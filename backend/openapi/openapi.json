@@ -190,6 +190,258 @@
           "data",
           "requestId"
         ]
+      },
+      "FileInitResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "upload": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "PUT"
+                    ]
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "method",
+                  "url"
+                ]
+              }
+            },
+            "required": [
+              "fileId",
+              "upload"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "FileStoredResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sizeBytes": {
+                "type": "integer"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "mimeDetected": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "sizeBytes",
+              "sha256",
+              "mimeDetected"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ApiFailure": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "错误码，见 backend_plan.md 4.1 目录"
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retryable"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "requestId"
+        ]
+      },
+      "AiConfigResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "config": {
+                "type": "object",
+                "additionalProperties": {}
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "enabled",
+              "config",
+              "notes"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiConfigPutResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "enabled"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiProbeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "purpose": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "configVersion": {
+                "type": "integer"
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "passed",
+                    "detail"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "purpose",
+              "model",
+              "configVersion",
+              "passed",
+              "checks"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
       }
     },
     "parameters": {}
@@ -248,6 +500,457 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "创建文件记录，获取上传地址（服务端分配 R2 key）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 127
+                  }
+                },
+                "required": [
+                  "fileName"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建待上传文件",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileInitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/content": {
+      "put": {
+        "tags": [
+          "files"
+        ],
+        "summary": "上传文件内容（二进制，≤10MiB，按实际上传字节校验）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "校验通过并已存储",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileStoredResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "超过大小限制",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "文件类型校验未通过",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "下载文件内容（需项目成员权限；R2 不公开）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件字节流",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-config": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "读取当前 AI 配置版本（运维管理员）",
+        "responses": {
+          "200": {
+            "description": "当前配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "写入新的 AI 配置版本（只增不改；启用前须通过探测）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "textEconomy": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 600000
+                      },
+                      "maxInputChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxOutputTokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32768
+                      },
+                      "supportsJson": {
+                        "type": "boolean"
+                      },
+                      "supportsVision": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "pricePerMTokens": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "prefixItems": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ],
+                        "default": null
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "timeoutMs",
+                      "maxInputChars",
+                      "maxOutputTokens",
+                      "supportsJson",
+                      "supportsVision"
+                    ]
+                  },
+                  "visionEconomy": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 600000
+                      },
+                      "maxInputChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxOutputTokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32768
+                      },
+                      "supportsJson": {
+                        "type": "boolean"
+                      },
+                      "supportsVision": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "pricePerMTokens": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "prefixItems": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ],
+                        "default": null
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "timeoutMs",
+                      "maxInputChars",
+                      "maxOutputTokens",
+                      "supportsJson",
+                      "supportsVision"
+                    ]
+                  },
+                  "review": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 600000
+                      },
+                      "maxInputChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxOutputTokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32768
+                      },
+                      "supportsJson": {
+                        "type": "boolean"
+                      },
+                      "supportsVision": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "pricePerMTokens": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "prefixItems": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ],
+                        "default": null
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "timeoutMs",
+                      "maxInputChars",
+                      "maxOutputTokens",
+                      "supportsJson",
+                      "supportsVision"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "textEconomy",
+                  "visionEconomy",
+                  "review"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "新版本已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConfigPutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-config/probe": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "对当前配置执行能力探测（中文/JSON/图片/用量字段）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "textEconomy",
+                      "visionEconomy",
+                      "review"
+                    ],
+                    "default": "textEconomy"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "探测报告",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiProbeResponse"
                 }
               }
             }

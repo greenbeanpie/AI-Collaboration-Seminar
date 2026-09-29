@@ -12,3 +12,16 @@ export function apiEnvelope<T extends z.ZodType>(data: T, name: string) {
     })
     .openapi(name);
 }
+
+/** 统一失败响应信封（与 PLAN 约定的 ApiFailure 一致），供各路由错误响应引用 */
+export const apiErrorEnvelope = z
+  .object({
+    error: z.object({
+      code: z.string().openapi({ description: '错误码，见 backend_plan.md 4.1 目录' }),
+      message: z.string(),
+      retryable: z.boolean(),
+      details: z.record(z.string(), z.unknown()).optional(),
+    }),
+    requestId: z.string(),
+  })
+  .openapi('ApiFailure');

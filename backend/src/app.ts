@@ -4,6 +4,8 @@ import { AppError } from './core/errors';
 import { failureBody, requestIdMiddleware } from './core/http';
 import { registerSystemRoutes } from './api/health';
 import { registerCapabilitiesRoutes } from './api/capabilities';
+import { registerFileRoutes } from './api/files';
+import { registerAdminRoutes } from './api/admin';
 
 export function createApp(): OpenAPIHono<AppEnv> {
   const app = new OpenAPIHono<AppEnv>();
@@ -30,6 +32,8 @@ export function createApp(): OpenAPIHono<AppEnv> {
   // 所有域路由直接注册到本实例（带完整 /api/v1 前缀），保证契约文档完整
   registerSystemRoutes(app);
   registerCapabilitiesRoutes(app);
+  registerFileRoutes(app);
+  registerAdminRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {
     openapi: '3.1.0',
