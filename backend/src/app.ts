@@ -1,6 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from './env';
-import { AppError } from './core/errors';
+import { AppError, validationFailed } from './core/errors';
 import { failureBody, requestIdMiddleware } from './core/http';
 import { registerSystemRoutes } from './api/health';
 import { registerCapabilitiesRoutes } from './api/capabilities';
@@ -10,10 +10,24 @@ import { registerAuthRoutes } from './api/auth';
 import { registerProjectRoutes } from './api/projects';
 import { registerMemberRoutes } from './api/members';
 import { registerInvitationRoutes } from './api/invitations';
+import { registerSourceRoutes } from './api/sources';
+import { registerRequirementRoutes } from './api/requirements';
+import { registerJobRoutes } from './api/jobs';
 import { requireAllowedOrigin } from './core/origin';
 
 export function createApp(): OpenAPIHono<AppEnv> {
-  const app = new OpenAPIHono<AppEnv>();
+  // 校验失败统一走 ApiFailure 契约（不再使用 zod-openapi 默认的 {success:false} 形状）
+  const app = new OpenAPIHono<AppEnv>({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        throw validationFailed('请求参数不合法', {
+          issues: result.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        });
+      }
+      // 校验成功时不干预，放行到业务 handler
+      return undefined as unknown as Response;
+    },
+  });
 
   app.use('*', requestIdMiddleware);
   app.use('*', requireAllowedOrigin);
@@ -42,6 +56,9 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerProjectRoutes(app);
   registerMemberRoutes(app);
   registerInvitationRoutes(app);
+  registerSourceRoutes(app);
+  registerRequirementRoutes(app);
+  registerJobRoutes(app);
   registerFileRoutes(app);
   registerAdminRoutes(app);
 

@@ -3,6 +3,7 @@ export type EnvName = 'local' | 'staging' | 'production';
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
+  PARSE_WORKFLOW: Workflow;
   ENV_NAME: EnvName;
   EMAIL_MODE: 'echo' | 'resend';
   /** 逗号分隔的写请求 Origin 白名单 */

@@ -1,8 +1,11 @@
 /**
  * 生成结构合法的多页 PDF（Helvetica 标准字体 + ASCII 文本），
- * 用于 unpdf 文本层提取的 CPU/耗时 spike。仅使用 ASCII，保证字节偏移 == 字符数。
+ * 用于 unpdf 文本层提取的 CPU/耗时 spike 与解析流水线测试。
+ * 仅使用 ASCII，保证字节偏移 == 字符数。
+ * options.text=false 时生成无文本层的页面（模拟纯扫描 PDF）。
  */
-export function makePdf(pageCount: number): Uint8Array {
+export function makePdf(pageCount: number, options?: { text?: boolean }): Uint8Array {
+  const withText = options?.text ?? true;
   const objects: string[] = [];
   const put = (n: number, body: string) => {
     objects[n] = `${n} 0 obj\n${body}\nendobj\n`;
@@ -15,7 +18,7 @@ export function makePdf(pageCount: number): Uint8Array {
 
   for (let i = 0; i < pageCount; i++) {
     const text = `Page ${i + 1}: submit the signed form before the deadline 2026-10-08. Team size is five members.`;
-    const content = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+    const content = withText ? `BT /F1 12 Tf 72 720 Td (${text}) Tj ET` : '';
     put(
       4 + i * 2,
       `<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`,
@@ -37,4 +40,9 @@ export function makePdf(pageCount: number): Uint8Array {
   }
   out += `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
   return new TextEncoder().encode(out);
+}
+
+/** 最小 PNG：文件头魔数合法即可（用于页面图上传链路测试） */
+export function makePng(): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
 }

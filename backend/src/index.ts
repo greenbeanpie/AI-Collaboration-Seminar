@@ -1,5 +1,6 @@
 import { createApp } from './app';
 import { handleScheduled } from './cron';
+import { ParseSourceWorkflow } from './workflows/parse-source';
 import type { Env } from './env';
 
 const app = createApp();
@@ -10,3 +11,5 @@ export default {
     ctx.waitUntil(handleScheduled(env));
   },
 } satisfies ExportedHandler<Env>;
+
+export { ParseSourceWorkflow };

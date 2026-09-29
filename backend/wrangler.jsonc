@@ -17,6 +17,13 @@
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-local" }],
+  "workflows": [
+    {
+      "binding": "PARSE_WORKFLOW",
+      "name": "ai-office-parse",
+      "class_name": "ParseSourceWorkflow"
+    }
+  ],
   "triggers": {
     "crons": ["* * * * *"]
   },
@@ -48,7 +55,14 @@
           "migrations_dir": "migrations"
         }
       ],
-      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-staging" }]
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-staging" }],
+      "workflows": [
+        {
+          "binding": "PARSE_WORKFLOW",
+          "name": "ai-office-parse-staging",
+          "class_name": "ParseSourceWorkflow"
+        }
+      ]
     },
     "production": {
       "name": "ai-office-api",
@@ -67,7 +81,14 @@
           "migrations_dir": "migrations"
         }
       ],
-      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-production" }]
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-production" }],
+      "workflows": [
+        {
+          "binding": "PARSE_WORKFLOW",
+          "name": "ai-office-parse-production",
+          "class_name": "ParseSourceWorkflow"
+        }
+      ]
     }
   }
 }

@@ -486,7 +486,7 @@ Workers 免费版每次请求约 10ms CPU；`unpdf` 解析多页 PDF 的纯 JS �
 - [x] M0 脚手架（2026-09-29，commit 2cab0cd：Hono+Zod/OpenAPI+Vitest、统一响应/requestId/错误目录、health、capabilities、openapi.json 导出，7 用例）
 - [x] M1 基础设施（2026-09-29，commit 6da3984：D1 全量迁移+种子、R2 文件上传下载与魔数校验/隔离回收、会话与成员中间件、AI Gateway 客户端+ai_calls 记录（费用未知标未知）、admin 配置版本化+能力探测、unpdf spike（30 页约 6–8ms，见 backend/docs/SPIKE-unpdf.md）、DEPLOY.md，13 用例）
 - [x] M2 身份项目（2026-09-29：验证码 HMAC 全流程（回显模式/60s 间隔/IP 限流/一次性消费）、会话 Cookie、项目 CRUD+乐观锁+归档、成员权限矩阵（owner 不可自移/退出）、邀请生命周期（次数/撤销/过期/人数规则）、Origin 白名单，16 用例；共 36 用例全绿）
-- [ ] M3 来源解析（含 Workflows 派发/恢复器接入与真实比赛 PDF 复测）
+- [x] M3 来源解析（2026-09-29：来源导入（文件/粘贴/网页）与版本、ParseSourceWorkflow（确定性实例 ID=jobId）+ outbox/cron 恢复器、unpdf 按页提取与片段化、扫描页 render-requests/页面图上传/视觉 OCR（待复核标记）、要求提取（JSON+一次修复+伪造引用拒绝→AI_OUTPUT_INVALID）、要求集编辑/owner 确认、评分标准版本 CRUD/确认、网页白名单抓取、jobs 查询与 retry，9 用例；共 45 用例全绿，契约 32 路径）
 - [ ] M4 任务材料 AI
 - [ ] M5 预审答辩账本
 - [ ] M6 加固联调

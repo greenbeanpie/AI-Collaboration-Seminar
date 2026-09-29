@@ -890,6 +890,1024 @@
           "requestId"
         ]
       },
+      "SourceCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "paste",
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "currentVersionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "sourceVersionId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "sourceId",
+              "kind",
+              "title",
+              "currentVersionId",
+              "createdAt",
+              "sourceVersionId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SourceListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "file",
+                        "paste",
+                        "web"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "currentVersionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "kind",
+                    "title",
+                    "currentVersionId",
+                    "createdAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SourceVersionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sourceVersionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "web",
+                  "paste"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "processing",
+                  "ready",
+                  "failed"
+                ]
+              },
+              "parseError": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pageCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "charCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "pages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pageNumber": {
+                      "type": "integer"
+                    },
+                    "textStatus": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "extracted",
+                        "empty"
+                      ]
+                    },
+                    "imageStatus": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "uploaded",
+                        "rejected"
+                      ]
+                    },
+                    "ocrStatus": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "pending",
+                        "ok",
+                        "failed"
+                      ]
+                    },
+                    "needsReview": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "pageNumber",
+                    "textStatus",
+                    "imageStatus",
+                    "ocrStatus",
+                    "needsReview"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "sourceVersionId",
+              "sourceId",
+              "revision",
+              "origin",
+              "status",
+              "parseError",
+              "pageCount",
+              "charCount",
+              "pages"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SourceParseResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId",
+              "status"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RenderRequestsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pageNumber": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "pageNumber"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "PageImagesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "accepted": {
+                "type": "integer"
+              },
+              "remaining": {
+                "type": "integer"
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "accepted",
+              "remaining",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RequirementSetListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirementSetId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sourceVersionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "confirmed"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "confirmedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "requirements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "deadline",
+                              "deliverable",
+                              "format",
+                              "scoring",
+                              "team",
+                              "other"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "dueDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "duePrecision": {
+                            "type": "string",
+                            "enum": [
+                              "date",
+                              "datetime",
+                              "unknown"
+                            ]
+                          },
+                          "citations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sourceVersionId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "fragmentId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "pageNumber": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                },
+                                "quote": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "sourceVersionId",
+                                "fragmentId",
+                                "pageNumber",
+                                "quote"
+                              ]
+                            }
+                          },
+                          "fieldState": {
+                            "type": "string",
+                            "enum": [
+                              "ai_suggestion",
+                              "edited",
+                              "confirmed"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "requirementId",
+                          "seq",
+                          "category",
+                          "title",
+                          "detail",
+                          "dueDate",
+                          "duePrecision",
+                          "citations",
+                          "fieldState"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "requirementSetId",
+                    "sourceVersionId",
+                    "status",
+                    "revision",
+                    "confirmedAt",
+                    "requirements"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RequirementSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "requirementSetId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sourceVersionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "confirmed"
+                ]
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "confirmedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirementId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "deadline",
+                        "deliverable",
+                        "format",
+                        "scoring",
+                        "team",
+                        "other"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string",
+                      "enum": [
+                        "date",
+                        "datetime",
+                        "unknown"
+                      ]
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sourceVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "fragmentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "pageNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "quote": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sourceVersionId",
+                          "fragmentId",
+                          "pageNumber",
+                          "quote"
+                        ]
+                      }
+                    },
+                    "fieldState": {
+                      "type": "string",
+                      "enum": [
+                        "ai_suggestion",
+                        "edited",
+                        "confirmed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "requirementId",
+                    "seq",
+                    "category",
+                    "title",
+                    "detail",
+                    "dueDate",
+                    "duePrecision",
+                    "citations",
+                    "fieldState"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "requirementSetId",
+              "sourceVersionId",
+              "status",
+              "revision",
+              "confirmedAt",
+              "requirements"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RequirementResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "requirementId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "deadline",
+                  "deliverable",
+                  "format",
+                  "scoring",
+                  "team",
+                  "other"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "dueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "duePrecision": {
+                "type": "string",
+                "enum": [
+                  "date",
+                  "datetime",
+                  "unknown"
+                ]
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "fragmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceVersionId",
+                    "fragmentId",
+                    "pageNumber",
+                    "quote"
+                  ]
+                }
+              },
+              "fieldState": {
+                "type": "string",
+                "enum": [
+                  "ai_suggestion",
+                  "edited",
+                  "confirmed"
+                ]
+              }
+            },
+            "required": [
+              "requirementId",
+              "seq",
+              "category",
+              "title",
+              "detail",
+              "dueDate",
+              "duePrecision",
+              "citations",
+              "fieldState"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RubricListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "rubricId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "official",
+                        "custom"
+                      ]
+                    },
+                    "weights": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "weight": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "weight"
+                        ]
+                      }
+                    },
+                    "notes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "confirmed"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubricId",
+                    "version",
+                    "source",
+                    "weights",
+                    "notes",
+                    "status",
+                    "confirmedAt",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RubricResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rubricId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "official",
+                  "custom"
+                ]
+              },
+              "weights": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "weight": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "weight"
+                  ]
+                }
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "confirmed"
+                ]
+              },
+              "confirmedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rubricId",
+              "version",
+              "source",
+              "weights",
+              "notes",
+              "status",
+              "confirmedAt",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "JobResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "running",
+                  "waiting_input",
+                  "succeeded",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "result": {},
+              "error": {},
+              "attempts": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId",
+              "kind",
+              "status",
+              "attempts",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "JobRetryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "FileInitResponse": {
         "type": "object",
         "properties": {
@@ -2020,6 +3038,983 @@
           },
           "429": {
             "description": "项目人数已达上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "导入来源（文件/粘贴文本/网页链接）并创建来源版本",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "paste",
+                      "web"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "fileId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100000
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "来源列表（游标分页）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "来源版本详情（含逐页处理状态）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceVersionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "版本详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceVersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/parse": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "发起解析（异步，202 + jobId）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "任务已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceParseResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态不允许解析",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/render-requests": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "获取需要前端 PDF.js 渲染上传的页码（扫描页）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "sourceVersionId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "待渲染页码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderRequestsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/page-images": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "上传页面图片（绑定 sourceVersionId+pageNumber），全部就绪后自动触发 OCR",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "pageNumber": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 30
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "pageNumber",
+                        "fileId"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 30
+                  }
+                },
+                "required": [
+                  "sourceVersionId",
+                  "images"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已接收（可能返回 OCR jobId）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageImagesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "页码/文件不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/requirement-sets": {
+      "get": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "要求集列表（可按 sourceVersionId 过滤；重新解析产生新草稿，不覆盖已确认内容）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "sourceVersionId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequirementSetListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/requirement-sets/{setId}": {
+      "get": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "要求集详情（含要求条目与引用）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "setId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequirementSetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/requirement-sets/{setId}/confirm": {
+      "post": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "确认要求集（owner；重复确认 409）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "setId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已确认",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequirementSetResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要负责人权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已确认",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/requirements/{requirementId}": {
+      "patch": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "修改要求条目（field_state 变为 edited；已确认的要求集不可改）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "requirementId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "dueDate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "duePrecision": {
+                    "type": "string",
+                    "enum": [
+                      "date",
+                      "datetime",
+                      "unknown"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "deadline",
+                      "deliverable",
+                      "format",
+                      "scoring",
+                      "team",
+                      "other"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已修改",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequirementResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "要求集已确认",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rubrics": {
+      "get": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "评分标准版本列表",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RubricListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "新增评分标准版本（草稿）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "official",
+                      "custom"
+                    ]
+                  },
+                  "weights": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "weight": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "weight"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "source",
+                  "weights"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RubricResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rubrics/{rubricId}": {
+      "patch": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "修改评分标准草稿（owner）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rubricId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "weights": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "weight": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "weight"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已修改",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RubricResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已确认不可改",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rubrics/{rubricId}/confirm": {
+      "post": {
+        "tags": [
+          "requirements"
+        ],
+        "summary": "确认评分标准（owner）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rubricId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已确认",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RubricResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "查询异步任务状态（前端 2s→10s 退避轮询）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{jobId}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "重试失败任务（终态成功/取消不可重试）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "已重新排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRetryResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "终态不可重试",
             "content": {
               "application/json": {
                 "schema": {
