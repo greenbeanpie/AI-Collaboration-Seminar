@@ -1,0 +1,260 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "「补位」AI 项目办公室 API",
+    "version": "0.1.0",
+    "description": "契约唯一来源：前端 MSW 以此为依据。接口契约由双方共同确认，不得单方面修改（见 backend_plan.md 第 1 节）。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ok"
+                ]
+              },
+              "environment": {
+                "type": "string"
+              },
+              "time": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "environment",
+              "time"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "HealthDepsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "d1": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "error"
+                ]
+              },
+              "r2": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "d1",
+              "r2"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "apiVersion": {
+                "type": "string",
+                "enum": [
+                  "v1"
+                ]
+              },
+              "environment": {
+                "type": "string"
+              },
+              "features": {
+                "type": "object",
+                "properties": {
+                  "aiEnabled": {
+                    "type": "boolean"
+                  },
+                  "webFetch": {
+                    "type": "boolean"
+                  },
+                  "emailMode": {
+                    "type": "string",
+                    "enum": [
+                      "echo",
+                      "resend"
+                    ]
+                  }
+                },
+                "required": [
+                  "aiEnabled",
+                  "webFetch",
+                  "emailMode"
+                ],
+                "description": "AI 是否启用由 ai_config_versions 决定；不暴露任何密钥"
+              },
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxFileBytes": {
+                    "type": "integer"
+                  },
+                  "maxPdfPages": {
+                    "type": "integer"
+                  },
+                  "pageImageMaxEdge": {
+                    "type": "integer"
+                  },
+                  "pageImageMaxBytes": {
+                    "type": "integer"
+                  },
+                  "listDefaultPageSize": {
+                    "type": "integer"
+                  },
+                  "listMaxPageSize": {
+                    "type": "integer"
+                  },
+                  "concurrentAiTasksPerProject": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "maxFileBytes",
+                  "maxPdfPages",
+                  "pageImageMaxEdge",
+                  "pageImageMaxBytes",
+                  "listDefaultPageSize",
+                  "listMaxPageSize",
+                  "concurrentAiTasksPerProject"
+                ]
+              },
+              "competitionTemplate": {
+                "type": "object",
+                "properties": {
+                  "teamSizeLimit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "teamSizeLimit"
+                ],
+                "description": "本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制"
+              }
+            },
+            "required": [
+              "apiVersion",
+              "environment",
+              "features",
+              "limits",
+              "competitionTemplate"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "存活检查（不触发付费调用）",
+        "responses": {
+          "200": {
+            "description": "服务存活",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/deps": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "内部依赖检查（D1/R2 可达性，不触发付费调用）",
+        "responses": {
+          "200": {
+            "description": "依赖状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDepsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "系统能力与限制（公开接口）",
+        "responses": {
+          "200": {
+            "description": "能力与限制",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}
