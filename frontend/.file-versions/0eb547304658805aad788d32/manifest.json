@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "fileName": "index.html",
+  "currentVersionId": "87c137dd-46b0-4768-b950-555e6aa6027d",
+  "entries": [
+    {
+      "id": "87c137dd-46b0-4768-b950-555e6aa6027d",
+      "fileName": "index.html",
+      "version": 1,
+      "label": "Version 1",
+      "createdAt": 1790678263950,
+      "source": "ai",
+      "prompt": "请你根据当前项目目录下的PLAN.md了解项目规划，为我们制作一份前端的网页/应用程序原型；你只需要专注于实现整体框架和视觉效果，暂时不需要考虑与后端的连接；你应当适当使用视觉特效等以美化页面",
+      "size": 249836,
+      "mime": "text/html; charset=utf-8",
+      "kind": "html",
+      "contentPath": "0001-87c137dd-46b0-4768-b950-555e6aa6027d.html",
+      "contentDigest": "47ea209e64928bfa796dfaffd9b7f08fb29dd03435b4a85f9ef351fdbb4eddcd",
+      "promptSource": "message"
+    }
+  ]
+}
