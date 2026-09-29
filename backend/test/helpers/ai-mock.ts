@@ -5,6 +5,8 @@ export interface GatewayMockOptions {
   repair?: boolean;
   /** 返回伪造 fragmentId 的引用（应导致 AI_OUTPUT_INVALID） */
   fabricatedCitation?: boolean;
+  /** 只审模式返回伪造引文（应导致 AI_OUTPUT_INVALID） */
+  fabricatedAgentQuote?: boolean;
 }
 
 interface ChatBody {
@@ -63,6 +65,29 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
               dueDate: '2026-10-08',
               duePrecision: 'date',
               citations: [{ fragmentId, pageNumber, quote }],
+            },
+          ],
+        }),
+      );
+    }
+    if (systemText.includes('团队写作助手')) {
+      return openAiResponse(
+        JSON.stringify({ title: 'AI 生成草稿', markdown: '# AI 草稿\n\n这是 **AI** 生成的内容，待人工复核。' }),
+      );
+    }
+    if (systemText.includes('「带做」模式助手')) {
+      return openAiResponse(JSON.stringify({ type: 'question', content: '你们目前收集到哪些比赛要求？' }));
+    }
+    if (systemText.includes('审阅助手')) {
+      return openAiResponse(
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'high',
+              title: '缺少成效数据',
+              detail: '作品介绍没有应用成效部分',
+              suggestion: '补充真实试用数据或标注待填写',
+              quote: options?.fabricatedAgentQuote ? '这句引文在材料中不存在' : '本作品面向组队作业场景',
             },
           ],
         }),

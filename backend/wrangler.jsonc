@@ -22,6 +22,11 @@
       "binding": "PARSE_WORKFLOW",
       "name": "ai-office-parse",
       "class_name": "ParseSourceWorkflow"
+    },
+    {
+      "binding": "AGENT_WORKFLOW",
+      "name": "ai-office-agent",
+      "class_name": "AgentRunWorkflow"
     }
   ],
   "triggers": {
@@ -61,6 +66,11 @@
           "binding": "PARSE_WORKFLOW",
           "name": "ai-office-parse-staging",
           "class_name": "ParseSourceWorkflow"
+        },
+        {
+          "binding": "AGENT_WORKFLOW",
+          "name": "ai-office-agent-staging",
+          "class_name": "AgentRunWorkflow"
         }
       ]
     },
@@ -87,6 +97,11 @@
           "binding": "PARSE_WORKFLOW",
           "name": "ai-office-parse-production",
           "class_name": "ParseSourceWorkflow"
+        },
+        {
+          "binding": "AGENT_WORKFLOW",
+          "name": "ai-office-agent-production",
+          "class_name": "AgentRunWorkflow"
         }
       ]
     }

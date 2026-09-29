@@ -49,12 +49,14 @@ export async function createJobAndDispatch(
       "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
     ).bind(newId(), jobId, now, now),
   ]);
-  await tryDispatchParseJob(env, jobId);
+  await tryDispatchJob(env, jobId);
   return jobId;
 }
 
-/** 尝试创建确定性实例（实例 ID = jobId）；实例已存在或引擎不可用时不视为错误 */
-export async function tryDispatchParseJob(env: Env, jobId: string): Promise<'dispatched' | 'deferred' | 'engine'> {
+const PARSE_JOB_KINDS = new Set(['parse_source', 'ocr_pages', 'requirement_extract', 'web_fetch']);
+
+/** 尝试创建确定性实例（实例 ID = jobId；解析类走 PARSE_WORKFLOW，AI 类走 AGENT_WORKFLOW） */
+export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatched' | 'deferred' | 'engine'> {
   const claim = await env.DB.prepare(
     "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ?2 WHERE id = ?1 AND status IN ('queued', 'waiting_input')",
   )
@@ -63,7 +65,9 @@ export async function tryDispatchParseJob(env: Env, jobId: string): Promise<'dis
   if ((claim.meta?.changes ?? 0) === 0) return 'deferred';
 
   try {
-    await env.PARSE_WORKFLOW.create({ id: jobId, params: { jobId } });
+    const job = await getJob(env, jobId);
+    const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
+    await workflow.create({ id: jobId, params: { jobId } });
     await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1")
       .bind(jobId, nowIso())
       .run();

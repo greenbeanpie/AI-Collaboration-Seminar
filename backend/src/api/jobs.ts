@@ -5,7 +5,7 @@ import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
-import { getJob, tryDispatchParseJob } from '../services/jobs';
+import { getJob, tryDispatchJob } from '../services/jobs';
 
 const jobParams = z.object({ jobId: z.string().uuid() });
 
@@ -91,7 +91,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
       ).bind(newId(), newJobId, now, now),
     ]);
-    await tryDispatchParseJob(c.env, newJobId);
+    await tryDispatchJob(c.env, newJobId);
     return c.json(apiData(c, { jobId: newJobId }), 202);
   });
 }

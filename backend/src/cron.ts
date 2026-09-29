@@ -1,6 +1,7 @@
 import type { Env } from './env';
 import { nowIso } from './core/db';
-import { tryDispatchParseJob } from './services/jobs';
+import { tryDispatchJob } from './services/jobs';
+import { releaseStaleReservations } from './services/budget';
 
 /**
  * 定时维护（crons 每分钟触发）：
@@ -11,6 +12,7 @@ import { tryDispatchParseJob } from './services/jobs';
 export async function handleScheduled(env: Env): Promise<void> {
   const now = nowIso();
   await recoverJobs(env, now);
+  await releaseStaleReservations(env, now);
   try {
     const quarantined = await env.DB
       .prepare("SELECT id, r2_key FROM files WHERE status = 'quarantined' AND gc_after IS NOT NULL AND gc_after <= ?1")
@@ -64,7 +66,7 @@ async function recoverJobs(env: Env, now: string): Promise<void> {
       )
         .bind(row.job_id, new Date(Date.now() + 5 * 60_000).toISOString())
         .run();
-      await tryDispatchParseJob(env, row.job_id);
+      await tryDispatchJob(env, row.job_id);
     }
   } catch (err) {
     console.error('[cron] 任务恢复失败:', err);
