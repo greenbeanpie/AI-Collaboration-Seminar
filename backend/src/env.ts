@@ -13,6 +13,8 @@ export interface Env {
   AI_GATEWAY_ID: string;
   ADMIN_TOKEN: string;
   RESEND_API_KEY?: string;
+  /** 验证码邮件发件人（如 验证码 <noreply@example.com>）；Resend 需已验证域名 */
+  EMAIL_FROM?: string;
 }
 
 export interface SessionUser {

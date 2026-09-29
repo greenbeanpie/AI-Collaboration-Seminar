@@ -2,7 +2,7 @@
 
 > 依据：[PLAN.md](./PLAN.md) 第二章「后端开发计划」。本文档由后端 AI 维护，是后端实施的执行蓝图；与 PLAN.md 冲突时以 PLAN.md 为准，并在本文档记录差异及原因。
 >
-> 版本：v1（2026-09-29）｜执行分支：`backend`｜状态：待实施
+> 版本：v2（2026-09-29，M0–M2 实施后更新）｜执行分支：`backend`｜当前进度：M0 ✅ / M1 ✅ / M2 ✅ / M3–M6 待实施
 
 ---
 
@@ -156,6 +156,7 @@ type ApiFailure = { error: { code: string; message: string; retryable: boolean; 
 | `QUOTA_EXCEEDED` | 429 | true | 项目 AI 并发 ≥2 或项目预算不足 |
 | `AI_OUTPUT_INVALID` | 502 | false | 模型输出修复一次后仍不合法 |
 | `AI_UNAVAILABLE` | 503 | true | Gateway/模型超时不可用（费用未知时保留待核对记录） |
+| `EMAIL_UNAVAILABLE` | 503 | true | 验证码邮件发送失败（适配器故障/未配置） |
 | `INTERNAL` | 500 | false | 未分类错误 |
 
 ### 4.2 登录（验证码）与会话
@@ -482,10 +483,10 @@ Workers 免费版每次请求约 10ms CPU；`unpdf` 解析多页 PDF 的纯 JS �
 
 ## 13. 完成状态记录（随进度更新）
 
-- [ ] M0 脚手架（前端完成/后端完成分开记录，PLAN 二.10）
-- [ ] M1 基础设施
-- [ ] M2 身份项目
-- [ ] M3 来源解析
+- [x] M0 脚手架（2026-09-29，commit 2cab0cd：Hono+Zod/OpenAPI+Vitest、统一响应/requestId/错误目录、health、capabilities、openapi.json 导出，7 用例）
+- [x] M1 基础设施（2026-09-29，commit 6da3984：D1 全量迁移+种子、R2 文件上传下载与魔数校验/隔离回收、会话与成员中间件、AI Gateway 客户端+ai_calls 记录（费用未知标未知）、admin 配置版本化+能力探测、unpdf spike（30 页约 6–8ms，见 backend/docs/SPIKE-unpdf.md）、DEPLOY.md，13 用例）
+- [x] M2 身份项目（2026-09-29：验证码 HMAC 全流程（回显模式/60s 间隔/IP 限流/一次性消费）、会话 Cookie、项目 CRUD+乐观锁+归档、成员权限矩阵（owner 不可自移/退出）、邀请生命周期（次数/撤销/过期/人数规则）、Origin 白名单，16 用例；共 36 用例全绿）
+- [ ] M3 来源解析（含 Workflows 派发/恢复器接入与真实比赛 PDF 复测）
 - [ ] M4 任务材料 AI
 - [ ] M5 预审答辩账本
 - [ ] M6 加固联调

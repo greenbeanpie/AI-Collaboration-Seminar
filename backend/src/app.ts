@@ -6,11 +6,17 @@ import { registerSystemRoutes } from './api/health';
 import { registerCapabilitiesRoutes } from './api/capabilities';
 import { registerFileRoutes } from './api/files';
 import { registerAdminRoutes } from './api/admin';
+import { registerAuthRoutes } from './api/auth';
+import { registerProjectRoutes } from './api/projects';
+import { registerMemberRoutes } from './api/members';
+import { registerInvitationRoutes } from './api/invitations';
+import { requireAllowedOrigin } from './core/origin';
 
 export function createApp(): OpenAPIHono<AppEnv> {
   const app = new OpenAPIHono<AppEnv>();
 
   app.use('*', requestIdMiddleware);
+  app.use('*', requireAllowedOrigin);
 
   app.onError((err, c) => {
     const requestId = c.get('requestId') ?? crypto.randomUUID();
@@ -32,6 +38,10 @@ export function createApp(): OpenAPIHono<AppEnv> {
   // 所有域路由直接注册到本实例（带完整 /api/v1 前缀），保证契约文档完整
   registerSystemRoutes(app);
   registerCapabilitiesRoutes(app);
+  registerAuthRoutes(app);
+  registerProjectRoutes(app);
+  registerMemberRoutes(app);
+  registerInvitationRoutes(app);
   registerFileRoutes(app);
   registerAdminRoutes(app);
 
