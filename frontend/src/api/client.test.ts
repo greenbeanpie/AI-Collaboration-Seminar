@@ -66,6 +66,16 @@ describe('API client', () => {
       .rejects.toMatchObject({ code: 'INVALID_PAGINATION' });
   });
 
+  it('accepts the non-paginated requirement and rubric list contract', async () => {
+    const mock = vi.fn().mockImplementation(() => new Response(JSON.stringify({
+      data: { items: [] }, requestId: 'list-request',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', mock);
+    await expect(listAllItems<'RequirementSetListResponse'>('/api/v1/projects/project-1/requirement-sets')).resolves.toEqual([]);
+    await expect(listAllItems<'RubricListResponse'>('/api/v1/projects/project-1/rubrics')).resolves.toEqual([]);
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
   it('reuses an explicit idempotency key across a retried mutation', async () => {
     const fetchMock = vi.fn().mockImplementation(() => new Response(JSON.stringify({ data: { jobId: 'job-1' }, requestId: 'job-request' }), {
       status: 202, headers: { 'Content-Type': 'application/json' },

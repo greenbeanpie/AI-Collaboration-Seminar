@@ -17,9 +17,9 @@ const SourcesPage = lazy(() => import('./pages/SourcesPage').then((module) => ({
 const RequirementsPage = lazy(() => import('./pages/RequirementsPage').then((module) => ({ default: module.RequirementsPage })));
 const TasksPage = lazy(() => import('./pages/TasksPage').then((module) => ({ default: module.TasksPage })));
 const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((module) => ({ default: module.MaterialsPage })));
-const AiWorkspacePage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.AiWorkspacePage })));
-const ReviewsPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.ReviewsPage })));
-const RehearsalsPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.RehearsalsPage })));
+const AiWorkspacePage = lazy(() => import('./pages/AiWorkspacePage').then((module) => ({ default: module.AiWorkspacePage })));
+const ReviewsPage = lazy(() => import('./pages/ReviewsPage').then((module) => ({ default: module.ReviewsPage })));
+const RehearsalsPage = lazy(() => import('./pages/RehearsalsPage').then((module) => ({ default: module.RehearsalsPage })));
 const TeamPage = lazy(() => import('./pages/TeamPage').then((module) => ({ default: module.TeamPage })));
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ default: module.LedgerPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));

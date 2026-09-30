@@ -25,6 +25,8 @@ type Job = DataOf<'JobResponse'>;
 type CapabilityData = DataOf<'CapabilitiesResponse'>;
 type IntakeKind = 'paste' | 'web' | 'file';
 type PendingUpload = { fileId: string; file: File };
+type PageImagesBody = { sourceVersionId: string; images: Array<{ pageNumber: number; fileId: string }> };
+type PendingPageImagesSubmission = { body: PageImagesBody; idempotencyKey: string };
 
 const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled', 'waiting_input']);
 
@@ -127,7 +129,7 @@ function SourceJobProgress({
       <div><strong>{query.isLoading ? '正在读取解析任务' : job ? `解析任务：${job.status}` : '解析任务状态暂不可用'}</strong><p>{query.error ? classifySourceError(query.error) : progress}</p></div>
       <div className="sources-record-actions">
         {job?.status === 'waiting_input' && pagesToRender > 0 && (
-          <button className="button button-primary button-small" type="button" disabled={scanning || !capability?.features.aiEnabled || !tracked.fileId} onClick={() => onScan(tracked)}>
+          <button className="button button-primary button-small" type="button" disabled={scanning || !capability?.features.aiEnabled} onClick={() => onScan(tracked)}>
             {scanning ? <><LoaderCircle className="spin" size={14} /> 正在处理页面</> : <><ScanText size={14} /> 渲染并上传扫描页</>}
           </button>
         )}
@@ -137,7 +139,7 @@ function SourceJobProgress({
       </div>
     </div>
     {job?.status === 'waiting_input' && pagesToRender > 0 && !capability?.features.aiEnabled && <div className="callout warning-callout">当前服务能力显示 AI 未启用。扫描页 OCR 和要求提取暂不可用，页面不会用模拟结果替代。</div>}
-    {job?.status === 'waiting_input' && pagesToRender > 0 && !tracked.fileId && <div className="callout warning-callout">当前浏览器没有这份来源 PDF 的文件关联；版本详情接口未返回文件 ID。请从“导入来源”重新导入原 PDF 后，在新来源上发起解析。</div>}
+    {job?.status === 'waiting_input' && pagesToRender > 0 && !tracked.fileId && <div className="callout">继续扫描时将从服务端读取原文件关联，不依赖导入时的浏览器。</div>}
     {scanning && <div className="sources-scan-progress">正在读取待渲染页码、用 PDF.js 生成页面图片并按服务端限制上传。{scanning ? '请保持此页打开。' : ''}</div>}
     {query.error && <div className="sources-error"><ErrorNotice error={query.error} onRetry={() => void query.refetch()} /></div>}
   </div>;
@@ -178,7 +180,7 @@ function SourceRecord({
   const latestJob = jobs[0];
   const activeJob = latestJob?.status && ['queued', 'running', 'waiting_input'].includes(latestJob.status) ? latestJob : undefined;
   const displayedJob = latestJob;
-  const currentFileId = source.currentVersionId ? sourceFileId(projectId, source.currentVersionId) : null;
+  const currentFileId = version?.fileId ?? (source.currentVersionId ? sourceFileId(projectId, source.currentVersionId) : null);
   const versionBadge = version ? sourceStatus(version.status) : null;
   return <article id={`source-${source.sourceId}`} className={`sources-record${highlighted ? ' sources-record-target' : ''}`}>
     <div className="sources-record-heading">
@@ -237,10 +239,11 @@ export function SourcesPage() {
   const [scanJobId, setScanJobId] = useState<string | null>(null);
   const [scanProgressSourceId, setScanProgressSourceId] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState('');
-  const sourceIntentKey = useRef(createIntentKey());
+  const sourceIntentKeys = useRef(new Map<string, string>());
   const parseIntentKeys = useRef(new Map<string, string>());
   const retryIntentKeys = useRef(new Map<string, string>());
-  const fileInitIntentKey = useRef(createIntentKey());
+  const fileInitIntentKeys = useRef(new WeakMap<File, string>());
+  const pageImagesIntentKeys = useRef(new Map<string, PendingPageImagesSubmission>());
 
   const capabilityQuery = useQuery({ queryKey: ['capabilities'], queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') });
   const capability = capabilityQuery.data;
@@ -279,10 +282,11 @@ export function SourcesPage() {
     setScanJobId(null);
     setScanProgressSourceId(null);
     setScanProgress('');
-    sourceIntentKey.current = createIntentKey();
-    fileInitIntentKey.current = createIntentKey();
+    sourceIntentKeys.current.clear();
+    fileInitIntentKeys.current = new WeakMap<File, string>();
     parseIntentKeys.current.clear();
     retryIntentKeys.current.clear();
+    pageImagesIntentKeys.current.clear();
   }, [projectId, trackedJobsProjectId]);
 
   useEffect(() => {
@@ -315,14 +319,15 @@ export function SourcesPage() {
   }, []);
 
   const startParse = useCallback(async (source: SourceItem, sourceVersionId: string): Promise<boolean> => {
-    const intentKey = parseIntentKeys.current.get(source.sourceId) ?? createIntentKey();
-    parseIntentKeys.current.set(source.sourceId, intentKey);
+    const intentId = `${source.sourceId}:${sourceVersionId}`;
+    const intentKey = parseIntentKeys.current.get(intentId) ?? createIntentKey();
+    parseIntentKeys.current.set(intentId, intentKey);
     setActionError(null);
     setSuccessMessage('');
     setParsingSourceId(source.sourceId);
     try {
       const result = await api.post<'SourceParseResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/parse`), { sourceVersionId }, { idempotencyKey: intentKey });
-      parseIntentKeys.current.delete(source.sourceId);
+      parseIntentKeys.current.delete(intentId);
       trackJob({ jobId: result.jobId, sourceId: source.sourceId, sourceVersionId, sourceTitle: source.title, fileId: sourceFileId(projectId, sourceVersionId), status: result.status === 'queued' ? 'queued' : undefined });
       setSuccessMessage('解析任务已提交。页面可见时每 2–10 秒查询一次，切换到其他标签页时会暂停。');
       void queryClient.invalidateQueries({ queryKey: ['sourceVersion', projectId, source.sourceId, sourceVersionId] });
@@ -350,41 +355,48 @@ export function SourcesPage() {
 
   const scanPages = useCallback(async (tracked: TrackedSourceJob) => {
     if (!capability) return;
-    const fileId = tracked.fileId ?? sourceFileId(projectId, tracked.sourceVersionId);
-    if (!fileId) {
-      setActionError(new Error('当前浏览器没有此来源 PDF 的文件关联。'));
-      return;
-    }
     setActionError(null);
     setScanJobId(tracked.jobId);
     setScanProgressSourceId(tracked.sourceId);
     setScanProgress('读取服务器待渲染页码…');
     try {
-      const response = await api.get<'RenderRequestsResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/render-requests`), { sourceVersionId: tracked.sourceVersionId });
-      const pageNumbers = response.items.map((item) => item.pageNumber);
-      if (pageNumbers.length === 0) {
-        await queryClient.invalidateQueries({ queryKey: ['sourceVersion', projectId, tracked.sourceId, tracked.sourceVersionId] });
-        setScanProgress('服务端当前没有待渲染页码；已刷新逐页状态。');
-        return;
+      const version = await api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/versions/${encodeURIComponent(tracked.sourceVersionId)}`));
+      const fileId = version.fileId ?? tracked.fileId ?? sourceFileId(projectId, tracked.sourceVersionId);
+      if (!fileId) throw new Error('此来源版本未关联原 PDF 文件，无法生成扫描页。');
+      rememberSourceFile(projectId, tracked.sourceVersionId, fileId);
+      let pending = pageImagesIntentKeys.current.get(tracked.jobId);
+      if (!pending) {
+        const response = await api.get<'RenderRequestsResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/render-requests`), { sourceVersionId: tracked.sourceVersionId });
+        const pageNumbers = response.items.map((item) => item.pageNumber);
+        if (pageNumbers.length === 0) {
+          await queryClient.invalidateQueries({ queryKey: ['sourceVersion', projectId, tracked.sourceId, tracked.sourceVersionId] });
+          setScanProgress('服务端当前没有待渲染页码；已刷新逐页状态。');
+          return;
+        }
+        setScanProgress(`正在读取来源 PDF（${pageNumbers.length} 页待处理）…`);
+        const bytes = await downloadSourcePdf(projectId, fileId);
+        const { renderPdfPages } = await import('./source-pdf-render');
+        const images = await renderPdfPages(bytes, pageNumbers, {
+          pageImageMaxEdge: capability.limits.pageImageMaxEdge,
+          pageImageMaxBytes: capability.limits.pageImageMaxBytes,
+          maxPdfPages: capability.limits.maxPdfPages,
+        }, (pageNumber) => setScanProgress(`已渲染第 ${pageNumber} 页，正在上传…`));
+        const uploadedImages: Array<{ pageNumber: number; fileId: string }> = [];
+        for (const image of images) {
+          setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
+          const imageFileId = await uploadProjectFile(projectId, image.file);
+          uploadedImages.push({ pageNumber: image.pageNumber, fileId: imageFileId });
+        }
+        pending = {
+          body: { sourceVersionId: tracked.sourceVersionId, images: uploadedImages },
+          idempotencyKey: createIntentKey(),
+        };
+        pageImagesIntentKeys.current.set(tracked.jobId, pending);
+      } else {
+        setScanProgress('沿用上次提交的同一批页面图片和请求编号，确认服务端处理状态…');
       }
-      setScanProgress(`正在读取来源 PDF（${pageNumbers.length} 页待处理）…`);
-      const bytes = await downloadSourcePdf(projectId, fileId);
-      const { renderPdfPages } = await import('./source-pdf-render');
-      const images = await renderPdfPages(bytes, pageNumbers, {
-        pageImageMaxEdge: capability.limits.pageImageMaxEdge,
-        pageImageMaxBytes: capability.limits.pageImageMaxBytes,
-        maxPdfPages: capability.limits.maxPdfPages,
-      }, (pageNumber) => setScanProgress(`已渲染第 ${pageNumber} 页，正在上传…`));
-      const uploadedImages: Array<{ pageNumber: number; fileId: string }> = [];
-      for (const image of images) {
-        setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
-        const imageFileId = await uploadProjectFile(projectId, image.file);
-        uploadedImages.push({ pageNumber: image.pageNumber, fileId: imageFileId });
-      }
-      const accepted = await api.post<'PageImagesResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/page-images`), {
-        sourceVersionId: tracked.sourceVersionId,
-        images: uploadedImages,
-      }, { idempotencyKey: createIntentKey() });
+      const accepted = await api.post<'PageImagesResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/page-images`), pending.body, { idempotencyKey: pending.idempotencyKey });
+      pageImagesIntentKeys.current.delete(tracked.jobId);
       if (accepted.jobId) {
         replaceTracked(tracked.jobId, { jobId: accepted.jobId, status: 'queued' });
         setScanProgress(`已接收 ${accepted.accepted} 页，OCR 任务已排队，剩余未提交页数 ${accepted.remaining}。`);
@@ -427,18 +439,29 @@ export function SourcesPage() {
           fileId = pendingUpload.fileId;
         } else {
           setSubmitStage('初始化文件上传…');
-          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey.current);
+          let fileInitIntentKey = fileInitIntentKeys.current.get(file);
+          if (!fileInitIntentKey) {
+            fileInitIntentKey = createIntentKey();
+            fileInitIntentKeys.current.set(file, fileInitIntentKey);
+          }
+          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey);
           setPendingUpload({ fileId, file });
         }
         body = { kind, fileId };
       }
       if (title.trim()) body.title = title.trim();
+      const sourceIntentId = JSON.stringify(body);
+      let sourceIntentKey = sourceIntentKeys.current.get(sourceIntentId);
+      if (!sourceIntentKey) {
+        sourceIntentKey = createIntentKey();
+        sourceIntentKeys.current.set(sourceIntentId, sourceIntentKey);
+      }
       setSubmitStage(kind === 'file' ? '登记来源并发起解析…' : '登记来源并发起解析…');
-      const source = await api.post<'SourceCreateResponse'>(projectPath(projectId, '/sources'), body, { idempotencyKey: sourceIntentKey.current });
-      sourceIntentKey.current = createIntentKey();
+      const source = await api.post<'SourceCreateResponse'>(projectPath(projectId, '/sources'), body, { idempotencyKey: sourceIntentKey });
+      sourceIntentKeys.current.delete(sourceIntentId);
       setPendingUpload(null);
+      if (file) fileInitIntentKeys.current.delete(file);
       if (fileId) rememberSourceFile(projectId, source.sourceVersionId, fileId);
-      fileInitIntentKey.current = createIntentKey();
       await queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
       setSubmitStage('启动解析任务…');
       const parseStarted = capability.features.aiEnabled

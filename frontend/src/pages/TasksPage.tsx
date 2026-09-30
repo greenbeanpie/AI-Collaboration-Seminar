@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CalendarDays, Check, ClipboardList, Plus, RefreshCw, UserRound } from 'lucide-react';
-import { api, projectPath } from '../api/client';
+import { api, projectPath, listAllItems } from '../api/client';
 import type { DataOf, Task } from '../api/types';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
-import { CommentsPanel, loadCursorPages } from './TasksMaterialsShared';
+import { CommentsPanel } from './TasksMaterialsShared';
 import './TasksMaterials.css';
 
 type TaskListItem = DataOf<'TaskListResponse'>['items'][number];
@@ -112,20 +112,17 @@ export function TasksPage() {
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', projectId, statusFilter],
-    queryFn: () => loadCursorPages<TaskListItem>((cursor) => api.get<'TaskListResponse'>(
-      projectPath(projectId, '/tasks'),
-      { cursor, limit: 100, status: statusFilter },
-    )),
+    queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100, status: statusFilter }, { requireNextCursor: true }),
   });
   const membersQuery = useQuery({
     queryKey: ['members', projectId],
-    queryFn: () => api.get<'MemberListResponse'>(projectPath(projectId, '/members')),
+    queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')),
   });
   const requirementsQuery = useQuery({
     queryKey: ['requirementSets', projectId],
-    queryFn: () => api.get<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets')),
+    queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets')),
   });
-  const requirements = useMemo(() => requirementsQuery.data?.items.flatMap((set) => set.requirements) ?? [], [requirementsQuery.data]);
+  const requirements = useMemo(() => requirementsQuery.data?.flatMap((set) => set.requirements) ?? [], [requirementsQuery.data]);
 
   const createTask = useMutation({
     mutationFn: (draft: TaskDraft) => api.post<'TaskResponse'>(projectPath(projectId, '/tasks'), taskBody(draft)),
@@ -186,7 +183,7 @@ export function TasksPage() {
     updateTask.mutate({ taskId: task.taskId, expectedRevision: task.revision, fields: { status: value as TaskStatus } });
   };
 
-  const memberNames = useMemo(() => new Map((membersQuery.data?.items ?? []).map((member) => [member.userId, member.displayName])), [membersQuery.data]);
+  const memberNames = useMemo(() => new Map((membersQuery.data ?? []).map((member) => [member.userId, member.displayName])), [membersQuery.data]);
   const requirementNames = useMemo(() => new Map(requirements.map((requirement) => [requirement.requirementId, requirement.title])), [requirements]);
   const tasks = tasksQuery.data ?? [];
   const completed = tasks.filter((task) => task.status === 'done').length;
@@ -203,7 +200,7 @@ export function TasksPage() {
       <section className="tm-task-summary" aria-label="任务概况">
         <div><span>当前筛选任务</span><strong>{tasksQuery.isLoading ? '—' : tasks.length}</strong></div>
         <div><span>已完成</span><strong>{tasksQuery.isLoading ? '—' : completed}</strong></div>
-        <div><span>团队成员</span><strong>{membersQuery.data?.items.length ?? '—'}</strong></div>
+        <div><span>团队成员</span><strong>{membersQuery.data?.length ?? '—'}</strong></div>
       </section>
 
       {tasksQuery.error && <ErrorNotice error={tasksQuery.error} onRetry={() => void tasksQuery.refetch()} />}
@@ -252,7 +249,7 @@ export function TasksPage() {
       {showCreate && <Modal title="新建任务" onClose={() => setShowCreate(false)}>
         <form className="tm-modal-form" onSubmit={handleCreate}>
           <p className="tm-form-intro">任务会直接写入当前项目。负责人和要求来自后端当前记录。</p>
-          <TaskFields draft={createDraft} onChange={(field, value) => changeDraft(setCreateDraft, createDraft, field, value)} members={membersQuery.data?.items ?? []} requirements={requirements} includeStatus={false} />
+          <TaskFields draft={createDraft} onChange={(field, value) => changeDraft(setCreateDraft, createDraft, field, value)} members={membersQuery.data ?? []} requirements={requirements} includeStatus={false} />
           {createTask.error && <ErrorNotice error={createTask.error} />}
           <div className="tm-form-actions"><button type="button" className="button button-quiet" onClick={() => setShowCreate(false)}>取消</button><button type="submit" className="button button-primary" disabled={createTask.isPending}>{createTask.isPending ? '创建中…' : '创建任务'}</button></div>
         </form>
@@ -262,7 +259,7 @@ export function TasksPage() {
         <div className="tm-task-detail">
           <form className="tm-modal-form" onSubmit={handleEdit}>
             <p className="tm-form-intro">当前版本 r{selectedTask.revision} · 更新时会提交 expectedRevision。</p>
-            <TaskFields draft={editDraft} onChange={(field, value) => changeDraft(setEditDraft, editDraft, field, value)} members={membersQuery.data?.items ?? []} requirements={requirements} includeStatus />
+            <TaskFields draft={editDraft} onChange={(field, value) => changeDraft(setEditDraft, editDraft, field, value)} members={membersQuery.data ?? []} requirements={requirements} includeStatus />
             {updateTask.error && <ErrorNotice error={updateTask.error} />}
             <div className="tm-form-actions"><button type="button" className="button button-quiet" onClick={() => setSelectedTask(null)}>关闭</button><button type="submit" className="button button-primary" disabled={updateTask.isPending}>{updateTask.isPending ? '保存中…' : '保存修改'}</button></div>
           </form>

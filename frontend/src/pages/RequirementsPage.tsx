@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Check, ExternalLink, Pencil, Plus, Save, Trash2 } from 'lucide-react';
-import { api, projectPath } from '../api/client';
+import { api, projectPath, listAllItems } from '../api/client';
 import type { DataOf } from '../api/types';
 import { ConfirmButton, EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { useProject } from '../components/ProjectShell';
@@ -17,7 +17,11 @@ type RubricWeight = Rubric['weights'][number];
 type Source = DataOf<'SourceListResponse'>['items'][number];
 type Category = Requirement['category'];
 type DuePrecision = Requirement['duePrecision'];
-type RequirementDraft = Pick<Requirement, 'title' | 'detail' | 'category' | 'duePrecision'> & { dueDate: string };
+type RequirementDraft = Pick<Requirement, 'title' | 'detail' | 'category' | 'duePrecision'> & {
+  dueDate: string;
+  originalDueDate: string | null;
+  dueDateChanged: boolean;
+};
 type RubricDraft = { source: Rubric['source'] | ''; weights: Array<{ key: string; label: string; weight: string }>; notes: string };
 
 const categoryLabels: Record<Category, string> = {
@@ -70,6 +74,8 @@ function RequirementEditor({
     detail: requirement.detail,
     category: requirement.category,
     dueDate: requirement.dueDate?.slice(0, 10) ?? '',
+    originalDueDate: requirement.dueDate,
+    dueDateChanged: false,
     duePrecision: requirement.duePrecision,
   }));
   return <form className="requirements-edit-form" onSubmit={(event) => { event.preventDefault(); onSave(draft); }}>
@@ -77,10 +83,10 @@ function RequirementEditor({
     <Field label="详细说明"><textarea className="input textarea" rows={4} maxLength={2000} value={draft.detail} onChange={(event) => setDraft({ ...draft, detail: event.target.value })} /></Field>
     <div className="form-grid-two">
       <Field label="分类"><select className="input" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as Category })}>{Object.entries(categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-      <Field label="截止日期" hint="API 仅保存 YYYY-MM-DD；具体时刻可写入要求说明。"><input className="input" type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} /></Field>
+      <Field label="截止日期" hint="此页面只编辑日期；若原文明确具体时刻，请保留在要求说明中。"><input className="input" type="date" value={draft.dueDate} onChange={(event) => { const dueDate = event.target.value; setDraft({ ...draft, dueDate, dueDateChanged: true, duePrecision: dueDate ? 'date' : 'unknown' }); }} /></Field>
     </div>
-    <Field label="时间精度"><select className="input" value={draft.duePrecision} onChange={(event) => setDraft({ ...draft, duePrecision: event.target.value as DuePrecision })}>{Object.entries(precisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-    <div className="callout">若原文未给出日期或具体时刻，请保留“未确认”，不要推测补全。</div>
+    <Field label="时间精度" hint="当前页面只记录日期，不提供时刻编辑。"><div className="form-note">{precisionLabels[draft.duePrecision]}{draft.duePrecision === 'datetime' && !draft.dueDateChanged ? ' · 服务端原值会在日期未改动时保留' : ''}</div></Field>
+    <div className="callout">若原文未给出日期，请保留为空；若确知具体时刻，可写入要求说明。不要推测补全。</div>
     {error ? <ErrorNotice error={error} /> : null}
     <div className="form-actions"><button className="button button-primary button-small" type="submit" disabled={busy}><Save size={14} /> {busy ? '正在保存' : '保存修改'}</button><button className="button button-quiet button-small" type="button" onClick={onCancel} disabled={busy}>取消</button></div>
   </form>;
@@ -158,11 +164,11 @@ export function RequirementsPage() {
   const previousProjectId = useRef(projectId);
   const editIntentKeys = useRef(new Map<string, string>());
   const requirementConfirmKeys = useRef(new Map<string, string>());
-  const rubricCreateIntentKey = useRef(createIntentKey());
+  const rubricCreateIntentKeys = useRef(new Map<string, string>());
   const rubricEditIntentKeys = useRef(new Map<string, string>());
   const rubricConfirmKeys = useRef(new Map<string, string>());
 
-  const setQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: ({ signal }) => listAllProjectItems<'RequirementSetListResponse'>(projectId, '/requirement-sets', 100, signal) });
+  const setQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: ({ signal }) => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), {}, { signal }) });
   const sets = useMemo(() => setQuery.data ?? [], [setQuery.data]);
   const selectedSetId = (setFromUrl && sets.some((set) => set.requirementSetId === setFromUrl)) ? setFromUrl : sets[0]?.requirementSetId ?? null;
   const detailQuery = useQuery({
@@ -170,7 +176,7 @@ export function RequirementsPage() {
     queryFn: () => api.get<'RequirementSetResponse'>(projectPath(projectId, `/requirement-sets/${encodeURIComponent(selectedSetId!)}`)),
     enabled: Boolean(selectedSetId),
   });
-  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: ({ signal }) => listAllProjectItems<'RubricListResponse'>(projectId, '/rubrics', 100, signal) });
+  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: ({ signal }) => listAllItems<'RubricListResponse'>(projectPath(projectId, '/rubrics'), {}, { signal }) });
   const capabilityQuery = useQuery({ queryKey: ['capabilities'], queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') });
   const sourceQuery = useQuery({
     queryKey: ['sources', projectId],
@@ -212,7 +218,7 @@ export function RequirementsPage() {
     requirementConfirmKeys.current.clear();
     rubricEditIntentKeys.current.clear();
     rubricConfirmKeys.current.clear();
-    rubricCreateIntentKey.current = createIntentKey();
+    rubricCreateIntentKeys.current.clear();
   }, [projectId]);
 
   useEffect(() => {
@@ -231,14 +237,16 @@ export function RequirementsPage() {
     setRequirementError(null);
     setSavingRequirementId(requirement.requirementId);
     try {
-      await api.patch<'RequirementResponse'>(projectPath(projectId, `/requirements/${encodeURIComponent(requirement.requirementId)}`), {
+      const body = {
         title: draft.title.trim(),
         detail: draft.detail.trim(),
         category: draft.category,
-        dueDate: draft.dueDate || null,
-        duePrecision: draft.duePrecision,
-      }, { idempotencyKey: setIntentKey(editIntentKeys.current, requirement.requirementId) });
-      editIntentKeys.current.delete(requirement.requirementId);
+        dueDate: draft.dueDateChanged ? draft.dueDate || null : draft.originalDueDate,
+        duePrecision: draft.dueDateChanged ? draft.dueDate ? 'date' : 'unknown' : draft.duePrecision,
+      };
+      const intentId = `${requirement.requirementId}:${JSON.stringify(body)}`;
+      await api.patch<'RequirementResponse'>(projectPath(projectId, `/requirements/${encodeURIComponent(requirement.requirementId)}`), body, { idempotencyKey: setIntentKey(editIntentKeys.current, intentId) });
+      editIntentKeys.current.delete(intentId);
       setEditingRequirementId(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['requirementSet', projectId, selectedSetId] }),
@@ -310,20 +318,23 @@ export function RequirementsPage() {
     setRubricSaving(true);
     try {
       if (rubricMode === 'create') {
-        const rubric = await api.post<'RubricResponse'>(projectPath(projectId, '/rubrics'), {
+        const body = {
           source: sourceType!,
           weights,
           ...(rubricDraft.notes.trim() ? { notes: rubricDraft.notes.trim() } : {}),
-        }, { idempotencyKey: rubricCreateIntentKey.current });
-        rubricCreateIntentKey.current = createIntentKey();
+        };
+        const intentId = JSON.stringify(body);
+        const rubric = await api.post<'RubricResponse'>(projectPath(projectId, '/rubrics'), body, { idempotencyKey: setIntentKey(rubricCreateIntentKeys.current, intentId) });
+        rubricCreateIntentKeys.current.delete(intentId);
         setSelectedRubricId(rubric.rubricId);
       } else if (rubricMode === 'edit' && selectedRubricIdResolved) {
-        const rubricKey = setIntentKey(rubricEditIntentKeys.current, selectedRubricIdResolved);
-        await api.patch<'RubricResponse'>(projectPath(projectId, `/rubrics/${encodeURIComponent(selectedRubricIdResolved)}`), {
+        const body = {
           weights,
           notes: rubricDraft.notes.trim() || null,
-        }, { idempotencyKey: rubricKey });
-        rubricEditIntentKeys.current.delete(selectedRubricIdResolved);
+        };
+        const intentId = `${selectedRubricIdResolved}:${JSON.stringify(body)}`;
+        await api.patch<'RubricResponse'>(projectPath(projectId, `/rubrics/${encodeURIComponent(selectedRubricIdResolved)}`), body, { idempotencyKey: setIntentKey(rubricEditIntentKeys.current, intentId) });
+        rubricEditIntentKeys.current.delete(intentId);
       }
       setRubricMode(null);
       await queryClient.invalidateQueries({ queryKey: ['rubrics', projectId] });

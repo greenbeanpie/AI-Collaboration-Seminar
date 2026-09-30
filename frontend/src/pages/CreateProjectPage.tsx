@@ -9,13 +9,12 @@ export function CreateProjectPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
-  const [deadlinePrecision, setDeadlinePrecision] = useState<'date' | 'datetime' | 'unknown'>('unknown');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const create = useMutation({
     mutationFn: () => api.post<'ProjectResponse'>('/api/v1/projects', {
       name: name.trim(), description: description.trim(),
-      ...(deadlineDate ? { deadlineDate, deadlinePrecision } : { deadlinePrecision: 'unknown' }),
+      ...(deadlineDate ? { deadlineDate, deadlinePrecision: 'date' } : { deadlinePrecision: 'unknown' }),
     }),
     onSuccess: async (project) => { await queryClient.invalidateQueries({ queryKey: ['projects'] }); navigate(`/app/projects/${project.id}`); },
   });
@@ -25,8 +24,8 @@ export function CreateProjectPage() {
     <form className="card form-card" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
       <Field label="项目名称"><input className="input" required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
       <Field label="项目说明" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
-      <div className="form-grid-two"><Field label="截止日期"><input className="input" type="date" value={deadlineDate} onChange={(event) => { setDeadlineDate(event.target.value); setDeadlinePrecision(event.target.value ? 'date' : 'unknown'); }} /></Field><Field label="日期精度"><select className="input" value={deadlinePrecision} onChange={(event) => setDeadlinePrecision(event.target.value as typeof deadlinePrecision)}><option value="unknown">尚未确认</option><option value="date">仅日期</option><option value="datetime">精确到时刻</option></select></Field></div>
-      <div className="form-note"><CalendarDays size={16} />尚未确认的截止日期会保留为空，不会自动补上时间。</div>
+      <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><input className="input" type="date" value={deadlineDate} onChange={(event) => setDeadlineDate(event.target.value)} /></Field>
+      <div className="form-note"><CalendarDays size={16} />未确认日期时会保留为空；有日期时按“精确到日期”保存，不会自动补上时间。</div>
       {create.error && <ErrorNotice error={create.error} />}
       <div className="form-actions"><Link to="/app" className="button button-quiet">取消</Link><button type="submit" className="button button-primary" disabled={create.isPending || !name.trim()}>{create.isPending ? '正在创建…' : '创建项目'}</button></div>
     </form>

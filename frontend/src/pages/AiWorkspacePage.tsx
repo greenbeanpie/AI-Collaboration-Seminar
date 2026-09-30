@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, FileText, Play, RefreshCw, Send } from 'lucide-react';
-import { api, ApiError, projectPath } from '../api/client';
+import { api, ApiError, projectPath, listAllItems } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -9,8 +9,6 @@ import type { DataOf } from '../api/types';
 import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, jobStatusLabel, markdownToTiptapDoc, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 
 type AgentSession = DataOf<'AgentSessionResponse'>;
-type AgentSessionSummary = { sessionId: string; title: string; capability: 'do' | 'guide' | 'review_only'; status: 'active' | 'closed'; taskId: string | null; latestRunId: string | null; latestRunStatus: string | null; latestJobId: string | null; createdAt: string; updatedAt: string };
-type AgentSessionList = { items: AgentSessionSummary[]; nextCursor: string | null };
 type MaterialItem = DataOf<'MaterialListResponse'>['items'][number];
 type PendingAgentJob = { jobId: string; entityId: string; action: string };
 type AdoptionIntent = { signature: string; body: { materialId: string; expectedRevision: number; reviewed: true; doc: Record<string, unknown>; markdown: string } };
@@ -45,19 +43,19 @@ export function AiWorkspacePage() {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const taskQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => api.get<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) });
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => api.get<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const sourceQuery = useQuery({ queryKey: ['sources', projectId], queryFn: () => api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }) });
+  const taskQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) });
+  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
+  const sourceQuery = useQuery({ queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }) });
   const sessionListQuery = useQuery({
     queryKey: ['agentSessions', projectId],
-    queryFn: async () => await api.get<'AgentSessionResponse'>(projectPath(projectId, '/agent-sessions'), { status: 'all', limit: 100 }) as unknown as AgentSessionList,
+    queryFn: () => listAllItems<'AgentSessionListResponse'>(projectPath(projectId, '/agent-sessions'), { status: 'all', limit: 100 }, { requireNextCursor: true }),
     staleTime: 10_000,
   });
-  const materials = materialQuery.data?.items ?? [];
-  const sources = sourceQuery.data?.items ?? [];
+  const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
+  const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
   const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
     queryKey: ['materialVersions', projectId, material.materialId],
-    queryFn: () => api.get<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
+    queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
     staleTime: 15_000,
   })) });
   const sourceVersionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
@@ -89,12 +87,12 @@ export function AiWorkspacePage() {
     refetchOnWindowFocus: true,
   });
   const session = selectedSessionQuery.data as AgentSession | undefined;
-  const sessionSummaries = sessionListQuery.data?.items ?? [];
+  const sessionSummaries = useMemo(() => sessionListQuery.data ?? [], [sessionListQuery.data]);
   const selectedSessionSummary = sessionSummaries.find((item) => item.sessionId === selectedSessionId);
   const currentJobId = pendingAgentJob?.entityId === selectedSessionId ? pendingAgentJob.jobId : null;
   const job = useVisibleJobPoller(currentJobId);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
-  const selectedMaterials = useMemo(() => materials.flatMap((material, index) => (materialVersionQueries[index]?.data?.items ?? []).map((version) => ({
+  const selectedMaterials = useMemo(() => materials.flatMap((material, index) => (materialVersionQueries[index]?.data ?? []).map((version) => ({
     versionId: version.versionId,
     materialId: material.materialId,
     title: material.title,
@@ -143,7 +141,7 @@ export function AiWorkspacePage() {
       clearPendingJob(pendingJobKey(projectId), pendingAgentJob.jobId);
       setPendingAgentJob((current) => current?.jobId === pendingAgentJob.jobId ? null : current);
     }
-  }, [job.job?.jobId, job.job?.status, job.isSettled, pendingAgentJob, projectId, queryClient]);
+  }, [job.job, job.isSettled, pendingAgentJob, projectId, queryClient]);
 
   const savePending = (sessionId: string, jobId: string, action: string) => {
     const pending = { jobId, entityId: sessionId, action };
@@ -245,7 +243,7 @@ export function AiWorkspacePage() {
           <Field label="关联任务" hint="可留空；选择后 AI 会依据该任务补位。">
             <select className="ai-workflow-select" value={taskId} onChange={(event) => setTaskId(event.target.value)}>
               <option value="">不关联任务</option>
-              {(taskQuery.data?.items ?? []).map((task) => <option key={task.taskId} value={task.taskId}>{task.title} · {task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : task.status === 'blocked' ? '受阻' : '待处理'}</option>)}
+              {(taskQuery.data ?? []).map((task) => <option key={task.taskId} value={task.taskId}>{task.title} · {task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : task.status === 'blocked' ? '受阻' : '待处理'}</option>)}
             </select>
           </Field>
           <Field label="补充说明" hint="最多 4,000 个字符。请勿提供密钥或不应发送给 AI 的内容。">
@@ -264,7 +262,6 @@ export function AiWorkspacePage() {
                 </label>;
               })}
             </div>
-            {materials.some((material) => materialVersionQueries[materials.indexOf(material)]?.data?.nextCursor) && <small>每份材料当前显示最近 100 个版本。</small>}
           </div>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">通知与项目来源版本 <small>当前后端只提供每个来源的当前版本。</small></div>
@@ -300,7 +297,6 @@ export function AiWorkspacePage() {
             <button className="button button-quiet button-small" onClick={() => void selectedSessionQuery.refetch()} disabled={!selectedSessionId || selectedSessionQuery.isFetching}>读取对话</button>
           </div>
           {selectedSessionSummary && <div className="ai-workflow-meta"><span>{selectedSessionSummary.title}</span><span>更新于 {formatWorkflowDate(selectedSessionSummary.updatedAt)}</span><span>最近运行 {selectedSessionSummary.latestRunStatus ?? '无'}</span><span className="mono">会话 ID {selectedSessionSummary.sessionId}</span></div>}
-          {sessionListQuery.data?.nextCursor && <div className="ai-workflow-meta">已显示最近 100 条会话记录；更早记录可通过分页接口读取。</div>}
           {selectedSessionQuery.isLoading ? <Spinner label="正在从后端恢复会话" /> : selectedSessionQuery.error ? <ErrorNotice error={selectedSessionQuery.error} onRetry={() => void selectedSessionQuery.refetch()} /> : session ? <>
             <div className="ai-workflow-meta"><StatusPill tone={session.status === 'active' ? 'blue' : 'neutral'}>{session.status === 'active' ? '会话进行中' : '会话已关闭'}</StatusPill><span>{modeOptions.find((option) => option.value === session.capability)?.label ?? session.capability}</span><span className="mono">ID {session.sessionId}</span><span>{session.turns.length} 个对话回合</span></div>
             {currentJobId && <JobPanel jobId={currentJobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} onRetry={() => void handleRetryJob()} />}

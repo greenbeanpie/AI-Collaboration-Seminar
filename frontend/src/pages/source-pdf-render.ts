@@ -29,7 +29,7 @@ export async function renderPdfPages(
     for (const pageNumber of pageNumbers) {
       const page = await document.getPage(pageNumber);
       const base = page.getViewport({ scale: 1 });
-      let scale = Math.min(1, limits.pageImageMaxEdge / Math.max(base.width, base.height));
+      let scale = limits.pageImageMaxEdge / Math.max(base.width, base.height);
       let blob: Blob | null = null;
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const viewport = page.getViewport({ scale });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, RefreshCw, ShieldAlert } from 'lucide-react';
-import { api, projectPath } from '../api/client';
+import { api, projectPath, listAllItems } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -17,16 +17,16 @@ export function ReviewsPage() {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const requirementQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: () => api.get<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) });
-  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: () => api.get<'RubricListResponse'>(projectPath(projectId, '/rubrics')) });
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => api.get<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const reviewListQuery = useQuery({ queryKey: ['reviews', projectId], queryFn: () => api.get<'ReviewListResponse'>(projectPath(projectId, '/reviews')) });
-  const materials = materialQuery.data?.items ?? [];
-  const confirmedRequirementSets = (requirementQuery.data?.items ?? []).filter((set) => set.status === 'confirmed');
-  const confirmedRubrics = (rubricQuery.data?.items ?? []).filter((rubric) => rubric.status === 'confirmed');
+  const requirementQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) });
+  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: () => listAllItems<'RubricListResponse'>(projectPath(projectId, '/rubrics')) });
+  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
+  const reviewListQuery = useQuery({ queryKey: ['reviews', projectId], queryFn: () => listAllItems<'ReviewListResponse'>(projectPath(projectId, '/reviews')) });
+  const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
+  const confirmedRequirementSets = (requirementQuery.data ?? []).filter((set) => set.status === 'confirmed');
+  const confirmedRubrics = (rubricQuery.data ?? []).filter((rubric) => rubric.status === 'confirmed');
   const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
     queryKey: ['materialVersions', projectId, material.materialId],
-    queryFn: () => api.get<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
+    queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
     staleTime: 15_000,
   })) });
 
@@ -49,7 +49,7 @@ export function ReviewsPage() {
     refetchOnWindowFocus: true,
   });
   const review = selectedReviewQuery.data;
-  const reviews = reviewListQuery.data?.items ?? [];
+  const reviews = useMemo(() => reviewListQuery.data ?? [], [reviewListQuery.data]);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
   const hasPendingReviewJob = Boolean(pendingReviewJob && !job.isSettled);
   const currentMaterialVersions = useMemo(() => materials.flatMap((material) => material.currentVersionId ? [{
@@ -64,7 +64,7 @@ export function ReviewsPage() {
     materialVersionQueries.forEach((query, index) => {
       const material = materials[index];
       if (query.error) errors.push(query.error);
-      if (material && query.data) query.data.items.forEach((version) => byVersionId.set(version.versionId, material));
+      if (material && query.data) query.data.forEach((version) => byVersionId.set(version.versionId, material));
     });
     return { byVersionId, errors, loaded: materialVersionQueries.every((query) => Boolean(query.data)) };
   }, [materialVersionQueries, materials]);
@@ -99,7 +99,7 @@ export function ReviewsPage() {
     } else {
       clear();
     }
-  }, [job.job?.jobId, job.job?.status, job.isSettled, pendingReviewJob, projectId, queryClient]);
+  }, [job.job, job.isSettled, pendingReviewJob, projectId, queryClient]);
 
   const freshness = (materialVersionIds: string[]) => {
     let stale = false;
@@ -227,7 +227,6 @@ export function ReviewsPage() {
       </> : null}
     </SectionCard>}
 
-    {historyState.loaded && materials.some((material) => materialVersionQueries[materials.indexOf(material)]?.data?.nextCursor) && <div className="ai-workflow-meta"><span>版本比较使用每份材料最近 100 个版本；超过此范围的旧版本会标记为待确认。</span></div>}
   </div>;
 }
 

@@ -3765,6 +3765,8 @@ export interface components {
                 revision: number;
                 /** @enum {string} */
                 origin: "file" | "web" | "paste";
+                /** Format: uuid */
+                fileId: string | null;
                 /** @enum {string} */
                 status: "pending" | "processing" | "ready" | "failed";
                 parseError: string | null;

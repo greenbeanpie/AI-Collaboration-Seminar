@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
-import { api, projectPath } from '../api/client';
+import { api, projectPath, listAllItems } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -17,10 +17,10 @@ export function RehearsalsPage() {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => api.get<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const memberQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => api.get<'MemberListResponse'>(projectPath(projectId, '/members')) });
-  const materials = materialQuery.data?.items ?? [];
-  const members = memberQuery.data?.items ?? [];
+  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
+  const memberQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
+  const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
+  const members = useMemo(() => memberQuery.data ?? [], [memberQuery.data]);
   const currentMaterialVersions = useMemo(() => materials.flatMap((material) => material.currentVersionId ? [{ versionId: material.currentVersionId, title: material.title, revision: material.revision, materialId: material.materialId }] : []), [materials]);
 
   const [scope, setScope] = useState<'all' | 'member'>('all');
@@ -76,7 +76,7 @@ export function RehearsalsPage() {
     if (job.job.status === 'succeeded') {
       void queryClient.invalidateQueries({ queryKey: ['rehearsal', projectId, pendingRehearsalJob.entityId] }).then(clear, clear);
     } else clear();
-  }, [job.job?.jobId, job.job?.status, job.isSettled, pendingRehearsalJob, projectId, queryClient]);
+  }, [job.job, job.isSettled, pendingRehearsalJob, projectId, queryClient]);
 
   const savePending = (rehearsalId: string, jobId: string, action: PendingRehearsalJob['action']) => {
     const pending = { jobId, entityId: rehearsalId, action };
