@@ -19,7 +19,7 @@ export function SourceFullText({ sourceId, sourceVersionId }: { sourceId: string
     <summary>查看全文片段与引用定位</summary>
     <input className="input" aria-label="搜索来源全文" placeholder="搜索原文" value={search} onChange={e => setSearch(e.target.value)} />
     {query.isLoading && <p>正在读取全文……</p>}{query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
-    {query.data?.filter(f => f.content.includes(search) || f.fragmentId === target).map(f => <article key={f.fragmentId} id={`fragment-${f.fragmentId}`} style={{ whiteSpace: 'pre-wrap', padding: '1rem', border: f.fragmentId === target ? '2px solid #365dd9' : '1px solid #ddd', marginTop: '0.5rem' }}>
+    {query.data?.filter(f => f.content.includes(search) || f.fragmentId === target).map(f => <article key={f.fragmentId} id={`fragment-${f.fragmentId}`} style={{ whiteSpace: 'pre-wrap', padding: '1rem', border: f.fragmentId === target ? '2px solid var(--blue)' : '1px solid var(--line)', marginTop: '0.5rem' }}>
       <strong>{f.pageNumber ? `第 ${f.pageNumber} 页` : '正文'} · 片段 {f.seq}{f.kind === 'ocr' ? ' · OCR 待人工复核' : ''}</strong><p>{f.content}</p>
     </article>)}
     {query.data?.length === 0 && <p>尚无可引用文本，请先解析或补齐 OCR 页面。</p>}

@@ -8,6 +8,7 @@ export default tseslint.config(
   {
     ignores: ['dist/**', '.wrangler/**', 'node_modules/**', 'src/api/openapi.ts', 'public/guest/**', '**/*.config.js'],
   },
+  { files: ['public/theme.js'], languageOptions: { globals: globals.browser } },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
