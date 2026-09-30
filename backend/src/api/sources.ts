@@ -6,6 +6,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
+import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { projectParams } from './projects';
 
@@ -262,11 +263,14 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(listRoute, async (c) => {
     const member = c.get('member')!;
-    const limit = Math.min(Number.parseInt(c.req.valid('query').limit ?? '20', 10) || LIMITS.listDefaultPageSize, LIMITS.listMaxPageSize);
+    const { limit, cursor } = parsePaging(c.req.valid('query'));
     const rows = await c.env.DB.prepare(
-      'SELECT id, project_id, kind, title, current_version_id, created_at FROM sources WHERE project_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2',
+      `SELECT id, project_id, kind, title, current_version_id, created_at FROM sources
+       WHERE project_id = ?1
+       AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
+       ORDER BY created_at DESC, id DESC LIMIT ?4`,
     )
-      .bind(member.projectId, limit + 1)
+      .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1)
       .all<SourceRow>();
     const hasMore = rows.results.length > limit;
     const items = rows.results.slice(0, limit).map((r) => ({
@@ -276,10 +280,11 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       currentVersionId: r.current_version_id,
       createdAt: r.created_at,
     }));
+    const lastItem = items.at(-1);
     return c.json(
       apiData(c, {
         items,
-        nextCursor: hasMore ? btoa(rows.results[limit]!.created_at) : null,
+        nextCursor: nextCursor(hasMore, lastItem && { createdAt: lastItem.createdAt, id: lastItem.sourceId }) ?? null,
       }),
       200,
     );
