@@ -3,11 +3,11 @@ import type { components } from './openapi';
 export type SchemaName = keyof components['schemas'];
 export type DataOf<Name extends SchemaName> = components['schemas'][Name] extends { data: infer Data } ? Data : never;
 
-export type User = DataOf<'AuthSessionGetResponse'>['user'];
+export type User = Omit<DataOf<'AuthSessionGetResponse'>['user'], 'email' | 'username' | 'isAdmin'> & { email: string | null; username?: string | null; isAdmin?: boolean };
 export type Project = DataOf<'ProjectResponse'>;
 export type ProjectSummary = DataOf<'ProjectListResponse'>['items'][number];
-export type Member = DataOf<'MemberListResponse'>['items'][number];
-export type Capability = DataOf<'CapabilitiesResponse'>;
+export type Member = Omit<DataOf<'MemberListResponse'>['items'][number], 'username' | 'isAdmin'> & { username?: string | null; isAdmin?: boolean };
+export type Capability = Omit<DataOf<'CapabilitiesResponse'>, 'authentication'> & { authentication?: Partial<NonNullable<DataOf<'CapabilitiesResponse'>['authentication']>> & { mode?: 'password'; passwordEnabled?: boolean; invitationRequired?: boolean; passwordMinLength?: number } };
 export type Task = DataOf<'TaskResponse'>;
 export type Material = DataOf<'MaterialResponse'>;
 export type MaterialVersion = DataOf<'MaterialVersionResponse'>;

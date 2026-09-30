@@ -9,6 +9,8 @@ import { ProjectShell } from './components/ProjectShell';
 import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState, promptInstall, subscribe } from './pwa-install';
 
+const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
+const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectPage })));
@@ -62,6 +64,12 @@ function ProtectedApp() {
   return <AppShell user={session.data}><Outlet /></AppShell>;
 }
 
+function SystemAdminOnly() {
+  const session = useSession();
+  if (session.data?.isAdmin !== true) return <div className="welcome-card"><h1>需要系统管理员权限</h1><p role="alert">项目负责人不能管理系统账户或模型配置。</p><Link to="/app">返回我的项目</Link></div>;
+  return <Outlet />;
+}
+
 function PwaStatus() {
   const online = useStateOnline();
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
@@ -96,6 +104,10 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
+        <Route element={<SystemAdminOnly />}>
+          <Route path="/app/admin/accounts" element={<AdminAccountsPage />} />
+          <Route path="/app/admin/ai" element={<AiSettings />} />
+        </Route>
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />
         <Route path="/app/projects/:projectId" element={<ProjectShell />}>

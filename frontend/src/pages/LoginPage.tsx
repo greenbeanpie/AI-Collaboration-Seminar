@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Mail, ShieldCheck } from 'lucide-react';
-import { TurnstileChallenge } from '../components/TurnstileChallenge';
+import { ArrowUpRight, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
-import type { Capability } from '../api/types';
+import type { Capability, User } from '../api/types';
 import { useCapabilities } from '../auth';
 import { ErrorNotice, Field, Spinner } from '../components/ui';
 
@@ -16,78 +15,63 @@ export function LoginPage(props: Props) {
   const capabilityError = props.capabilityError ?? capabilityQuery.error;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [turnstileToken, setTurnstileToken] = useState('');
-  const [turnstileError, setTurnstileError] = useState('');
-  const [turnstileReset, setTurnstileReset] = useState(0);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [account, setAccount] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [challengeId, setChallengeId] = useState('');
-  const [devCode, setDevCode] = useState<string | undefined>();
-  const [resendSeconds, setResendSeconds] = useState(0);
-  const [feedback, setFeedback] = useState('');
-  const [challengeError, setChallengeError] = useState<unknown>(null);
-  const [loginError, setLoginError] = useState<unknown>(null);
-  const localEcho = capabilities?.environment === 'local' && capabilities.features.emailMode === 'echo';
-
-  useEffect(() => {
-    if (resendSeconds <= 0) return;
-    const timer = window.setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [resendSeconds]);
-
-  const handleTurnstileToken = useCallback((token: string) => { setTurnstileToken(token); if (token) setTurnstileError(''); }, []);
-  const authentication = capabilities?.authentication;
-  const challengeBlocked = !capabilities || authentication?.emailReady === false || (authentication?.turnstileRequired === true && !turnstileToken);
-  const sendChallenge = useMutation({
-    mutationFn: () => {
-      if (challengeBlocked) throw new Error(authentication?.emailReady === false ? '验证码邮件服务尚未配置' : '请先完成安全验证');
-      return api.post<'AuthChallengeResponse'>('/api/v1/auth/challenges', { email: email.trim(), ...(turnstileToken ? { turnstileToken } : {}) });
+  const [error, setError] = useState<unknown>(null);
+  const minPasswordLength = capabilities?.authentication?.passwordMinLength ?? 12;
+  const authenticationUnavailable = capabilities?.authentication?.passwordEnabled === false;
+  const authenticate = useMutation({
+    mutationFn: async () => {
+      if (authenticationUnavailable) throw new Error('密码登录服务尚未启用，请联系系统管理员。');
+      if (mode === 'register') {
+        if (!/^[A-Za-z0-9_-]{3,32}$/.test(username.trim())) throw new Error('用户名须为 3–32 位字母、数字、下划线或连字符。');
+        if (password.length < minPasswordLength || password.length > 128) throw new Error(`密码须为 ${minPasswordLength}–128 位。`);
+        if (!/^[A-Za-z0-9]{16}$/.test(invitationCode.trim())) throw new Error('请输入管理员提供的 16 位注册邀请码。');
+        return api.post<'AuthSessionResponse'>('/api/v1/auth/register', { username: username.trim(), password, invitationCode: invitationCode.trim(), ...(email.trim() ? { email: email.trim() } : {}) });
+      }
+      if (!account.trim() || !password) throw new Error('请输入账号与密码。');
+      return api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { account: account.trim(), password });
     },
     onSuccess: (result) => {
-      setChallengeId(result.challengeId);
-      setDevCode(result.devCode ?? undefined);
-      setResendSeconds(result.resendAfterSeconds);
-      setCode(''); setFeedback(localEcho && result.devCode ? '本地验证码已生成。' : '验证码已发送，请检查邮箱。'); setChallengeError(null);
-    },
-    onError: (error) => { setChallengeError(error); setFeedback(''); },
-    onSettled: () => { setTurnstileToken(''); setTurnstileReset(value => value + 1); },
-  });
-  const signIn = useMutation({
-    mutationFn: () => api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { email: email.trim(), challengeId, code: code.trim() }),
-    onSuccess: async () => {
-      setLoginError(null);
-      await queryClient.invalidateQueries({ queryKey: ['session'] });
-      await queryClient.refetchQueries({ queryKey: ['session'], type: 'active' });
+      setPassword(''); setInvitationCode(''); setError(null);
+      queryClient.setQueryData(['session'], result.user as User);
       navigate('/app', { replace: true });
     },
-    onError: setLoginError,
+    onError: setError,
   });
-
+  function switchMode(next: 'login' | 'register') {
+    setMode(next); setPassword(''); setInvitationCode(''); setError(null);
+  }
   return <main className="auth-page">
     <div className="auth-orb orb-one" /><div className="auth-orb orb-two" />
     <header className="auth-top"><Link to="/" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link><a href="/guest/index.html" className="button button-quiet">游客演示 <ArrowUpRight size={16} /></a></header>
     <div className="auth-layout">
       <section className="auth-intro"><span className="intro-badge"><span className="pulse-dot" />真实项目工作区</span><h1>让协作过程<br /><em>清楚、有据、能交接</em></h1><p>从通知要求到团队任务、材料版本与过程记录，让每一步都留在真实项目里。</p><div className="intro-checks"><span><ShieldCheck size={17} /> 项目数据由服务端保存</span><span><ShieldCheck size={17} /> AI 内容须人工复核后采纳</span></div></section>
       <section className="auth-card">
-        <div className="auth-card-top"><div className="auth-icon"><Mail size={21} /></div><span className="eyebrow">邮箱验证登录</span></div>
-        <h2>欢迎回来</h2><p className="auth-subtitle">{capabilities?.authentication?.inviteOnly ? '当前仅受邀邮箱可登录；首次验证后创建账户。加入名单请联系项目负责人。' : '输入邮箱获取一次性验证码；首次登录会创建账户。'}</p>
-        {capabilityError !== null && capabilityError !== undefined && <ErrorNotice error={capabilityError} onRetry={() => { void (props.onRetryCapabilities ?? capabilityQuery.refetch)(); }} />}
-        <form onSubmit={(event) => { event.preventDefault(); if (challengeId) { setLoginError(null); signIn.mutate(); } else { setChallengeError(null); sendChallenge.mutate(); } }}>
-          <Field label="邮箱地址"><input className="input" autoComplete="email" type="email" required maxLength={254} placeholder="name@example.com" value={email} onChange={(event) => { setEmail(event.target.value); setChallengeId(''); setCode(''); setDevCode(undefined); setFeedback(''); setLoginError(null); }} /></Field>
-          {authentication?.turnstileRequired && (authentication.turnstileSiteKey ? <TurnstileChallenge siteKey={authentication.turnstileSiteKey} reset={turnstileReset} onToken={handleTurnstileToken} onError={setTurnstileError} /> : <p role="alert">安全验证尚未配置，请稍后重试。</p>)}
-          {authentication?.emailReady === false && <p role="alert">验证码邮件服务尚未配置，请联系项目管理员。</p>}
-          {turnstileError && <div role="alert"><p>{turnstileError}</p><button type="button" className="text-button" onClick={() => { setTurnstileToken(''); setTurnstileError(''); setTurnstileReset(value => value + 1); }}>重试安全验证</button></div>}
-          {!challengeId ? <button className="button button-primary button-wide" type="submit" disabled={sendChallenge.isPending || challengeBlocked}>{sendChallenge.isPending ? <Spinner label="正在发送" /> : '获取验证码'}</button> : <>
-            <Field label="6 位验证码" hint="验证码仅能使用一次，过期后需要重新获取。"><input className="input code-input" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} /></Field>
-            {localEcho && devCode && <div className="local-echo"><span className="local-echo-label">本地验证码回显</span><strong>{devCode}</strong><small>仅本地 echo 邮件模式提供；生产环境不会返回验证码。</small></div>}
-            <button className="button button-primary button-wide" type="submit" disabled={signIn.isPending || code.length !== 6}>{signIn.isPending ? <Spinner label="正在验证" /> : '验证并登录'}</button>
-            <button type="button" className="text-button resend-button" disabled={resendSeconds > 0 || sendChallenge.isPending || challengeBlocked} onClick={() => sendChallenge.mutate()}>{resendSeconds > 0 ? `${resendSeconds} 秒后可重新发送` : '重新发送验证码'}</button>
-          </>}
-        </form>
-        {feedback && <div className="notice notice-success">{feedback}</div>}
-        {challengeError !== null && <ErrorNotice error={challengeError} />}
-        {loginError !== null && <ErrorNotice error={loginError} />}
-        <div className="auth-footnote">请妥善保管邮箱验证码。加入项目后，根据团队约定标注材料来源与贡献。</div>
+        <div className="auth-card-top"><div className="auth-icon"><KeyRound size={21} /></div><span className="eyebrow">账号密码 · 邀请注册</span></div>
+        <div className="auth-tabs" role="tablist" aria-label="登录或注册"><button type="button" role="tab" id="login-tab" aria-controls="auth-panel" aria-selected={mode === 'login'} disabled={authenticate.isPending} onClick={() => switchMode('login')}>登录</button><button type="button" role="tab" id="register-tab" aria-controls="auth-panel" aria-selected={mode === 'register'} disabled={authenticate.isPending} onClick={() => switchMode('register')}>注册</button></div>
+        <div role="tabpanel" id="auth-panel" aria-labelledby={mode === 'login' ? 'login-tab' : 'register-tab'}>
+          <h2>{mode === 'login' ? '欢迎回来' : '创建协作账户'}</h2><p className="auth-subtitle">{mode === 'login' ? '使用用户名或已绑定邮箱与密码登录。' : '注册需要系统管理员提供的单次邀请码；邮箱可选。'}</p>
+          {capabilityError !== null && capabilityError !== undefined && <ErrorNotice error={capabilityError} onRetry={() => { void (props.onRetryCapabilities ?? capabilityQuery.refetch)(); }} />}
+          {authenticationUnavailable && <p role="alert">密码登录服务尚未启用，请联系系统管理员。</p>}
+          <form onSubmit={(event) => { event.preventDefault(); if (!authenticate.isPending) { setError(null); authenticate.mutate(); } }}>
+            <fieldset className="auth-fields" disabled={authenticate.isPending}>
+              {mode === 'login' ? <Field label="用户名或邮箱"><input className="input" name="account" autoComplete="username" required maxLength={254} placeholder="输入用户名或邮箱" value={account} onChange={event => setAccount(event.target.value)} /></Field> : <>
+                <Field label="用户名" hint="3–32 位字母、数字、下划线或连字符。"><input className="input" name="username" autoComplete="username" pattern={'[A-Za-z0-9_\\-]{3,32}'} required maxLength={32} placeholder="例如 team_member" value={username} onChange={event => setUsername(event.target.value)} /></Field>
+                <Field label="邮箱地址（选填）"><input className="input" name="email" autoComplete="email" type="email" maxLength={254} placeholder="name@example.com" value={email} onChange={event => setEmail(event.target.value)} /></Field>
+              </>}
+              <Field label="密码" hint={mode === 'register' ? `${minPasswordLength}–128 位；请使用独立密码并妥善保存。` : undefined}><input className="input" name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'register' ? minPasswordLength : undefined} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /></Field>
+              {mode === 'register' && <Field label="16 位注册邀请码" hint="由系统管理员提供，成功注册后即失效；与项目邀请不同。"><input className="input code-input" name="invitationCode" autoComplete="off" pattern="[A-Za-z0-9]{16}" minLength={16} maxLength={16} required value={invitationCode} onChange={event => setInvitationCode(event.target.value.trim())} /></Field>}
+              <button className="button button-primary button-wide" type="submit" disabled={authenticationUnavailable}>{authenticate.isPending ? <Spinner label={mode === 'login' ? '正在登录' : '正在注册'} /> : mode === 'login' ? '登录工作区' : '注册并登录'}</button>
+            </fieldset>
+          </form>
+          {error !== null && <ErrorNotice error={error} />}
+        </div>
+        <div className="auth-footnote">请妥善保管密码与注册邀请码。加入项目后，根据团队约定标注材料来源与贡献。</div>
       </section>
     </div>
     <footer className="auth-footer"><span>「补位」AI 项目办公室</span><span>请以官方平台要求为准，产品中的预审结果仅供协作参考。</span></footer>

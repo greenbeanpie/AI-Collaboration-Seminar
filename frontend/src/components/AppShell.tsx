@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, LogOut, Plus, UsersRound } from 'lucide-react';
+import { FolderKanban, KeyRound, LogOut, Plus, Settings, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
@@ -13,6 +13,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const label = user.displayName || user.username || user.email || '项目成员';
 
   async function logout() {
     setBusy(true); setLogoutError(null);
@@ -32,13 +33,17 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       <nav className="main-nav" aria-label="主导航">
         <NavLink to="/app" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><FolderKanban size={18} />我的项目</NavLink>
         <NavLink to="/app/join" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UsersRound size={18} />加入项目</NavLink>
+        {user.isAdmin === true && <>
+          <NavLink to="/app/admin/accounts" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} />注册邀请码</NavLink>
+          <NavLink to="/app/admin/ai" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />系统 AI 设置</NavLink>
+        </>}
       </nav>
       <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>
       <div className="sidebar-spacer" />
       {logoutError !== null && <div className="sidebar-error"><ErrorNotice error={logoutError} /></div>}
-      <div className="profile-row"><span className="avatar">{(user.displayName || user.email).slice(0, 1).toLocaleUpperCase()}</span><span className="profile-info"><strong>{user.displayName || '项目成员'}</strong><small>{user.email}</small></span><button className="icon-button" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /></button></div>
+      <div className="profile-row"><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="profile-info"><strong>{label}</strong><small>{user.username || user.email || (user.isAdmin ? '系统管理员' : '协作账户')}</small></span><button className="icon-button" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /></button></div>
       <div className="sidebar-note">登录账户的数据由项目服务保存</div>
     </aside>
-    <main className="main-shell"><div className="mobile-bar"><Link to="/app" className="brand"><span className="brand-mark">补</span><strong>补位</strong></Link><span>{user.displayName || user.email}</span></div>{children}</main>
+    <main className="main-shell"><div className="mobile-bar"><Link to="/app" className="brand"><span className="brand-mark">补</span><strong>补位</strong></Link><span>{label}</span></div>{children}</main>
   </div>;
 }
