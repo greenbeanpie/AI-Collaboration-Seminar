@@ -24,7 +24,7 @@ describe('Password account authentication', () => {
     expect(cookie).toContain('HttpOnly'); expect(cookie).toContain('Secure'); expect(cookie).toContain('SameSite=Lax');
     const db = await env.DB.prepare('SELECT u.email, a.password_hash, a.contact_email, a.email_verified FROM users u JOIN auth_accounts a ON a.user_id = u.id WHERE u.id = ?1').bind(user.id).first<{ email: string; password_hash: string; contact_email: string | null; email_verified: number }>();
     expect(db?.email).toBe(`account:${user.id}`); expect(db?.contact_email).toBeNull(); expect(db?.email_verified).toBe(0);
-    expect(db?.password_hash).toMatch(/^pbkdf2-sha256\$600000\$/); expect(db?.password_hash).not.toContain(PASSWORD);
+    expect(db?.password_hash).toMatch(/^scrypt\$32768\$8\$3\$/); expect(db?.password_hash).not.toContain(PASSWORD);
     const login = await post('/api/v1/auth/sessions', { account: 'no_email_account', password: PASSWORD }); expect(login.status).toBe(201);
     expect((await login.json() as { data: { user: { id: string } } }).data.user.id).toBe(user.id);
     const sessionCookie = login.headers.get('set-cookie')!.split(';')[0]!;
