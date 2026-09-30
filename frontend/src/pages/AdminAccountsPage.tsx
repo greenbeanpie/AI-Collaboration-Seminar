@@ -1,40 +1,62 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { ApiError } from '../api/client';
 import { adminRequest, useSession } from '../auth';
 import type { AccountInvitation, CreatedAccountInvitation } from '../auth';
 import { ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 
 export function AdminAccountsPage() {
   const session = useSession();
-  const authorized = session.data?.isAdmin === true;
+  const [accessError, setAccessError] = useState<ApiError | null>(null);
+  const authorized = session.data?.isAdmin === true && !accessError;
   const superAdmin = session.data?.role === 'super_admin';
   const queryClient = useQueryClient();
   const [created, setCreated] = useState<CreatedAccountInvitation | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const invitations = useQuery({ queryKey: ['admin-account-invitations'], enabled: authorized,
-    queryFn: () => adminRequest<{ items: AccountInvitation[]; nextCursor: null }>('/api/v1/admin/account-invitations'), retry: false });
+  const [notice, setNotice] = useState('');
+  const [editorVersion, setEditorVersion] = useState(0);
+  function denyAccess(error: unknown) {
+    if (!(error instanceof ApiError) || ![401, 403, 404].includes(error.status)) return;
+    setAccessError(error); setCreated(null); setNotice('');
+    queryClient.removeQueries({ predicate: q => ['admin-accounts', 'admin-account-invitations'].includes(String(q.queryKey[0])) });
+    void session.refetch();
+  }
+  async function protect<T>(load: () => Promise<T>): Promise<T> {
+    try { return await load(); } catch (error) { denyAccess(error); throw error; }
+  }
+  const invitations = useQuery({ queryKey: ['admin-account-invitations', session.data?.id, session.data?.role], enabled: authorized,
+    queryFn: () => protect(() => adminRequest<{ items: AccountInvitation[]; nextCursor: null }>('/api/v1/admin/account-invitations')), retry: false });
   const [cursor, setCursor] = useState<string | null>(null);
-  const accounts = useQuery({ queryKey: ['admin-accounts', cursor], enabled: authorized,
-    queryFn: () => adminRequest<{ items: ManagedAccount[]; nextCursor: string | null }>(`/api/v1/admin/accounts${cursor ? `?cursor=${cursor}` : ''}`), retry: false });
+  const accounts = useQuery({ queryKey: ['admin-accounts', session.data?.id, session.data?.role, cursor], enabled: authorized,
+    queryFn: () => protect(() => adminRequest<{ items: ManagedAccount[]; nextCursor: string | null }>(`/api/v1/admin/accounts${cursor ? `?cursor=${cursor}` : ''}`)), retry: false });
   const update = useMutation({
     mutationFn: ({ id, kind, body }: { id: string; kind: 'role' | 'profile'; body: unknown }) => adminRequest(`/api/v1/admin/accounts/${id}/${kind}`, { method: 'PATCH', body }),
-    onSuccess: async () => { setError(null); await Promise.all([queryClient.invalidateQueries({ queryKey: ['admin-accounts'] }), queryClient.invalidateQueries({ queryKey: ['session'] })]); }, onError: setError,
+    onSuccess: async () => { setError(null); await Promise.all([queryClient.invalidateQueries({ queryKey: ['admin-accounts'] }), queryClient.invalidateQueries({ queryKey: ['session'] })]); }, onError: async error => {
+      setError(error); denyAccess(error);
+      if (error instanceof ApiError && error.status === 409) {
+        const [latest] = await Promise.all([accounts.refetch(), session.refetch()]);
+        setEditorVersion(version => version + 1);
+        if (!latest.error) setNotice('账户状态已刷新，请核对权限与等级后重试。');
+      }
+    },
   });
   const create = useMutation({
     mutationFn: () => adminRequest<CreatedAccountInvitation>('/api/v1/admin/account-invitations', { method: 'POST', body: {} }),
     onSuccess: async data => { setCreated(data); setError(null); await queryClient.invalidateQueries({ queryKey: ['admin-account-invitations'] }); },
-    onError: setError,
+    onError: error => { setError(error); denyAccess(error); },
   });
+  if (accessError) return <ErrorNotice error={accessError} onRetry={() => setAccessError(null)} />;
   if (session.isLoading) return <Spinner label="正在检查系统管理员权限" />;
   if (session.error) return <ErrorNotice error={session.error} />;
   if (!authorized) return <SectionCard title="需要系统管理员权限"><p role="alert">只有系统管理员可以管理注册邀请码。项目负责人不具备此权限。</p></SectionCard>;
   return <div className="page-stack">
     <PageHeading eyebrow="系统管理" title="账户注册邀请码" detail="邀请码允许创建一个新账户，成功注册后即失效。它与团队的项目邀请独立。" action={superAdmin && <Link className="button button-quiet" to="/app/admin/ai">AI 模型设置</Link>} />
+    {notice && <p role="status">{notice}</p>}
     <SectionCard title="账户等级与管理" detail="超级管理员管理账户等级和系统配置；普通管理员管理一般用户与邀请码。项目成员权限独立保留。">
       {accounts.isLoading && <Spinner label="正在读取账户" />}
       {accounts.error && <ErrorNotice error={accounts.error} onRetry={() => void accounts.refetch()} />}
-      {accounts.data?.items.map(account => <AccountEditor key={account.id} account={account} superAdmin={superAdmin} pending={update.isPending} onSave={(kind, body) => { setError(null); update.mutate({ id: account.id, kind, body }); }} />)}
+      {accounts.data?.items.map(account => <AccountEditor key={`${account.id}:${account.role}:${account.displayName}:${editorVersion}`} account={account} superAdmin={superAdmin} pending={update.isPending || accounts.isFetching || accounts.isError} onSave={(kind, body) => { setError(null); update.mutate({ id: account.id, kind, body }); }} />)}
       <div className="button-row">{cursor && <button className="button button-quiet" onClick={() => setCursor(null)}>回到首页</button>}{accounts.data?.nextCursor && <button className="button button-quiet" onClick={() => setCursor(accounts.data!.nextCursor)}>下一页账户</button>}</div>
     </SectionCard>
     <SectionCard title="生成注册邀请码" detail="完整邀请码只在生成时显示一次；离开页面后无法再次读取。请及时保存并交给受邀人员。">

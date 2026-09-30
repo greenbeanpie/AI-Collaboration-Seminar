@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -81,4 +81,37 @@ it('super admin can submit a role change and sees the persisted role', async () 
   fireEvent.click(screen.getByRole('button', { name: '保存等级' }));
   await screen.findByText('member · 普通管理员');
   expect(mock.mock.calls.some(([path, options]) => path === '/api/v1/admin/accounts/u1/role' && options?.method === 'PATCH')).toBe(true);
+});
+
+
+const deniedResponse = (status: number) => new Response(JSON.stringify({ error: { code: status === 409 ? 'INVALID_STATE' : 'PERMISSION_DENIED', message: status === 409 ? '账户状态变化' : '权限已移除', retryable: false }, requestId: 'fixture' }), { status, headers: { 'content-type': 'application/json' } });
+it.each(['list', 'mutation'] as const)('purges account and invitation caches and hides privileged controls after denied %s', async source => {
+ let revoked = false; let sessionReads = 0;
+ const target = { id: 'u1', username: 'private_member', email: 'private@example.test', displayName: '保密资料', role: 'user' };
+ vi.stubGlobal('fetch', vi.fn(async (path: string, options?: RequestInit) => {
+  if (path === '/api/v1/auth/session') { sessionReads++; return response({ user: { ...user, role: 'user', isAdmin: false } }); }
+  if (revoked && ((source === 'list' && path === '/api/v1/admin/accounts') || options?.method === 'PATCH')) return deniedResponse(403);
+  if (path === '/api/v1/admin/accounts') return response({ items: [target], nextCursor: null });
+  return response({ items: [{ id: 'private-invite', createdAt: '2026-09-30T00:00:00Z', usedAt: null, usedBy: null }], nextCursor: null });
+ }));
+ const client = setup(); await screen.findByLabelText('private_member 账户等级'); await screen.findByText('private-invite'); revoked = true;
+ if (source === 'list') await act(async () => { await client.refetchQueries({ queryKey: ['admin-accounts'] }); });
+ else { fireEvent.change(screen.getByLabelText('private_member 账户等级'), { target: { value: 'admin' } }); fireEvent.click(screen.getByRole('button', { name: '保存等级' })); }
+ await screen.findByRole('alert'); await waitFor(() => expect(sessionReads).toBeGreaterThan(0));
+ expect(screen.queryByLabelText('private_member 账户等级')).not.toBeInTheDocument(); expect(screen.queryByLabelText('private_member 显示名称')).not.toBeInTheDocument();
+ expect(screen.queryByText('private-invite')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: '生成一个邀请码' })).not.toBeInTheDocument();
+ expect(client.getQueryData(['admin-accounts', user.id, 'super_admin', null])).toBeUndefined();
+ expect(client.getQueryData(['admin-account-invitations', user.id, 'super_admin'])).toBeUndefined();
+});
+it('role conflict refreshes account data and resets the stale editor selection', async () => {
+ let role = 'user'; let patches = 0;
+ vi.stubGlobal('fetch', vi.fn(async (path: string, options?: RequestInit) => {
+  if (path === '/api/v1/auth/session') return response({ user });
+  if (options?.method === 'PATCH') { patches++; role = 'admin'; return deniedResponse(409); }
+  if (path === '/api/v1/admin/accounts') return response({ items: [{ id: 'u1', username: 'member', email: null, displayName: '成员', role }], nextCursor: null });
+  return response({ items: [], nextCursor: null });
+ }));
+ setup(); fireEvent.change(await screen.findByLabelText('member 账户等级'), { target: { value: 'super_admin' } }); fireEvent.click(screen.getByRole('button', { name: '保存等级' }));
+ await screen.findByText('账户状态已刷新，请核对权限与等级后重试。');
+ expect(screen.getByLabelText('member 账户等级')).toHaveValue('admin'); expect(screen.getByRole('button', { name: '保存等级' })).toBeDisabled(); expect(patches).toBe(1);
 });
