@@ -4,3 +4,7 @@
 .account-settings input { width: 100%; }
 .account-settings button { margin-right: 8px; }
 .account-settings p { line-height: 1.6; }
+
+.account-settings h2 { font-size: 18px; margin: 0 0 16px; }
+.account-settings .section-card { display: block; }
+.account-settings label, .account-settings p { font-size: 14px; }

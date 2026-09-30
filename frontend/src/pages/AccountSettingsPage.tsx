@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useSession } from '../auth';
 import { clearAccountStorage } from '../storage';
-import { ErrorNotice } from '../components/ui';
+import { ErrorNotice, PageHeading } from '../components/ui';
 
 export function AccountSettingsPage() {
   const session = useSession();
@@ -54,7 +54,7 @@ export function AccountSettingsPage() {
     finally { locked.current = false; setBusy(false); }
   }
   return <div className="account-settings">
-    <header className="page-heading"><h1>账户设置</h1><p>管理项目成员看到的昵称和登录密码。</p></header>
+    <PageHeading title="账户设置" detail="管理项目成员看到的昵称和登录密码。" />
     {error !== null && <ErrorNotice error={error} />}
     {notice && <p role="status">{notice}</p>}
     <section className="section-card"><h2>个人资料</h2>
