@@ -1042,6 +1042,13 @@
                   "paste"
                 ]
               },
+              "fileId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
               "status": {
                 "type": "string",
                 "enum": [
@@ -1121,6 +1128,7 @@
               "sourceId",
               "revision",
               "origin",
+              "fileId",
               "status",
               "parseError",
               "pageCount",

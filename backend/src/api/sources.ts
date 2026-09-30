@@ -8,6 +8,7 @@ import { invalidState, notFound, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
+import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';
 
 const sourceParams = projectParams.extend({ sourceId: z.string().uuid() });
@@ -51,6 +52,7 @@ const versionResponse = apiEnvelope(
     sourceId: z.string().uuid(),
     revision: z.number().int(),
     origin: z.enum(['file', 'web', 'paste']),
+    fileId: z.string().uuid().nullable(),
     status: z.enum(['pending', 'processing', 'ready', 'failed']),
     parseError: z.string().nullable(),
     pageCount: z.number().int().nullable(),
@@ -168,6 +170,7 @@ interface VersionRow {
   source_id: string;
   revision: number;
   origin: 'file' | 'web' | 'paste';
+  file_id: string | null;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   parse_error: string | null;
   page_count: number | null;
@@ -180,6 +183,14 @@ interface PageRow {
   image_status: 'none' | 'uploaded' | 'rejected';
   ocr_status: 'none' | 'pending' | 'ok' | 'failed';
   needs_review: number;
+}
+
+async function projectSourceVersion(env: AppEnv['Bindings'], projectId: string, sourceId: string, versionId: string): Promise<VersionRow> {
+  const version = await env.DB.prepare(
+    'SELECT id, source_id, revision, origin, file_id, status, parse_error, page_count, char_count FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3',
+  ).bind(versionId, sourceId, projectId).first<VersionRow>();
+  if (!version) throw notFound('来源版本不存在');
+  return version;
 }
 
 export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
@@ -291,13 +302,8 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(versionRoute, async (c) => {
-    const { sourceVersionId } = c.req.valid('param');
-    const version = await c.env.DB.prepare(
-      'SELECT id, source_id, revision, origin, status, parse_error, page_count, char_count FROM source_versions WHERE id = ?1',
-    )
-      .bind(sourceVersionId)
-      .first<VersionRow>();
-    if (!version) throw notFound('来源版本不存在');
+    const { sourceId, sourceVersionId } = c.req.valid('param');
+    const version = await projectSourceVersion(c.env, c.get('member')!.projectId, sourceId, sourceVersionId);
     const pages = await c.env.DB.prepare(
       'SELECT page_number, text_status, image_status, ocr_status, needs_review FROM source_pages WHERE source_version_id = ?1 ORDER BY page_number',
     )
@@ -309,6 +315,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         sourceId: version.source_id,
         revision: version.revision,
         origin: version.origin,
+        fileId: version.file_id,
         status: version.status,
         parseError: version.parse_error,
         pageCount: version.page_count,
@@ -337,13 +344,20 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!source) throw notFound('来源不存在');
     const versionId = body.sourceVersionId ?? source.current_version_id;
     if (!versionId) throw invalidState('来源没有可解析的版本');
-    const jobId = await createJobAndDispatch(c.env, {
-      projectId: member.projectId,
-      kind: 'parse_source',
-      input: { sourceId, sourceVersionId: versionId, phase: 'extract' },
-      createdBy: c.get('user')!.id,
+    await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
+    const result = await withIdempotency(c.env, {
+      key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
+      operation: `source.parse:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body),
+    }, async () => {
+      const jobId = await createJobAndDispatch(c.env, {
+        projectId: member.projectId,
+        kind: 'parse_source',
+        input: { sourceId, sourceVersionId: versionId, phase: 'extract' },
+        createdBy: c.get('user')!.id,
+      });
+      return { status: 202 as const, body: { jobId, status: 'queued' } };
     });
-    return c.json(apiData(c, { jobId, status: 'queued' }), 202);
+    return c.json(apiData(c, result.body), result.status);
   });
 
   app.openapi(renderRequestsRoute, async (c) => {
@@ -355,6 +369,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!source) throw notFound('来源不存在');
     const versionId = sourceVersionId ?? source.current_version_id;
     if (!versionId) throw notFound('来源版本不存在');
+    await projectSourceVersion(c.env, c.get('member')!.projectId, sourceId, versionId);
     const pages = await c.env.DB.prepare(
       "SELECT page_number FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND image_status = 'none' ORDER BY page_number",
     )
@@ -373,49 +388,66 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!source) throw notFound('来源不存在');
     const versionId = body.sourceVersionId || source.current_version_id;
     if (!versionId) throw invalidState('来源没有版本');
+    await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
 
-    let accepted = 0;
-    for (const img of body.images) {
-      const page = await c.env.DB.prepare(
-        'SELECT id, text_status, image_status FROM source_pages WHERE source_version_id = ?1 AND page_number = ?2',
+    const result = await withIdempotency(c.env, {
+      key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
+      operation: `source.page-images:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body),
+    }, async () => {
+      if (new Set(body.images.map(image => image.pageNumber)).size !== body.images.length) {
+        throw validationFailed('同一次请求不能重复提交同一页');
+      }
+      for (const img of body.images) {
+        const page = await c.env.DB.prepare(
+          'SELECT id, text_status, image_status FROM source_pages WHERE source_version_id = ?1 AND page_number = ?2',
+        )
+          .bind(versionId, img.pageNumber)
+          .first<{ id: string; text_status: string; image_status: string }>();
+        if (!page) throw validationFailed(`页码 ${img.pageNumber} 不存在（尚未解析或超出页数）`);
+        if (page.text_status === 'extracted') throw validationFailed(`页码 ${img.pageNumber} 已有文本层，无需图片`);
+        if (page.image_status !== 'none') throw invalidState(`页码 ${img.pageNumber} 的图片已上传`);
+        const file = await c.env.DB.prepare("SELECT id, project_id, status, ext FROM files WHERE id = ?1")
+          .bind(img.fileId)
+          .first<{ id: string; project_id: string; status: string; ext: string }>();
+        if (!file || file.project_id !== member.projectId) throw notFound(`页码 ${img.pageNumber} 的图片文件不存在`);
+        if (file.status !== 'available') throw invalidState(`页码 ${img.pageNumber} 的图片文件不可用`);
+        if (!['.png', '.jpg', '.jpeg', '.webp'].includes(file.ext)) throw validationFailed('页面图片仅支持 PNG/JPEG/WEBP');
+      }
+
+      // Validate the whole payload first, then apply every page in one atomic statement.
+      // The count guard makes concurrent submissions fail without a partial write.
+      const updated = await c.env.DB.prepare(`
+        UPDATE source_pages SET
+          image_file_id = (SELECT json_extract(value, '$.fileId') FROM json_each(?2)
+            WHERE json_extract(value, '$.pageNumber') = source_pages.page_number),
+          image_status = 'uploaded', ocr_status = 'pending', updated_at = ?3
+        WHERE source_version_id = ?1
+          AND page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))
+          AND (SELECT COUNT(*) FROM source_pages eligible
+            WHERE eligible.source_version_id = ?1 AND eligible.image_status = 'none'
+              AND eligible.text_status != 'extracted'
+              AND eligible.page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))) = json_array_length(?2)
+      `).bind(versionId, JSON.stringify(body.images), nowIso()).run();
+      const accepted = updated.meta.changes;
+      if (accepted !== body.images.length) throw invalidState('页面状态已发生变化，请刷新后重新提交');
+
+      const remaining = await c.env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND image_status = 'none'",
       )
-        .bind(versionId, img.pageNumber)
-        .first<{ id: string; text_status: string; image_status: string }>();
-      if (!page) throw validationFailed(`页码 ${img.pageNumber} 不存在（尚未解析或超出页数）`);
-      if (page.text_status === 'extracted') throw validationFailed(`页码 ${img.pageNumber} 已有文本层，无需图片`);
-      if (page.image_status !== 'none') throw invalidState(`页码 ${img.pageNumber} 的图片已上传`);
-      const file = await c.env.DB.prepare("SELECT id, project_id, status, ext FROM files WHERE id = ?1")
-        .bind(img.fileId)
-        .first<{ id: string; project_id: string; status: string; ext: string }>();
-      if (!file || file.project_id !== member.projectId) throw notFound(`页码 ${img.pageNumber} 的图片文件不存在`);
-      if (file.status !== 'available') throw invalidState(`页码 ${img.pageNumber} 的图片文件不可用`);
-      if (!['.png', '.jpg', '.jpeg', '.webp'].includes(file.ext)) throw validationFailed('页面图片仅支持 PNG/JPEG/WEBP');
-      await c.env.DB.prepare(
-        "UPDATE source_pages SET image_file_id = ?2, image_status = 'uploaded', ocr_status = 'pending', updated_at = ?3 WHERE id = ?1",
-      )
-          .bind(page.id, img.fileId, nowIso())
-          .run();
-      accepted++;
-    }
+        .bind(versionId)
+        .first<{ n: number }>();
 
-    const remaining = await c.env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND image_status = 'none'",
-    )
-      .bind(versionId)
-      .first<{ n: number }>();
-
-    let jobId: string | null = null;
-    if ((remaining?.n ?? 0) === 0 && accepted > 0) {
-      jobId = await createJobAndDispatch(c.env, {
-        projectId: member.projectId,
-        kind: 'ocr_pages',
-        input: { sourceId, sourceVersionId: versionId, phase: 'ocr' },
-        createdBy: c.get('user')!.id,
-      });
-    }
-    return c.json(
-      apiData(c, { accepted, remaining: remaining?.n ?? 0, jobId }),
-      202,
-    );
+      let jobId: string | null = null;
+      if ((remaining?.n ?? 0) === 0 && accepted > 0) {
+        jobId = await createJobAndDispatch(c.env, {
+          projectId: member.projectId,
+          kind: 'ocr_pages',
+          input: { sourceId, sourceVersionId: versionId, phase: 'ocr' },
+          createdBy: c.get('user')!.id,
+        });
+      }
+      return { status: 202 as const, body: { accepted, remaining: remaining?.n ?? 0, jobId } };
+    });
+    return c.json(apiData(c, result.body), result.status);
   });
 }
