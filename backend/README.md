@@ -19,7 +19,7 @@ Cloudflare Workers 上的模块化单体后端（比赛项目：AI 赋能组队�
 ## 快速开始
 
 ```bash
-npm install
+npm ci
 cp .dev.vars.example .dev.vars   # 填本地密钥
 npx wrangler d1 migrations apply DB --local
 npm run dev                      # wrangler dev（D1/R2 本地模拟）→ http://127.0.0.1:8787
@@ -48,11 +48,11 @@ test/             # Vitest 集成测试（workerd + 本地 D1/R2）
 docs/             # 部署/联调/spike 文档
 ```
 
-## 当前进度与未完成部分（2026-09-29 更新）
+## 当前进度与未完成部分（2026-09-30 更新）
 
-已完成 **M0–M5**（脚手架 / 基础设施 / 身份项目 / 来源解析 / 任务材料与三档 AI / 预审答辩与账本），PLAN 契约内 **55 条路径全部实现**，60 个测试用例全绿。**未完成**：
+已实现 **M0–M5** 的主要业务模块（脚手架 / 基础设施 / 身份项目 / 来源解析 / 任务材料与三档 AI / 预审答辩与账本），当前 OpenAPI 为 **57 条路径、77 个操作**。本次补齐分工建议与人工应用接口并接入真实前端；最终验证证据见 [实现对齐报告](../docs/IMPLEMENTATION-ALIGNMENT.md)。**未完成**：
 
-- **M6 加固与联调**：长期非终态任务核对的细化、并发/预算压测、staging/production 部署、与前端真实 Service Binding 联调、监控指标整理
-- **外部依赖**：Resend 发信域名（当前验证码为回显模式）、正式模型 API Key（当前 Workers AI 兜底且默认未启用，需能力探测后启用）
+- **B5 / M6 剩余项**：金额预算预占与按费用结算尚未实现（`estimated_cost` 仍为 0）；长期非终态任务核对、并发/预算压测、监控指标及云端 Service Binding 联调仍需后续验收。
+- **外部依赖**：真实 Cloudflare D1 / R2 / Worker 资源、Resend 发信域名和密钥、Gateway 与正式模型设置。local 使用回显；staging / production 必须使用真实邮件模式。AI 默认禁用，需能力探测后启用。
 
 接口行为与联调注意事项见 [docs/FRONTEND-INTEGRATION.md](./docs/FRONTEND-INTEGRATION.md) 第 8 节。

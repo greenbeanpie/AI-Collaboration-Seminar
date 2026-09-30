@@ -6,6 +6,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
+    "lint": "npm run lint --prefix frontend",
     "test:backend": "npm test --prefix backend",
     "build": "npm run build --prefix frontend",
     "verify:integration": "node scripts/verify-integration.mjs",

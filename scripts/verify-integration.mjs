@@ -49,8 +49,12 @@ await call(member, '/invitations/accept', { method: 'POST', body: { code: invite
 assert.equal((await call(member, p)).myRole, 'member');
 await call(member, `${p}/members/me`, { method: 'PATCH', body: { skills: ['写作', '测试'], hoursPerWeek: 4 } });
 const task = await call(owner, `${p}/tasks`, { method: 'POST', body: { title: '真实协作任务', assigneeId: member.user.id }, status: 201 });
-await call(member, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, status: 'doing' } });
+const activeTask = await call(member, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, status: 'doing' } });
 await call(owner, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, status: 'done' }, status: 409, code: 'VERSION_CONFLICT' });
+await call(owner, `${p}/tasks/apply-assignment`, { method: 'POST', body: { taskId: task.taskId, assigneeId: owner.user.id, expectedRevision: task.revision }, status: 409, code: 'VERSION_CONFLICT' });
+const assigned = await call(owner, `${p}/tasks/apply-assignment`, { method: 'POST', body: { taskId: task.taskId, assigneeId: owner.user.id, expectedRevision: activeTask.revision } });
+assert.equal(assigned.assigneeId, owner.user.id);
+assert.equal(assigned.status, 'doing', 'AI assignment adoption cannot complete a task');
 await call(member, `${p}/comments`, { method: 'POST', body: { targetType: 'task', targetId: task.taskId, body: '真实评论' }, status: 201 });
 assert.equal((await call(owner, `${p}/comments?targetType=task&targetId=${task.taskId}`)).items[0].body, '真实评论');
 const material = await call(owner, `${p}/materials`, { method: 'POST', body: { title: '联调作品介绍' }, status: 201 });
@@ -64,12 +68,27 @@ await call(owner, file.upload.url, { method: 'PUT', body: new TextEncoder().enco
 assert.equal(await call(member, file.upload.url), '联调测试文件');
 const source = await call(owner, `${p}/sources`, { method: 'POST', body: { kind: 'paste', title: '真实来源', text: '请在2026年10月8日前提交作品介绍。' }, status: 201 });
 assert(source.sourceVersionId);
+const fileSource = await call(owner, `${p}/sources`, { method: 'POST', body: { kind: 'file', title: '真实文件来源', fileId: file.fileId }, status: 201 });
+const fileVersion = await call(member, `${p}/sources/${fileSource.sourceId}/versions/${fileSource.sourceVersionId}`);
+assert.equal(fileVersion.fileId, file.fileId, 'File association must come from the server');
+const sourcePath = `${p}/sources/${source.sourceId}`;
+await call(owner, `${sourcePath}/versions/${fileSource.sourceVersionId}`, { status: 404, code: 'NOT_FOUND' });
+await call(owner, `${sourcePath}/render-requests?sourceVersionId=${fileSource.sourceVersionId}`, { status: 404, code: 'NOT_FOUND' });
+await call(owner, `${sourcePath}/parse`, { method: 'POST', body: { sourceVersionId: fileSource.sourceVersionId }, status: 404, code: 'NOT_FOUND' });
+await call(owner, `${sourcePath}/page-images`, { method: 'POST', body: { sourceVersionId: fileSource.sourceVersionId, images: [{ pageNumber: 1, fileId: file.fileId }] }, status: 404, code: 'NOT_FOUND' });
+const rubric = await call(owner, `${p}/rubrics`, { method: 'POST', body: { source: 'custom', weights: [{ key: 'quality', label: '材料质量', weight: 100 }], notes: '联调备注' }, status: 201 });
+const clearedRubric = await call(owner, `${p}/rubrics/${rubric.rubricId}`, { method: 'PATCH', body: { notes: null } });
+assert.equal(clearedRubric.notes, null, 'Rubric notes can be explicitly cleared');
+await call(member, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST', status: 403, code: 'PERMISSION_DENIED' });
+const confirmedRubric = await call(owner, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST' });
+assert.equal(confirmedRubric.status, 'confirmed');
 await call(owner, `${p}/decisions`, { method: 'POST', body: { title: '验证真实服务', detail: '本地 API 数据，不进入生产。' }, status: 201 });
 const contribution = await call(member, `${p}/contributions`, { method: 'POST', body: { description: '完成联调验证' }, status: 201 });
 await call(member, `${p}/contributions/${contribution.contributionId}/corrections`, { method: 'POST', body: { description: '补充材料协作验证' }, status: 201 });
 await call(owner, `${p}/resources`, { method: 'POST', body: { kind: 'other', title: '联调测试资源' }, status: 201 });
 const exported = await call(owner, `${p}/export-bundle`);
-assert(exported);
+assert(Array.isArray(exported.requirementSets));
+assert.equal(exported.rubricVersions.find(item => item.rubricId === rubric.rubricId)?.status, 'confirmed');
 // Unconfigured AI is explicitly unavailable, never replaced by demo success.
 if (!capabilities.features.aiEnabled) {
   const pending = await call(owner, `${p}/agent-sessions`, { method: 'POST', body: { mode: 'do', instruction: '验证不可用状态' }, status: 202 });
@@ -81,6 +100,17 @@ if (!capabilities.features.aiEnabled) {
   }
   assert.equal(job.status, 'failed', 'Disabled AI must fail explicitly');
   assert.equal(job.error.code, 'AI_UNAVAILABLE');
+  await call(null, `/jobs/${pending.jobId}/retry`, { method: 'POST', body: {}, status: 401, code: 'UNAUTHENTICATED' });
+  await call(outsider, `/jobs/${pending.jobId}/retry`, { method: 'POST', body: {}, status: 403, code: 'PERMISSION_DENIED' });
+  const suggestion = await call(owner, `${p}/assignment-suggestions`, { method: 'POST', body: { taskIds: [task.taskId] }, status: 202 });
+  let assignment;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    assignment = await call(owner, `/jobs/${suggestion.jobId}`);
+    if (['failed', 'succeeded', 'cancelled'].includes(assignment.status)) break;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert.equal(assignment.status, 'failed');
+  assert.equal(assignment.error.code, 'AI_UNAVAILABLE');
 }
 await call(owner, `${p}/members/${member.user.id}`, { method: 'DELETE' });
 await call(member, file.upload.url, { status: 403, code: 'PERMISSION_DENIED' });

@@ -41,12 +41,15 @@ npm run dev:frontend
 
 ```sh
 npm run typecheck
+npm run lint
 npm run test:backend
+npm run test:frontend
 npm run build
+npm run verify:worker
 npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopback + local + echo
 ```
 
-该 HTTP 验证创建一次性本地账户与项目，覆盖协作、材料保存、冲突、文件权限和退出；结束后归档测试项目。它拒绝远端及生产环境，且不发送真实邮件或调用付费模型。前端组件/API 测试和 lint 命令见 `frontend/package.json`。
+该 HTTP 验证创建一次性本地账户与项目，覆盖协作、材料保存、冲突、评分确认、文件权限和退出；结束后归档测试项目。它拒绝远端及生产环境，且不发送真实邮件或调用付费模型。
 
 ## 部署
 
