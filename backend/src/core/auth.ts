@@ -1,7 +1,6 @@
 import { createMiddleware } from 'hono/factory';
-import type { AppEnv } from '../env';
+import type { AppEnv, Env, SessionUser } from '../env';
 import { nowIso, sha256Hex } from './db';
-import { assertInvitedEmail } from '../services/auth-policy';
 import { notFound, permissionDenied, unauthenticated } from './errors';
 
 export const SESSION_COOKIE = 'ai_office_session';
@@ -14,7 +13,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
     if (idx === -1) continue;
     const key = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
-    if (key) out[key] = decodeURIComponent(value);
+    if (key) { try { out[key] = decodeURIComponent(value); } catch { /* Malformed cookie cannot authenticate. */ } }
   }
   return out;
 }
@@ -39,21 +38,22 @@ export function clearSessionCookie(): string {
  * 会话校验：读取 Cookie 中的令牌，仅按哈希查库（DB 不存明文）。
  * 不做滑动续期（首版固定 7 天）。
  */
+/** Only sessions issued by password authentication can access business or admin routes. */
+export async function loadSessionUser(env: Env, token: string | undefined): Promise<SessionUser | null> {
+  if (!token) return null;
+  const row = await env.DB.prepare(
+    `SELECT u.id, a.username, a.contact_email, u.display_name, a.is_admin
+       FROM sessions s JOIN users u ON u.id = s.user_id JOIN auth_accounts a ON a.user_id = u.id
+      WHERE s.token_hash = ?1 AND s.revoked_at IS NULL AND s.expires_at > ?2
+        AND s.auth_method = 'password' AND a.password_hash IS NOT NULL`,
+  ).bind(await sha256Hex(token), nowIso()).first<{ id: string; username: string | null; contact_email: string | null; display_name: string; is_admin: number }>();
+  return row ? { id: row.id, username: row.username, email: row.contact_email, displayName: row.display_name, isAdmin: row.is_admin === 1 } : null;
+}
+
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
-  const cookies = parseCookies(c.req.header('cookie'));
-  const token = cookies[SESSION_COOKIE];
-  if (!token) throw unauthenticated();
-  const tokenHash = await sha256Hex(token);
-  const row = await c.env.DB.prepare(
-    `SELECT s.id AS session_id, s.expires_at, u.id AS user_id, u.email, u.display_name
-     FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = ?1 AND s.revoked_at IS NULL AND s.expires_at > ?2`,
-  )
-    .bind(tokenHash, nowIso())
-    .first<{ session_id: string; user_id: string; email: string; display_name: string }>();
-  if (!row) throw unauthenticated();
-  assertInvitedEmail(c.env, row.email);
-  c.set('user', { id: row.user_id, email: row.email, displayName: row.display_name });
+  const user = await loadSessionUser(c.env, parseCookies(c.req.header('cookie'))[SESSION_COOKIE]);
+  if (!user) throw unauthenticated();
+  c.set('user', user);
   await next();
 });
 

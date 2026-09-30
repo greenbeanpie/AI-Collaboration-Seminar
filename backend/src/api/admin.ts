@@ -5,7 +5,9 @@ import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { nowIso, newId, timingSafeEqual } from '../core/db';
 import { seal } from '../ai/secrets';
-import { unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
+import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
+import { createAccountInvitation } from '../services/accounts';
+import { permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
 import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../services/idempotency';
 import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
@@ -21,12 +23,17 @@ const bearer = (header: string | undefined): string | null => {
   return token || null;
 };
 
-/** 运维管理员鉴权：Bearer ADMIN_TOKEN（常数时间比较） */
+/** System administrators require a password session; operator Bearer remains supported. */
 export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   const token = bearer(c.req.header('authorization'));
-  if (!token) throw unauthenticated('缺少管理员令牌');
-  const ok = await timingSafeEqual(token, c.env.ADMIN_TOKEN);
-  if (!ok) throw unauthenticated('管理员令牌无效');
+  if (token) {
+    if (!c.env.ADMIN_TOKEN || !await timingSafeEqual(token, c.env.ADMIN_TOKEN)) throw unauthenticated('管理员令牌无效');
+  } else {
+    const user = await loadSessionUser(c.env, parseCookies(c.req.header('cookie'))[SESSION_COOKIE]);
+    if (!user) throw unauthenticated();
+    if (!user.isAdmin) throw permissionDenied('需要系统管理员权限');
+    c.set('user', user);
+  }
   await next();
 });
 
@@ -147,8 +154,19 @@ const releaseRoute = createRoute({
   },
 });
 
+const accountInvitationResponse = apiEnvelope(z.object({ id: z.string().uuid(), code: z.string(), createdAt: z.string() }), 'AccountInvitationCreateResponse');
+const accountInvitationListResponse = apiEnvelope(z.object({ items: z.array(z.object({ id: z.string().uuid(), createdAt: z.string(), usedAt: z.string().nullable(), usedBy: z.string().nullable() })), nextCursor: z.string().nullable() }), 'AccountInvitationListResponse');
+const createAccountInvitationRoute = createRoute({ method: 'post', path: '/api/v1/admin/account-invitations', tags: ['admin'], summary: '系统管理员生成16位单次注册码（仅此响应回显明文）', request: { body: { content: { 'application/json': { schema: z.object({}) } }, required: true } }, responses: { 201: { content: { 'application/json': { schema: accountInvitationResponse } }, description: '注册码' } } });
+const listAccountInvitationsRoute = createRoute({ method: 'get', path: '/api/v1/admin/account-invitations', tags: ['admin'], summary: '注册码使用状态（无明文码和哈希）', responses: { 200: { content: { 'application/json': { schema: accountInvitationListResponse } }, description: '最近100个注册码' } } });
+
 export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/admin/*', requireAdmin);
+  app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
+  app.openapi(listAccountInvitationsRoute, async c => {
+    const rows = await c.env.DB.prepare('SELECT id, created_at, used_at, used_by FROM account_invitations ORDER BY created_at DESC, id DESC LIMIT 100').all<{ id: string; created_at: string; used_at: string | null; used_by: string | null }>();
+    return c.json(apiData(c, { items: rows.results.map(row => ({ id: row.id, createdAt: row.created_at, usedAt: row.used_at, usedBy: row.used_by })), nextCursor: null }), 200);
+  });
+
 
   app.openapi(getRoute, async (c) => {
     const loaded = await loadAiConfig(c.env.DB);

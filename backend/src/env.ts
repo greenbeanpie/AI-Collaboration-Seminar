@@ -27,8 +27,10 @@ export interface Env {
 
 export interface SessionUser {
   id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
   displayName: string;
+  isAdmin: boolean;
 }
 
 export interface ProjectMember {

@@ -3,9 +3,6 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { LIMITS } from '../core/limits';
-import { resendEmailConfigured } from '../email/resend';
-import { turnstileRequired } from '../services/turnstile';
-import { inviteOnly } from '../services/auth-policy';
 
 const capabilitiesResponse = apiEnvelope(
   z
@@ -35,6 +32,10 @@ const capabilitiesResponse = apiEnvelope(
         })
         .openapi({ description: '本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制' }),
       authentication: z.object({
+        mode: z.literal('password'),
+        passwordEnabled: z.boolean(),
+        invitationRequired: z.boolean(),
+        passwordMinLength: z.number().int(),
         turnstileRequired: z.boolean(),
         turnstileSiteKey: z.string().nullable(),
         emailReady: z.boolean(),
@@ -108,10 +109,14 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         },
         competitionTemplate: template,
         authentication: {
-          turnstileRequired: turnstileRequired(c.env),
-          turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || null,
-          emailReady: c.env.EMAIL_MODE === 'echo' ? c.env.ENV_NAME === 'local' : resendEmailConfigured(c.env),
-          inviteOnly: inviteOnly(c.env),
+          mode: 'password' as const,
+          passwordEnabled: true,
+          invitationRequired: true,
+          passwordMinLength: 12,
+          turnstileRequired: false,
+          turnstileSiteKey: null,
+          emailReady: false,
+          inviteOnly: true,
         },
       }),
       200,

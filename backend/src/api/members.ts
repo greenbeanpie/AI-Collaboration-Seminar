@@ -8,7 +8,9 @@ import { projectParams } from './projects';
 
 const memberSchema = z.object({
   userId: z.string().uuid(),
-  email: z.string(),
+  email: z.string().nullable(),
+  username: z.string().nullable(),
+  isAdmin: z.boolean(),
   displayName: z.string(),
   role: z.enum(['owner', 'member']),
   skills: z.array(z.string()),
@@ -82,7 +84,9 @@ const memberLeaveRoute = createRoute({
 
 interface MemberRow {
   user_id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
+  is_admin: number;
   display_name: string;
   role: 'owner' | 'member';
   skills_json: string;
@@ -94,6 +98,8 @@ function toMember(row: MemberRow) {
   return {
     userId: row.user_id,
     email: row.email,
+    username: row.username,
+    isAdmin: row.is_admin === 1,
     displayName: row.display_name,
     role: row.role,
     skills: JSON.parse(row.skills_json) as string[],
@@ -102,8 +108,8 @@ function toMember(row: MemberRow) {
   };
 }
 
-const memberSelect = `SELECT pm.user_id, u.email, u.display_name, pm.role, pm.skills_json, pm.hours_per_week, pm.joined_at
-  FROM project_members pm JOIN users u ON u.id = pm.user_id`;
+const memberSelect = `SELECT pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.skills_json, pm.hours_per_week, pm.joined_at
+  FROM project_members pm JOIN users u ON u.id = pm.user_id LEFT JOIN auth_accounts a ON a.user_id = u.id`;
 
 export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/members', requireUser, requireProjectMember());

@@ -1,145 +1,159 @@
 import { SELF } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
+import { authCookie, seedProject, seedUser } from './helpers/seed';
+import { ADMIN_TOKEN } from './helpers/constants';
+import { consumePasswordRateLimit, createAccountInvitation } from '../src/services/accounts';
+import { createApp } from '../src/app';
 import type { Env } from '../src/env';
-import { AppError } from '../src/core/errors';
-import { emailProviderFor } from '../src/api/auth';
 
-interface ChallengeData {
-  data: { challengeId: string; expiresAt: string; resendAfterSeconds: number; devCode?: string };
-}
+const PASSWORD = 'fixture-password-very-long-123';
+const post = (path: string, body: unknown, cookie?: string) => SELF.fetch(BASE + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+const get = (path: string, cookie?: string) => SELF.fetch(BASE + path, { headers: cookie ? { cookie } : {} });
+async function invitation() { return createAccountInvitation(env, null); }
+async function register(username: string, email?: string | null) { const invite = await invitation(); return post('/api/v1/auth/register', { username, password: PASSWORD, invitationCode: invite.code, email }); }
+beforeEach(async () => { await env.DB.prepare('DELETE FROM auth_password_rate_limits').run(); });
+afterEach(() => vi.unstubAllGlobals());
 
-async function createChallenge(email: string): Promise<{ res: Response; body: ChallengeData }> {
-  const res = await SELF.fetch(`${BASE}/api/v1/auth/challenges`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email }),
+describe('Password account authentication', () => {
+  it('no-email registration returns null contact, password login reuses identity and logout revokes session', async () => {
+    const res = await register('No_Email_Account'); expect(res.status).toBe(201);
+    const user = (await res.json() as { data: { user: { id: string; username: string; email: string | null; isAdmin: boolean } } }).data.user;
+    expect(user).toMatchObject({ username: 'No_Email_Account', email: null, isAdmin: false });
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain('HttpOnly'); expect(cookie).toContain('Secure'); expect(cookie).toContain('SameSite=Lax');
+    const db = await env.DB.prepare('SELECT u.email, a.password_hash, a.contact_email, a.email_verified FROM users u JOIN auth_accounts a ON a.user_id = u.id WHERE u.id = ?1').bind(user.id).first<{ email: string; password_hash: string; contact_email: string | null; email_verified: number }>();
+    expect(db?.email).toBe(`account:${user.id}`); expect(db?.contact_email).toBeNull(); expect(db?.email_verified).toBe(0);
+    expect(db?.password_hash).toMatch(/^pbkdf2-sha256\$600000\$/); expect(db?.password_hash).not.toContain(PASSWORD);
+    const login = await post('/api/v1/auth/sessions', { account: 'no_email_account', password: PASSWORD }); expect(login.status).toBe(201);
+    expect((await login.json() as { data: { user: { id: string } } }).data.user.id).toBe(user.id);
+    const sessionCookie = login.headers.get('set-cookie')!.split(';')[0]!;
+    expect((await get('/api/v1/auth/session', sessionCookie)).status).toBe(200);
+    const logout = await SELF.fetch(BASE + '/api/v1/auth/session', { method: 'DELETE', headers: { cookie: sessionCookie } }); expect(logout.status).toBe(200);
+    expect((await get('/api/v1/auth/session', sessionCookie)).status).toBe(401);
   });
-  const body = (await res.json()) as ChallengeData;
-  return { res, body };
-}
 
-async function login(email: string, challengeId: string, code: string): Promise<{ res: Response; cookie: string | null }> {
-  const res = await SELF.fetch(`${BASE}/api/v1/auth/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, challengeId, code }),
+  it('optional email is a contact login alias, never automatically verified', async () => {
+    const res = await register('contact_account', 'Person@Example.test'); expect(res.status).toBe(201);
+    const user = (await res.json() as { data: { user: { id: string; email: string } } }).data.user;
+    expect(user.email).toBe('person@example.test');
+    expect((await env.DB.prepare('SELECT email_verified FROM auth_accounts WHERE user_id = ?1').bind(user.id).first<{ email_verified: number }>())?.email_verified).toBe(0);
+    const login = await post('/api/v1/auth/sessions', { account: 'PERSON@example.TEST', password: PASSWORD }); expect(login.status).toBe(201);
+    expect((await login.json() as { data: { user: { id: string } } }).data.user.id).toBe(user.id);
   });
-  const setCookie = res.headers.get('set-cookie');
-  const cookie = setCookie?.split(';')[0] ?? null;
-  return { res, cookie };
-}
 
-describe('验证码登录全流程', () => {
-  it('验证码回显仅允许本地环境，staging/production 不得退回 echo', () => {
-    expect(() => emailProviderFor({ ...env, ENV_NAME: 'local', EMAIL_MODE: 'echo' } as Env)).not.toThrow();
-    for (const environment of ['staging', 'production'] as const) {
-      try {
-        emailProviderFor({ ...env, ENV_NAME: environment, EMAIL_MODE: 'echo' } as Env);
-        throw new Error(`echo must be rejected in ${environment}`);
-      } catch (error) {
-        expect(error).toBeInstanceOf(AppError);
-        expect((error as AppError).code).toBe('EMAIL_UNAVAILABLE');
-      }
+  it('wrong password and unknown account return the same generic failure', async () => {
+    await register('known_account');
+    for (const account of ['known_account', 'missing_account']) {
+      const res = await post('/api/v1/auth/sessions', { account, password: 'wrong-password-123' }); expect(res.status).toBe(401);
+      expect((await res.json() as { error: { code: string; message: string } }).error).toMatchObject({ code: 'UNAUTHENTICATED', message: '账号或密码错误' });
     }
   });
 
-  it('请求验证码 → 换取会话 → 读取/注销会话', async () => {
-    const email = `flow-${crypto.randomUUID()}@example.com`;
-    const { res, body } = await createChallenge(email);
-    expect(res.status).toBe(201);
-    expect(body.data.challengeId).toMatch(/^[0-9a-f-]{36}$/);
-    // 回显模式（local）返回 devCode
-    expect(body.data.devCode).toMatch(/^\d{6}$/);
-
-    const { res: loginRes, cookie } = await login(email, body.data.challengeId, body.data.devCode!);
-    expect(loginRes.status).toBe(201);
-    expect(cookie).toContain('ai_office_session=');
-    const loginBody = (await loginRes.json()) as { data: { user: { id: string; email: string; displayName: string } } };
-    expect(loginBody.data.user.email).toBe(email);
-    expect(loginBody.data.user.displayName.length).toBeGreaterThan(0);
-
-    const me = await SELF.fetch(`${BASE}/api/v1/auth/session`, { headers: { cookie: cookie! } });
-    expect(me.status).toBe(200);
-    const meBody = (await me.json()) as { data: { user: { email: string } } };
-    expect(meBody.data.user.email).toBe(email);
-
-    const logout = await SELF.fetch(`${BASE}/api/v1/auth/session`, { method: 'DELETE', headers: { cookie: cookie! } });
-    expect(logout.status).toBe(200);
-    const after = await SELF.fetch(`${BASE}/api/v1/auth/session`, { headers: { cookie: cookie! } });
-    expect(after.status).toBe(401);
-  });
-
-  it('同一用户再次登录复用同一账号', async () => {
-    const email = `again-${crypto.randomUUID()}@example.com`;
-    const first = await createChallenge(email);
-    const l1 = await login(email, first.body.data.challengeId, first.body.data.devCode!);
-    expect(l1.res.status).toBe(201);
-    const user1 = ((await l1.res.json()) as { data: { user: { id: string } } }).data.user.id;
-
-    // 回拨挑战时间以越过 60s 发送间隔
-    await env.DB.prepare('UPDATE auth_challenges SET requested_at = ?2 WHERE email = ?1')
-      .bind(email, new Date(Date.now() - 61_000).toISOString())
-      .run();
-
-    const second = await createChallenge(email);
-    expect(second.res.status).toBe(201);
-    const l2 = await login(email, second.body.data.challengeId, second.body.data.devCode!);
-    expect(l2.res.status).toBe(201);
-    const user2 = ((await l2.res.json()) as { data: { user: { id: string } } }).data.user.id;
-    expect(user2).toBe(user1);
-  });
-
-  it('错误验证码 → 400；尝试 5 次后 → 429', async () => {
-    const email = `attempts-${crypto.randomUUID()}@example.com`;
-    const { body } = await createChallenge(email);
-    for (let i = 0; i < 5; i++) {
-      const bad = await login(email, body.data.challengeId, '000000');
-      expect(bad.res.status).toBe(400);
-      expect(((await bad.res.json()) as { error: { code: string } }).error.code).toBe('AUTH_CHALLENGE_INVALID');
+  it('registration requires an unused 16-character code and 12+ character password', async () => {
+    const invite = await invitation();
+    for (const fields of [{ password: 'short' }, { invitationCode: 'short' }, { username: 'ab' }, { username: 'with@email' }]) {
+      expect((await post('/api/v1/auth/register', { username: 'valid_name', password: PASSWORD, invitationCode: invite.code, ...fields })).status).toBe(400);
     }
-    const sixth = await login(email, body.data.challengeId, '000000');
-    expect(sixth.res.status).toBe(429);
-    expect(((await sixth.res.json()) as { error: { code: string } }).error.code).toBe('AUTH_ATTEMPTS_EXCEEDED');
+    expect((await env.DB.prepare('SELECT used_at FROM account_invitations WHERE id = ?1').bind(invite.id).first<{ used_at: string | null }>())?.used_at).toBeNull();
   });
 
-  it('过期验证码 → 410', async () => {
-    const email = `expired-${crypto.randomUUID()}@example.com`;
-    const { body } = await createChallenge(email);
-    await env.DB.prepare("UPDATE auth_challenges SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?1")
-      .bind(body.data.challengeId)
-      .run();
-    const res = await login(email, body.data.challengeId, body.data.devCode!);
-    expect(res.res.status).toBe(410);
-    expect(((await res.res.json()) as { error: { code: string } }).error.code).toBe('AUTH_CHALLENGE_EXPIRED');
+  it('concurrent registration consumes one invitation only once', async () => {
+    const invite = await invitation();
+    const results = await Promise.all(['race_one', 'race_two'].map(username => post('/api/v1/auth/register', { username, password: PASSWORD, invitationCode: invite.code })));
+    expect(results.map(res => res.status).sort()).toEqual([201, 400]);
+    const row = await env.DB.prepare('SELECT used_at, used_by FROM account_invitations WHERE id = ?1').bind(invite.id).first<{ used_at: string; used_by: string }>();
+    expect(row?.used_by).toBeTruthy();
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM auth_accounts WHERE username_norm IN ('race_one', 'race_two')").first<{ n: number }>())?.n).toBe(1);
   });
 
-  it('单邮箱 60 秒内重复请求 → 429', async () => {
-    const email = `resend-${crypto.randomUUID()}@example.com`;
-    const first = await createChallenge(email);
-    expect(first.res.status).toBe(201);
-    const second = await createChallenge(email);
-    expect(second.res.status).toBe(429);
-    expect((second.body as unknown as { error: { code: string } }).error.code).toBe('RATE_LIMITED');
+  it('username/email conflicts do not consume an invitation or bind the existing account', async () => {
+    await register('occupied_name', 'occupied@example.test'); const invite = await invitation();
+    expect((await post('/api/v1/auth/register', { username: 'OCCUPIED_NAME', password: PASSWORD, invitationCode: invite.code })).status).toBe(409);
+    expect((await post('/api/v1/auth/register', { username: 'other_name', email: 'OCCUPIED@example.test', password: PASSWORD, invitationCode: invite.code })).status).toBe(409);
+    expect((await env.DB.prepare('SELECT used_at FROM account_invitations WHERE id = ?1').bind(invite.id).first<{ used_at: string | null }>())?.used_at).toBeNull();
+    expect((await post('/api/v1/auth/register', { username: 'fresh_account', password: PASSWORD, invitationCode: invite.code })).status).toBe(201);
   });
 
-  it('不信任明文：库中不存验证码原文', async () => {
-    const email = `hmac-${crypto.randomUUID()}@example.com`;
-    const { body } = await createChallenge(email);
-    const row = await env.DB.prepare('SELECT code_hmac FROM auth_challenges WHERE id = ?1')
-      .bind(body.data.challengeId)
-      .first<{ code_hmac: string }>();
-    expect(row?.code_hmac).not.toBe(body.data.devCode);
-    expect(row?.code_hmac?.length).toBe(64); // SHA-256 hex
+  it('concurrent username conflict consumes only the winning invitation', async () => {
+    const invitations = await Promise.all([invitation(), invitation()]);
+    const results = await Promise.all(invitations.map(invite => post('/api/v1/auth/register', { username: 'same_concurrent_name', email: 'same_concurrent@example.test', password: PASSWORD, invitationCode: invite.code })));
+    expect(results.map(res => res.status).sort()).toEqual([201, 409]);
+    const used = await env.DB.prepare('SELECT used_at FROM account_invitations WHERE id IN (?1, ?2)').bind(invitations[0]!.id, invitations[1]!.id).all<{ used_at: string | null }>();
+    expect(used.results.filter(row => row.used_at !== null)).toHaveLength(1);
+    expect(used.results.filter(row => row.used_at === null)).toHaveLength(1);
   });
 
-  it('写请求携带不在白名单的 Origin → 403', async () => {
-    const res = await SELF.fetch(`${BASE}/api/v1/auth/challenges`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
-      body: JSON.stringify({ email: `origin-${crypto.randomUUID()}@example.com` }),
-    });
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('PERMISSION_DENIED');
+  it('registration does not bind or claim a legacy user by matching contact email', async () => {
+    const legacy = await seedUser('legacy@example.test'); const pid = await seedProject(legacy.userId);
+    await env.DB.prepare('UPDATE auth_accounts SET username = NULL, username_norm = NULL, password_hash = NULL WHERE user_id = ?1').bind(legacy.userId).run();
+    const invite = await invitation();
+    expect((await post('/api/v1/auth/register', { username: 'legacy_claim', email: legacy.email, password: PASSWORD, invitationCode: invite.code })).status).toBe(409);
+    expect((await env.DB.prepare('SELECT used_at FROM account_invitations WHERE id = ?1').bind(invite.id).first<{ used_at: string | null }>())?.used_at).toBeNull();
+    expect((await env.DB.prepare('SELECT password_hash FROM auth_accounts WHERE user_id = ?1').bind(legacy.userId).first<{ password_hash: string | null }>())?.password_hash).toBeNull();
+    expect((await env.DB.prepare('SELECT created_by FROM projects WHERE id = ?1').bind(pid).first<{ created_by: string }>())?.created_by).toBe(legacy.userId);
+  });
+
+  it('login and registration endpoints enforce persistent limits before costly password work', async () => {
+    const identity = 'limited_account';
+    for (let i = 0; i < 10; i++) await consumePasswordRateLimit(env, 'login-account', identity, 10, 900);
+    expect((await post('/api/v1/auth/sessions', { account: identity, password: PASSWORD })).status).toBe(429);
+    for (let i = 0; i < 10; i++) await consumePasswordRateLimit(env, 'register-ip', 'unknown', 10, 3600);
+    const invite = await invitation();
+    expect((await post('/api/v1/auth/register', { username: 'limited_registration', password: PASSWORD, invitationCode: invite.code })).status).toBe(429);
+    expect((await env.DB.prepare('SELECT used_at FROM account_invitations WHERE id = ?1').bind(invite.id).first<{ used_at: string | null }>())?.used_at).toBeNull();
+  });
+
+  it('project/member DTOs never expose the internal opaque users.email key', async () => {
+    const res = await register('member_no_email'); const cookie = res.headers.get('set-cookie')!.split(';')[0]!;
+    const user = (await res.json() as { data: { user: { id: string } } }).data.user; const pid = await seedProject(user.id);
+    for (const path of [`/api/v1/projects/${pid}/members`, `/api/v1/projects/${pid}/members/me`]) {
+      const response = await get(path, cookie); expect(response.status).toBe(200); const text = await response.text();
+      expect(text).not.toContain('account:'); const data = JSON.parse(text).data; const member = data.items?.[0] ?? data;
+      expect(member).toMatchObject({ email: null, username: 'member_no_email', isAdmin: false });
+    }
+  });
+
+  it('persistent atomic rate limits permit exactly the allowance under concurrent requests', async () => {
+    const results = await Promise.allSettled(Array.from({ length: 15 }, () => consumePasswordRateLimit(env, 'test-login-account', 'private-account', 5, 900)));
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(5);
+    expect((await env.DB.prepare('SELECT SUM(attempts) AS n FROM auth_password_rate_limits').first<{ n: number }>())?.n).toBe(5);
+    const rows = await env.DB.prepare('SELECT bucket_key FROM auth_password_rate_limits').all<{ bucket_key: string }>();
+    expect(JSON.stringify(rows)).not.toContain('private-account');
+  });
+
+  it('legacy OTP sessions cannot access projects or admin even after account promotion', async () => {
+    const seeded = await seedUser(); const pid = await seedProject(seeded.userId);
+    await env.DB.batch([env.DB.prepare("UPDATE sessions SET auth_method = 'legacy' WHERE user_id = ?1").bind(seeded.userId), env.DB.prepare('UPDATE auth_accounts SET is_admin = 1 WHERE user_id = ?1').bind(seeded.userId)]);
+    expect((await get('/api/v1/auth/session', authCookie(seeded.token))).status).toBe(401);
+    expect((await get(`/api/v1/projects/${pid}`, authCookie(seeded.token))).status).toBe(401);
+    expect((await get('/api/v1/admin/account-invitations', authCookie(seeded.token))).status).toBe(401);
+    expect((await env.DB.prepare('SELECT created_by FROM projects WHERE id = ?1').bind(pid).first<{ created_by: string }>())?.created_by).toBe(seeded.userId);
+  });
+
+  it('system admin password session can generate codes; project owner cannot; list never returns codes/hashes', async () => {
+    const owner = await seedUser(); await seedProject(owner.userId);
+    expect((await post('/api/v1/admin/account-invitations', {}, authCookie(owner.token))).status).toBe(403);
+    await env.DB.prepare('UPDATE auth_accounts SET is_admin = 1 WHERE user_id = ?1').bind(owner.userId).run();
+    const created = await post('/api/v1/admin/account-invitations', {}, authCookie(owner.token)); expect(created.status).toBe(201);
+    const data = (await created.json() as { data: { id: string; code: string; createdAt: string } }).data; expect(data.code).toMatch(/^[A-Z0-9]{16}$/);
+    const stored = await env.DB.prepare('SELECT code_hash FROM account_invitations WHERE id = ?1').bind(data.id).first<{ code_hash: string }>(); expect(stored?.code_hash).not.toBe(data.code); expect(stored?.code_hash).toHaveLength(64);
+    const listed = await get('/api/v1/admin/account-invitations', authCookie(owner.token)); const text = await listed.text(); expect(text).not.toContain(data.code); expect(text).not.toContain(stored!.code_hash);
+    expect((await get('/api/v1/admin/ai-config', authCookie(owner.token))).status).toBe(200);
+    const operator = await SELF.fetch(BASE + '/api/v1/admin/account-invitations', { method: 'POST', headers: { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' }, body: '{}' }); expect(operator.status).toBe(201);
+  });
+
+  it('OTP is disabled in every environment regardless of old mail/allowlist configuration', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    for (const environment of ['local', 'staging', 'production'] as const) {
+      const response = await createApp().fetch(new Request(BASE + '/api/v1/auth/challenges', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'owner@example.test' }) }), { ...env, ENV_NAME: environment } as Env);
+      expect(response.status).toBe(410);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await post('/api/v1/auth/sessions', { email: 'owner@example.test', challengeId: crypto.randomUUID(), code: '123456' })).status).toBe(400);
+  });
+
+  it('write origin validation still protects password login/register', async () => {
+    const response = await SELF.fetch(BASE + '/api/v1/auth/sessions', { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ account: 'user', password: PASSWORD }) }); expect(response.status).toBe(403);
   });
 });

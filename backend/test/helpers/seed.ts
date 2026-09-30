@@ -1,6 +1,7 @@
 import { env } from './env';
 import { newId, nowIso, sha256Hex } from '../../src/core/db';
 import { SESSION_COOKIE } from '../../src/core/auth';
+import { DUMMY_PASSWORD_HASH } from '../../src/services/password';
 
 const futureIso = (days: number): string => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -10,7 +11,7 @@ export interface SeededUser {
   token: string;
 }
 
-/** 建用户 + 有效会话（直接落库，绕过验证码流程——验证码流程在 M2 测试）。邮箱自动追加随机后缀避免冲突 */
+/** Trusted test fixture: account + password-method session. Actual password flow has separate tests. */
 export async function seedUser(email = 'owner@example.com', displayName = '测试用户'): Promise<SeededUser> {
   const userId = newId();
   const token = `tok-${newId()}`;
@@ -22,8 +23,9 @@ export async function seedUser(email = 'owner@example.com', displayName = '测�
       displayName,
       nowIso(),
     ),
+    env.DB.prepare("INSERT INTO auth_accounts (user_id, username, username_norm, contact_email, contact_email_norm, password_hash, created_at) VALUES (?1, ?2, ?2, ?3, ?3, ?4, ?5)").bind(userId, `fixture-${userId}`, uniqueEmail, DUMMY_PASSWORD_HASH, nowIso()),
     env.DB.prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+      "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, auth_method) VALUES (?1, ?2, ?3, ?4, ?5, 'password')",
     ).bind(newId(), userId, await sha256Hex(token), futureIso(7), nowIso()),
   ]);
   return { userId, email: uniqueEmail, token };
