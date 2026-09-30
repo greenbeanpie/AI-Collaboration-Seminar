@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ai-office-web",
+  "name": "greenbp-team-office",
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-26",
   "assets": {
@@ -17,7 +17,7 @@
     },
     "production": {
       "name": "greenbp-team-office",
-      "services": [{ "binding": "API", "service": "ai-office-api" }]
+      "services": [{ "binding": "API", "service": "greenbp-team-office-backend" }]
     }
   }
 }

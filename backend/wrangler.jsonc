@@ -3,7 +3,7 @@
 // staging / production 的资源 ID 由负责人创建真实资源后填入（见 docs/DEPLOY.md）。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ai-office-api",
+  "name": "greenbp-team-office-backend",
   "main": "src/index.ts",
   "compatibility_date": "2025-05-05",
   "compatibility_flags": ["nodejs_compat"],
@@ -75,7 +75,7 @@
       ]
     },
     "production": {
-      "name": "ai-office-api",
+      "name": "greenbp-team-office-backend",
       "vars": {
         "ENV_NAME": "production",
         "EMAIL_MODE": "resend",
@@ -96,12 +96,12 @@
       "workflows": [
         {
           "binding": "PARSE_WORKFLOW",
-          "name": "ai-office-parse-production",
+          "name": "greenbp-team-office-parse",
           "class_name": "ParseSourceWorkflow"
         },
         {
           "binding": "AGENT_WORKFLOW",
-          "name": "ai-office-agent-production",
+          "name": "greenbp-team-office-agent",
           "class_name": "AgentRunWorkflow"
         }
       ]
