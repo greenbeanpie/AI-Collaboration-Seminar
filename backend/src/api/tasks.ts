@@ -4,7 +4,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, versionConflict } from '../core/errors';
+import { invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { recordEvent } from '../services/events';
 import { projectParams } from './projects';
@@ -109,6 +109,26 @@ const taskPatchRoute = createRoute({
   },
 });
 
+const applyAssignmentBody = z.object({
+  taskId: z.string().uuid(),
+  assigneeId: z.string().uuid().nullable(),
+  expectedRevision: z.number().int().min(1),
+});
+
+const applyAssignmentRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/projects/{projectId}/tasks/apply-assignment',
+  tags: ['tasks'],
+  summary: '应用一项分工建议（仅修改负责人，保留任务状态）',
+  request: { params: projectParams, body: { content: { 'application/json': { schema: applyAssignmentBody } }, required: true } },
+  responses: {
+    200: { content: { 'application/json': { schema: taskResponse } }, description: '负责人已更新' },
+    400: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '负责人不是项目成员' },
+    404: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '任务不存在' },
+    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '任务版本冲突' },
+  },
+});
+
 const commentCreateRoute = createRoute({
   method: 'post',
   path: '/api/v1/projects/{projectId}/comments',
@@ -174,12 +194,33 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const id = newId();
     const now = nowIso();
-    await c.env.DB.prepare(
+    const created = await c.env.DB.prepare(
       `INSERT INTO tasks (id, project_id, title, detail, assignee_id, due_date, due_precision, status, requirement_id, revision, created_by, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'todo', ?8, 1, ?9, ?10, ?10)`,
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'todo', ?8, 1, ?9, ?10, ?10
+       WHERE (?5 IS NULL OR EXISTS (
+         SELECT 1 FROM project_members pm WHERE pm.project_id = ?2 AND pm.user_id = ?5
+       ))
+       AND (?8 IS NULL OR EXISTS (
+         SELECT 1 FROM requirements r WHERE r.id = ?8 AND r.project_id = ?2
+       ))`,
     )
       .bind(id, member.projectId, body.title, body.detail, body.assigneeId, body.dueDate, body.duePrecision, body.requirementId, c.get('user')!.id, now)
       .run();
+    if ((created.meta?.changes ?? 0) === 0) {
+      if (body.assigneeId) {
+        const assignee = await c.env.DB.prepare('SELECT 1 AS present FROM project_members WHERE project_id = ?1 AND user_id = ?2')
+          .bind(member.projectId, body.assigneeId)
+          .first();
+        if (!assignee) throw validationFailed('负责人必须是当前项目成员');
+      }
+      if (body.requirementId) {
+        const requirement = await c.env.DB.prepare('SELECT 1 AS present FROM requirements WHERE id = ?1 AND project_id = ?2')
+          .bind(body.requirementId, member.projectId)
+          .first();
+        if (!requirement) throw validationFailed('要求必须属于当前项目');
+      }
+      throw invalidState('任务创建未生效');
+    }
     const row = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1').bind(id).first<TaskRow>();
     if (!row) throw notFound('任务创建失败');
     return c.json(apiData(c, toTask(row)), 201);
@@ -206,11 +247,12 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(...binds)
       .all<TaskRow>();
     const hasMore = rows.results.length > paging.limit;
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: rows.results.slice(0, paging.limit).map(toTask),
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.created_at, id: overflow.id }) ?? null) : null,
+        items: pageRows.map(toTask),
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );
@@ -227,8 +269,9 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(taskPatchRoute, async (c) => {
     const body = c.req.valid('json');
     const taskId = c.req.valid('param').taskId;
+    const projectId = c.get('member')!.projectId;
     const current = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND project_id = ?2')
-      .bind(taskId, c.get('member')!.projectId)
+      .bind(taskId, projectId)
       .first<TaskRow>();
     if (!current) throw notFound('任务不存在');
     if (current.revision !== body.expectedRevision) throw versionConflict(current.revision);
@@ -238,14 +281,20 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       `UPDATE tasks SET
          title = COALESCE(?2, title),
          detail = COALESCE(?3, detail),
-         assignee_id = COALESCE(?4, assignee_id),
-         due_date = COALESCE(?5, due_date),
+         assignee_id = CASE WHEN ?12 = 1 THEN ?4 ELSE assignee_id END,
+         due_date = CASE WHEN ?13 = 1 THEN ?5 ELSE due_date END,
          due_precision = COALESCE(?6, due_precision),
          status = COALESCE(?7, status),
-         requirement_id = COALESCE(?8, requirement_id),
+         requirement_id = CASE WHEN ?14 = 1 THEN ?8 ELSE requirement_id END,
          revision = revision + 1,
          updated_at = ?9
-       WHERE id = ?1 AND revision = ?10`,
+       WHERE id = ?1 AND project_id = ?10 AND revision = ?11
+         AND (?12 = 0 OR ?4 IS NULL OR EXISTS (
+           SELECT 1 FROM project_members pm WHERE pm.project_id = ?10 AND pm.user_id = ?4
+         ))
+         AND (?14 = 0 OR ?8 IS NULL OR EXISTS (
+           SELECT 1 FROM requirements r WHERE r.id = ?8 AND r.project_id = ?10
+         ))`,
     )
       .bind(
         taskId,
@@ -257,10 +306,33 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
         body.status ?? null,
         body.requirementId ?? null,
         nowIso(),
+        projectId,
         body.expectedRevision,
+        body.assigneeId === undefined ? 0 : 1,
+        body.dueDate === undefined ? 0 : 1,
+        body.requirementId === undefined ? 0 : 1,
       )
       .run();
-    if ((updated.meta?.changes ?? 0) === 0) throw invalidState('更新未生效');
+    if ((updated.meta?.changes ?? 0) === 0) {
+      const latest = await c.env.DB.prepare('SELECT revision FROM tasks WHERE id = ?1 AND project_id = ?2')
+        .bind(taskId, projectId)
+        .first<{ revision: number }>();
+      if (!latest) throw notFound('任务不存在');
+      if (latest.revision !== body.expectedRevision) throw versionConflict(latest.revision);
+      if (body.assigneeId) {
+        const assignee = await c.env.DB.prepare('SELECT 1 AS present FROM project_members WHERE project_id = ?1 AND user_id = ?2')
+          .bind(projectId, body.assigneeId)
+          .first();
+        if (!assignee) throw validationFailed('负责人必须是当前项目成员');
+      }
+      if (body.requirementId) {
+        const requirement = await c.env.DB.prepare('SELECT 1 AS present FROM requirements WHERE id = ?1 AND project_id = ?2')
+          .bind(body.requirementId, projectId)
+          .first();
+        if (!requirement) throw validationFailed('要求必须属于当前项目');
+      }
+      throw invalidState('更新未生效');
+    }
 
     if (statusChanged && body.status) {
       await recordEvent(c.env, {
@@ -276,6 +348,59 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     }
 
     const row = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1').bind(taskId).first<TaskRow>();
+    if (!row) throw notFound('任务不存在');
+    return c.json(apiData(c, toTask(row)), 200);
+  });
+
+  app.openapi(applyAssignmentRoute, async (c) => {
+    const { taskId, assigneeId, expectedRevision } = c.req.valid('json');
+    const projectId = c.get('member')!.projectId;
+    const current = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND project_id = ?2')
+      .bind(taskId, projectId)
+      .first<TaskRow>();
+    if (!current) throw notFound('任务不存在');
+    if (current.revision !== expectedRevision) throw versionConflict(current.revision);
+
+    // 版本与成员资格都在同一 UPDATE 内复核，防止预读后并发改任务或移除成员。
+    const updated = await c.env.DB.prepare(
+      `UPDATE tasks SET assignee_id = ?3, revision = revision + 1, updated_at = ?4
+       WHERE id = ?1 AND project_id = ?2 AND revision = ?5
+         AND (?3 IS NULL OR EXISTS (
+           SELECT 1 FROM project_members pm WHERE pm.project_id = ?2 AND pm.user_id = ?3
+         ))`,
+    )
+      .bind(taskId, projectId, assigneeId, nowIso(), expectedRevision)
+      .run();
+
+    if ((updated.meta?.changes ?? 0) === 0) {
+      const latest = await c.env.DB.prepare('SELECT revision FROM tasks WHERE id = ?1 AND project_id = ?2')
+        .bind(taskId, projectId)
+        .first<{ revision: number }>();
+      if (!latest) throw notFound('任务不存在');
+      if (latest.revision !== expectedRevision) throw versionConflict(latest.revision);
+      if (assigneeId !== null) {
+        const member = await c.env.DB.prepare('SELECT 1 AS present FROM project_members WHERE project_id = ?1 AND user_id = ?2')
+          .bind(projectId, assigneeId)
+          .first();
+        if (!member) throw validationFailed('负责人必须是当前项目成员');
+      }
+      throw invalidState('分工应用未生效');
+    }
+
+    await recordEvent(c.env, {
+      projectId,
+      actorType: 'user',
+      actorId: c.get('user')!.id,
+      type: 'task.assignment_applied',
+      entityType: 'task',
+      entityId: taskId,
+      dedupKey: `assignment:${expectedRevision}`,
+      payload: { assigneeId, expectedRevision },
+    });
+
+    const row = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND project_id = ?2')
+      .bind(taskId, projectId)
+      .first<TaskRow>();
     if (!row) throw notFound('任务不存在');
     return c.json(apiData(c, toTask(row)), 200);
   });
@@ -316,7 +441,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     let cursorSql = '';
     if (paging.cursor) {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
-      cursorSql = ' AND (c.created_at < ? OR (c.created_at = ? AND c.id < ?))';
+      cursorSql = ' AND (c.created_at > ? OR (c.created_at = ? AND c.id > ?))';
     }
     binds.push(paging.limit + 1);
     const rows = await c.env.DB.prepare(
@@ -328,10 +453,11 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
         id: string; target_type: string; target_id: string; author_id: string; author_name: string; body: string; created_at: string;
       }>();
     const hasMore = rows.results.length > paging.limit;
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: rows.results.slice(0, paging.limit).map((r) => ({
+        items: pageRows.map((r) => ({
           commentId: r.id,
           targetType: r.target_type as 'task' | 'material' | 'review' | 'rehearsal',
           targetId: r.target_id,
@@ -340,7 +466,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
           body: r.body,
           createdAt: r.created_at,
         })),
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.created_at, id: overflow.id }) ?? null) : null,
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );

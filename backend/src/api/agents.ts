@@ -5,6 +5,7 @@ import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
+import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { reserveAiSlot } from '../services/budget';
@@ -56,12 +57,31 @@ const sessionSchema = z.object({
   runs: z.array(
     z.object({
       runId: z.string().uuid(),
+      jobId: z.string().uuid().nullable(),
       status: z.string(),
       capability: z.string(),
     }),
   ),
 });
 const sessionResponse = apiEnvelope(sessionSchema, 'AgentSessionResponse');
+const sessionListResponse = apiEnvelope(
+  z.object({
+    items: z.array(z.object({
+      sessionId: z.string().uuid(),
+      title: z.string(),
+      capability: z.enum(['do', 'guide', 'review_only']),
+      status: z.enum(['active', 'closed']),
+      taskId: z.string().uuid().nullable(),
+      latestRunId: z.string().uuid().nullable(),
+      latestRunStatus: z.string().nullable(),
+      latestJobId: z.string().uuid().nullable(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })),
+    nextCursor: z.string().nullable(),
+  }),
+  'AgentSessionListResponse',
+);
 
 // 冻结写请求 #2：materialId、expectedRevision、reviewed: true、Tiptap JSON
 const adoptBody = z.object({
@@ -95,6 +115,23 @@ const getRoute = createRoute({
   summary: 'AI 会话详情（含回合与运行状态）',
   request: { params: sessionParams },
   responses: { 200: { content: { 'application/json': { schema: sessionResponse } }, description: '详情' } },
+});
+
+const listRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/projects/{projectId}/agent-sessions',
+  tags: ['agent'],
+  summary: '项目 AI 会话列表（游标分页，可按模式和状态筛选；包含最新运行和任务 ID）',
+  request: {
+    params: projectParams,
+    query: z.object({
+      cursor: z.string().optional(),
+      limit: z.string().optional(),
+      status: z.enum(['active', 'closed', 'all']).optional(),
+      capability: z.enum(['do', 'guide', 'review_only']).optional(),
+    }),
+  },
+  responses: { 200: { content: { 'application/json': { schema: sessionListResponse } }, description: '列表' } },
 });
 
 const turnRoute = createRoute({
@@ -210,10 +247,10 @@ async function sessionDetail(env: AppEnv['Bindings'], session: SessionRow) {
     .bind(session.id)
     .all<{ sequence: number; role: string; kind: string; run_id: string | null; payload_json: string; created_at: string }>();
   const runs = await env.DB.prepare(
-    'SELECT id, status, capability FROM agent_runs WHERE session_id = ?1 ORDER BY created_at',
+    'SELECT id, job_id, status, capability FROM agent_runs WHERE session_id = ?1 ORDER BY created_at, id',
   )
     .bind(session.id)
-    .all<{ id: string; status: string; capability: string }>();
+    .all<{ id: string; job_id: string | null; status: string; capability: string }>();
   return {
     sessionId: session.id,
     capability: session.capability,
@@ -227,11 +264,12 @@ async function sessionDetail(env: AppEnv['Bindings'], session: SessionRow) {
       payload: JSON.parse(t.payload_json) as Record<string, unknown>,
       createdAt: t.created_at,
     })),
-    runs: runs.results.map((r) => ({ runId: r.id, status: r.status, capability: r.capability })),
+    runs: runs.results.map((r) => ({ runId: r.id, jobId: r.job_id, status: r.status, capability: r.capability })),
   };
 }
 
 export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
+  app.use('/api/v1/projects/:projectId/agent-sessions', requireUser, requireProjectMember());
   app.use('/api/v1/projects/:projectId/agent-sessions/*', requireUser, requireProjectMember());
   app.use('/api/v1/projects/:projectId/agent-runs/*', requireUser, requireProjectMember());
 
@@ -288,9 +326,64 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
         sourceVersionIds: body.sourceVersionIds,
         turnSequence: 1,
       });
+      await c.env.DB.prepare('UPDATE agent_runs SET job_id = ?2 WHERE id = ?1').bind(runId, jobId).run();
       return { status: 202 as const, body: { sessionId, runId, jobId } };
     });
     return c.json(apiData(c, idem.body), idem.status);
+  });
+
+  app.openapi(listRoute, async (c) => {
+    const member = c.get('member')!;
+    const query = c.req.valid('query');
+    const paging = parsePaging(query);
+    const conditions = ['s.project_id = ?1'];
+    const binds: unknown[] = [member.projectId];
+    if (query.status && query.status !== 'all') {
+      binds.push(query.status);
+      conditions.push(`s.status = ?${binds.length}`);
+    }
+    if (query.capability) {
+      binds.push(query.capability);
+      conditions.push(`s.capability = ?${binds.length}`);
+    }
+    if (paging.cursor) {
+      binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
+      conditions.push(`(s.created_at < ?${binds.length - 2} OR (s.created_at = ?${binds.length - 1} AND s.id < ?${binds.length}))`);
+    }
+    binds.push(paging.limit + 1);
+    const rows = await c.env.DB.prepare(
+      `SELECT s.id, s.title, s.capability, s.status, s.task_id, s.created_at, s.updated_at,
+              latest.id AS latest_run_id, latest.status AS latest_run_status, latest.job_id AS latest_job_id
+         FROM agent_sessions s
+         LEFT JOIN agent_runs latest ON latest.id = (
+           SELECT r.id FROM agent_runs r WHERE r.session_id = s.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1
+         )
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY s.created_at DESC, s.id DESC LIMIT ?`,
+    )
+      .bind(...binds)
+      .all<{
+        id: string; title: string; capability: 'do' | 'guide' | 'review_only'; status: 'active' | 'closed'; task_id: string | null;
+        created_at: string; updated_at: string; latest_run_id: string | null; latest_run_status: string | null; latest_job_id: string | null;
+      }>();
+    const hasMore = rows.results.length > paging.limit;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
+    return c.json(apiData(c, {
+      items: pageRows.map((row) => ({
+        sessionId: row.id,
+        title: row.title,
+        capability: row.capability,
+        status: row.status,
+        taskId: row.task_id,
+        latestRunId: row.latest_run_id,
+        latestRunStatus: row.latest_run_status,
+        latestJobId: row.latest_job_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+      nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
+    }), 200);
   });
 
   app.openapi(getRoute, async (c) => {
@@ -310,14 +403,16 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       .first<{ m: number | null }>();
     const sequence = (maxTurn?.m ?? 0) + 1;
     const turnId = newId();
-    await c.env.DB.prepare(
-      "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, 'user', 'answer', ?5, ?6)",
-    )
-      .bind(turnId, session.id, member.projectId, sequence, JSON.stringify({ answer: body.content }), nowIso())
-      .run();
+    const answerCreatedAt = nowIso();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, 'user', 'answer', ?5, ?6)",
+      ).bind(turnId, session.id, member.projectId, sequence, JSON.stringify({ answer: body.content }), answerCreatedAt),
+      c.env.DB.prepare('UPDATE agent_sessions SET updated_at = ?2 WHERE id = ?1').bind(session.id, answerCreatedAt),
+    ]);
 
     const lastRun = await c.env.DB.prepare(
-      'SELECT inputs_json FROM agent_runs WHERE session_id = ?1 ORDER BY created_at DESC LIMIT 1',
+      'SELECT inputs_json FROM agent_runs WHERE session_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1',
     )
       .bind(session.id)
       .first<{ inputs_json: string }>();
@@ -335,6 +430,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       sourceVersionIds: lastInputs.sourceVersionIds,
       turnSequence: sequence + 1,
     });
+    await c.env.DB.prepare('UPDATE agent_runs SET job_id = ?2 WHERE id = ?1').bind(runId, jobId).run();
     return c.json(apiData(c, { turnId, sequence, runId, jobId }), 202);
   });
 

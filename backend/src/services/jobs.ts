@@ -37,9 +37,9 @@ export interface ParseJobInput {
  */
 export async function createJobAndDispatch(
   env: Env,
-  params: { projectId: string | null; kind: JobKind; input: unknown; createdBy: string | null },
+  params: { projectId: string | null; kind: JobKind; input: unknown; createdBy: string | null; jobId?: string },
 ): Promise<string> {
-  const jobId = newId();
+  const jobId = params.jobId ?? newId();
   const now = nowIso();
   await env.DB.batch([
     env.DB.prepare(

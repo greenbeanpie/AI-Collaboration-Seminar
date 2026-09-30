@@ -83,7 +83,7 @@ export async function createChallenge(
     challengeId,
     expiresAt,
     resendAfterSeconds: LIMITS.challengeResendSeconds,
-    ...(env.EMAIL_MODE === 'echo' && env.ENV_NAME !== 'production' ? { devCode: code } : {}),
+    ...(env.EMAIL_MODE === 'echo' && env.ENV_NAME === 'local' ? { devCode: code } : {}),
   };
 }
 

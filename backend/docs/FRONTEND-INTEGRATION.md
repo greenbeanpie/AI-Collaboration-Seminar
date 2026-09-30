@@ -1,9 +1,9 @@
 # 前端联调指南（FRONTEND-INTEGRATION.md）
 
-> 面向前端 AI / 前端同学。说明如何接入「补位」AI 项目办公室后端（`backend/` 分支）。
-> 契约唯一来源：[`backend/openapi/openapi.json`](../openapi/openapi.json)（当前 32 条路径）。契约由双方共同确认，不得单方面修改。
+> 面向前端 AI / 前端同学。说明如何接入「补位」AI 项目办公室后端。
+> 契约唯一来源：[`backend/openapi/openapi.json`](../openapi/openapi.json)（当前 57 条路径、77 个操作）。契约由双方共同确认，不得单方面修改。
 >
-> 更新日期：2026-09-29 ｜ 后端进度：M0–M3 已实现（登录/项目/成员/邀请/文件/来源解析/要求/评分标准/异步任务），**M4–M6 部分接口尚未实现，见第 8 节**。
+> 更新日期：2026-09-30 ｜ 本地代码覆盖 PLAN 后端 API 清单中的身份、项目协作、来源/要求、任务分工、材料、AI 补位、预审/答辩、过程账本及导出接口。生产模型、真实发信、费用计量和部署链路尚未完成验证，详见第 8 节。
 
 ---
 
@@ -86,7 +86,7 @@ export default defineConfig({
 
 ---
 
-## 3. 登录流程（验证码，当前为回显模式）
+## 3. 登录流程（本地回显；部署环境使用邮件）
 
 ```ts
 // 1. 请求验证码
@@ -96,7 +96,7 @@ const res = await fetch('/api/v1/auth/challenges', {
   body: JSON.stringify({ email: 'user@example.com' }),
 });
 // 201 → { data: { challengeId, expiresAt, resendAfterSeconds, devCode? } }
-// devCode 仅在回显模式（EMAIL_MODE=echo，本地/演示）返回；生产环境没有该字段。
+// devCode 仅在 ENV_NAME=local 且 EMAIL_MODE=echo 时返回；staging/production 不允许 echo。
 
 // 2. 验证码换会话（用户不存在会自动注册）
 const login = await fetch('/api/v1/auth/sessions', {
@@ -256,16 +256,53 @@ POST   /api/v1/invitations/accept                          // {code} → 加入�
 
 ## 8. 当前实现范围与剩余事项（2026-09-29 更新）
 
-**PLAN 契约内的全部端点均已实现（55 条路径）**，包括 M4 的任务/材料/三档 AI 补位/采纳，与 M5 的预审/答辩/账本/导出。前端可对全部接口进行真实联调；`Idempotency-Key` 已在关键 POST（创建 AI 会话、采纳、发起预审）生效——建议所有关键 POST 都带上该头。
+OpenAPI 当前包含 57 条路径、77 个 HTTP 操作。除了 PLAN 原有接口，还包括项目 AI 会话列表、异步任务分工建议和单任务人工应用分工建议。任务/项目/材料等主要列表支持游标分页；分页回归已覆盖 tasks、projects、materials 和 AI 会话。
 
-尚未完成、影响联调的事项：
+分工建议接口：
+
+```ts
+// 不传 taskIds 时处理项目全部未完成任务，单次最多 20 项。
+// requirementSetId 可省略；省略时使用最新的已确认要求集（如无则不附要求）。
+const started = await fetch(`/api/v1/projects/${projectId}/assignment-suggestions`, {
+  method: 'POST', headers: { ...jsonHeaders, 'Idempotency-Key': requestKey },
+  body: JSON.stringify({ requirementSetId, taskIds }),
+}); // 202 → { data: { jobId } }
+
+// GET /api/v1/jobs/{jobId} 成功时 result：
+// { requirementSetId, assignments: [{ taskId, assigneeId, reason, expectedRevision }], considerations }
+// 结果只包含建议，不会自动指派或更改任务状态。
+
+await fetch(`/api/v1/projects/${projectId}/tasks/apply-assignment`, {
+  method: 'POST', headers: jsonHeaders,
+  body: JSON.stringify({ taskId, assigneeId, expectedRevision }),
+}); // 200 → 更新后的 Task；409 时保留现有数据并刷新任务后再确认
+```
+
+人工应用一次只处理一个任务。服务端在写入时再次检查任务 revision 和负责人当前项目成员资格，任务状态保持不变。建议请求分工建议、AI 会话、预审等创建异步任务的关键 POST 时携带 `Idempotency-Key`。该头目前落在 AI 会话创建、采纳、预审和分工建议接口。
+
+`GET /api/v1/projects/{projectId}/export-bundle` 除材料 Markdown、任务与过程记录外，还返回 `requirementSets[]`（要求集确认态/版本、逐条要求及原文 citations）和 `rubricVersions[]`（版本、确认态、权重和备注），供成果说明导出引用。费用未知时 `aiUsage.costStatus` 为 `unknown`。
+
+当前后端与 PLAN 的实现对齐：
+
+| PLAN 功能 | 当前后端实现 | 联调说明 |
+|---|---|---|
+| 验证码身份、会话、项目/成员/邀请 | 已实现 | 本地 echo 仅用于 local；部署环境要求 Resend |
+| 文件、来源导入、PDF 文本/指定扫描页、要求与评分版本 | 已实现 | 真实 PDF 样本与模型准确率尚未做线上验证 |
+| 任务/评论/材料版本/Markdown 导出 | 已实现 | 乐观锁和主要列表分页有后端回归覆盖 |
+| 团队分工建议与人工应用 | 已实现 | 异步建议不写任务；应用需 `expectedRevision`，一次一项 |
+| 三档 AI 会话、带做回合、人工复核采纳 | 已实现 | 依赖已配置并启用的模型；失败不会自动切到演示结果 |
+| 预审、答辩演练、事件/贡献/资源账本、导出包 | 已实现 | 关联和访问以服务端项目权限为准 |
+| Workflow 恢复、费用/预算 | 部分实现 | 有异步派发、并发预占和过期释放；预算 `estimated_cost` 目前固定为 0，真实费用未知/对账未完成，不代表预算限额已完整执行 |
+
+尚未完成、影响真实部署的事项：
 
 | 事项 | 状态 | 影响 |
 |---|---|---|
-| 真实发信（Resend） | 等发信域名 | 验证码仍为回显模式（`devCode` 仅本地/演示返回） |
-| 正式模型 | 等模型 Key（GLM/Gemini 等） | 当前 `/capabilities.aiEnabled=false`；启用前 AI 接口会返回 503 AI_UNAVAILABLE，前端需保留 MSW/演示分支 |
-| staging/production 部署 | 待创建 Cloudflare 资源（docs/DEPLOY.md） | 生产联调与 Service Binding 实测在 M6 |
-| 长期任务核对/压测/监控 | M6 | 不阻塞功能联调 |
+| 真实发信（Resend） | 待验证域名和部署密钥 | 部署环境 `EMAIL_MODE=echo` 会拒绝发信；不返回真实验证码 |
+| 正式模型 | 待配置并验证 Gateway/model 密钥与模型能力 | `/capabilities.features.aiEnabled` 来自 D1 配置；禁用或未配置时异步 AI job 会进入 `failed` 并携带 `AI_UNAVAILABLE`，同步能力调用可能直接返回 503 |
+| 生产费用预算 | 未完成 | 目前 reservation 的 `estimated_cost` 固定为 0；不应据此认定花费已受限 |
+| staging/production 部署 | 待创建/核验 Cloudflare 资源 | 生产联调与前端 Service Binding 仍待完成 |
+| 长期任务核对/压测/监控 | 未完成 | B5 不应标记完成，需真实服务联调及预算/恢复验证 |
 
 三档 AI 与预审/答辩的接口行为提醒：
 
@@ -283,7 +320,7 @@ POST   /api/v1/invitations/accept                          // {code} → 加入�
 - [ ] 粘贴文本导入→解析轮询→要求草稿渲染（引用可定位）→人工编辑→负责人确认
 - [ ] 扫描 PDF 流程：waiting_input→render-requests→PDF.js 渲染上传→OCR 完成
 - [ ] 项目 PATCH 乐观锁：人为制造 409 并按 currentRevision 恢复
-- [ ] 未实现接口保持 MSW 模拟（不出现裸 404）
+- [ ] 未实现的产品流程保持明确演示状态（不出现裸 404，也不把模拟成功伪装成生产数据）
 - [ ] 所有请求/响应 `requestId` 已接入前端日志
 
 有任何契约问题：**先提出来双方确认，不要单方面改 openapi.json 的语义**（补充字段可协商）。

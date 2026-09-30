@@ -43,9 +43,8 @@ export function decodeCursor(value: string | undefined): Cursor | undefined {
   return undefined;
 }
 
-/** 基于游标构造下一页游标；调用方在取到 limit+1 条时传入第 limit+1 条的字段 */
-export function nextCursor(page: { limit: number }, overflowRow?: { createdAt: string; id: string }): string | undefined {
-  if (!overflowRow) return undefined;
-  void page;
-  return encodeCursor({ createdAt: overflowRow.createdAt, id: overflowRow.id });
+/** 下一页游标必须指向本页最后一条已返回记录；limit+1 条仅用于判断是否还有下一页。 */
+export function nextCursor(hasMore: boolean, lastPageRow?: { createdAt: string; id: string }): string | undefined {
+  if (!hasMore || !lastPageRow) return undefined;
+  return encodeCursor({ createdAt: lastPageRow.createdAt, id: lastPageRow.id });
 }

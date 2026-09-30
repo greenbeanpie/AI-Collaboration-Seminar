@@ -14,6 +14,7 @@ import { registerSourceRoutes } from './api/sources';
 import { registerRequirementRoutes } from './api/requirements';
 import { registerJobRoutes } from './api/jobs';
 import { registerTaskRoutes } from './api/tasks';
+import { registerAssignmentRoutes } from './api/assignment';
 import { registerMaterialRoutes } from './api/materials';
 import { registerAgentRoutes } from './api/agents';
 import { registerReviewRoutes } from './api/reviews';
@@ -66,6 +67,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerRequirementRoutes(app);
   registerJobRoutes(app);
   registerTaskRoutes(app);
+  registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerAgentRoutes(app);
   registerReviewRoutes(app);

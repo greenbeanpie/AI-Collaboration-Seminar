@@ -24,6 +24,7 @@ const capabilitiesResponse = apiEnvelope(
         listDefaultPageSize: z.number().int(),
         listMaxPageSize: z.number().int(),
         concurrentAiTasksPerProject: z.number().int(),
+        assignmentSuggestionMaxTasks: z.number().int(),
       }),
       competitionTemplate: z
         .object({
@@ -94,6 +95,7 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
           listDefaultPageSize: LIMITS.listDefaultPageSize,
           listMaxPageSize: LIMITS.listMaxPageSize,
           concurrentAiTasksPerProject: LIMITS.concurrentAiTasksPerProject,
+          assignmentSuggestionMaxTasks: LIMITS.assignmentSuggestionMaxTasks,
         },
         competitionTemplate: template,
       }),

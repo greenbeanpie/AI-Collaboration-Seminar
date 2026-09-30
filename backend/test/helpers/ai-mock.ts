@@ -43,6 +43,21 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
       );
     }
     const systemText = String(first ?? '');
+    if (systemText.includes('团队分工建议助手')) {
+      const userContent = String(body.messages?.[1]?.content ?? '{}');
+      const input = JSON.parse(userContent) as {
+        tasks?: Array<{ taskId: string }>;
+        members?: Array<{ userId: string }>;
+      };
+      return openAiResponse(JSON.stringify({
+        assignments: (input.tasks ?? []).map((task) => ({
+          taskId: task.taskId,
+          assigneeId: input.members?.[0]?.userId ?? null,
+          reason: '模拟建议：技能与投入时间匹配',
+        })),
+        considerations: ['请团队确认每位成员的实际工作量'],
+      }));
+    }
     if (systemText.includes('比赛通知解析助手')) {
       textCalls++;
       if (options?.repair && textCalls === 1) {

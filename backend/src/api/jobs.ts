@@ -6,6 +6,7 @@ import { requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { getJob, tryDispatchJob } from '../services/jobs';
+import { reserveAiSlot, settleReservation } from '../services/budget';
 
 const jobParams = z.object({ jobId: z.string().uuid() });
 
@@ -47,6 +48,7 @@ const retryRoute = createRoute({
 
 export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/jobs/:jobId', requireUser);
+  app.use('/api/v1/jobs/:jobId/*', requireUser);
 
   app.openapi(getRoute, async (c) => {
     const job = await getJob(c.env, c.req.valid('param').jobId);
@@ -83,14 +85,23 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     const input = JSON.parse(job.input_json) as Record<string, unknown>;
     const newJobId = newId();
     const now = nowIso();
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6)",
-      ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now),
-      c.env.DB.prepare(
-        "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
-      ).bind(newId(), newJobId, now, now),
-    ]);
+    const reservedAiKind = new Set(['assignment_suggest', 'agent_run', 'review_run', 'rehearsal_turn']).has(job.kind);
+    if (reservedAiKind && job.project_id) {
+      await reserveAiSlot(c.env, { projectId: job.project_id, jobId: newJobId, purpose: job.kind });
+    }
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6)",
+        ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now),
+        c.env.DB.prepare(
+          "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
+        ).bind(newId(), newJobId, now, now),
+      ]);
+    } catch (error) {
+      if (reservedAiKind) await settleReservation(c.env, newJobId, 'released');
+      throw error;
+    }
     await tryDispatchJob(c.env, newJobId);
     return c.json(apiData(c, { jobId: newJobId }), 202);
   });

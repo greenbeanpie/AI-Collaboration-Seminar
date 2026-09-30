@@ -177,6 +177,65 @@ const resourceListRoute = createRoute({
 });
 
 // ========== 导出 ==========
+const exportRequirementSchema = z.object({
+  requirementId: z.string().uuid(),
+  seq: z.number().int(),
+  category: z.enum(['deadline', 'deliverable', 'format', 'scoring', 'team', 'other']),
+  title: z.string(),
+  detail: z.string(),
+  dueDate: z.string().nullable(),
+  duePrecision: z.enum(['date', 'datetime', 'unknown']),
+  citations: z.array(z.object({
+    sourceVersionId: z.string().uuid(),
+    fragmentId: z.string().uuid(),
+    pageNumber: z.number().int().nullable(),
+    quote: z.string(),
+  })),
+  fieldState: z.enum(['ai_suggestion', 'edited', 'confirmed']),
+});
+
+const exportBundleResponse = apiEnvelope(z.object({
+  project: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    description: z.string(),
+    competition_deadline_date: z.string().nullable(),
+    status: z.string(),
+  }),
+  generatedAt: z.string(),
+  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int() })),
+  requirementSets: z.array(z.object({
+    requirementSetId: z.string().uuid(),
+    sourceVersionId: z.string().uuid().nullable(),
+    status: z.enum(['draft', 'confirmed']),
+    revision: z.number().int(),
+    confirmedAt: z.string().nullable(),
+    requirements: z.array(exportRequirementSchema),
+  })),
+  rubricVersions: z.array(z.object({
+    rubricId: z.string().uuid(),
+    version: z.number().int(),
+    source: z.enum(['official', 'custom']),
+    weights: z.array(z.object({ key: z.string(), label: z.string(), weight: z.number() })),
+    notes: z.string().nullable(),
+    status: z.enum(['draft', 'confirmed']),
+    confirmedAt: z.string().nullable(),
+    createdAt: z.string(),
+  })),
+  tasks: z.array(z.object({ title: z.string(), status: z.string(), assignee_id: z.string().nullable(), due_date: z.string().nullable() })),
+  decisions: z.array(z.object({ title: z.string(), detail: z.string(), decided_at: z.string() })),
+  contributions: z.array(z.object({ user_id: z.string().uuid(), kind: z.string(), description: z.string(), correction_of: z.string().uuid().nullable() })),
+  resources: z.array(z.object({ kind: z.string(), title: z.string(), url: z.string().nullable() })),
+  events: z.array(z.object({ type: z.string(), occurred_at: z.string() })),
+  aiUsage: z.object({
+    calls: z.number().int(),
+    promptTokens: z.number().int(),
+    completionTokens: z.number().int(),
+    costStatus: z.string(),
+    note: z.string(),
+  }),
+}), 'ExportBundleResponse');
+
 const exportRoute = createRoute({
   method: 'get',
   path: '/api/v1/projects/{projectId}/export-bundle',
@@ -184,10 +243,7 @@ const exportRoute = createRoute({
   summary: '导出成果说明 JSON 汇总（材料 Markdown + 要求 + 账本 + 声明）',
   request: { params: projectParams },
   responses: {
-    200: {
-      content: { 'application/json': { schema: apiEnvelope(z.record(z.string(), z.unknown()), 'ExportBundleResponse') } },
-      description: '导出汇总',
-    },
+    200: { content: { 'application/json': { schema: exportBundleResponse } }, description: '导出汇总' },
   },
 });
 
@@ -219,10 +275,11 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(...binds)
       .all<{ id: string; type: string; actor_type: string; actor_id: string; entity_type: string; entity_id: string; payload_json: string; occurred_at: string }>();
     const hasMore = rows.results.length > paging.limit;
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: rows.results.slice(0, paging.limit).map((r) => ({
+        items: pageRows.map((r) => ({
           eventId: r.id,
           type: r.type,
           actorType: r.actor_type as 'user' | 'ai' | 'system',
@@ -232,7 +289,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
           payload: JSON.parse(r.payload_json) as Record<string, unknown>,
           occurredAt: r.occurred_at,
         })),
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.occurred_at, id: overflow.id }) ?? null) : null,
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.occurred_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );
@@ -360,6 +417,35 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(projectId)
       .all<{ title: string; markdown: string; revision: number }>();
 
+    const requirementSets = await c.env.DB.prepare(
+      'SELECT id, source_version_id, status, revision, confirmed_at FROM requirement_sets WHERE project_id = ?1 ORDER BY created_at, id',
+    )
+      .bind(projectId)
+      .all<{ id: string; source_version_id: string | null; status: 'draft' | 'confirmed'; revision: number; confirmed_at: string | null }>();
+    const requirements = await c.env.DB.prepare(
+      'SELECT id, requirement_set_id, seq, category, title, detail, due_date, due_precision, citations_json, field_state FROM requirements WHERE project_id = ?1 ORDER BY requirement_set_id, seq, id',
+    )
+      .bind(projectId)
+      .all<{
+        id: string; requirement_set_id: string; seq: number; category: string; title: string; detail: string;
+        due_date: string | null; due_precision: string; citations_json: string; field_state: string;
+      }>();
+    const requirementsBySet = new Map<string, typeof requirements.results>();
+    for (const requirement of requirements.results) {
+      const list = requirementsBySet.get(requirement.requirement_set_id) ?? [];
+      list.push(requirement);
+      requirementsBySet.set(requirement.requirement_set_id, list);
+    }
+
+    const rubricVersions = await c.env.DB.prepare(
+      'SELECT id, version, source, weights_json, notes, status, confirmed_at, created_at FROM rubric_versions WHERE project_id = ?1 ORDER BY version',
+    )
+      .bind(projectId)
+      .all<{
+        id: string; version: number; source: 'official' | 'custom'; weights_json: string; notes: string | null;
+        status: 'draft' | 'confirmed'; confirmed_at: string | null; created_at: string;
+      }>();
+
     const tasks = await c.env.DB.prepare('SELECT title, status, assignee_id, due_date FROM tasks WHERE project_id = ?1 ORDER BY created_at')
       .bind(projectId)
       .all<{ title: string; status: string; assignee_id: string | null; due_date: string | null }>();
@@ -381,7 +467,11 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       .all<{ type: string; occurred_at: string }>();
 
     const aiUsage = await c.env.DB.prepare(
-      'SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens, cost_status FROM ai_calls WHERE project_id = ?1',
+      `SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+              COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+              CASE WHEN COUNT(*) = 0 OR SUM(CASE WHEN cost_status = 'unknown' THEN 1 ELSE 0 END) > 0
+                   THEN 'unknown' ELSE 'known' END AS cost_status
+         FROM ai_calls WHERE project_id = ?1`,
     )
       .bind(projectId)
       .first<{ calls: number; prompt_tokens: number; completion_tokens: number; cost_status: string }>();
@@ -391,6 +481,36 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
         project,
         generatedAt: nowIso(),
         materials: materials.results,
+        requirementSets: requirementSets.results.map((set) => ({
+          requirementSetId: set.id,
+          sourceVersionId: set.source_version_id,
+          status: set.status,
+          revision: set.revision,
+          confirmedAt: set.confirmed_at,
+          requirements: (requirementsBySet.get(set.id) ?? []).map((requirement) => ({
+            requirementId: requirement.id,
+            seq: requirement.seq,
+            category: requirement.category as 'deadline' | 'deliverable' | 'format' | 'scoring' | 'team' | 'other',
+            title: requirement.title,
+            detail: requirement.detail,
+            dueDate: requirement.due_date,
+            duePrecision: requirement.due_precision as 'date' | 'datetime' | 'unknown',
+            citations: JSON.parse(requirement.citations_json) as Array<{
+              sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string;
+            }>,
+            fieldState: requirement.field_state as 'ai_suggestion' | 'edited' | 'confirmed',
+          })),
+        })),
+        rubricVersions: rubricVersions.results.map((rubric) => ({
+          rubricId: rubric.id,
+          version: rubric.version,
+          source: rubric.source,
+          weights: JSON.parse(rubric.weights_json) as Array<{ key: string; label: string; weight: number }>,
+          notes: rubric.notes,
+          status: rubric.status,
+          confirmedAt: rubric.confirmed_at,
+          createdAt: rubric.created_at,
+        })),
         tasks: tasks.results,
         decisions: decisions.results,
         contributions: contributions.results,

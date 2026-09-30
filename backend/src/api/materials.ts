@@ -236,10 +236,11 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(...binds)
       .all<MaterialRow>();
     const hasMore = rows.results.length > paging.limit;
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: rows.results.slice(0, paging.limit).map((r) => ({
+        items: pageRows.map((r) => ({
           materialId: r.id,
           title: r.title,
           kind: r.kind,
@@ -248,7 +249,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
           createdAt: r.created_at,
           updatedAt: r.updated_at,
         })),
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.created_at, id: overflow.id }) ?? null) : null,
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );
@@ -317,15 +318,16 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     binds.push(paging.limit + 1);
     const rows = await c.env.DB.prepare(
-      `SELECT * FROM material_versions WHERE material_id = ?1${cursorSql} ORDER BY revision DESC LIMIT ?`,
+      `SELECT * FROM material_versions WHERE material_id = ?1${cursorSql} ORDER BY created_at DESC, id DESC LIMIT ?`,
     )
       .bind(...binds)
       .all<VersionRow>();
     const hasMore = rows.results.length > paging.limit;
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: rows.results.slice(0, paging.limit).map((r) => ({
+        items: pageRows.map((r) => ({
           versionId: r.id,
           revision: r.revision,
           markdown: r.markdown,
@@ -334,7 +336,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
           authorId: r.author_id,
           createdAt: r.created_at,
         })),
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.created_at, id: overflow.id }) ?? null) : null,
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );

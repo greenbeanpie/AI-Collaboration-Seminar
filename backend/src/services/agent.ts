@@ -80,6 +80,8 @@ export async function aiJsonCall<S extends z.ZodType>(
     model: string;
     modelConfig: import('../ai/config').AiModelConfig;
     promptVersion: string;
+    jobId?: string;
+    runId?: string;
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     schema: S;
   },
@@ -98,6 +100,8 @@ export async function aiJsonCall<S extends z.ZodType>(
   ) =>
     recordAiCall(env, {
       projectId: params.projectId,
+      jobId: params.jobId,
+      runId: params.runId,
       purpose: params.purpose,
       configVersionId: params.configVersionId,
       promptVersion: params.promptVersion,
@@ -230,7 +234,13 @@ async function buildGuideHistory(env: Env, sessionId: string | null): Promise<st
   return turns.results
     .map((t) => {
       const payload = JSON.parse(t.payload_json) as Record<string, unknown>;
-      const text = typeof payload['question'] === 'string' ? payload['question'] : typeof payload['markdown'] === 'string' ? payload['markdown'] : '';
+      const text = typeof payload['answer'] === 'string'
+        ? payload['answer']
+        : typeof payload['question'] === 'string'
+          ? payload['question']
+          : typeof payload['markdown'] === 'string'
+            ? payload['markdown']
+            : '';
       return `${t.role === 'user' ? '参与者' : '助手'}: ${String(text).slice(0, 2000)}`;
     })
     .join('\n');
@@ -350,7 +360,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     const turnKind = input.capability === 'do' ? 'draft' : input.capability === 'guide' ? (outputPayload['question'] !== undefined ? 'question' : 'draft') : 'review_result';
     const sequence = input.turnSequence ?? 1;
     const now = nowIso();
-    await env.DB.batch([
+    const statements = [
       env.DB.prepare(
         "UPDATE agent_runs SET status = 'succeeded', output_json = ?2 WHERE id = ?1",
       ).bind(input.runId, JSON.stringify(outputPayload)),
@@ -366,7 +376,13 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         JSON.stringify(outputPayload),
         now,
       ),
-    ]);
+    ];
+    if (run.session_id) {
+      statements.push(
+        env.DB.prepare('UPDATE agent_sessions SET updated_at = ?2 WHERE id = ?1').bind(run.session_id, now),
+      );
+    }
+    await env.DB.batch(statements);
     await settleReservation(env, jobId, 'settled');
     await recordEvent(env, {
       projectId: input.projectId,

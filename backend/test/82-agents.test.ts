@@ -5,7 +5,7 @@ import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { mockGatewayFetch } from './helpers/ai-mock';
 import { runAgentJob } from '../src/services/agent';
 import { runParseJob } from '../src/services/parse';
-import { reserveAiSlot, settleReservation } from '../src/services/budget';
+import { releaseStaleReservations, reserveAiSlot, settleReservation } from '../src/services/budget';
 import { markdownToDoc } from '../src/services/tiptap';
 import { quotaExceeded } from '../src/core/errors';
 
@@ -53,6 +53,51 @@ async function createMaterial(cookie: string, pid: string, title: string, markdo
   return { materialId: material.materialId, revision: saved.data.revision, versionId: saved.data.versionId };
 }
 
+describe('AI 会话索引', () => {
+  it('列表支持游标恢复，并返回最新运行关联的 jobId', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const cookie = authCookie(owner.token);
+    const sessionIds: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      const sessionId = crypto.randomUUID();
+      sessionIds.push(sessionId);
+      const createdAt = new Date(Date.UTC(2026, 8, 30, 0, 0, index)).toISOString();
+      await env.DB.prepare(
+        "INSERT INTO agent_sessions (id, project_id, capability, title, status, created_by, created_at, updated_at) VALUES (?1, ?2, 'do', ?3, 'active', ?4, ?5, ?5)",
+      ).bind(sessionId, pid, `会话 ${index}`, owner.userId, createdAt).run();
+    }
+
+    const runId = crypto.randomUUID();
+    const jobId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO agent_runs (id, session_id, project_id, capability, job_id, mode, status, inputs_json, prompt_version, created_at) VALUES (?1, ?2, ?3, 'do', ?4, 'do', 'running', '{}', 'test', ?5)",
+    ).bind(runId, sessionIds[0], pid, jobId, new Date(Date.UTC(2026, 8, 30, 0, 0, 10)).toISOString()).run();
+
+    const first = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions?status=all&limit=100`, { headers: { cookie } });
+    expect(first.status).toBe(200);
+    const allItems = ((await first.json()) as { data: { items: Array<{ sessionId: string; latestRunId: string | null; latestJobId: string | null }>; nextCursor: string | null } }).data.items;
+    const latest = allItems.find((item) => item.sessionId === sessionIds[0]);
+    expect(latest?.latestRunId).toBe(runId);
+    expect(latest?.latestJobId).toBe(jobId);
+
+    const allIds = allItems.map((item) => item.sessionId);
+    const pagedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL(`${BASE}/api/v1/projects/${pid}/agent-sessions?status=all&limit=2`);
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const page = await SELF.fetch(url, { headers: { cookie } });
+      expect(page.status).toBe(200);
+      const pageData = (await page.json()) as { data: { items: { sessionId: string }[]; nextCursor: string | null } };
+      pagedIds.push(...pageData.data.items.map((item) => item.sessionId));
+      cursor = pageData.data.nextCursor;
+    } while (cursor);
+    expect(allIds).toHaveLength(5);
+    expect(pagedIds).toEqual(allIds);
+  });
+});
+
 describe('三档 AI 补位', () => {
   it('代做：生成草稿 → 可采纳为材料新版本（reviewed 语义强制）', async () => {
     vi.stubGlobal('fetch', mockGatewayFetch());
@@ -67,6 +112,14 @@ describe('三档 AI 补位', () => {
     });
     expect(create.status).toBe(202);
     const created = (await create.json()) as { data: { sessionId: string; runId: string; jobId: string } };
+
+    const list = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions?limit=100`, {
+      headers: { cookie: authCookie(owner.token) },
+    });
+    const listItems = ((await list.json()) as { data: { items: Array<{ sessionId: string; latestRunId: string | null; latestJobId: string | null }> } }).data.items;
+    const listedSession = listItems.find((item) => item.sessionId === created.data.sessionId);
+    expect(listedSession?.latestRunId).toBe(created.data.runId);
+    expect(listedSession?.latestJobId).toBe(created.data.jobId);
 
     const done = await ensureJobDone(authCookie(owner.token), created.data.jobId, 'agent');
     expect(done.status).toBe('succeeded');
@@ -251,5 +304,37 @@ describe('预算并发预占（每项目 2）', () => {
     expect(rejected).toBe(true);
     await settleReservation(env, `job-1-${pid}`, 'settled');
     await reserveAiSlot(env, { projectId: pid, jobId: `job-4-${pid}`, purpose: 'agent_run' });
+  });
+
+  it('并发预占原子限制在 2 个；清理只释放超过 2 小时的记录', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const concurrent = await Promise.allSettled(
+      Array.from({ length: 5 }, (_, index) => reserveAiSlot(env, {
+        projectId: pid,
+        jobId: `parallel-${index}-${pid}`,
+        purpose: 'agent_run',
+      })),
+    );
+    expect(concurrent.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
+    expect(concurrent.filter((result) => result.status === 'rejected')).toHaveLength(3);
+
+    const now = '2026-09-30T12:00:00.000Z';
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'stale', 'agent_run', 0, 'reserved', '2026-09-30T09:59:59.000Z')",
+      ).bind(crypto.randomUUID(), pid),
+      env.DB.prepare(
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'fresh', 'agent_run', 0, 'reserved', '2026-09-30T10:00:01.000Z')",
+      ).bind(crypto.randomUUID(), pid),
+    ]);
+    await releaseStaleReservations(env, now);
+    const rows = await env.DB.prepare("SELECT job_id, status, settled_at FROM usage_reservations WHERE project_id = ?1 AND job_id IN ('stale', 'fresh') ORDER BY job_id")
+      .bind(pid)
+      .all<{ job_id: string; status: string; settled_at: string | null }>();
+    expect(rows.results).toEqual([
+      { job_id: 'fresh', status: 'reserved', settled_at: null },
+      { job_id: 'stale', status: 'released', settled_at: now },
+    ]);
   });
 });

@@ -14,19 +14,71 @@ async function createTask(cookie: string, pid: string, body: Record<string, unkn
 }
 
 describe('任务与评论', () => {
+  it('任务和评论游标分页不会跳过溢出行', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const cookie = authCookie(owner.token);
+    const taskIds: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      const created = await createTask(cookie, pid, { title: `分页任务 ${index}` });
+      expect(created.status).toBe(201);
+      taskIds.push(String(created.data.taskId));
+    }
+
+    const taskAll = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/tasks?limit=100`, { headers: { cookie } });
+    const allTaskIds = ((await taskAll.json()) as { data: { items: { taskId: string }[] } }).data.items.map((item) => item.taskId);
+    const pagedTaskIds: string[] = [];
+    let taskCursor: string | null = null;
+    do {
+      const url = new URL(`${BASE}/api/v1/projects/${pid}/tasks?limit=2`);
+      if (taskCursor) url.searchParams.set('cursor', taskCursor);
+      const page = await SELF.fetch(url, { headers: { cookie } });
+      const pageData = (await page.json()) as { data: { items: { taskId: string }[]; nextCursor: string | null } };
+      pagedTaskIds.push(...pageData.data.items.map((item) => item.taskId));
+      taskCursor = pageData.data.nextCursor;
+    } while (taskCursor);
+    expect(pagedTaskIds).toEqual(allTaskIds);
+
+    const commentTargetId = taskIds[0]!;
+    for (let index = 0; index < 5; index++) {
+      const response = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/comments`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetType: 'task', targetId: commentTargetId, body: `分页评论 ${index}` }),
+      });
+      expect(response.status).toBe(201);
+    }
+    const commentUrl = new URL(`${BASE}/api/v1/projects/${pid}/comments?targetType=task&targetId=${commentTargetId}&limit=100`);
+    const commentAll = await SELF.fetch(commentUrl, { headers: { cookie } });
+    const allCommentIds = ((await commentAll.json()) as { data: { items: { commentId: string }[] } }).data.items.map((item) => item.commentId);
+    const pagedCommentIds: string[] = [];
+    let commentCursor: string | null = null;
+    do {
+      const url = new URL(`${BASE}/api/v1/projects/${pid}/comments?targetType=task&targetId=${commentTargetId}&limit=2`);
+      if (commentCursor) url.searchParams.set('cursor', commentCursor);
+      const page = await SELF.fetch(url, { headers: { cookie } });
+      const pageData = (await page.json()) as { data: { items: { commentId: string }[]; nextCursor: string | null } };
+      pagedCommentIds.push(...pageData.data.items.map((item) => item.commentId));
+      commentCursor = pageData.data.nextCursor;
+    } while (commentCursor);
+    expect(pagedCommentIds).toEqual(allCommentIds);
+  });
+
   it('创建 → 列表 → 更新（乐观锁 + 状态事件）', async () => {
     const owner = await seedUser();
     const member = await seedUser();
     const pid = await seedProject(owner.userId);
 
-    const created = await createTask(authCookie(owner.token), pid, { title: '撰写作品介绍', detail: '含教育痛点与创新点' });
+    const created = await createTask(authCookie(owner.token), pid, {
+      title: '撰写作品介绍', detail: '含教育痛点与创新点', dueDate: '2026-10-08',
+    });
     expect(created.status).toBe(201);
     const task = created.data as unknown as {
       taskId: string; revision: number; status: string; title: string;
     };
     expect(task.status).toBe('todo');
 
-    // 指派成员（成员必须在项目中才能被指派？v1 不做成员校验，仅存 ID——先加入成员再指派）
+    // 项目成员可以被指派；非本项目用户不会作为负责人写入。
     await env.DB.prepare(
       "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'member', '2026-09-29T00:00:00.000Z')",
     )
@@ -60,6 +112,81 @@ describe('任务与评论', () => {
       .bind(task.taskId)
       .first<{ n: number }>();
     expect(event?.n).toBe(1);
+
+    // 显式 null 表示清空日期和负责人。
+    const clear = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/tasks/${task.taskId}`, {
+      method: 'PATCH',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 2, assigneeId: null, dueDate: null }),
+    });
+    expect(clear.status).toBe(200);
+    const cleared = (await clear.json() as { data: { revision: number; status: string; assigneeId: string | null; dueDate: string | null } }).data;
+    expect(cleared).toMatchObject({ revision: 3, status: 'doing', assigneeId: null, dueDate: null });
+
+    const outsider = await seedUser();
+    const invalidAssignee = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/tasks/${task.taskId}`, {
+      method: 'PATCH',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 3, assigneeId: outsider.userId }),
+    });
+    expect(invalidAssignee.status).toBe(400);
+    expect((await invalidAssignee.json() as { error: { code: string } }).error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('拒绝跨项目负责人或要求关联，失败时不写入或修改任务', async () => {
+    const owner = await seedUser();
+    const otherOwner = await seedUser();
+    const otherMember = await seedUser();
+    const projectId = await seedProject(owner.userId);
+    const otherProjectId = await seedProject(otherOwner.userId);
+    const cookie = authCookie(owner.token);
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'member', ?4)",
+    ).bind(crypto.randomUUID(), otherProjectId, otherMember.userId, now).run();
+
+    const requirementSetId = crypto.randomUUID();
+    const requirementId = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO requirement_sets (id, project_id, status, revision, created_at, updated_at) VALUES (?1, ?2, 'draft', 1, ?3, ?3)")
+        .bind(requirementSetId, otherProjectId, now),
+      env.DB.prepare("INSERT INTO requirements (id, requirement_set_id, project_id, seq, category, title, updated_at) VALUES (?1, ?2, ?3, 1, 'other', '外项目要求', ?4)")
+        .bind(requirementId, requirementSetId, otherProjectId, now),
+    ]);
+
+    const invalidAssigneeCreate = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '错误负责人', assigneeId: otherMember.userId }),
+    });
+    expect(invalidAssigneeCreate.status).toBe(400);
+    const invalidRequirementCreate = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '错误要求', requirementId }),
+    });
+    expect(invalidRequirementCreate.status).toBe(400);
+    const countBefore = await env.DB.prepare('SELECT COUNT(*) AS count FROM tasks WHERE project_id = ?1')
+      .bind(projectId).first<{ count: number }>();
+    expect(countBefore?.count).toBe(0);
+
+    const created = await createTask(cookie, projectId, { title: '保持原样' });
+    const taskId = String(created.data.taskId);
+    const patchBadAssignee = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 1, title: '不得写入', assigneeId: otherMember.userId }),
+    });
+    expect(patchBadAssignee.status).toBe(400);
+    const patchBadRequirement = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 1, title: '同样不得写入', requirementId }),
+    });
+    expect(patchBadRequirement.status).toBe(400);
+    const current = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks/${taskId}`, { headers: { cookie } });
+    expect((await current.json() as { data: { title: string; assigneeId: string | null; requirementId: string | null; revision: number } }).data)
+      .toMatchObject({ title: '保持原样', assigneeId: null, requirementId: null, revision: 1 });
   });
 
   it('评论：发表与按目标查询', async () => {
@@ -84,6 +211,36 @@ describe('任务与评论', () => {
 });
 
 describe('材料与版本', () => {
+  it('材料列表游标分页不会跳过溢出行', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const cookie = authCookie(owner.token);
+    for (let index = 0; index < 5; index++) {
+      const response = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/materials`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ title: `分页材料 ${index}` }),
+      });
+      expect(response.status).toBe(201);
+    }
+
+    const all = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/materials?limit=100`, { headers: { cookie } });
+    const allIds = ((await all.json()) as { data: { items: { materialId: string }[] } }).data.items.map((item) => item.materialId);
+    const pagedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL(`${BASE}/api/v1/projects/${pid}/materials?limit=2`);
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const page = await SELF.fetch(url, { headers: { cookie } });
+      const pageData = (await page.json()) as { data: { items: { materialId: string }[]; nextCursor: string | null } };
+      pagedIds.push(...pageData.data.items.map((item) => item.materialId));
+      cursor = pageData.data.nextCursor;
+    } while (cursor);
+
+    expect(allIds).toHaveLength(5);
+    expect(pagedIds).toEqual(allIds);
+  });
+
   it('创建 → 保存（乐观锁）→ 版本历史 → 409 冲突', async () => {
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);

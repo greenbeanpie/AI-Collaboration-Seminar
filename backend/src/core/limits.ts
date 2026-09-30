@@ -12,6 +12,8 @@ export const LIMITS = {
   listMaxPageSize: 100,
   /** 每项目并行 AI 任务上限 */
   concurrentAiTasksPerProject: 2,
+  /** 单次 AI 分工建议最多处理的未完成任务数 */
+  assignmentSuggestionMaxTasks: 20,
   sessionTtlDays: 7,
   challengeTtlMinutes: 10,
   challengeMaxAttempts: 5,

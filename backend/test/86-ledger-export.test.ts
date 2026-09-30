@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { BASE } from './helpers/env';
+import { BASE, env } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 
 describe('过程账本与导出', () => {
@@ -9,6 +9,20 @@ describe('过程账本与导出', () => {
     const pid = await seedProject(owner.userId);
     const cookie = authCookie(owner.token);
     const json = { 'content-type': 'application/json' };
+    const createdAt = new Date().toISOString();
+    const requirementSetId = crypto.randomUUID();
+    const requirementId = crypto.randomUUID();
+    const sourceVersionId = crypto.randomUUID();
+    const fragmentId = crypto.randomUUID();
+    const rubricId = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO requirement_sets (id, project_id, status, revision, confirmed_by, confirmed_at, created_at, updated_at) VALUES (?1, ?2, 'confirmed', 2, ?3, ?4, ?4, ?4)")
+        .bind(requirementSetId, pid, owner.userId, createdAt),
+      env.DB.prepare("INSERT INTO requirements (id, requirement_set_id, project_id, seq, category, title, detail, due_date, due_precision, citations_json, field_state, updated_at) VALUES (?1, ?2, ?3, 1, 'deadline', '报名截止', '', '2026-10-08', 'date', ?4, 'confirmed', ?5)")
+        .bind(requirementId, requirementSetId, pid, JSON.stringify([{ sourceVersionId, fragmentId, pageNumber: 1, quote: '截止日期' }]), createdAt),
+      env.DB.prepare("INSERT INTO rubric_versions (id, project_id, version, source, weights_json, notes, status, confirmed_by, confirmed_at, created_at) VALUES (?1, ?2, 1, 'official', ?3, '比赛官方权重', 'confirmed', ?4, ?5, ?5)")
+        .bind(rubricId, pid, JSON.stringify([{ key: 'innovation', label: '创新', weight: 20 }]), owner.userId, createdAt),
+    ]);
 
     // 决策
     const decision = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/decisions`, {
@@ -67,6 +81,8 @@ describe('过程账本与导出', () => {
       data: {
         project: { id: string; name: string };
         materials: unknown[];
+        requirementSets: Array<{ requirementSetId: string; status: string; requirements: Array<{ requirementId: string; citations: Array<{ fragmentId: string }> }> }>;
+        rubricVersions: Array<{ rubricId: string; status: string; weights: Array<{ key: string; weight: number }> }>;
         tasks: unknown[];
         decisions: unknown[];
         contributions: unknown[];
@@ -75,6 +91,22 @@ describe('过程账本与导出', () => {
       };
     };
     expect(bundleBody.data.project.id).toBe(pid);
+    expect(bundleBody.data.requirementSets).toHaveLength(1);
+    expect(bundleBody.data.requirementSets[0]).toMatchObject({
+      requirementSetId,
+      status: 'confirmed',
+      requirements: [{ requirementId, citations: [{ sourceVersionId, fragmentId, pageNumber: 1, quote: '截止日期' }] }],
+    });
+    expect(bundleBody.data.rubricVersions).toEqual([{
+      rubricId,
+      version: 1,
+      source: 'official',
+      weights: [{ key: 'innovation', label: '创新', weight: 20 }],
+      notes: '比赛官方权重',
+      status: 'confirmed',
+      confirmedAt: createdAt,
+      createdAt,
+    }]);
     expect(bundleBody.data.decisions).toHaveLength(1);
     expect(bundleBody.data.resources).toHaveLength(1);
     expect(bundleBody.data.aiUsage.costStatus).toBe('unknown');

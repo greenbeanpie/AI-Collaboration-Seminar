@@ -9,6 +9,7 @@ import { echoEmailProvider } from '../email/echo';
 import { createResendEmailProvider } from '../email/resend';
 import type { EmailProvider } from '../email/provider';
 import { createChallenge, verifyAndConsumeChallenge } from '../services/auth-codes';
+import { emailUnavailable } from '../core/errors';
 
 const emailSchema = z.string().email().max(254);
 
@@ -44,7 +45,7 @@ const challengeCreateRoute = createRoute({
   method: 'post',
   path: '/api/v1/auth/challenges',
   tags: ['auth'],
-  summary: '请求邮箱验证码（60s 间隔；回显模式下仅非生产返回 devCode）',
+  summary: '请求邮箱验证码（60s 间隔；仅本地回显模式返回 devCode）',
   request: { body: { content: { 'application/json': { schema: challengeBody } }, required: true } },
   responses: {
     201: { content: { 'application/json': { schema: challengeResponse } }, description: '挑战已创建并发送' },
@@ -83,9 +84,10 @@ const sessionDeleteRoute = createRoute({
   responses: { 200: { content: { 'application/json': { schema: sessionDeleteResponse } }, description: '已撤销' } },
 });
 
-function emailProviderFor(env: AppEnv['Bindings']): EmailProvider {
+export function emailProviderFor(env: AppEnv['Bindings']): EmailProvider {
   if (env.EMAIL_MODE === 'resend') return createResendEmailProvider(env);
-  return echoEmailProvider;
+  if (env.EMAIL_MODE === 'echo' && env.ENV_NAME === 'local') return echoEmailProvider;
+  throw emailUnavailable('当前环境未配置可用的验证码邮件服务');
 }
 
 const SESSION_TTL_SECONDS = LIMITS.sessionTtlDays * 86_400;

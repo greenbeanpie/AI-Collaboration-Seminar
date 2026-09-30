@@ -4,7 +4,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
+import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 
 export const projectParams = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
@@ -186,12 +186,13 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(...binds)
       .all<ProjectRow & { role: 'owner' | 'member' }>();
     const hasMore = rows.results.length > paging.limit;
-    const items = rows.results.slice(0, paging.limit).map((r) => toProject(r, r.role));
-    const overflow = hasMore ? rows.results[paging.limit] : undefined;
+    const pageRows = rows.results.slice(0, paging.limit);
+    const items = pageRows.map((r) => toProject(r, r.role));
+    const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
         items,
-        nextCursor: overflow ? (nextCursor(paging, { createdAt: overflow.created_at, id: overflow.id }) ?? null) : null,
+        nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );
@@ -222,17 +223,18 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       `UPDATE projects SET
          name = COALESCE(?2, name),
          description = COALESCE(?3, description),
-         competition_deadline_date = COALESCE(?4, competition_deadline_date),
-         deadline_precision = COALESCE(?5, deadline_precision),
-         status = COALESCE(?6, status),
+         competition_deadline_date = CASE WHEN ?4 = 1 THEN ?5 ELSE competition_deadline_date END,
+         deadline_precision = COALESCE(?6, deadline_precision),
+         status = COALESCE(?7, status),
          revision = revision + 1,
-         updated_at = ?7
-       WHERE id = ?1 AND revision = ?8`,
+         updated_at = ?8
+       WHERE id = ?1 AND revision = ?9`,
     )
       .bind(
         member.projectId,
         body.name ?? null,
         body.description ?? null,
+        'deadlineDate' in body ? 1 : 0,
         body.deadlineDate ?? null,
         body.deadlinePrecision ?? null,
         body.status ?? null,
@@ -240,7 +242,13 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
         body.expectedRevision,
       )
       .run();
-    if ((updated.meta?.changes ?? 0) === 0) throw invalidState('更新未生效，请检查状态变更是否合法');
+    if ((updated.meta?.changes ?? 0) === 0) {
+      const latest = await c.env.DB.prepare('SELECT revision FROM projects WHERE id = ?1')
+        .bind(member.projectId)
+        .first<{ revision: number }>();
+      if (!latest) throw notFound('项目不存在');
+      throw versionConflict(latest.revision);
+    }
 
     const row = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1')
       .bind(member.projectId)

@@ -26,6 +26,46 @@ async function createProject(cookie: string, name: string): Promise<{ res: Respo
 }
 
 describe('项目生命周期', () => {
+  it('deadlineDate 可清除，项目分页不会遗漏当前页后的第一条记录', async () => {
+    const owner = await seedUser();
+    const cookie = authCookie(owner.token);
+    const projectIds: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      const { body } = await createProject(cookie, `分页项目 ${index}`);
+      projectIds.push(body.data.id);
+    }
+
+    const setDeadline = await SELF.fetch(`${BASE}/api/v1/projects/${projectIds[0]}`, {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 1, deadlineDate: '2026-10-08', deadlinePrecision: 'date' }),
+    });
+    expect(setDeadline.status).toBe(200);
+    const clearDeadline = await SELF.fetch(`${BASE}/api/v1/projects/${projectIds[0]}`, {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: 2, deadlineDate: null, deadlinePrecision: 'unknown' }),
+    });
+    expect(clearDeadline.status).toBe(200);
+    expect(((await clearDeadline.json()) as ProjectData).data.deadlineDate).toBeNull();
+
+    const all = await SELF.fetch(`${BASE}/api/v1/projects?status=all&limit=100`, { headers: { cookie } });
+    const allIds = ((await all.json()) as { data: { items: { id: string }[] } }).data.items.map((item) => item.id);
+    const pagedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = new URL(`${BASE}/api/v1/projects?status=all&limit=2`);
+      if (cursor) url.searchParams.set('cursor', cursor);
+      const page = await SELF.fetch(url, { headers: { cookie } });
+      const pageData = (await page.json()) as { data: { items: { id: string }[]; nextCursor: string | null } };
+      pagedIds.push(...pageData.data.items.map((item) => item.id));
+      cursor = pageData.data.nextCursor;
+    } while (cursor);
+
+    expect(allIds).toHaveLength(5);
+    expect(pagedIds).toEqual(allIds);
+  });
+
   it('创建 → 列表 → 详情 → 更新（乐观锁）→ 归档', async () => {
     const owner = await seedUser();
     const { res, body } = await createProject(authCookie(owner.token), 'AI 教育赛项目');

@@ -1,6 +1,9 @@
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { env, BASE } from './helpers/env';
+import type { Env } from '../src/env';
+import { AppError } from '../src/core/errors';
+import { emailProviderFor } from '../src/api/auth';
 
 interface ChallengeData {
   data: { challengeId: string; expiresAt: string; resendAfterSeconds: number; devCode?: string };
@@ -28,6 +31,19 @@ async function login(email: string, challengeId: string, code: string): Promise<
 }
 
 describe('验证码登录全流程', () => {
+  it('验证码回显仅允许本地环境，staging/production 不得退回 echo', () => {
+    expect(() => emailProviderFor({ ...env, ENV_NAME: 'local', EMAIL_MODE: 'echo' } as Env)).not.toThrow();
+    for (const environment of ['staging', 'production'] as const) {
+      try {
+        emailProviderFor({ ...env, ENV_NAME: environment, EMAIL_MODE: 'echo' } as Env);
+        throw new Error(`echo must be rejected in ${environment}`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        expect((error as AppError).code).toBe('EMAIL_UNAVAILABLE');
+      }
+    }
+  });
+
   it('请求验证码 → 换取会话 → 读取/注销会话', async () => {
     const email = `flow-${crypto.randomUUID()}@example.com`;
     const { res, body } = await createChallenge(email);
