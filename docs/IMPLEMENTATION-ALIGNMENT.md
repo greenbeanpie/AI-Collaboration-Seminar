@@ -1,6 +1,6 @@
 # 实现与 PLAN.md 对齐记录
 
-更新：2026-09-30。本次范围由用户明确授权：前后端功能核对与接入，保留游客演示，修复接入缺陷，处理 GitHub 依赖告警。Chrome 异常后，用户要求暂缓所有 Chrome 操作和页面读取；本记录将命令行验证与浏览器待验收分开。
+更新：2026-09-30。本次范围由用户明确授权：前后端功能核对与接入，保留游客演示，修复接入缺陷，处理 GitHub 依赖告警。用户确认 Chrome 恢复后已继续本地生产构建的页面验收；本记录区分已通过的操作、仍待验证的路径和云端条件。
 
 ## 接入前的核对
 
@@ -41,9 +41,9 @@
 
 | 阶段 | 当前交付范围 | 尚不能认定通过的验收 |
 | --- | --- | --- |
-| F0 | React / TS / Vite / 路由 / Query 工程，按后端 OpenAPI 生成类型，正式入口与游客资产隔离 | 浏览器视觉验收 |
-| F1–F3 | 邮箱、项目与邀请，来源与要求，团队与任务，材料与三档 AI，预审、答辩、账本和导出接入真实 API | Chrome 页面完整操作流程；真实模型输出及比赛原始材料正确性 |
-| F4 | PWA 壳缓存、离线及更新提示；账户/项目/材料作用域草稿；409 保留内容并人工比较 | 安装、离线重连、移动端、键盘、打印 PDF 的实际浏览器验收 |
+| F0 | React / TS / Vite / 路由 / Query 工程，按后端 OpenAPI 生成类型，正式入口与游客资产隔离 | 完整视觉覆盖仍待完成；本次已实际操作登录、项目、任务、材料、来源、评分及账本 |
+| F1–F3 | 邮箱、项目与邀请，来源与要求，团队与任务，材料与三档 AI，预审、答辩、账本和导出接入真实 API | 多人邀请及文件/PDF 完整浏览器流程；真实模型输出及比赛原始材料正确性 |
+| F4 | PWA 壳缓存、离线及更新提示；账户/项目/材料作用域草稿；409 保留内容并人工比较 | 已验证键盘登录、390px 布局、在线页离线编辑及确认重连；安装、离线刷新、打印 PDF 待验证 |
 | F5 | 前端本地代理与真实 Workers/D1/R2 的多账户 HTTP 联调；静态资产 Worker Service Binding 转发验证 | Cloudflare 预览部署和云端端到端验收 |
 | B0–B2 | 后端基础设施、鉴权协作、来源及解析/要求接口具备实现与本地集成测试 | Gateway 真模型费用/视觉能力、真实邮件、比赛 PDF 实际识别和人工核对 |
 | B3–B4 | 任务、版本、AI 采纳、预审答辩、事件及导出具备实现与本地集成测试；补齐人工分工建议应用 | 真模型全流程及正式申报材料验收 |
@@ -79,9 +79,9 @@
 | `npm run typecheck` | 前后端均通过 |
 | `npm run lint` | 前端 0 errors / 0 warnings；生成资产不纳入源码 lint |
 | `npm run test:backend` | 17 文件 / 75 项通过，退出码 0 |
-| `npm run test:frontend` | 7 文件 / 25 项通过；登录、API、分页、存储失败、跨页 Query 缓存和 Worker 契约 |
+| `npm run test:frontend` | 8 文件 / 27 项通过；新增真实 Tiptap 可编辑状态及跨标签页草稿冲突回归 |
 | `npm run build` | Vite / PWA 成功，无大 chunk 警告；页面懒加载，PDF.js 按需加载 |
-| `npm run verify:integration` | 62 项真实 HTTP 检查通过，经前端代理访问真实本地后端；3 个账户验证协作及越权边界 |
+| `npm run verify:integration` | 62 项真实 HTTP 检查通过，经前端代理访问真实本地后端；3 个账户验证协作及越权边界；本轮再次经构建预览 localhost:4173 全部通过 |
 | `npm run verify:worker` | Service Binding 原样转发 Cookie / Origin / Set-Cookie / 错误；API 不回落游客或 SPA 内容 |
 | 后端 export:openapi、前端 typegen 后比较 Git diff | 契约无漂移，57 路径 / 77 操作 |
 | 两端 `npm audit --registry=https://registry.npmjs.org` | 均 0 vulnerabilities |
@@ -92,7 +92,31 @@
 
 **测试运行时残留告警：**已添加每测试的 Workflow introspection / dispose，并确保清理顺序先于 fetch mock 移除；仍观察到 3 次 workerd canceled request 和 1 次 RPC stub 未 dispose 提示，未抑制日志。全部 75 项断言通过，退出成功，Vitest teardown 超时为 0。测试池版本为 `@cloudflare/vitest-pool-workers@0.22.0`；后续仍需定位这些运行时告警，不能宣称完全无告警。完整日志保留在验证 worktree 的 `backend/.wrangler/final-backend-tests.log`。
 
-浏览器视觉、实际键盘操作、移动端、打印 PDF、PWA 安装/离线交互及 PDF.js 实际渲染验收按用户要求延期；JSDOM 测试不替代这些 Chrome 验收。
+## 本轮 Chrome 页面验收
+
+使用 `npm run preview -- --host localhost --port 4173 --strictPort` 加本地 Wrangler 后端，未调用云邮件或付费模型。一次性测试项目：`f7b7545d-ea97-4f4d-899a-837526c15047`。
+
+| 实际操作 | 观察结果 |
+| --- | --- |
+| 邮箱验证码、Enter 提交 | 本地 echo 登录成功，新账户项目列表为空 |
+| 创建项目、负责人任务、状态更新 | 项目与任务保存成功，AI 页读取到真实任务状态“进行中” |
+| 材料创建、正文、评论、刷新 | 修复后空材料不再误报草稿；正文产生 r2，评论读取成功 |
+| 双标签页编辑 | B 先保存 r3；A 收到 409，展示两份正文，勾选确认后保存 r4 |
+| PWA 构建更新 | 实际显示“立即更新”，点击后加载新构建，修复效果复核通过 |
+| 在线页切换离线并编辑 | 保存按钮禁用，显示“离线草稿已写入本机” |
+| 重连与原生确认 | 重连没有自动提交；确认后保存 r5，刷新读取到离线正文 |
+| 粘贴来源原文 | 服务端创建来源，AI 未启用时明确禁止解析 |
+| 自拟评分草稿及负责人确认 | 初始未预填权重，人工填写后保存并确认；预审读取到该评分版本 |
+| AI、预审、答辩 | 显示真实材料版本；新建操作禁用，没有模拟结果 |
+| 决策和贡献补录 | 保存成功，导出汇总显示各 1 条记录 |
+| 手机 390px 宽度 | 来源、要求、AI 页面 document.scrollWidth 与 clientWidth 均为 390；导航可用键盘进入导出 |
+| 浏览器控制台 | 材料流程采样未见 warn / error |
+
+本轮发现并修复的材料问题：`setEditable` 默认会发送 Tiptap update 事件，导致未编辑正文被写成草稿。现在状态切换明确 `emitUpdate=false`。保存前重新持久化本标签页正文，避免另一标签页完成保存后清除共享草稿导致 409 正文只留内存；409 同步服务端详情与版本历史，主保存按钮在比较期间禁用。两项新增回归测试均通过。
+
+截图：`docs/evidence/chrome-material-conflict.jpg`、`chrome-offline-draft.jpg`。冲突截图记录修复前后这轮操作中的状态，截图之后又补齐了详情版本同步和主保存按钮禁用。
+
+**仍未通过的浏览器项目：**JSON/Markdown 下载落盘、打印 PDF、PWA 安装与离线刷新、PDF.js 实际渲染和多人邀请页面全流程。首次 Markdown 下载触发 macOS 保存框，等待下载超时；取消保存框后页面操作恢复，不能将该超时直接认定为 Chrome 网络故障。后续 JSON 导出时系统报告 Mac 锁定，无法处理保存窗口，因此这些路径不计为已验收。JSDOM 与 HTTP 测试不能替代这些实际操作。
 
 Cloudflare 当前登录账户的只读检查显示：`ai-office-api` Worker 不存在；D1 列表无 `ai-office-db-staging` / `ai-office-db-production`。仓库生产资源 ID、Gateway 设置及发信配置仍未填入。这次执行本地真实后端联调，不宣称已上线或真实邮件/付费模型调用已验收。
 
@@ -102,4 +126,4 @@ Cloudflare 当前登录账户的只读检查显示：`ai-office-api` Worker 不�
 
 修复已合并并推送 `main`。推送后再次尝试 `gh api`，本次认证可用；Dependabot API 返回此前的 #1、#4、#5、#6、#7、#10、#11 均为 `fixed`，当前 open 告警为 **0**。没有使用 dismiss 忽略告警。推送时 GitHub 的旧状态提示仍为 7 条，随后由依赖扫描自动判定为修复；本结论以推送后的 API 响应为准。
 
-Chrome 网页验收仍暂缓；告警状态已经通过 API 完成确认，不需要读取 Chrome 页面。主工作区已执行 `npm run install:all` 安装与锁文件一致的依赖；本次启动的两个本地开发服务已关闭。
+告警状态已经通过 API 完成确认，不需要读取 Chrome 页面。主工作区已执行 `npm run install:all` 安装与锁文件一致的依赖。浏览器验收恢复后另启动本地后端和构建预览；本轮状态以以上实际验收记录为准。

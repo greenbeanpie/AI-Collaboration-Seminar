@@ -222,8 +222,9 @@ export function MaterialsPage() {
   useEffect(() => {
     if (!editor) return;
     const detailReady = material?.materialId === activeMaterialId;
-    editor.setEditable(Boolean(detailReady && !saving && !conflict && !recoveryDraft));
-  }, [activeMaterialId, conflict, editor, material?.materialId, recoveryDraft, saving]);
+    // Editable-state changes do not modify the document or create a local draft.
+    editor.setEditable(Boolean(material && detailReady && !saving && !conflict && !recoveryDraft), false);
+  }, [activeMaterialId, conflict, editor, material, recoveryDraft, saving]);
 
   const selectMaterial = (materialId: string) => {
     const leavingDraftMessage = draftPersisted
@@ -281,6 +282,12 @@ export function MaterialsPage() {
     }
     setSaving(true);
     setSaveError(null);
+    // Another tab may have removed the shared draft after saving its own version.
+    // Persist this tab's submitted copy again so a conflict or network failure remains recoverable.
+    setDraftPersisted(saveDraft(accountId, projectId, activeMaterialId, {
+      doc, baseRevision: expectedRevision, needsReconnectConfirmation: false,
+    } satisfies LocalDraft));
+    setDraftStorageWarning(false);
     try {
       const savedVersion = await api.put<'MaterialVersionResponse'>(
         projectPath(projectId, `/materials/${encodeURIComponent(activeMaterialId)}`),
@@ -305,7 +312,11 @@ export function MaterialsPage() {
           const server = await api.get<'MaterialResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(activeMaterialId)}`));
           setConflict({ server, localDoc: doc, reviewed: false });
           setSaveError(null);
-          await queryClient.invalidateQueries({ queryKey: ['materials', projectId] });
+          queryClient.setQueryData(['material', projectId, activeMaterialId], server);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['materials', projectId] }),
+            queryClient.invalidateQueries({ queryKey: ['materialVersions', projectId, activeMaterialId] }),
+          ]);
         } catch (refreshError) {
           setSaveError(refreshError);
         }
@@ -398,7 +409,7 @@ export function MaterialsPage() {
                 <div className="tm-editor-actions tm-hide-print">
                   <button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
                   <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button>
-                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={!dirty || !online || saving || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
+                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={!dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
