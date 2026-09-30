@@ -2,7 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarCheck2, FileText, ListTodo, UsersRound } from 'lucide-react';
 import { listAllItems, projectPath } from '../api/client';
-import type { EventItem } from '../api/types';
+import { presentEvent } from './event-presentation';
 import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, EmptyState, SectionCard, Spinner, StatusPill } from '../components/ui';
 
@@ -54,14 +54,14 @@ export function ProjectOverviewPage() {
         <div className="card-list">
           {missingDeadline && <Link className="list-row attention-row" to={`/app/projects/${projectId}/settings`}><span className="attention-mark">!</span><span className="list-row-main"><strong>截止日期尚未确认</strong><p>项目设置中可记录官方通知中的日期精度。</p></span><ArrowRight size={15} /></Link>}
           {sources.data?.length === 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/sources`}><span className="attention-mark">+</span><span className="list-row-main"><strong>导入通知或项目资料</strong><p>粘贴原文、填写公开网址或上传文件后再提取要求。</p></span><ArrowRight size={15} /></Link>}
-          {draftSets && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/requirements`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求集等待人工确认</strong><p>系统提取内容保持草稿状态，负责人确认后才成为正式要求。</p></span><ArrowRight size={15} /></Link>}
+          {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/requirements`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求集等待人工确认</strong><p>系统提取内容保持草稿状态，负责人确认后才成为正式要求。</p></span><ArrowRight size={15} /></Link>}
           {taskItems.some((task) => task.status !== 'done') && <Link className="list-row attention-row" to={`/app/projects/${projectId}/tasks`}><span className="attention-mark">{taskItems.filter((task) => task.status !== 'done').length}</span><span className="list-row-main"><strong>继续推进未完成任务</strong><p>更新负责人、截止日期和完成状态。</p></span><ArrowRight size={15} /></Link>}
-          {checklistDataReady && !missingDeadline && !sources.data?.length && !draftSets && !hasOpenTasks && <EmptyState title="暂无待处理事项" detail="系统没有从当前项目记录中发现待处理内容。" />}
+          {checklistDataReady && !missingDeadline && Boolean(sources.data?.length) && !draftSets && !hasOpenTasks && <EmptyState title="暂无待处理事项" detail="系统没有从当前项目记录中发现待处理内容。" />}
         </div>
       </SectionCard>
     </div>
     <SectionCard title="最近活动" detail="来自项目事件流，记录决策、贡献和 AI 操作。" action={<Link className="button button-quiet button-small" to={`/app/projects/${projectId}/ledger`}>打开过程账本</Link>}>
-      {events.isLoading ? <Spinner label="读取项目事件" /> : events.error ? <ErrorNotice error={events.error} onRetry={() => void events.refetch()} /> : events.data?.length ? <div className="ledger-timeline">{events.data.slice(0, 8).map((event: EventItem) => <div className="ledger-line" key={event.eventId}><span className="ledger-marker" /><div className="ledger-content"><strong>{event.type}</strong><p>{event.payload && Object.keys(event.payload).length ? JSON.stringify(event.payload) : '暂无事件详情'}</p><small>{event.actorType} · {new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>)}</div> : <EmptyState title="还没有过程记录" detail="补录决策、贡献或 AI 使用信息后，会在这里显示。" />}
+      {events.isLoading ? <Spinner label="读取项目事件" /> : events.error ? <ErrorNotice error={events.error} onRetry={() => void events.refetch()} /> : events.data?.length ? <div className="ledger-timeline">{events.data.slice(0, 8).map((event) => { const activity = presentEvent(event); return <div className="ledger-line" key={event.eventId}><span className="ledger-marker" /><div className="ledger-content"><strong>{activity.title}</strong><p>{activity.detail}</p><small>{activity.actor} · {new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>; })}</div> : <EmptyState title="还没有过程记录" detail="补录决策、贡献或 AI 使用信息后，会在这里显示。" />}
     </SectionCard>
     <div className="overview-footer-note"><StatusPill tone="blue">项目空间</StatusPill><span>此页面只呈现 API 返回的真实记录；每个数字在对应数据未加载时保持为空。</span></div>
   </div>;

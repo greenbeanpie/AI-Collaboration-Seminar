@@ -4,6 +4,7 @@ import { Check, Clipboard, Copy, Lightbulb, Plus, RefreshCw, UserMinus, UsersRou
 import { api, listAllItems, projectPath } from '../api/client';
 import type { Member, RequirementSet, Task } from '../api/types';
 import { useCapabilities } from '../auth';
+import { invitationStatus } from './invitation-status';
 import { useProject } from '../components/ProjectShell';
 import { ConfirmButton, EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 
@@ -119,7 +120,7 @@ export function TeamPage() {
   const me = meQuery.data;
   const profileSkills = skillsValue ?? me?.skills.join(', ') ?? '';
   const profileHours = hoursValue ?? (me?.hoursPerWeek === null || me?.hoursPerWeek === undefined ? '' : String(me.hoursPerWeek));
-  const activeInviteCount = invitationsQuery.data?.items.filter((item) => !item.revokedAt && new Date(item.expiresAt).getTime() > Date.now()).length ?? 0;
+  const activeInviteCount = invitationsQuery.data?.items.filter((item) => invitationStatus(item) === '有效').length ?? 0;
   const teamLimit = capabilities.data?.competitionTemplate.teamSizeLimit;
   const skillCoverage = useMemo(() => {
     const counts = new Map<string, number>();
@@ -168,7 +169,7 @@ export function TeamPage() {
         {members.length ? <div className="team-member-list">{members.map((member) => <div className="team-member" key={member.userId}>
           <span className="avatar">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>
           <div className="team-member-main"><div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{member.role === 'owner' ? '负责人' : '成员'}</StatusPill></div><small>{member.email}</small><div className="chip-list">{member.skills.length ? member.skills.map((skill) => <span className="chip" key={skill}>{skill}</span>) : <span className="muted">尚未登记技能</span>}</div><small>{member.hoursPerWeek === null ? '每周投入时间待填写' : `每周约 ${member.hoursPerWeek} 小时`}</small></div>
-          {project.myRole === 'owner' && member.role !== 'owner' && <ConfirmButton className="icon-button" disabled={removeMember.isPending} onClick={() => removeMember.mutate(member.userId)}><UserMinus size={17} /></ConfirmButton>}
+          {project.myRole === 'owner' && member.role !== 'owner' && <ConfirmButton className="icon-button" aria-label={`移除成员 ${member.displayName}`} disabled={removeMember.isPending} onClick={() => removeMember.mutate(member.userId)}><UserMinus size={17} /></ConfirmButton>}
         </div>)}</div> : <EmptyState title="暂无成员数据" detail="项目成员接口暂未返回记录。" />}
         {removeMember.error && <ErrorNotice error={removeMember.error} />}
         {project.myRole !== 'owner' && <div className="form-actions"><ConfirmButton disabled={leaveProject.isPending} onClick={() => leaveProject.mutate()}>退出项目</ConfirmButton>{leaveProject.error && <ErrorNotice error={leaveProject.error} />}</div>}
@@ -199,7 +200,7 @@ export function TeamPage() {
       {invite.error && <ErrorNotice error={invite.error} />}
       <p className="subtle-note">有效邀请 {activeInviteCount} 个。受邀成员需登录后提交邀请码，人数上限由后端原子校验。</p>
       {invitationsQuery.error && <ErrorNotice error={invitationsQuery.error} onRetry={() => void invitationsQuery.refetch()} />}
-      {invitationsQuery.data?.items.length ? <div className="table-wrap"><table><thead><tr><th>状态</th><th>有效期至</th><th>使用次数</th><th>创建时间</th><th /></tr></thead><tbody>{invitationsQuery.data.items.map((invitation) => <tr key={invitation.invitationId}><td><StatusPill tone={invitation.revokedAt ? 'bad' : new Date(invitation.expiresAt).getTime() < Date.now() ? 'neutral' : 'good'}>{invitation.revokedAt ? '已撤销' : new Date(invitation.expiresAt).getTime() < Date.now() ? '已过期' : '有效'}</StatusPill></td><td>{displayDate(invitation.expiresAt)}</td><td>{invitation.usedCount}{invitation.maxUses ? ` / ${invitation.maxUses}` : ' / 不限'}</td><td>{displayDate(invitation.createdAt)}</td><td>{!invitation.revokedAt && <ConfirmButton className="button button-quiet button-small" disabled={revokeInvitation.isPending} onClick={() => revokeInvitation.mutate(invitation.invitationId)}>撤销</ConfirmButton>}</td></tr>)}</tbody></table></div> : invitationsQuery.isLoading ? <Spinner label="读取邀请列表" /> : <p className="muted">尚无邀请记录。</p>}
+      {invitationsQuery.data?.items.length ? <div className="table-wrap"><table><thead><tr><th>状态</th><th>有效期至</th><th>使用次数</th><th>创建时间</th><th /></tr></thead><tbody>{invitationsQuery.data.items.map((invitation) => <tr key={invitation.invitationId}><td><StatusPill tone={invitationStatus(invitation) === '有效' ? 'good' : 'neutral'}>{invitationStatus(invitation)}</StatusPill></td><td>{displayDate(invitation.expiresAt)}</td><td>{invitation.usedCount}{invitation.maxUses ? ` / ${invitation.maxUses}` : ' / 不限'}</td><td>{displayDate(invitation.createdAt)}</td><td>{!invitation.revokedAt && <ConfirmButton className="button button-quiet button-small" disabled={revokeInvitation.isPending} onClick={() => revokeInvitation.mutate(invitation.invitationId)}>撤销</ConfirmButton>}</td></tr>)}</tbody></table></div> : invitationsQuery.isLoading ? <Spinner label="读取邀请列表" /> : <p className="muted">尚无邀请记录。</p>}
       {revokeInvitation.error && <ErrorNotice error={revokeInvitation.error} />}
     </SectionCard>}
 

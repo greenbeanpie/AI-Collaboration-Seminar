@@ -51,6 +51,6 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   return <label className="field"><span className="field-label">{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
-export function ConfirmButton({ children, onClick, disabled, className = 'button button-danger' }: { children: ReactNode; onClick: () => void; disabled?: boolean; className?: string }) {
-  return <button className={className} disabled={disabled} onClick={() => { if (window.confirm('请确认此操作。')) onClick(); }}>{children}</button>;
+export function ConfirmButton({ children, onClick, disabled, className = 'button button-danger', 'aria-label': ariaLabel }: { children: ReactNode; onClick: () => void; disabled?: boolean; className?: string; 'aria-label'?: string }) {
+  return <button className={className} aria-label={ariaLabel} disabled={disabled} onClick={() => { if (window.confirm('请确认此操作。')) onClick(); }}>{children}</button>;
 }

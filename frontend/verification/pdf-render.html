@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF.js 浏览器验收</title>
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #162334; background: #f3f6fa; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 32px 20px 56px; }
+      main { max-width: 1040px; margin: 0 auto; }
+      h1 { margin: 0 0 8px; font-size: 26px; }
+      p { color: #536273; line-height: 1.55; }
+      .panel { margin-top: 22px; padding: 22px; border: 1px solid #dbe2ea; border-radius: 14px; background: white; box-shadow: 0 8px 24px #172b4310; }
+      .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }
+      input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #bdc8d4; border-radius: 8px; background: white; color: inherit; font: inherit; }
+      input[type="file"] { padding: 7px; }
+      .limits { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+      button { min-height: 44px; margin-top: 18px; padding: 10px 16px; border: 0; border-radius: 8px; color: white; background: #145bc4; font: inherit; font-weight: 700; cursor: pointer; }
+      button:disabled { opacity: .55; cursor: wait; }
+      .status { min-height: 24px; margin: 14px 0 0; color: #536273; }
+      .error { color: #b42318; font-weight: 600; white-space: pre-wrap; }
+      .result { display: grid; gap: 14px; }
+      #rendered-image { display: none; max-width: 100%; max-height: 75vh; object-fit: contain; border: 1px solid #dbe2ea; background: #eef2f6; }
+      .meta { font-variant-numeric: tabular-nums; color: #344256; }
+      @media (max-width: 680px) { body { padding: 22px 14px 40px; } .fields, .limits { grid-template-columns: 1fr; } .limits { grid-column: 1; } .panel { padding: 17px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>PDF.js 浏览器验收</h1>
+      <p>此页面直接运行产品中的 PDF.js 页面渲染函数。它仅供本地开发验收，不调用 API 或模型。</p>
+      <section class="panel" aria-label="PDF 输入与渲染限制">
+        <div class="fields">
+          <label for="pdf-file">选择 PDF 文件
+            <input id="pdf-file" data-testid="pdf-file" type="file" accept="application/pdf,.pdf" />
+          </label>
+          <label for="page-number">待渲染页码
+            <input id="page-number" data-testid="page-number" type="number" min="1" step="1" value="1" />
+          </label>
+          <div class="limits" aria-label="渲染限制">
+            <label for="max-pdf-pages">PDF 页数上限
+              <input id="max-pdf-pages" data-testid="max-pdf-pages" type="number" min="1" step="1" value="30" />
+            </label>
+            <label for="page-image-max-edge">图片长边上限（像素）
+              <input id="page-image-max-edge" data-testid="page-image-max-edge" type="number" min="1" step="1" value="2000" />
+            </label>
+            <label for="page-image-max-bytes">图片体积上限（字节）
+              <input id="page-image-max-bytes" data-testid="page-image-max-bytes" type="number" min="1" step="1" value="2097152" />
+            </label>
+          </div>
+        </div>
+        <button id="render-page" data-testid="render-page" type="button">渲染所选页</button>
+        <p id="render-status" data-testid="render-status" class="status" aria-live="polite">请选择 PDF 文件。</p>
+        <p id="render-error" data-testid="render-error" class="status error" role="alert" hidden></p>
+      </section>
+      <section class="panel result" aria-label="渲染结果">
+        <strong>渲染结果</strong>
+        <div id="render-summary" data-testid="render-summary" class="meta" aria-live="polite">尚无渲染结果。</div>
+        <img id="rendered-image" data-testid="rendered-image" alt="PDF.js 输出的 JPEG 页面" />
+      </section>
+    </main>
+    <script type="module" src="./pdf-render.ts"></script>
+  </body>
+</html>

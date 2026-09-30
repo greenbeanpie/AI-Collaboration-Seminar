@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, BookOpenCheck, FilePlus2, History, Plus, Send, ShieldCheck } from 'lucide-react';
 import { api, listAllItems, projectPath } from '../api/client';
-import type { Contribution, Decision, EventItem, Member, Resource } from '../api/types';
+import type { Contribution, Decision, Member, Resource } from '../api/types';
+import { presentEvent } from './event-presentation';
 import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, EmptyState, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 
@@ -69,7 +70,7 @@ export function LedgerPage() {
     <div className="ledger-warning"><ShieldCheck size={18} /><span>账本用于留痕与交接。贡献说明可以更正，原始记录会保留；请只记录可核实的事实。</span></div>
 
     <SectionCard title="事件流" detail="按发生时间列出服务端记录的决策、贡献和 AI 操作。" action={<StatusPill tone="blue">{events.length} 条</StatusPill>}>
-      {events.length ? <div className="ledger-timeline">{events.map((event: EventItem) => <div className="ledger-line" key={event.eventId}><span className={`ledger-marker actor-${event.actorType}`} /><div className="ledger-content"><div className="ledger-event-title"><strong>{event.type}</strong><span>{event.actorType === 'ai' ? 'AI 事件' : event.actorType === 'system' ? '系统' : '成员操作'}</span></div><p>{Object.keys(event.payload).length ? <code>{JSON.stringify(event.payload)}</code> : '该事件未附带其他说明。'}</p><small>{new Date(event.occurredAt).toLocaleString('zh-CN')} · {event.entityType} · {event.entityId.slice(0, 8)}</small></div></div>)}</div> : <EmptyState title="暂无事件记录" detail="创建项目决策、补录贡献或发生 AI 工作流后，事件会出现在这里。" />}
+      {events.length ? <div className="ledger-timeline">{events.map((event) => { const activity = presentEvent(event); return <div className="ledger-line" key={event.eventId}><span className={`ledger-marker actor-${event.actorType}`} /><div className="ledger-content"><div className="ledger-event-title"><strong>{activity.title}</strong><span>{activity.actor}</span></div><p>{activity.detail}</p><small>{new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>; })}</div> : <EmptyState title="暂无事件记录" detail="创建项目决策、补录贡献或发生 AI 工作流后，事件会出现在这里。" />}
     </SectionCard>
 
     <div className="two-column">
