@@ -2761,6 +2761,794 @@
           "requestId"
         ]
       },
+      "ReviewCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "reviewId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "reviewId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ReviewResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "reviewId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "requirementSetId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "rubricVersionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "materialVersionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "running",
+                  "succeeded",
+                  "failed"
+                ]
+              },
+              "report": {},
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reviewId",
+              "requirementSetId",
+              "rubricVersionId",
+              "materialVersionIds",
+              "status",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ReviewListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "requirementSetId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rubricVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "materialVersionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "running",
+                        "succeeded",
+                        "failed"
+                      ]
+                    },
+                    "report": {},
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "reviewId",
+                    "requirementSetId",
+                    "rubricVersionId",
+                    "materialVersionIds",
+                    "status",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rehearsalId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "rehearsalId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rehearsalId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "member"
+                ]
+              },
+              "memberId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "finished"
+                ]
+              },
+              "turns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sequence": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "question",
+                        "answer",
+                        "followup",
+                        "summary"
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sequence",
+                    "kind",
+                    "role",
+                    "content",
+                    "createdAt"
+                  ]
+                }
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "finishedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "rehearsalId",
+              "scope",
+              "memberId",
+              "status",
+              "turns",
+              "createdAt",
+              "finishedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalAnswerResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "turnId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "turnId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalFinishResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "EventListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "eventId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "actorType": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "ai",
+                        "system"
+                      ]
+                    },
+                    "actorId": {
+                      "type": "string"
+                    },
+                    "entityType": {
+                      "type": "string"
+                    },
+                    "entityId": {
+                      "type": "string"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "occurredAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "eventId",
+                    "type",
+                    "actorType",
+                    "actorId",
+                    "entityType",
+                    "entityId",
+                    "payload",
+                    "occurredAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "DecisionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "decisionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "madeBy": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "decidedAt": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "decisionId",
+              "title",
+              "detail",
+              "madeBy",
+              "decidedAt",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "DecisionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "decisionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "madeBy": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "decidedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "decisionId",
+                    "title",
+                    "detail",
+                    "madeBy",
+                    "decidedAt",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ContributionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "contributionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "correctionOf": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contributionId",
+              "userId",
+              "kind",
+              "description",
+              "correctionOf",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ContributionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "contributionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "correctionOf": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "contributionId",
+                    "userId",
+                    "kind",
+                    "description",
+                    "correctionOf",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "resourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "url",
+                  "file",
+                  "model",
+                  "other"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fileId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "declaredBy": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "resourceId",
+              "kind",
+              "title",
+              "url",
+              "fileId",
+              "declaredBy",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "resourceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "url",
+                        "file",
+                        "model",
+                        "other"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "fileId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "declaredBy": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "resourceId",
+                    "kind",
+                    "title",
+                    "url",
+                    "fileId",
+                    "declaredBy",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ExportBundleResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "FileInitResponse": {
         "type": "object",
         "properties": {
@@ -5973,6 +6761,850 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/reviews": {
+      "post": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "发起预审（冻结写请求：rubricVersionId/requirementSetId/materialVersionIds；202 + jobId）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "requirementSetId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  }
+                },
+                "required": [
+                  "rubricVersionId",
+                  "requirementSetId",
+                  "materialVersionIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCreateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "输入不属于本项目",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "预审记录列表",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/reviews/{reviewId}": {
+      "get": {
+        "tags": [
+          "reviews"
+        ],
+        "summary": "预审详情（报告绑定输入版本；材料更新后前端应提示报告针对旧版本）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "reviewId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "发起答辩演练（202 + jobId，第一问生成中）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "member"
+                    ]
+                  },
+                  "memberId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "scope"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}": {
+      "get": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "演练详情（含全部问答轮次）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/answers": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "逐题回答（202 + jobId，追问或点评生成中）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  }
+                },
+                "required": [
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalAnswerResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "演练已结束",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/finish": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "结束演练并生成总结（202 + jobId）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "总结生成中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalFinishResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "演练已结束",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/events": {
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "过程账本（决策/贡献/AI 使用记录事件流，游标分页）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "type",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "事件列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/decisions": {
+      "post": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "补录决策记录",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "default": ""
+                  },
+                  "decidedAt": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z)?$"
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "决策记录列表",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/contributions": {
+      "post": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "补录贡献记录",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "default": "manual"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "description"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "贡献记录列表（更正保留原记录）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/contributions/{contributionId}/corrections": {
+      "post": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "对贡献记录提出更正（原记录保留，新增更正条目）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "contributionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "description"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "更正已记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resources": {
+      "post": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "声明第三方资源（图片/模型/引用等）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "url",
+                      "file",
+                      "model",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "fileId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "meta": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "kind",
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已声明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "第三方资源声明列表",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/export-bundle": {
+      "get": {
+        "tags": [
+          "ledger"
+        ],
+        "summary": "导出成果说明 JSON 汇总（材料 Markdown + 要求 + 账本 + 声明）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "导出汇总",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportBundleResponse"
                 }
               }
             }

@@ -1,0 +1,164 @@
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import type { AppEnv } from '../env';
+import { apiData } from '../core/api';
+import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
+import { requireProjectMember, requireUser } from '../core/auth';
+import { newId, nowIso } from '../core/db';
+import { notFound } from '../core/errors';
+import { createJobAndDispatch } from '../services/jobs';
+import { withIdempotency } from '../services/idempotency';
+import { reserveAiSlot } from '../services/budget';
+import { projectParams } from './projects';
+
+const reviewParams = projectParams.extend({ reviewId: z.string().uuid() });
+
+// 冻结写请求 #3：rubricVersionId、requirementSetId、materialVersionIds
+const createBody = z.object({
+  rubricVersionId: z.string().uuid(),
+  requirementSetId: z.string().uuid(),
+  materialVersionIds: z.array(z.string().uuid()).min(1).max(10),
+});
+
+const reportSchema = z.object({
+  scores: z.array(
+    z.object({
+      key: z.string(),
+      score: z.number(),
+      comment: z.string(),
+      suggestions: z.array(z.string()),
+    }),
+  ),
+  overall: z.object({ score: z.number(), summary: z.string() }),
+  rubricVersion: z.number().int().optional(),
+  materialVersionIds: z.array(z.string().uuid()).optional(),
+});
+
+const reviewSchema = z.object({
+  reviewId: z.string().uuid(),
+  requirementSetId: z.string().uuid(),
+  rubricVersionId: z.string().uuid(),
+  materialVersionIds: z.array(z.string().uuid()),
+  status: z.enum(['pending', 'running', 'succeeded', 'failed']),
+  report: z.unknown().nullable(),
+  createdAt: z.string(),
+});
+const reviewResponse = apiEnvelope(reviewSchema, 'ReviewResponse');
+const reviewListResponse = apiEnvelope(z.object({ items: z.array(reviewSchema) }), 'ReviewListResponse');
+
+const reviewCreateRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/projects/{projectId}/reviews',
+  tags: ['reviews'],
+  summary: '发起预审（冻结写请求：rubricVersionId/requirementSetId/materialVersionIds；202 + jobId）',
+  request: { params: projectParams, body: { content: { 'application/json': { schema: createBody } }, required: true } },
+  responses: {
+    202: { content: { 'application/json': { schema: apiEnvelope(z.object({ reviewId: z.string().uuid(), jobId: z.string().uuid() }), 'ReviewCreateResponse') } }, description: '已排队' },
+    404: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '输入不属于本项目' },
+  },
+});
+
+const getRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/projects/{projectId}/reviews/{reviewId}',
+  tags: ['reviews'],
+  summary: '预审详情（报告绑定输入版本；材料更新后前端应提示报告针对旧版本）',
+  request: { params: reviewParams },
+  responses: { 200: { content: { 'application/json': { schema: reviewResponse } }, description: '详情' } },
+});
+
+const listRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/projects/{projectId}/reviews',
+  tags: ['reviews'],
+  summary: '预审记录列表',
+  request: { params: projectParams },
+  responses: { 200: { content: { 'application/json': { schema: reviewListResponse } }, description: '列表' } },
+});
+
+interface ReviewRow {
+  id: string;
+  project_id: string;
+  requirement_set_id: string;
+  rubric_version_id: string;
+  material_version_ids_json: string;
+  status: string;
+  report_json: string | null;
+  created_at: string;
+}
+
+function toReview(r: ReviewRow) {
+  return {
+    reviewId: r.id,
+    requirementSetId: r.requirement_set_id,
+    rubricVersionId: r.rubric_version_id,
+    materialVersionIds: JSON.parse(r.material_version_ids_json) as string[],
+    status: r.status as 'pending' | 'running' | 'succeeded' | 'failed',
+    report: r.report_json ? (JSON.parse(r.report_json) as unknown) : null,
+    createdAt: r.created_at,
+  };
+}
+
+export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
+  app.use('/api/v1/projects/:projectId/reviews/*', requireUser, requireProjectMember());
+
+  app.openapi(reviewCreateRoute, async (c) => {
+    const body = c.req.valid('json');
+    const member = c.get('member')!;
+    const user = c.get('user')!;
+    const idem = await withIdempotency(c.env, {
+      key: c.req.header('idempotency-key'),
+      userId: user.id,
+      operation: 'review.create',
+      rawBody: JSON.stringify(body),
+    }, async () => {
+      const rubric = await c.env.DB.prepare('SELECT id FROM rubric_versions WHERE id = ?1 AND project_id = ?2')
+        .bind(body.rubricVersionId, member.projectId)
+        .first();
+      if (!rubric) throw notFound('评分标准不存在或不属于本项目');
+      const set = await c.env.DB.prepare('SELECT id FROM requirement_sets WHERE id = ?1 AND project_id = ?2')
+        .bind(body.requirementSetId, member.projectId)
+        .first();
+      if (!set) throw notFound('要求集不存在或不属于本项目');
+      for (const versionId of body.materialVersionIds) {
+        const row = await c.env.DB.prepare(
+          'SELECT v.id FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2',
+        )
+          .bind(versionId, member.projectId)
+          .first();
+        if (!row) throw notFound(`材料版本 ${versionId} 不存在或不属于本项目`);
+      }
+
+      const reviewId = newId();
+      await c.env.DB.prepare(
+        "INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
+      )
+        .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
+        .run();
+
+      const jobId = await createJobAndDispatch(c.env, {
+        projectId: member.projectId,
+        kind: 'review_run',
+        input: { reviewId, projectId: member.projectId },
+        createdBy: user.id,
+      });
+      await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'review_run' });
+      return { status: 202 as const, body: { reviewId, jobId } };
+    });
+    return c.json(apiData(c, idem.body), idem.status);
+  });
+
+  app.openapi(getRoute, async (c) => {
+    const row = await c.env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2')
+      .bind(c.req.valid('param').reviewId, c.get('member')!.projectId)
+      .first<ReviewRow>();
+    if (!row) throw notFound('预审记录不存在');
+    return c.json(apiData(c, toReview(row)), 200);
+  });
+
+  app.openapi(listRoute, async (c) => {
+    const rows = await c.env.DB.prepare('SELECT * FROM reviews WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 100')
+      .bind(c.get('member')!.projectId)
+      .all<ReviewRow>();
+    return c.json(apiData(c, { items: rows.results.map(toReview) }), 200);
+  });
+}

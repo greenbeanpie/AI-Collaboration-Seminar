@@ -93,6 +93,24 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
         }),
       );
     }
+    if (systemText.includes('预审评估助手')) {
+      // 从系统提示中提取评分维度 key，逐项生成模拟分数（保证覆盖全部维度）
+      const keys = [...systemText.matchAll(/- (\w+)（/g)].map((m) => m[1] ?? '');
+      return openAiResponse(
+        JSON.stringify({
+          scores: keys.map((key) => ({ key, score: 80, comment: '模拟评语', suggestions: ['继续完善'] })),
+          overall: { score: 80, summary: '整体达到可提交水平（非官方模拟分数）' },
+        }),
+      );
+    }
+    if (systemText.includes('答辩演练评委')) {
+      return openAiResponse(JSON.stringify({ action: 'question', content: '请具体说明你们的教育痛点依据。' }));
+    }
+    if (systemText.includes('答辩总结助手')) {
+      return openAiResponse(
+        JSON.stringify({ summary: '答辩表现总结（模拟）。', strengths: ['痛点清晰'], improvements: ['补充数据'] }),
+      );
+    }
     return openAiResponse('你好，我是中文助手。');
   });
 }

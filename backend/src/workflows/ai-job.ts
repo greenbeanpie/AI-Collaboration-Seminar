@@ -1,9 +1,9 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from '../env';
-import { runAgentJob } from '../services/agent';
+import { runAiJob } from '../services/ai-jobs';
 
 /**
- * AI 类任务 Workflow（agent_run；review_run / rehearsal_turn 在 M5 接入同一类）。
+ * AI 类任务 Workflow（agent_run / review_run / rehearsal_turn）。
  * 实例 ID = jobId（确定性派发见 services/jobs.ts tryDispatchJob）。
  */
 export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string }> {
@@ -11,7 +11,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string }>
     await step.do(
       'run-ai-job',
       { retries: { limit: 2, delay: '5 seconds' } },
-      async () => runAgentJob(this.env, event.payload.jobId),
+      async () => runAiJob(this.env, event.payload.jobId),
     );
   }
 }

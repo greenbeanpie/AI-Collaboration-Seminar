@@ -16,6 +16,9 @@ import { registerJobRoutes } from './api/jobs';
 import { registerTaskRoutes } from './api/tasks';
 import { registerMaterialRoutes } from './api/materials';
 import { registerAgentRoutes } from './api/agents';
+import { registerReviewRoutes } from './api/reviews';
+import { registerRehearsalRoutes } from './api/rehearsals';
+import { registerLedgerRoutes } from './api/ledger';
 import { requireAllowedOrigin } from './core/origin';
 
 export function createApp(): OpenAPIHono<AppEnv> {
@@ -65,6 +68,9 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerTaskRoutes(app);
   registerMaterialRoutes(app);
   registerAgentRoutes(app);
+  registerReviewRoutes(app);
+  registerRehearsalRoutes(app);
+  registerLedgerRoutes(app);
   registerFileRoutes(app);
   registerAdminRoutes(app);
 

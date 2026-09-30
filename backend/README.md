@@ -47,13 +47,11 @@ test/             # Vitest 集成测试（workerd + 本地 D1/R2）
 docs/             # 部署/联调/spike 文档
 ```
 
-## 当前进度与未完成部分（2026-09-29）
+## 当前进度与未完成部分（2026-09-29 更新）
 
-已完成 **M0–M3**（脚手架 / 基础设施 / 身份项目 / 来源解析），45 个测试用例全绿。**未完成**：
+已完成 **M0–M5**（脚手架 / 基础设施 / 身份项目 / 来源解析 / 任务材料与三档 AI / 预审答辩与账本），PLAN 契约内 **55 条路径全部实现**，60 个测试用例全绿。**未完成**：
 
-- **M4**：任务与评论、材料与版本、三档 AI 补位（代做/带做/只审）与采纳、事件账本、`Idempotency-Key` 幂等、AI 预算预占与并发限制
-- **M5**：预审、答辩演练、贡献与来源声明、导出 bundle
-- **M6**：长期任务核对等加固、staging/production 部署、与前端真实联调
-- 外部依赖：Resend 发信域名、正式模型 API Key（当前验证码为回显模式、AI 为 Workers AI 兜底且默认未启用）
+- **M6 加固与联调**：长期非终态任务核对的细化、并发/预算压测、staging/production 部署、与前端真实 Service Binding 联调、监控指标整理
+- **外部依赖**：Resend 发信域名（当前验证码为回显模式）、正式模型 API Key（当前 Workers AI 兜底且默认未启用，需能力探测后启用）
 
-对各里程碑接口细节的影响见 [docs/FRONTEND-INTEGRATION.md](./docs/FRONTEND-INTEGRATION.md) 第 8 节。
+接口行为与联调注意事项见 [docs/FRONTEND-INTEGRATION.md](./docs/FRONTEND-INTEGRATION.md) 第 8 节。

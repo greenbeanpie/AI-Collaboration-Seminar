@@ -2,7 +2,7 @@
 
 > 依据：[PLAN.md](./PLAN.md) 第二章「后端开发计划」。本文档由后端 AI 维护，是后端实施的执行蓝图；与 PLAN.md 冲突时以 PLAN.md 为准，并在本文档记录差异及原因。
 >
-> 版本：v2（2026-09-29，M0–M2 实施后更新）｜执行分支：`backend`｜当前进度：M0 ✅ / M1 ✅ / M2 ✅ / M3–M6 待实施
+> 版本：v3（2026-09-29，M0–M5 实施后更新）｜执行分支：`backend`｜当前进度：M0–M5 ✅（契约 55 路径，60 用例全绿）／M6 待实施
 
 ---
 
@@ -486,9 +486,9 @@ Workers 免费版每次请求约 10ms CPU；`unpdf` 解析多页 PDF 的纯 JS �
 - [x] M0 脚手架（2026-09-29，commit 2cab0cd：Hono+Zod/OpenAPI+Vitest、统一响应/requestId/错误目录、health、capabilities、openapi.json 导出，7 用例）
 - [x] M1 基础设施（2026-09-29，commit 6da3984：D1 全量迁移+种子、R2 文件上传下载与魔数校验/隔离回收、会话与成员中间件、AI Gateway 客户端+ai_calls 记录（费用未知标未知）、admin 配置版本化+能力探测、unpdf spike（30 页约 6–8ms，见 backend/docs/SPIKE-unpdf.md）、DEPLOY.md，13 用例）
 - [x] M2 身份项目（2026-09-29：验证码 HMAC 全流程（回显模式/60s 间隔/IP 限流/一次性消费）、会话 Cookie、项目 CRUD+乐观锁+归档、成员权限矩阵（owner 不可自移/退出）、邀请生命周期（次数/撤销/过期/人数规则）、Origin 白名单，16 用例；共 36 用例全绿）
-- [x] M3 来源解析（2026-09-29：来源导入（文件/粘贴/网页）与版本、ParseSourceWorkflow（确定性实例 ID=jobId）+ outbox/cron 恢复器、unpdf 按页提取与片段化、扫描页 render-requests/页面图上传/视觉 OCR（待复核标记）、要求提取（JSON+一次修复+伪造引用拒绝→AI_OUTPUT_INVALID）、要求集编辑/owner 确认、评分标准版本 CRUD/确认、网页白名单抓取、jobs 查询与 retry，9 用例；共 45 用例全绿，契约 32 路径）
-- [ ] M4 任务材料 AI
-- [ ] M5 预审答辩账本
-- [ ] M6 加固联调
+- [x] M3 来源解析（2026-09-29：来源导入（文件/粘贴/网页）与版本、ParseSourceWorkflow（确定性实例 ID=jobId）+ outbox/cron 恢复器、unpdf 按页提取与片段化、扫描页 render-requests/页面图上传/视觉 OCR（待复核标记）、要求提取（JSON+一次修复+伪造引用拒绝→AI_OUTPUT_INVALID）、要求集编辑/owner 确认、评分标准版本 CRUD/确认、网页白名单抓取、jobs 查询与 retry，9 用例）
+- [x] M4 任务材料 AI（2026-09-29，commit b01cee4：任务/评论、材料版本+乐观锁（batch 原子+孤儿补偿）、Markdown↔Tiptap 纯函数转换、三档 AI 补位（代做/带做/只审，统一 JSON+一次修复+引文核验）、采纳（冻结#2，reviewed 强制、batch 原子、重复采纳 409）、事件账本（去重写入）、Idempotency-Key 幂等（回放/冲突/处理中）、预算并发预占（每项目 2+cron 释放），12 用例）
+- [x] M5 预审答辩账本（2026-09-29：预审（冻结#3，分数覆盖全部维度校验）、答辩演练（首问/逐题/追问/总结，反馈不做个人排名）、事件流查询、决策/贡献+更正链（迁移 0003）/资源声明、export-bundle 汇总（AI 用量费用未知如实标注），3 用例；共 60 用例全绿，契约 55 路径）
+- [ ] M6 加固联调（长期非终态任务核对细化、压测、staging/production 部署、Service Binding 真实联调、监控）
 - [ ] 真实联调完成（后方可标「可试用 MVP」）
 - [ ] 比赛材料完成

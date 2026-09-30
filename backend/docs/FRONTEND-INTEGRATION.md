@@ -254,27 +254,26 @@ POST   /api/v1/invitations/accept                          // {code} → 加入�
 
 ---
 
-## 8. ⚠️ 尚未实现的接口（前端请继续用 MSW 模拟）
+## 8. 当前实现范围与剩余事项（2026-09-29 更新）
 
-以下在 PLAN 契约内、但后端 **M4–M6 才实现**。前端联调时这些请求会得到 404 `NOT_FOUND`，请保留 MSW 模拟分支，勿切真实后端：
+**PLAN 契约内的全部端点均已实现（55 条路径）**，包括 M4 的任务/材料/三档 AI 补位/采纳，与 M5 的预审/答辩/账本/导出。前端可对全部接口进行真实联调；`Idempotency-Key` 已在关键 POST（创建 AI 会话、采纳、发起预审）生效——建议所有关键 POST 都带上该头。
 
-| 域 | 未实现端点 | 里程碑 |
+尚未完成、影响联调的事项：
+
+| 事项 | 状态 | 影响 |
 |---|---|---|
-| 分工任务 | `/assignment-suggestions`、`/tasks`、`/tasks/apply-assignment`、`/comments` | M4 |
-| 材料 | `/materials`、`/materials/{id}/versions` | M4 |
-| 三档 AI 补位 | `/agent-sessions`、`/agent-sessions/{id}/turns`、`/agent-runs/{id}/adopt`（冻结写请求 #1/#2） | M4 |
-| 预审答辩 | `/reviews`、`/rehearsals`、`/rehearsals/{id}/answers`、`/rehearsals/{id}/finish`（冻结写请求 #3） | M5 |
-| 过程账本 | `/events`、`/decisions`、`/contributions`、`/contributions/{id}/corrections`、`/resources` | M5 |
-| 导出 | `/export-bundle` | M5 |
+| 真实发信（Resend） | 等发信域名 | 验证码仍为回显模式（`devCode` 仅本地/演示返回） |
+| 正式模型 | 等模型 Key（GLM/Gemini 等） | 当前 `/capabilities.aiEnabled=false`；启用前 AI 接口会返回 503 AI_UNAVAILABLE，前端需保留 MSW/演示分支 |
+| staging/production 部署 | 待创建 Cloudflare 资源（docs/DEPLOY.md） | 生产联调与 Service Binding 实测在 M6 |
+| 长期任务核对/压测/监控 | M6 | 不阻塞功能联调 |
 
-其他未落地行为（影响前端设计但暂无接口差异）：
+三档 AI 与预审/答辩的接口行为提醒：
 
-- **`Idempotency-Key` 头尚未强制**：M4 落地。前端可以先按 PLAN 预留（关键 POST 带上该头），后端目前会忽略。
-- **AI 预算/并发预占（每项目 2）**：M4 接入；届时超限返回 `QUOTA_EXCEEDED`。
-- **材料乐观锁**（`expectedRevision` + `409 VERSION_CONFLICT`）：随材料接口 M4 落地；项目 PATCH 已支持。
-- **真实发信（Resend）**：待验证发信域名；当前所有环境验证码走回显（`devCode` 字段仅本地/演示存在）。
-- **真实模型**：种子配置 `enabled=0`（Workers AI 兜底），能力探测通过前 `/capabilities` 的 `aiEnabled=false`。
-- **staging/production 部署与前端 Service Binding 实测**：M6。
+- `POST /agent-sessions`（冻结写请求 #1）返回 `{sessionId, runId, jobId}`；草稿在会话详情的 `turns[]`（`kind='draft'`，`payload.markdown/doc`）。
+- 采纳（冻结 #2）`POST /agent-runs/{runId}/adopt`：`reviewed` 必须为 `true`，`doc` 为 Tiptap JSON；产生 `origin='ai_adoption'` 的新版本；同一 run 只能采纳一次（409）。
+- 预审（冻结 #3）`POST /reviews` → 轮询 jobId → `GET /reviews/{id}` 的 `report` 绑定 `materialVersionIds`，材料更新后请提示「报告针对旧版本」。
+- 答辩 `POST /rehearsals` → 第一问生成中 → `answers` 逐题 → `finish` 总结；演练结束后再答题返回 409。
+- AI 产物均为**草稿语义**：AI 不会改任务状态或正式材料，一切以采纳/人工确认为准。
 
 ## 9. 联调验收清单（前端视角）
 
