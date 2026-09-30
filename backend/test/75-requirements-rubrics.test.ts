@@ -69,6 +69,22 @@ describe('要求集：编辑与确认', () => {
     expect(patch.status).toBe(200);
     expect(((await patch.json()) as { data: { fieldState: string } }).data.fieldState).toBe('edited');
 
+    const setDueDate = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/requirements/${first.requirementId}`, {
+      method: 'PATCH',
+      headers: { cookie: authCookie(member.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ dueDate: '2026-10-08' }),
+    });
+    expect(setDueDate.status).toBe(200);
+    expect(((await setDueDate.json()) as { data: { dueDate: string | null } }).data.dueDate).toBe('2026-10-08');
+
+    const clearDueDate = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/requirements/${first.requirementId}`, {
+      method: 'PATCH',
+      headers: { cookie: authCookie(member.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ dueDate: null }),
+    });
+    expect(clearDueDate.status).toBe(200);
+    expect(((await clearDueDate.json()) as { data: { dueDate: string | null } }).data.dueDate).toBeNull();
+
     // 成员不能确认
     const memberConfirm = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/requirement-sets/${setId}/confirm`, {
       method: 'POST',
@@ -133,6 +149,14 @@ describe('评分标准版本', () => {
       body: JSON.stringify({ notes: '补充细则说明' }),
     });
     expect(patch.status).toBe(200);
+
+    const clearNotes = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rubrics/${rubric1.rubricId}`, {
+      method: 'PATCH',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ notes: null }),
+    });
+    expect(clearNotes.status).toBe(200);
+    expect(((await clearNotes.json()) as { data: { notes: string | null } }).data.notes).toBeNull();
 
     const confirm = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rubrics/${rubric1.rubricId}/confirm`, {
       method: 'POST',

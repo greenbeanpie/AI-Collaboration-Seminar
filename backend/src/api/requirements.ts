@@ -295,17 +295,18 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
       `UPDATE requirements SET
          title = COALESCE(?2, title),
          detail = COALESCE(?3, detail),
-         due_date = COALESCE(?4, due_date),
-         due_precision = COALESCE(?5, due_precision),
-         category = COALESCE(?6, category),
+         due_date = CASE WHEN ?4 = 1 THEN ?5 ELSE due_date END,
+         due_precision = COALESCE(?6, due_precision),
+         category = COALESCE(?7, category),
          field_state = 'edited',
-         updated_at = ?7
+         updated_at = ?8
        WHERE id = ?1`,
     )
       .bind(
         requirementId,
         body.title ?? null,
         body.detail ?? null,
+        'dueDate' in body ? 1 : 0,
         body.dueDate ?? null,
         body.duePrecision ?? null,
         body.category ?? null,
@@ -354,8 +355,8 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
       .first<RubricRow>();
     if (!row) throw notFound('评分标准不存在');
     if (row.status === 'confirmed') throw invalidState('已确认的评分标准不可修改（请新增版本）');
-    await c.env.DB.prepare('UPDATE rubric_versions SET weights_json = COALESCE(?2, weights_json), notes = COALESCE(?3, notes) WHERE id = ?1')
-      .bind(rubricId, body.weights ? JSON.stringify(body.weights) : null, body.notes ?? null)
+    await c.env.DB.prepare('UPDATE rubric_versions SET weights_json = COALESCE(?2, weights_json), notes = CASE WHEN ?3 = 1 THEN ?4 ELSE notes END WHERE id = ?1')
+      .bind(rubricId, body.weights ? JSON.stringify(body.weights) : null, 'notes' in body ? 1 : 0, body.notes ?? null)
       .run();
     const updated = await c.env.DB.prepare('SELECT * FROM rubric_versions WHERE id = ?1').bind(rubricId).first<RubricRow>();
     if (!updated) throw notFound('评分标准不存在');
