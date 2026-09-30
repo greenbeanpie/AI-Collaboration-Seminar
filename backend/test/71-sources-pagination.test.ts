@@ -156,4 +156,16 @@ it('同一页图片请求键回放已接收结果，不重复更新页面', asyn
     expect(response.status).toBe(202);
     expect(((await response.json()) as { data: unknown }).data).toEqual({ accepted: 1, remaining: 1, jobId: null });
   }
+  await env.DB.prepare('INSERT INTO source_pages (id, source_version_id, project_id, page_number, updated_at) VALUES (?1, ?2, ?3, 3, ?4)')
+    .bind(crypto.randomUUID(), source.sourceVersionId, projectId, new Date().toISOString()).run();
+  const batch = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/sources/${source.sourceId}/page-images`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
+    body: JSON.stringify({ sourceVersionId: source.sourceVersionId, images: [2, 3].map(pageNumber => ({ pageNumber, fileId: file.fileId })) }),
+  });
+  expect(batch.status).toBe(202);
+  expect(((await batch.json()) as { data: { accepted: number; remaining: number; jobId: string } }).data)
+    .toMatchObject({ accepted: 2, remaining: 0, jobId: expect.any(String) });
+  const after = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND image_status = 'uploaded'")
+    .bind(source.sourceVersionId).first<{ n: number }>();
+  expect(after?.n).toBe(3);
 });

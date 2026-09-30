@@ -17,6 +17,8 @@ export default defineConfig({
     }),
   ],
   test: {
+    // Dispose Workflow instances from setup before per-file fetch mocks are removed.
+    sequence: { hooks: 'list' },
     // setup 在 worker 运行时内执行：按序应用 migrations/ 下的 D1 迁移
     setupFiles: ['./test/setup.ts'],
   },
