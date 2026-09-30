@@ -141,9 +141,18 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
     const body = c.req.valid('json');
     const member = c.get('member')!;
     await c.env.DB.prepare(
-      'UPDATE project_members SET skills_json = COALESCE(?2, skills_json), hours_per_week = COALESCE(?3, hours_per_week) WHERE project_id = ?1',
+      `UPDATE project_members
+       SET skills_json = COALESCE(?3, skills_json),
+           hours_per_week = CASE WHEN ?4 = 1 THEN ?5 ELSE hours_per_week END
+       WHERE project_id = ?1 AND user_id = ?2`,
     )
-      .bind(member.projectId, body.skills ? JSON.stringify(body.skills) : null, body.hoursPerWeek ?? null)
+      .bind(
+        member.projectId,
+        member.userId,
+        body.skills === undefined ? null : JSON.stringify(body.skills),
+        body.hoursPerWeek === undefined ? 0 : 1,
+        body.hoursPerWeek ?? null,
+      )
       .run();
     const row = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id = ?1 AND pm.user_id = ?2`)
       .bind(member.projectId, c.get('user')!.id)
