@@ -1,12 +1,15 @@
 # 「补位」AI 项目办公室
 
-本仓库包含项目实施计划和一个可直接在浏览器中打开的前端原型。原型使用演示数据和模拟 AI，修改保存在浏览器本地；它尚未连接后端，也不是 `PLAN.md` 中规划的 React、PWA 或 Cloudflare Worker 成品。
+本仓库包含项目实施计划、一个可直接在浏览器中打开的前端原型，以及位于 `backend/` 的后端服务实现（PLAN.md 第二章，开发于 backend 分支）。原型使用演示数据和模拟 AI，修改保存在浏览器本地；它尚未连接后端，也不是 `PLAN.md` 中规划的 React、PWA 或 Cloudflare Worker 成品。
 
 ## 目录结构
 
 | 路径 | 用途 |
 | --- | --- |
 | `PLAN.md` | 前后端功能、接口及验收计划 |
+| `backend_plan.md` | 后端实施计划与进度（M0–M5 已完成，60 用例全绿） |
+| `backend/` | 后端服务（Cloudflare Workers + D1 + R2 + Workflows；见 `backend/README.md`） |
+| `backend/openapi/openapi.json` | 后端 API 契约（前端联调依据；见 `backend/docs/FRONTEND-INTEGRATION.md`） |
 | `frontend/index.html` | 前端原型入口，包含页面、样式和交互 |
 | `frontend/index.html.artifact.json` | 原型工具的入口元数据 |
 | `frontend/.file-versions/` | 原型历史版本与清单，供回溯使用 |
