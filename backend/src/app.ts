@@ -6,6 +6,7 @@ import { registerSystemRoutes } from './api/health';
 import { registerCapabilitiesRoutes } from './api/capabilities';
 import { registerFileRoutes } from './api/files';
 import { registerAdminRoutes } from './api/admin';
+import { registerAccountSettingsRoutes } from './api/account-settings';
 import { registerAuthRoutes } from './api/auth';
 import { registerProjectRoutes } from './api/projects';
 import { registerMemberRoutes } from './api/members';
@@ -60,6 +61,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerSystemRoutes(app);
   registerCapabilitiesRoutes(app);
   registerAuthRoutes(app);
+  registerAccountSettingsRoutes(app);
   registerProjectRoutes(app);
   registerMemberRoutes(app);
   registerInvitationRoutes(app);

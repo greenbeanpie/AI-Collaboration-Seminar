@@ -71,11 +71,12 @@ export async function loginPasswordAccount(env: Env, input: { account: string; p
   const valid = await verifyPassword(input.password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
   if (!row || !valid) throw unauthenticated('账号或密码错误');
   const session = await sessionValues(row.user_id);
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, auth_method) VALUES (?1, ?2, ?3, ?4, ?5, 'password')")
-      .bind(session.id, row.user_id, session.hash, session.expiresAt, session.createdAt),
+  const result = await env.DB.batch([
+    env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, auth_method) SELECT ?1, ?2, ?3, ?4, ?5, 'password' WHERE EXISTS (SELECT 1 FROM auth_accounts WHERE user_id = ?2 AND password_hash = ?6)")
+      .bind(session.id, row.user_id, session.hash, session.expiresAt, session.createdAt, row.password_hash),
     env.DB.prepare('UPDATE users SET last_login_at = ?2 WHERE id = ?1').bind(row.user_id, session.createdAt),
   ]);
+  if (result[0]?.meta.changes !== 1) throw unauthenticated('密码已更改，请重新登录');
   return { user: { id: row.user_id, username: row.username, email: row.contact_email, displayName: row.display_name, isAdmin: row.is_admin === 1 }, token: session.token };
 }
 

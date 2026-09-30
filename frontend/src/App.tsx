@@ -9,6 +9,7 @@ import { ProjectShell } from './components/ProjectShell';
 import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState, promptInstall, subscribe } from './pwa-install';
 
+const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage').then(module => ({ default: module.AccountSettingsPage })));
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
 const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
@@ -104,6 +105,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
+        <Route path="/app/settings" element={<AccountSettingsPage />} />
         <Route element={<SystemAdminOnly />}>
           <Route path="/app/admin/accounts" element={<AdminAccountsPage />} />
           <Route path="/app/admin/ai" element={<AiSettings />} />

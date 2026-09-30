@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import type { Capability, User } from '../api/types';
@@ -15,6 +15,7 @@ export function LoginPage(props: Props) {
   const capabilityError = props.capabilityError ?? capabilityQuery.error;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [account, setAccount] = useState('');
   const [username, setUsername] = useState('');
@@ -58,7 +59,8 @@ export function LoginPage(props: Props) {
           <h2>{mode === 'login' ? '欢迎回来' : '创建协作账户'}</h2><p className="auth-subtitle">{mode === 'login' ? '使用用户名或已绑定邮箱与密码登录。' : '注册需要系统管理员提供的单次邀请码；邮箱可选。'}</p>
           {capabilityError !== null && capabilityError !== undefined && <ErrorNotice error={capabilityError} onRetry={() => { void (props.onRetryCapabilities ?? capabilityQuery.refetch)(); }} />}
           {authenticationUnavailable && <p role="alert">密码登录服务尚未启用，请联系系统管理员。</p>}
-          <form onSubmit={(event) => { event.preventDefault(); if (!authenticate.isPending) { setError(null); authenticate.mutate(); } }}>
+          {searchParams.get('passwordChanged') === '1' && <p role="status">密码已修改，全部设备已退出。请使用新密码登录。</p>}
+      <form onSubmit={(event) => { event.preventDefault(); if (!authenticate.isPending) { setError(null); authenticate.mutate(); } }}>
             <fieldset className="auth-fields" disabled={authenticate.isPending}>
               {mode === 'login' ? <Field label="用户名或邮箱"><input className="input" name="account" autoComplete="username" required maxLength={254} placeholder="输入用户名或邮箱" value={account} onChange={event => setAccount(event.target.value)} /></Field> : <>
                 <Field label="用户名" hint="3–32 位字母、数字、下划线或连字符。"><input className="input" name="username" autoComplete="username" pattern={'[A-Za-z0-9_\\-]{3,32}'} required maxLength={32} placeholder="例如 team_member" value={username} onChange={event => setUsername(event.target.value)} /></Field>
