@@ -4,7 +4,7 @@ Cloudflare Workers 上的模块化单体后端（比赛项目：AI 赋能组队�
 
 - **运行时**：Cloudflare Workers（免费套餐优先）+ D1 + 私有 R2 + Workflows + AI Gateway
 - **技术栈**：TypeScript + Hono + @hono/zod-openapi（OpenAPI 3.1）+ Zod + unpdf + Vitest（workerd 集成测试）
-- **执行分支**：`backend`（merge 进 main 由组长执行；禁止 force push）
+- **仓库状态**：后端已合并至 `main`；通过独立 worktree 完成前后端接入。
 
 ## 文档
 
@@ -14,13 +14,14 @@ Cloudflare Workers 上的模块化单体后端（比赛项目：AI 赋能组队�
 | [docs/DEPLOY.md](./docs/DEPLOY.md) | 部署说明（资源创建清单、Secrets、迁移、AI 启用流程） |
 | [docs/SPIKE-unpdf.md](./docs/SPIKE-unpdf.md) | unpdf 免费版 CPU spike 结论 |
 | [../backend_plan.md](../backend_plan.md) | 后端实施计划与进度记录 |
-| [openapi/openapi.json](./openapi/openapi.json) | API 契约（唯一来源，前端 MSW 依据；由 `npm run export:openapi` 生成） |
+| [openapi/openapi.json](./openapi/openapi.json) | API 契约（唯一来源，真实前端接入依据；由 `npm run export:openapi` 生成） |
 
 ## 快速开始
 
 ```bash
 npm install
 cp .dev.vars.example .dev.vars   # 填本地密钥
+npx wrangler d1 migrations apply DB --local
 npm run dev                      # wrangler dev（D1/R2 本地模拟）→ http://127.0.0.1:8787
 npm test                         # 全量测试（workerd 内运行，自动应用迁移）
 npm run typecheck                # tsc --noEmit

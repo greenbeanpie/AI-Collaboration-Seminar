@@ -1,6 +1,6 @@
 # 部署说明（DEPLOY.md）
 
-> 负责人在本地执行以下步骤创建 Cloudflare 免费资源并部署。全程使用免费套餐（Workers Free / D1 Free / R2 Free / AI Gateway 免费）。
+> 负责人在本地执行以下步骤创建 Cloudflare 免费资源并部署。按实际资源与供应商计费，AI 调用及超出免费额度的资源会产生费用。
 
 ## 0. 前置
 
@@ -29,7 +29,7 @@ npx wrangler r2 bucket create ai-office-files-staging
 
 ## 2. 填写 wrangler.jsonc
 
-在 `environments.staging`（及 production）中替换：
+在 `env.staging`（及 production）中替换：
 
 | 字段 | 填入 |
 |---|---|
@@ -44,14 +44,14 @@ npx wrangler r2 bucket create ai-office-files-staging
 npx wrangler secret put AUTH_SECRET --env staging       # 随机长字符串：openssl rand -hex 32
 npx wrangler secret put ADMIN_TOKEN --env staging       # 运维管理员令牌
 npx wrangler secret put CLOUDFLARE_API_TOKEN --env staging
-# 以下两项等接通后再配：
-npx wrangler secret put RESEND_API_KEY --env staging    # 有域名后启用真实发信时
+npx wrangler secret put RESEND_API_KEY --env staging    # 必须配置并验证发信域名
+# 在 env.staging.vars / env.production.vars 中设置 EMAIL_FROM
 ```
 
 ## 4. 应用迁移并部署
 
 ```bash
-npx wrangler d1 migrations apply ai-office-db-staging --remote
+npx wrangler d1 migrations apply DB --env staging --remote
 npx wrangler deploy --env staging
 ```
 
@@ -90,6 +90,7 @@ curl -X PUT https://.../api/v1/admin/ai-config \
 
 ```bash
 cp .dev.vars.example .dev.vars   # 填入本地密钥
+npx wrangler d1 migrations apply DB --local
 npm run dev                      # wrangler dev（D1/R2 本地模拟）
 npm test                         # vitest（workerd 内集成测试）
 npm run typecheck && npm run export:openapi
@@ -98,5 +99,5 @@ npm run typecheck && npm run export:openapi
 ## 9. 回滚与恢复
 
 - 代码回滚：`npx wrangler rollback --env staging`（或重新部署上一 commit）。
-- 数据库备份：`npx wrangler d1 export ai-office-db-staging --remote --output=backup-$(date +%F).sql`（生产环境在每次迁移前执行）。
+- 数据库备份：`npx wrangler d1 export DB --env staging --remote --output=backup-$(date +%F).sql`（生产环境在每次迁移前执行）。
 - 迁移只增不改；回滚代码不自动回滚数据库结构（backend_plan.md 5.10）。

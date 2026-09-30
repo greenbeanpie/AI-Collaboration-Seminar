@@ -1,32 +1,55 @@
 # 「补位」AI 项目办公室
 
-本仓库包含项目实施计划、一个可直接在浏览器中打开的前端原型，以及位于 `backend/` 的后端服务实现（PLAN.md 第二章，开发于 backend 分支）。原型使用演示数据和模拟 AI，修改保存在浏览器本地；它尚未连接后端，也不是 `PLAN.md` 中规划的 React、PWA 或 Cloudflare Worker 成品。
+前端真实应用与 Cloudflare Workers 后端使用同源 `/api/v1` 接口。登录后读取真实项目和材料；原有演示原型保留在登录页的 **游客体验** 入口，演示数据和模拟 AI 只存在于 `/guest/`。API 失败不会退回演示成功。
 
-## 目录结构
+## 目录
 
 | 路径 | 用途 |
 | --- | --- |
-| `PLAN.md` | 前后端功能、接口及验收计划 |
-| `backend_plan.md` | 后端实施计划与进度（M0–M5 已完成，60 用例全绿） |
-| `backend/` | 后端服务（Cloudflare Workers + D1 + R2 + Workflows；见 `backend/README.md`） |
-| `backend/openapi/openapi.json` | 后端 API 契约（前端联调依据；见 `backend/docs/FRONTEND-INTEGRATION.md`） |
-| `frontend/index.html` | 前端原型入口，包含页面、样式和交互 |
-| `frontend/index.html.artifact.json` | 原型工具的入口元数据 |
-| `frontend/.file-versions/` | 原型历史版本与清单，供回溯使用 |
-| `frontend/.od-frames/` | 设备预览模板，供设计预览使用 |
+| `PLAN.md` | 功能、架构与验收计划 |
+| `docs/IMPLEMENTATION-ALIGNMENT.md` | 前后端逐项对齐、验证证据与剩余上线条件 |
+| `frontend/` | React / TypeScript 应用、游客原型、PWA 与静态资产 Worker |
+| `backend/` | Hono API、D1 迁移、私有 R2、Workflows、Gateway 和集成测试 |
+| `backend/openapi/openapi.json` | API 契约 |
+| `backend/docs/FRONTEND-INTEGRATION.md` | 请求、任务和页面接入说明 |
+| `backend/docs/DEPLOY.md` | 云资源、密钥、迁移和部署步骤 |
+| `scripts/verify-integration.mjs` | 经前端代理访问真实本地后端的 HTTP 验证 |
 
-`frontend/.file-versions/` 和 `frontend/.od-frames/` 是原型辅助文件，不属于部署页面。根目录的 `LICENSE` 为授权文件。
+## 本地运行
 
-## 本地预览
-
-在仓库根目录运行：
+先安装依赖并初始化本地数据库：
 
 ```sh
-python3 -m http.server 8000 --directory frontend
+npm run install:all
+cp backend/.dev.vars.example backend/.dev.vars
+# 编辑 backend/.dev.vars，将 AUTH_SECRET / ADMIN_TOKEN 换成随机值。
+cd backend
+npx wrangler d1 migrations apply DB --local
+cd ..
 ```
 
-然后打开 <http://localhost:8000/>。原型不需要安装依赖或执行构建。浏览器会将演示修改保存在本地存储中；可在原型的设置页重置。
+在两个终端分别启动：
 
-## 部署页面
+```sh
+npm run dev:backend
+npm run dev:frontend
+```
 
-本仓库目前没有 Worker 配置。若使用单独维护的 Cloudflare Worker 项目，仅复制 `frontend/index.html` 到该项目的静态资源目录，并在目标项目内执行其部署和验证流程。不要将原型的版本记录或设备预览模板一并作为站点资源部署。
+打开 <http://localhost:5173>。本地使用独立模拟 D1 / R2，但业务请求由真实后端实现处理；邮箱回显模式在页面明确标记为本地开发。云端 staging / production 配置为真实邮件模式。AI 默认禁用，配置 Gateway 并完成模型探测后才启用；未配置时真实入口会显示不可用。
+
+## 验证
+
+```sh
+npm run typecheck
+npm run test:backend
+npm run build
+npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopback + local + echo
+```
+
+该 HTTP 验证创建一次性本地账户与项目，覆盖协作、材料保存、冲突、文件权限和退出；结束后归档测试项目。它拒绝远端及生产环境，且不发送真实邮件或调用付费模型。前端组件/API 测试和 lint 命令见 `frontend/package.json`。
+
+## 部署
+
+前端使用 Workers Static Assets，Worker 将 `/api/*` 通过 `API` Service Binding 原样转发后端。前端构建后使用 `frontend/wrangler.jsonc` 的 staging / production 环境。后端必须配置对应前端域名的 `ALLOWED_ORIGINS`，并填入真实 D1、R2、邮件与 Gateway 设置。
+
+代码接入与本地验证不等于云端上线。实际部署、真实邮件投递、真实模型费用和比赛材料验收状态见对齐报告。
