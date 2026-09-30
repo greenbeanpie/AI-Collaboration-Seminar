@@ -1,3 +1,4 @@
+import { ThemeSelector } from './components/ThemeSelector';
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -99,6 +100,7 @@ function useStateOnline(): boolean {
 
 export default function App() {
   return <>
+    <ThemeSelector />
     <PwaStatus />
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />

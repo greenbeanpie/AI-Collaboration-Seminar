@@ -1,25 +1,25 @@
 .sources-intake { display: grid; gap: 16px; }
 .sources-intake-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
-.sources-intake-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink-soft); font-size: 11px; font-weight: 700; cursor: pointer; }
-.sources-intake-tab[aria-pressed="true"] { border-color: #c9d9f6; background: var(--blue-soft); color: var(--blue-dark); }
+.sources-intake-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--palette-fff-surface); color: var(--ink-soft); font-size: 11px; font-weight: 700; cursor: pointer; }
+.sources-intake-tab[aria-pressed="true"] { border-color: var(--palette-c9d9f6-border); background: var(--blue-soft); color: var(--blue-dark); }
 .sources-intake-tab:disabled { cursor: not-allowed; opacity: .55; }
 .sources-record-list { display: grid; gap: 13px; }
-.sources-record { display: grid; gap: 14px; padding: 16px; border: 1px solid #e9edf4; border-radius: 14px; background: #fff; scroll-margin-top: 88px; }
-.sources-record-target { border-color: #8eb4fa; box-shadow: 0 0 0 3px rgba(34,100,230,.08); }
+.sources-record { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--palette-e9edf4-border); border-radius: 14px; background: var(--palette-fff-surface); scroll-margin-top: 88px; }
+.sources-record-target { border-color: var(--palette-8eb4fa-border); box-shadow: 0 0 0 3px rgba(34,100,230,.08); }
 .sources-record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sources-record-heading h3 { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .sources-record-heading p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .sources-record-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.sources-record-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; color: #929bad; font-size: 9px; }
+.sources-record-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--palette-929bad-text); font-size: 9px; }
 .sources-pages { display: flex; flex-wrap: wrap; gap: 6px; }
-.sources-page-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #e6ebf4; border-radius: 8px; background: #fafbfe; color: #64718a; font-size: 9px; }
-.sources-page-chip-target { border-color: #8eb4fa; background: #eef4ff; color: var(--blue-dark); scroll-margin-top: 96px; }
-.sources-job { display: grid; gap: 10px; padding: 12px; border: 1px solid #dce8fd; border-radius: 12px; background: #f7faff; }
+.sources-page-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--palette-e6ebf4-border); border-radius: 8px; background: var(--palette-fafbfe-surface); color: var(--palette-64718a-text); font-size: 9px; }
+.sources-page-chip-target { border-color: var(--palette-8eb4fa-border); background: var(--palette-eef4ff-surface); color: var(--blue-dark); scroll-margin-top: 96px; }
+.sources-job { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--palette-dce8fd-border); border-radius: 12px; background: var(--palette-f7faff-surface); }
 .sources-job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sources-job-head strong { color: #365787; font-size: 11px; }
-.sources-job-head p { margin: 4px 0 0; color: #71809b; font-size: 10px; line-height: 1.6; }
-.sources-inline-note { margin: 0; color: #8893a7; font-size: 10px; line-height: 1.6; }
-.sources-scan-progress { color: #5373a8; font-size: 10px; line-height: 1.6; }
+.sources-job-head strong { color: var(--palette-365787-text); font-size: 11px; }
+.sources-job-head p { margin: 4px 0 0; color: var(--palette-71809b-text); font-size: 10px; line-height: 1.6; }
+.sources-inline-note { margin: 0; color: var(--palette-8893a7-text); font-size: 10px; line-height: 1.6; }
+.sources-scan-progress { color: var(--palette-5373a8-text); font-size: 10px; line-height: 1.6; }
 .sources-error { margin-top: 3px; }
 @media (max-width: 640px) {
   .sources-record-heading { display: grid; }
