@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { request } from './client';
+import { api, listAllItems, request } from './client';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -28,5 +28,46 @@ describe('API client', () => {
     await expect(request<'AgentSessionCreateResponse'>('/api/v1/projects/project-1/agent-sessions', {
       method: 'POST', body: { mode: 'do' },
     })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE', status: 503, requestId: 'trace-123' });
+  });
+
+  it('loads every cursor page before reporting a complete list', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), window.location.origin);
+      calls.push(url.searchParams.get('cursor') ?? 'first-page');
+      const page = url.searchParams.has('cursor')
+        ? { items: [{ eventId: 'event-2', type: 'task.updated', actorType: 'user', actorId: 'user-1', entityType: 'task', entityId: 'task-2', payload: {}, occurredAt: '2026-01-02T00:00:00Z' }], nextCursor: null }
+        : { items: [{ eventId: 'event-1', type: 'task.created', actorType: 'user', actorId: 'user-1', entityType: 'task', entityId: 'task-1', payload: {}, occurredAt: '2026-01-01T00:00:00Z' }], nextCursor: 'page-two' };
+      return new Response(JSON.stringify({ data: page, requestId: 'page-request' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const events = await listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events', { limit: 1 });
+
+    expect(events.map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
+    expect(calls).toEqual(['first-page', 'page-two']);
+  });
+
+  it('stops on a repeated cursor instead of presenting duplicate data as complete', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => new Response(JSON.stringify({
+      data: { items: [], nextCursor: 'same-cursor' }, requestId: 'page-request',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events')).rejects.toMatchObject({ code: 'INVALID_PAGINATION' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses an explicit idempotency key across a retried mutation', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => new Response(JSON.stringify({ data: { jobId: 'job-1' }, requestId: 'job-request' }), {
+      status: 202, headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const intent = { idempotencyKey: 'one-user-intent' };
+
+    await api.post<'JobRetryResponse'>('/api/v1/projects/project-1/assignment-suggestions', { taskIds: ['task-1'] }, intent);
+    await api.post<'JobRetryResponse'>('/api/v1/projects/project-1/assignment-suggestions', { taskIds: ['task-1'] }, intent);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([, options]) => new Headers(options?.headers).get('Idempotency-Key'))).toEqual(['one-user-intent', 'one-user-intent']);
   });
 });

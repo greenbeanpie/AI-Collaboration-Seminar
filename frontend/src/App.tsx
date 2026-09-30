@@ -11,7 +11,13 @@ import { AcceptInvitationPage } from './pages/AcceptInvitationPage';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
 import { ProjectOverviewPage } from './pages/ProjectOverviewPage';
-import { AiWorkspacePage, ExportPage, LedgerPage, MaterialsPage, ProjectSettingsPage, RehearsalsPage, RequirementsPage, ReviewsPage, SourcesPage, TasksPage, TeamPage } from './pages/PlaceholderPages';
+import { AiWorkspacePage, RehearsalsPage, RequirementsPage, ReviewsPage, SourcesPage } from './pages/PlaceholderPages';
+import { TasksPage } from './pages/TasksPage';
+import { MaterialsPage } from './pages/MaterialsPage';
+import { TeamPage } from './pages/TeamPage';
+import { ProjectSettingsPage } from './pages/ProjectSettingsPage';
+import { ExportPage } from './pages/ExportPage';
+import { LedgerPage } from './pages/LedgerPage';
 import { ErrorNotice, Spinner } from './components/ui';
 
 function Landing() {
@@ -50,7 +56,7 @@ function PwaStatus() {
   const online = useStateOnline();
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
   return <>
-    {!online && <div className="offline-banner"><WifiOff size={15} /> 当前离线。已加载内容可查看，修改先保存在本机草稿，联网后由你确认提交。</div>}
+    {!online && <div className="offline-banner"><WifiOff size={15} /> 当前离线。已加载内容可能仍可查看；只有页面明确标示的本机草稿会在此设备保留，联网后请检查并确认提交。</div>}
     {needRefresh && <div className="update-banner">更新会重新载入页面，请先确认材料草稿已保存。<button className="button button-small button-primary" onClick={() => void updateServiceWorker(true)}>立即更新</button></div>}
   </>;
 }

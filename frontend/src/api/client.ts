@@ -107,4 +107,40 @@ export const api = {
     request<Name>(path, { ...options, method: 'DELETE' }),
 };
 
+type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Items } ? Items : never;
+
+export async function listAllItems<Name extends SchemaName>(path: string, query: RequestOptions['query'] = {}): Promise<ItemsOf<Name>> {
+  const all: unknown[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+  let pageCount = 0;
+  do {
+    const page: DataOf<Name> = await api.get<Name>(path, { ...query, cursor });
+    if (!page || typeof page !== 'object' || !('items' in page) || !Array.isArray(page.items)) {
+      throw new ApiError(200, {
+        error: { code: 'INVALID_PAGINATION', message: '服务端列表响应缺少 items 字段。', retryable: false },
+        requestId: makeRequestId(),
+      });
+    }
+    all.push(...page.items);
+    const nextCursor: string | null = 'nextCursor' in page && typeof page.nextCursor === 'string' ? page.nextCursor : null;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new ApiError(200, {
+        error: { code: 'INVALID_PAGINATION', message: '服务端返回了重复分页游标，已停止加载以避免重复记录。', retryable: false },
+        requestId: makeRequestId(),
+      });
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+    pageCount += 1;
+    if (pageCount > 200) {
+      throw new ApiError(200, {
+        error: { code: 'PAGINATION_LIMIT', message: '项目数据页数超出安全加载上限，请联系管理员。', retryable: false },
+        requestId: makeRequestId(),
+      });
+    }
+  } while (cursor);
+  return all as ItemsOf<Name>;
+}
+
 export const projectPath = (projectId: string, tail = '') => `/api/v1/projects/${encodeURIComponent(projectId)}${tail}`;

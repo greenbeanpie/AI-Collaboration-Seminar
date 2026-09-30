@@ -9,7 +9,7 @@ const capabilities: Capability = {
   apiVersion: 'v1', environment: 'local',
   features: { aiEnabled: false, webFetch: true, emailMode: 'echo' },
   limits: { maxFileBytes: 10485760, maxPdfPages: 30, pageImageMaxEdge: 2000, pageImageMaxBytes: 2097152,
-    listDefaultPageSize: 20, listMaxPageSize: 100, concurrentAiTasksPerProject: 2 },
+    listDefaultPageSize: 20, listMaxPageSize: 100, concurrentAiTasksPerProject: 2, assignmentSuggestionMaxTasks: 20 },
   competitionTemplate: { teamSizeLimit: 5 },
 };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify({ data, requestId: 'test-request' }), {

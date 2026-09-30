@@ -121,7 +121,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 请求邮箱验证码（60s 间隔；回显模式下仅非生产返回 devCode） */
+        /** 请求邮箱验证码（60s 间隔；仅本地回显模式返回 devCode） */
         post: {
             parameters: {
                 query?: never;
@@ -1783,6 +1783,82 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/tasks/apply-assignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 应用一项分工建议（仅修改负责人，保留任务状态） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        taskId: string;
+                        /** Format: uuid */
+                        assigneeId: string | null;
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 负责人已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskResponse"];
+                    };
+                };
+                /** @description 负责人不是项目成员 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 任务不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 任务版本冲突 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/comments": {
         parameters: {
             query?: never;
@@ -1850,6 +1926,98 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["CommentResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/assignment-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 生成项目任务分工建议（异步；只生成建议，不直接修改任务） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requirementSetId?: string;
+                        taskIds?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 建议任务已创建，轮询 jobId 获取结果 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssignmentSuggestionResponse"];
+                    };
+                };
+                /** @description 任务列表或要求集参数不合法 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 非项目成员 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 要求集不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 要求集状态或任务状态不允许 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 项目 AI 并发名额已满 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
             };
@@ -2107,7 +2275,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 项目 AI 会话列表（游标分页，可按模式和状态筛选；包含最新运行和任务 ID） */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                    status?: "active" | "closed" | "all";
+                    capability?: "do" | "guide" | "review_only";
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentSessionListResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         /** 发起三档 AI 补位（冻结写请求：mode/roleTemplate/taskId/instruction/materialVersionIds/sourceVersionIds） */
         post: {
@@ -3327,6 +3523,7 @@ export interface components {
                     listDefaultPageSize: number;
                     listMaxPageSize: number;
                     concurrentAiTasksPerProject: number;
+                    assignmentSuggestionMaxTasks: number;
                 };
                 /** @description 本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制 */
                 competitionTemplate: {
@@ -3866,6 +4063,14 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        AssignmentSuggestionResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         MaterialResponse: {
             data: {
                 /** Format: uuid */
@@ -3963,6 +4168,31 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        AgentSessionListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    sessionId: string;
+                    title: string;
+                    /** @enum {string} */
+                    capability: "do" | "guide" | "review_only";
+                    /** @enum {string} */
+                    status: "active" | "closed";
+                    /** Format: uuid */
+                    taskId: string | null;
+                    /** Format: uuid */
+                    latestRunId: string | null;
+                    latestRunStatus: string | null;
+                    /** Format: uuid */
+                    latestJobId: string | null;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AgentSessionResponse: {
             data: {
                 /** Format: uuid */
@@ -3989,6 +4219,8 @@ export interface components {
                 runs: {
                     /** Format: uuid */
                     runId: string;
+                    /** Format: uuid */
+                    jobId: string | null;
                     status: string;
                     capability: string;
                 }[];
@@ -4238,7 +4470,104 @@ export interface components {
         };
         ExportBundleResponse: {
             data: {
-                [key: string]: unknown;
+                project: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    description: string;
+                    competition_deadline_date: string | null;
+                    status: string;
+                };
+                generatedAt: string;
+                materials: {
+                    title: string;
+                    markdown: string;
+                    revision: number;
+                }[];
+                requirementSets: {
+                    /** Format: uuid */
+                    requirementSetId: string;
+                    /** Format: uuid */
+                    sourceVersionId: string | null;
+                    /** @enum {string} */
+                    status: "draft" | "confirmed";
+                    revision: number;
+                    confirmedAt: string | null;
+                    requirements: {
+                        /** Format: uuid */
+                        requirementId: string;
+                        seq: number;
+                        /** @enum {string} */
+                        category: "deadline" | "deliverable" | "format" | "scoring" | "team" | "other";
+                        title: string;
+                        detail: string;
+                        dueDate: string | null;
+                        /** @enum {string} */
+                        duePrecision: "date" | "datetime" | "unknown";
+                        citations: {
+                            /** Format: uuid */
+                            sourceVersionId: string;
+                            /** Format: uuid */
+                            fragmentId: string;
+                            pageNumber: number | null;
+                            quote: string;
+                        }[];
+                        /** @enum {string} */
+                        fieldState: "ai_suggestion" | "edited" | "confirmed";
+                    }[];
+                }[];
+                rubricVersions: {
+                    /** Format: uuid */
+                    rubricId: string;
+                    version: number;
+                    /** @enum {string} */
+                    source: "official" | "custom";
+                    weights: {
+                        key: string;
+                        label: string;
+                        weight: number;
+                    }[];
+                    notes: string | null;
+                    /** @enum {string} */
+                    status: "draft" | "confirmed";
+                    confirmedAt: string | null;
+                    createdAt: string;
+                }[];
+                tasks: {
+                    title: string;
+                    status: string;
+                    assignee_id: string | null;
+                    due_date: string | null;
+                }[];
+                decisions: {
+                    title: string;
+                    detail: string;
+                    decided_at: string;
+                }[];
+                contributions: {
+                    /** Format: uuid */
+                    user_id: string;
+                    kind: string;
+                    description: string;
+                    /** Format: uuid */
+                    correction_of: string | null;
+                }[];
+                resources: {
+                    kind: string;
+                    title: string;
+                    url: string | null;
+                }[];
+                events: {
+                    type: string;
+                    occurred_at: string;
+                }[];
+                aiUsage: {
+                    calls: number;
+                    promptTokens: number;
+                    completionTokens: number;
+                    costStatus: string;
+                    note: string;
+                };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
