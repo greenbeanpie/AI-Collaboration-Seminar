@@ -3,10 +3,9 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
-import { newId } from '../core/db';
 import { invalidState, notFound, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
-import { reserveAiSlot, settleReservation } from '../services/budget';
+import { withReservedAiJob } from '../services/budget';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';
@@ -129,15 +128,14 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(member.projectId)
       .all<MemberRow>();
 
-    const jobId = newId();
-    await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'assignment_suggest' });
-    try {
+    return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'assignment_suggest' }, async (jobId, configVersionId) => {
       await createJobAndDispatch(c.env, {
         projectId: member.projectId,
         kind: 'assignment_suggest',
         jobId,
         createdBy: user.id,
         input: {
+          configVersionId,
           projectId: member.projectId,
           requestedBy: user.id,
           requirementSetId,
@@ -160,11 +158,8 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
           })),
         },
       });
-    } catch (error) {
-      await settleReservation(c.env, jobId, 'released');
-      throw error;
-    }
     return { status: 202 as const, body: { jobId } };
+    });
     });
     return c.json(apiData(c, idem.body), idem.status);
   });

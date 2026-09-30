@@ -6,7 +6,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
-import { reserveAiSlot } from '../services/budget';
+import { withReservedAiJob } from '../services/budget';
 import { projectParams } from './projects';
 import { parsePaging, nextCursor } from '../core/pagination';
 
@@ -169,21 +169,29 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
       if (!memberRow) throw notFound('成员不存在或不属于本项目');
     }
 
-    const rehearsalId = newId();
-    await c.env.DB.prepare(
-      "INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7)",
-    )
-      .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(body.materialVersionIds), user.id, nowIso())
-      .run();
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+      const rehearsalId = newId();
+      await c.env.DB.prepare(
+        "INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7)",
+      )
+        .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(body.materialVersionIds), user.id, nowIso())
+        .run();
 
-    const jobId = await createJobAndDispatch(c.env, {
-      projectId: member.projectId,
-      kind: 'rehearsal_turn',
-      input: { rehearsalId, projectId: member.projectId, phase: 'question' },
-      createdBy: user.id,
+      try {
+        await createJobAndDispatch(c.env, {
+          jobId,
+          projectId: member.projectId,
+          kind: 'rehearsal_turn',
+          input: { rehearsalId, projectId: member.projectId, phase: 'question', configVersionId },
+          createdBy: user.id,
+        });
+      } catch (error) {
+        if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.prepare('DELETE FROM rehearsals WHERE id = ?1').bind(rehearsalId).run();
+        throw error;
+      }
+      return { rehearsalId, jobId };
     });
-    await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'rehearsal_turn' });
-    return c.json(apiData(c, { rehearsalId, jobId }), 202);
+    return c.json(apiData(c, result), 202);
   });
 
   app.openapi(listRoute, async (c) => {
@@ -210,21 +218,29 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     if (rehearsal.status !== 'active') throw invalidState('演练已结束');
     if ((await loadTurns(c.env, rehearsal.id)).length === 0) throw invalidState('第一问尚未生成，请稍后');
 
-    const turnId = newId();
-    await c.env.DB.prepare(
-      "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6)",
-    )
-      .bind(turnId, rehearsal.id, member.projectId, rehearsal.id, JSON.stringify({ content: body.content }), nowIso())
-      .run();
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+      const turnId = newId();
+      await c.env.DB.prepare(
+        "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6)",
+      )
+        .bind(turnId, rehearsal.id, member.projectId, rehearsal.id, JSON.stringify({ content: body.content }), nowIso())
+        .run();
 
-    const jobId = await createJobAndDispatch(c.env, {
-      projectId: member.projectId,
-      kind: 'rehearsal_turn',
-      input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'followup' },
-      createdBy: user.id,
+      try {
+        await createJobAndDispatch(c.env, {
+          jobId,
+          projectId: member.projectId,
+          kind: 'rehearsal_turn',
+          input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'followup', configVersionId },
+          createdBy: user.id,
+        });
+      } catch (error) {
+        if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.prepare('DELETE FROM rehearsal_turns WHERE id = ?1').bind(turnId).run();
+        throw error;
+      }
+      return { turnId, jobId };
     });
-    await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'rehearsal_turn' });
-    return c.json(apiData(c, { turnId, jobId }), 202);
+    return c.json(apiData(c, result), 202);
   });
 
   app.openapi(finishRoute, async (c) => {
@@ -233,13 +249,16 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, member.projectId);
     if (rehearsal.status !== 'active') throw invalidState('演练已结束');
 
-    const jobId = await createJobAndDispatch(c.env, {
-      projectId: member.projectId,
-      kind: 'rehearsal_turn',
-      input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'summary' },
-      createdBy: user.id,
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+      await createJobAndDispatch(c.env, {
+        jobId,
+        projectId: member.projectId,
+        kind: 'rehearsal_turn',
+        input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'summary', configVersionId },
+        createdBy: user.id,
+      });
+      return { jobId };
     });
-    await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'rehearsal_turn' });
-    return c.json(apiData(c, { jobId }), 202);
+    return c.json(apiData(c, result), 202);
   });
 }

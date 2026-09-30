@@ -56,6 +56,7 @@ async function loadHistory(env: Env, rehearsalId: string): Promise<string> {
 /** 答辩演练执行：出题 →（逐题回答/追问）→ 总结；对成员的反馈不转化为个人排名 */
 export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as RehearsalJobInput;
   try {
     const rehearsal = await env.DB.prepare('SELECT * FROM rehearsals WHERE id = ?1 AND project_id = ?2')
@@ -96,6 +97,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       ];
       const { data } = await aiJsonCall(env, {
         projectId: input.projectId,
+        jobId,
         purpose: 'review',
         configVersionId: config.id,
         model: reviewModel.model,
@@ -139,6 +141,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     ];
     const { data } = await aiJsonCall(env, {
       projectId: input.projectId,
+      jobId,
       purpose: 'review',
       configVersionId: config.id,
       model: reviewModel.model,

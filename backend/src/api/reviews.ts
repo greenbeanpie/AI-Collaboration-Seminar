@@ -7,7 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { notFound } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
-import { reserveAiSlot } from '../services/budget';
+import { withReservedAiJob } from '../services/budget';
 import { projectParams } from './projects';
 
 const reviewParams = projectParams.extend({ reviewId: z.string().uuid() });
@@ -129,21 +129,28 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!row) throw notFound(`材料版本 ${versionId} 不存在或不属于本项目`);
       }
 
-      const reviewId = newId();
-      await c.env.DB.prepare(
-        "INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
-      )
-        .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
-        .run();
+      return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run' }, async (jobId, configVersionId) => {
+        const reviewId = newId();
+        await c.env.DB.prepare(
+          "INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
+        )
+          .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
+          .run();
 
-      const jobId = await createJobAndDispatch(c.env, {
-        projectId: member.projectId,
-        kind: 'review_run',
-        input: { reviewId, projectId: member.projectId },
-        createdBy: user.id,
+        try {
+          await createJobAndDispatch(c.env, {
+            jobId,
+            projectId: member.projectId,
+            kind: 'review_run',
+            input: { reviewId, projectId: member.projectId, configVersionId },
+            createdBy: user.id,
+          });
+        } catch (error) {
+          if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.prepare('DELETE FROM reviews WHERE id = ?1').bind(reviewId).run();
+          throw error;
+        }
+        return { status: 202 as const, body: { reviewId, jobId } };
       });
-      await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'review_run' });
-      return { status: 202 as const, body: { reviewId, jobId } };
     });
     return c.json(apiData(c, idem.body), idem.status);
   });

@@ -17,6 +17,7 @@ export interface GatewayCallInput {
   /** 需要 JSON 输出时置 true；模型不支持结构化约束时由调用方改用 JSON 提示 + Zod 校验 */
   jsonMode?: boolean;
   maxOutputTokens?: number;
+  beforeFetch?: () => Promise<void>;
 }
 
 export interface GatewayCallOutput {
@@ -87,6 +88,13 @@ export async function gatewayChat(
     if (!isAllowedModelEndpoint(url, endpoint.envName)) throw aiUnavailable('模型 API 必须使用公开 HTTPS 域名且不能包含查询参数');
     token = await unseal(input.config.apiKeyEncrypted, endpoint.authSecret ?? '');
   }
+  const textChars = input.messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
+  if (textChars > input.config.maxInputChars || input.messages.length > 32) {
+    throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
+  }
+  if (input.maxOutputTokens !== undefined && input.maxOutputTokens > input.config.maxOutputTokens) {
+    throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
+  }
   const body: Record<string, unknown> = {
     model: input.config.model,
     messages: input.messages,
@@ -97,6 +105,7 @@ export async function gatewayChat(
 
   const started = Date.now();
   let res: Response;
+  await input.beforeFetch?.();
   try {
     res = await fetchImpl(url, {
       method: 'POST',

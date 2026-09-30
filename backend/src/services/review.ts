@@ -48,6 +48,7 @@ const normalize = (s: string): string => s.replace(/\s+/g, '').toLowerCase();
 /** 预审执行（冻结写请求 #3 的运行端）：材料版本 × 评分版本 × 要求集 → 分项模拟分数 */
 export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as ReviewJobInput;
   try {
     const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2')
@@ -103,6 +104,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
 
     const { data } = await aiJsonCall(env, {
       projectId: input.projectId,
+      jobId,
       purpose: 'review',
       configVersionId: config.id,
       model: reviewModel.model,

@@ -5,7 +5,7 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, getJob, succeedJob } from './jobs';
-import { settleReservation } from './budget';
+import { markAiCallStarted, settleReservation } from './budget';
 import { recordEvent } from './events';
 import { markdownToDoc } from './tiptap';
 import { z } from 'zod';
@@ -97,7 +97,7 @@ export async function aiJsonCall<S extends z.ZodType>(
   const record = async (
     input: unknown,
     output: unknown,
-    status: 'ok' | 'repaired' | 'invalid',
+    status: 'ok' | 'repaired' | 'invalid' | 'failed',
     tokens: { promptTokens: number | null; completionTokens: number | null },
     latencyMs: number,
   ) =>
@@ -117,39 +117,38 @@ export async function aiJsonCall<S extends z.ZodType>(
       status,
     });
 
-  const started = Date.now();
-  let raw = '';
-  try {
-    const out = await gatewayChat(endpoint, { config: params.modelConfig, messages: params.messages, jsonMode: true });
-    raw = out.content;
-    const data = params.schema.parse(extractJson(raw));
-    await record(params.messages, raw, 'ok', out, out.latencyMs);
-    return { data, repaired: false };
-  } catch (firstError) {
-    const repairMessages = [
-      ...params.messages,
-      { role: 'assistant' as const, content: raw.slice(0, 8000) },
-      {
-        role: 'user' as const,
-        content: `你的上一次输出不合法（错误：${firstError instanceof Error ? firstError.message.slice(0, 300) : String(firstError)}）。请重新严格按 JSON 结构输出，不要任何额外文字。`,
-      },
-    ];
+  let messages = params.messages;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const started = Date.now();
+    let attempted = false;
+    let out: Awaited<ReturnType<typeof gatewayChat>> | undefined;
+    let failure: unknown;
     try {
-      const out2 = await gatewayChat(endpoint, { config: params.modelConfig, messages: repairMessages, jsonMode: true });
-      const data = params.schema.parse(extractJson(out2.content));
-      await record(repairMessages, out2.content, 'repaired', out2, out2.latencyMs);
-      return { data, repaired: true };
-    } catch (secondError) {
-      await record(
-        repairMessages,
-        { error: secondError instanceof Error ? secondError.message : String(secondError) },
-        'invalid',
-        { promptTokens: null, completionTokens: null },
-        Date.now() - started,
-      );
-      throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
+      out = await gatewayChat(endpoint, {
+        config: params.modelConfig, messages, jsonMode: true,
+        beforeFetch: async () => { await markAiCallStarted(env, params.jobId); attempted = true; },
+      });
+    } catch (error) {
+      if (!attempted) throw error; // 验证拒绝时没有请求，也不重试。
+      failure = error;
     }
+    let data: z.infer<S> | undefined;
+    if (out) {
+      try { data = params.schema.parse(extractJson(out.content)); } catch (error) { failure = error; }
+    }
+    // 每次已发出的请求都记录；账本/R2失败不触发第二次付费请求，尝试标记保留待对账。
+    await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
+      out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
+      out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
+    if (!failure) return { data: data!, repaired: attempt === 1 };
+    if (attempt === 1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
+    messages = [
+      ...params.messages,
+      { role: 'assistant', content: (out?.content ?? '').slice(0, 8000) },
+      { role: 'user', content: `你的上一次输出不合法（错误：${failure instanceof Error ? failure.message.slice(0, 300) : String(failure)}）。请重新严格按 JSON 结构输出，不要任何额外文字。` },
+    ];
   }
+  throw new AppError('AI_OUTPUT_INVALID', '模型输出不合法', 502, false);
 }
 
 /** 校验输入引用都归属本项目 */
@@ -252,6 +251,7 @@ async function buildGuideHistory(env: Env, sessionId: string | null): Promise<st
 /** 执行一次 AI 补位运行（do / guide / review_only） */
 export async function runAgentJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as AgentRunJobInput;
   try {
     const run = await env.DB.prepare('SELECT * FROM agent_runs WHERE id = ?1 AND project_id = ?2')
@@ -318,6 +318,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     if (input.capability === 'do') {
       const { data } = await aiJsonCall(env, {
         projectId: input.projectId,
+        jobId,
+        runId: input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,
@@ -330,6 +332,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     } else if (input.capability === 'guide') {
       const { data } = await aiJsonCall(env, {
         projectId: input.projectId,
+        jobId,
+        runId: input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,
@@ -342,6 +346,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     } else {
       const { data } = await aiJsonCall(env, {
         projectId: input.projectId,
+        jobId,
+        runId: input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,

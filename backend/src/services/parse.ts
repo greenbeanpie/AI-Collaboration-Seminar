@@ -6,9 +6,10 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, succeedJob, waitJobInput, getJob } from './jobs';
-import { reserveAiSlot, settleReservation } from './budget';
+import { markAiCallStarted, reserveAiSlot, settleReservation } from './budget';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
+import { aiJsonCall } from './agent';
 
 const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-page-v1';
@@ -220,7 +221,7 @@ const ocrOutputSchema = z.object({
 });
 
 /** 步骤二：对已上传页面图执行视觉 OCR（低成本视觉模型，结果标记待人工复核） */
-export async function ocrPendingPages(env: Env, sourceVersionId: string, configVersionId?: string): Promise<{ ocred: number; failed: number; stillMissing: number }> {
+export async function ocrPendingPages(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string): Promise<{ ocred: number; failed: number; stillMissing: number }> {
   const version = await loadVersion(env, sourceVersionId);
   const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
@@ -265,10 +266,14 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
 
     const started = Date.now();
     let ok = false;
+    let attempted = false;
+    let response: Awaited<ReturnType<typeof gatewayChat>> | undefined;
+    let recording = false;
     try {
       const out = await gatewayChat(endpoint, {
         config: vision,
         jsonMode: true,
+        beforeFetch: async () => { await markAiCallStarted(env, jobId); attempted = true; },
         messages: [
           {
             role: 'user',
@@ -279,6 +284,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
           },
         ],
       });
+      response = out;
       const parsed = ocrOutputSchema.parse(JSON.parse(out.content));
       // 空文本不得当作识别成功：否则会跳过失败页并在后续误报「无可分析内容」（A06）
       if (!parsed.text.trim()) throw new AppError('AI_OUTPUT_INVALID', '视觉模型未识别出文字', 422, false);
@@ -289,8 +295,10 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       )
         .bind(page.id, parsed.confidence, nowIso())
         .run();
+      recording = true;
       await recordAiCall(env, {
         projectId: version.project_id,
+        jobId,
         purpose: 'visionEconomy',
         configVersionId: config.id,
         promptVersion: OCR_PROMPT_VERSION,
@@ -304,16 +312,19 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       });
       ok = true;
     } catch (err) {
+      if (!attempted) throw err;
+      if (recording) throw err;
       await recordAiCall(env, {
         projectId: version.project_id,
+        jobId,
         purpose: 'visionEconomy',
         configVersionId: config.id,
         promptVersion: OCR_PROMPT_VERSION,
         model: vision.model,
         input: { sourceVersionId: version.id, pageNumber: page.page_number },
         output: { error: err instanceof Error ? err.message : String(err) },
-        promptTokens: null,
-        completionTokens: null,
+        promptTokens: response?.promptTokens ?? null,
+        completionTokens: response?.completionTokens ?? null,
         latencyMs: Date.now() - started,
         status: 'failed',
       });
@@ -399,7 +410,7 @@ async function validateCitations(
 }
 
 /** 步骤三：文本模型提取要求草稿（结构化输出 + 一次修复重试 + 引用校验） */
-export async function extractRequirements(env: Env, sourceVersionId: string, configVersionId?: string): Promise<{ requirementSetId: string; count: number }> {
+export async function extractRequirements(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string): Promise<{ requirementSetId: string; count: number }> {
   const version = await loadVersion(env, sourceVersionId);
   const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
@@ -434,80 +445,17 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
     { role: 'user' as const, content: `<source>\n${listing}\n</source>` },
   ];
 
-  const endpoint = {
-    accountId: env.CLOUDFLARE_ACCOUNT_ID,
-    apiToken: env.CLOUDFLARE_API_TOKEN,
-    gatewayId: env.AI_GATEWAY_ID,
-    authSecret: env.AUTH_SECRET,
-    envName: env.ENV_NAME,
-  };
-  const started = Date.now();
-  let raw = '';
-  let repaired = false;
-  let parsed: z.infer<typeof requirementOutputSchema>;
-
-  try {
-    const out = await gatewayChat(endpoint, { config: textModel, messages, jsonMode: true });
-    raw = out.content;
-    parsed = requirementOutputSchema.parse(extractJson(raw));
-    await recordAiCall(env, {
-      projectId: version.project_id,
-      purpose: 'textEconomy',
-      configVersionId: config.id,
-      promptVersion: AI_PROMPT_VERSION,
-      model: textModel.model,
-      input: { messages },
-      output: raw,
-      promptTokens: out.promptTokens,
-      completionTokens: out.completionTokens,
-      latencyMs: out.latencyMs,
-      status: 'ok',
-    });
-  } catch (err) {
-    // 一次格式修复重试（PLAN 二.6：修复调用计入费用）
-    const repairMessages = [
-      ...messages,
-      { role: 'assistant' as const, content: raw.slice(0, 8000) },
-      {
-        role: 'user' as const,
-        content: `你的上一次输出不合法（错误：${err instanceof Error ? err.message.slice(0, 300) : String(err)}）。请重新严格按 JSON 结构输出，不要任何额外文字。`,
-      },
-    ];
-    try {
-      const out2 = await gatewayChat(endpoint, { config: textModel, messages: repairMessages, jsonMode: true });
-      raw = out2.content;
-      parsed = requirementOutputSchema.parse(extractJson(raw));
-      repaired = true;
-      await recordAiCall(env, {
-        projectId: version.project_id,
-        purpose: 'textEconomy',
-        configVersionId: config.id,
-        promptVersion: AI_PROMPT_VERSION,
-        model: textModel.model,
-        input: { messages: repairMessages },
-        output: raw,
-        promptTokens: out2.promptTokens,
-        completionTokens: out2.completionTokens,
-        latencyMs: out2.latencyMs,
-        status: 'repaired',
-      });
-    } catch (err2) {
-      await recordAiCall(env, {
-        projectId: version.project_id,
-        purpose: 'textEconomy',
-        configVersionId: config.id,
-        promptVersion: AI_PROMPT_VERSION,
-        model: textModel.model,
-        input: { messages: repairMessages },
-        output: { error: err2 instanceof Error ? err2.message : String(err2) },
-        promptTokens: null,
-        completionTokens: null,
-        latencyMs: Date.now() - started,
-        status: 'invalid',
-      });
-      throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
-    }
-  }
+  const { data: parsed } = await aiJsonCall(env, {
+    projectId: version.project_id,
+    jobId,
+    purpose: 'textEconomy',
+    configVersionId: config.id,
+    model: textModel.model,
+    modelConfig: textModel,
+    promptVersion: AI_PROMPT_VERSION,
+    messages,
+    schema: requirementOutputSchema,
+  });
 
   await validateCitations(env, version.id, parsed.requirements as ModelRequirement[]);
 
@@ -543,13 +491,6 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
   inserts.push(env.DB.prepare("UPDATE source_versions SET status = 'ready', parse_error = NULL WHERE id = ?1").bind(version.id));
   await env.DB.batch(inserts);
   return { requirementSetId: setId, count: parsed.requirements.length };
-}
-
-function extractJson(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) throw new Error('响应中未找到 JSON 对象');
-  return JSON.parse(text.slice(start, end + 1));
 }
 
 /**
@@ -589,7 +530,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         return { status: 'waiting_input' };
       }
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
-        extractRequirements(env, input.sourceVersionId, input.configVersionId),
+        extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
       );
       await succeedJob(env, jobId, result);
       return { status: 'succeeded' };
@@ -602,7 +543,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
   // phase === 'ocr'
   try {
     const { stillMissing } = await withAiSlot(env, jobId, job.project_id, 'ocr_pages', () =>
-      ocrPendingPages(env, input.sourceVersionId, input.configVersionId),
+      ocrPendingPages(env, input.sourceVersionId, input.configVersionId, jobId),
     );
     if (stillMissing > 0) {
       await waitJobInput(env, jobId, { stillMissing, message: '仍有页面未上传图片' });
@@ -611,7 +552,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
-      extractRequirements(env, input.sourceVersionId, input.configVersionId),
+      extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
     );
     await succeedJob(env, jobId, result);
     return { status: 'succeeded' };

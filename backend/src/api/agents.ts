@@ -8,7 +8,7 @@ import { invalidState, notFound, validationFailed, versionConflict } from '../co
 import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
-import { reserveAiSlot } from '../services/budget';
+import { withReservedAiJob } from '../services/budget';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -190,45 +190,53 @@ async function createRunAndJob(
   },
 ): Promise<{ runId: string; jobId: string }> {
   const runId = newId();
-  await env.DB.prepare(
-    "INSERT INTO agent_runs (id, session_id, project_id, capability, mode, status, inputs_json, prompt_version, created_at) VALUES (?1, ?2, ?3, ?4, ?4, 'running', ?5, 'agent-v1', ?6)",
-  )
-    .bind(
-      runId,
-      params.sessionId,
-      params.projectId,
-      params.capability,
-      JSON.stringify({
-        taskId: params.taskId,
-        instruction: params.instruction,
-        roleTemplate: params.roleTemplate,
-        materialVersionIds: params.materialVersionIds,
-        sourceVersionIds: params.sourceVersionIds,
-        turnSequence: params.turnSequence,
-      }),
-      nowIso(),
+  return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run' }, async (jobId, configVersionId) => {
+    await env.DB.prepare(
+      "INSERT INTO agent_runs (id, session_id, project_id, capability, mode, status, inputs_json, prompt_version, created_at) VALUES (?1, ?2, ?3, ?4, ?4, 'running', ?5, 'agent-v1', ?6)",
     )
-    .run();
+      .bind(
+        runId,
+        params.sessionId,
+        params.projectId,
+        params.capability,
+        JSON.stringify({
+          taskId: params.taskId,
+          instruction: params.instruction,
+          roleTemplate: params.roleTemplate,
+          materialVersionIds: params.materialVersionIds,
+          sourceVersionIds: params.sourceVersionIds,
+          turnSequence: params.turnSequence,
+        }),
+        nowIso(),
+      )
+      .run();
 
-  const jobId = await createJobAndDispatch(env, {
-    projectId: params.projectId,
-    kind: 'agent_run',
-    input: {
-      runId,
-      projectId: params.projectId,
-      capability: params.capability,
-      taskId: params.taskId,
-      instruction: params.instruction,
-      roleTemplate: params.roleTemplate,
-      materialVersionIds: params.materialVersionIds,
-      sourceVersionIds: params.sourceVersionIds,
-      turnSequence: params.turnSequence,
-    },
-    createdBy: params.userId,
+    try {
+      await createJobAndDispatch(env, {
+        jobId,
+        projectId: params.projectId,
+        kind: 'agent_run',
+        input: {
+          configVersionId,
+          runId,
+          projectId: params.projectId,
+          capability: params.capability,
+          taskId: params.taskId,
+          instruction: params.instruction,
+          roleTemplate: params.roleTemplate,
+          materialVersionIds: params.materialVersionIds,
+          sourceVersionIds: params.sourceVersionIds,
+          turnSequence: params.turnSequence,
+        },
+        createdBy: params.userId,
+      });
+    } catch (error) {
+      const job = await env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first();
+      if (!job) await env.DB.prepare('DELETE FROM agent_runs WHERE id = ?1').bind(runId).run();
+      throw error;
+    }
+    return { runId, jobId };
   });
-  // 预算预占在任务创建后登记（并发检查 + 预占记录）
-  await reserveAiSlot(env, { projectId: params.projectId, jobId, purpose: 'agent_run' });
-  return { runId, jobId };
 }
 
 async function loadSession(env: AppEnv['Bindings'], sessionId: string, projectId: string): Promise<SessionRow> {
@@ -474,29 +482,35 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       const versionId = newId();
       const now = nowIso();
 
-      // 版本 + 指针 + 运行标记 + 账本事件（PLAN 二.7：原子提交语义）
+      // 所有写入依赖同一条件插入；batch 串行且原子，竞争失败只写零行。
       const results = await c.env.DB.batch([
         c.env.DB.prepare(
           `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, ai_run_id, author_id, created_at, attachments_json)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ai_adoption', ?7, ?8, ?9, COALESCE((SELECT attachments_json FROM material_versions WHERE id = (SELECT current_version_id FROM materials WHERE id = ?2)), '[]'))`,
-        ).bind(versionId, material.id, member.projectId, newRevision, JSON.stringify(body.doc), markdown, run.id, user.id, now),
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'ai_adoption', ?7, ?8, ?9,
+                  COALESCE((SELECT attachments_json FROM material_versions WHERE id = m.current_version_id), '[]')
+             FROM materials m WHERE m.id = ?2 AND m.revision = ?10
+              AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ?7 AND status = 'succeeded')`,
+        ).bind(versionId, material.id, member.projectId, newRevision, JSON.stringify(body.doc), markdown, run.id, user.id, now, body.expectedRevision),
         c.env.DB.prepare(
-          'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4',
-        ).bind(material.id, versionId, now, body.expectedRevision),
-        c.env.DB.prepare(
-          "UPDATE agent_runs SET status = 'adopted', adopted_at = ?2, adoption_material_version_id = ?3 WHERE id = ?1 AND status = 'succeeded'",
+          "UPDATE agent_runs SET status = 'adopted', adopted_at = ?2, adoption_material_version_id = ?3 WHERE id = ?1 AND status = 'succeeded' AND EXISTS (SELECT 1 FROM material_versions WHERE id = ?3)",
         ).bind(run.id, now, versionId),
-        // 账本事件与业务写入同 batch（A08）：业务成功即事件必在，避免二次写入失败丢账
+        c.env.DB.prepare(
+          `UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3
+            WHERE id = ?1 AND revision = ?4
+              AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ?5 AND adoption_material_version_id = ?2 AND status = 'adopted')`,
+        ).bind(material.id, versionId, now, body.expectedRevision, run.id),
         c.env.DB.prepare(
           `INSERT INTO events (id, project_id, actor_type, actor_id, type, entity_type, entity_id, dedup_key, payload_json, occurred_at)
-           VALUES (?1, ?2, 'user', ?3, 'material.adopted', 'material_version', ?4, ?5, ?6, ?7)
+           SELECT ?1, ?2, 'user', ?3, 'material.adopted', 'material_version', ?4, ?5, ?6, ?7
+            WHERE EXISTS (SELECT 1 FROM materials WHERE id = ?8 AND current_version_id = ?4)
+              AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ?5 AND adoption_material_version_id = ?4)
            ON CONFLICT (project_id, type, entity_type, entity_id, dedup_key) DO NOTHING`,
-        ).bind(newId(), member.projectId, user.id, versionId, run.id, JSON.stringify({ runId: run.id, revision: newRevision, aiRunId: run.id }), now),
+        ).bind(newId(), member.projectId, user.id, versionId, run.id, JSON.stringify({ runId: run.id, revision: newRevision, aiRunId: run.id }), now, material.id),
       ]);
-      if ((results[1]?.meta?.changes ?? 0) === 0) {
-        await c.env.DB.prepare('DELETE FROM material_versions WHERE id = ?1').bind(versionId).run();
-        await c.env.DB.prepare("UPDATE agent_runs SET status = 'succeeded', adopted_at = NULL, adoption_material_version_id = NULL WHERE id = ?1").bind(run.id).run();
-        throw versionConflict(material.revision);
+      if ((results[0]?.meta?.changes ?? 0) === 0) {
+        const current = await c.env.DB.prepare('SELECT revision FROM materials WHERE id = ?1').bind(material.id).first<{ revision: number }>();
+        if (current?.revision !== body.expectedRevision) throw versionConflict(current?.revision ?? material.revision);
+        throw invalidState('该 AI 运行已被其他请求采纳');
       }
       return { status: 201 as const, body: { materialVersionId: versionId, revision: newRevision } };
     });

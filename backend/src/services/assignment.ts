@@ -52,6 +52,7 @@ async function assertCurrentMember(env: Env, projectId: string, userId: string):
 /** Generate advisory-only assignments for a project snapshot. Applying suggestions is a separate user action. */
 export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as AssignmentSuggestionInput;
   try {
     if (job.kind !== 'assignment_suggest' || !job.project_id || job.project_id !== input.projectId) {
