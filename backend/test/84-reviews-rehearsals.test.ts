@@ -121,7 +121,7 @@ describe('预审', () => {
     void other;
     const bad = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/reviews`, {
       method: 'POST',
-      headers: { cookie, 'content-type': 'application/json' },
+      headers: { cookie, 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ rubricVersionId, requirementSetId, materialVersionIds: [otherSetup.materialVersionId] }),
     });
     expect(bad.status).toBe(404);

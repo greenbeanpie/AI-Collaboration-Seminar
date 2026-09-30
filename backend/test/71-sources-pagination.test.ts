@@ -98,6 +98,7 @@ it('已授权成员读取来源版本时获得服务端原文件关联', async (
 });
 
 it('同一解析请求键回放原任务，不重复创建异步任务', async () => {
+  await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1').run();
   const owner = await seedUser();
   const projectId = await seedProject(owner.userId);
   const cookie = authCookie(owner.token);

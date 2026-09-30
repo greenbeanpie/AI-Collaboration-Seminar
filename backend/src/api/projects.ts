@@ -16,6 +16,7 @@ export const projectSchema = z.object({
   deadlineDate: z.string().nullable().openapi({ description: '比赛截止日期（YYYY-MM-DD，保留精度不补时刻）' }),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']),
   status: z.enum(['active', 'archived']),
+  aiBudgetUsd: z.number().nonnegative().nullable().openapi({ description: '项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束' }),
   revision: z.number().int(),
   myRole: z.enum(['owner', 'member']),
   createdAt: z.string(),
@@ -34,6 +35,7 @@ const createBody = z.object({
   description: z.string().max(2000).default(''),
   deadlineDate: dateOnly.optional(),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']).default('unknown'),
+  aiBudgetUsd: z.number().nonnegative().nullable().optional(),
 });
 
 const patchBody = z.object({
@@ -43,6 +45,7 @@ const patchBody = z.object({
   deadlineDate: dateOnly.nullable().optional(),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']).optional(),
   status: z.enum(['active', 'archived']).optional(),
+  aiBudgetUsd: z.number().nonnegative().nullable().optional(),
 });
 
 const projectCreateRoute = createRoute({
@@ -100,6 +103,7 @@ interface ProjectRow {
   description: string;
   competition_deadline_date: string | null;
   deadline_precision: string;
+  ai_budget_usd: number | null;
   status: string;
   revision: number;
   created_at: string;
@@ -113,6 +117,7 @@ function toProject(row: ProjectRow, role: 'owner' | 'member') {
     description: row.description,
     deadlineDate: row.competition_deadline_date,
     deadlinePrecision: row.deadline_precision as 'date' | 'datetime' | 'unknown',
+    aiBudgetUsd: row.ai_budget_usd,
     status: row.status as 'active' | 'archived',
     revision: row.revision,
     myRole: role,
@@ -142,8 +147,8 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
     const teamSizeLimit = await readTeamSizeLimit(c.env.DB);
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, status, revision, created_by, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'active', 1, ?7, ?8, ?8)`,
+        `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9)`,
       ).bind(
         projectId,
         body.name,
@@ -151,6 +156,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
         body.deadlineDate ?? null,
         body.deadlinePrecision,
         teamSizeLimit,
+        body.aiBudgetUsd ?? null,
         user.id,
         now,
       ),
@@ -226,9 +232,10 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
          competition_deadline_date = CASE WHEN ?4 = 1 THEN ?5 ELSE competition_deadline_date END,
          deadline_precision = COALESCE(?6, deadline_precision),
          status = COALESCE(?7, status),
+         ai_budget_usd = CASE WHEN ?8 = 1 THEN ?9 ELSE ai_budget_usd END,
          revision = revision + 1,
-         updated_at = ?8
-       WHERE id = ?1 AND revision = ?9`,
+         updated_at = ?10
+       WHERE id = ?1 AND revision = ?11`,
     )
       .bind(
         member.projectId,
@@ -238,6 +245,8 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
         body.deadlineDate ?? null,
         body.deadlinePrecision ?? null,
         body.status ?? null,
+        'aiBudgetUsd' in body ? 1 : 0,
+        body.aiBudgetUsd ?? null,
         nowIso(),
         body.expectedRevision,
       )

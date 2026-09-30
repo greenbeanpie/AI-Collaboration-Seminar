@@ -16,7 +16,24 @@ afterEach(async () => {
   const activeIntrospectors = workflowIntrospectors;
   workflowIntrospectors = [];
   // Stop introspection and abort unfinished instances created during the test.
-  await Promise.all(activeIntrospectors.map((introspector) => introspector.dispose()));
+  await Promise.all(activeIntrospectors.map(async (introspector) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const instances = await introspector.get();
+      // A business terminal state can precede step.do completion. Allow the engine to finish
+      // before aborting; keep teardown bounded for intentionally unfinished test workflows.
+      // 说明（A13）：负向用例的实例停在 'errored'，仅等待 'complete' 会在超时后被 abort，
+      // 从而产生 workerd canceled request / RPC stub 提示。试过并发等待多个终态，反而因
+      // 遗留待决 RPC 调用把告警从 5 条放大到 44 条，故保留单一终态等待并如实记录日志。
+      await Promise.race([
+        Promise.all(instances.map(instance => instance.waitForStatus('complete'))),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, 2000); }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      await introspector.dispose();
+    }
+  }));
 });
 
 /**

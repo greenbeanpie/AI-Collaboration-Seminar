@@ -4,8 +4,9 @@
  * 仅使用 ASCII，保证字节偏移 == 字符数。
  * options.text=false 时生成无文本层的页面（模拟纯扫描 PDF）。
  */
-export function makePdf(pageCount: number, options?: { text?: boolean }): Uint8Array {
+export function makePdf(pageCount: number, options?: { text?: boolean; scannedPages?: number[] }): Uint8Array {
   const withText = options?.text ?? true;
+  const scannedPages = new Set(options?.scannedPages ?? []);
   const objects: string[] = [];
   const put = (n: number, body: string) => {
     objects[n] = `${n} 0 obj\n${body}\nendobj\n`;
@@ -18,7 +19,7 @@ export function makePdf(pageCount: number, options?: { text?: boolean }): Uint8A
 
   for (let i = 0; i < pageCount; i++) {
     const text = `Page ${i + 1}: submit the signed form before the deadline 2026-10-08. Team size is five members.`;
-    const content = withText ? `BT /F1 12 Tf 72 720 Td (${text}) Tj ET` : '';
+    const content = withText && !scannedPages.has(i + 1) ? `BT /F1 12 Tf 72 720 Td (${text}) Tj ET` : '';
     put(
       4 + i * 2,
       `<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`,

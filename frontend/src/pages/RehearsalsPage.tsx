@@ -27,7 +27,9 @@ export function RehearsalsPage() {
   const [memberId, setMemberId] = useState('');
   const [selectedMaterialVersionIds, setSelectedMaterialVersionIds] = useState<string[]>([]);
   const [initializedMaterialSelection, setInitializedMaterialSelection] = useState(false);
-  const [recentIds, setRecentIds] = useState(() => readRecentIds(recentIdsKey(projectId)));
+  const historyQuery = useQuery({ queryKey: ['rehearsals', projectId], queryFn: () => listAllItems<'RehearsalListResponse'>(projectPath(projectId, '/rehearsals')) });
+  const [localRecentIds, setRecentIds] = useState(() => readRecentIds(recentIdsKey(projectId)));
+  const recentIds = Array.from(new Set([...(historyQuery.data ?? []).map(r => r.rehearsalId), ...localRecentIds]));
   const [selectedRehearsalId, setSelectedRehearsalId] = useState(() => readRecentIds(recentIdsKey(projectId))[0] ?? '');
   const [pendingRehearsalJob, setPendingRehearsalJob] = useState<PendingRehearsalJob | null>(() => readPendingJob<PendingRehearsalJob>(pendingJobKey(projectId)));
   const [answerText, setAnswerText] = useState('');
@@ -100,6 +102,7 @@ export function RehearsalsPage() {
       setSelectedRehearsalId(result.rehearsalId);
       savePending(result.rehearsalId, result.jobId, 'create');
       setAnswerText('');
+      void queryClient.invalidateQueries({ queryKey: ['rehearsals', projectId] });
       void queryClient.invalidateQueries({ queryKey: ['rehearsal', projectId, result.rehearsalId] });
     } catch (error) {
       setCreateError(error);
@@ -211,11 +214,12 @@ export function RehearsalsPage() {
         </form>}
       </SectionCard>
 
-      <SectionCard title="最近的真实演练" detail="后端未提供演练列表接口。本机保存最近由创建响应返回的演练 ID，选择时会重新读取后端记录。">
+      <SectionCard title="最近的真实演练" detail="历史由后端保存，可跨设备查看；选择记录读取完整问答。">
+        {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}
         {recentIds.length > 0 ? <div className="stack">
           <div className="ai-workflow-session-picker">
             <select className="ai-workflow-select" aria-label="选择最近的答辩演练" value={selectedRehearsalId} onChange={(event) => setSelectedRehearsalId(event.target.value)}>
-              {recentIds.map((id) => <option key={id} value={id}>演练 {id.slice(0, 8)} · {id}</option>)}
+              <option value="">选择历史演练</option>{recentIds.map((id) => <option key={id} value={id}>演练 {id.slice(0, 8)} · {id}</option>)}
             </select>
             <button className="button button-quiet button-small" onClick={() => void rehearsalQuery.refetch()} disabled={!selectedRehearsalId || rehearsalQuery.isFetching}><RefreshCw size={14} />重新读取</button>
             <button className="button button-quiet button-small" onClick={removeRecent} disabled={!selectedRehearsalId}>从本机最近列表移除</button>
@@ -239,7 +243,7 @@ export function RehearsalsPage() {
               <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!canAnswer || !aiEnabled || sendingAnswer || !answerText.trim()}><Send size={15} />{sendingAnswer ? '正在提交回答' : '提交回答'}</button><button className="button button-quiet" type="button" onClick={() => void handleFinish()} disabled={!aiEnabled || hasPendingJob || finishing || isFinishPending || rehearsal.turns.length === 0}><Check size={15} />{finishing || isFinishPending ? '正在生成总结' : '结束并生成总结'}</button>{!canAnswer && rehearsal.status === 'active' && <span className="muted">等候后端保存的问题后再提交回答。</span>}</div>
             </form>}
           </> : <EmptyState title="选择一场最近的演练" detail="演练记录只从真实服务端按其 ID 恢复。" />}
-        </div> : <EmptyState title="还没有本机最近演练" detail="演练记录从真实后端读取；本机只保存由创建响应返回的演练 ID，供之后恢复使用。" />}
+        </div> : <EmptyState title="还没有答辩演练" detail="创建演练后，可在此处和其他设备恢复。" />}
       </SectionCard>
     </div>
     {!capabilities.data?.features.aiEnabled && <div className="ai-workflow-meta"><MessageSquareText size={15} /><span>答辩问题、追问和总结均要求真实后端 AI 能力。AI 未启用时，只能查看已有真实演练。</span></div>}

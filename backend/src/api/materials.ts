@@ -5,7 +5,6 @@ import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { notFound, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
-import { recordEvent } from '../services/events';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -14,6 +13,7 @@ const DOC_MAX_BYTES = 200 * 1024;
 const materialParams = projectParams.extend({ materialId: z.string().uuid() });
 const versionParams = materialParams.extend({ versionId: z.string().uuid() });
 
+const attachmentSchema = z.object({ fileId: z.string().uuid(), name: z.string() });
 const materialSchema = z.object({
   materialId: z.string().uuid(),
   title: z.string(),
@@ -25,6 +25,7 @@ const materialSchema = z.object({
       revision: z.number().int(),
       doc: z.record(z.string(), z.unknown()),
       markdown: z.string(),
+      attachments: z.array(attachmentSchema),
       origin: z.enum(['manual', 'ai_adoption']),
       authorId: z.string().uuid(),
       createdAt: z.string(),
@@ -41,6 +42,7 @@ const versionSchema = z.object({
   revision: z.number().int(),
   doc: z.record(z.string(), z.unknown()),
   markdown: z.string(),
+  attachments: z.array(attachmentSchema),
   origin: z.enum(['manual', 'ai_adoption']),
   aiRunId: z.string().uuid().nullable(),
   authorId: z.string().uuid(),
@@ -58,6 +60,7 @@ const saveBody = z.object({
   expectedRevision: z.number().int().min(1),
   doc: z.record(z.string(), z.unknown()),
   markdown: z.string().max(200_000).optional(),
+  attachmentIds: z.array(z.string().uuid()).max(20).optional(),
 });
 
 const materialCreateRoute = createRoute({
@@ -133,6 +136,7 @@ interface VersionRow {
   material_id: string;
   revision: number;
   doc_json: string;
+  attachments_json: string;
   markdown: string;
   origin: 'manual' | 'ai_adoption';
   ai_run_id: string | null;
@@ -146,6 +150,7 @@ function toVersion(r: VersionRow) {
     revision: r.revision,
     doc: JSON.parse(r.doc_json) as Record<string, unknown>,
     markdown: r.markdown,
+    attachments: JSON.parse(r.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
     origin: r.origin,
     aiRunId: r.ai_run_id,
     authorId: r.author_id,
@@ -161,11 +166,11 @@ async function loadMaterial(env: AppEnv['Bindings'], materialId: string, project
   return row;
 }
 
-async function loadVersion(env: AppEnv['Bindings'], versionId: string, projectId: string): Promise<VersionRow> {
+async function loadVersion(env: AppEnv['Bindings'], versionId: string, projectId: string, materialId?: string): Promise<VersionRow> {
   const row = await env.DB.prepare(
-    'SELECT v.* FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2',
+    'SELECT v.* FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2 AND (?3 IS NULL OR v.material_id = ?3)',
   )
-    .bind(versionId, projectId)
+    .bind(versionId, projectId, materialId ?? null)
     .first<VersionRow>();
   if (!row) throw notFound('材料版本不存在');
   return row;
@@ -186,6 +191,7 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow) {
           revision: current.revision,
           doc: JSON.parse(current.doc_json) as Record<string, unknown>,
           markdown: current.markdown,
+          attachments: JSON.parse(current.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
           origin: current.origin,
           authorId: current.author_id,
           createdAt: current.created_at,
@@ -206,7 +212,11 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const materialId = newId();
     const versionId = newId();
     const now = nowIso();
-    const emptyDoc = { type: 'doc', content: [] };
+    const headings = ['作品概述', '问题与需求', '方案与创新', '实现与验证', '团队分工', '风险与后续计划'];
+    const emptyDoc = body.kind === 'work-introduction' ? { type: 'doc', content: headings.flatMap(text => [
+      { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text }] },
+      { type: 'paragraph', content: [{ type: 'text', text: '待填写并人工核验' }] },
+    ]) } : { type: 'doc', content: [] };
     await c.env.DB.batch([
       c.env.DB.prepare(
         'INSERT INTO materials (id, project_id, title, kind, current_version_id, revision, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?7)',
@@ -214,7 +224,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       c.env.DB.prepare(
         `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at)
          VALUES (?1, ?2, ?3, 1, ?4, ?5, 'manual', ?6, ?7)`,
-      ).bind(versionId, materialId, member.projectId, JSON.stringify(emptyDoc), '', user.id, now),
+      ).bind(versionId, materialId, member.projectId, JSON.stringify(emptyDoc), docToMarkdown(emptyDoc), user.id, now),
     ]);
     const material = await loadMaterial(c.env, materialId, member.projectId);
     return c.json(apiData(c, await materialDetail(c.env, material)), 201);
@@ -269,6 +279,16 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!isTiptapDoc(body.doc)) throw validationFailed('doc 必须是 Tiptap JSON（{type:"doc", content:[...]}）');
     if (JSON.stringify(body.doc).length > DOC_MAX_BYTES) throw validationFailed('doc 超过大小限制');
     const markdown = body.markdown ?? docToMarkdown(body.doc);
+    const current = material.current_version_id ? await loadVersion(c.env, material.current_version_id, member.projectId) : null;
+    let attachments = JSON.parse(current?.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>;
+    if (body.attachmentIds) {
+      attachments = [];
+      for (const fileId of new Set(body.attachmentIds)) {
+        const file = await c.env.DB.prepare("SELECT original_name FROM files WHERE id = ?1 AND project_id = ?2 AND status = 'available'").bind(fileId, member.projectId).first<{ original_name: string }>();
+        if (!file) throw notFound('附件不存在或不可用');
+        attachments.push({ fileId, name: file.original_name });
+      }
+    }
 
     const latest = await c.env.DB.prepare('SELECT MAX(revision) AS r FROM material_versions WHERE material_id = ?1')
       .bind(materialId)
@@ -280,28 +300,23 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     // 版本 + 指针 + revision 原子提交（PLAN 二.7：D1 batch）
     const result = await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'manual', ?7, ?8)`,
-      ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now),
+        `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at, attachments_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'manual', ?7, ?8, ?9)`,
+      ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now, JSON.stringify(attachments)),
       c.env.DB.prepare(
         'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4',
       ).bind(materialId, versionId, now, body.expectedRevision),
+      c.env.DB.prepare(`INSERT INTO events (id, project_id, actor_type, actor_id, type, entity_type, entity_id, dedup_key, payload_json, occurred_at)
+        SELECT ?1, ?2, 'user', ?3, 'material.saved', 'material', ?4, ?5, ?6, ?7
+        WHERE EXISTS (SELECT 1 FROM materials WHERE id = ?4 AND current_version_id = ?8)
+        ON CONFLICT (project_id, type, entity_type, entity_id, dedup_key) DO NOTHING`)
+        .bind(newId(), member.projectId, c.get('user')!.id, materialId, `v${newRevision}`, JSON.stringify({ revision: newRevision }), now, versionId),
     ]);
     if ((result[1]?.meta?.changes ?? 0) === 0) {
-      // 条件更新失败：不得留下孤儿版本（batch 已回滚不生效——D1 batch 非事务，需补偿删除）
+      // 条件更新失败：不得留下孤儿版本（零行条件更新不会触发事务回滚，需补偿删除）
       await c.env.DB.prepare('DELETE FROM material_versions WHERE id = ?1').bind(versionId).run();
       throw versionConflict(material.revision);
     }
-    await recordEvent(c.env, {
-      projectId: member.projectId,
-      actorType: 'user',
-      actorId: c.get('user')!.id,
-      type: 'material.saved',
-      entityType: 'material',
-      entityId: materialId,
-      dedupKey: `v${newRevision}`,
-      payload: { revision: newRevision },
-    });
     const version = await loadVersion(c.env, versionId, member.projectId);
     return c.json(apiData(c, toVersion(version)), 201);
   });
@@ -331,6 +346,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
           versionId: r.id,
           revision: r.revision,
           markdown: r.markdown,
+          attachments: JSON.parse(r.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
           origin: r.origin,
           aiRunId: r.ai_run_id,
           authorId: r.author_id,
@@ -343,7 +359,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(getVersionRoute, async (c) => {
-    const version = await loadVersion(c.env, c.req.valid('param').versionId, c.get('member')!.projectId);
+    const version = await loadVersion(c.env, c.req.valid('param').versionId, c.get('member')!.projectId, c.req.valid('param').materialId);
     return c.json(apiData(c, toVersion(version)), 200);
   });
 }

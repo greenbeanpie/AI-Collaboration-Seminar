@@ -1,3 +1,4 @@
+import { MaterialAttachments } from './MaterialAttachments';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
@@ -78,6 +79,7 @@ export function MaterialsPage() {
   const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
+  const [newKind, setNewKind] = useState('document');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [draftPersisted, setDraftPersisted] = useState(true);
@@ -151,7 +153,7 @@ export function MaterialsPage() {
   const material = materialQuery.data;
 
   const createMaterial = useMutation({
-    mutationFn: (title: string) => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: 'document' }),
+    mutationFn: (title: string) => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: newKind }),
     onSuccess: async (created) => {
       setNewTitle('');
       setSelectedVersionId(null);
@@ -362,6 +364,7 @@ export function MaterialsPage() {
               </button>)}
             </div>}
             {!materialsQuery.isLoading && !materialsQuery.error && !materialsQuery.data?.length && <EmptyState title="还没有材料" detail="创建一份材料后开始协作编辑。" />}
+            <select className="input" aria-label="材料模板" value={newKind} onChange={e => setNewKind(e.target.value)}><option value="document">空白材料</option><option value="work-introduction">作品介绍模板</option></select>
             <form className="tm-create-material" onSubmit={(event) => { event.preventDefault(); if (newTitle.trim()) createMaterial.mutate(newTitle); }}>
               <label className="tm-sr-only" htmlFor="new-material-title">材料标题</label>
               <input id="new-material-title" maxLength={200} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="新材料名称" />
@@ -385,6 +388,7 @@ export function MaterialsPage() {
               {versionQuery.data && <>
                 <header><strong>不可变快照 · r{versionQuery.data.revision}</strong><time>{formatDate(versionQuery.data.createdAt)}</time></header>
                 <MaterialDocumentView doc={versionQuery.data.doc} className="tm-document-preview" />
+                <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}><a href={projectPath(projectId, `/files/${a.fileId}/content`)} download={a.name}>{a.name}</a></li>)}</ul>
               </>}
             </div>}
           </section>}
@@ -437,6 +441,7 @@ export function MaterialsPage() {
                 {editor && <EditorContent editor={editor} />}
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
+              <MaterialAttachments material={material} disabled={dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} />
               <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>
 

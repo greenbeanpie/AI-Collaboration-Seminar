@@ -411,6 +411,14 @@
                   "archived"
                 ]
               },
+              "aiBudgetUsd": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
+              },
               "revision": {
                 "type": "integer"
               },
@@ -435,6 +443,7 @@
               "deadlineDate",
               "deadlinePrecision",
               "status",
+              "aiBudgetUsd",
               "revision",
               "myRole",
               "createdAt",
@@ -494,6 +503,14 @@
                         "archived"
                       ]
                     },
+                    "aiBudgetUsd": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
+                    },
                     "revision": {
                       "type": "integer"
                     },
@@ -518,6 +535,7 @@
                     "deadlineDate",
                     "deadlinePrecision",
                     "status",
+                    "aiBudgetUsd",
                     "revision",
                     "myRole",
                     "createdAt",
@@ -1134,6 +1152,67 @@
               "pageCount",
               "charCount",
               "pages"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SourceFragmentListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fragmentId": {
+                      "type": "string"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "seq": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "fragmentId",
+                    "pageNumber",
+                    "content",
+                    "kind",
+                    "seq"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -2308,6 +2387,25 @@
                   "markdown": {
                     "type": "string"
                   },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "fileId",
+                        "name"
+                      ]
+                    }
+                  },
                   "origin": {
                     "type": "string",
                     "enum": [
@@ -2328,6 +2426,7 @@
                   "revision",
                   "doc",
                   "markdown",
+                  "attachments",
                   "origin",
                   "authorId",
                   "createdAt"
@@ -2451,6 +2550,25 @@
               "markdown": {
                 "type": "string"
               },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fileId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fileId",
+                    "name"
+                  ]
+                }
+              },
               "origin": {
                 "type": "string",
                 "enum": [
@@ -2478,6 +2596,7 @@
               "revision",
               "doc",
               "markdown",
+              "attachments",
               "origin",
               "aiRunId",
               "authorId",
@@ -2515,6 +2634,25 @@
                     "markdown": {
                       "type": "string"
                     },
+                    "attachments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fileId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fileId",
+                          "name"
+                        ]
+                      }
+                    },
                     "origin": {
                       "type": "string",
                       "enum": [
@@ -2541,6 +2679,7 @@
                     "versionId",
                     "revision",
                     "markdown",
+                    "attachments",
                     "origin",
                     "aiRunId",
                     "authorId",
@@ -3084,6 +3223,84 @@
             "required": [
               "rehearsalId",
               "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "rehearsalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "member"
+                      ]
+                    },
+                    "memberId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "finished"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "rehearsalId",
+                    "scope",
+                    "memberId",
+                    "status",
+                    "createdAt",
+                    "finishedAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -3733,12 +3950,31 @@
                     },
                     "revision": {
                       "type": "integer"
+                    },
+                    "attachments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fileId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fileId",
+                          "name"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "title",
                     "markdown",
-                    "revision"
+                    "revision",
+                    "attachments"
                   ]
                 }
               },
@@ -4352,6 +4588,85 @@
           "data",
           "requestId"
         ]
+      },
+      "IdempotencyStuckResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "olderThanMinutes": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "idempotencyKey": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "requestHash": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "idempotencyKey",
+                    "userId",
+                    "operation",
+                    "requestHash",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "olderThanMinutes",
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "IdempotencyReleaseResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "released": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "released"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
       }
     },
     "parameters": {}
@@ -4620,6 +4935,13 @@
                       "unknown"
                     ],
                     "default": "unknown"
+                  },
+                  "aiBudgetUsd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
                   }
                 },
                 "required": [
@@ -4793,6 +5115,13 @@
                       "active",
                       "archived"
                     ]
+                  },
+                  "aiBudgetUsd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
                   }
                 },
                 "required": [
@@ -5453,6 +5782,73 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceVersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "来源全文引用片段",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceVersionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "可引用片段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceFragmentListResponse"
                 }
               }
             }
@@ -7099,6 +7495,14 @@
                   "markdown": {
                     "type": "string",
                     "maxLength": 200000
+                  },
+                  "attachmentIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 20
                   }
                 },
                 "required": [
@@ -7846,6 +8250,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RehearsalCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "跨设备答辩历史列表",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "演练历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalListResponse"
                 }
               }
             }
@@ -8676,8 +9127,11 @@
                         "minLength": 1
                       },
                       "model": {
+                        "type": "string"
+                      },
+                      "apiUrl": {
                         "type": "string",
-                        "minLength": 1
+                        "default": ""
                       },
                       "timeoutMs": {
                         "type": "integer",
@@ -8711,13 +9165,22 @@
                         ],
                         "prefixItems": [
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           },
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           }
                         ],
                         "default": null
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -8738,8 +9201,11 @@
                         "minLength": 1
                       },
                       "model": {
+                        "type": "string"
+                      },
+                      "apiUrl": {
                         "type": "string",
-                        "minLength": 1
+                        "default": ""
                       },
                       "timeoutMs": {
                         "type": "integer",
@@ -8773,13 +9239,22 @@
                         ],
                         "prefixItems": [
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           },
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           }
                         ],
                         "default": null
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -8800,8 +9275,11 @@
                         "minLength": 1
                       },
                       "model": {
+                        "type": "string"
+                      },
+                      "apiUrl": {
                         "type": "string",
-                        "minLength": 1
+                        "default": ""
                       },
                       "timeoutMs": {
                         "type": "integer",
@@ -8835,13 +9313,22 @@
                         ],
                         "prefixItems": [
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           },
                           {
-                            "type": "number"
+                            "type": "number",
+                            "minimum": 0
                           }
                         ],
                         "default": null
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -8920,6 +9407,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AiProbeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/idempotency/stuck": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "列出滞留的幂等 processing 记录（运维核对后释放）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "olderThanMinutes",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "滞留记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdempotencyStuckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/idempotency/release": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "释放滞留的幂等 processing 记录（人工确认业务状态后允许同键重试）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "idempotencyKey",
+                  "userId",
+                  "operation"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已释放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdempotencyReleaseResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "没有处理中的同键记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }

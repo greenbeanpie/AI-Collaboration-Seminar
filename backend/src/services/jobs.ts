@@ -1,4 +1,6 @@
 import type { Env } from '../env';
+import { loadAiConfig } from '../ai/config';
+import { settleReservation } from './budget';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound } from '../core/errors';
 
@@ -26,6 +28,7 @@ export interface JobRow {
 }
 
 export interface ParseJobInput {
+  configVersionId?: string;
   sourceId: string;
   sourceVersionId: string;
   phase: 'extract' | 'ocr';
@@ -41,10 +44,19 @@ export async function createJobAndDispatch(
 ): Promise<string> {
   const jobId = params.jobId ?? newId();
   const now = nowIso();
+  const supplied = params.input as Record<string, unknown>;
+  const latestConfig = await loadAiConfig(env.DB);
+  let frozenConfig = supplied.configVersionId ?? latestConfig?.id;
+  if (typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
+    await env.DB.prepare('UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1 AND ai_config_version_id IS NULL').bind(supplied.sourceVersionId, frozenConfig ?? null).run();
+    const source = await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(supplied.sourceVersionId).first<{ ai_config_version_id: string | null }>();
+    frozenConfig = source?.ai_config_version_id ?? frozenConfig;
+  }
+  const input = { ...supplied, configVersionId: frozenConfig };
   await env.DB.batch([
     env.DB.prepare(
       "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6)",
-    ).bind(jobId, params.projectId, params.kind, JSON.stringify(params.input), params.createdBy, now),
+    ).bind(jobId, params.projectId, params.kind, JSON.stringify(input), params.createdBy, now),
     env.DB.prepare(
       "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
     ).bind(newId(), jobId, now, now),
@@ -68,15 +80,16 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
     const job = await getJob(env, jobId);
     const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
     await workflow.create({ id: jobId, params: { jobId } });
-    await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1")
+    await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
       .bind(jobId, nowIso())
       .run();
     return 'dispatched';
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('already exists')) {
-      // 实例已存在：核对状态，不重复创建（PLAN 二.7）
-      await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1")
+      await reconcileWorkflowJob(env, jobId);
+      // 只在已核对实例状态后标记派发。
+      await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
         .bind(jobId, nowIso())
         .run();
       return 'dispatched';
@@ -101,22 +114,24 @@ export async function getJob(env: Env, jobId: string): Promise<JobRow> {
 }
 
 export async function failJob(env: Env, jobId: string, error: { code: string; message: string; details?: unknown }): Promise<void> {
-  await env.DB.prepare(
+  const transition = await env.DB.prepare(
     "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')",
   )
     .bind(jobId, JSON.stringify(error), nowIso())
     .run();
+  if ((transition.meta?.changes ?? 0) === 0) return;
   await env.DB.prepare("UPDATE job_outbox SET status = 'failed', last_error = ?2, updated_at = ?3 WHERE job_id = ?1")
     .bind(jobId, error.code, nowIso())
     .run();
 }
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
-  await env.DB.prepare(
+  const transition = await env.DB.prepare(
     "UPDATE jobs SET status = 'succeeded', result_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')",
   )
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
+  if ((transition.meta?.changes ?? 0) === 0) return;
   await env.DB.prepare("UPDATE job_outbox SET status = 'done', updated_at = ?2 WHERE job_id = ?1")
     .bind(jobId, nowIso())
     .run();
@@ -137,4 +152,17 @@ export async function assertNotTerminal(env: Env, jobId: string): Promise<JobRow
     throw invalidState('任务已进入终态');
   }
   return job;
+}
+
+/** Inspect engine state before treating an existing instance as dispatched. */
+export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<void> {
+  const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
+  const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
+  const instance = await workflow.get(jobId);
+  const state = await instance.status();
+  if (['errored', 'terminated', 'complete'].includes(state.status)) {
+    await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 已结束但业务任务未提交结果，请重试新任务', details: { workflowStatus: state.status } });
+    await settleReservation(env, jobId, 'released');
+  }
 }

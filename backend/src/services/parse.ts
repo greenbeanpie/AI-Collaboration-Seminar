@@ -6,6 +6,7 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, succeedJob, waitJobInput, getJob } from './jobs';
+import { reserveAiSlot, settleReservation } from './budget';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
 
@@ -13,6 +14,7 @@ const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-page-v1';
 
 export interface ParseJobInput {
+  configVersionId?: string;
   sourceId: string;
   sourceVersionId: string;
   phase: 'extract' | 'ocr';
@@ -85,7 +87,7 @@ async function insertFragments(
     for (const chunk of chunkPage(page.text)) {
       inserts.push(
         env.DB.prepare(
-          'INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)',
+          "INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at) SELECT ?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(seq), 0) + 1 FROM source_fragments WHERE source_version_id = ?2), ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM source_fragments WHERE source_version_id = ?2 AND page_number IS ?4 AND kind = ?6 AND content = ?7)",
         ).bind(
           crypto.randomUUID(),
           version.id,
@@ -218,9 +220,9 @@ const ocrOutputSchema = z.object({
 });
 
 /** 步骤二：对已上传页面图执行视觉 OCR（低成本视觉模型，结果标记待人工复核） */
-export async function ocrPendingPages(env: Env, sourceVersionId: string): Promise<{ ocred: number; failed: number; stillMissing: number }> {
+export async function ocrPendingPages(env: Env, sourceVersionId: string, configVersionId?: string): Promise<{ ocred: number; failed: number; stillMissing: number }> {
   const version = await loadVersion(env, sourceVersionId);
-  const config = await loadAiConfig(env.DB);
+  const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
   if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
   const vision = config.config.visionEconomy;
@@ -228,6 +230,8 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string): Promis
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
+    authSecret: env.AUTH_SECRET,
+    envName: env.ENV_NAME,
   };
 
   const pages = await env.DB.prepare(
@@ -276,6 +280,8 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string): Promis
         ],
       });
       const parsed = ocrOutputSchema.parse(JSON.parse(out.content));
+      // 空文本不得当作识别成功：否则会跳过失败页并在后续误报「无可分析内容」（A06）
+      if (!parsed.text.trim()) throw new AppError('AI_OUTPUT_INVALID', '视觉模型未识别出文字', 422, false);
       await env.FILES.put(`sources/${version.id}/ocr-page-${page.page_number}.txt`, parsed.text);
       await insertFragments(env, version, [{ pageNumber: page.page_number, text: parsed.text, kind: 'ocr' }]);
       await env.DB.prepare(
@@ -325,7 +331,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string): Promis
   }
 
   const missing = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND image_status = 'none'",
+    "SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND image_status = 'none' AND text_status = 'none'",
   )
     .bind(version.id)
     .first<{ n: number }>();
@@ -393,9 +399,9 @@ async function validateCitations(
 }
 
 /** 步骤三：文本模型提取要求草稿（结构化输出 + 一次修复重试 + 引用校验） */
-export async function extractRequirements(env: Env, sourceVersionId: string): Promise<{ requirementSetId: string; count: number }> {
+export async function extractRequirements(env: Env, sourceVersionId: string, configVersionId?: string): Promise<{ requirementSetId: string; count: number }> {
   const version = await loadVersion(env, sourceVersionId);
-  const config = await loadAiConfig(env.DB);
+  const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
   if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
   const textModel = config.config.textEconomy;
@@ -432,6 +438,8 @@ export async function extractRequirements(env: Env, sourceVersionId: string): Pr
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
+    authSecret: env.AUTH_SECRET,
+    envName: env.ENV_NAME,
   };
   const started = Date.now();
   let raw = '';
@@ -544,9 +552,33 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.slice(start, end + 1));
 }
 
+/**
+ * 在真实模型调用外包一层并发/金额预占（A03）：调用前原子预占，调用后按用量结算。
+ * 同一任务分阶段（OCR → 要求提取）时，前一段结算后才会为后一段新建预占。
+ */
+async function withAiSlot<T>(
+  env: Env,
+  jobId: string,
+  projectId: string | null,
+  purpose: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!projectId) return run();
+  await reserveAiSlot(env, { projectId, jobId, purpose });
+  try {
+    const result = await run();
+    await settleReservation(env, jobId, 'settled');
+    return result;
+  } catch (err) {
+    await settleReservation(env, jobId, 'released');
+    throw err;
+  }
+}
+
 /** 任务编排：按 job input 的阶段执行对应步骤（Workflow 与恢复器共用） */
 export async function runParseJob(env: Env, jobId: string): Promise<{ status: string }> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
   const input = JSON.parse(job.input_json) as ParseJobInput;
 
   if (input.phase === 'extract') {
@@ -556,7 +588,9 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         await waitJobInput(env, jobId, { needsImages, message: '存在扫描页，请上传页面图片' });
         return { status: 'waiting_input' };
       }
-      const result = await extractRequirements(env, input.sourceVersionId);
+      const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
+        extractRequirements(env, input.sourceVersionId, input.configVersionId),
+      );
       await succeedJob(env, jobId, result);
       return { status: 'succeeded' };
     } catch (err) {
@@ -567,12 +601,18 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 
   // phase === 'ocr'
   try {
-    const { stillMissing } = await ocrPendingPages(env, input.sourceVersionId);
+    const { stillMissing } = await withAiSlot(env, jobId, job.project_id, 'ocr_pages', () =>
+      ocrPendingPages(env, input.sourceVersionId, input.configVersionId),
+    );
     if (stillMissing > 0) {
       await waitJobInput(env, jobId, { stillMissing, message: '仍有页面未上传图片' });
       return { status: 'waiting_input' };
     }
-    const result = await extractRequirements(env, input.sourceVersionId);
+    const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
+    if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
+    const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
+      extractRequirements(env, input.sourceVersionId, input.configVersionId),
+    );
     await succeedJob(env, jobId, result);
     return { status: 'succeeded' };
   } catch (err) {

@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { AppError } from '../core/errors';
 import { gatewayChat, type ChatMessage, type GatewayCallOutput } from './gateway';
-import { loadAiConfig, type AiModelConfig, type AiPurpose } from './config';
+import { loadAiConfig, type AiModelConfig, type AiPurpose, type LoadedAiConfig } from './config';
 import { recordAiCall } from './calls';
 
 export type ProbeCheckName = 'chinese_text' | 'json_output' | 'vision_accept' | 'usage_fields';
@@ -46,14 +46,16 @@ function extractJson(text: string): Record<string, unknown> {
  * 探测允许在 enabled=0 时运行——它正是启用前的验证门槛。
  * 探测调用同样计入 ai_calls（费用未知时如实记录，不填零）。
  */
-export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy'): Promise<ProbeReport> {
-  const loaded = await loadAiConfig(env.DB);
+export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig): Promise<ProbeReport> {
+  const loaded = frozen ?? await loadAiConfig(env.DB);
   if (!loaded) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失，请先通过 /admin/ai-config 写入种子配置', 503, false);
   const cfg = loaded.config[purpose];
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
+    authSecret: env.AUTH_SECRET,
+    envName: env.ENV_NAME,
   };
 
   async function callAndRecord(messages: ChatMessage[], jsonMode: boolean): Promise<GatewayCallOutput> {

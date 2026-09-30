@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { nowIso, newId } from '../core/db';
-import type { AiPurpose } from './config';
+import { loadAiConfig, type AiPurpose } from './config';
 
 export interface AiCallRecord {
   projectId?: string | null;
@@ -23,6 +23,10 @@ export interface AiCallRecord {
  * 费用：pricePerMTokens 未配置 → cost_status='unknown'，不填零（PLAN 二.7）。
  */
 export async function recordAiCall(env: Env, params: AiCallRecord): Promise<string> {
+  const config = await loadAiConfig(env.DB, params.configVersionId);
+  const price = config?.config[params.purpose].pricePerMTokens;
+  const known = Boolean(price && params.promptTokens !== null && params.completionTokens !== null && params.promptTokens >= 0 && params.completionTokens >= 0 && (params.status === 'ok' || params.status === 'repaired'));
+  const cost = known ? (params.promptTokens! * price![0] + params.completionTokens! * price![1]) / 1_000_000 : null;
   const id = newId();
   const inputKey = `ai-calls/${id}/input.json`;
   const outputKey = `ai-calls/${id}/output.json`;
@@ -48,8 +52,8 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
       outputKey,
       params.promptTokens,
       params.completionTokens,
-      null,
-      'unknown',
+      cost,
+      known ? 'known' : 'unknown',
       params.status,
       Math.round(params.latencyMs),
       nowIso(),

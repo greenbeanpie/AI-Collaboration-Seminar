@@ -10,6 +10,7 @@ import { failJob, getJob, succeedJob } from './jobs';
 const PROMPT_VERSION = 'assignment-v1';
 
 export interface AssignmentSuggestionInput {
+  configVersionId?: string;
   projectId: string;
   requestedBy: string;
   requirementSetId: string | null;
@@ -58,7 +59,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
     }
     await assertCurrentMember(env, input.projectId, input.requestedBy);
 
-    const config = await loadAiConfig(env.DB);
+    const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
     const model = config.config.textEconomy;

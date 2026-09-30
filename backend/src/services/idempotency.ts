@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { nowIso, sha256Hex } from '../core/db';
-import { AppError, invalidState } from '../core/errors';
+import { AppError, invalidState, validationFailed } from '../core/errors';
 
 export interface IdempotencyParams {
   key: string | undefined;
@@ -8,6 +8,8 @@ export interface IdempotencyParams {
   operation: string;
   /** 原始请求体文本（未解析），用于同键不同内容的冲突判定 */
   rawBody: string;
+  /** 冻结写请求必须携带 Idempotency-Key（A08）；缺少时返回 400 而不是静默执行 */
+  required?: boolean;
 }
 
 export interface IdempotentResult<T, S extends number = number> {
@@ -19,13 +21,13 @@ export interface IdempotentResult<T, S extends number = number> {
 
 /**
  * 幂等执行（PLAN 二.7）：关键 POST 使用 Idempotency-Key。
- * - 未带 Key：直接执行（前端灰度期间不强制）。
+ * - 未带 Key 且 required：400 VALIDATION_FAILED；未带 Key 且非 required：直接执行。
  * - 同键同内容且已完成：回放原响应（replayed=true，requestId 为新请求的）。
  * - 同键不同内容：409 IDEMPOTENCY_CONFLICT。
  * - 同键处理中：409 INVALID_STATE。
- * 响应体落库在业务执行成功后进行（半途失败留下 processing 记录，重复请求将得到
- * 「处理中」409，可在下个请求周期由同键重试覆盖？——不：processing 记录由
- * 完成路径覆盖；真正半途失败的记录会在 24h 后可被同键重试替换，见 cleanup）。
+ * 业务成功而响应记录失败时保留 processing，禁止过期删除后重复执行。
+ * 运维恢复路径：GET /api/v1/admin/idempotency/stuck 列出滞留记录，
+ * POST /api/v1/admin/idempotency/release 人工确认业务状态后释放该键以便重试。
  */
 export async function withIdempotency<T, S extends number>(
   env: Env,
@@ -33,6 +35,7 @@ export async function withIdempotency<T, S extends number>(
   execute: () => Promise<{ status: S; body: T }>,
 ): Promise<IdempotentResult<T, S>> {
   if (!params.key) {
+    if (params.required) throw validationFailed('该请求必须携带 Idempotency-Key 请求头');
     const result = await execute();
     return { ...result, replayed: false };
   }
@@ -55,12 +58,7 @@ export async function withIdempotency<T, S extends number>(
         replayed: true,
       };
     }
-    // 半途失败留下的 processing 记录：超过 10 分钟视为过期，允许覆盖
-    await env.DB.prepare(
-      "DELETE FROM idempotency_records WHERE idempotency_key = ?1 AND user_id = ?2 AND operation = ?3 AND status = 'processing' AND created_at <= ?4",
-    )
-      .bind(params.key, params.userId, params.operation, new Date(Date.now() - 10 * 60_000).toISOString())
-      .run();
+    // 不自动删除 processing：业务可能已成功，需要核对后恢复响应，避免重复副作用。
     throw invalidState('相同幂等键的请求正在处理中，请稍后重试');
   }
 
@@ -86,4 +84,56 @@ export async function withIdempotency<T, S extends number>(
     .bind(params.key, result.status, JSON.stringify(result.body), params.userId, params.operation)
     .run();
   return { ...result, replayed: false };
+}
+
+export interface StuckIdempotencyRecord {
+  idempotencyKey: string;
+  userId: string;
+  operation: string;
+  requestHash: string;
+  createdAt: string;
+}
+
+/**
+ * 列出滞留的 processing 记录（运维核对用）。
+ * 业务可能已成功而响应记录写入失败，因此这些记录不能自动删除，只能人工确认后释放。
+ */
+export async function listStuckIdempotencyRecords(
+  env: Env,
+  olderThanMinutes = 10,
+  limit = 50,
+): Promise<StuckIdempotencyRecord[]> {
+  const before = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+  const rows = await env.DB.prepare(
+    `SELECT idempotency_key, user_id, operation, request_hash, created_at
+       FROM idempotency_records
+      WHERE status = 'processing' AND created_at <= ?1
+      ORDER BY created_at
+      LIMIT ?2`,
+  )
+    .bind(before, limit)
+    .all<{ idempotency_key: string; user_id: string; operation: string; request_hash: string; created_at: string }>();
+  return rows.results.map((row) => ({
+    idempotencyKey: row.idempotency_key,
+    userId: row.user_id,
+    operation: row.operation,
+    requestHash: row.request_hash,
+    createdAt: row.created_at,
+  }));
+}
+
+/**
+ * 释放一条滞留的 processing 记录，使同一幂等键可以重新执行。
+ * 仅在运维已人工确认业务状态（业务未生效，或重试本身是幂等的）后调用。
+ */
+export async function releaseIdempotencyRecord(
+  env: Env,
+  params: { idempotencyKey: string; userId: string; operation: string },
+): Promise<boolean> {
+  const res = await env.DB.prepare(
+    "DELETE FROM idempotency_records WHERE idempotency_key = ?1 AND user_id = ?2 AND operation = ?3 AND status = 'processing'",
+  )
+    .bind(params.idempotencyKey, params.userId, params.operation)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
 }

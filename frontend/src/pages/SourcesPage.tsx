@@ -1,3 +1,4 @@
+import { SourceFullText } from './SourceFullText';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -212,7 +213,8 @@ function SourceRecord({
     })}</div> : null}
     {displayedJob && <SourceJobProgress projectId={projectId} tracked={displayedJob} capability={capability} onUpdate={onJobUpdate} onRetryJob={onRetryJob} onScan={onScan} scanning={scanJobId === displayedJob.jobId} />}
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
-    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。引用展示原句与页码，全文请核对原始文件。</p>}
+    {version && <SourceFullText sourceId={source.sourceId} sourceVersionId={version.sourceVersionId} />}
+    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。引用展示原句与页码，可展开下方全文片段核对原文件。</p>}
   </article>;
 }
 

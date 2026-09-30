@@ -8,6 +8,7 @@ import { runAssignmentSuggestionJob } from './assignment';
 /** AI 类任务的统一入口（AgentRunWorkflow 按 job.kind 路由到对应执行器） */
 export async function runAiJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
+  if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
       await runAgentJob(env, jobId);

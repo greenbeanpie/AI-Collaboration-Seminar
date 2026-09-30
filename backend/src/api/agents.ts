@@ -9,7 +9,6 @@ import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { reserveAiSlot } from '../services/budget';
-import { recordEvent } from '../services/events';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -283,6 +282,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       operation: 'agent-session.create',
       // zod 校验已消费原始流，用解析后 body 的稳定序列化做请求哈希
       rawBody: JSON.stringify(body),
+      required: true,
     }, async () => {
       // 输入归属校验（任务/材料/来源必须属于本项目）
       if (body.taskId) {
@@ -450,6 +450,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       userId: user.id,
       operation: 'agent-run.adopt',
       rawBody: JSON.stringify(body),
+      required: true,
     }, async () => {
       const run = await c.env.DB.prepare('SELECT id, project_id, status, output_json FROM agent_runs WHERE id = ?1 AND project_id = ?2')
         .bind(c.req.valid('param').runId, member.projectId)
@@ -476,8 +477,8 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       // 版本 + 指针 + 运行标记 + 账本事件（PLAN 二.7：原子提交语义）
       const results = await c.env.DB.batch([
         c.env.DB.prepare(
-          `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, ai_run_id, author_id, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ai_adoption', ?7, ?8, ?9)`,
+          `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, ai_run_id, author_id, created_at, attachments_json)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ai_adoption', ?7, ?8, ?9, COALESCE((SELECT attachments_json FROM material_versions WHERE id = (SELECT current_version_id FROM materials WHERE id = ?2)), '[]'))`,
         ).bind(versionId, material.id, member.projectId, newRevision, JSON.stringify(body.doc), markdown, run.id, user.id, now),
         c.env.DB.prepare(
           'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4',
@@ -485,22 +486,18 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
         c.env.DB.prepare(
           "UPDATE agent_runs SET status = 'adopted', adopted_at = ?2, adoption_material_version_id = ?3 WHERE id = ?1 AND status = 'succeeded'",
         ).bind(run.id, now, versionId),
+        // 账本事件与业务写入同 batch（A08）：业务成功即事件必在，避免二次写入失败丢账
+        c.env.DB.prepare(
+          `INSERT INTO events (id, project_id, actor_type, actor_id, type, entity_type, entity_id, dedup_key, payload_json, occurred_at)
+           VALUES (?1, ?2, 'user', ?3, 'material.adopted', 'material_version', ?4, ?5, ?6, ?7)
+           ON CONFLICT (project_id, type, entity_type, entity_id, dedup_key) DO NOTHING`,
+        ).bind(newId(), member.projectId, user.id, versionId, run.id, JSON.stringify({ runId: run.id, revision: newRevision, aiRunId: run.id }), now),
       ]);
       if ((results[1]?.meta?.changes ?? 0) === 0) {
         await c.env.DB.prepare('DELETE FROM material_versions WHERE id = ?1').bind(versionId).run();
         await c.env.DB.prepare("UPDATE agent_runs SET status = 'succeeded', adopted_at = NULL, adoption_material_version_id = NULL WHERE id = ?1").bind(run.id).run();
         throw versionConflict(material.revision);
       }
-      await recordEvent(c.env, {
-        projectId: member.projectId,
-        actorType: 'user',
-        actorId: user.id,
-        type: 'material.adopted',
-        entityType: 'material_version',
-        entityId: versionId,
-        dedupKey: run.id,
-        payload: { runId: run.id, revision: newRevision, aiRunId: run.id },
-      });
       return { status: 201 as const, body: { materialVersionId: versionId, revision: newRevision } };
     });
     return c.json(apiData(c, idem.body), idem.status);

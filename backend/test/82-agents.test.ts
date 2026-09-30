@@ -134,7 +134,7 @@ describe('三档 AI 补位', () => {
     // 采纳：reviewed=false → 400
     const badAdopt = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-runs/${created.data.runId}/adopt`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ materialId: material.materialId, expectedRevision: material.revision, reviewed: false, doc: markdownToDoc('# 人工修改后') }),
     });
     expect(badAdopt.status).toBe(400);
@@ -142,7 +142,7 @@ describe('三档 AI 补位', () => {
     // 采纳成功 → 新版本 ai_adoption
     const adopt = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-runs/${created.data.runId}/adopt`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ materialId: material.materialId, expectedRevision: material.revision, reviewed: true, doc: markdownToDoc('# 人工修改后的作品介绍') }),
     });
     expect(adopt.status).toBe(201);
@@ -160,7 +160,7 @@ describe('三档 AI 补位', () => {
     // 重复采纳 → 409
     const again = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-runs/${created.data.runId}/adopt`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ materialId: material.materialId, expectedRevision: material.revision + 1, reviewed: true, doc: markdownToDoc('# 再采纳') }),
     });
     expect(again.status).toBe(409);
@@ -178,7 +178,7 @@ describe('三档 AI 补位', () => {
 
     const create = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ mode: 'review_only', materialVersionIds: [material.versionId] }),
     });
     expect(create.status).toBe(202);
@@ -192,7 +192,7 @@ describe('三档 AI 补位', () => {
     vi.stubGlobal('fetch', mockGatewayFetch());
     const create2 = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ mode: 'review_only', materialVersionIds: [material.versionId] }),
     });
     const created2 = (await create2.json()) as { data: { sessionId: string; jobId: string } };
@@ -212,7 +212,7 @@ describe('三档 AI 补位', () => {
 
     const create = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ mode: 'guide', instruction: '带我做预审准备' }),
     });
     expect(create.status).toBe(202);
@@ -247,7 +247,7 @@ describe('三档 AI 补位', () => {
 
     const create = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
       method: 'POST',
-      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({ mode: 'do', materialVersionIds: [otherMaterial.versionId] }),
     });
     expect(create.status).toBe(404);
@@ -255,6 +255,18 @@ describe('三档 AI 补位', () => {
 });
 
 describe('幂等（Idempotency-Key）', () => {
+  it('冻结写请求缺少 Idempotency-Key → 400', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const res = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
+      method: 'POST',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'do', instruction: '缺少幂等键' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_FAILED');
+  });
+
   it('同键同内容回放同一会话；同键不同内容 409', async () => {
     vi.stubGlobal('fetch', mockGatewayFetch());
     const owner = await seedUser();
@@ -336,5 +348,76 @@ describe('预算并发预占（每项目 2）', () => {
       { job_id: 'fresh', status: 'reserved', settled_at: null },
       { job_id: 'stale', status: 'released', settled_at: now },
     ]);
+  });
+
+  it('仍在运行的任务预占不被清理释放', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const now = '2026-09-30T12:00:00.000Z';
+    const stale = new Date(Date.parse(now) - 3 * 3600_000).toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES ('running-job', ?1, 'agent_run', 'running', '{}', 0, ?2, ?3, ?3)",
+      ).bind(pid, owner.userId, stale),
+      env.DB.prepare(
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'running-job', 'agent_run', 0, 'reserved', ?3)",
+      ).bind(crypto.randomUUID(), pid, stale),
+    ]);
+    await releaseStaleReservations(env, now);
+    const row = await env.DB.prepare("SELECT status FROM usage_reservations WHERE job_id = 'running-job'").first<{ status: string }>();
+    expect(row?.status).toBe('reserved');
+  });
+
+  it('项目 AI 预算不足时拒绝预占并返回预算明细', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const configRow = await env.DB.prepare('SELECT id, config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1')
+      .first<{ id: string; config_json: string }>();
+    const priced = JSON.parse(configRow!.config_json) as Record<string, { pricePerMTokens: [number, number] | null }>;
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) priced[purpose]!.pricePerMTokens = [1_000_000, 1_000_000];
+    await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1')
+      .bind(configRow!.id, JSON.stringify(priced))
+      .run();
+    try {
+      await env.DB.prepare('UPDATE projects SET ai_budget_usd = 0.000001 WHERE id = ?1').bind(pid).run();
+      let error: unknown;
+      try {
+        await reserveAiSlot(env, { projectId: pid, jobId: `over-budget-${pid}`, purpose: 'agent_run' });
+      } catch (err) {
+        error = err;
+      }
+      expect((error as { code?: string } | undefined)?.code).toBe('QUOTA_EXCEEDED');
+      expect((error as { details?: { budgetUsd?: number } } | undefined)?.details?.budgetUsd).toBe(0.000001);
+      const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations WHERE job_id = ?1").bind(`over-budget-${pid}`).first<{ n: number }>();
+      expect(row?.n).toBe(0);
+    } finally {
+      await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1')
+        .bind(configRow!.id, configRow!.config_json)
+        .run();
+    }
+  });
+
+  it('结算按真实用量写入金额，费用未知时标记待对账', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const configRow = await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ id: string }>();
+
+    await reserveAiSlot(env, { projectId: pid, jobId: 'job-known-cost', purpose: 'agent_run' });
+    await env.DB.prepare(
+      "INSERT INTO ai_calls (id, project_id, job_id, purpose, config_version_id, prompt_version, model, cost_usd, cost_status, status, created_at) VALUES (?1, ?2, 'job-known-cost', 'textEconomy', ?3, 'v1', 'm', 0.5, 'known', 'ok', ?4)",
+    ).bind(crypto.randomUUID(), pid, configRow!.id, new Date(Date.now() + 1000).toISOString()).run();
+    await settleReservation(env, 'job-known-cost', 'settled');
+    const known = await env.DB.prepare("SELECT status, settled_cost FROM usage_reservations WHERE job_id = 'job-known-cost'").first<{ status: string; settled_cost: number }>();
+    expect(known?.status).toBe('settled');
+    expect(known?.settled_cost).toBeCloseTo(0.5);
+
+    await reserveAiSlot(env, { projectId: pid, jobId: 'job-unknown-cost', purpose: 'agent_run' });
+    await env.DB.prepare(
+      "INSERT INTO ai_calls (id, project_id, job_id, purpose, config_version_id, prompt_version, model, cost_usd, cost_status, status, created_at) VALUES (?1, ?2, 'job-unknown-cost', 'textEconomy', ?3, 'v1', 'm', NULL, 'unknown', 'timeout', ?4)",
+    ).bind(crypto.randomUUID(), pid, configRow!.id, new Date(Date.now() + 1000).toISOString()).run();
+    await settleReservation(env, 'job-unknown-cost', 'settled');
+    const unknown = await env.DB.prepare("SELECT status, settled_cost FROM usage_reservations WHERE job_id = 'job-unknown-cost'").first<{ status: string; settled_cost: number | null }>();
+    expect(unknown?.status).toBe('pending_reconcile');
+    expect(unknown?.settled_cost).toBeNull();
   });
 });

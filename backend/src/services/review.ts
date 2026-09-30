@@ -11,6 +11,7 @@ import { z } from 'zod';
 const PROMPT_VERSION = 'review-v1';
 
 export interface ReviewJobInput {
+  configVersionId?: string;
   reviewId: string;
   projectId: string;
 }
@@ -57,7 +58,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       throw new AppError('INVALID_STATE', '预审不在待运行状态', 409, false);
     }
 
-    const config = await loadAiConfig(env.DB);
+    const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
     const reviewModel = config.config.review;

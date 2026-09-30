@@ -7,6 +7,8 @@ export interface GatewayMockOptions {
   fabricatedCitation?: boolean;
   /** 只审模式返回伪造引文（应导致 AI_OUTPUT_INVALID） */
   fabricatedAgentQuote?: boolean;
+  /** 视觉 OCR 返回不符合 schema 的内容（应导致该页 ocr_status='failed'） */
+  visionInvalid?: boolean;
 }
 
 interface ChatBody {
@@ -38,6 +40,7 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
     const body = JSON.parse(String(init?.body ?? '{}')) as ChatBody;
     const first = body.messages?.[0]?.content;
     if (Array.isArray(first)) {
+      if (options?.visionInvalid) return openAiResponse('{"unexpected": true}');
       return openAiResponse(
         '{"text": "扫描页内容：作品提交截止日期为 2026-10-08，团队人数不超过 5 人。", "confidence": 0.92}',
       );

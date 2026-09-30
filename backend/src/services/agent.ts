@@ -13,6 +13,7 @@ import { z } from 'zod';
 export type AgentCapability = 'do' | 'guide' | 'review_only';
 
 export interface AgentRunJobInput {
+  configVersionId?: string;
   runId: string;
   projectId: string;
   capability: AgentCapability;
@@ -90,6 +91,8 @@ export async function aiJsonCall<S extends z.ZodType>(
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
+    authSecret: env.AUTH_SECRET,
+    envName: env.ENV_NAME,
   };
   const record = async (
     input: unknown,
@@ -257,7 +260,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     if (!run) throw new AppError('NOT_FOUND', 'AI 运行记录不存在', 404, false);
     if (run.status !== 'running') throw new AppError('INVALID_STATE', '运行不在进行中', 409, false);
 
-    const config = await loadAiConfig(env.DB);
+    const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
     const textModel = config.config.textEconomy;

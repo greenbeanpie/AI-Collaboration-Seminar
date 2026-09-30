@@ -1,5 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
+import { requireEnabledAiConfig } from '../ai/config';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
@@ -61,6 +62,12 @@ const versionResponse = apiEnvelope(
   }),
   'SourceVersionResponse',
 );
+
+const fragmentsRoute = createRoute({
+  method: 'get', path: '/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments', tags: ['sources'],
+  summary: '来源全文引用片段', request: { params: versionParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(z.object({ fragmentId: z.string(), pageNumber: z.number().nullable(), content: z.string(), kind: z.string(), seq: z.number() })), nextCursor: z.string().nullable() }), 'SourceFragmentListResponse') } }, description: '可引用片段' } },
+});
 
 const parseResponse = apiEnvelope(
   z.object({ jobId: z.string().uuid(), status: z.string() }),
@@ -332,6 +339,18 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     );
   });
 
+  app.openapi(fragmentsRoute, async (c) => {
+    const { sourceId, sourceVersionId } = c.req.valid('param');
+    await projectSourceVersion(c.env, c.get('member')!.projectId, sourceId, sourceVersionId);
+    const query = c.req.valid('query');
+    const limit = parsePaging(query).limit;
+    const after = Number(query.cursor ?? 0);
+    if (!Number.isSafeInteger(after) || after < 0) throw validationFailed('片段游标无效');
+    const rows = await c.env.DB.prepare('SELECT id, page_number, content, kind, seq FROM source_fragments WHERE source_version_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(sourceVersionId, after, limit + 1).all<{ id: string; page_number: number | null; content: string; kind: string; seq: number }>();
+    const page = rows.results.slice(0, limit);
+    return c.json(apiData(c, { items: page.map(r => ({ fragmentId: r.id, pageNumber: r.page_number, content: r.content, kind: r.kind, seq: r.seq })), nextCursor: rows.results.length > limit ? String(page.at(-1)!.seq) : null }), 200);
+  });
+
   app.openapi(parseRoute, async (c) => {
     const { sourceId } = c.req.valid('param');
     const body = c.req.valid('json');
@@ -345,6 +364,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const versionId = body.sourceVersionId ?? source.current_version_id;
     if (!versionId) throw invalidState('来源没有可解析的版本');
     await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
+    await requireEnabledAiConfig(c.env.DB);
     const result = await withIdempotency(c.env, {
       key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
       operation: `source.parse:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body),
@@ -371,7 +391,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!versionId) throw notFound('来源版本不存在');
     await projectSourceVersion(c.env, c.get('member')!.projectId, sourceId, versionId);
     const pages = await c.env.DB.prepare(
-      "SELECT page_number FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND image_status = 'none' ORDER BY page_number",
+      "SELECT page_number FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND (image_status = 'none' OR ocr_status = 'failed') ORDER BY page_number",
     )
       .bind(versionId)
       .all<{ page_number: number }>();
@@ -399,13 +419,13 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       for (const img of body.images) {
         const page = await c.env.DB.prepare(
-          'SELECT id, text_status, image_status FROM source_pages WHERE source_version_id = ?1 AND page_number = ?2',
+          'SELECT id, text_status, image_status, ocr_status FROM source_pages WHERE source_version_id = ?1 AND page_number = ?2',
         )
           .bind(versionId, img.pageNumber)
-          .first<{ id: string; text_status: string; image_status: string }>();
+          .first<{ id: string; text_status: string; image_status: string; ocr_status: string }>();
         if (!page) throw validationFailed(`页码 ${img.pageNumber} 不存在（尚未解析或超出页数）`);
         if (page.text_status === 'extracted') throw validationFailed(`页码 ${img.pageNumber} 已有文本层，无需图片`);
-        if (page.image_status !== 'none') throw invalidState(`页码 ${img.pageNumber} 的图片已上传`);
+        if (page.image_status !== 'none' && page.ocr_status !== 'failed') throw invalidState(`页码 ${img.pageNumber} 的图片已上传`);
         const file = await c.env.DB.prepare("SELECT id, project_id, status, ext FROM files WHERE id = ?1")
           .bind(img.fileId)
           .first<{ id: string; project_id: string; status: string; ext: string }>();
@@ -424,7 +444,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         WHERE source_version_id = ?1
           AND page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))
           AND (SELECT COUNT(*) FROM source_pages eligible
-            WHERE eligible.source_version_id = ?1 AND eligible.image_status = 'none'
+            WHERE eligible.source_version_id = ?1 AND (eligible.image_status = 'none' OR eligible.ocr_status = 'failed')
               AND eligible.text_status != 'extracted'
               AND eligible.page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))) = json_array_length(?2)
       `).bind(versionId, JSON.stringify(body.images), nowIso()).run();

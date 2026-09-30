@@ -203,7 +203,7 @@ const exportBundleResponse = apiEnvelope(z.object({
     status: z.string(),
   }),
   generatedAt: z.string(),
-  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int() })),
+  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int(), attachments: z.array(z.object({ fileId: z.string(), name: z.string() })) })),
   requirementSets: z.array(z.object({
     requirementSetId: z.string().uuid(),
     sourceVersionId: z.string().uuid().nullable(),
@@ -412,10 +412,10 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!project) throw notFound('项目不存在');
 
     const materials = await c.env.DB.prepare(
-      `SELECT m.title, v.markdown, v.revision FROM materials m JOIN material_versions v ON v.id = m.current_version_id WHERE m.project_id = ?1 ORDER BY m.created_at`,
+      `SELECT m.title, v.markdown, v.attachments_json, v.revision FROM materials m JOIN material_versions v ON v.id = m.current_version_id WHERE m.project_id = ?1 ORDER BY m.created_at`,
     )
       .bind(projectId)
-      .all<{ title: string; markdown: string; revision: number }>();
+      .all<{ title: string; markdown: string; revision: number; attachments_json: string }>();
 
     const requirementSets = await c.env.DB.prepare(
       'SELECT id, source_version_id, status, revision, confirmed_at FROM requirement_sets WHERE project_id = ?1 ORDER BY created_at, id',
@@ -480,7 +480,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       apiData(c, {
         project,
         generatedAt: nowIso(),
-        materials: materials.results,
+        materials: materials.results.map(({ attachments_json, ...material }) => ({ ...material, attachments: JSON.parse(attachments_json) as Array<{ fileId: string; name: string }> })),
         requirementSets: requirementSets.results.map((set) => ({
           requirementSetId: set.id,
           sourceVersionId: set.source_version_id,

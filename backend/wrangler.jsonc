@@ -79,15 +79,16 @@
       "vars": {
         "ENV_NAME": "production",
         "EMAIL_MODE": "resend",
-        "ALLOWED_ORIGINS": "",
-        "CLOUDFLARE_ACCOUNT_ID": "",
-        "AI_GATEWAY_ID": ""
+        "ALLOWED_ORIGINS": "https://team.greenbp.dpdns.org,https://greenbp-team-office.hddhp.workers.dev",
+        "CLOUDFLARE_ACCOUNT_ID": "17a6817bca6612a9cb11d0395eeba0ac",
+        "AI_GATEWAY_ID": "",
+        "EMAIL_FROM": "补位 AI 项目办公室 <onboarding@resend.dev>"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "ai-office-db-production",
-          "database_id": "<PROD_D1_ID>",
+          "database_id": "2a65957e-9138-4c39-be40-156c1756e037",
           "migrations_dir": "migrations"
         }
       ],

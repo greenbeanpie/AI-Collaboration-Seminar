@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -7,6 +7,7 @@ import { useCapabilities, useSession } from './auth';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
 import { ErrorNotice, Spinner } from './components/ui';
+import { getInstallState, promptInstall, subscribe } from './pwa-install';
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
@@ -67,7 +68,14 @@ function PwaStatus() {
   return <>
     {!online && <div className="offline-banner"><WifiOff size={15} /> 当前离线。已加载内容可能仍可查看；只有页面明确标示的本机草稿会在此设备保留，联网后请检查并确认提交。</div>}
     {needRefresh && <div className="update-banner">更新会重新载入页面，请先确认材料草稿已保存。<button className="button button-small button-primary" onClick={() => void updateServiceWorker(true)}>立即更新</button></div>}
+    <PwaInstallBanner />
   </>;
+}
+
+function PwaInstallBanner() {
+  const { canInstall } = useSyncExternalStore(subscribe, getInstallState);
+  if (!canInstall) return null;
+  return <div className="install-banner">安装到桌面可获得独立窗口和离线入口。<button className="button button-quiet button-small" onClick={() => void promptInstall()}>安装到桌面</button></div>;
 }
 
 function useStateOnline(): boolean {

@@ -322,3 +322,18 @@ describe('Markdown ↔ Tiptap 转换（纯函数）', () => {
     expect(docToMarkdown({ type: 'nope' })).toBe('');
   });
 });
+
+
+describe('作品介绍模板与附件版本', () => {
+  it('作品介绍创建结构正文；附件跨项目拒绝', async () => {
+    const user = await seedUser();
+    const pid = await seedProject(user.userId);
+    const headers = { cookie: authCookie(user.token), 'content-type': 'application/json' };
+    const create = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/materials`, { method: 'POST', headers, body: JSON.stringify({ title: '作品介绍', kind: 'work-introduction' }) });
+    const material = (await create.json() as { data: { materialId: string; currentVersion: { markdown: string; doc: unknown; attachments: unknown[] } } }).data;
+    expect(material.currentVersion.markdown).toContain('实现与验证');
+    expect(material.currentVersion.attachments).toEqual([]);
+    const reject = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/materials/${material.materialId}`, { method: 'PUT', headers, body: JSON.stringify({ expectedRevision: 1, doc: material.currentVersion.doc, attachmentIds: [crypto.randomUUID()] }) });
+    expect(reject.status).toBe(404);
+  });
+});

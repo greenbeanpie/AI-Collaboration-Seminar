@@ -25,6 +25,12 @@ export const LIMITS = {
   aiCallExtraRetries: 1,
   /** 隔离文件回收时限（小时） */
   quarantineGcHours: 48,
+  /** 孤儿 R2 对象宽限期（天）：比这更晚的对象不参与清理，避免误删刚写入的数据 */
+  orphanObjectGraceDays: 7,
+  /** 单次 cron 最多删除的孤儿对象数（有界批处理） */
+  orphanGcMaxObjectsPerRun: 200,
+  /** 已完成幂等回放记录的保留天数；processing 记录不自动删除，需运维核对（见 A08） */
+  idempotencyCompletedRetentionDays: 30,
 } as const;
 
 /** 允许上传的扩展名与可检测的文件魔数（见 services/files.ts） */

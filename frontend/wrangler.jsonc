@@ -16,7 +16,7 @@
       "services": [{ "binding": "API", "service": "ai-office-api-staging" }]
     },
     "production": {
-      "name": "ai-office-web",
+      "name": "greenbp-team-office",
       "services": [{ "binding": "API", "service": "ai-office-api" }]
     }
   }

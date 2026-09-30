@@ -8,6 +8,7 @@ import { invalidState, notFound } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
 import { reserveAiSlot } from '../services/budget';
 import { projectParams } from './projects';
+import { parsePaging, nextCursor } from '../core/pagination';
 
 const rehearsalParams = projectParams.extend({ rehearsalId: z.string().uuid() });
 
@@ -45,6 +46,12 @@ const rehearsalCreateRoute = createRoute({
   responses: {
     202: { content: { 'application/json': { schema: apiEnvelope(z.object({ rehearsalId: z.string().uuid(), jobId: z.string().uuid() }), 'RehearsalCreateResponse') } }, description: '已排队' },
   },
+});
+
+const listRoute = createRoute({
+  method: 'get', path: '/api/v1/projects/{projectId}/rehearsals', tags: ['rehearsals'],
+  summary: '跨设备答辩历史列表', request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(rehearsalSchema.omit({ turns: true })), nextCursor: z.string().nullable() }), 'RehearsalListResponse') } }, description: '演练历史' } },
 });
 
 const getRoute = createRoute({
@@ -177,6 +184,17 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     });
     await reserveAiSlot(c.env, { projectId: member.projectId, jobId, purpose: 'rehearsal_turn' });
     return c.json(apiData(c, { rehearsalId, jobId }), 202);
+  });
+
+  app.openapi(listRoute, async (c) => {
+    const { projectId } = c.req.valid('param');
+    const paging = parsePaging(c.req.valid('query'));
+    const rows = await c.env.DB.prepare('SELECT * FROM rehearsals WHERE project_id = ?1 AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4')
+      .bind(projectId, paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1).all<RehearsalRow>();
+    const page = rows.results.slice(0, paging.limit);
+    const items = page.map(r => ({ rehearsalId: r.id, scope: r.scope, memberId: r.member_id, status: r.status as 'active' | 'finished', createdAt: r.created_at, finishedAt: r.finished_at }));
+    const last = page.at(-1);
+    return c.json(apiData(c, { items, nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }), 200);
   });
 
   app.openapi(getRoute, async (c) => {

@@ -27,3 +27,7 @@ Thumbs.db
 # local tooling
 .mimosa/
 .zcode/
+
+.npm-cache/
+
+.review-workspace/

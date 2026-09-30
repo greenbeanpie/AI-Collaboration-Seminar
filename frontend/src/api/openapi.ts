@@ -346,6 +346,7 @@ export interface paths {
                          * @enum {string}
                          */
                         deadlinePrecision?: "date" | "datetime" | "unknown";
+                        aiBudgetUsd?: number | null;
                     };
                 };
             };
@@ -434,6 +435,7 @@ export interface paths {
                         deadlinePrecision?: "date" | "datetime" | "unknown";
                         /** @enum {string} */
                         status?: "active" | "archived";
+                        aiBudgetUsd?: number | null;
                     };
                 };
             };
@@ -971,6 +973,50 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["SourceVersionResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 来源全文引用片段 */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sourceId: string;
+                    sourceVersionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 可引用片段 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SourceFragmentListResponse"];
                     };
                 };
             };
@@ -2153,6 +2199,7 @@ export interface paths {
                             [key: string]: unknown;
                         };
                         markdown?: string;
+                        attachmentIds?: string[];
                     };
                 };
             };
@@ -2657,7 +2704,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 跨设备答辩历史列表 */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 演练历史 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalListResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         /** 发起答辩演练（202 + jobId，第一问生成中） */
         post: {
@@ -3366,6 +3439,8 @@ export interface paths {
                         textEconomy: {
                             provider: string;
                             model: string;
+                            /** @default  */
+                            apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
                             maxOutputTokens: number;
@@ -3377,10 +3452,14 @@ export interface paths {
                                 number,
                                 number
                             ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         visionEconomy: {
                             provider: string;
                             model: string;
+                            /** @default  */
+                            apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
                             maxOutputTokens: number;
@@ -3392,10 +3471,14 @@ export interface paths {
                                 number,
                                 number
                             ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         review: {
                             provider: string;
                             model: string;
+                            /** @default  */
+                            apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
                             maxOutputTokens: number;
@@ -3407,6 +3490,8 @@ export interface paths {
                                 number,
                                 number
                             ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         /** @default false */
                         enabled?: boolean;
@@ -3469,6 +3554,99 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["AiProbeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/idempotency/stuck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出滞留的幂等 processing 记录（运维核对后释放） */
+        get: {
+            parameters: {
+                query?: {
+                    olderThanMinutes?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 滞留记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdempotencyStuckResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/idempotency/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 释放滞留的幂等 processing 记录（人工确认业务状态后允许同键重试） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        idempotencyKey: string;
+                        /** Format: uuid */
+                        userId: string;
+                        operation: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已释放 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdempotencyReleaseResponse"];
+                    };
+                };
+                /** @description 没有处理中的同键记录 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
             };
@@ -3599,6 +3777,8 @@ export interface components {
                 deadlinePrecision: "date" | "datetime" | "unknown";
                 /** @enum {string} */
                 status: "active" | "archived";
+                /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
+                aiBudgetUsd: number | null;
                 revision: number;
                 /** @enum {string} */
                 myRole: "owner" | "member";
@@ -3621,6 +3801,8 @@ export interface components {
                     deadlinePrecision: "date" | "datetime" | "unknown";
                     /** @enum {string} */
                     status: "active" | "archived";
+                    /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
+                    aiBudgetUsd: number | null;
                     revision: number;
                     /** @enum {string} */
                     myRole: "owner" | "member";
@@ -3782,6 +3964,20 @@ export interface components {
                     ocrStatus: "none" | "pending" | "ok" | "failed";
                     needsReview: boolean;
                 }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SourceFragmentListResponse: {
+            data: {
+                items: {
+                    fragmentId: string;
+                    pageNumber: number | null;
+                    content: string;
+                    kind: string;
+                    seq: number;
+                }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -4088,6 +4284,11 @@ export interface components {
                         [key: string]: unknown;
                     };
                     markdown: string;
+                    attachments: {
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                    }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
                     /** Format: uuid */
@@ -4127,6 +4328,11 @@ export interface components {
                     [key: string]: unknown;
                 };
                 markdown: string;
+                attachments: {
+                    /** Format: uuid */
+                    fileId: string;
+                    name: string;
+                }[];
                 /** @enum {string} */
                 origin: "manual" | "ai_adoption";
                 /** Format: uuid */
@@ -4145,6 +4351,11 @@ export interface components {
                     versionId: string;
                     revision: number;
                     markdown: string;
+                    attachments: {
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                    }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
                     /** Format: uuid */
@@ -4304,6 +4515,25 @@ export interface components {
                 rehearsalId: string;
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    rehearsalId: string;
+                    /** @enum {string} */
+                    scope: "all" | "member";
+                    /** Format: uuid */
+                    memberId: string | null;
+                    /** @enum {string} */
+                    status: "active" | "finished";
+                    createdAt: string;
+                    finishedAt: string | null;
+                }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -4485,6 +4715,10 @@ export interface components {
                     title: string;
                     markdown: string;
                     revision: number;
+                    attachments: {
+                        fileId: string;
+                        name: string;
+                    }[];
                 }[];
                 requirementSets: {
                     /** Format: uuid */
@@ -4631,6 +4865,27 @@ export interface components {
                     passed: boolean;
                     detail: string;
                 }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        IdempotencyStuckResponse: {
+            data: {
+                olderThanMinutes: number;
+                items: {
+                    idempotencyKey: string;
+                    userId: string;
+                    operation: string;
+                    requestHash: string;
+                    createdAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        IdempotencyReleaseResponse: {
+            data: {
+                released: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

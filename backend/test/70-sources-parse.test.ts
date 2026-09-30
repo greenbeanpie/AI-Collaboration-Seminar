@@ -183,7 +183,7 @@ describe('来源解析流水线', () => {
     expect(upBody.jobId).toBeTruthy();
 
     const ocrDone = await ensureJobDone(authCookie(owner.token), upBody.jobId!);
-    expect(ocrDone.status).toBe('succeeded');
+    expect(ocrDone.status, JSON.stringify(ocrDone.error)).toBe('succeeded');
 
     const ocrFrags = await env.DB.prepare("SELECT kind, needs_review FROM source_fragments f JOIN source_pages p ON p.source_version_id = f.source_version_id WHERE f.source_version_id = ?1 AND f.kind = 'ocr' LIMIT 1")
       .bind(sourceVersionId)
@@ -240,5 +240,71 @@ describe('来源解析流水线', () => {
     const goodJob = await startParse(authCookie(owner.token), pid, good.sourceId);
     const goodDone = await ensureJobDone(authCookie(owner.token), goodJob);
     expect(goodDone.status).toBe('succeeded');
+  });
+
+  it('混合 PDF：已有文本层的页面不再等待图片（A06）', async () => {
+    vi.stubGlobal('fetch', mockGatewayFetch());
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const fileId = await uploadFile(authCookie(owner.token), pid, '混合件.pdf', makePdf(2, { scannedPages: [2] }));
+    const { sourceId, sourceVersionId } = await createSource(authCookie(owner.token), pid, { kind: 'file', fileId });
+
+    const jobId = await startParse(authCookie(owner.token), pid, sourceId);
+    const done = await ensureJobDone(authCookie(owner.token), jobId);
+    expect(done.status).toBe('waiting_input');
+    // 只缺扫描页，不因存在文本页而重复索要图片
+    expect((done.result as { needsImages: number }).needsImages).toBe(1);
+
+    const rr = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/sources/${sourceId}/render-requests`, { headers: { cookie: authCookie(owner.token) } });
+    const rrBody = (await rr.json() as { data: { items: Array<{ pageNumber: number }> } }).data;
+    expect(rrBody.items.map((i) => i.pageNumber)).toEqual([2]);
+
+    const img2 = await uploadFile(authCookie(owner.token), pid, 'page-2.png', makePng());
+    const up = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/sources/${sourceId}/page-images`, {
+      method: 'POST',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersionId, images: [{ pageNumber: 2, fileId: img2 }] }),
+    });
+    expect(up.status).toBe(202);
+    const upBody = (await up.json() as { data: { remaining: number; jobId: string | null } }).data;
+    expect(upBody.remaining).toBe(0);
+    const ocrDone = await ensureJobDone(authCookie(owner.token), upBody.jobId!);
+    expect(ocrDone.status, JSON.stringify(ocrDone.error)).toBe('succeeded');
+  });
+
+  it('OCR 失败页不误报完整，且重新出现在待渲染列表（A06）', async () => {
+    vi.stubGlobal('fetch', mockGatewayFetch({ visionInvalid: true }));
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const fileId = await uploadFile(authCookie(owner.token), pid, '识别失败.pdf', makePdf(1, { text: false }));
+    const { sourceId, sourceVersionId } = await createSource(authCookie(owner.token), pid, { kind: 'file', fileId });
+
+    const jobId = await startParse(authCookie(owner.token), pid, sourceId);
+    const done = await ensureJobDone(authCookie(owner.token), jobId);
+    expect(done.status).toBe('waiting_input');
+
+    const img1 = await uploadFile(authCookie(owner.token), pid, 'page-1.png', makePng());
+    const up = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/sources/${sourceId}/page-images`, {
+      method: 'POST',
+      headers: { cookie: authCookie(owner.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersionId, images: [{ pageNumber: 1, fileId: img1 }] }),
+    });
+    expect(up.status).toBe(202);
+    const upBody = (await up.json() as { data: { jobId: string | null } }).data;
+
+    const ocrDone = await ensureJobDone(authCookie(owner.token), upBody.jobId!);
+    // 识别失败的页面不得被当作整册识别完成
+    expect(ocrDone.status).toBe('failed');
+    expect((ocrDone.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
+
+    const page = await env.DB.prepare("SELECT ocr_status FROM source_pages WHERE source_version_id = ?1 AND page_number = 1")
+      .bind(sourceVersionId)
+      .first<{ ocr_status: string }>();
+    expect(page?.ocr_status).toBe('failed');
+
+    // 失败页可重试：仍出现在待渲染列表
+    const rr = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/sources/${sourceId}/render-requests`, { headers: { cookie: authCookie(owner.token) } });
+    const rrBody = (await rr.json() as { data: { items: Array<{ pageNumber: number }> } }).data;
+    expect(rrBody.items.map((i) => i.pageNumber)).toEqual([1]);
   });
 });

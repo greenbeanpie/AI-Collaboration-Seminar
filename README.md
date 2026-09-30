@@ -64,11 +64,11 @@ npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopb
 
 | 状态 | 尚需完成 | 详细占位 |
 | --- | --- | --- |
-| 待配置 / 待验证 | Cloudflare 真实资源、迁移/部署、Service Binding、邮件域名与验证码投递 | [A01](docs/ARCHITECTURE.md#a01)、[A02](docs/ARCHITECTURE.md#a02) |
-| 未完成 | 金额预算预占/结算（当前费用为未知）、探测启用强制门槛、任务冻结模型配置、模型供应商切换 | [A03](docs/ARCHITECTURE.md#a03)–[A05](docs/ARCHITECTURE.md#a05)、[A15](docs/ARCHITECTURE.md#a15) |
-| 待完善 / 待验证 | OCR 失败页与完整性、Workflow 崩溃/重复执行恢复、业务/账本/幂等响应原子性 | [A06](docs/ARCHITECTURE.md#a06)–[A08](docs/ARCHITECTURE.md#a08) |
-| 未完成 | 材料独立附件、作品介绍模板、来源全文引用定位、答辩跨设备历史列表 | [A09](docs/ARCHITECTURE.md#a09)–[A11](docs/ARCHITECTURE.md#a11) |
-| 待验证 / 待完善 | 操作系统实际 PWA 安装、原生 PDF 保存、数据保留/恢复/监控/压测及测试运行时告警 | [A12](docs/ARCHITECTURE.md#a12)、[A13](docs/ARCHITECTURE.md#a13) |
-| 待验证 | 真模型/OCR 云端全流程与比赛原始材料、最终申报内容人工验收 | [A14](docs/ARCHITECTURE.md#a14) |
+| 待配置 / 待验证（云端） | Cloudflare 真实资源、迁移/部署、Service Binding、邮件域名与验证码投递 | [A01](docs/ARCHITECTURE.md#a01)、[A02](docs/ARCHITECTURE.md#a02) |
+| 已实现（本地），云端待验证 | 金额预占/结算与待对账、探测启用门槛、任务冻结配置、供应商切换 | [A03](docs/ARCHITECTURE.md#a03)–[A05](docs/ARCHITECTURE.md#a05)、[A15](docs/ARCHITECTURE.md#a15) |
+| 已实现（本地），真实识别质量待验证 | OCR 失败页可重试与完整性判定、Workflow 恢复故障注入、强制幂等与账本原子性 | [A06](docs/ARCHITECTURE.md#a06)–[A08](docs/ARCHITECTURE.md#a08) |
+| 已实现（本地） | 材料附件、作品介绍模板、来源全文引用定位、答辩跨设备历史列表 | [A09](docs/ARCHITECTURE.md#a09)–[A11](docs/ARCHITECTURE.md#a11) |
+| 待人工/待完善 | 操作系统实际 PWA 安装、原生 PDF 保存、数据保留与恢复演练、监控与压测 | [A12](docs/ARCHITECTURE.md#a12)、[A13](docs/ARCHITECTURE.md#a13) |
+| 待验证（云端） | 真模型/OCR 云端全流程与比赛原始材料、最终申报内容人工验收 | [A14](docs/ARCHITECTURE.md#a14) |
 
-既有本地浏览器/HTTP 验证、测试结果及残留告警见 [实现对齐记录](docs/IMPLEMENTATION-ALIGNMENT.md)。模型成功路径使用 fixture；PDF 渲染成功不代表 OCR 正确，当前并发预占也不代表金额预算控制完成。各项占位包含代码位置与完成判据，关闭时应补充提交和验证证据。
+既有本地浏览器/HTTP 验证、测试结果及残留告警见 [实现对齐记录](docs/IMPLEMENTATION-ALIGNMENT.md)。**本地验证不等于云端验收**：模型成功路径使用受控 fixture（本地零费用端到端见 A14），PDF 渲染成功不代表 OCR 正确，金额预占与结算的数值规则仍需与真实供应商账单核对。各项占位包含代码位置与完成判据，关闭时应补充提交和验证证据。

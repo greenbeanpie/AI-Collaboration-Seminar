@@ -2,44 +2,165 @@ import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
 import { quotaExceeded } from '../core/errors';
+import { loadAiConfig, type AiPurpose, type LoadedAiConfig } from '../ai/config';
 
 /**
- * AI 预算/并发预占（PLAN 二.7）：每项目并行 AI 任务上限 2。
- * 调用前原子预占（计数检查 + 插入），任务完成/失败时结算/释放；
- * 崩溃遗留的预占由 cron 按时限释放（backend_plan.md 4.7）。
+ * AI 预算与并发预占（PLAN 二.7）：
+ * - 每项目并行 AI 任务上限 2（LIMITS.concurrentAiTasksPerProject）。
+ * - 调用前按模型价格与最坏情况 token 估算原子预占金额，调用后按真实用量结算。
+ * - 未配置价格的模型金额记为 0（费用 unknown，不填零）；超时/用量未知 → pending_reconcile。
+ * - 崩溃遗留的预占由 cron 释放，但仍在排队/运行的对应任务不得被释放（避免重复扣款与超额放行）。
+ */
+
+/** 任务种类 → 模型用途（决定用哪一档价格估算） */
+const KIND_TO_AI_PURPOSE: Record<string, AiPurpose> = {
+  agent_run: 'textEconomy',
+  assignment_suggest: 'textEconomy',
+  requirement_extract: 'textEconomy',
+  parse_source: 'textEconomy',
+  ocr_pages: 'visionEconomy',
+  review_run: 'review',
+  rehearsal_turn: 'review',
+};
+
+/**
+ * 最坏情况估算（美元）：输入按 maxInputChars/4 估 token，输出按 maxOutputTokens 上限。
+ * 未配置价格 → 0，此时只受并发上限约束，实际费用如实记 unknown。
+ * 估算偏保守，保证不会因为低估而超出项目预算。
+ */
+export function estimateCostUsd(config: LoadedAiConfig | null, purpose: AiPurpose): number {
+  const model = config?.config[purpose];
+  const price = model?.pricePerMTokens;
+  if (!model || !price) return 0;
+  const inputTokens = Math.ceil(model.maxInputChars / 4);
+  return (inputTokens * price[0] + model.maxOutputTokens * price[1]) / 1_000_000;
+}
+
+async function findActiveReservation(env: Env, jobId: string): Promise<{ id: string; created_at: string } | null> {
+  return env.DB.prepare(
+    "SELECT id, created_at FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved' ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(jobId)
+    .first<{ id: string; created_at: string }>();
+}
+
+/** 读取任务创建时冻结的模型配置版本（缺失时回退最新版本，仅影响估算精度） */
+async function frozenConfigVersionIdFor(env: Env, jobId: string): Promise<string | undefined> {
+  const job = await env.DB.prepare('SELECT input_json FROM jobs WHERE id = ?1').bind(jobId).first<{ input_json: string }>();
+  if (!job) return undefined;
+  try {
+    const parsed = JSON.parse(job.input_json) as { configVersionId?: unknown };
+    return typeof parsed.configVersionId === 'string' ? parsed.configVersionId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 原子预占一个 AI 并发槽位与估算金额。
+ * 同一任务已有活动预占时直接返回（OCR 与要求提取可能分阶段复用同一任务）。
  */
 export async function reserveAiSlot(
   env: Env,
   params: { projectId: string; jobId: string; purpose: string },
 ): Promise<void> {
+  if (await findActiveReservation(env, params.jobId)) return;
+
+  const config = await loadAiConfig(env.DB, await frozenConfigVersionIdFor(env, params.jobId));
+  const aiPurpose = KIND_TO_AI_PURPOSE[params.purpose];
+  const estimatedCost = aiPurpose ? estimateCostUsd(config, aiPurpose) : 0;
+
   const result = await env.DB.prepare(
     `INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at)
-     SELECT ?1, ?2, ?3, ?4, 0, 'reserved', ?5
+     SELECT ?1, ?2, ?3, ?4, ?5, 'reserved', ?6
       WHERE (SELECT COUNT(*) FROM usage_reservations
-              WHERE project_id = ?2 AND status IN ('reserved', 'pending_reconcile')) < ?6`,
+              WHERE project_id = ?2 AND status IN ('reserved', 'pending_reconcile')) < ?7
+        AND ((SELECT ai_budget_usd FROM projects WHERE id = ?2) IS NULL
+             OR ?5 <= (SELECT ai_budget_usd FROM projects WHERE id = ?2)
+                      - (SELECT COALESCE(SUM(CASE WHEN status = 'settled' THEN COALESCE(settled_cost, 0) ELSE COALESCE(estimated_cost, 0) END), 0)
+                           FROM usage_reservations
+                          WHERE project_id = ?2 AND status IN ('reserved', 'pending_reconcile', 'settled')))`,
   )
-    .bind(newId(), params.projectId, params.jobId, params.purpose, nowIso(), LIMITS.concurrentAiTasksPerProject)
+    .bind(
+      newId(),
+      params.projectId,
+      params.jobId,
+      params.purpose,
+      estimatedCost,
+      nowIso(),
+      LIMITS.concurrentAiTasksPerProject,
+    )
     .run();
+
   if ((result.meta?.changes ?? 0) === 0) {
-    throw quotaExceeded('该项目的 AI 任务并发已达上限，请等待进行中的任务完成', {
-      limit: LIMITS.concurrentAiTasksPerProject,
+    // 区分并发超限与预算不足，给出可操作的错误
+    const state = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM usage_reservations WHERE project_id = ?1 AND status IN ('reserved', 'pending_reconcile')) AS active,
+              (SELECT ai_budget_usd FROM projects WHERE id = ?1) AS budget,
+              (SELECT COALESCE(SUM(CASE WHEN status = 'settled' THEN COALESCE(settled_cost, 0) ELSE COALESCE(estimated_cost, 0) END), 0)
+                 FROM usage_reservations WHERE project_id = ?1 AND status IN ('reserved', 'pending_reconcile', 'settled')) AS committed`,
+    )
+      .bind(params.projectId)
+      .first<{ active: number; budget: number | null; committed: number }>();
+
+    if ((state?.active ?? 0) >= LIMITS.concurrentAiTasksPerProject) {
+      throw quotaExceeded('该项目的 AI 任务并发已达上限，请等待进行中的任务完成', {
+        limit: LIMITS.concurrentAiTasksPerProject,
+      });
+    }
+    throw quotaExceeded('项目 AI 预算不足，请提高预算或等待结算后重试', {
+      budgetUsd: state?.budget ?? null,
+      committedUsd: state?.committed ?? 0,
+      estimatedCostUsd: estimatedCost,
     });
   }
 }
 
+/**
+ * 结算或释放预占。
+ * settled：按该次预占之后产生的 ai_calls 真实费用结算；存在费用未知的调用 → pending_reconcile。
+ * released：调用未发生或失败 ── 释放槽位，不产生金额。
+ */
 export async function settleReservation(env: Env, jobId: string, outcome: 'settled' | 'released'): Promise<void> {
-  await env.DB.prepare(
-    'UPDATE usage_reservations SET status = ?2, settled_at = ?3 WHERE job_id = ?1 AND status = ?4',
+  const active = await findActiveReservation(env, jobId);
+  if (!active) return;
+  const now = nowIso();
+  if (outcome === 'released') {
+    await env.DB.prepare(
+      "UPDATE usage_reservations SET status = 'released', settled_cost = NULL, settled_at = ?2 WHERE id = ?1 AND status = 'reserved'",
+    )
+      .bind(active.id, now)
+      .run();
+    return;
+  }
+
+  const agg = await env.DB.prepare(
+    `SELECT COALESCE(SUM(CASE WHEN cost_status = 'known' THEN cost_usd ELSE 0 END), 0) AS known_cost,
+            SUM(CASE WHEN cost_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_calls
+       FROM ai_calls WHERE job_id = ?1 AND created_at >= ?2`,
   )
-    .bind(jobId, outcome, nowIso(), 'reserved')
+    .bind(jobId, active.created_at)
+    .first<{ known_cost: number; unknown_calls: number | null }>();
+
+  const unknown = (agg?.unknown_calls ?? 0) > 0;
+  await env.DB.prepare(
+    "UPDATE usage_reservations SET status = ?2, settled_cost = ?3, settled_at = ?4 WHERE id = ?1 AND status = 'reserved'",
+  )
+    .bind(active.id, unknown ? 'pending_reconcile' : 'settled', unknown ? null : (agg?.known_cost ?? 0), now)
     .run();
 }
 
-/** cron：释放超过 2 小时仍未结算的预占（对应任务应已被标记失败） */
+/**
+ * cron：释放超过 2 小时且对应任务已不在排队/运行中的预占。
+ * 仍在 queued/running/waiting_input 的任务不释放，避免重复扣款或超额放行；
+ * 任务记录缺失（孤儿预占）按已结束处理，避免永久占用槽位。
+ */
 export async function releaseStaleReservations(env: Env, now: string): Promise<void> {
   const staleBefore = new Date(new Date(now).getTime() - 2 * 3600_000).toISOString();
   await env.DB.prepare(
-    "UPDATE usage_reservations SET status = 'released', settled_at = ?2 WHERE status = 'reserved' AND created_at <= ?1",
+    `UPDATE usage_reservations SET status = 'released', settled_cost = NULL, settled_at = ?2
+      WHERE status = 'reserved' AND created_at <= ?1
+        AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = usage_reservations.job_id AND jobs.status IN ('queued', 'running', 'waiting_input'))`,
   )
     .bind(staleBefore, now)
     .run();

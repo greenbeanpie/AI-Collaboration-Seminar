@@ -1,7 +1,8 @@
 import type { Env } from './env';
 import { nowIso } from './core/db';
-import { tryDispatchJob } from './services/jobs';
+import { tryDispatchJob, reconcileWorkflowJob } from './services/jobs';
 import { releaseStaleReservations } from './services/budget';
+import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
 
 /**
  * 定时维护（crons 每分钟触发）：
@@ -12,6 +13,10 @@ import { releaseStaleReservations } from './services/budget';
 export async function handleScheduled(env: Env): Promise<void> {
   const now = nowIso();
   await recoverJobs(env, now);
+  const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
+  for (const job of staleRunning.results) {
+    try { await reconcileWorkflowJob(env, job.id); } catch (error) { console.error('[cron] Workflow 状态核对失败', job.id, error); }
+  }
   await releaseStaleReservations(env, now);
   try {
     const quarantined = await env.DB
@@ -34,6 +39,26 @@ export async function handleScheduled(env: Env): Promise<void> {
     await env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at <= ?1').bind(now).run();
   } catch (err) {
     console.error('[cron] 定时维护失败（迁移未应用或依赖暂不可用时不致命）:', err);
+  }
+
+  // 孤儿 R2 对象回收（只删超过宽限期且数据库无引用的受管对象）
+  try {
+    const orphan = await gcOrphanObjects(env, now);
+    if (orphan.deleted.length > 0 || orphan.failures > 0) {
+      console.log('[cron] 孤儿对象回收', JSON.stringify(orphan));
+    }
+  } catch (err) {
+    console.error('[cron] 孤儿对象回收失败:', err);
+  }
+
+  // 数据保留：已完成的幂等回放记录到期清理（processing 保留给运维核对）
+  try {
+    const retention = await gcExpiredRecords(env, now);
+    if (retention.idempotencyDeleted > 0) {
+      console.log('[cron] 幂等记录清理', JSON.stringify(retention));
+    }
+  } catch (err) {
+    console.error('[cron] 幂等记录清理失败:', err);
   }
 }
 
@@ -61,11 +86,12 @@ async function recoverJobs(env: Env, now: string): Promise<void> {
           .run();
         continue;
       }
-      await env.DB.prepare(
-        'UPDATE job_outbox SET lease_until = ?2, attempts = attempts + 1, updated_at = ?2 WHERE job_id = ?1 AND (lease_until IS NULL OR lease_until <= ?2)',
+      const claim = await env.DB.prepare(
+        'UPDATE job_outbox SET lease_until = ?2, attempts = attempts + 1, updated_at = ?3 WHERE job_id = ?1 AND (lease_until IS NULL OR lease_until <= ?3)',
       )
-        .bind(row.job_id, new Date(Date.now() + 5 * 60_000).toISOString())
+        .bind(row.job_id, new Date(new Date(now).getTime() + 5 * 60_000).toISOString(), now)
         .run();
+      if ((claim.meta?.changes ?? 0) === 0) continue;
       await tryDispatchJob(env, row.job_id);
     }
   } catch (err) {

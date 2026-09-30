@@ -219,8 +219,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .welcome-card h1 { margin: 11px 0 -9px; color: var(--ink); font-size: 24px; }
 .welcome-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 9px; }
-.offline-banner, .update-banner { position: fixed; z-index: 50; top: 10px; left: 50%; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 24px); padding: 8px 12px; border: 1px solid #e5d9ba; border-radius: 11px; background: #fffaf0; box-shadow: var(--shadow-soft); color: #765d2e; font-size: 10px; transform: translateX(-50%); }
+.offline-banner, .update-banner, .install-banner { position: fixed; z-index: 50; top: 10px; left: 50%; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 24px); padding: 8px 12px; border: 1px solid #e5d9ba; border-radius: 11px; background: #fffaf0; box-shadow: var(--shadow-soft); color: #765d2e; font-size: 10px; transform: translateX(-50%); }
 .update-banner { top: 54px; border-color: #d9e3f5; background: #f4f8ff; color: #546b94; }
+.install-banner { top: 98px; border-color: #d8e6dc; background: #f3fbf5; color: #446852; }
 
 .table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -288,7 +289,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .ledger-content p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.7; white-space: pre-wrap; }
 .ledger-content small { color: #a1aaba; font-size: 8px; }
 
-.offline-banner, .update-banner { max-width: min(680px, calc(100vw - 28px)); }
+.offline-banner, .update-banner, .install-banner { max-width: min(680px, calc(100vw - 28px)); }
 @media (max-width: 1080px) {
   .sidebar { flex-basis: 220px; width: 220px; }
   .main-shell { padding-right: 24px; padding-left: 24px; }
@@ -346,11 +347,12 @@ tbody tr:last-child td { border-bottom: 0; }
   .auth-top > .button { min-height: 34px; padding: 0 10px; }
   .offline-banner { top: auto; bottom: 11px; font-size: 9px; }
   .update-banner { top: 10px; }
+  .install-banner { top: 54px; }
   th, td { padding-right: 8px; padding-left: 8px; }
 }
 @media print {
   body { background: #fff; }
-  .sidebar, .mobile-bar, .project-tabs, .button, .icon-button, .heading-action, .offline-banner, .update-banner, .no-print { display: none !important; }
+  .sidebar, .mobile-bar, .project-tabs, .button, .icon-button, .heading-action, .offline-banner, .update-banner, .install-banner, .no-print { display: none !important; }
   .main-shell { padding: 0; }
   .project-banner { padding: 0 0 12px; }
   .content-wrap, .page-stack { width: 100%; max-width: none; padding: 12px 0; }

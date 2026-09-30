@@ -2,6 +2,7 @@ import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
+import { aiConfigSchema } from '../src/ai/config';
 
 const adminHeaders = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
 
@@ -33,7 +34,7 @@ describe('管理端鉴权', () => {
 });
 
 describe('AI 配置版本化', () => {
-  it('种子配置 version=1 未启用；写入新版本启用后 capabilities 跟随', async () => {
+  it('种子配置未启用；禁止未测试直接启用', async () => {
     const get = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers: adminHeaders });
     expect(get.status).toBe(200);
     const current = (await get.json()) as { data: { version: number; enabled: boolean } };
@@ -82,19 +83,44 @@ describe('AI 配置版本化', () => {
         notes: '测试启用',
       }),
     });
-    expect(put.status).toBe(201);
-    const putData = (await put.json()) as { data: { version: number; enabled: boolean } };
-    expect(putData.data.version).toBe(2);
-    expect(putData.data.enabled).toBe(true);
-
+    expect(put.status).toBe(409);
     const capsAfter = await SELF.fetch(`${BASE}/api/v1/capabilities`);
     const after = (await capsAfter.json()) as { data: { features: { aiEnabled: boolean } } };
-    expect(after.data.features.aiEnabled).toBe(true);
+    expect(after.data.features.aiEnabled).toBe(false);
   });
 });
 
 describe('AI 能力探测', () => {
+  it('自定义地址和密钥加密保存，全部用途探测后启用；变更配置使证据失效', async () => {
+    const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
+    const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
+    const body = Object.fromEntries(Object.entries(config).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'test-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]));
+    const save = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...body, enabled: false }) });
+    expect(save.status).toBe(201);
+    const stored = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
+    expect(stored!.config_json).not.toContain('fixture-key');
+    const read = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers: adminHeaders });
+    const loaded = (await read.json() as { data: { config: Record<string, Record<string, unknown>> } }).data.config;
+    expect(JSON.stringify(loaded)).not.toContain('apiKeyEncrypted');
+    expect(loaded.textEconomy!.keyConfigured).toBe(true);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toBe('https://model.example.com/v1/chat/completions');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-key');
+      const messages = JSON.parse(String(init?.body)).messages;
+      const content = Array.isArray(messages[0].content) ? '{"seen":true}' : messages[0].content.includes('你好') ? '你好，我是助手。' : '{"ok":true,"n":1}';
+      return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { prompt_tokens: 8, completion_tokens: 4 } }));
+    }));
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review']) {
+      const res = await SELF.fetch(`${BASE}/api/v1/admin/ai-config/probe`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ purpose }) });
+      expect((await res.json() as { data: { passed: boolean } }).data.passed).toBe(true);
+    }
+    const enable = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...loaded, enabled: true }) });
+    expect(enable.status).toBe(201);
+    const changed = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...loaded, textEconomy: { ...loaded.textEconomy, model: 'changed' }, enabled: true }) });
+    expect(changed.status).toBe(409);
+  });
   it('模型正常时四项检查通过，并记录 ai_calls（费用未知）', async () => {
+    const beforeCalls = await env.DB.prepare('SELECT COUNT(*) AS n FROM ai_calls').first<{ n: number }>();
     const mock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         messages?: Array<{ content: unknown }>;
@@ -138,7 +164,7 @@ describe('AI 能力探测', () => {
     expect(mock).toHaveBeenCalled();
 
     const calls = await env.DB.prepare('SELECT cost_usd, cost_status FROM ai_calls').all<{ cost_usd: number | null; cost_status: string }>();
-    expect(calls.results.length).toBe(2); // 中文 + JSON 两次真实调用记录
+    expect(calls.results.length).toBe((beforeCalls?.n ?? 0) + 2); // 中文 + JSON 两次真实调用记录
     for (const row of calls.results) {
       expect(row.cost_usd).toBeNull();
       expect(row.cost_status).toBe('unknown');
@@ -160,5 +186,28 @@ describe('AI 能力探测', () => {
     expect(report.data.passed).toBe(false);
     expect(report.data.checks[0]?.passed).toBe(false);
     expect(report.data.checks[0]?.detail).toContain('500');
+  });
+
+  it('探测失败不产生通过证据，启用仍被拒绝', async () => {
+    const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
+    const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
+    const body = Object.fromEntries(
+      Object.entries(config).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'probe-fail-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]),
+    );
+    const save = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...body, enabled: false }) });
+    expect(save.status).toBe(201);
+    const saved = await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ id: string }>();
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'plain english only' } }], usage: {} }))));
+    const probe = await SELF.fetch(`${BASE}/api/v1/admin/ai-config/probe`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ purpose: 'textEconomy' }) });
+    expect(probe.status).toBe(200);
+    expect(((await probe.json()) as { data: { passed: boolean } }).data.passed).toBe(false);
+    const evidence = await env.DB.prepare('SELECT passed FROM ai_probes WHERE config_version_id = ?1 AND purpose = ?2').bind(saved!.id, 'textEconomy').first<{ passed: number }>();
+    expect(evidence?.passed).toBe(0);
+
+    // 配置未变（apiKey 留空以复用已存密钥）但证据不足 → 仍禁止启用
+    const enableBody = Object.fromEntries(Object.entries(body).map(([p, model]) => [p, { ...model, apiKey: '' }]));
+    const enable = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...enableBody, enabled: true }) });
+    expect(enable.status).toBe(409);
   });
 });

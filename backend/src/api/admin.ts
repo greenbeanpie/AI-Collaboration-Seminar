@@ -2,11 +2,14 @@ import { createMiddleware } from 'hono/factory';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
-import { apiEnvelope } from '../core/openapi';
+import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { nowIso, newId, timingSafeEqual } from '../core/db';
-import { unauthenticated } from '../core/errors';
+import { seal } from '../ai/secrets';
+import { unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
+import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../services/idempotency';
 import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
+import { isAllowedModelEndpoint } from '../ai/gateway';
 
 const BEARER_PREFIX_RE = /^Bearer\s+/i;
 
@@ -27,10 +30,11 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
+const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).optional(), clearKey: z.boolean().optional() });
 const configShape = z.object({
-  textEconomy: aiModelConfigSchema,
-  visionEconomy: aiModelConfigSchema,
-  review: aiModelConfigSchema,
+  textEconomy: editableModel,
+  visionEconomy: editableModel,
+  review: editableModel,
   enabled: z.boolean().default(false),
   notes: z.string().max(2000).optional(),
 });
@@ -96,6 +100,53 @@ const probeRoute = createRoute({
   responses: { 200: { content: { 'application/json': { schema: probeResponse } }, description: '探测报告' } },
 });
 
+const stuckQuery = z.object({ olderThanMinutes: z.string().optional(), limit: z.string().optional() });
+
+const stuckResponse = apiEnvelope(
+  z.object({
+    olderThanMinutes: z.number().int(),
+    items: z.array(
+      z.object({
+        idempotencyKey: z.string(),
+        userId: z.string(),
+        operation: z.string(),
+        requestHash: z.string(),
+        createdAt: z.string(),
+      }),
+    ),
+  }),
+  'IdempotencyStuckResponse',
+);
+
+const stuckRoute = createRoute({
+  method: 'get',
+  path: '/api/v1/admin/idempotency/stuck',
+  tags: ['admin'],
+  summary: '列出滞留的幂等 processing 记录（运维核对后释放）',
+  request: { query: stuckQuery },
+  responses: { 200: { content: { 'application/json': { schema: stuckResponse } }, description: '滞留记录' } },
+});
+
+const releaseBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  userId: z.string().uuid(),
+  operation: z.string().min(1).max(100),
+});
+
+const releaseResponse = apiEnvelope(z.object({ released: z.boolean() }), 'IdempotencyReleaseResponse');
+
+const releaseRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/admin/idempotency/release',
+  tags: ['admin'],
+  summary: '释放滞留的幂等 processing 记录（人工确认业务状态后允许同键重试）',
+  request: { body: { content: { 'application/json': { schema: releaseBody } }, required: true } },
+  responses: {
+    200: { content: { 'application/json': { schema: releaseResponse } }, description: '已释放' },
+    404: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '没有处理中的同键记录' },
+  },
+});
+
 export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/admin/*', requireAdmin);
 
@@ -109,7 +160,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         id: loaded.id,
         version: loaded.version,
         enabled: loaded.enabled,
-        config: loaded.config,
+        config: Object.fromEntries(Object.entries(loaded.config).map(([purpose, { apiKeyEncrypted, ...model }]) => [purpose, { ...model, keyConfigured: Boolean(apiKeyEncrypted) }])),
         notes: null,
       }),
       200,
@@ -121,7 +172,20 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const latest = await loadAiConfig(c.env.DB);
     const version = (latest?.version ?? 0) + 1;
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
-    const { enabled, notes, ...config } = body;
+    const { enabled, notes } = body;
+    const config = aiConfigSchema.parse(body);
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) {
+      const input = body[purpose];
+      if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
+        throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');
+      }
+      config[purpose].apiKeyEncrypted = input.clearKey ? undefined : input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : latest?.config[purpose].apiKeyEncrypted;
+    }
+    if (enabled) {
+      if (!latest || JSON.stringify(aiConfigSchema.parse(config)) !== JSON.stringify(latest.config)) throw invalidState('请先保存配置并测试全部模型，配置变化后必须重新测试');
+      const probes = await c.env.DB.prepare('SELECT purpose FROM ai_probes WHERE config_version_id = ?1 AND passed = 1').bind(latest.id).all<{ purpose: string }>();
+      if (probes.results.length !== 3) throw invalidState('三个用途的模型测试全部通过后才能启用 AI');
+    }
     await c.env.DB.prepare(
       'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
     )
@@ -132,7 +196,11 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(probeRoute, async (c) => {
     const body = c.req.valid('json');
-    const report = await probeModel(c.env, body.purpose as AiPurpose);
+    const loaded = await loadAiConfig(c.env.DB);
+    if (!loaded) throw invalidState('请先保存模型配置');
+    const report = await probeModel(c.env, body.purpose as AiPurpose, loaded);
+    await c.env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(config_version_id, purpose) DO UPDATE SET passed = excluded.passed, report_json = excluded.report_json, tested_at = excluded.tested_at')
+      .bind(loaded.id, report.purpose, report.passed ? 1 : 0, JSON.stringify(report), nowIso()).run();
     return c.json(
       apiData(c, {
         purpose: report.purpose,
@@ -143,5 +211,23 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       }),
       200,
     );
+  });
+
+  app.openapi(stuckRoute, async (c) => {
+    const query = c.req.valid('query');
+    // 注意 0 是合法值（列出全部滞留记录），不能用 `|| 10` 兜底
+    const parsedOlder = Number.parseInt(query.olderThanMinutes ?? '10', 10);
+    const olderThanMinutes = Number.isFinite(parsedOlder) && parsedOlder >= 0 ? parsedOlder : 10;
+    const parsedLimit = Number.parseInt(query.limit ?? '50', 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(200, parsedLimit) : 50;
+    const items = await listStuckIdempotencyRecords(c.env, olderThanMinutes, limit);
+    return c.json(apiData(c, { olderThanMinutes, items }), 200);
+  });
+
+  app.openapi(releaseRoute, async (c) => {
+    const body = c.req.valid('json');
+    const released = await releaseIdempotencyRecord(c.env, body);
+    if (!released) throw notFound('没有处理中的同键记录');
+    return c.json(apiData(c, { released: true }), 200);
   });
 }

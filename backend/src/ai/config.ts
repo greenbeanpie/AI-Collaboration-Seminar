@@ -6,7 +6,9 @@ export type AiPurpose = 'textEconomy' | 'visionEconomy' | 'review';
 
 export const aiModelConfigSchema = z.object({
   provider: z.string().min(1),
-  model: z.string().min(1),
+  model: z.string(),
+  apiUrl: z.string().default(''),
+  apiKeyEncrypted: z.string().optional(),
   timeoutMs: z.number().int().min(1000).max(600000),
   maxInputChars: z.number().int().min(1),
   maxOutputTokens: z.number().int().min(1).max(32768),
@@ -14,7 +16,7 @@ export const aiModelConfigSchema = z.object({
   supportsVision: z.boolean(),
   temperature: z.number().min(0).max(2).optional(),
   /** 每百万 token 价格 [输入 USD, 输出 USD]；null 表示未配置 → 费用记未知，不填零 */
-  pricePerMTokens: z.tuple([z.number(), z.number()]).nullable().default(null),
+  pricePerMTokens: z.tuple([z.number().nonnegative(), z.number().nonnegative()]).nullable().default(null),
 });
 
 export const aiConfigSchema = z.object({
@@ -34,9 +36,10 @@ export interface LoadedAiConfig {
 }
 
 /** 读取最新 AI 配置版本；调用方任务固定使用创建时的版本 */
-export async function loadAiConfig(db: D1Database): Promise<LoadedAiConfig | null> {
+export async function loadAiConfig(db: D1Database, configVersionId?: string): Promise<LoadedAiConfig | null> {
   const row = await db
-    .prepare('SELECT id, version, config_json, enabled FROM ai_config_versions ORDER BY version DESC LIMIT 1')
+    .prepare(configVersionId ? 'SELECT id, version, config_json, enabled FROM ai_config_versions WHERE id = ?1' : 'SELECT id, version, config_json, enabled FROM ai_config_versions ORDER BY version DESC LIMIT 1')
+    .bind(...(configVersionId ? [configVersionId] : []))
     .first<{ id: string; version: number; config_json: string; enabled: number }>();
   if (!row) return null;
   return {

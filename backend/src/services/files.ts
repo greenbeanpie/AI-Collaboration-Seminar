@@ -57,10 +57,10 @@ export async function createFileInit(
   const fileId = newId();
   const r2Key = `${params.projectId}/${fileId}${ext}`;
   await env.DB.prepare(
-    `INSERT INTO files (id, project_id, uploader_user_id, r2_key, mime_declared, ext, status, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7)`,
+    `INSERT INTO files (id, project_id, uploader_user_id, r2_key, mime_declared, ext, status, created_at, original_name)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8)`,
   )
-    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso())
+    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName)
     .run();
   return {
     fileId,

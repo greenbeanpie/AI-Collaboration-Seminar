@@ -84,7 +84,7 @@
 | `npm run build` | Vite / PWA 成功，无大 chunk 警告；页面懒加载，PDF.js 按需加载 |
 | `npm run verify:integration` | 62 项真实 HTTP 检查通过，经前端代理访问真实本地后端；3 个账户验证协作及越权边界；本轮再次经构建预览 localhost:4173 全部通过 |
 | `npm run verify:worker` | Service Binding 原样转发 Cookie / Origin / Set-Cookie / 错误；API 不回落游客或 SPA 内容 |
-| 后端 export:openapi、前端 typegen 后比较 Git diff | 契约无漂移，57 路径 / 77 操作 |
+| 后端 export:openapi、前端 typegen 后比较 Git diff | 契约无漂移（当轮快照 57 路径 / 77 操作；当前为 60 / 81） |
 | 两端 `npm audit --registry=https://registry.npmjs.org` | 均 0 vulnerabilities |
 | 两端 production `wrangler deploy --dry-run` | 编译与绑定配置通过；未部署或创建资源 |
 | `git diff --check` | 通过 |
@@ -151,3 +151,31 @@
 修复已合并并推送 `main`。推送后再次尝试 `gh api`，本次认证可用；Dependabot API 返回此前的 #1、#4、#5、#6、#7、#10、#11 均为 `fixed`，当前 open 告警为 **0**。没有使用 dismiss 忽略告警。推送时 GitHub 的旧状态提示仍为 7 条，随后由依赖扫描自动判定为修复；本结论以推送后的 API 响应为准。
 
 本轮收尾再次通过 Dependabot API 确认 open 为 0，不需要读取 Chrome 页面。主工作区已执行 `npm run install:all` 安装与锁文件一致的依赖。浏览器验收恢复后另启动本地后端和构建预览；本轮状态以以上实际验收记录为准。
+
+## launch_prep 本轮：A01–A15 本地推进与验证（2026-09-30）
+
+用户明确授权：继续解决 A01–A15，进行本地测试，**不部署云端、不向任何可能产生费用的 API 发送请求**。本轮全部模型路径使用受控 fixture 或测试注入的 fetch mock。
+
+### 实现与测试结果
+
+本地 Node `v24.21.0` / npm `11.19.0`：
+
+| 验证 | 结果 |
+| --- | --- |
+| `npm run typecheck` | 前后端通过 |
+| `npm run lint` | 前端 0 error |
+| `npm run test:backend` | 22 文件 / 100 项通过，退出码 0（本轮由 17/80 增加到 22/100） |
+| `npm run test:frontend` | 14 文件 / 38 项通过 |
+| `npm run build` | 通过 |
+| `wrangler deploy --dry-run --env staging`（前后端） | 编译与绑定通过，未部署、未创建资源 |
+| `npm run preflight:deploy -- staging` | 按预期 BLOCKED 并列出 3 项缺失：EMAIL_FROM、真实 D1 database_id、前端 HTTPS Origin 白名单 |
+| `npm run export:openapi` + `npm run typegen` | 契约无漂移，当前 60 路径 / 81 操作（新增两个幂等运维端点） |
+| `npm run verify:integration` | **本轮未执行**：本机 8787 端口被会话开始前已存在的 workerd（PID 44936，19:18 启动）占用，Vite 代理固定指向该端口，运行会验证到旧代码。该命令仍为可用本地验证，需先释放 8787 后自行执行 |
+
+本轮修复的真实缺陷：
+
+- 空 OCR 结果（模型返回不含 `text` 的 JSON）此前会被当作识别成功，导致跳过失败页并在后续误报「来源没有可分析的文本内容」。现在空文本使该页标记失败，任务以 `AI_OUTPUT_INVALID` 失败且该页可重新上传重试。
+- 过期额度清理此前会释放「任务仍在运行」的预占，存在重复扣款与超额放行风险；现在只在对应任务已终态或任务记录缺失（孤儿）时回收，且清理前检查条件更新影响行数。
+- 任务恢复不会再把已终态任务改回运行中；工作流实例已结束但业务未提交时标记失败并释放额度。
+
+新增占位与既有占位的状态见 [架构文档第 7 节](ARCHITECTURE.md#7-未完成与不确定事项登记)。A01/A02/A14 的云端部分仍保留「待云环境验收」，A12 需人工在操作系统完成，A13 的保留策略与压测仍待完善。

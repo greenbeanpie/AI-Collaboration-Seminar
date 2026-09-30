@@ -110,6 +110,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
       userId: user.id,
       operation: 'review.create',
       rawBody: JSON.stringify(body),
+      required: true,
     }, async () => {
       const rubric = await c.env.DB.prepare('SELECT id FROM rubric_versions WHERE id = ?1 AND project_id = ?2')
         .bind(body.rubricVersionId, member.projectId)

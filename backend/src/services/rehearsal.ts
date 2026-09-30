@@ -11,6 +11,7 @@ import { z } from 'zod';
 const PROMPT_VERSION = 'rehearsal-v1';
 
 export interface RehearsalJobInput {
+  configVersionId?: string;
   rehearsalId: string;
   projectId: string;
   phase: 'question' | 'followup' | 'summary';
@@ -62,7 +63,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       .first<RehearsalRow>();
     if (!rehearsal) throw new AppError('NOT_FOUND', '答辩演练不存在', 404, false);
 
-    const config = await loadAiConfig(env.DB);
+    const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
     const reviewModel = config.config.review;

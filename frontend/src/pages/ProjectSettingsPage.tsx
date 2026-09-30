@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AiSettings } from './AiSettings';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Save } from 'lucide-react';
 import { ApiError, api, projectPath } from '../api/client';
@@ -64,6 +65,7 @@ export function ProjectSettingsPage() {
       </form>
     </SectionCard>
 
+    {owner && <AiSettings />}
     <SectionCard title="后端能力与限制" detail="上传限制、AI 可用性和比赛模板由公开 capabilities 接口返回。">
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
       {capabilities.data ? <div className="capability-grid">

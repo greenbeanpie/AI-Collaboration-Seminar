@@ -98,7 +98,7 @@ function CitationCard({ citation, sourceTitle, sourceId }: { citation: Requireme
   const hash = sourceId
     ? citation.pageNumber ? `#source-page-${encodeURIComponent(sourceId)}-${citation.pageNumber}` : `#source-${encodeURIComponent(sourceId)}`
     : '';
-  const link = `/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(citation.sourceVersionId)}${pageQuery}${hash}`;
+  const link = `/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(citation.sourceVersionId)}${pageQuery}&fragmentId=${encodeURIComponent(citation.fragmentId)}${hash}`;
   return <div className="requirements-citation">
     <div className="requirements-citation-head"><span>{sourceTitle ?? `来源版本 ${citation.sourceVersionId.slice(0, 8)}`}{citation.pageNumber ? ` · 第 ${citation.pageNumber} 页` : ' · 网页或文字片段'}</span><Link className="button-link" to={link}>查看来源 <ExternalLink size={12} /></Link></div>
     <blockquote className="quote-box">{citation.quote}</blockquote>

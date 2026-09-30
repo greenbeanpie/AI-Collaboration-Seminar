@@ -9,6 +9,8 @@ const runId = randomUUID();
 let checks = 0;
 async function call(account, path, { method = 'GET', body, status = 200, code } = {}) {
   const headers = { Origin: origin, 'X-Request-Id': randomUUID(), 'CF-Connecting-IP': `198.51.100.${1 + Math.floor(Math.random() * 250)}` };
+  // 写请求统一携带幂等键（冻结写请求强制要求，见 A08）
+  if (method !== 'GET') headers['Idempotency-Key'] = randomUUID();
   if (account?.cookie) headers.Cookie = account.cookie;
   if (body !== undefined && !(body instanceof Uint8Array)) headers['Content-Type'] = 'application/json';
   const res = await fetch(new URL(path.startsWith('/api/') ? path : `/api/v1${path}`, base), {
@@ -66,6 +68,16 @@ assert.match(version.markdown, /真实 API/);
 const file = await call(owner, `${p}/files`, { method: 'POST', body: { fileName: 'integration.txt', contentType: 'text/plain' }, status: 201 });
 await call(owner, file.upload.url, { method: 'PUT', body: new TextEncoder().encode('联调测试文件'), status: 201 });
 assert.equal(await call(member, file.upload.url), '联调测试文件');
+const attached = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: 2, doc, attachmentIds: [file.fileId] }, status: 201 });
+assert.deepEqual(attached.attachments, [{ fileId: file.fileId, name: 'integration.txt' }]);
+const detached = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: 3, doc, attachmentIds: [] }, status: 201 });
+assert.deepEqual(detached.attachments, []);
+assert.deepEqual((await call(member, `${p}/materials/${material.materialId}/versions/${attached.versionId}`)).attachments, attached.attachments);
+const template = await call(owner, `${p}/materials`, { method: 'POST', body: { title: '作品介绍模板', kind: 'work-introduction' }, status: 201 });
+assert.match(template.currentVersion.markdown, /实现与验证/);
+await call(owner, `${p}/materials/${template.materialId}/versions/${attached.versionId}`, { status: 404, code: 'NOT_FOUND' });
+assert.deepEqual((await call(member, `${p}/rehearsals`)).items, []);
+
 const source = await call(owner, `${p}/sources`, { method: 'POST', body: { kind: 'paste', title: '真实来源', text: '请在2026年10月8日前提交作品介绍。' }, status: 201 });
 assert(source.sourceVersionId);
 const fileSource = await call(owner, `${p}/sources`, { method: 'POST', body: { kind: 'file', title: '真实文件来源', fileId: file.fileId }, status: 201 });
