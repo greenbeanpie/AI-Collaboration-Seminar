@@ -1,0 +1,114 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "/app/admin/ai",
+    "selector": ".ai-model-settings",
+    "style": {
+      "borderRadius": "14px",
+      "border": "1px solid rgb(229, 233, 241)",
+      "display": "grid",
+      "gap": "24px",
+      "columns": "none",
+      "text": "文本与要求提取\n文本与要求提取供应商\nOpenAI 兼容接口\nCloudflare Workers AI（运维配置）\n文本与要求提取 API URL\n填写完整 HTTPS chat/completions 接口地址。\n文本与要求提取 API key\n尚未填写密钥。\n文本与要求提取模型名称\n服务支持 JSON response_format（不支持时取消，仍会校验 JSON 输出）\n测试文本与要求提取连接与能力"
+    }
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "/app/projects/fixture",
+    "selector": ".module-links",
+    "style": {
+      "borderRadius": "0px",
+      "border": "0px none rgb(31, 41, 55)",
+      "display": "grid",
+      "gap": "14px",
+      "columns": "320.312px 320.312px",
+      "text": "任务\n0 项记录\n团队成员\n1 项记录\n材料\n1 项记录\n通知来源\n0 项记录"
+    }
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "/app/admin/ai",
+    "selector": ".ai-model-settings",
+    "style": {
+      "borderRadius": "14px",
+      "border": "1px solid rgb(60, 78, 103)",
+      "display": "grid",
+      "gap": "24px",
+      "columns": "none",
+      "text": "文本与要求提取\n文本与要求提取供应商\nOpenAI 兼容接口\nCloudflare Workers AI（运维配置）\n文本与要求提取 API URL\n填写完整 HTTPS chat/completions 接口地址。\n文本与要求提取 API key\n尚未填写密钥。\n文本与要求提取模型名称\n服务支持 JSON response_format（不支持时取消，仍会校验 JSON 输出）\n测试文本与要求提取连接与能力"
+    }
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "/app/projects/fixture",
+    "selector": ".module-links",
+    "style": {
+      "borderRadius": "0px",
+      "border": "0px none rgb(237, 242, 250)",
+      "display": "grid",
+      "gap": "14px",
+      "columns": "320.312px 320.312px",
+      "text": "任务\n0 项记录\n团队成员\n1 项记录\n材料\n1 项记录\n通知来源\n0 项记录"
+    }
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "/app/admin/ai",
+    "selector": ".ai-model-settings",
+    "style": {
+      "borderRadius": "14px",
+      "border": "1px solid rgb(229, 233, 241)",
+      "display": "grid",
+      "gap": "24px",
+      "columns": "none",
+      "text": "文本与要求提取\n文本与要求提取供应商\nOpenAI 兼容接口\nCloudflare Workers AI（运维配置）\n文本与要求提取 API URL\n填写完整 HTTPS chat/completions 接口地址。\n文本与要求提取 API key\n尚未填写密钥。\n文本与要求提取模型名称\n服务支持 JSON response_format（不支持时取消，仍会校验 JSON 输出）\n测试文本与要求提取连接与能力"
+    }
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "/app/projects/fixture",
+    "selector": ".module-links",
+    "style": {
+      "borderRadius": "0px",
+      "border": "0px none rgb(31, 41, 55)",
+      "display": "grid",
+      "gap": "12px",
+      "columns": "322px",
+      "text": "任务\n0 项记录\n团队成员\n1 项记录\n材料\n1 项记录\n通知来源\n0 项记录"
+    }
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "/app/admin/ai",
+    "selector": ".ai-model-settings",
+    "style": {
+      "borderRadius": "14px",
+      "border": "1px solid rgb(60, 78, 103)",
+      "display": "grid",
+      "gap": "24px",
+      "columns": "none",
+      "text": "文本与要求提取\n文本与要求提取供应商\nOpenAI 兼容接口\nCloudflare Workers AI（运维配置）\n文本与要求提取 API URL\n填写完整 HTTPS chat/completions 接口地址。\n文本与要求提取 API key\n尚未填写密钥。\n文本与要求提取模型名称\n服务支持 JSON response_format（不支持时取消，仍会校验 JSON 输出）\n测试文本与要求提取连接与能力"
+    }
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "/app/projects/fixture",
+    "selector": ".module-links",
+    "style": {
+      "borderRadius": "0px",
+      "border": "0px none rgb(237, 242, 250)",
+      "display": "grid",
+      "gap": "12px",
+      "columns": "322px",
+      "text": "任务\n0 项记录\n团队成员\n1 项记录\n材料\n1 项记录\n通知来源\n0 项记录"
+    }
+  }
+]

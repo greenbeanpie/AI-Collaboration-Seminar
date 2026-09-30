@@ -1,0 +1,16 @@
+/* Reference demo shares the workspace's selected theme. */
+:root { --meta: #626874; --leading-body: 1.65; }
+:root[data-theme="dark"] {
+  --bg: #111827; --surface: #1b2536; --surface-warm: #202e42;
+  --fg: #edf2fa; --fg-2: #c3cddd; --muted: #b0bfd4; --meta: #a2b2c9;
+  --border: #536b8d; --border-soft: #3c4e67;
+  --accent: #9dc4ff; --accent-hover: #b8d4ff; --accent-active: #82b4ff;
+  --accent-on: #111827; --success: #82ddb7; --warn: #f2c46d; --danger: #ffabb8;
+  --shadow-pop: 0 18px 48px rgb(0 0 0 / 40%);
+}
+button, a, input, select, textarea, summary { scroll-margin-block: 80px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.modal, .drawer { overscroll-behavior: contain; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

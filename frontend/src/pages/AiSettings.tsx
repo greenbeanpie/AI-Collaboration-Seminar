@@ -49,7 +49,7 @@ export function AiSettings() {
         setConfig(data.version ? Object.fromEntries(purposes.map(p => [p, { ...data.config[p], apiKey: '' }])) as Config : blank());
         setVersion(data.version); setDirty(false); setReports({}); setMessage(data.enabled ? '当前 AI 已启用。' : '当前 AI 未启用。');
       })}>读取已保存配置</button>
-      {purposes.map(p => <fieldset key={p} className="stack" disabled={busy}><legend>{labels[p]}</legend>
+      {purposes.map(p => <fieldset key={p} className="ai-model-settings" disabled={busy}><legend>{labels[p]}</legend>
         <Field label={`${labels[p]}供应商`}><select className="input" value={config[p].provider} onChange={e => edit(p, { provider: e.target.value })}><option value="openai-compatible">OpenAI 兼容接口</option><option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
         <Field label={`${labels[p]} API URL`} hint="填写完整 HTTPS chat/completions 接口地址。"><input className="input" type="url" autoComplete="off" value={config[p].apiUrl ?? ''} onChange={e => edit(p, { apiUrl: e.target.value.trim() })} /></Field>
         <Field label={`${labels[p]} API key`} hint={config[p].keyConfigured ? '已保存密钥，留空保留；不会回显。' : '尚未填写密钥。'}><input className="input" type="password" autoComplete="off" value={config[p].apiKey ?? ''} onChange={e => edit(p, { apiKey: e.target.value })} /></Field>

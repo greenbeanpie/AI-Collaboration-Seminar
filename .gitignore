@@ -40,3 +40,6 @@ deploy/vps/.env
 
 # Private generated login credentials and bootstrap SQL
 .local-secrets/
+
+# Full local visual-audit matrix; curated evidence is explicitly committed.
+docs/evidence/ui-audit/

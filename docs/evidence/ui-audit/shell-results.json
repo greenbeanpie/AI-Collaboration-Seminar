@@ -1,0 +1,142 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "state": "session-loading",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "state": "session-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "state": "capability-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "state": "forbidden",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "state": "offline",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "state": "session-loading",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "state": "session-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "state": "capability-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "state": "forbidden",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "state": "offline",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "state": "session-loading",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "state": "session-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "state": "capability-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "state": "forbidden",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "state": "offline",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "state": "session-loading",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "state": "session-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "state": "capability-error",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "state": "forbidden",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "state": "offline",
+    "overflow": false,
+    "errors": []
+  }
+]

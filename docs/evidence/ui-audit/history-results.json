@@ -1,0 +1,114 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "reviews",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "rehearsals",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "ai",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "route": "sources",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "reviews",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "rehearsals",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "ai",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "route": "sources",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "reviews",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "rehearsals",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "ai",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "route": "sources",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "reviews",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "rehearsals",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "ai",
+    "overflow": false,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "route": "sources",
+    "overflow": false,
+    "errors": []
+  }
+]

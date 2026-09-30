@@ -110,7 +110,7 @@ export default function App() {
         <Route path="/app/settings" element={<AccountSettingsPage />} />
         <Route element={<SystemAdminOnly />}>
           <Route path="/app/admin/accounts" element={<AdminAccountsPage />} />
-          <Route path="/app/admin/ai" element={<AiSettings />} />
+          <Route path="/app/admin/ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} />
         </Route>
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />

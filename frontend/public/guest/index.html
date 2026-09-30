@@ -6,6 +6,7 @@
   <title>「补位」AI 项目办公室 · 前端原型</title>
   <meta name="description" content="基于 PLAN.md 的「补位」AI 项目办公室前端高保真原型：导入通知、确认要求、团队分工、AI 补位、材料采纳与留痕、预审与答辩、过程账本。演示数据 · 模拟 AI，不连接真实服务。" />
   <meta name="theme-color" content="#ffffff" />
+  <script src="/theme.js"></script>
   <style>
 /* OD-LAYOUT-PRIMITIVES v1 — structure only: display, flex/grid, overflow, wrapping, ratio.
    Put this @layer first; product CSS outside the layer always wins. */
@@ -1192,6 +1193,8 @@ body[data-route="login"] .view { padding: 0; }
   @page { margin: 16mm 14mm; }
 }
   </style>
+  <link rel="stylesheet" href="/guest/readability.css" />
+  <script src="/guest/dialog-focus.js" defer></script>
 </head>
 <body data-route="boot">
   <div class="shell" id="app" hidden>
