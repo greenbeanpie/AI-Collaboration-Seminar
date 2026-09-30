@@ -121,7 +121,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 请求邮箱验证码（60s 间隔；仅本地回显模式返回 devCode） */
+        /**
+         * 验证码认证已停用，使用账号密码登录
+         * @deprecated
+         */
         post: {
             parameters: {
                 query?: never;
@@ -129,27 +132,10 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** Format: email */
-                        email: string;
-                        turnstileToken?: string;
-                    };
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description 挑战已创建并发送 */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AuthChallengeResponse"];
-                    };
-                };
-                /** @description 发送过于频繁 */
-                429: {
+                /** @description 验证码认证永久停用 */
+                410: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -174,7 +160,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 验证码换取会话（用户不存在则自动注册） */
+        /** 用户名或联系邮箱与密码换取会话 */
         post: {
             parameters: {
                 query?: never;
@@ -185,16 +171,13 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** Format: email */
-                        email: string;
-                        /** Format: uuid */
-                        challengeId: string;
-                        code: string;
+                        account: string;
+                        password: string;
                     };
                 };
             };
             responses: {
-                /** @description 登录成功（Set-Cookie） */
+                /** @description 密码登录成功（Set-Cookie） */
                 201: {
                     headers: {
                         [name: string]: unknown;
@@ -203,7 +186,71 @@ export interface paths {
                         "application/json": components["schemas"]["AuthSessionResponse"];
                     };
                 };
-                /** @description 验证码错误 */
+                /** @description 账号或密码错误 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 认证频率已达限制 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 凭一次性注册码创建用户名密码账号（邮箱可空且不视为已验证） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        username: string;
+                        password: string;
+                        invitationCode: string;
+                        /** Format: email */
+                        email?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description 注册并登录 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuthSessionResponse"];
+                    };
+                };
+                /** @description 参数或邀请码无效 */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -212,8 +259,8 @@ export interface paths {
                         "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
-                /** @description 验证码过期 */
-                410: {
+                /** @description 用户名或邮箱已占用，邀请码未消耗 */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -221,7 +268,7 @@ export interface paths {
                         "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
-                /** @description 尝试次数过多 */
+                /** @description 注册频率已达限制 */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -245,7 +292,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 读取当前登录用户 */
+        /** 读取当前密码登录用户 */
         get: {
             parameters: {
                 query?: never;
@@ -268,7 +315,7 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** 退出登录（立即撤销当前会话） */
+        /** 立即撤销当前会话 */
         delete: {
             parameters: {
                 query?: never;
@@ -3398,6 +3445,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/account-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 注册码使用状态（无明文码和哈希） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 最近100个注册码 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccountInvitationListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 系统管理员生成16位单次注册码（仅此响应回显明文） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 注册码 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccountInvitationCreateResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/ai-config": {
         parameters: {
             query?: never;
@@ -3709,22 +3816,16 @@ export interface components {
                     teamSizeLimit: number | null;
                 };
                 authentication?: {
+                    /** @enum {string} */
+                    mode: "password";
+                    passwordEnabled: boolean;
+                    invitationRequired: boolean;
+                    passwordMinLength: number;
                     turnstileRequired: boolean;
                     turnstileSiteKey: string | null;
                     emailReady: boolean;
                     inviteOnly?: boolean;
                 };
-            };
-            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
-            requestId: string;
-        };
-        AuthChallengeResponse: {
-            data: {
-                /** Format: uuid */
-                challengeId: string;
-                expiresAt: string;
-                resendAfterSeconds: number;
-                devCode?: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -3746,8 +3847,10 @@ export interface components {
                 user: {
                     /** Format: uuid */
                     id: string;
-                    email: string;
+                    username: string | null;
+                    email: string | null;
                     displayName: string;
+                    isAdmin: boolean;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -3758,8 +3861,10 @@ export interface components {
                 user: {
                     /** Format: uuid */
                     id: string;
-                    email: string;
+                    username: string | null;
+                    email: string | null;
                     displayName: string;
+                    isAdmin: boolean;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -3826,7 +3931,9 @@ export interface components {
                 items: {
                     /** Format: uuid */
                     userId: string;
-                    email: string;
+                    email: string | null;
+                    username: string | null;
+                    isAdmin: boolean;
                     displayName: string;
                     /** @enum {string} */
                     role: "owner" | "member";
@@ -3842,7 +3949,9 @@ export interface components {
             data: {
                 /** Format: uuid */
                 userId: string;
-                email: string;
+                email: string | null;
+                username: string | null;
+                isAdmin: boolean;
                 displayName: string;
                 /** @enum {string} */
                 role: "owner" | "member";
@@ -4835,6 +4944,30 @@ export interface components {
                 sizeBytes: number;
                 sha256: string;
                 mimeDetected: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AccountInvitationCreateResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                code: string;
+                createdAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AccountInvitationListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    createdAt: string;
+                    usedAt: string | null;
+                    usedBy: string | null;
+                }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

@@ -240,3 +240,18 @@ A04/A05/A06/A09/A10/A11/A12 安装入口/A13 本地机制/A15 均有实现和本
 生产验收项目 `c4f24172-6b00-4893-bec7-937c234bc510` 只含测试内容，结束归档保留版本，现有账户数据不删除。保留当前会话方便用户填写 AI 设置；生产退出/撤销未另做，本地 HTTP 已覆盖。截图与可读预览：`docs/evidence/production-export-preview.png` / `.md`、`resend-domain-verified.png`；运行证据 `cloud-readiness.json` 不含 key、OTP 或 Cookie token。
 
 后端运行仍有已定位的测试池收尾告警（4 次 canceled request、RPC stub 提示），未隐藏。真实模型/OCR、比赛原文正确性、OS 安装/原生 PDF 保存、原生下载完成、云端恢复切换和长期监控仍未关闭。
+
+
+## 密码认证与注册邀请码验收（2026-10-01）
+
+用户要求已替换生产认证：用户名/邮箱与密码登录，用户名/密码/16 位单次注册码注册，邮箱选填。系统管理员密码保存在本机 gitignored `.local-secrets/admin-credentials.json`；默认管理员绑定原有 user ID，既有项目和材料保留。0012 为新增表和会话字段迁移，旧验证码会话失效，OTP API 返回 410。普通项目 owner 不获得系统管理员权限。
+
+验证：后端 29 文件 / 150 项、前端 18 文件 / 54 项通过，typecheck/lint/build、Service Binding 检查通过；本地真实 HTTP 73 项、生产认证 14 项通过。生产覆盖用户名与邮箱登录、错误密码401、无邮箱注册、单次码复用400、普通用户管理员接口403、退出会话401，以及原归档项目访问。邀请码注册并发与邮箱/用户名冲突消费保护由 Workers 测试覆盖。原始迁移实际 SQLite 数据保全脚本通过；本地恢复演练检查34表、6项断言通过。生产迁移前 SQL 备份仅在私有 `.local-backups/`。
+
+实际浏览器使用管理员密码登录后展示原项目、系统管理员导航、注册码记录「已使用」；AI 设置的 URL/key 为空，三个用途测试按钮保留。只保留工作页，无邮件发送或真实模型调用。生产测试建立了一个无邮箱普通验收账号，没有加入任何项目；凭据同样保存在私密文件，邀请码已消耗。
+
+线上首次 PBKDF2 600000 返回 NotSupportedError：本地新运行时与线上100000上限存在差异。最终使用原生 scrypt N32768/r8/p3、16字节随机盐、32字节输出，拒绝弱参数；同密码升级管理员哈希后，重新部署并通过生产与本地实测。参考 [Cloudflare Node crypto支持](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/) 与 [OWASP密码存储参数](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)。
+
+最终生产版本：后端 `85f011b9-7c7e-4be1-992c-8a1510a31e8c`，前端 `54b06f48-c0e8-44ec-936b-f4d93350a95c`。安全证据 [password-auth-readiness.json](evidence/password-auth-readiness.json)，网页截图 [password-admin-accounts.png](evidence/password-admin-accounts.png)。此前邮箱认证记录是历史状态。
+
+剩余边界：无自助密码找回/普通旧账号密码配置界面；邮箱可填但未验证，不能用于自动认领或找回。邀请码记录仅最新100条。自定义域名挑战、真模型/OCR、云端恢复和告警配置仍按此前边界保留。Workers测试池仍有取消请求/RPC释放收尾告警，未隐藏。

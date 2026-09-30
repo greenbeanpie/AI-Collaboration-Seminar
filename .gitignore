@@ -37,3 +37,6 @@ Thumbs.db
 .local-backups/
 
 deploy/vps/.env
+
+# Private generated login credentials and bootstrap SQL
+.local-secrets/

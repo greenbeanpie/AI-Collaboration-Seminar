@@ -37,6 +37,7 @@
   },
   "vars": {
     "ENV_NAME": "local",
+    "AUTH_MODE": "password",
     "EMAIL_MODE": "echo",
     "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,http://127.0.0.1:4173",
     "CLOUDFLARE_ACCOUNT_ID": "",
@@ -47,6 +48,7 @@
       "name": "ai-office-api-staging",
       "vars": {
         "ENV_NAME": "staging",
+        "AUTH_MODE": "password",
         "EMAIL_MODE": "resend",
         "ALLOWED_ORIGINS": "",
         "CLOUDFLARE_ACCOUNT_ID": "",
@@ -83,7 +85,7 @@
         "CLOUDFLARE_ACCOUNT_ID": "17a6817bca6612a9cb11d0395eeba0ac",
         "AI_GATEWAY_ID": "",
         "EMAIL_FROM": "补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>",
-        "AUTH_MODE": "invite-only",
+        "AUTH_MODE": "password",
         "EMAIL_DAILY_LIMIT": "30",
         "TURNSTILE_REQUIRED": "false",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFKQSg4fWagOtFAC"

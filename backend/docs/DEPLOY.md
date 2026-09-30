@@ -180,25 +180,15 @@ production 的 Worker 名称、Service Binding 和资源字段在仓库中已对
 
 正式放量前先修复架构文档 A03/A07/A08 所列代码缺口；随后验收 Secrets、D1 迁移、私有 R2、两端部署与回滚、Service Binding、真实邮件、模型/OCR、云端恢复与监控。模型 URL/key 继续留待用户在网页设置填写，不能仅凭预算竞争单元测试或模型 fixture 成功认定费用上限与真模型已验收。
 
-## 13. 当前邀请制与真实邮箱验收
+## 13. 密码身份与一次性注册码
 
-生产已使用 `AUTH_MODE=invite-only`，`EMAIL_FROM=补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>`，`EMAIL_DAILY_LIMIT=30`。发信域名已验证，真实收件、登录与持久化主路径通过；批准邮箱仅保存在 Worker Secret。
+生产设置 `AUTH_MODE=password`。先备份 D1，应用 0012 密码身份迁移，再执行仓库根目录的 `npm run bootstrap:admin:production`，最后部署后端与前端。初始化使用特权 D1 操作，不提供公开创建管理员接口。迁移新增 auth_accounts、account_invitations、auth_password_rate_limits，并将原会话标记 legacy；旧会话不再通过认证。
 
-新增或移除名单（会覆盖整个名单，务必保留仍需访问的成员）：
+脚本将管理员绑定到已有目标邮箱的 user ID，保留所有项目外键；遇到邮箱歧义或用户名已被其他身份占用立即停止。设置管理员密码同时撤销其旧会话。随机密码保存在 `.local-secrets/admin-credentials.json`，不可提交、公开或写入日志。重复初始化校验既有密码并复用，无法静默轮换。管理员登录后可生成 16 位单次注册码和管理 AI 设置；ADMIN_TOKEN 仍可作为运维方式，不可发给普通成员。
 
-```sh
-cd backend
-npx wrangler secret put AUTH_ALLOWED_EMAILS --env production
-# 在终端提示中输入完整名单，逗号分隔；不要把真实名单提交到仓库。
-```
+密码使用 scrypt（N=32768、r=8、p=3，32 MiB 内存工作集）、随机 16 字节盐。注册码只保存 SHA256 哈希，注册与消费原子提交。登录与注册均有持久化限流。邮箱可选且不自动验证或关联旧账号；现无自助密码找回，需要管理员通过可信途径处理旧账号密码配置。
 
-名单改变后，受保护请求每次重新检查邮箱，移出名单的旧会话也会拒绝访问。已有用户、项目及材料不会被删除。开放注册模式必须使用 Turnstile；不能只设 `TURNSTILE_REQUIRED=false` 来开放生产注册。
-
-额度：全站 30 次/UTC 日（可配置 1–100，非法配置回退 30）；每邮箱 6 次/UTC 日；每 IP 10 次/滚动小时。全站、邮箱和 IP 额度在发信前原子预占，失败尝试不退回。邮箱/IP 采用 HMAC 标识，不依赖到期后会被清理的验证码表。新表自迁移生效后累计，迁移前已被清理的历史尝试无法回填，全站已有计数仍保留。
-
-`RESEND_API_KEY`、`AUTH_SECRET` 和 `ADMIN_TOKEN` 始终作为 Worker Secrets；AI 设置必须使用生产 `ADMIN_TOKEN`，不能使用本地示例令牌。`scripts/configure-resend-local.mjs` 可提供一次性 loopback 密钥输入页：密码框 → Wrangler stdin → Worker Secret，不保存密钥文件、不回显。保存完成自动关闭服务。
-
-迁移前的私有 SQL 备份在 gitignored 的 `.local-backups/`；原始备份不能公开提交。实际部署及验证版本记录见实现对齐文档。
+RESEND_API_KEY 和原邮件域名配置保留供未来通知使用，密码认证不依赖邮件、Turnstile 或 AUTH_ALLOWED_EMAILS。不要恢复旧验证码认证路径。AUTH_SECRET 保持原值并继续使用 Worker Secret。私有 D1 备份位于 gitignored 的 `.local-backups/`。
 
 ## 14. 未来 VPS 迁移准备（未实际部署服务器）
 
@@ -212,7 +202,9 @@ npx wrangler secret put AUTH_ALLOWED_EMAILS --env production
 2. 在本仓库执行 `npm run build`，把 `frontend/dist` 和 `deploy/vps` 按相同目录关系复制到服务器。
 3. 复制 `.env.example` 为 `.env`，填写 APP_HOST 与 API_UPSTREAM_HOST；密钥继续留在 Cloudflare，VPS 不保存 Resend 或模型 key。
 4. 在 VPS 的 `deploy/vps` 执行 `docker compose config --quiet`，然后 `docker compose up -d`。
-5. DNS-only 指向 VPS 并验证 HTTPS，再验收同源 API、Cookie、受邀登录、材料和导出，最后再切换正式域名；不要关闭整个 zone 的安全设置。若正式 hostname 绑定 Worker route/Custom Domain，切换时需按实际绑定解除该 hostname，保留其它资源。
+5. DNS-only 指向 VPS 并验证 HTTPS，再验收同源 API、Cookie、密码登录与邀请码注册、材料和导出，最后再切换正式域名；不要关闭整个 zone 的安全设置。若正式 hostname 绑定 Worker route/Custom Domain，切换时需按实际绑定解除该 hostname，保留其它资源。
 6. 代码或 DNS 回滚使用保留的 Worker 和当前 DNS 记录，不能先删除旧服务。域名变化后需重新登录，项目和材料仍由同一 D1 保存。
 
-**切换前的 IP 限流边界：**目前 Workers 用 `CF-Connecting-IP`；经过 VPS 代理后它会变为 VPS 出口 IP，所有用户共享 10 次/小时额度。示例 Caddy 不信任客户端注入的 IP header。正式迁移前需要设计有认证的真实 IP 传递或调整受邀小团队限流策略，不能直接信任任意 `X-Forwarded-For`。这是未完成的迁移条件，不宣称该样例已经完成线上压力验收。
+**切换前的 IP 限流边界：**目前 Workers 用 `CF-Connecting-IP`；经过 VPS 代理后它会变为 VPS 出口 IP，所有用户共享密码登录与注册的 IP 额度。示例 Caddy 不信任客户端注入的 IP header。正式迁移前需要设计有认证的真实 IP 传递或调整受邀小团队限流策略，不能直接信任任意 `X-Forwarded-For`。这是未完成的迁移条件，不宣称该样例已经完成线上压力验收。
+
+线上密码派生必须实际验收：本地运行时支持 PBKDF2 600000，但生产实测仍有 100000 次上限，因此使用原生 scrypt 的 OWASP 推荐等价参数，不降低 PBKDF2 迭代数。此前已初始化的管理员可用同一凭据文件加 `--upgrade-kdf` 更新存储哈希，原密码不变且会撤销旧会话；不要在无法校验原密码时覆盖账号。

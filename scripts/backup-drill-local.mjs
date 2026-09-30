@@ -20,7 +20,7 @@ const backendDir = fileURLToPath(new URL('../backend', import.meta.url));
 // 直接用 node 执行 wrangler 的 CLI：Windows 下 execFileSync 无法直接 spawn .cmd
 const WRANGLER_CLI = join(backendDir, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const REQUIRED_TABLES = [
-  'users', 'projects', 'project_members', 'sources', 'source_versions', 'source_pages',
+  'auth_accounts', 'account_invitations', 'auth_password_rate_limits', 'sessions', 'users', 'projects', 'project_members', 'sources', 'source_versions', 'source_pages',
   'source_fragments', 'requirement_sets', 'requirements', 'rubric_versions', 'tasks',
   'materials', 'material_versions', 'agent_sessions', 'agent_runs', 'reviews', 'rehearsals',
   'events', 'contributions', 'jobs', 'job_outbox', 'idempotency_records',

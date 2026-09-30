@@ -36,7 +36,7 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-打开 <http://localhost:5173>。本地使用独立模拟 D1 / R2，但业务请求由真实后端实现处理；邮箱回显模式在页面明确标记为本地开发。云端 staging / production 配置为真实邮件模式。AI 默认禁用。负责人可在项目设置中的「AI 模型接入与测试」填写 API URL、key 和模型名称；模型地址和密钥默认留空。后端已强制要求同一配置版本的三用途探测通过才允许启用。capabilities 的启用标志仍不代表模型持续可用。未启用时真实入口会显示不可用。
+打开 <http://localhost:5173>。本地使用独立模拟 D1 / R2，但业务请求由真实后端实现处理；登录使用账号或邮箱与密码，注册需要管理员生成的单次邀请码。首次本地启动先执行 `npm run bootstrap:admin:local`，凭据保存在 gitignored 的 `.local-secrets/admin-credentials.json`。AI 默认禁用。系统管理员可在项目设置中的「AI 模型接入与测试」填写 API URL、key 和模型名称；模型地址和密钥默认留空。后端已强制要求同一配置版本的三用途探测通过才允许启用。capabilities 的启用标志仍不代表模型持续可用。未启用时真实入口会显示不可用。
 
 ## 验证
 
@@ -84,7 +84,7 @@ npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopb
 
 逐项证据与未完成边界见 [架构文档](docs/ARCHITECTURE.md)，本次测试记录见 [进度核对记录](docs/IMPLEMENTATION-ALIGNMENT.md#最新提交进度核对2026-09-30基线-19dedbd)。模型 URL/key 继续由用户在网页填写，真模型测试尚未执行。
 
-## 当前生产状态：邀请制邮箱登录（2026-09-30）
+## 历史生产状态：邀请制邮箱登录（2026-09-30，已被密码认证取代）
 
 用户选择暂用邀请制，未来再迁移 VPS 前端/反向代理。现已部署：
 
@@ -96,3 +96,15 @@ npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopb
 - AI URL/key 仍由用户在网页设置填写，真实模型/OCR 未调用。原生 JSON 下载等待超时，导出预览及内容已验证；操作系统 PWA 安装/原生 PDF 保存仍待人工。
 
 未来 VPS 文件在 `deploy/vps/`：Docker Compose 配置检查和固定镜像的 Caddy 离线配置验证通过；尚未部署云服务器。实际步骤与 IP 传递限制见 [部署说明](backend/docs/DEPLOY.md)。当前云端证据见 [验收记录](docs/IMPLEMENTATION-ALIGNMENT.md)。此前 19dedbd 的进度核对是历史快照，上述状态覆盖其中已修复问题。
+
+## 密码登录与邀请码注册（2026-10-01）
+
+登录填写用户名或邮箱和密码。注册填写用户名、12–128 位密码和管理员生成的 16 位一次性邀请码；邮箱选填。用户名为 3–32 位英文字母、数字、下划线或连字符，账号与邮箱登录不区分大小写，密码保留原始字符。
+
+系统管理员在「账号与邀请码」生成注册码，每个只能使用一次；完整码仅在生成时显示，数据库只存哈希。项目负责人不能生成系统注册码。AI 设置支持管理员登录会话；模型 URL/key 继续留空并保留测试按钮。
+
+默认管理员账号 `greenbp`，邮箱 `zgpride87@outlook.com`。随机密码和登录地址只保存在本机 `.local-secrets/admin-credentials.json`，目录已排除 Git 并限制当前 Windows 用户访问。分别用 `npm run bootstrap:admin:local` 和 `npm run bootstrap:admin:production` 初始化，重复执行复用凭据，不自动重置密码。
+
+迁移保留原用户 ID、项目和材料。旧验证码会话失效，已有普通邮箱账号需另行安全设置密码，不能通过自填邮箱认领；邮箱选填不代表邮箱已验证，也不能作为自动找回凭据。旧验证码接口返回 410，不再发信。当前尚未提供自助密码找回。
+
+本轮已部署并验收：后端150项、前端54项、本地HTTP73项、生产认证14项通过，类型检查、lint、构建和本地恢复演练通过。管理员网页登录和原项目保留已实际确认。详情见 [密码认证验收](docs/IMPLEMENTATION-ALIGNMENT.md#密码认证与注册邀请码验收2026-10-01)；测试池既有收尾告警仍保留。

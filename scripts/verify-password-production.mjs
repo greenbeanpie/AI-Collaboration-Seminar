@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+
+// Explicit production smoke test: no model or email calls; one disposable account.
+if (!process.argv.includes('--production')) throw new Error('Pass --production explicitly');
+const path = new URL('../.local-secrets/admin-credentials.json', import.meta.url);
+const saved = JSON.parse(readFileSync(path, 'utf8'));
+const admin = saved.accounts.production;
+assert(admin?.initialized, 'Initialize production administrator first');
+const base = new URL(admin.loginUrl).origin;
+let checks = 0;
+async function call(cookie, route, method = 'GET', body, expected = 200) {
+  const headers = { Origin: base, 'Idempotency-Key': randomUUID() };
+  if (cookie) headers.Cookie = cookie;
+  if (body) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${base}/api/v1${route}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  assert.equal(response.status, expected, `${method} ${route}: unexpected status`);
+  const envelope = await response.json();
+  checks++;
+  return { data: envelope.data, cookie: response.headers.get('set-cookie')?.split(';')[0] };
+}
+const signedIn = await call(null, '/auth/sessions', 'POST', { account: admin.username, password: admin.password }, 201);
+assert.equal(signedIn.data.user.id, admin.userId);
+assert.equal(signedIn.data.user.isAdmin, true);
+const emailLogin = await call(null, '/auth/sessions', 'POST', { account: admin.email, password: admin.password }, 201);
+assert.equal(emailLogin.data.user.id, admin.userId);
+await call(emailLogin.cookie, '/auth/session', 'DELETE');
+await call(null, '/auth/challenges', 'POST', { email: admin.email }, 410);
+await call(null, '/auth/sessions', 'POST', { account: admin.username, password: 'incorrect-password-test' }, 401);
+const created = await call(signedIn.cookie, '/admin/account-invitations', 'POST', {}, 201);
+assert.match(created.data.code, /^[A-Z0-9]{16}$/);
+const test = { username: `acceptance_${randomBytes(4).toString('hex')}`, password: randomBytes(24).toString('base64url'), email: null, loginUrl: admin.loginUrl, createdAt: new Date().toISOString() };
+saved.acceptanceAccounts ??= [];
+saved.acceptanceAccounts.push(test);
+writeFileSync(path, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 });
+const registered = await call(null, '/auth/register', 'POST', { username: test.username, password: test.password, invitationCode: created.data.code }, 201);
+assert.equal(registered.data.user.email, null);
+assert.equal(registered.data.user.isAdmin, false);
+test.userId = registered.data.user.id;
+writeFileSync(path, JSON.stringify(saved, null, 2) + '\n', { mode: 0o600 });
+await call(null, '/auth/register', 'POST', { username: `${test.username}_reuse`, password: test.password, invitationCode: created.data.code }, 400);
+await call(registered.cookie, '/admin/account-invitations', 'POST', {}, 403);
+await call(registered.cookie, '/auth/session', 'DELETE');
+await call(registered.cookie, '/auth/session', 'GET', undefined, 401);
+const invitations = await call(signedIn.cookie, '/admin/account-invitations');
+const consumed = invitations.data.items.find(item => item.id === created.data.id);
+assert(consumed.usedAt && consumed.usedBy === test.userId);
+assert(!('code' in consumed) && !('codeHash' in consumed));
+const projects = await call(signedIn.cookie, '/projects?status=all');
+assert(projects.data.items.some(item => item.id === 'c4f24172-6b00-4893-bec7-937c234bc510'), 'Existing project ownership preserved');
+await call(signedIn.cookie, '/auth/session', 'DELETE');
+console.log(`PASS: ${checks} production authentication checks; username/email login, optional email, single use, permissions, revocation and existing project preserved. Disposable account credentials saved privately.`);

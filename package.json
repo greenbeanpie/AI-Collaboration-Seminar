@@ -13,6 +13,8 @@
     "verify:worker": "node scripts/verify-worker.mjs",
     "test:frontend": "npm test --prefix frontend",
     "preflight:deploy": "node scripts/preflight-deploy.mjs",
-    "backup:drill:local": "node scripts/backup-drill-local.mjs"
+    "backup:drill:local": "node scripts/backup-drill-local.mjs",
+    "bootstrap:admin:local": "node scripts/bootstrap-password-admin.mjs --local",
+    "bootstrap:admin:production": "node scripts/bootstrap-password-admin.mjs --production"
   }
 }

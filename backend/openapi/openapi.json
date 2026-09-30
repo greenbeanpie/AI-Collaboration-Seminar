@@ -179,6 +179,21 @@
               "authentication": {
                 "type": "object",
                 "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "password"
+                    ]
+                  },
+                  "passwordEnabled": {
+                    "type": "boolean"
+                  },
+                  "invitationRequired": {
+                    "type": "boolean"
+                  },
+                  "passwordMinLength": {
+                    "type": "integer"
+                  },
                   "turnstileRequired": {
                     "type": "boolean"
                   },
@@ -196,6 +211,10 @@
                   }
                 },
                 "required": [
+                  "mode",
+                  "passwordEnabled",
+                  "invitationRequired",
+                  "passwordMinLength",
                   "turnstileRequired",
                   "turnstileSiteKey",
                   "emailReady"
@@ -208,42 +227,6 @@
               "features",
               "limits",
               "competitionTemplate"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "AuthChallengeResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "challengeId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "expiresAt": {
-                "type": "string"
-              },
-              "resendAfterSeconds": {
-                "type": "integer"
-              },
-              "devCode": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "challengeId",
-              "expiresAt",
-              "resendAfterSeconds"
             ]
           },
           "requestId": {
@@ -305,17 +288,31 @@
                     "type": "string",
                     "format": "uuid"
                   },
+                  "username": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "email": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "displayName": {
                     "type": "string"
+                  },
+                  "isAdmin": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "id",
+                  "username",
                   "email",
-                  "displayName"
+                  "displayName",
+                  "isAdmin"
                 ]
               }
             },
@@ -346,17 +343,31 @@
                     "type": "string",
                     "format": "uuid"
                   },
+                  "username": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "email": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "displayName": {
                     "type": "string"
+                  },
+                  "isAdmin": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "id",
+                  "username",
                   "email",
-                  "displayName"
+                  "displayName",
+                  "isAdmin"
                 ]
               }
             },
@@ -606,7 +617,19 @@
                       "format": "uuid"
                     },
                     "email": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "username": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "isAdmin": {
+                      "type": "boolean"
                     },
                     "displayName": {
                       "type": "string"
@@ -637,6 +660,8 @@
                   "required": [
                     "userId",
                     "email",
+                    "username",
+                    "isAdmin",
                     "displayName",
                     "role",
                     "skills",
@@ -671,7 +696,19 @@
                 "format": "uuid"
               },
               "email": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "isAdmin": {
+                "type": "boolean"
               },
               "displayName": {
                 "type": "string"
@@ -702,6 +739,8 @@
             "required": [
               "userId",
               "email",
+              "username",
+              "isAdmin",
               "displayName",
               "role",
               "skills",
@@ -4479,6 +4518,100 @@
           "requestId"
         ]
       },
+      "AccountInvitationCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AccountInvitationListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "usedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "usedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "createdAt",
+                    "usedAt",
+                    "usedBy"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AiConfigResponse": {
         "type": "object",
         "properties": {
@@ -4762,45 +4895,11 @@
         "tags": [
           "auth"
         ],
-        "summary": "请求邮箱验证码（60s 间隔；仅本地回显模式返回 devCode）",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "maxLength": 254,
-                    "format": "email"
-                  },
-                  "turnstileToken": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048
-                  }
-                },
-                "required": [
-                  "email"
-                ]
-              }
-            }
-          }
-        },
+        "deprecated": true,
+        "summary": "验证码认证已停用，使用账号密码登录",
         "responses": {
-          "201": {
-            "description": "挑战已创建并发送",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthChallengeResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "发送过于频繁",
+          "410": {
+            "description": "验证码认证永久停用",
             "content": {
               "application/json": {
                 "schema": {
@@ -4817,7 +4916,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "验证码换取会话（用户不存在则自动注册）",
+        "summary": "用户名或联系邮箱与密码换取会话",
         "requestBody": {
           "required": true,
           "content": {
@@ -4825,24 +4924,20 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": {
+                  "account": {
                     "type": "string",
-                    "maxLength": 254,
-                    "format": "email"
+                    "minLength": 1,
+                    "maxLength": 254
                   },
-                  "challengeId": {
+                  "password": {
                     "type": "string",
-                    "format": "uuid"
-                  },
-                  "code": {
-                    "type": "string",
-                    "pattern": "^\\d{6}$"
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 },
                 "required": [
-                  "email",
-                  "challengeId",
-                  "code"
+                  "account",
+                  "password"
                 ]
               }
             }
@@ -4850,7 +4945,7 @@
         },
         "responses": {
           "201": {
-            "description": "登录成功（Set-Cookie）",
+            "description": "密码登录成功（Set-Cookie）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4859,18 +4954,8 @@
               }
             }
           },
-          "400": {
-            "description": "验证码错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiFailure"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "验证码过期",
+          "401": {
+            "description": "账号或密码错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -4880,7 +4965,97 @@
             }
           },
           "429": {
-            "description": "尝试次数过多",
+            "description": "认证频率已达限制",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "凭一次性注册码创建用户名密码账号（邮箱可空且不视为已验证）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 32,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 128
+                  },
+                  "invitationCode": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9]{16}$"
+                  },
+                  "email": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 254,
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "username",
+                  "password",
+                  "invitationCode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "注册并登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或邀请码无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "用户名或邮箱已占用，邀请码未消耗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "注册频率已达限制",
             "content": {
               "application/json": {
                 "schema": {
@@ -4897,7 +5072,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "读取当前登录用户",
+        "summary": "读取当前密码登录用户",
         "responses": {
           "200": {
             "description": "当前用户",
@@ -4915,7 +5090,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "退出登录（立即撤销当前会话）",
+        "summary": "立即撤销当前会话",
         "responses": {
           "200": {
             "description": "已撤销",
@@ -9111,6 +9286,55 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/account-invitations": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "系统管理员生成16位单次注册码（仅此响应回显明文）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "注册码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountInvitationCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "注册码使用状态（无明文码和哈希）",
+        "responses": {
+          "200": {
+            "description": "最近100个注册码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountInvitationListResponse"
                 }
               }
             }

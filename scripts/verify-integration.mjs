@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 // Deliberately refuse remote/production services: this creates disposable local records.
@@ -28,15 +29,23 @@ async function call(account, path, { method = 'GET', body, status = 200, code } 
 }
 const capabilities = await call(null, '/capabilities');
 assert.equal(capabilities.environment, 'local', 'Only ENV_NAME=local is supported');
-assert.equal(capabilities.features.emailMode, 'echo', 'Use local echo, never send test mail');
+const privateCredentials = JSON.parse(readFileSync(new URL('../.local-secrets/admin-credentials.json', import.meta.url), 'utf8')).accounts.local;
+const admin = { cookie: '' };
+const adminSession = await call(admin, '/auth/sessions', { method: 'POST', body: { account: privateCredentials.username, password: privateCredentials.password }, status: 201 });
+assert.equal(adminSession.user.isAdmin, true);
+await call(null, '/auth/challenges', { method: 'POST', body: { email: 'disabled@example.test' }, status: 410 });
 async function login(role) {
   const account = { cookie: '' };
-  const email = `${role}.${runId}@example.test`;
-  const challenge = await call(account, '/auth/challenges', { method: 'POST', body: { email }, status: 201 });
-  assert.match(challenge.devCode, /^\d{6}$/);
-  const data = await call(account, '/auth/sessions', { method: 'POST', body: { email, challengeId: challenge.challengeId, code: challenge.devCode }, status: 201 });
+  const invitation = await call(admin, '/admin/account-invitations', { method: 'POST', body: {}, status: 201 });
+  assert.match(invitation.code, /^[A-Z0-9]{16}$/);
+  const username = `${role}_${runId.slice(0,8)}`;
+  const password = `Local-test-${randomUUID()}`;
+  const data = await call(account, '/auth/register', { method: 'POST', body: { username, password, invitationCode: invitation.code }, status: 201 });
+  assert.equal(data.user.email, null);
+  assert.equal(data.user.isAdmin, false);
   account.user = data.user;
   assert.equal((await call(account, '/auth/session')).user.id, account.user.id);
+  await call(account, '/admin/account-invitations', { status: 403 });
   return account;
 }
 const owner = await login('owner');
