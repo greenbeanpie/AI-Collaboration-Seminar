@@ -249,7 +249,7 @@ export function SourcesPage() {
     queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', capability!.limits.listMaxPageSize, signal),
     enabled: Boolean(capability),
   });
-  const sources = sourceQuery.data ?? [];
+  const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
   const versionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
     queryKey: ['sourceVersion', projectId, source.sourceId, source.currentVersionId],
     queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.currentVersionId!)}`)),

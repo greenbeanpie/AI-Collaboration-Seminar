@@ -163,7 +163,7 @@ export function RequirementsPage() {
   const rubricConfirmKeys = useRef(new Map<string, string>());
 
   const setQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: ({ signal }) => listAllProjectItems<'RequirementSetListResponse'>(projectId, '/requirement-sets', 100, signal) });
-  const sets = setQuery.data ?? [];
+  const sets = useMemo(() => setQuery.data ?? [], [setQuery.data]);
   const selectedSetId = (setFromUrl && sets.some((set) => set.requirementSetId === setFromUrl)) ? setFromUrl : sets[0]?.requirementSetId ?? null;
   const detailQuery = useQuery({
     queryKey: ['requirementSet', projectId, selectedSetId],
@@ -182,7 +182,7 @@ export function RequirementsPage() {
     for (const source of sourceQuery.data ?? []) if (source.currentVersionId) map.set(source.currentVersionId, source);
     return map;
   }, [sourceQuery.data]);
-  const rubrics = rubricQuery.data ?? [];
+  const rubrics = useMemo(() => rubricQuery.data ?? [], [rubricQuery.data]);
   const selectedRubricIdResolved = selectedRubricId && rubrics.some((rubric) => rubric.rubricId === selectedRubricId) ? selectedRubricId : rubrics[0]?.rubricId ?? null;
 
   useEffect(() => {
