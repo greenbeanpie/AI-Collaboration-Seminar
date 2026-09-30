@@ -100,4 +100,6 @@ Cloudflare 当前登录账户的只读检查显示：`ai-office-api` Worker 不�
 
 暂停 Chrome 前读取到 7 条 open Dependabot 告警，均关联 `backend/package-lock.json` 中的开发工具依赖：sharp/libheif 和 undici。锁文件现将 Miniflare 使用的 `sharp` 固定到 `0.35.4`、`undici` 固定到 `7.29.1`，保留测试池兼容版本；官方 npm audit 已为 0。
 
-修复随主分支推送供 GitHub 自动重新判定，未使用 dismiss 将告警标为忽略。`gh api` 认证此前返回 401；Chrome 暂停期间，GitHub 网页上的最终关闭状态仍未验收，不将“依赖已修复”写成“7 条告警已确认关闭”。
+修复已合并并推送 `main`。推送后再次尝试 `gh api`，本次认证可用；Dependabot API 返回此前的 #1、#4、#5、#6、#7、#10、#11 均为 `fixed`，当前 open 告警为 **0**。没有使用 dismiss 忽略告警。推送时 GitHub 的旧状态提示仍为 7 条，随后由依赖扫描自动判定为修复；本结论以推送后的 API 响应为准。
+
+Chrome 网页验收仍暂缓；告警状态已经通过 API 完成确认，不需要读取 Chrome 页面。主工作区已执行 `npm run install:all` 安装与锁文件一致的依赖；本次启动的两个本地开发服务已关闭。
