@@ -193,7 +193,7 @@ function SourceRecord({
         <p>创建于 {new Date(source.createdAt).toLocaleString('zh-CN')}</p>
       </div>
       <div className="sources-record-actions">
-        <button className="button button-quiet button-small" type="button" disabled={!source.currentVersionId || isBusy || Boolean(activeJob)} onClick={() => source.currentVersionId && onParse(source, source.currentVersionId)}>
+        <button className="button button-quiet button-small" type="button" disabled={!source.currentVersionId || !capability?.features.aiEnabled || isBusy || Boolean(activeJob)} onClick={() => source.currentVersionId && onParse(source, source.currentVersionId)}>
           {isBusy ? <><LoaderCircle className="spin" size={14} /> 正在发起</> : activeJob ? '已有任务处理中' : !capability?.features.aiEnabled ? 'AI 未启用' : version?.status === 'ready' ? '重新解析' : '开始解析'}
         </button>
       </div>
@@ -212,7 +212,7 @@ function SourceRecord({
     })}</div> : null}
     {displayedJob && <SourceJobProgress projectId={projectId} tracked={displayedJob} capability={capability} onUpdate={onJobUpdate} onRetryJob={onRetryJob} onScan={onScan} scanning={scanJobId === displayedJob.jobId} />}
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
-    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。当前 API 提供引用原句与页码，未提供来源全文片段接口。</p>}
+    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。引用展示原句与页码，全文请核对原始文件。</p>}
   </article>;
 }
 

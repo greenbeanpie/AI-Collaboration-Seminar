@@ -59,7 +59,7 @@
 
 | 文件范围 | 交付内容 |
 | --- | --- |
-| `frontend/src/pages/`、`components/`、`auth.tsx` | 正式账户和项目页面、协作及 AI 工作流 |
+| `frontend/src/pages/`、`components/`、`auth.ts` | 正式账户和项目页面、协作及 AI 工作流 |
 | `frontend/src/api/` | 由 OpenAPI 生成的类型、错误处理、分页和幂等请求 |
 | `frontend/src/storage.ts`、`App.tsx`、`vite.config.ts` | 草稿、离线/更新状态、PWA 资产缓存 |
 | `frontend/public/guest/index.html` | 原游客演示原型，独立于正式数据入口 |

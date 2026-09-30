@@ -404,7 +404,7 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
     {Boolean(error) && <ErrorNotice error={error} />}
     {adopted && <div className="ai-workflow-note"><strong>已创建正式材料版本 v{adopted.revision}。</strong><span className="mono"> 版本 ID {adopted.versionId}</span></div>}
     {!adopted && runStatus === 'adopted' && <div className="ai-workflow-note">此运行已被采纳为正式材料版本。</div>}
-    <div className="ai-workflow-actions"><button className="button button-primary" onClick={() => void adopt()} disabled={!reviewed || !markdown.trim() || saving || Boolean(adopted) || runStatus !== 'succeeded' || !target}><Check size={15} />{saving ? '正在保存新版本' : adopted || runStatus === 'adopted' ? '已采纳' : '确认复核并采纳'}</button>{!adopted && runStatus !== 'adopted' && <span className="muted">后端要求 reviewed=true 和期望修订号。</span>}</div>
+    <div className="ai-workflow-actions"><button className="button button-primary" onClick={() => void adopt()} disabled={!reviewed || !markdown.trim() || saving || Boolean(adopted) || runStatus !== 'succeeded' || !target}><Check size={15} />{saving ? '正在保存新版本' : adopted || runStatus === 'adopted' ? '已采纳' : '确认复核并采纳'}</button>{!adopted && runStatus !== 'adopted' && <span className="muted">采纳会创建新版本，并保留 AI 草稿与人工修改记录。</span>}</div>
   </div>;
 }
 
