@@ -9,6 +9,7 @@ import { useProject } from '../components/ProjectShell';
 import {
   createIntentKey,
   downloadSourcePdf,
+  listAllProjectItems,
   readTrackedSourceJobs,
   rememberSourceFile,
   sourceFileId,
@@ -245,10 +246,10 @@ export function SourcesPage() {
   const capability = capabilityQuery.data;
   const sourceQuery = useQuery({
     queryKey: ['sources', projectId],
-    queryFn: () => api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: capability?.limits.listMaxPageSize }),
+    queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', capability!.limits.listMaxPageSize, signal),
     enabled: Boolean(capability),
   });
-  const sources = sourceQuery.data?.items ?? [];
+  const sources = sourceQuery.data ?? [];
   const versionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
     queryKey: ['sourceVersion', projectId, source.sourceId, source.currentVersionId],
     queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.currentVersionId!)}`)),
@@ -491,7 +492,7 @@ export function SourcesPage() {
         <Field label="来源标题（可选）"><input className="input" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder={kind === 'file' ? file?.name ?? '使用文件名' : kind === 'web' ? '使用网页标题' : '粘贴文本'} /></Field>
         {actionError ? <ErrorNotice error={actionError} /> : null}
         {successMessage && <div className="notice notice-success" role="status"><FilePlus2 size={17} /><div className="notice-copy"><strong>{successMessage}</strong></div></div>}
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && !file)}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">列表上限按服务端返回的 {capability.limits.listMaxPageSize} 条读取。</span></div>
+        <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && !file)}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">按服务端单页上限分批读取完整来源列表。</span></div>
       </form>
     </SectionCard>
 
@@ -504,7 +505,6 @@ export function SourcesPage() {
           return <SourceRecord key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} />;
         })}
       </div>}
-      {sourceQuery.data?.nextCursor ? <div className="callout warning-callout">来源列表已达到服务端单次读取上限（{capability.limits.listMaxPageSize} 条），接口报告还有记录。当前后端返回了游标但未应用游标过滤，因此未尝试重复加载同一页。</div> : null}
       {versionQueries.some((query) => query.error) && <div className="stack">{versionQueries.map((query, index) => query.error ? <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} /> : null)}</div>}
     </SectionCard>
   </div>;

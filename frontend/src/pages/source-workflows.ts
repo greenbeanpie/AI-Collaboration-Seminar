@@ -1,4 +1,5 @@
 import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
+import type { DataOf, SchemaName } from '../api/types';
 
 export type TrackedSourceJob = {
   jobId: string;
@@ -10,6 +11,56 @@ export type TrackedSourceJob = {
 };
 
 export type PageRenderLimits = { pageImageMaxEdge: number; pageImageMaxBytes: number; maxPdfPages: number };
+
+type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Items } ? Items : never;
+
+const maxPageCount = 200;
+
+function paginationError(code: string, message: string): ApiError {
+  return new ApiError(200, {
+    error: { code, message, retryable: false },
+    requestId: createIntentKey(),
+  });
+}
+
+export async function listAllProjectItems<Name extends SchemaName>(
+  projectId: string,
+  tail: string,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<ItemsOf<Name>> {
+  if (!Number.isInteger(pageSize) || pageSize < 1) {
+    throw paginationError('INVALID_PAGINATION_LIMIT', '服务端返回了无效的列表分页上限。');
+  }
+
+  const all: unknown[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  for (let pageCount = 0; pageCount < maxPageCount; pageCount += 1) {
+    const page = await api.get<Name>(projectPath(projectId, tail), { limit: pageSize, cursor }, signal);
+    if (!page || typeof page !== 'object') {
+      throw paginationError('INVALID_PAGINATION', '服务端列表响应无法识别，已停止加载。');
+    }
+    const candidate = page as { items?: unknown; nextCursor?: unknown };
+    if (!Array.isArray(candidate.items) || !Object.prototype.hasOwnProperty.call(candidate, 'nextCursor')) {
+      throw paginationError('INVALID_PAGINATION', '服务端列表响应缺少 items 或 nextCursor，已停止加载。');
+    }
+    all.push(...candidate.items);
+
+    if (candidate.nextCursor === null) return all as ItemsOf<Name>;
+    if (typeof candidate.nextCursor !== 'string' || candidate.nextCursor.length === 0) {
+      throw paginationError('INVALID_PAGINATION', '服务端返回了无效的分页游标，已停止加载。');
+    }
+    if (candidate.nextCursor === cursor || seenCursors.has(candidate.nextCursor)) {
+      throw paginationError('INVALID_PAGINATION', '服务端返回了重复分页游标，已停止加载以避免重复记录。');
+    }
+    seenCursors.add(candidate.nextCursor);
+    cursor = candidate.nextCursor;
+  }
+
+  throw paginationError('PAGINATION_LIMIT', `列表超过 ${maxPageCount} 页安全读取上限，未显示不完整结果。`);
+}
 
 const jobsStorageKey = (projectId: string) => `ai-office:v1:${projectId}:source-jobs`;
 const filesStorageKey = (projectId: string) => `ai-office:v1:${projectId}:source-files`;

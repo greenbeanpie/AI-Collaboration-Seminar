@@ -6,7 +6,7 @@ import { api, projectPath } from '../api/client';
 import type { DataOf } from '../api/types';
 import { ConfirmButton, EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { useProject } from '../components/ProjectShell';
-import { createIntentKey } from './source-workflows';
+import { createIntentKey, listAllProjectItems } from './source-workflows';
 import './RequirementsPage.css';
 
 type RequirementSet = DataOf<'RequirementSetResponse'>;
@@ -162,27 +162,27 @@ export function RequirementsPage() {
   const rubricEditIntentKeys = useRef(new Map<string, string>());
   const rubricConfirmKeys = useRef(new Map<string, string>());
 
-  const setQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: () => api.get<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets')) });
-  const sets = setQuery.data?.items ?? [];
+  const setQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: ({ signal }) => listAllProjectItems<'RequirementSetListResponse'>(projectId, '/requirement-sets', 100, signal) });
+  const sets = setQuery.data ?? [];
   const selectedSetId = (setFromUrl && sets.some((set) => set.requirementSetId === setFromUrl)) ? setFromUrl : sets[0]?.requirementSetId ?? null;
   const detailQuery = useQuery({
     queryKey: ['requirementSet', projectId, selectedSetId],
     queryFn: () => api.get<'RequirementSetResponse'>(projectPath(projectId, `/requirement-sets/${encodeURIComponent(selectedSetId!)}`)),
     enabled: Boolean(selectedSetId),
   });
-  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: () => api.get<'RubricListResponse'>(projectPath(projectId, '/rubrics')) });
+  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: ({ signal }) => listAllProjectItems<'RubricListResponse'>(projectId, '/rubrics', 100, signal) });
   const capabilityQuery = useQuery({ queryKey: ['capabilities'], queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') });
   const sourceQuery = useQuery({
     queryKey: ['sources', projectId],
-    queryFn: () => api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: capabilityQuery.data?.limits.listMaxPageSize }),
+    queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', capabilityQuery.data!.limits.listMaxPageSize, signal),
     enabled: Boolean(capabilityQuery.data),
   });
   const sourcesByVersion = useMemo(() => {
     const map = new Map<string, Source>();
-    for (const source of sourceQuery.data?.items ?? []) if (source.currentVersionId) map.set(source.currentVersionId, source);
+    for (const source of sourceQuery.data ?? []) if (source.currentVersionId) map.set(source.currentVersionId, source);
     return map;
   }, [sourceQuery.data]);
-  const rubrics = rubricQuery.data?.items ?? [];
+  const rubrics = rubricQuery.data ?? [];
   const selectedRubricIdResolved = selectedRubricId && rubrics.some((rubric) => rubric.rubricId === selectedRubricId) ? selectedRubricId : rubrics[0]?.rubricId ?? null;
 
   useEffect(() => {
