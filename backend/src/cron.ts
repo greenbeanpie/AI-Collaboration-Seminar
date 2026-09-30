@@ -1,7 +1,7 @@
 import type { Env } from './env';
 import { nowIso } from './core/db';
-import { tryDispatchJob, reconcileWorkflowJob } from './services/jobs';
-import { releaseStaleReservations } from './services/budget';
+import { tryDispatchJob, reconcileWorkflowJob, failJob } from './services/jobs';
+import { releaseStaleReservations, settleReservation } from './services/budget';
 import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
 
 /**
@@ -12,11 +12,12 @@ import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
  */
 export async function handleScheduled(env: Env): Promise<void> {
   const now = nowIso();
-  await recoverJobs(env, now);
-  const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
+  const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
   for (const job of staleRunning.results) {
     try { await reconcileWorkflowJob(env, job.id); } catch (error) { console.error('[cron] Workflow 状态核对失败', job.id, error); }
   }
+  // Requeue missing instances before selecting the due outbox, so recovery dispatches in this run.
+  await recoverJobs(env, nowIso());
   await releaseStaleReservations(env, now);
   try {
     const quarantined = await env.DB
@@ -63,33 +64,29 @@ export async function handleScheduled(env: Env): Promise<void> {
 }
 
 /** 恢复器：抢占到期租约 → 重建 Workflow 实例（实例已存在则核对状态，不重复创建） */
-async function recoverJobs(env: Env, now: string): Promise<void> {
+export async function recoverJobs(env: Env, now: string): Promise<void> {
   try {
     const due = await env.DB
       .prepare(
-        `SELECT o.job_id, o.attempts FROM job_outbox o JOIN jobs j ON j.id = o.job_id
+        `SELECT o.job_id, o.attempts, j.updated_at FROM job_outbox o JOIN jobs j ON j.id = o.job_id
          WHERE o.status = 'pending' AND o.available_at <= ?1 AND j.status IN ('queued', 'waiting_input')
            AND (o.lease_until IS NULL OR o.lease_until <= ?1)
          ORDER BY o.available_at LIMIT 10`,
       )
       .bind(now)
-      .all<{ job_id: string; attempts: number }>();
+      .all<{ job_id: string; attempts: number; updated_at: string }>();
     for (const row of due.results) {
       if (row.attempts >= 5) {
-        await env.DB.prepare(
-          "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('queued', 'waiting_input')",
-        )
-          .bind(row.job_id, JSON.stringify({ code: 'INTERNAL', message: '任务派发多次失败' }), nowIso())
-          .run();
-        await env.DB.prepare("UPDATE job_outbox SET status = 'failed', last_error = 'dispatch_exhausted', updated_at = ?2 WHERE job_id = ?1")
-          .bind(row.job_id, nowIso())
-          .run();
+        const failed = await failJob(env, row.job_id, { code: 'INTERNAL', message: '任务派发多次失败' }, row.updated_at);
+        if (failed) await settleReservation(env, row.job_id, 'released');
         continue;
       }
       const claim = await env.DB.prepare(
-        'UPDATE job_outbox SET lease_until = ?2, attempts = attempts + 1, updated_at = ?3 WHERE job_id = ?1 AND (lease_until IS NULL OR lease_until <= ?3)',
+        `UPDATE job_outbox SET lease_until = ?2, attempts = attempts + 1, updated_at = ?3
+          WHERE job_id = ?1 AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?3)
+            AND EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_outbox.job_id AND jobs.status IN ('queued', 'waiting_input') AND jobs.updated_at = ?4)`,
       )
-        .bind(row.job_id, new Date(new Date(now).getTime() + 5 * 60_000).toISOString(), now)
+        .bind(row.job_id, new Date(new Date(now).getTime() + 5 * 60_000).toISOString(), now, row.updated_at)
         .run();
       if ((claim.meta?.changes ?? 0) === 0) continue;
       await tryDispatchJob(env, row.job_id);

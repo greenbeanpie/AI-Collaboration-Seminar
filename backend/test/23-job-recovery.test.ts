@@ -1,11 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Env } from '../src/env';
+import { handleScheduled, recoverJobs } from '../src/cron';
 import { env } from './helpers/env';
 import { newId, nowIso } from '../src/core/db';
 import { seedProject, seedUser } from './helpers/seed';
-import { assertNotTerminal, failJob, getJob, succeedJob } from '../src/services/jobs';
+import { assertNotTerminal, failJob, getJob, succeedJob, reconcileWorkflowJob } from '../src/services/jobs';
 
-afterEach(() => {
-  // 本文件不发送模型请求
+const seededJobIds: string[] = [];
+
+afterEach(async () => {
+  for (const jobId of seededJobIds.splice(0)) {
+    await env.DB.prepare('DELETE FROM ai_calls WHERE job_id = ?1').bind(jobId).run();
+    await env.DB.prepare('DELETE FROM usage_reservations WHERE job_id = ?1').bind(jobId).run();
+    await env.DB.prepare('DELETE FROM jobs WHERE id = ?1').bind(jobId).run();
+  }
 });
 
 interface Seeded {
@@ -17,6 +25,7 @@ async function seedJob(status: string): Promise<Seeded> {
   const owner = await seedUser();
   const projectId = await seedProject(owner.userId);
   const jobId = newId();
+  seededJobIds.push(jobId);
   const now = nowIso();
   await env.DB.batch([
     env.DB.prepare(
@@ -74,5 +83,150 @@ describe('A07 任务恢复与重复执行边界', () => {
     const later = new Date(Date.now() + 10 * 60_000).toISOString();
     const third = await env.DB.prepare(claim).bind(jobId, new Date(Date.now() + 15 * 60_000).toISOString(), later).run();
     expect(third.meta?.changes).toBe(1);
+  });
+});
+
+function withWorkflow(workflow: { get?: unknown; create?: unknown }): Env {
+  return { ...env, AGENT_WORKFLOW: workflow as unknown as Workflow };
+}
+
+async function ageRunningJob(jobId: string, outboxStatus = 'pending'): Promise<void> {
+  const old = new Date(Date.now() - 10 * 60_000).toISOString();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE jobs SET updated_at = ?2 WHERE id = ?1').bind(jobId, old),
+    env.DB.prepare('UPDATE job_outbox SET status = ?2, available_at = ?3, lease_until = NULL WHERE job_id = ?1').bind(jobId, outboxStatus, old),
+  ]);
+}
+
+async function outboxStatus(jobId: string): Promise<string | undefined> {
+  return (await env.DB.prepare('SELECT status FROM job_outbox WHERE job_id = ?1').bind(jobId).first<{ status: string }>())?.status;
+}
+
+describe('A07 engine and database recovery', () => {
+  it('crash after claim before instance creation: cron redispatches once in the same run', async () => {
+    const { jobId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    const create = vi.fn(async () => ({ id: jobId }));
+    const testEnv = withWorkflow({ get: vi.fn(async () => { throw new Error('instance.not_found'); }), create });
+    await handleScheduled(testEnv);
+    expect(create).toHaveBeenCalledExactlyOnceWith({ id: jobId, params: { jobId } });
+    expect((await getJob(env, jobId)).status).toBe('running');
+    expect(await outboxStatus(jobId)).toBe('dispatched');
+    await handleScheduled(testEnv);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('an active instance is not recreated', async () => {
+    const { jobId } = await seedJob('running');
+    await ageRunningJob(jobId, 'dispatched');
+    const create = vi.fn();
+    await handleScheduled(withWorkflow({ get: async () => ({ status: async () => ({ status: 'running' }) }), create }));
+    expect(create).not.toHaveBeenCalled();
+    expect((await getJob(env, jobId)).status).toBe('running');
+    expect(await outboxStatus(jobId)).toBe('dispatched');
+  });
+
+  it('a transient engine failure never permits replay', async () => {
+    const { jobId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    await expect(reconcileWorkflowJob(withWorkflow({ get: async () => { throw new Error('upstream timeout'); } }), jobId)).rejects.toThrow('upstream timeout');
+    expect((await getJob(env, jobId)).status).toBe('running');
+    expect(await outboxStatus(jobId)).toBe('pending');
+  });
+
+  it.each(['complete', 'errored', 'terminated'])('engine %s without committed business result fails explicitly', async (status) => {
+    const { jobId } = await seedJob('running');
+    await reconcileWorkflowJob(withWorkflow({ get: async () => ({ status: async () => ({ status }) }) }), jobId);
+    expect((await getJob(env, jobId)).status).toBe('failed');
+    expect((await getJob(env, jobId)).error_json).toContain(status);
+    expect(await outboxStatus(jobId)).toBe('failed');
+  });
+
+  it('business success racing engine completion preserves result and outbox', async () => {
+    const { jobId } = await seedJob('running');
+    await reconcileWorkflowJob(withWorkflow({ get: async () => ({ status: async () => {
+      await succeedJob(env, jobId, { committed: true });
+      return { status: 'complete' };
+    } }) }), jobId);
+    expect((await getJob(env, jobId)).status).toBe('succeeded');
+    expect(await outboxStatus(jobId)).toBe('done');
+  });
+
+  it('business success racing a missing instance is not requeued', async () => {
+    const { jobId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    await reconcileWorkflowJob(withWorkflow({ get: async () => {
+      await succeedJob(env, jobId, { committed: true });
+      throw new Error('instance.not_found');
+    } }), jobId);
+    expect((await getJob(env, jobId)).status).toBe('succeeded');
+    expect(await outboxStatus(jobId)).toBe('done');
+  });
+
+  it('exhausted retries for a missing instance fail explicitly', async () => {
+    const { jobId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    await env.DB.prepare('UPDATE job_outbox SET attempts = 5 WHERE job_id = ?1').bind(jobId).run();
+    const create = vi.fn();
+    await handleScheduled(withWorkflow({ get: async () => { throw new Error('instance.not_found'); }, create }));
+    expect((await getJob(env, jobId)).status).toBe('failed');
+    expect(await outboxStatus(jobId)).toBe('failed');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('concurrent recoverers claim only one dispatch', async () => {
+    const { jobId } = await seedJob('queued');
+    await ageRunningJob(jobId);
+    const create = vi.fn(async () => ({ id: jobId }));
+    const testEnv = withWorkflow({ create });
+    await Promise.all([recoverJobs(testEnv, nowIso()), recoverJobs(testEnv, nowIso())]);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(await outboxStatus(jobId)).toBe('dispatched');
+  });
+});
+
+describe('A07 model attempt replay boundary', () => {
+  it('missing instance with a recorded call fails without redispatch', async () => {
+    const { jobId, projectId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    await env.DB.prepare(
+      "INSERT INTO usage_reservations (id, project_id, job_id, purpose, attempts_started, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 1, ?4)",
+    ).bind(newId(), projectId, jobId, nowIso()).run();
+    await env.DB.prepare(
+      "INSERT INTO ai_calls (id, project_id, job_id, purpose, model, cost_usd, cost_status, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 'fixture', 0.25, 'known', ?4)",
+    ).bind(newId(), projectId, jobId, nowIso()).run();
+    const create = vi.fn();
+    await handleScheduled(withWorkflow({ get: async () => { throw new Error('instance.not_found'); }, create }));
+    expect((await getJob(env, jobId)).status).toBe('failed');
+    expect((await getJob(env, jobId)).error_json).toContain('模型调用已开始');
+    const reservation = await env.DB.prepare('SELECT status, settled_cost FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string; settled_cost: number }>();
+    expect(reservation).toMatchObject({ status: 'settled', settled_cost: 0.25 });
+    expect(create).not.toHaveBeenCalled();
+    expect(await outboxStatus(jobId)).toBe('failed');
+  });
+
+  it('missing instance with an unrecorded started attempt fails without redispatch', async () => {
+    const { jobId, projectId } = await seedJob('running');
+    await ageRunningJob(jobId);
+    await env.DB.prepare(
+      "INSERT INTO usage_reservations (id, project_id, job_id, purpose, attempts_started, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 1, ?4)",
+    ).bind(newId(), projectId, jobId, nowIso()).run();
+    const create = vi.fn();
+    await handleScheduled(withWorkflow({ get: async () => { throw new Error('instance.not_found'); }, create }));
+    expect((await getJob(env, jobId)).status).toBe('failed');
+    expect(create).not.toHaveBeenCalled();
+    const reservation = await env.DB.prepare('SELECT status, settled_cost FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string; settled_cost: number | null }>();
+    expect(reservation).toMatchObject({ status: 'pending_reconcile', settled_cost: null });
+    expect(await outboxStatus(jobId)).toBe('failed');
+  });
+
+  it('waiting for user input racing engine completion remains actionable', async () => {
+    const { jobId } = await seedJob('running');
+    await reconcileWorkflowJob(withWorkflow({ get: async () => ({ status: async () => {
+      await env.DB.prepare("UPDATE jobs SET status = 'waiting_input', updated_at = ?2 WHERE id = ?1").bind(jobId, new Date(Date.now() + 1000).toISOString()).run();
+      return { status: 'complete' };
+    } }) }), jobId);
+    expect((await getJob(env, jobId)).status).toBe('waiting_input');
+    expect(await outboxStatus(jobId)).toBe('dispatched');
   });
 });
