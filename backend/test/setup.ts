@@ -1,4 +1,23 @@
 import { env } from './helpers/env';
+import { afterEach, beforeEach } from 'vitest';
+import { introspectWorkflow, type WorkflowIntrospector } from 'cloudflare:test';
+
+let workflowIntrospectors: WorkflowIntrospector[] = [];
+
+beforeEach(async () => {
+  // These are the actual bindings declared by backend/wrangler.jsonc.
+  workflowIntrospectors = await Promise.all([
+    env.PARSE_WORKFLOW,
+    env.AGENT_WORKFLOW,
+  ].map((workflow) => introspectWorkflow(workflow)));
+});
+
+afterEach(async () => {
+  const activeIntrospectors = workflowIntrospectors;
+  workflowIntrospectors = [];
+  // Stop introspection and abort unfinished instances created during the test.
+  await Promise.all(activeIntrospectors.map((introspector) => introspector.dispose()));
+});
 
 /**
  * 在 worker 运行时内按序应用 migrations/ 下全部 D1 迁移。
