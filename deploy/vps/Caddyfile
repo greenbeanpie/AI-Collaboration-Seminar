@@ -1,0 +1,20 @@
+{$APP_HOST} {
+	encode zstd gzip
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy https://{$API_UPSTREAM_HOST} {
+			# Do not trust client-supplied forwarding identity. Cloudflare sees the VPS IP.
+			header_up -CF-Connecting-IP
+			header_up -X-Real-IP
+		}
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}

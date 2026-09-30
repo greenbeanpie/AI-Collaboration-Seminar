@@ -3,6 +3,9 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { LIMITS } from '../core/limits';
+import { resendEmailConfigured } from '../email/resend';
+import { turnstileRequired } from '../services/turnstile';
+import { inviteOnly } from '../services/auth-policy';
 
 const capabilitiesResponse = apiEnvelope(
   z
@@ -31,6 +34,12 @@ const capabilitiesResponse = apiEnvelope(
           teamSizeLimit: z.number().int().nullable(),
         })
         .openapi({ description: '本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制' }),
+      authentication: z.object({
+        turnstileRequired: z.boolean(),
+        turnstileSiteKey: z.string().nullable(),
+        emailReady: z.boolean(),
+        inviteOnly: z.boolean().optional(),
+      }).optional(),
     }),
   'CapabilitiesResponse',
 );
@@ -98,6 +107,12 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
           assignmentSuggestionMaxTasks: LIMITS.assignmentSuggestionMaxTasks,
         },
         competitionTemplate: template,
+        authentication: {
+          turnstileRequired: turnstileRequired(c.env),
+          turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || null,
+          emailReady: c.env.EMAIL_MODE === 'echo' ? c.env.ENV_NAME === 'local' : resendEmailConfigured(c.env),
+          inviteOnly: inviteOnly(c.env),
+        },
       }),
       200,
     );

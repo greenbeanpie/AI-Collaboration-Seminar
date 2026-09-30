@@ -24,7 +24,7 @@ const REQUIRED_TABLES = [
   'source_fragments', 'requirement_sets', 'requirements', 'rubric_versions', 'tasks',
   'materials', 'material_versions', 'agent_sessions', 'agent_runs', 'reviews', 'rehearsals',
   'events', 'contributions', 'jobs', 'job_outbox', 'idempotency_records',
-  'ai_config_versions', 'ai_calls', 'usage_reservations', 'app_config', 'ai_probes',
+  'ai_config_versions', 'ai_calls', 'usage_reservations', 'app_config', 'ai_probes', 'auth_email_daily_usage', 'auth_email_recipient_usage', 'auth_email_ip_attempts',
 ];
 
 function runWrangler(args) {
@@ -75,7 +75,7 @@ try {
         let j = i + 1;
         while (j < rawLines.length) {
           block.push(rawLines[j]);
-          if (rawLines[j].trim() === ');') break;
+          if (rawLines[j].trimEnd().endsWith(';')) break; // ALTER-added columns can close as REFERENCES table(id));
           j++;
         }
         i = j;

@@ -134,6 +134,7 @@ export interface paths {
                     "application/json": {
                         /** Format: email */
                         email: string;
+                        turnstileToken?: string;
                     };
                 };
             };
@@ -3706,6 +3707,12 @@ export interface components {
                 /** @description 本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制 */
                 competitionTemplate: {
                     teamSizeLimit: number | null;
+                };
+                authentication?: {
+                    turnstileRequired: boolean;
+                    turnstileSiteKey: string | null;
+                    emailReady: boolean;
+                    inviteOnly?: boolean;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */

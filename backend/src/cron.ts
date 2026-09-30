@@ -38,6 +38,7 @@ export async function handleScheduled(env: Env): Promise<void> {
     }
     await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?1').bind(now).run();
     await env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at <= ?1').bind(now).run();
+    await env.DB.prepare('DELETE FROM auth_email_ip_attempts WHERE attempted_at <= ?1').bind(new Date(new Date(now).getTime() - 2 * 3600_000).toISOString()).run();
   } catch (err) {
     console.error('[cron] 定时维护失败（迁移未应用或依赖暂不可用时不致命）:', err);
   }

@@ -9,6 +9,7 @@ import {
 } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import type { EmailProvider } from '../email/provider';
+import { assertInvitedEmail, dailyEmailLimit } from './auth-policy';
 
 export interface ChallengeCreated {
   challengeId: string;
@@ -36,6 +37,7 @@ export async function createChallenge(
   env: Env,
   params: { email: string; ip: string | null; emailProvider: EmailProvider },
 ): Promise<ChallengeCreated> {
+  assertInvitedEmail(env, params.email);
   const now = new Date();
   const nowStr = now.toISOString();
 
@@ -70,12 +72,28 @@ export async function createChallenge(
   const expiresAt = new Date(now.getTime() + LIMITS.challengeTtlMinutes * 60_000).toISOString();
   const codeHmacValue = await codeHmac(env.AUTH_SECRET, challengeId, params.email, code);
 
-  await env.DB.prepare(
-    `INSERT INTO auth_challenges (id, email, code_hmac, attempts, ip, requested_at, expires_at)
-     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6)`,
-  )
-    .bind(challengeId, params.email, codeHmacValue, params.ip, nowStr, expiresAt)
-    .run();
+  const day = nowStr.slice(0, 10);
+  const ipHash = params.ip ? await hmacSha256Hex(env.AUTH_SECRET, `email-ip|${params.ip}`) : null;
+  const recipientHash = await hmacSha256Hex(env.AUTH_SECRET, `email-quota|${params.email.toLowerCase()}`);
+  const resendBefore = new Date(now.getTime() - LIMITS.challengeResendSeconds * 1000).toISOString();
+  const hourAgo = new Date(now.getTime() - 3600_000).toISOString();
+  // One transaction claims the per-email/IP allowance and global delivery budget.
+  // A provider failure keeps the delivery attempt counted; it is never a free retry.
+  const claimed = await env.DB.batch([
+    env.DB.prepare('INSERT INTO auth_email_daily_usage (day, sends) VALUES (?1, 0) ON CONFLICT (day) DO NOTHING').bind(day),
+    env.DB.prepare('INSERT INTO auth_email_recipient_usage (day, email_hash, sends) VALUES (?1, ?2, 0) ON CONFLICT (day, email_hash) DO NOTHING').bind(day, recipientHash),
+    env.DB.prepare(`INSERT INTO auth_challenges (id, email, code_hmac, attempts, ip, requested_at, expires_at)
+      SELECT ?1, ?2, ?3, 0, ?4, ?5, ?6
+      WHERE NOT EXISTS (SELECT 1 FROM auth_challenges WHERE lower(email) = lower(?2) AND requested_at > ?7)
+        AND (SELECT sends FROM auth_email_recipient_usage WHERE day = ?10 AND email_hash = ?8) < 6
+        AND (?4 IS NULL OR (SELECT COUNT(*) FROM auth_email_ip_attempts WHERE ip_hash = ?12 AND attempted_at > ?9) < 10)
+        AND (SELECT sends FROM auth_email_daily_usage WHERE day = ?10) < ?11`)
+      .bind(challengeId, params.email, codeHmacValue, params.ip, nowStr, expiresAt, resendBefore, recipientHash, hourAgo, day, dailyEmailLimit(env), ipHash),
+    env.DB.prepare('UPDATE auth_email_daily_usage SET sends = sends + 1 WHERE day = ?1 AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?2)').bind(day, challengeId),
+    env.DB.prepare('UPDATE auth_email_recipient_usage SET sends = sends + 1 WHERE day = ?1 AND email_hash = ?2 AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?3)').bind(day, recipientHash, challengeId),
+    env.DB.prepare('INSERT INTO auth_email_ip_attempts (id, ip_hash, attempted_at) SELECT ?1, ?2, ?3 WHERE ?2 IS NOT NULL AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?1)').bind(challengeId, ipHash, nowStr),
+  ]);
+  if ((claimed[2]?.meta?.changes ?? 0) !== 1) throw rateLimited('邮件发送频率或每日额度已达限制，请稍后再试');
 
   await params.emailProvider.sendVerificationCode(params.email, code, challengeId);
 

@@ -175,6 +175,31 @@
                   "teamSizeLimit"
                 ],
                 "description": "本赛事模板参数；仅作为创建项目时的默认建议，不硬编码为所有项目的限制"
+              },
+              "authentication": {
+                "type": "object",
+                "properties": {
+                  "turnstileRequired": {
+                    "type": "boolean"
+                  },
+                  "turnstileSiteKey": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "emailReady": {
+                    "type": "boolean"
+                  },
+                  "inviteOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "turnstileRequired",
+                  "turnstileSiteKey",
+                  "emailReady"
+                ]
               }
             },
             "required": [
@@ -4749,6 +4774,11 @@
                     "type": "string",
                     "maxLength": 254,
                     "format": "email"
+                  },
+                  "turnstileToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
                   }
                 },
                 "required": [

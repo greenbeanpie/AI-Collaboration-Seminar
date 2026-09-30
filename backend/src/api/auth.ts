@@ -10,6 +10,8 @@ import { createResendEmailProvider } from '../email/resend';
 import type { EmailProvider } from '../email/provider';
 import { createChallenge, verifyAndConsumeChallenge } from '../services/auth-codes';
 import { emailUnavailable } from '../core/errors';
+import { verifyTurnstile } from '../services/turnstile';
+import { assertInvitedEmail } from '../services/auth-policy';
 
 const emailSchema = z.string().email().max(254);
 
@@ -19,7 +21,7 @@ const userSchema = z.object({
   displayName: z.string(),
 });
 
-const challengeBody = z.object({ email: emailSchema });
+const challengeBody = z.object({ email: emailSchema, turnstileToken: z.string().min(1).max(2048).optional() });
 const challengeResponse = apiEnvelope(
   z.object({
     challengeId: z.string().uuid(),
@@ -98,6 +100,8 @@ export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(challengeCreateRoute, async (c) => {
     const body = c.req.valid('json');
     const ip = c.req.header('cf-connecting-ip') ?? null;
+    assertInvitedEmail(c.env, body.email);
+    await verifyTurnstile(c.env, body.turnstileToken, ip);
     const result = await createChallenge(c.env, {
       email: body.email,
       ip,
@@ -108,6 +112,7 @@ export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(authSessionRoute, async (c) => {
     const body = c.req.valid('json');
+    assertInvitedEmail(c.env, body.email);
     await verifyAndConsumeChallenge(c.env, {
       challengeId: body.challengeId,
       email: body.email,

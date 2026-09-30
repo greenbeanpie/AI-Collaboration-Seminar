@@ -1,0 +1,195 @@
+{
+  "checkedAt": "2026-09-30T15:37:56.578Z",
+  "origin": "https://greenbp-team-office.hddhp.workers.dev",
+  "checks": [
+    {
+      "path": "/api/v1/health",
+      "status": 200,
+      "contentType": "application/json",
+      "body": {
+        "data": {
+          "status": "ok",
+          "environment": "production",
+          "time": "2026-09-30T15:37:56.931Z"
+        },
+        "requestId": "4c88c207-d805-4b4d-851a-7a89692559cb"
+      }
+    },
+    {
+      "path": "/api/v1/health/deps",
+      "status": 200,
+      "contentType": "application/json",
+      "body": {
+        "data": {
+          "d1": "ok",
+          "r2": "ok"
+        },
+        "requestId": "4b12e1cb-24e0-41b3-a7b2-f6940c445431"
+      }
+    },
+    {
+      "path": "/api/v1/capabilities",
+      "status": 200,
+      "contentType": "application/json",
+      "body": {
+        "data": {
+          "apiVersion": "v1",
+          "environment": "production",
+          "features": {
+            "aiEnabled": false,
+            "webFetch": true,
+            "emailMode": "resend"
+          },
+          "limits": {
+            "maxFileBytes": 10485760,
+            "maxPdfPages": 30,
+            "pageImageMaxEdge": 2000,
+            "pageImageMaxBytes": 2097152,
+            "listDefaultPageSize": 20,
+            "listMaxPageSize": 100,
+            "concurrentAiTasksPerProject": 2,
+            "assignmentSuggestionMaxTasks": 20
+          },
+          "competitionTemplate": {
+            "teamSizeLimit": 5
+          },
+          "authentication": {
+            "turnstileRequired": false,
+            "turnstileSiteKey": "0x4AAAAAAFKQSg4fWagOtFAC",
+            "emailReady": true,
+            "inviteOnly": true
+          }
+        },
+        "requestId": "98c91320-d7ff-4e06-b4d9-d83f7f06f799"
+      }
+    },
+    {
+      "path": "/api/v1/auth/session",
+      "status": 401,
+      "contentType": "application/json",
+      "body": {
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "未登录或会话已失效",
+          "retryable": false
+        },
+        "requestId": "22c95e57-6d05-429d-836f-cdfcdbcbfe0d"
+      }
+    },
+    {
+      "path": "/manifest.webmanifest",
+      "status": 200,
+      "contentType": "application/manifest+json",
+      "body": {
+        "name": "补位 · AI 项目办公室",
+        "short_name": "补位",
+        "description": "协作推进项目材料、任务和过程记录",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#f4f6fa",
+        "theme_color": "#f4f6fa",
+        "lang": "zh-CN",
+        "scope": "/",
+        "icons": [
+          {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+          },
+          {
+            "src": "/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+          },
+          {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+          }
+        ]
+      }
+    },
+    {
+      "path": "/sw.js",
+      "status": 200,
+      "contentType": "text/javascript"
+    },
+    {
+      "path": "/icon-192.png",
+      "status": 200,
+      "contentType": "image/png"
+    },
+    {
+      "path": "/icon-512.png",
+      "status": 200,
+      "contentType": "image/png"
+    },
+    {
+      "path": "/guest/index.html",
+      "status": 200,
+      "contentType": "text/html"
+    }
+  ],
+  "customDomain": {
+    "status": 403,
+    "cfMitigated": "challenge"
+  },
+  "authentication": {
+    "mode": "invite-only",
+    "senderDomain": "auth.greenbp.dpdns.org",
+    "domainVerified": true,
+    "emailDeliveryStatus": "Delivered",
+    "recipientRedacted": true,
+    "realLoginConfirmed": true,
+    "cookie": {
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax",
+      "path": "/"
+    }
+  },
+  "productionAcceptance": {
+    "projectId": "c4f24172-6b00-4893-bec7-937c234bc510",
+    "materialId": "6772d436-1a2e-41ef-b0d3-07cf2c6c1f1f",
+    "materialRevision": 2,
+    "refreshPersistence": true,
+    "anonymousProjectStatus": 401,
+    "unapprovedEmailStatus": 403,
+    "pwaUpdateApplied": true,
+    "logoutProductionTest": false,
+    "projectArchived": true,
+    "exportPreviewRevision": 2,
+    "nativeJsonDownload": "unconfirmed-download-event-timeout",
+    "nativePdfSave": "not-tested",
+    "osPwaInstall": "not-tested"
+  },
+  "deployment": {
+    "backendVersion": "13d1c9de-0589-4bd2-ac1a-eedf1c8900eb",
+    "frontendVersion": "8a0f1753-a160-4aaf-ab5e-d60effe418cd",
+    "appliedMigrations": [
+      "0008",
+      "0009",
+      "0010",
+      "0011"
+    ]
+  },
+  "verification": {
+    "backendTests": 142,
+    "frontendTests": 48,
+    "localHttpChecks": 68,
+    "backupRequiredTables": 30,
+    "backupChecks": 6,
+    "vpsComposeConfig": true,
+    "vpsCaddyOfflineValidation": true,
+    "vpsDeployed": false
+  }
+}

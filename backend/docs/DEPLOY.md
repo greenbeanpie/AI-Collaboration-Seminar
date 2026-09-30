@@ -84,7 +84,7 @@ curl -X PUT https://.../api/v1/admin/ai-config \
 
 ## 7. 前端接入
 
-前端 Worker 通过 **Service Binding** 绑定本 Worker（服务名 `ai-office-api-staging` / `ai-office-api`），`/api/*` 转发由前端 Worker 配置；`ALLOWED_ORIGINS` 需包含前端域名。契约以 `backend/openapi/openapi.json` 为准。
+生产前端沿用 `greenbp-team-office`（预期域名 `team.greenbp.dpdns.org`）；前端 Worker 通过 **Service Binding** 绑定本 Worker（staging 服务名 `ai-office-api-staging`，production 服务名 `greenbp-team-office-backend`），`/api/*` 转发由前端 Worker 配置；`ALLOWED_ORIGINS` 需包含前端域名。契约以 `backend/openapi/openapi.json` 为准。
 
 ## 8. 本地开发
 
@@ -105,7 +105,7 @@ npm run typecheck && npm run export:openapi
 
 ### 9.2 备份
 
-- 生产环境在**每次迁移前**执行：`npx wrangler d1 export DB --env staging --remote --output=backup-$(date +%F).sql`
+- 生产环境在**每次迁移前**执行：`npx wrangler d1 export DB --env production --remote --output=backup-YYYY-MM-DD.sql`（文件名日期由执行人填写）
 - 本地演练（零云费用，不接触云端）：`npm run backup:drill:local`
   该脚本导出本地 D1 → 校验导出完整性（27 张表建表语句、含 INSERT、结尾完整）→ 把建表语句重排到数据之前 → 导入一个独立的本地演练库 → 查询验证行数，最后清理临时文件。
 
@@ -173,3 +173,46 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "content-type: applicati
 | 测试运行时告警 | workerd canceled request / RPC stub | 见架构文档 7.2，属测试池收尾现象，不隐藏日志 |
 
 日志中可检索的关键前缀：`[cron]`（维护与恢复）、`[gc]`（孤儿回收失败）、`[events]`（账本写入失败）、`[email:resend]`（投递失败）。
+
+## 12. 当前发布状态（2026-09-30，19dedbd）
+
+production 的 Worker 名称、Service Binding 和资源字段在仓库中已对齐，`npm run preflight:deploy -- production` 通过。staging 的同命令仍报缺 EMAIL_FROM、D1 ID、Origin。以上均是静态配置验证，不代表远端资源或发信域名已验收；当前 `EMAIL_FROM` 仍使用 `onboarding@resend.dev`，真实邮件投递需单独验证。
+
+正式放量前先修复架构文档 A03/A07/A08 所列代码缺口；随后验收 Secrets、D1 迁移、私有 R2、两端部署与回滚、Service Binding、真实邮件、模型/OCR、云端恢复与监控。模型 URL/key 继续留待用户在网页设置填写，不能仅凭预算竞争单元测试或模型 fixture 成功认定费用上限与真模型已验收。
+
+## 13. 当前邀请制与真实邮箱验收
+
+生产已使用 `AUTH_MODE=invite-only`，`EMAIL_FROM=补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>`，`EMAIL_DAILY_LIMIT=30`。发信域名已验证，真实收件、登录与持久化主路径通过；批准邮箱仅保存在 Worker Secret。
+
+新增或移除名单（会覆盖整个名单，务必保留仍需访问的成员）：
+
+```sh
+cd backend
+npx wrangler secret put AUTH_ALLOWED_EMAILS --env production
+# 在终端提示中输入完整名单，逗号分隔；不要把真实名单提交到仓库。
+```
+
+名单改变后，受保护请求每次重新检查邮箱，移出名单的旧会话也会拒绝访问。已有用户、项目及材料不会被删除。开放注册模式必须使用 Turnstile；不能只设 `TURNSTILE_REQUIRED=false` 来开放生产注册。
+
+额度：全站 30 次/UTC 日（可配置 1–100，非法配置回退 30）；每邮箱 6 次/UTC 日；每 IP 10 次/滚动小时。全站、邮箱和 IP 额度在发信前原子预占，失败尝试不退回。邮箱/IP 采用 HMAC 标识，不依赖到期后会被清理的验证码表。新表自迁移生效后累计，迁移前已被清理的历史尝试无法回填，全站已有计数仍保留。
+
+`RESEND_API_KEY`、`AUTH_SECRET` 和 `ADMIN_TOKEN` 始终作为 Worker Secrets；AI 设置必须使用生产 `ADMIN_TOKEN`，不能使用本地示例令牌。`scripts/configure-resend-local.mjs` 可提供一次性 loopback 密钥输入页：密码框 → Wrangler stdin → Worker Secret，不保存密钥文件、不回显。保存完成自动关闭服务。
+
+迁移前的私有 SQL 备份在 gitignored 的 `.local-backups/`；原始备份不能公开提交。实际部署及验证版本记录见实现对齐文档。
+
+## 14. 未来 VPS 迁移准备（未实际部署服务器）
+
+目标是把前端静态资产和同源 `/api/*` 代理放到 VPS，后端、D1/R2 与现有用户 ID 继续复用，不进行数据库身份体系迁移。
+
+文件：`deploy/vps/Caddyfile`、`deploy/vps/compose.yaml`、`deploy/vps/.env.example`。镜像固定为本轮验证过的官方 Caddy digest。`docker compose config --quiet` 与容器 `caddy validate`（network none）通过；已消除格式和冗余 Host header 告警。此验证不含实际域名 TLS 颁发或上游网络联通。
+
+准备过程：
+
+1. 提供 Linux VPS，开放 80/443 TCP（可选 443 UDP），安装 Docker/Compose；先用测试域名验收。
+2. 在本仓库执行 `npm run build`，把 `frontend/dist` 和 `deploy/vps` 按相同目录关系复制到服务器。
+3. 复制 `.env.example` 为 `.env`，填写 APP_HOST 与 API_UPSTREAM_HOST；密钥继续留在 Cloudflare，VPS 不保存 Resend 或模型 key。
+4. 在 VPS 的 `deploy/vps` 执行 `docker compose config --quiet`，然后 `docker compose up -d`。
+5. DNS-only 指向 VPS 并验证 HTTPS，再验收同源 API、Cookie、受邀登录、材料和导出，最后再切换正式域名；不要关闭整个 zone 的安全设置。若正式 hostname 绑定 Worker route/Custom Domain，切换时需按实际绑定解除该 hostname，保留其它资源。
+6. 代码或 DNS 回滚使用保留的 Worker 和当前 DNS 记录，不能先删除旧服务。域名变化后需重新登录，项目和材料仍由同一 D1 保存。
+
+**切换前的 IP 限流边界：**目前 Workers 用 `CF-Connecting-IP`；经过 VPS 代理后它会变为 VPS 出口 IP，所有用户共享 10 次/小时额度。示例 Caddy 不信任客户端注入的 IP header。正式迁移前需要设计有认证的真实 IP 传递或调整受邀小团队限流策略，不能直接信任任意 `X-Forwarded-For`。这是未完成的迁移条件，不宣称该样例已经完成线上压力验收。

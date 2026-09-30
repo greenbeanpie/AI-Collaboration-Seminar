@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
 import type { Capability } from '../api/types';
 
+vi.mock('../components/TurnstileChallenge', () => ({ TurnstileChallenge: ({ onToken }: { onToken: (value: string) => void }) => <button type="button" onClick={() => onToken('fixture-turnstile-token')}>完成安全验证 fixture</button> }));
+
 const capabilities: Capability = {
   apiVersion: 'v1', environment: 'local',
   features: { aiEnabled: false, webFetch: true, emailMode: 'echo' },
@@ -78,4 +80,29 @@ describe('real login and guest separation', () => {
     expect(screen.queryByPlaceholderText('000000')).not.toBeInTheDocument();
     expect(screen.queryByText('本地验证码已生成。')).not.toBeInTheDocument();
   });
+});
+
+
+it('安全验证未完成时不发邮件，完成后携带token且不回显生产验证码', async () => {
+  const mock = setup({ environment: 'production', features: { aiEnabled: false, webFetch: true, emailMode: 'resend' }, authentication: { turnstileRequired: true, turnstileSiteKey: 'fixture-site', emailReady: true } });
+  submitEmail();
+  await waitFor(() => expect(screen.getByText('请先完成安全验证')).toBeInTheDocument());
+  expect(mock.mock.calls.filter(([path]) => path.endsWith('/auth/challenges'))).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '完成安全验证 fixture' }));
+  submitEmail();
+  await screen.findByText('验证码已发送，请检查邮箱。');
+  const call = mock.mock.calls.find(([path]) => path.endsWith('/auth/challenges'));
+  expect(JSON.parse(String(call?.[1]?.body)).turnstileToken).toBe('fixture-turnstile-token');
+  expect(screen.queryByText('123456')).not.toBeInTheDocument();
+});
+
+
+it('邀请制保留邮箱验证，不加载 CAPTCHA，不回显生产 OTP', async () => {
+  const mock = setup({ environment: 'production', features: { aiEnabled: false, webFetch: true, emailMode: 'resend' }, authentication: { inviteOnly: true, turnstileRequired: false, turnstileSiteKey: null, emailReady: true } });
+  expect(screen.getByText(/当前仅受邀邮箱可登录/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '完成安全验证 fixture' })).not.toBeInTheDocument();
+  submitEmail();
+  await screen.findByText('验证码已发送，请检查邮箱。');
+  expect(mock.mock.calls.filter(([path]) => path.endsWith('/auth/challenges'))).toHaveLength(1);
+  expect(screen.queryByText('123456')).not.toBeInTheDocument();
 });

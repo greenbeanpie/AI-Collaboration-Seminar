@@ -82,7 +82,11 @@
         "ALLOWED_ORIGINS": "https://team.greenbp.dpdns.org,https://greenbp-team-office.hddhp.workers.dev",
         "CLOUDFLARE_ACCOUNT_ID": "17a6817bca6612a9cb11d0395eeba0ac",
         "AI_GATEWAY_ID": "",
-        "EMAIL_FROM": "补位 AI 项目办公室 <onboarding@resend.dev>"
+        "EMAIL_FROM": "补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>",
+        "AUTH_MODE": "invite-only",
+        "EMAIL_DAILY_LIMIT": "30",
+        "TURNSTILE_REQUIRED": "false",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFKQSg4fWagOtFAC"
       },
       "d1_databases": [
         {

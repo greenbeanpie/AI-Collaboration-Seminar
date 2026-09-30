@@ -31,3 +31,9 @@ Thumbs.db
 .npm-cache/
 
 .review-workspace/
+
+.agent-worktrees/
+
+.local-backups/
+
+deploy/vps/.env

@@ -17,6 +17,12 @@ export interface Env {
   RESEND_API_KEY?: string;
   /** 验证码邮件发件人（如 验证码 <noreply@example.com>）；Resend 需已验证域名 */
   EMAIL_FROM?: string;
+  TURNSTILE_REQUIRED?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  AUTH_MODE?: 'invite-only' | 'turnstile';
+  AUTH_ALLOWED_EMAILS?: string;
+  EMAIL_DAILY_LIMIT?: string;
 }
 
 export interface SessionUser {

@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { nowIso, sha256Hex } from './db';
+import { assertInvitedEmail } from '../services/auth-policy';
 import { notFound, permissionDenied, unauthenticated } from './errors';
 
 export const SESSION_COOKIE = 'ai_office_session';
@@ -51,6 +52,7 @@ export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
     .bind(tokenHash, nowIso())
     .first<{ session_id: string; user_id: string; email: string; display_name: string }>();
   if (!row) throw unauthenticated();
+  assertInvitedEmail(c.env, row.email);
   c.set('user', { id: row.user_id, email: row.email, displayName: row.display_name });
   await next();
 });

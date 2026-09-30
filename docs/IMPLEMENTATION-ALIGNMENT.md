@@ -179,3 +179,64 @@
 - 任务恢复不会再把已终态任务改回运行中；工作流实例已结束但业务未提交时标记失败并释放额度。
 
 新增占位与既有占位的状态见 [架构文档第 7 节](ARCHITECTURE.md#7-未完成与不确定事项登记)。A01/A02/A14 的云端部分仍保留「待云环境验收」，A12 需人工在操作系统完成，A13 的保留策略与压测仍待完善。
+
+## 最新提交进度核对（2026-09-30，基线 19dedbd）
+
+核对区间 `99edc16..19dedbd`，当前分支 `launch_prep`。本次开始时工作区干净，只更新进度与部署说明，未修改业务代码。
+
+| 提交 | 实际新增进度 |
+| --- | --- |
+| `e700086` | 项目预算字段、金额预占/结算、OCR 完整性、幂等人工恢复、PWA 安装入口、GC/保留策略、本地备份演练、预算并发测试与 fixture 端到端测试 |
+| `19dedbd` | 生产后端改为 `greenbp-team-office-backend`，生产 Workflow 改为 `greenbp-team-office-parse` / `greenbp-team-office-agent`，生产前端 `greenbp-team-office` 的 API 绑定指向新后端；未包含实际部署证据 |
+
+### 本次重新执行的验证
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm run typecheck` / `npm run lint` | 通过 |
+| `npm run test:backend` | **25 文件 / 109 项通过**，退出码 0 |
+| `npm run test:frontend` | **15 文件 / 43 项通过**，退出码 0 |
+| `npm run build` / `npm run verify:worker` | 通过 |
+| `npm run preflight:deploy -- production` | 静态配置通过 |
+| `npm run preflight:deploy -- staging` | 仍阻碍：EMAIL_FROM、真实 D1 ID、HTTPS Origin |
+
+本次后端测试仍观察到 4 次 workerd canceled request 及 RPC stub/result 释放提示，未隐藏日志。测试退出成功不等于这些告警已经消除。历史的 22/100 和 14/38 是较早快照，本次计数以 25/109 和 15/43 为准。
+
+本次未重跑浏览器、独立 HTTP 联调、备份演练、部署 dry-run 或云端验收；这些历史结果保留原环境标识。提交说明中记载的 HTTP 68 项、备份演练与 dry-run 成功未在本次重复执行，也不作为本次现测结果。
+
+### 本次源码核对发现的剩余代码阻碍
+
+- **A03：部分完成。** `api/agents.ts`、`reviews.ts`、`rehearsals.ts` 先派发 Workflow 再预占，预算拒绝前模型可能已经执行；失败/超时路径释放额度，未按已发生或未知费用结算。输入字符数除以 4 不是中文 token 上界，未涵盖修复重试与多页 OCR，不能保证金额硬上限。现有 109 项测试不覆盖全部这些边界。
+- **A07：部分加固。** 先置 running 后创建 Workflow 的中断窗口未恢复；实例不存在时 cron 仅记录异常，任务可能长期 running。现有租约/终态测试通过，但不等于创建断电窗口已验证。
+- **A08：强制键和人工恢复已实现，完全原子性未完成。** 回放响应仍在业务事务后另写；采纳冲突补偿未清理同批次插入的 `material.adopted` 事件。`27-idempotency-recovery.test.ts` 以修改记录状态模拟响应失败，不是注入实际写入故障。
+
+A04/A05/A06/A09/A10/A11/A12 安装入口/A13 本地机制/A15 均有实现和本地测试证据；A01/A02/A14 的云端验收、A12 操作系统实际安装/PDF 保存、A13 云端监控与恢复仍未关闭。production 字段已配置与静态预检通过，故旧的「生产资源字段仍未填入」仅保留为历史快照，不能用于描述当前仓库或实时云账户。
+
+## 邮箱生产上线与邀请制验收（2026-09-30）
+
+用户先授权 Resend 配置及一次真实验证码投递，随后明确选择「暂用邀请制、未来迁移 VPS」。当前分支为 `main`（不沿用历史 launch_prep 标签）；`3b0aaba`、`6fae48e` 已合入。本次实际部署了两端与新增迁移，未调用真实模型。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| typecheck / lint | 通过 |
+| 后端测试 | 28 文件 / **142 项通过** |
+| 前端测试 | 16 文件 / **48 项通过** |
+| build / verify:worker | 通过 |
+| 本地 HTTP | **68 项通过**；一次性项目归档 |
+| 本地恢复演练 | **30 张表、6 项检查通过**；新外键的导出结束格式已兼容 |
+| Resend / DNS | `auth.greenbp.dpdns.org` Verified；按页面要求新增 TXT 与两个 CNAME，不改其它 DNS |
+| 真实邮箱 | API 发信成功、Resend **Delivered**，用户确认实际收信并登录；不读取/记录 OTP |
+| 实际会话 | Cookie metadata：HttpOnly=true、Secure=true、SameSite=Lax、Path=/；没有记录 token 值 |
+| 生产权限 | 未批准邮箱 403；匿名读取实际验收项目 401 |
+| 生产材料 | 模板创建 r1、人工补充保存 r2；刷新后正文与两条历史一致 |
+| 生产导出 | 实际预览含 r2 正文与 material.saved 事件；JSON 下载事件等待超时，未确认原生文件保存 |
+| PWA 更新 | 点击「立即更新」后实际加载邀请制新版本；OS 安装仍未验证 |
+| VPS 准备 | Compose 静态检查与固定官方镜像 Caddy 离线 validate 通过；没有购买或部署 VPS |
+
+当前使用备用入口 `https://greenbp-team-office.hddhp.workers.dev/`；自定义域名自动请求仍返回 403 / Cf-Mitigated: challenge。Turnstile 基础诊断通过但真人验证反复失败/超时，用户选择以邀请名单和原子发信限额替换本应用 CAPTCHA；全 zone Bot Fight Mode 未关闭。生产不允许通过单独 TURNSTILE_REQUIRED=false 开放注册，名单缺失失败关闭，被移出名单的旧会话也拒绝访问。
+
+发信限额为全站 30 次/UTC 日、单邮箱 6 次/UTC 日、IP 10 次/滚动小时。全站/邮箱/IP 计数与挑战创建同 D1 batch，供应商失败不退回尝试；邮箱与 IP 用 HMAC 标识，验证码过期清理不重置限额。迁移前被清理的历史尝试无法回填新表，原全站日计数继续保留。
+
+生产验收项目 `c4f24172-6b00-4893-bec7-937c234bc510` 只含测试内容，结束归档保留版本，现有账户数据不删除。保留当前会话方便用户填写 AI 设置；生产退出/撤销未另做，本地 HTTP 已覆盖。截图与可读预览：`docs/evidence/production-export-preview.png` / `.md`、`resend-domain-verified.png`；运行证据 `cloud-readiness.json` 不含 key、OTP 或 Cookie token。
+
+后端运行仍有已定位的测试池收尾告警（4 次 canceled request、RPC stub 提示），未隐藏。真实模型/OCR、比赛原文正确性、OS 安装/原生 PDF 保存、原生下载完成、云端恢复切换和长期监控仍未关闭。

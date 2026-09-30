@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, Mail, ShieldCheck } from 'lucide-react';
+import { TurnstileChallenge } from '../components/TurnstileChallenge';
 import { api } from '../api/client';
 import type { Capability } from '../api/types';
 import { useCapabilities } from '../auth';
@@ -15,6 +16,9 @@ export function LoginPage(props: Props) {
   const capabilityError = props.capabilityError ?? capabilityQuery.error;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileError, setTurnstileError] = useState('');
+  const [turnstileReset, setTurnstileReset] = useState(0);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [challengeId, setChallengeId] = useState('');
@@ -31,8 +35,14 @@ export function LoginPage(props: Props) {
     return () => window.clearTimeout(timer);
   }, [resendSeconds]);
 
+  const handleTurnstileToken = useCallback((token: string) => { setTurnstileToken(token); if (token) setTurnstileError(''); }, []);
+  const authentication = capabilities?.authentication;
+  const challengeBlocked = !capabilities || authentication?.emailReady === false || (authentication?.turnstileRequired === true && !turnstileToken);
   const sendChallenge = useMutation({
-    mutationFn: () => api.post<'AuthChallengeResponse'>('/api/v1/auth/challenges', { email: email.trim() }),
+    mutationFn: () => {
+      if (challengeBlocked) throw new Error(authentication?.emailReady === false ? '验证码邮件服务尚未配置' : '请先完成安全验证');
+      return api.post<'AuthChallengeResponse'>('/api/v1/auth/challenges', { email: email.trim(), ...(turnstileToken ? { turnstileToken } : {}) });
+    },
     onSuccess: (result) => {
       setChallengeId(result.challengeId);
       setDevCode(result.devCode ?? undefined);
@@ -40,6 +50,7 @@ export function LoginPage(props: Props) {
       setCode(''); setFeedback(localEcho && result.devCode ? '本地验证码已生成。' : '验证码已发送，请检查邮箱。'); setChallengeError(null);
     },
     onError: (error) => { setChallengeError(error); setFeedback(''); },
+    onSettled: () => { setTurnstileToken(''); setTurnstileReset(value => value + 1); },
   });
   const signIn = useMutation({
     mutationFn: () => api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { email: email.trim(), challengeId, code: code.trim() }),
@@ -59,15 +70,18 @@ export function LoginPage(props: Props) {
       <section className="auth-intro"><span className="intro-badge"><span className="pulse-dot" />真实项目工作区</span><h1>让协作过程<br /><em>清楚、有据、能交接</em></h1><p>从通知要求到团队任务、材料版本与过程记录，让每一步都留在真实项目里。</p><div className="intro-checks"><span><ShieldCheck size={17} /> 项目数据由服务端保存</span><span><ShieldCheck size={17} /> AI 内容须人工复核后采纳</span></div></section>
       <section className="auth-card">
         <div className="auth-card-top"><div className="auth-icon"><Mail size={21} /></div><span className="eyebrow">邮箱验证登录</span></div>
-        <h2>欢迎回来</h2><p className="auth-subtitle">输入邮箱获取一次性验证码；首次登录会创建账户。</p>
+        <h2>欢迎回来</h2><p className="auth-subtitle">{capabilities?.authentication?.inviteOnly ? '当前仅受邀邮箱可登录；首次验证后创建账户。加入名单请联系项目负责人。' : '输入邮箱获取一次性验证码；首次登录会创建账户。'}</p>
         {capabilityError !== null && capabilityError !== undefined && <ErrorNotice error={capabilityError} onRetry={() => { void (props.onRetryCapabilities ?? capabilityQuery.refetch)(); }} />}
         <form onSubmit={(event) => { event.preventDefault(); if (challengeId) { setLoginError(null); signIn.mutate(); } else { setChallengeError(null); sendChallenge.mutate(); } }}>
           <Field label="邮箱地址"><input className="input" autoComplete="email" type="email" required maxLength={254} placeholder="name@example.com" value={email} onChange={(event) => { setEmail(event.target.value); setChallengeId(''); setCode(''); setDevCode(undefined); setFeedback(''); setLoginError(null); }} /></Field>
-          {!challengeId ? <button className="button button-primary button-wide" type="submit" disabled={sendChallenge.isPending}>{sendChallenge.isPending ? <Spinner label="正在发送" /> : '获取验证码'}</button> : <>
+          {authentication?.turnstileRequired && (authentication.turnstileSiteKey ? <TurnstileChallenge siteKey={authentication.turnstileSiteKey} reset={turnstileReset} onToken={handleTurnstileToken} onError={setTurnstileError} /> : <p role="alert">安全验证尚未配置，请稍后重试。</p>)}
+          {authentication?.emailReady === false && <p role="alert">验证码邮件服务尚未配置，请联系项目管理员。</p>}
+          {turnstileError && <div role="alert"><p>{turnstileError}</p><button type="button" className="text-button" onClick={() => { setTurnstileToken(''); setTurnstileError(''); setTurnstileReset(value => value + 1); }}>重试安全验证</button></div>}
+          {!challengeId ? <button className="button button-primary button-wide" type="submit" disabled={sendChallenge.isPending || challengeBlocked}>{sendChallenge.isPending ? <Spinner label="正在发送" /> : '获取验证码'}</button> : <>
             <Field label="6 位验证码" hint="验证码仅能使用一次，过期后需要重新获取。"><input className="input code-input" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} /></Field>
             {localEcho && devCode && <div className="local-echo"><span className="local-echo-label">本地验证码回显</span><strong>{devCode}</strong><small>仅本地 echo 邮件模式提供；生产环境不会返回验证码。</small></div>}
             <button className="button button-primary button-wide" type="submit" disabled={signIn.isPending || code.length !== 6}>{signIn.isPending ? <Spinner label="正在验证" /> : '验证并登录'}</button>
-            <button type="button" className="text-button resend-button" disabled={resendSeconds > 0 || sendChallenge.isPending} onClick={() => sendChallenge.mutate()}>{resendSeconds > 0 ? `${resendSeconds} 秒后可重新发送` : '重新发送验证码'}</button>
+            <button type="button" className="text-button resend-button" disabled={resendSeconds > 0 || sendChallenge.isPending || challengeBlocked} onClick={() => sendChallenge.mutate()}>{resendSeconds > 0 ? `${resendSeconds} 秒后可重新发送` : '重新发送验证码'}</button>
           </>}
         </form>
         {feedback && <div className="notice notice-success">{feedback}</div>}
