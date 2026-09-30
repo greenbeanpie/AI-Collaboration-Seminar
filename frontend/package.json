@@ -1,0 +1,43 @@
+{
+  "name": "ai-office-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0 --strictPort",
+    "typegen": "openapi-typescript ../backend/openapi/openapi.json -o src/api/openapi.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.2",
+    "@tiptap/extension-link": "^3.10.7",
+    "@tiptap/extension-table": "^3.10.7",
+    "@tiptap/extension-table-cell": "^3.10.7",
+    "@tiptap/extension-table-header": "^3.10.7",
+    "@tiptap/extension-table-row": "^3.10.7",
+    "@tiptap/react": "^3.10.7",
+    "@tiptap/starter-kit": "^3.10.7",
+    "lucide-react": "^0.468.0",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^27.0.0",
+    "openapi-typescript": "^7.10.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.7",
+    "vite-plugin-pwa": "^1.0.3",
+    "vitest": "^4.1.11"
+  }
+}

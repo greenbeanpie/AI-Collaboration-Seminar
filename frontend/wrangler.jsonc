@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-office-web",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api", "/api/*"],
+    "not_found_handling": "single-page-application"
+  },
+  "services": [{ "binding": "API", "service": "ai-office-api-staging" }],
+  "env": {
+    "staging": {
+      "name": "ai-office-web-staging",
+      "services": [{ "binding": "API", "service": "ai-office-api-staging" }]
+    },
+    "production": {
+      "name": "ai-office-web",
+      "services": [{ "binding": "API", "service": "ai-office-api" }]
+    }
+  }
+}
