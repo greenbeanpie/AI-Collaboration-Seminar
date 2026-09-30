@@ -3,7 +3,7 @@ import type { components } from './openapi';
 export type SchemaName = keyof components['schemas'];
 export type DataOf<Name extends SchemaName> = components['schemas'][Name] extends { data: infer Data } ? Data : never;
 
-export type User = Omit<DataOf<'AuthSessionGetResponse'>['user'], 'email' | 'username' | 'isAdmin'> & { email: string | null; username?: string | null; isAdmin?: boolean };
+export type User = Omit<DataOf<'AuthSessionGetResponse'>['user'], 'email' | 'username' | 'isAdmin' | 'role'> & { email: string | null; username?: string | null; isAdmin?: boolean; role?: 'super_admin' | 'admin' | 'user' };
 export type Project = DataOf<'ProjectResponse'>;
 export type ProjectSummary = DataOf<'ProjectListResponse'>['items'][number];
 export type Member = Omit<DataOf<'MemberListResponse'>['items'][number], 'username' | 'isAdmin'> & { username?: string | null; isAdmin?: boolean };

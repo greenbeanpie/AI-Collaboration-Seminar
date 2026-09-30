@@ -1,3 +1,4 @@
+import { accountRole, type AccountRole } from '../core/account-role';
 import type { Env, SessionUser } from '../env';
 import { hmacSha256Hex, newId, nowIso, sha256Hex } from '../core/db';
 import { invalidState, rateLimited, unauthenticated, validationFailed } from '../core/errors';
@@ -43,8 +44,8 @@ export async function registerPasswordAccount(env: Env, input: { username: strin
        WHERE EXISTS (SELECT 1 FROM account_invitations WHERE code_hash = ?5 AND used_at IS NULL)
          AND NOT EXISTS (SELECT 1 FROM auth_accounts WHERE username_norm = ?6 OR (?7 IS NOT NULL AND lower(contact_email) = ?7))`)
       .bind(userId, `account:${userId}`, username, now, codeHash, usernameNorm, email),
-    env.DB.prepare(`INSERT INTO auth_accounts (user_id, username, username_norm, contact_email, contact_email_norm, password_hash, is_admin, created_at)
-      SELECT ?1, ?2, ?3, ?4, ?4, ?5, 0, ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1)`)
+    env.DB.prepare(`INSERT INTO auth_accounts (user_id, username, username_norm, contact_email, contact_email_norm, password_hash, is_admin, account_role, created_at)
+      SELECT ?1, ?2, ?3, ?4, ?4, ?5, 0, 'user', ?6 WHERE EXISTS (SELECT 1 FROM users WHERE id = ?1)`)
       .bind(userId, username, usernameNorm, email, passwordHash, now),
     env.DB.prepare(`UPDATE account_invitations SET used_at = ?2, used_by = ?3 WHERE code_hash = ?1 AND used_at IS NULL AND EXISTS (SELECT 1 FROM auth_accounts WHERE user_id = ?3)`)
       .bind(codeHash, now, userId),
@@ -57,17 +58,17 @@ export async function registerPasswordAccount(env: Env, input: { username: strin
     if (conflict) throw invalidState('用户名或邮箱已被使用');
     throw validationFailed('邀请码无效或已经使用');
   }
-  return { user: { id: userId, username, email, displayName: username, isAdmin: false }, token: session.token };
+  return { user: { id: userId, username, email, displayName: username, role: 'user', isAdmin: false }, token: session.token };
 }
 
 export async function loginPasswordAccount(env: Env, input: { account: string; password: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
   const identity = input.account.trim().toLowerCase();
   await consumePasswordRateLimit(env, 'login-ip', ip, 30, 3600);
   await consumePasswordRateLimit(env, 'login-account', identity, 10, 900);
-  const row = await env.DB.prepare(`SELECT a.user_id, a.username, a.contact_email, a.password_hash, a.is_admin, u.display_name
+  const row = await env.DB.prepare(`SELECT a.user_id, a.username, a.contact_email, a.password_hash, a.is_admin, a.account_role, u.display_name
     FROM auth_accounts a JOIN users u ON u.id = a.user_id
     WHERE (a.username_norm = ?1 OR a.contact_email_norm = ?1) AND a.password_hash IS NOT NULL`)
-    .bind(identity).first<{ user_id: string; username: string | null; contact_email: string | null; password_hash: string; is_admin: number; display_name: string }>();
+    .bind(identity).first<{ user_id: string; username: string | null; contact_email: string | null; password_hash: string; is_admin: number; account_role: AccountRole | null; display_name: string }>();
   const valid = await verifyPassword(input.password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
   if (!row || !valid) throw unauthenticated('账号或密码错误');
   const session = await sessionValues(row.user_id);
@@ -77,7 +78,7 @@ export async function loginPasswordAccount(env: Env, input: { account: string; p
     env.DB.prepare('UPDATE users SET last_login_at = ?2 WHERE id = ?1').bind(row.user_id, session.createdAt),
   ]);
   if (result[0]?.meta.changes !== 1) throw unauthenticated('密码已更改，请重新登录');
-  return { user: { id: row.user_id, username: row.username, email: row.contact_email, displayName: row.display_name, isAdmin: row.is_admin === 1 }, token: session.token };
+  return { user: { id: row.user_id, username: row.username, email: row.contact_email, displayName: row.display_name, role: accountRole(row), isAdmin: accountRole(row) !== 'user' }, token: session.token };
 }
 
 /** Codes contain 80 bits of unbiased cryptographic randomness and are disclosed only once. */

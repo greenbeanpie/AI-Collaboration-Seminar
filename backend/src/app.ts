@@ -1,3 +1,4 @@
+import { registerSupportTicketRoutes } from './api/support-tickets';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from './env';
 import { AppError, validationFailed } from './core/errors';
@@ -77,6 +78,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerLedgerRoutes(app);
   registerFileRoutes(app);
   registerAdminRoutes(app);
+  registerSupportTicketRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {
     openapi: '3.1.0',

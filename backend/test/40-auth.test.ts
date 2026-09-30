@@ -139,7 +139,7 @@ describe('Password account authentication', () => {
     const data = (await created.json() as { data: { id: string; code: string; createdAt: string } }).data; expect(data.code).toMatch(/^[A-Z0-9]{16}$/);
     const stored = await env.DB.prepare('SELECT code_hash FROM account_invitations WHERE id = ?1').bind(data.id).first<{ code_hash: string }>(); expect(stored?.code_hash).not.toBe(data.code); expect(stored?.code_hash).toHaveLength(64);
     const listed = await get('/api/v1/admin/account-invitations', authCookie(owner.token)); const text = await listed.text(); expect(text).not.toContain(data.code); expect(text).not.toContain(stored!.code_hash);
-    expect((await get('/api/v1/admin/ai-config', authCookie(owner.token))).status).toBe(200);
+    expect((await get('/api/v1/admin/ai-config', authCookie(owner.token))).status).toBe(403);
     const operator = await SELF.fetch(BASE + '/api/v1/admin/account-invitations', { method: 'POST', headers: { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' }, body: '{}' }); expect(operator.status).toBe(201);
   });
 

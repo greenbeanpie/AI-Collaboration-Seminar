@@ -57,7 +57,7 @@ export function AccountSettingsPage() {
     <PageHeading title="账户设置" detail="管理项目成员看到的昵称和登录密码。" />
     {error !== null && <ErrorNotice error={error} />}
     {notice && <p role="status">{notice}</p>}
-    <section className="section-card"><h2>个人资料</h2>
+    <section className="section-card"><h2>个人资料</h2><p>账户等级：{session.data?.role === 'super_admin' ? '超级管理员' : session.data?.role === 'admin' ? '普通管理员' : '一般用户'}</p>
       <p>登录账号：{session.data?.username || session.data?.email || '原有账号'}</p>
       <form onSubmit={event => void saveName(event)}>
         <label>昵称<input className="input" value={name} onChange={event => setName(event.target.value)} required maxLength={64} disabled={busy} autoComplete="nickname" /></label>

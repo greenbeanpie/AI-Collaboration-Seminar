@@ -15,7 +15,7 @@ export function AiSettings() {
   const qc = useQueryClient();
   const session = useSession();
   const [token, setToken] = useState('');
-  const access = session.data?.isAdmin === true || Boolean(token.trim());
+  const access = session.data?.role === 'super_admin' || Boolean(token.trim());
   const [config, setConfig] = useState<Config>(blank);
   const [reports, setReports] = useState<Partial<Record<Purpose, Report>>>({});
   const [version, setVersion] = useState(0);
@@ -40,9 +40,9 @@ export function AiSettings() {
     setMessage(enabled ? 'AI 已启用，可继续真实业务测试。' : '配置已保存，AI 暂停启用。请逐项测试。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
-  return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用系统管理员账户登录即可管理。API URL、key 和模型名称由你填写；设置影响所有项目。">
+  return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。API URL、key 和模型名称由你填写；设置影响所有项目。">
     <div className="stack">
-      {session.data?.isAdmin !== true && <p className="muted">需要系统管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
+      {session.data?.role !== 'super_admin' && <p className="muted">需要超级管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
       <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { setToken(e.target.value); setReports({}); setError(undefined); setMessage(''); }} /></Field></details>
       <button className="button button-quiet" disabled={!access || busy} onClick={() => void run(async () => {
         const data = await call<{ config: Config; version: number; enabled: boolean }>('GET', '');

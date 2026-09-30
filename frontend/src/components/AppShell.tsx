@@ -33,10 +33,11 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       <nav className="main-nav" aria-label="主导航">
         <NavLink to="/app" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><FolderKanban size={18} />我的项目</NavLink>
         <NavLink to="/app/join" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UsersRound size={18} />加入项目</NavLink>
+        <NavLink to="/app/support" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} />支持工单</NavLink>
         <NavLink to="/app/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />账户设置</NavLink>
         {user.isAdmin === true && <>
           <NavLink to="/app/admin/accounts" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} />注册邀请码</NavLink>
-          <NavLink to="/app/admin/ai" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />系统 AI 设置</NavLink>
+          {user.role === 'super_admin' && <NavLink to="/app/admin/ai" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />系统 AI 设置</NavLink>}
         </>}
       </nav>
       <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>

@@ -1,0 +1,8 @@
+.support-page label { display: grid; gap: .5rem; }
+.support-page textarea { resize: vertical; min-height: 7rem; }
+.support-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.support-ticket-list, .support-messages { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 1rem; }
+.support-ticket-list li, .support-messages li { display: grid; gap: .5rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; min-width: 0; overflow-wrap: anywhere; }
+.support-page small { color: var(--muted); }
+.support-page .button-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.support-page .page-heading h1 { overflow-wrap: anywhere; }

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest';
 import { AiSettings } from './AiSettings';
 
-function setup(admin = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); }
+function setup(admin = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('system admin session saves blank configuration, tests connections, and cannot enable failed probes', async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {

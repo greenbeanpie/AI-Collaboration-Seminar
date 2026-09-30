@@ -7,7 +7,7 @@ import { clearSessionCookie, requireUser } from '../core/auth';
 import { permissionDenied, validationFailed, invalidState } from '../core/errors';
 import { consumePasswordRateLimit } from '../services/accounts';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../services/password';
-const userSchema = z.object({ id: z.string().uuid(), username: z.string().nullable(), email: z.string().nullable(), displayName: z.string(), isAdmin: z.boolean() });
+const userSchema = z.object({ id: z.string().uuid(), username: z.string().nullable(), email: z.string().nullable(), displayName: z.string(), isAdmin: z.boolean(), role: z.enum(['super_admin', 'admin', 'user']) });
 const profile = createRoute({ method: 'patch', path: '/api/v1/auth/profile', tags: ['auth'],
   request: { body: { content: { 'application/json': { schema: z.object({ displayName: z.string().trim().min(1).max(64).regex(/^[^\u0000-\u001f\u007f]+$/) }).strict() } }, required: true } },
   responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ user: userSchema }), 'AccountProfileResponse') } }, description: 'Updated display name' } } });

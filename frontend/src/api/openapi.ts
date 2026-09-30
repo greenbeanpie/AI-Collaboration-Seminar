@@ -3528,6 +3528,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 账户列表（不含凭据） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAccountListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/accounts/{userId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        role: "super_admin" | "admin" | "user";
+                    };
+                };
+            };
+            responses: {
+                /** @description 账户已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAccountResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/v1/admin/accounts/{userId}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        displayName: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 账户已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAccountResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/admin/account-invitations": {
         parameters: {
             query?: never;
@@ -3848,6 +3972,220 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/support/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                    status?: "pending" | "in_progress" | "waiting_user" | "resolved" | "closed";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 自己的工单；管理员可查看全部 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        title: string;
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 工单已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/tickets/{ticketId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticketId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 工单详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/tickets/{ticketId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    ticketId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 回复和状态历史 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketMessagesResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticketId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 回复已保存 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketReplyResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/tickets/{ticketId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticketId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "pending" | "in_progress" | "waiting_user" | "resolved" | "closed";
+                        revision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 管理员已更新状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3934,6 +4272,8 @@ export interface components {
                     email: string | null;
                     displayName: string;
                     isAdmin: boolean;
+                    /** @enum {string} */
+                    role: "super_admin" | "admin" | "user";
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -3948,6 +4288,8 @@ export interface components {
                     email: string | null;
                     displayName: string;
                     isAdmin: boolean;
+                    /** @enum {string} */
+                    role: "super_admin" | "admin" | "user";
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -3969,6 +4311,8 @@ export interface components {
                     email: string | null;
                     displayName: string;
                     isAdmin: boolean;
+                    /** @enum {string} */
+                    role: "super_admin" | "admin" | "user";
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -5052,6 +5396,39 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        AdminAccountListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    username: string | null;
+                    email: string | null;
+                    displayName: string;
+                    /** @enum {string} */
+                    role: "super_admin" | "admin" | "user";
+                    isAdmin: boolean;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AdminAccountResponse: {
+            data: {
+                user: {
+                    /** Format: uuid */
+                    id: string;
+                    username: string | null;
+                    email: string | null;
+                    displayName: string;
+                    /** @enum {string} */
+                    role: "super_admin" | "admin" | "user";
+                    isAdmin: boolean;
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AccountInvitationCreateResponse: {
             data: {
                 /** Format: uuid */
@@ -5130,6 +5507,74 @@ export interface components {
         IdempotencyReleaseResponse: {
             data: {
                 released: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SupportTicketListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    title: string;
+                    /** @enum {string} */
+                    status: "pending" | "in_progress" | "waiting_user" | "resolved" | "closed";
+                    revision: number;
+                    /** Format: uuid */
+                    ownerId: string;
+                    ownerName: string;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SupportTicketResponse: {
+            data: {
+                ticket: {
+                    /** Format: uuid */
+                    id: string;
+                    title: string;
+                    /** @enum {string} */
+                    status: "pending" | "in_progress" | "waiting_user" | "resolved" | "closed";
+                    revision: number;
+                    /** Format: uuid */
+                    ownerId: string;
+                    ownerName: string;
+                    createdAt: string;
+                    updatedAt: string;
+                    body: string;
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SupportTicketMessagesResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: uuid */
+                    authorId: string;
+                    authorName: string;
+                    /** @enum {string} */
+                    kind: "reply" | "status";
+                    body: string;
+                    /** @enum {string|null} */
+                    status: "pending" | "in_progress" | "waiting_user" | "resolved" | "closed" | null;
+                    createdAt: string;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SupportTicketReplyResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

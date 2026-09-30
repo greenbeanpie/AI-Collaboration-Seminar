@@ -10,6 +10,8 @@ import { ProjectShell } from './components/ProjectShell';
 import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState, promptInstall, subscribe } from './pwa-install';
 
+const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
+const SupportTicketDetailPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketDetailPage })));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage').then(module => ({ default: module.AccountSettingsPage })));
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
 const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
@@ -66,8 +68,9 @@ function ProtectedApp() {
   return <AppShell user={session.data}><Outlet /></AppShell>;
 }
 
-function SystemAdminOnly() {
+function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
   const session = useSession();
+  if (superOnly && session.data?.role !== 'super_admin') return <div className="welcome-card"><h1>需要超级管理员权限</h1><p role="alert">系统配置仅限超级管理员。</p><Link to="/app">返回我的项目</Link></div>;
   if (session.data?.isAdmin !== true) return <div className="welcome-card"><h1>需要系统管理员权限</h1><p role="alert">项目负责人不能管理系统账户或模型配置。</p><Link to="/app">返回我的项目</Link></div>;
   return <Outlet />;
 }
@@ -107,10 +110,12 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
+        <Route path="/app/support" element={<SupportTicketsPage />} />
+        <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
         <Route path="/app/settings" element={<AccountSettingsPage />} />
         <Route element={<SystemAdminOnly />}>
           <Route path="/app/admin/accounts" element={<AdminAccountsPage />} />
-          <Route path="/app/admin/ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} />
+          <Route element={<SystemAdminOnly superOnly />}><Route path="/app/admin/ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>
         </Route>
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />

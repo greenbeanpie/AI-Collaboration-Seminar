@@ -1,3 +1,4 @@
+import { accountRole, type AccountRole } from './account-role';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv, Env, SessionUser } from '../env';
 import { nowIso, sha256Hex } from './db';
@@ -42,12 +43,12 @@ export function clearSessionCookie(): string {
 export async function loadSessionUser(env: Env, token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, a.username, a.contact_email, u.display_name, a.is_admin
+    `SELECT u.id, a.username, a.contact_email, u.display_name, a.is_admin, a.account_role
        FROM sessions s JOIN users u ON u.id = s.user_id JOIN auth_accounts a ON a.user_id = u.id
       WHERE s.token_hash = ?1 AND s.revoked_at IS NULL AND s.expires_at > ?2
         AND s.auth_method = 'password' AND a.password_hash IS NOT NULL`,
-  ).bind(await sha256Hex(token), nowIso()).first<{ id: string; username: string | null; contact_email: string | null; display_name: string; is_admin: number }>();
-  return row ? { id: row.id, username: row.username, email: row.contact_email, displayName: row.display_name, isAdmin: row.is_admin === 1 } : null;
+  ).bind(await sha256Hex(token), nowIso()).first<{ id: string; username: string | null; contact_email: string | null; display_name: string; is_admin: number; account_role: AccountRole | null }>();
+  return row ? { id: row.id, username: row.username, email: row.contact_email, displayName: row.display_name, role: accountRole(row), isAdmin: accountRole(row) !== 'user' } : null;
 }
 
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {

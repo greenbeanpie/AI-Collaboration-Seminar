@@ -1,3 +1,4 @@
+import { registerAdminAccountRoutes } from './admin-accounts';
 import { createMiddleware } from 'hono/factory';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -32,6 +33,8 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
     const user = await loadSessionUser(c.env, parseCookies(c.req.header('cookie'))[SESSION_COOKIE]);
     if (!user) throw unauthenticated();
     if (!user.isAdmin) throw permissionDenied('需要系统管理员权限');
+    const systemPath = c.req.path.startsWith('/api/v1/admin/ai-config') || c.req.path.startsWith('/api/v1/admin/idempotency');
+    if (systemPath && user.role !== 'super_admin') throw permissionDenied('需要超级管理员权限');
     c.set('user', user);
   }
   await next();
@@ -161,6 +164,7 @@ const listAccountInvitationsRoute = createRoute({ method: 'get', path: '/api/v1/
 
 export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/admin/*', requireAdmin);
+  registerAdminAccountRoutes(app);
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
   app.openapi(listAccountInvitationsRoute, async c => {
     const rows = await c.env.DB.prepare('SELECT id, created_at, used_at, used_by FROM account_invitations ORDER BY created_at DESC, id DESC LIMIT 100').all<{ id: string; created_at: string; used_at: string | null; used_by: string | null }>();

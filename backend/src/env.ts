@@ -30,6 +30,7 @@ export interface SessionUser {
   email: string | null;
   username: string | null;
   displayName: string;
+  role: import('./core/account-role').AccountRole;
   isAdmin: boolean;
 }
 

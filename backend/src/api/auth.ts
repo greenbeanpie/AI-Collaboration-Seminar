@@ -8,7 +8,7 @@ import { AppError } from '../core/errors';
 import { loginPasswordAccount, registerPasswordAccount, SESSION_TTL_SECONDS } from '../services/accounts';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../services/password';
 
-const userSchema = z.object({ id: z.string().uuid(), username: z.string().nullable(), email: z.string().nullable(), displayName: z.string(), isAdmin: z.boolean() });
+const userSchema = z.object({ id: z.string().uuid(), username: z.string().nullable(), email: z.string().nullable(), displayName: z.string(), isAdmin: z.boolean(), role: z.enum(['super_admin', 'admin', 'user']) });
 const sessionResponse = apiEnvelope(z.object({ user: userSchema }), 'AuthSessionResponse');
 const sessionGetResponse = apiEnvelope(z.object({ user: userSchema }), 'AuthSessionGetResponse');
 const sessionDeleteResponse = apiEnvelope(z.object({ revoked: z.boolean() }), 'AuthSessionDeleteResponse');
