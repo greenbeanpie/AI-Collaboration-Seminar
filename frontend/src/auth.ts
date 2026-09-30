@@ -34,7 +34,7 @@ export async function adminRequest<T>(path: string, options: { method?: 'GET' | 
   if (token) headers.set('Authorization', `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(path, { method: options.method ?? 'GET', credentials: 'same-origin', headers,
+    response = await fetch(path, { method: options.method ?? 'GET', credentials: 'same-origin', cache: /^\/api\/v1\/admin\/accounts(?:[/?]|$)/.test(path) ? 'no-store' : undefined, headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   } catch {
     throw new Error('无法连接服务，请检查网络或后端是否启动。');

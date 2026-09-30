@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -40,7 +40,7 @@ it('create sends only title/body and opens detail; repeated clicks cannot duplic
  resolve(response({ ticket }, 201)); await screen.findByRole('heading', { name: '测试问题' });
 });
 it('plain text is escaped and ordinary users cannot change status; errors preserve reply draft', async () => {
- vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => options?.method === 'POST' ? fail() : response(url.includes('/messages') ? { items: [], nextCursor: null } : { ticket })));
+ vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => options?.method === 'POST' ? new Response(JSON.stringify({ error: { code: 'INTERNAL', message: '暂时无法回复', retryable: true }, requestId: 'fixture' }), { status: 500, headers: { 'content-type': 'application/json' } }) : response(url.includes('/messages') ? { items: [], nextCursor: null } : { ticket })));
  setup('/app/support/ticket1');
  await screen.findByText('<img src=x onerror=alert(1)>'); expect(document.querySelector('img')).toBeNull();
  expect(screen.queryByLabelText('工单状态')).not.toBeInTheDocument();
@@ -49,10 +49,10 @@ it('plain text is escaped and ordinary users cannot change status; errors preser
  await screen.findByRole('alert'); expect(screen.getByLabelText('回复内容')).toHaveValue('保留草稿');
 });
 it('404 detail hides history, reply and status forms', async () => {
- const mock = vi.fn(async () => fail()); vi.stubGlobal('fetch', mock); setup('/app/support/ticket1', 'admin');
+ const mock = vi.fn(async (url: string) => { expect(url).toContain('/api/v1/'); return fail(); }); vi.stubGlobal('fetch', mock); setup('/app/support/ticket1', 'admin');
  expect(await screen.findByRole('alert')).toHaveTextContent('工单不存在');
  expect(screen.queryByLabelText('回复内容')).not.toBeInTheDocument(); expect(screen.queryByLabelText('工单状态')).not.toBeInTheDocument();
- expect(mock).toHaveBeenCalledTimes(1);
+ expect(mock.mock.calls.every(call => !String(call[0]).includes('/messages'))).toBe(true);
 });
 it('admin can update status with revision; closed tickets display reopening guidance', async () => {
  let current = { ...ticket };
@@ -75,4 +75,63 @@ it('history pagination loads more records without replacing the first page', asy
  setup('/app/support/ticket1'); await screen.findByText('第一条');
  fireEvent.click(screen.getByRole('button', { name: '加载更多记录' })); await screen.findByText('第二条');
  expect(screen.getByText('第一条')).toBeInTheDocument(); expect(screen.queryByRole('button', { name: '加载更多记录' })).not.toBeInTheDocument();
+});
+
+
+const errorResponse = (status: number) => new Response(JSON.stringify({ error: { code: status === 409 ? 'INVALID_STATE' : 'PERMISSION_DENIED', message: status === 409 ? '状态冲突' : '工单无权访问', retryable: false }, requestId: 'fixture' }), { status, headers: { 'content-type': 'application/json' } });
+it.each(['detail', 'messages', 'status'] as const)('purges cached private content on %s access loss and refreshes the session', async source => {
+ let revoked = false; let sessionReads = 0;
+ const mock = vi.fn(async (url: string, options?: RequestInit) => {
+  if (url === '/api/v1/auth/session') { sessionReads++; return response({ user: { id: 'user1', role: 'user', isAdmin: false } }); }
+  if (revoked && ((source === 'detail' && url.endsWith('/ticket1')) || (source === 'messages' && url.includes('/messages')) || (source === 'status' && options?.method === 'PATCH'))) return errorResponse(source === 'detail' ? 404 : 403);
+  return response(url.includes('/messages') ? { items: [{ id: 'secret-message', authorId: 'other', authorName: '处理人', kind: 'reply', body: '机密回复内容', status: null, createdAt: ticket.createdAt }], nextCursor: null } : { ticket });
+ });
+ vi.stubGlobal('fetch', mock); const client = setup('/app/support/ticket1', 'admin');
+ await screen.findByText('机密回复内容'); revoked = true;
+ if (source === 'status') { fireEvent.change(screen.getByLabelText('工单状态'), { target: { value: 'closed' } }); fireEvent.click(screen.getByRole('button', { name: '保存状态' })); }
+ else await act(async () => { await client.refetchQueries({ queryKey: [source === 'detail' ? 'support-ticket' : 'support-messages'] }); });
+ await screen.findByRole('alert');
+ await waitFor(() => expect(sessionReads).toBeGreaterThan(0));
+ expect(screen.queryByText('机密回复内容')).not.toBeInTheDocument();
+ expect(screen.queryByText(ticket.body)).not.toBeInTheDocument();
+ expect(screen.queryByRole('heading', { name: ticket.title })).not.toBeInTheDocument();
+ expect(screen.queryByLabelText('回复内容')).not.toBeInTheDocument();
+ expect(screen.queryByLabelText('工单状态')).not.toBeInTheDocument();
+ expect(client.getQueryData(['support-ticket', 'user1', 'admin', 'ticket1'])).toBeUndefined();
+ expect(client.getQueryData(['support-messages', 'user1', 'admin', 'ticket1'])).toBeUndefined();
+});
+it('status conflict refreshes revision, resets selection, and keeps the reply draft for a successful retry', async () => {
+ let current = { ...ticket }; const revisions: number[] = [];
+ vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+  if (options?.method === 'PATCH') {
+   const body = JSON.parse(String(options.body)); revisions.push(body.revision);
+   if (revisions.length === 1) { current = { ...current, status: 'in_progress', revision: 2 }; return errorResponse(409); }
+   current = { ...current, status: body.status, revision: 3 }; return response({ ticket: current });
+  }
+  return response(url.includes('/messages') ? { items: [], nextCursor: null } : { ticket: current });
+ }));
+ setup('/app/support/ticket1', 'admin');
+ fireEvent.change(await screen.findByLabelText('回复内容'), { target: { value: '仍要发送的草稿' } });
+ fireEvent.change(screen.getByLabelText('工单状态'), { target: { value: 'resolved' } }); fireEvent.click(screen.getByRole('button', { name: '保存状态' }));
+ await screen.findByText('工单已被更新，已刷新最新状态；请检查后重试。回复草稿已保留。');
+ expect(screen.getByLabelText('工单状态')).toHaveValue('in_progress'); expect(screen.getByLabelText('回复内容')).toHaveValue('仍要发送的草稿');
+ fireEvent.change(screen.getByLabelText('工单状态'), { target: { value: 'resolved' } }); fireEvent.click(screen.getByRole('button', { name: '保存状态' }));
+ await screen.findByText('状态已更新'); expect(revisions).toEqual([1, 2]);
+});
+it('private support requests bypass browser HTTP cache', async () => {
+ const mock = vi.fn(async () => response({ items: [], nextCursor: null })); vi.stubGlobal('fetch', mock); setup();
+ await screen.findByText('暂无符合条件的工单。');
+ expect(mock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cache: 'no-store' }));
+});
+
+it('list access loss hides cached ticket titles and clears their cached records', async () => {
+ let revoked = false;
+ vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  if (url === '/api/v1/auth/session') return response({ user: { id: 'user1', role: 'user', isAdmin: false } });
+  return revoked ? errorResponse(403) : response({ items: [ticket], nextCursor: null });
+ }));
+ const client = setup('/app/support', 'admin'); await screen.findByRole('link', { name: ticket.title });
+ revoked = true; await act(async () => { await client.refetchQueries({ queryKey: ['support-tickets'] }); });
+ await screen.findByRole('alert'); expect(screen.queryByRole('link', { name: ticket.title })).not.toBeInTheDocument();
+ expect(client.getQueryData(['support-tickets', 'user1', 'admin', null, ''])).toBeUndefined();
 });

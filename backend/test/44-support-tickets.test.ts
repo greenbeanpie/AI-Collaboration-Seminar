@@ -89,3 +89,19 @@ it('concurrent status writes use revision conflict, keeping one matching history
  expect(responses.map(r => r.status).sort()).toEqual([200, 409]);
  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM support_ticket_messages WHERE ticket_id = ?1 AND kind = 'status'").bind(ticket.id).first<{ n: number }>())?.n).toBe(1);
 });
+it('private account and support successes and error responses disable HTTP caching', async () => {
+ const user = await actor(), stranger = await actor(), admin = await actor('admin'); const ticket = await create(user.cookie);
+ const responses = [
+  await call(undefined),
+  await call(user.cookie, `/${ticket.id}`),
+  await call(stranger.cookie, `/${ticket.id}`),
+  await call(user.cookie, '', 'POST', { title: '', body: '' }),
+  await call(user.cookie, `/${ticket.id}/status`, 'PATCH', { status: 'closed', revision: 1 }),
+  await SELF.fetch(`${BASE}/api/v1/admin/accounts`, { headers: { cookie: admin.cookie } }),
+  await SELF.fetch(`${BASE}/api/v1/admin/accounts`, { headers: { cookie: user.cookie } }),
+  await SELF.fetch(`${BASE}/api/v1/auth/session`),
+  await SELF.fetch(`${BASE}/api/v1/support/tickets`, { method: 'POST', headers: { cookie: user.cookie, origin: 'https://untrusted.example', 'content-type': 'application/json' }, body: JSON.stringify({ title: 'x', body: 'y' }) }),
+ ];
+ expect(responses.map(r => r.status)).toEqual([401,200,404,400,403,200,403,401,403]);
+ for (const response of responses) expect(response.headers.get('cache-control')).toBe('no-store');
+});

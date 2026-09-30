@@ -23,3 +23,9 @@ it('reports invalid operational token clearly and never persists it', async () =
   expect(new Headers(mock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer bad-token');
   expect(localStorage.length).toBe(0);
 });
+
+it('account management bypasses browser HTTP cache', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: { items: [], nextCursor: null } }), { status: 200, headers: { 'content-type': 'application/json' } })));
+  await adminRequest('/api/v1/admin/accounts?cursor=fixture');
+  expect(fetch).toHaveBeenCalledWith('/api/v1/admin/accounts?cursor=fixture', expect.objectContaining({ cache: 'no-store' }));
+});
