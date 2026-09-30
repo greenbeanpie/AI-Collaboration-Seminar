@@ -24,11 +24,11 @@ function ProjectCard({ project, taskCount, doneCount, taskError }: { project: Pr
 }
 
 export function DashboardPage() {
-  const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => listAllItems<'ProjectListResponse'>('/api/v1/projects', { status: 'all', limit: 100 }) });
+  const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => listAllItems<'ProjectListResponse'>('/api/v1/projects', { status: 'all', limit: 100 }, { requireNextCursor: true }) });
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const taskQueries = useQueries({ queries: projects.map((project) => ({
     queryKey: ['tasks', project.id],
-    queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${project.id}/tasks`, { limit: 100 }),
+    queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${project.id}/tasks`, { limit: 100 }, { requireNextCursor: true }),
     staleTime: 10_000,
   })) });
   const counts = useMemo(() => projects.map((project, index) => {

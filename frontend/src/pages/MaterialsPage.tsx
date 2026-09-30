@@ -80,6 +80,8 @@ export function MaterialsPage() {
   const [newTitle, setNewTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [draftPersisted, setDraftPersisted] = useState(true);
+  const [draftStorageWarning, setDraftStorageWarning] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [recoveryDraft, setRecoveryDraft] = useState<{ draft: LocalDraft; savedAt: string } | null>(null);
   const [reconnectConfirmation, setReconnectConfirmation] = useState(false);
@@ -113,7 +115,9 @@ export function MaterialsPage() {
         baseRevision: baseRevisionRef.current,
         needsReconnectConfirmation: needsReconnectConfirmationRef.current,
       };
-      saveDraft(currentAccountId, projectId, materialId, draft);
+      const saved = saveDraft(currentAccountId, projectId, materialId, draft);
+      setDraftPersisted(saved);
+      setDraftStorageWarning(false);
       setDirty(true);
       setSaveError(null);
     },
@@ -196,15 +200,19 @@ export function MaterialsPage() {
     editor.commands.setContent(material.currentVersion?.doc ?? emptyDoc, { emitUpdate: false });
     hydratingRef.current = false;
     setDirty(false);
+    setDraftPersisted(true);
+    setDraftStorageWarning(false);
     setConflict(null);
     setSaveError(null);
     setSelectedVersionId(null);
     const storedDraft = accountId ? getDraft<unknown>(accountId, projectId, material.materialId) : null;
     if (storedDraft && isLocalDraft(storedDraft.value)) {
+      setDraftPersisted(true);
       needsReconnectConfirmationRef.current = storedDraft.value.needsReconnectConfirmation === true;
       setRecoveryDraft({ draft: storedDraft.value, savedAt: storedDraft.savedAt });
       setReconnectConfirmation(navigator.onLine && needsReconnectConfirmationRef.current);
     } else {
+      setDraftPersisted(true);
       needsReconnectConfirmationRef.current = false;
       setRecoveryDraft(null);
       setReconnectConfirmation(false);
@@ -218,7 +226,10 @@ export function MaterialsPage() {
   }, [activeMaterialId, conflict, editor, material?.materialId, recoveryDraft, saving]);
 
   const selectMaterial = (materialId: string) => {
-    if (dirty && activeMaterialId !== materialId && !window.confirm('当前材料有未保存的编辑，已留在本机草稿中。切换材料？')) return;
+    const leavingDraftMessage = draftPersisted
+      ? '当前材料有未保存的编辑，已写入本机草稿。切换材料？'
+      : '浏览器未能写入本机草稿；切换后当前编辑可能丢失。仍要切换材料吗？';
+    if (dirty && activeMaterialId !== materialId && !window.confirm(leavingDraftMessage)) return;
     setActiveMaterialId(materialId);
     setSelectedVersionId(null);
     setConflict(null);
@@ -234,13 +245,16 @@ export function MaterialsPage() {
     hydratingRef.current = false;
     setRecoveryDraft(null);
     setDirty(true);
+    setDraftPersisted(true);
     if (online && needsReconnectConfirmationRef.current) setReconnectConfirmation(true);
   };
 
   const discardDraft = () => {
     if (!activeMaterialId || !accountId) return;
     if (!window.confirm('确定放弃这份本机草稿吗？此操作不会修改服务端版本。')) return;
-    removeDraft(accountId, projectId, activeMaterialId);
+    const removed = removeDraft(accountId, projectId, activeMaterialId);
+    setDraftPersisted(removed);
+    setDraftStorageWarning(!removed);
     needsReconnectConfirmationRef.current = false;
     baseRevisionRef.current = currentRevisionRef.current;
     if (editor && material?.materialId === activeMaterialId) {
@@ -261,7 +275,9 @@ export function MaterialsPage() {
       if (!window.confirm('这份材料包含离线期间编辑的内容。确认后会将该本机草稿保存为新的服务端版本。')) return;
       needsReconnectConfirmationRef.current = false;
       setReconnectConfirmation(false);
-      saveDraft(accountId, projectId, activeMaterialId, { doc, baseRevision: expectedRevision, needsReconnectConfirmation: false } satisfies LocalDraft);
+      const saved = saveDraft(accountId, projectId, activeMaterialId, { doc, baseRevision: expectedRevision, needsReconnectConfirmation: false } satisfies LocalDraft);
+      setDraftPersisted(saved);
+      setDraftStorageWarning(false);
     }
     setSaving(true);
     setSaveError(null);
@@ -272,7 +288,9 @@ export function MaterialsPage() {
       );
       currentRevisionRef.current = savedVersion.revision;
       baseRevisionRef.current = savedVersion.revision;
-      removeDraft(accountId, projectId, activeMaterialId);
+      const removedDraft = removeDraft(accountId, projectId, activeMaterialId);
+      setDraftPersisted(removedDraft);
+      setDraftStorageWarning(!removedDraft);
       setDirty(false);
       setConflict(null);
       setReconnectConfirmation(false);
@@ -312,14 +330,15 @@ export function MaterialsPage() {
       <PageHeading
         eyebrow="成果协作"
         title="材料中心"
-        detail="编辑服务端正式材料并查看不可变版本。离线修改只保存在当前账户、项目和材料对应的本机草稿中。"
+        detail="编辑服务端正式材料并查看不可变版本。离线修改会尝试保存为当前账户、项目和材料对应的本机草稿，页面会明确显示写入是否成功。"
       />
 
       {materialsQuery.error && <ErrorNotice error={materialsQuery.error} onRetry={() => void materialsQuery.refetch()} />}
       {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
       {createMaterial.error && <ErrorNotice error={createMaterial.error} />}
       {saveError ? <ErrorNotice error={saveError} onRetry={() => void materialQuery.refetch()} /> : null}
-      {!online && <div className="tm-inline-notice"><span className="tm-offline-indicator"><WifiOff size={14} />当前离线</span> 编辑内容会按账户、项目和材料保存在本机；恢复联网后需要你确认，页面不会自动提交。</div>}
+      {!online && <div className="tm-inline-notice"><span className="tm-offline-indicator"><WifiOff size={14} />当前离线</span> 编辑内容仅在浏览器存储成功时会按账户、项目和材料保存在本机；恢复联网后需要你确认，页面不会自动提交。</div>}
+      {draftStorageWarning && !dirty && <div className="tm-inline-notice tm-inline-error" role="status"><AlertTriangle size={14} />服务端操作已完成，但浏览器无法确认旧本机草稿已清理。若刷新后再次提示恢复，请核对服务端版本再处理。</div>}
 
       <div className="tm-materials-layout">
         <aside className="tm-material-sidebar" aria-label="材料列表">
@@ -374,7 +393,7 @@ export function MaterialsPage() {
             <section className="card tm-editor-card">
               <header className="tm-editor-header">
                 <div className="tm-editor-title-wrap"><h2>{material.title}</h2><p>服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
-                  {!online && <span className="tm-offline-indicator"><WifiOff size={13} />离线草稿保存在本机</span>}
+                  {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
                 <div className="tm-editor-actions tm-hide-print">
                   <button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
@@ -382,7 +401,8 @@ export function MaterialsPage() {
                   <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={!dirty || !online || saving || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
-              {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍保留在编辑器和本机草稿中。修复连接后可以手动重试。</div> : null}
+              {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
+              {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
               <div className="tm-editor-toolbar tm-hide-print" role="toolbar" aria-label="材料格式">
                 <button type="button" aria-label="粗体" title="粗体" onClick={() => editor?.chain().focus().toggleBold().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Bold size={15} /></button>
                 <button type="button" aria-label="斜体" title="斜体" onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Italic size={15} /></button>

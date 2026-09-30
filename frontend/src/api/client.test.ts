@@ -41,7 +41,7 @@ describe('API client', () => {
       return new Response(JSON.stringify({ data: page, requestId: 'page-request' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }));
 
-    const events = await listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events', { limit: 1 });
+    const events = await listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events', { limit: 1 }, { requireNextCursor: true });
 
     expect(events.map((event) => event.eventId)).toEqual(['event-1', 'event-2']);
     expect(calls).toEqual(['first-page', 'page-two']);
@@ -53,8 +53,17 @@ describe('API client', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events')).rejects.toMatchObject({ code: 'INVALID_PAGINATION' });
+    await expect(listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events', {}, { requireNextCursor: true })).rejects.toMatchObject({ code: 'INVALID_PAGINATION' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a cursor-paged API response that omits nextCursor', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(JSON.stringify({
+      data: { items: [] }, requestId: 'page-request',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    await expect(listAllItems<'EventListResponse'>('/api/v1/projects/project-1/events', {}, { requireNextCursor: true }))
+      .rejects.toMatchObject({ code: 'INVALID_PAGINATION' });
   });
 
   it('reuses an explicit idempotency key across a retried mutation', async () => {

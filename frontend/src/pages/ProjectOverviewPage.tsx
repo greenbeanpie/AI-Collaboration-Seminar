@@ -16,12 +16,12 @@ const modules = [
 export function ProjectOverviewPage() {
   const { projectId, project } = useProject();
   const queries = useQueries({ queries: [
-    { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) },
+    { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members'), { limit: 100 }) },
-    { queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) },
-    { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }) },
+    { queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }, { requireNextCursor: true }) },
+    { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) },
-    { queryKey: ['events', projectId], queryFn: () => listAllItems<'EventListResponse'>(projectPath(projectId, '/events'), { limit: 100 }) },
+    { queryKey: ['events', projectId], queryFn: () => listAllItems<'EventListResponse'>(projectPath(projectId, '/events'), { limit: 100 }, { requireNextCursor: true }) },
   ] });
   const [tasks, members, materials, sources, requirementSets, events] = queries;
   const taskItems = tasks.data ?? [];

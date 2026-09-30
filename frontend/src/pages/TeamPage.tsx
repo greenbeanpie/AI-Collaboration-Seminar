@@ -42,7 +42,7 @@ export function TeamPage() {
   const capabilities = useCapabilities();
   const membersQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members'), { limit: 100 }) });
   const meQuery = useQuery({ queryKey: ['member-me', projectId], queryFn: () => api.get<'MemberResponse'>(projectPath(projectId, '/members/me')) });
-  const tasksQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) });
+  const tasksQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) });
   const requirementsQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) });
   const invitationsQuery = useQuery({ queryKey: ['invitations', projectId], queryFn: () => api.get<'InvitationListResponse'>(projectPath(projectId, '/invitations')), enabled: project.myRole === 'owner' });
   const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);

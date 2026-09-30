@@ -39,7 +39,7 @@ function bundleToMarkdown(bundle: JsonObject): string {
 
   const sections: Array<[string, string]> = [
     ['材料及当前版本', 'materials'],
-    ['已确认要求集', 'requirementSets'],
+    ['要求集及确认状态', 'requirementSets'],
     ['任务', 'tasks'],
     ['评分标准版本', 'rubricVersions'],
     ['团队决策', 'decisions'],
@@ -98,7 +98,7 @@ export function ExportPage() {
     {bundle && <>
       <SectionCard title="服务端汇总" detail={`生成于 ${readString(bundle.generatedAt) ?? '服务端未提供时间'}`} action={<button className="button button-quiet button-small" onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw size={14} />{query.isFetching ? '刷新中' : '刷新数据'}</button>}>
         <div className="export-summary-grid">{[
-          ['材料', 'materials'], ['要求集', 'requirementSets'], ['任务', 'tasks'], ['评分版本', 'rubricVersions'], ['决策', 'decisions'], ['贡献记录', 'contributions'], ['资源声明', 'resources'], ['过程事件', 'events'],
+          ['材料', 'materials'], ['要求集及状态', 'requirementSets'], ['任务', 'tasks'], ['评分版本', 'rubricVersions'], ['决策', 'decisions'], ['贡献记录', 'contributions'], ['资源声明', 'resources'], ['过程事件', 'events'],
         ].map(([label, key]) => <div className="export-summary-item" key={key}><span>{label}</span><strong>{asArray(bundle[key]).length}</strong></div>)}</div>
         <div className="button-row"><button className="button button-primary" onClick={() => downloadFile(`${baseName}-成果说明.md`, markdown, 'text/markdown')}><Download size={15} />下载 Markdown</button><button className="button button-quiet" onClick={() => downloadFile(`${baseName}-服务端汇总.json`, JSON.stringify(bundle, null, 2), 'application/json')}><FileJson2 size={15} />下载 JSON 原始数据</button><button className="button button-quiet" onClick={() => setShowPreview((value) => !value)}>{showPreview ? '收起预览' : '预览 Markdown'}</button></div>
         {showPreview && <pre className="export-preview">{markdown}</pre>}

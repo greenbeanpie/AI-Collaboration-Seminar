@@ -1,24 +1,33 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { ArrowUpRight, WifiOff } from 'lucide-react';
 import { useCapabilities, useSession } from './auth';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { CreateProjectPage } from './pages/CreateProjectPage';
-import { AcceptInvitationPage } from './pages/AcceptInvitationPage';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
-import { ProjectOverviewPage } from './pages/ProjectOverviewPage';
-import { AiWorkspacePage, RehearsalsPage, RequirementsPage, ReviewsPage, SourcesPage } from './pages/PlaceholderPages';
-import { TasksPage } from './pages/TasksPage';
-import { MaterialsPage } from './pages/MaterialsPage';
-import { TeamPage } from './pages/TeamPage';
-import { ProjectSettingsPage } from './pages/ProjectSettingsPage';
-import { ExportPage } from './pages/ExportPage';
-import { LedgerPage } from './pages/LedgerPage';
 import { ErrorNotice, Spinner } from './components/ui';
+
+const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
+const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectPage })));
+const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage').then((module) => ({ default: module.AcceptInvitationPage })));
+const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage').then((module) => ({ default: module.ProjectOverviewPage })));
+const SourcesPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.SourcesPage })));
+const RequirementsPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.RequirementsPage })));
+const TasksPage = lazy(() => import('./pages/TasksPage').then((module) => ({ default: module.TasksPage })));
+const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((module) => ({ default: module.MaterialsPage })));
+const AiWorkspacePage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.AiWorkspacePage })));
+const ReviewsPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.ReviewsPage })));
+const RehearsalsPage = lazy(() => import('./pages/PlaceholderPages').then((module) => ({ default: module.RehearsalsPage })));
+const TeamPage = lazy(() => import('./pages/TeamPage').then((module) => ({ default: module.TeamPage })));
+const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ default: module.LedgerPage })));
+const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));
+const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ default: module.ExportPage })));
+
+function RouteLoading() {
+  return <main className="center-screen"><Spinner label="正在打开工作区" /></main>;
+}
 
 function Landing() {
   const session = useSession();
@@ -74,7 +83,7 @@ function useStateOnline(): boolean {
 export default function App() {
   return <>
     <PwaStatus />
-    <Routes>
+    <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
@@ -97,6 +106,6 @@ export default function App() {
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></Suspense>
   </>;
 }

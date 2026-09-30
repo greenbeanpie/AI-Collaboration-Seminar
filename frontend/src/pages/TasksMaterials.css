@@ -116,6 +116,7 @@
 .tm-editor-content .tiptap:focus-visible { outline: 2px solid #8cb29a; outline-offset: 5px; }
 .tm-editor-footer { display: flex; justify-content: space-between; gap: 15px; padding: 10px 18px; border-top: 1px solid var(--tm-line); color: var(--tm-muted); font-size: 11px; }
 .tm-inline-notice { padding: 12px 14px; border: 1px solid #e8d7ab; border-radius: 10px; background: #fffaf0; color: #74551b; font-size: 12px; line-height: 1.6; }
+.tm-inline-error { border-color: #efc9cf; background: #fff5f6; color: #a34150; }
 .tm-draft-recovery { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 13px 15px; border: 1px solid #d4e4d5; border-radius: 12px; background: #f3f8f2; color: #385b43; font-size: 12px; }
 .tm-draft-recovery > div { display: grid; gap: 3px; }
 .tm-draft-recovery strong { font-size: 13px; }

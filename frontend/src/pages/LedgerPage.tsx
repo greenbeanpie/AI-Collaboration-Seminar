@@ -9,7 +9,7 @@ import { ErrorNotice, EmptyState, Field, PageHeading, SectionCard, Spinner, Stat
 export function LedgerPage() {
   const { projectId, project } = useProject();
   const queryClient = useQueryClient();
-  const eventsQuery = useQuery({ queryKey: ['events', projectId], queryFn: () => listAllItems<'EventListResponse'>(projectPath(projectId, '/events'), { limit: 100 }) });
+  const eventsQuery = useQuery({ queryKey: ['events', projectId], queryFn: () => listAllItems<'EventListResponse'>(projectPath(projectId, '/events'), { limit: 100 }, { requireNextCursor: true }) });
   const decisionsQuery = useQuery({ queryKey: ['decisions', projectId], queryFn: () => api.get<'DecisionListResponse'>(projectPath(projectId, '/decisions')) });
   const contributionsQuery = useQuery({ queryKey: ['contributions', projectId], queryFn: () => api.get<'ContributionListResponse'>(projectPath(projectId, '/contributions')) });
   const resourcesQuery = useQuery({ queryKey: ['resources', projectId], queryFn: () => api.get<'ResourceListResponse'>(projectPath(projectId, '/resources')) });

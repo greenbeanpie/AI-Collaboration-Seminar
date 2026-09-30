@@ -17,7 +17,7 @@ export async function loadCursorPages<T>(loadPage: (cursor?: string) => Promise<
 
   for (let pageNumber = 0; pageNumber < 1000; pageNumber += 1) {
     const page = await loadPage(cursor);
-    if (!page || !Array.isArray(page.items)) throw new Error('服务端列表响应缺少记录数组，无法确认完整结果。');
+    if (!page || !Array.isArray(page.items) || !('nextCursor' in page) || (page.nextCursor !== null && typeof page.nextCursor !== 'string')) throw new Error('服务端列表响应缺少分页字段，无法确认完整结果。');
     items.push(...page.items);
     if (!page.nextCursor) return items;
     if (seenCursors.has(page.nextCursor)) throw new Error('服务端返回了重复分页游标，已停止加载以避免遗漏记录。');

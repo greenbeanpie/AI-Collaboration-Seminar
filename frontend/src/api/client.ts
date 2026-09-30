@@ -109,7 +109,11 @@ export const api = {
 
 type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Items } ? Items : never;
 
-export async function listAllItems<Name extends SchemaName>(path: string, query: RequestOptions['query'] = {}): Promise<ItemsOf<Name>> {
+export async function listAllItems<Name extends SchemaName>(
+  path: string,
+  query: RequestOptions['query'] = {},
+  options: { requireNextCursor?: boolean } = {},
+): Promise<ItemsOf<Name>> {
   const all: unknown[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
@@ -119,6 +123,12 @@ export async function listAllItems<Name extends SchemaName>(path: string, query:
     if (!page || typeof page !== 'object' || !('items' in page) || !Array.isArray(page.items)) {
       throw new ApiError(200, {
         error: { code: 'INVALID_PAGINATION', message: '服务端列表响应缺少 items 字段。', retryable: false },
+        requestId: makeRequestId(),
+      });
+    }
+    if (options.requireNextCursor && !('nextCursor' in page)) {
+      throw new ApiError(200, {
+        error: { code: 'INVALID_PAGINATION', message: '游标分页响应缺少 nextCursor 字段，无法确认列表是否完整。', retryable: false },
         requestId: makeRequestId(),
       });
     }
