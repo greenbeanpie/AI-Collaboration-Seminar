@@ -3,6 +3,7 @@ node_modules/
 
 # build output
 dist/
+*.tsbuildinfo
 
 # wrangler / cloudflare local state and secrets
 .wrangler/
@@ -12,6 +13,8 @@ dist/
 
 # test & coverage
 coverage/
+test-results/
+playwright-report/
 
 # logs
 *.log

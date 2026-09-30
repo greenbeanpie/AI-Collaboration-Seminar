@@ -8,6 +8,8 @@
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
     "test:backend": "npm test --prefix backend",
     "build": "npm run build --prefix frontend",
-    "verify:integration": "node scripts/verify-integration.mjs"
+    "verify:integration": "node scripts/verify-integration.mjs",
+    "verify:worker": "node scripts/verify-worker.mjs",
+    "test:frontend": "npm test --prefix frontend"
   }
 }
