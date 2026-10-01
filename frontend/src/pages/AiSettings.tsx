@@ -13,8 +13,10 @@ const modelSlots: ModelSlot[] = [...purposes, 'unified'];
 const labels = { unified: '统一模型', textEconomy: '文本与要求提取', visionEconomy: '图片与 OCR', review: '预审与答辩' };
 type Model = ProviderOptions & { model: string; apiUrl: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; maxOutputTokens: number; supportsJson: boolean; supportsVision: boolean; pricePerMTokens: [number, number] | null };
 type Config = Record<ModelSlot, Model> & { routingMode: 'advanced' | 'unified' };
+type TokenLimits = { routingMode: Config['routingMode']; values: Partial<Record<ModelSlot, number>> };
 type Report = { passed: boolean; configVersion: number; checks: { name: string; passed: boolean; detail: string }[] };
 const blank = (): Config => ({ routingMode: 'unified', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: p === 'visionEconomy', pricePerMTokens: null }])) }) as Config;
+const tokenLimits = (config: Partial<Config>): TokenLimits => ({ routingMode: config.routingMode ?? 'advanced', values: Object.fromEntries(modelSlots.flatMap(p => typeof config[p]?.maxOutputTokens === 'number' ? [[p, config[p]!.maxOutputTokens]] : [])) });
 
 export function AiSettings() {
   const qc = useQueryClient();
@@ -25,6 +27,7 @@ export function AiSettings() {
   const [reports, setReports] = useState<Partial<Record<Purpose, Report>>>({});
   const [version, setVersion] = useState(0);
   const [savedEnabled, setSavedEnabled] = useState(false);
+  const [savedTokenLimits, setSavedTokenLimits] = useState<TokenLimits>(() => tokenLimits({}));
   const [ready, setReady] = useState(false);
   const [dirty, setDirty] = useState(true);
   const [edited, setEdited] = useState(false);
@@ -60,7 +63,7 @@ export function AiSettings() {
       hasSavedUnified.current = Boolean(data.config.unified);
       unifiedEdited.current = false;
     }
-    setVersion(data.version); setSavedEnabled(data.enabled); setReady(true); setReports({});
+    setVersion(data.version); setSavedEnabled(data.enabled); setSavedTokenLimits(tokenLimits(data.config)); setReady(true); setReports({});
     setMessage(preserveDraft ? '已读取配置版本，编辑中的表单已保留，尚未保存。' : data.enabled ? '当前 AI 已启用。' : '当前 AI 未启用。');
   }
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -101,12 +104,13 @@ export function AiSettings() {
     if (!ready) throw new Error('请先成功读取已保存配置，再保存修改。');
     const slots = config.routingMode === 'unified' ? ['unified'] as const : purposes;
     const errors = slots.flatMap(p => providerOptionErrors(config[p]).map(detail => `${labels[p]}：${detail}`));
+    for (const p of slots) if (!Number.isInteger(config[p].maxOutputTokens) || config[p].maxOutputTokens < 1 || config[p].maxOutputTokens > 32768) errors.push(`${labels[p]}输出上限必须为 1–32768 的整数 token`);
     if (errors.length) throw new Error(`配置未保存：${errors.join('；')}`);
     // Do not materialize an untouched optional legacy slot just by opening the UI.
     const { unified, ...advanced } = config;
     const includeUnified = config.routingMode === 'unified' || hasSavedUnified.current || unifiedEdited.current;
     const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
-    setVersion(data.version); setSavedEnabled(data.enabled); setDirty(false); setEdited(false); setReports({});
+    setVersion(data.version); setSavedEnabled(data.enabled); setSavedTokenLimits(tokenLimits(includeUnified ? config : advanced)); setDirty(false); setEdited(false); setReports({});
     hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
     setConfig(c => ({ ...c, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
     setMessage(activate ? 'AI 已启用，可继续真实业务测试。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
@@ -135,6 +139,14 @@ export function AiSettings() {
       <p className="muted">已保存配置 v{version} · AI {savedEnabled ? '已启用' : '未启用'}{dirty ? ' · 表单修改尚未保存' : ''}</p>
       <Field label="模型路由模式"><select className="input" disabled={busy || !ready} value={config.routingMode} onChange={e => { draftRevision.current++; setConfig(c => ({ ...c, routingMode: e.target.value as Config['routingMode'] })); setDirty(true); setEdited(true); setReports({}); }}><option value="unified">统一模型（推荐）</option><option value="advanced">高级：按用途配置</option></select></Field>
       <p className="muted">统一模式让提取、评价、拆解、分配和对话使用同一模型配置；高级配置草稿会保留。切换模式后需保存并重新测试。模型不支持图片时，图片任务会明确失败，不会自动改用其他端点。</p>
+      <fieldset className="ai-model-settings" disabled={busy || !ready || !access}>
+        <legend>全局输出 token 上限</legend>
+        <p className="muted">系统级设置，影响所有项目。统一模式共用一个上限；高级模式按用途分别设置。单位是每次请求的输出 token，不是累计用量额度，也不保证正文能输出相同数量；部分模型的思考 token 同样占用输出预算。</p>
+        <p data-testid="saved-token-limits">已保存 v{version}：{version ? (savedTokenLimits.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => `${labels[p]} ${savedTokenLimits.values[p] ?? '未配置'} token / 次`).join('；') : '尚无已保存上限'} · AI {savedEnabled ? '已启用' : '未启用'}</p>
+        {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => <Field key={p} label={`${labels[p]}最大输出 token`} hint="每次请求，1–32768 整数；供应商或模型可能有更低的技术上限。"><input className="input" type="number" min="1" max="32768" step="1" value={config[p].maxOutputTokens} onChange={e => edit(p, { maxOutputTokens: Number(e.target.value) })} /></Field>)}
+        <p className="muted">修改的是表单草稿，需点击下方“保存配置”。保存并启用后用于后续任务，不改写已冻结的旧配置版本；更改上限沿用现有停用、测试与启用流程。</p>
+        <p className="muted">累计费用预算单独在各项目的“项目设置 → AI 预算”中管理，单位为美元（USD）。本系统没有全局累计 token 额度；输入长度按字符限制，并发与重试保护仍独立保留。</p>
+      </fieldset>
       {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；文本功能可在文本与评价测试通过后启用。</p>}
       {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready}><legend>{labels[p]}</legend>
         <Field label={`${labels[p]}供应商`} hint="选择预设只填入建议地址和模型；不会启用 AI 或发出请求。自定义保留现有兼容接口。"><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
@@ -149,7 +161,6 @@ export function AiSettings() {
         <details><summary>常用参数与调用上限</summary>
           <Field label={`${labels[p]} temperature`} hint={caps.temperature ? '0–2；留空不发送。通常与 top_p 二选一。' : preset === 'gemini' ? '按官方建议使用默认采样，请留空。' : '此模型/思考模式不支持；请留空。'}><input className="input" type="number" min="0" max="2" step="0.1" value={config[p].temperature ?? ''} onChange={e => edit(p, { temperature: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
           <Field label={`${labels[p]} top_p`} hint={caps.topP ? `${caps.minTopP}–1；留空不发送。` : preset === 'gemini' ? '按官方建议使用默认采样，请留空。' : '此模型/思考模式未核实支持；请留空。'}><input className="input" type="number" min={caps.minTopP} max="1" step="0.01" value={config[p].topP ?? ''} onChange={e => edit(p, { topP: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
-          <Field label={`${labels[p]}最大输出 token`} hint="1–32768，含义以供应商协议为准；不等于实际费用上限。"><input className="input" type="number" min="1" max="32768" value={config[p].maxOutputTokens} onChange={e => edit(p, { maxOutputTokens: Number(e.target.value) })} /></Field>
           <Field label={`${labels[p]}超时（毫秒）`}><input className="input" type="number" min="1000" max="600000" step="1000" value={config[p].timeoutMs} onChange={e => edit(p, { timeoutMs: Number(e.target.value) })} /></Field>
           <Field label={`${labels[p]}最大输入字符`}><input className="input" type="number" min="1" value={config[p].maxInputChars} onChange={e => edit(p, { maxInputChars: Number(e.target.value) })} /></Field>
           <label><input type="checkbox" checked={config[p].supportsVision} onChange={e => edit(p, { supportsVision: e.target.checked })} /> 声明模型支持图片输入（仍需探测）</label>

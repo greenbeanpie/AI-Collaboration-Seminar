@@ -199,6 +199,64 @@ it('loads sanitized unified config and retains draft on optimistic version confl
 const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
 
+it('prominent unified output limit retains the saved value and inactive purpose limits until explicitly saved', async () => {
+  const persisted = { ...savedConfig, unified: { ...savedModel, maxOutputTokens: 9876 }, textEconomy: { ...savedModel, maxOutputTokens: 2100 }, visionEconomy: { ...savedModel, maxOutputTokens: 3200 }, review: { ...savedModel, maxOutputTokens: 4300 } };
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 11, enabled: true, config: persisted } }));
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ expectedVersion: 11, unified: { maxOutputTokens: 12345, apiKey: '', keyConfigured: true }, textEconomy: { maxOutputTokens: 2100 }, visionEconomy: { maxOutputTokens: 3200 }, review: { maxOutputTokens: 4300 } });
+    expect(body).not.toHaveProperty('enabled');
+    return new Response(JSON.stringify({ data: { version: 12, enabled: false } }));
+  });
+  vi.stubGlobal('fetch', mock); await setup(true, false);
+  const limits = screen.getByRole('group', { name: '全局输出 token 上限' });
+  const input = within(limits).getByLabelText(/统一模型最大输出 token/);
+  expect(input).toHaveValue(9876); expect(input).toHaveAttribute('min', '1'); expect(input).toHaveAttribute('max', '32768'); expect(input).toHaveAttribute('step', '1');
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v11：统一模型 9876 token / 次');
+  fireEvent.change(input, { target: { value: '12345' } });
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 9876 token / 次');
+  expect(mock).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v12：统一模型 12345 token / 次');
+  expect(mock).toHaveBeenCalledTimes(2);
+  expect(within(limits).getByText(/累计费用预算/)).toHaveTextContent('美元（USD）');
+  expect(within(limits).getByText(/单位是每次请求/)).toHaveTextContent('思考 token');
+});
+
+it('advanced output limits remain independent across routing-mode changes without materializing an untouched unified slot', async () => {
+  const persisted = { textEconomy: { ...savedModel, maxOutputTokens: 1024 }, visionEconomy: { ...savedModel, maxOutputTokens: 8192 }, review: { ...savedModel, maxOutputTokens: 16384 } };
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 8, enabled: false, config: persisted } }));
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ routingMode: 'advanced', expectedVersion: 8, textEconomy: { maxOutputTokens: 1024 }, visionEconomy: { maxOutputTokens: 8192 }, review: { maxOutputTokens: 32768 } });
+    expect(body).not.toHaveProperty('unified');
+    return new Response(JSON.stringify({ data: { version: 9, enabled: false } }));
+  });
+  vi.stubGlobal('fetch', mock); await setup(true, false);
+  expect(screen.getByLabelText(/文本与要求提取最大输出 token/)).toHaveValue(1024);
+  expect(screen.getByLabelText(/图片与 OCR最大输出 token/)).toHaveValue(8192);
+  fireEvent.change(screen.getByLabelText(/预审与答辩最大输出 token/), { target: { value: '32768' } });
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('预审与答辩 16384 token / 次');
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
+  expect(screen.getByLabelText(/预审与答辩最大输出 token/)).toHaveValue(32768);
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(mock).toHaveBeenCalledTimes(2);
+});
+
+it.each(['0', '32769', '1.5'])('rejects invalid output token limit %s without saving or running a model probe', async value => {
+  const mock = vi.fn(async () => new Response(JSON.stringify({ data: { version: 4, enabled: true, config: savedConfig } })));
+  vi.stubGlobal('fetch', mock); await setup(true, false);
+  fireEvent.change(screen.getByLabelText(/统一模型最大输出 token/), { target: { value } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByRole('alert');
+  expect(screen.getByRole('alert')).toHaveTextContent('输出上限必须为 1–32768 的整数 token');
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 1500 token / 次');
+  expect(mock).toHaveBeenCalledOnce();
+});
+
 it('unchanged save preserves enabled state without requiring or making a connection probe', async () => {
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 4, enabled: true, config: savedConfig } }));
