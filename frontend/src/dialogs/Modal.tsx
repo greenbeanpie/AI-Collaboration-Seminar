@@ -31,4 +31,3 @@ export function Modal({ title, children, onClose, descriptionId }: { title: stri
   }, []);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={title} aria-describedby={descriptionId}><div className="modal-head"><h2>{title}</h2><button className="icon-button" aria-label="关闭" onClick={onClose}>×</button></div>{children}</section></div>;
 }
-
