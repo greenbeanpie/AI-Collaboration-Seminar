@@ -1,4 +1,5 @@
 import './notifications/notifications.css';
+import './dialogs/dialog-service';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

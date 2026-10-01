@@ -1,3 +1,4 @@
+import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -77,6 +78,7 @@ export function MaterialsPage() {
   const accountId = session.data?.id ?? '';
   const [online, setOnline] = useState(() => navigator.onLine);
   const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
+  const dialogs = usePageDialogs(`${accountId}:${projectId}:${activeMaterialId ?? ""}`);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newKind, setNewKind] = useState('document');
@@ -228,11 +230,11 @@ export function MaterialsPage() {
     editor.setEditable(Boolean(material && detailReady && !saving && !conflict && !recoveryDraft), false);
   }, [activeMaterialId, conflict, editor, material, recoveryDraft, saving]);
 
-  const selectMaterial = (materialId: string) => {
+  const selectMaterial = async (materialId: string) => {
     const leavingDraftMessage = draftPersisted
       ? '当前材料有未保存的编辑，已写入本机草稿。切换材料？'
       : '浏览器未能写入本机草稿；切换后当前编辑可能丢失。仍要切换材料吗？';
-    if (dirty && activeMaterialId !== materialId && !window.confirm(leavingDraftMessage)) return;
+    if (dirty && activeMaterialId !== materialId && !await dialogs.confirm(leavingDraftMessage)) return;
     setActiveMaterialId(materialId);
     setSelectedVersionId(null);
     setConflict(null);
@@ -252,9 +254,9 @@ export function MaterialsPage() {
     if (online && needsReconnectConfirmationRef.current) setReconnectConfirmation(true);
   };
 
-  const discardDraft = () => {
+  const discardDraft = async () => {
     if (!activeMaterialId || !accountId) return;
-    if (!window.confirm('确定放弃这份本机草稿吗？此操作不会修改服务端版本。')) return;
+    if (!await dialogs.confirm('确定放弃这份本机草稿吗？此操作不会修改服务端版本。')) return;
     const removed = removeDraft(accountId, projectId, activeMaterialId);
     setDraftPersisted(removed);
     setDraftStorageWarning(!removed);
@@ -275,7 +277,7 @@ export function MaterialsPage() {
     const doc = docOverride ?? editor.getJSON() as Record<string, unknown>;
     const markdown = docToMarkdown(doc);
     if (needsReconnectConfirmationRef.current) {
-      if (!window.confirm('这份材料包含离线期间编辑的内容。确认后会将该本机草稿保存为新的服务端版本。')) return;
+      if (!await dialogs.confirm('这份材料包含离线期间编辑的内容。确认后会将该本机草稿保存为新的服务端版本。')) return;
       needsReconnectConfirmationRef.current = false;
       setReconnectConfirmation(false);
       const saved = saveDraft(accountId, projectId, activeMaterialId, { doc, baseRevision: expectedRevision, needsReconnectConfirmation: false } satisfies LocalDraft);
@@ -428,13 +430,14 @@ export function MaterialsPage() {
                 <button type="button" aria-label="有序列表" title="有序列表" onClick={() => editor?.chain().focus().toggleOrderedList().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><ListOrdered size={15} /></button>
                 <span className="tm-toolbar-divider" />
                 <button type="button" aria-label="插入表格" title="插入 3 × 3 表格" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Table2 size={15} /></button>
-                <button type="button" aria-label="设置链接" title="设置链接" onClick={() => {
+                <button type="button" aria-label="设置链接" title="设置链接" onClick={async () => {
                   if (!editor) return;
                   const existing = editor.getAttributes('link').href as string | undefined;
-                  const href = window.prompt('输入完整网址（仅 http、https 或 mailto 链接）', existing ?? 'https://');
-                  if (href === null) return;
-                  if (!href.trim()) editor.chain().focus().unsetLink().run();
-                  else editor.chain().focus().setLink({ href }).run();
+                  const selection = { from: editor.state.selection.from, to: editor.state.selection.to };
+                  const href = await dialogs.prompt('输入完整网址（仅 http、https 或 mailto 链接）', existing ?? 'https://');
+                  if (href === null || editor.isDestroyed) return;
+                  if (!href.trim()) editor.chain().focus().setTextSelection(selection).unsetLink().run();
+                  else editor.chain().focus().setTextSelection(selection).setLink({ href }).run();
                 }} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Link2 size={15} /></button>
               </div>
               <div className="tm-editor-content">

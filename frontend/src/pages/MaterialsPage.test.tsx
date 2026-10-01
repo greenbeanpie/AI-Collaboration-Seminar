@@ -1,11 +1,12 @@
+import { cancelPageDialog } from '../dialogs/dialog-service';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MaterialsPage } from './MaterialsPage';
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'project-1' }) }));
 vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'account-1' } }) }));
-afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async()=>{cancelPageDialog();}); cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
 function renderMaterial() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
@@ -45,4 +46,14 @@ it('persists the submitted copy again when another tab cleared the draft before 
   expect(screen.getByRole('button', { name: '保存新版本' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '按 r2 重试保存' })).toBeDisabled();
   expect(screen.getByText(/^服务端当前版本 r2 ·/)).toBeInTheDocument();
+});
+it('canceling discard keeps the local draft and approval removes only that local draft',async()=>{
+ const key='buwei:draft:account-1:project-1:material-1';const draft={savedAt:'2026-09-30T00:00:00Z',value:{doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'保留草稿'}]}]},baseRevision:1,needsReconnectConfirmation:false}};
+ localStorage.setItem(key,JSON.stringify(draft));renderMaterial();fireEvent.click(await screen.findByRole('button',{name:'放弃草稿'}));
+ let dialog=await screen.findByRole('dialog');expect(dialog).toHaveTextContent('此操作不会修改服务端版本');fireEvent.click(within(dialog).getByRole('button',{name:'取消'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect(JSON.parse(localStorage.getItem(key)!)).toEqual(draft);
+ fireEvent.click(screen.getByRole('button',{name:'放弃草稿'}));dialog=await screen.findByRole('dialog');fireEvent.click(within(dialog).getByRole('button',{name:'确定'}));await waitFor(()=>expect(localStorage.getItem(key)).toBeNull());expect(screen.getByText('内容与服务端版本一致')).toBeInTheDocument();
+});
+it('link input is an in-page prompt; cancellation retains the document and default value',async()=>{
+ renderMaterial();await waitFor(()=>expect(screen.getByLabelText('材料正文编辑器')).toHaveAttribute('contenteditable','true'));fireEvent.click(screen.getByRole('button',{name:'设置链接'}));
+ const dialog=await screen.findByRole('dialog');expect(within(dialog).getByRole('textbox')).toHaveValue('https://');fireEvent.change(within(dialog).getByRole('textbox'),{target:{value:'https://example.test'}});fireEvent.click(within(dialog).getByRole('button',{name:'取消'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect(screen.getByText('内容与服务端版本一致')).toBeInTheDocument();
 });

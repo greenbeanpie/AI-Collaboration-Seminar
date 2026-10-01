@@ -1,3 +1,4 @@
+import { cancelPageDialog } from '../dialogs/dialog-service';
 import { cleanup,fireEvent,render,screen,waitFor,within,act } from '@testing-library/react';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter,Routes,Route,createMemoryRouter,RouterProvider,NavLink } from 'react-router-dom';
@@ -8,7 +9,8 @@ import { SettingsDirtyContext } from './settings-dirty';
 const user={id:'fixture',username:'alice',displayName:'Alice',email:null,isAdmin:false,role:'user'};
 const profile={revision:0,searchable:false,aiUseAllowed:false,bio:'',major:'',specialties:'',preferredRoles:'',visibility:{bio:false,major:false,specialties:false,preferredRoles:false}};
 const response=(data:unknown)=>Response.json({data,requestId:'test'});
-afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+afterEach(async()=>{await act(async()=>{cancelPageDialog();});cleanup();vi.unstubAllGlobals();});
+async function answer(name: '确定' | '取消') { const dialog=await screen.findByRole('dialog'); await act(async()=>{fireEvent.click(within(dialog).getByRole('button', { name }));}); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); }
 function setup(path='/app/profile',dirty=vi.fn()) {const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});client.setQueryData(['session'],user);render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><SettingsDirtyContext.Provider value={dirty}><Routes><Route path="/app/profile" element={<PersonalProfilePage/>}/><Route path="/app/people" element={<ProfileSearchPage/>}/><Route path="/app/people/:username" element={<PublicProfilePage/>}/></Routes></SettingsDirtyContext.Provider></MemoryRouter></QueryClientProvider>);return dirty;}
 it('keeps private edits out of public preview, saves visibility with revision and dirty guard',async()=>{
  let saved:unknown;vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{if(init?.method==='PUT'){saved=JSON.parse(init.body);return response({...profile,...saved as object,revision:1});}return response(profile);}));const dirty=setup();
@@ -42,15 +44,13 @@ it('opens the saved personal homepage in read mode and enters an explicit live M
 });
 it('canceling dirty edits requires confirmation and never saves a discarded draft', async () => {
  const fetch = vi.fn(async () => response({ ...profile, major: 'Saved major' })); vi.stubGlobal('fetch', fetch);
- const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
  setup(); fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }));
  fireEvent.change(screen.getByLabelText('专业'), { target: { value: 'Unsaved major' } });
  fireEvent.click(screen.getByRole('button', { name: '取消编辑' }));
- expect(screen.getByLabelText('专业')).toHaveValue('Unsaved major');
- confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: '取消编辑' }));
+ await answer('取消'); expect(screen.getByLabelText('专业')).toHaveValue('Unsaved major');
+ fireEvent.click(screen.getByRole('button', { name: '取消编辑' })); await answer('确定');
  expect(screen.getByRole('button', { name: '编辑资料' })).toBeInTheDocument();
  expect(screen.getByText('Saved major')).toBeInTheDocument(); expect(fetch).toHaveBeenCalledTimes(1);
- confirm.mockRestore();
 });
 it('one save returns to read mode, keeps the saved Markdown and suppresses repeated submissions', async () => {
  let writes = 0;
@@ -70,7 +70,6 @@ it('one save returns to read mode, keeps the saved Markdown and suppresses repea
 
 it('the independent profile route preserves edits when Back is canceled and supports confirmed Back/Forward', async () => {
  vi.stubGlobal('fetch', vi.fn(async () => response(profile)));
- const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); client.setQueryData(['session'], user);
  const router = createMemoryRouter([
   { path: '/app/profile', element: <><NavLink to="/app/settings">设置</NavLink><SettingsEditGuard><PersonalProfilePage/></SettingsEditGuard></> },
@@ -80,11 +79,10 @@ it('the independent profile route preserves edits when Back is canceled and supp
  fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }));
  fireEvent.change(screen.getByLabelText('专业'), { target: { value: 'Keep my draft' } });
  await act(() => router.navigate(-1));
- expect(confirm).toHaveBeenCalledOnce(); expect(router.state.location.pathname).toBe('/app/profile');
+ await answer('取消'); expect(router.state.location.pathname).toBe('/app/profile');
  expect(screen.getByLabelText('专业')).toHaveValue('Keep my draft');
- confirm.mockReturnValue(true); await act(() => router.navigate(-1));
+ await act(() => router.navigate(-1)); await answer('确定');
  expect(screen.getByText('Settings destination')).toBeInTheDocument();
  await act(() => router.navigate(1)); await screen.findByRole('button', { name: '编辑资料' });
  expect(screen.queryByRole('textbox')).toBeNull(); expect(screen.queryByText('Keep my draft')).toBeNull();
- confirm.mockRestore();
 });

@@ -1,3 +1,5 @@
+import { confirmPage } from '../dialogs/dialog-service';
+import type { SettingsLeaveRequest } from '../dialogs/settings-leave';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { useSession } from '../auth';
@@ -15,8 +17,11 @@ export function SettingsEditGuard({ children }: { children: ReactNode }) {
     currentLocation.pathname + currentLocation.search + currentLocation.hash !== nextLocation.pathname + nextLocation.search + nextLocation.hash);
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
-    if (window.confirm('设置有尚未保存的编辑。确定放弃这些编辑并离开吗？')) blocker.proceed();
-    else blocker.reset();
+    const controller = new AbortController();
+    void confirmPage('设置有尚未保存的编辑。确定放弃这些编辑并离开吗？', { signal: controller.signal }).then(confirmed => {
+      if (!controller.signal.aborted) { if (confirmed) blocker.proceed(); else blocker.reset(); }
+    });
+    return () => controller.abort();
   }, [blocker]);
   useEffect(() => {
     if (!dirty) return;
@@ -29,15 +34,20 @@ export function SettingsEditGuard({ children }: { children: ReactNode }) {
   }, [dirty]);
   useEffect(() => {
     let pendingEdits: Set<string> | null = null;
+    const controller = new AbortController();
     const beforeLeave = (event: Event) => {
       if (!edits.current.size) return;
-      if (!window.confirm('设置有尚未保存的编辑。确定放弃这些编辑并退出登录吗？')) { event.preventDefault(); return; }
-      pendingEdits = new Set(edits.current); edits.current.clear(); setDirty(false);
+      const waitUntil = (event as CustomEvent<SettingsLeaveRequest>).detail?.waitUntil;
+      if (!waitUntil) { event.preventDefault(); return; }
+      waitUntil(confirmPage('设置有尚未保存的编辑。确定放弃这些编辑并退出登录吗？', { signal: controller.signal }).then(confirmed => {
+        if (!confirmed || controller.signal.aborted) return false;
+        pendingEdits = new Set(edits.current); edits.current.clear(); setDirty(false); return true;
+      }));
     };
     const failed = () => { if (pendingEdits) { edits.current = pendingEdits; pendingEdits = null; setDirty(edits.current.size > 0); } };
     window.addEventListener('settings-before-leave', beforeLeave);
     window.addEventListener('settings-leave-failed', failed);
-    return () => { window.removeEventListener('settings-before-leave', beforeLeave); window.removeEventListener('settings-leave-failed', failed); };
+    return () => { controller.abort(); window.removeEventListener('settings-before-leave', beforeLeave); window.removeEventListener('settings-leave-failed', failed); };
   }, []);
   return <SettingsDirtyContext.Provider value={reportDirty}>{children}</SettingsDirtyContext.Provider>;
 }

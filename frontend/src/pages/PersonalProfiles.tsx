@@ -1,3 +1,4 @@
+import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Pencil } from 'lucide-react';
@@ -20,6 +21,7 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
 }
 export function PersonalProfilePage() {
   const session = useSession();
+  const dialogs = usePageDialogs(session.data?.id);
   const [saved, setSaved] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile | null>(null);
   const [editing, setEditing] = useState(false);
@@ -55,17 +57,19 @@ export function PersonalProfilePage() {
   }
 
   async function reload() {
-    if (lock.current || (dirty && !window.confirm('重新读取将放弃当前未保存修改，是否继续？'))) return;
-    lock.current = true; setBusy(true); setError(null);
+    if (lock.current) return;
+    lock.current = true;
     try {
+      if (dirty && !await dialogs.confirm('重新读取将放弃当前未保存修改，是否继续？')) return;
+      setBusy(true); setError(null);
       const profile = await api.get<'PersonalProfileResponse'>('/auth/personal-profile');
       setSaved(profile); setDraft(profile); setEditing(false); setNotice('');
     } catch (error) { setError(error); }
     finally { lock.current = false; setBusy(false); setLoading(false); }
   }
 
-  function cancelEditing() {
-    if (dirty && !window.confirm('有尚未保存的资料编辑。确定放弃这些编辑吗？')) return;
+  async function cancelEditing() {
+    if (dirty && !await dialogs.confirm('有尚未保存的资料编辑。确定放弃这些编辑吗？')) return;
     setDraft(saved); setEditing(false); setError(null); setNotice('');
   }
 
