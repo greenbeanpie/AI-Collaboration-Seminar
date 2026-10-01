@@ -17,6 +17,7 @@ import { registerProjectRoutes } from './api/projects';
 import { registerMemberRoutes } from './api/members';
 import { registerInvitationRoutes } from './api/invitations';
 import { registerSourceRoutes } from './api/sources';
+import { registerSourceProcessingRoutes } from './api/source-processing';
 import { registerRequirementRoutes } from './api/requirements';
 import { registerJobRoutes } from './api/jobs';
 import { registerTaskRoutes } from './api/tasks';
@@ -45,7 +46,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:jobs(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:jobs(?:\/|$)|projects\/[^/]+\/(?:sources|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -77,6 +78,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerMemberRoutes(app);
   registerInvitationRoutes(app);
   registerSourceRoutes(app);
+  registerSourceProcessingRoutes(app);
   registerRequirementRoutes(app);
   registerJobRoutes(app);
   registerTaskRoutes(app);

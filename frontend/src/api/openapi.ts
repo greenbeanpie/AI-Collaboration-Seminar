@@ -1470,6 +1470,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看正文、要求提取与文件总结的独立状态 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sourceId: string;
+                    sourceVersionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 处理状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SourceProcessingResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 单独生成或重试文件总结（不重复上传、不重新 OCR） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sourceId: string;
+                    sourceVersionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedSummaryRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 总结已排队 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SourceSummaryStartResponse"];
+                    };
+                };
+                /** @description 正文未就绪或总结状态已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/requirement-sets": {
         parameters: {
             query?: never;
@@ -5889,6 +5984,47 @@ export interface components {
                 remaining: number;
                 /** Format: uuid */
                 jobId: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SourceProcessingResponse: {
+            data: {
+                /** @enum {string} */
+                textStatus: "pending" | "processing" | "waiting_input" | "ready" | "failed";
+                /** @enum {string} */
+                requirementsStatus: "pending" | "processing" | "ready" | "failed";
+                requirementsError: string | null;
+                /** @enum {string} */
+                summaryStatus: "pending" | "queued" | "running" | "ready" | "failed" | "cancelled";
+                summary: {
+                    title: string;
+                    summary: string;
+                    keyPoints: string[];
+                    citations: {
+                        /** Format: uuid */
+                        fragmentId: string;
+                        pageNumber: number | null;
+                        quote: string;
+                    }[];
+                    /** @default [] */
+                    caveats: string[];
+                } | null;
+                summaryError: string | null;
+                /** Format: uuid */
+                summaryJobId: string | null;
+                summaryRevision: number;
+                coveredChars: number | null;
+                totalChars: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SourceSummaryStartResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                revision: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

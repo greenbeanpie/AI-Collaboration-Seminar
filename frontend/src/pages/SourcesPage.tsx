@@ -1,4 +1,5 @@
 import { SourceFullText } from './SourceFullText';
+import { SourceProcessingCard } from './SourceProcessingCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -106,11 +107,12 @@ function SourceJobProgress({
     }
     lastUpdatedAt.current = query.dataUpdatedAt;
     onUpdate(job.jobId, job.status);
-    if (job.status === 'succeeded' && notifiedStatus.current !== job.status) {
+    if (terminalStatuses.has(job.status) && notifiedStatus.current !== job.status) {
       notifiedStatus.current = job.status;
       void queryClient.invalidateQueries({ queryKey: ['requirementSets', projectId] });
       void queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
       void queryClient.invalidateQueries({ queryKey: ['sourceVersion', projectId, tracked.sourceId, tracked.sourceVersionId] });
+      void queryClient.invalidateQueries({ queryKey: ['sourceProcessing', projectId, tracked.sourceId, tracked.sourceVersionId] });
     }
   }, [job, query.dataUpdatedAt, onUpdate, projectId, queryClient, tracked.sourceId, tracked.sourceVersionId]);
 
@@ -121,7 +123,7 @@ function SourceJobProgress({
   const error = job?.error && typeof job.error === 'object' ? job.error as { code?: string; message?: string } : null;
   const progress = job?.status === 'waiting_input'
     ? remaining > 0 ? `有 ${remaining} 页需要补充页面图。` : '等待补充资料。'
-    : job?.status === 'succeeded' ? '处理完成，已生成要求草稿。'
+    : job?.status === 'succeeded' ? result.count === 0 ? '正文处理完成，未发现明确的项目要求。文件总结可在下方单独查看。' : '处理完成，已生成要求草稿。'
     : job?.status === 'failed' ? `${error?.message ?? '来源处理失败。'}${error?.code ? `（${error.code}）` : ''}`
         : job?.status === 'cancelled' ? '任务已取消。' : '正在解析来源并生成要求草稿。';
 
@@ -195,6 +197,7 @@ export function SourceRecord({
         <p>创建于 {new Date(source.createdAt).toLocaleString('zh-CN')}</p>
       </div>
       <div className="sources-record-actions">
+        {currentFileId && <a className="button button-quiet button-small" href={projectPath(projectId, `/files/${encodeURIComponent(currentFileId)}/content`)} target="_blank" rel="noopener noreferrer">查看原文件</a>}
         <button className="button button-quiet button-small" type="button" disabled={!source.currentVersionId || !capability?.features.aiEnabled || isBusy || Boolean(activeJob)} onClick={() => source.currentVersionId && onParse(source, source.currentVersionId)}>
           {isBusy ? <><LoaderCircle className="spin" size={14} /> 正在发起</> : activeJob ? '已有任务处理中' : !capability?.features.aiEnabled ? 'AI 未启用' : waitingForImages ? '重新读取文本层并提取要求' : version?.status === 'ready' ? '重新解析' : '开始解析'}
         </button>
@@ -216,6 +219,7 @@ export function SourceRecord({
     {displayedJob && <SourceJobProgress projectId={projectId} tracked={displayedJob} capability={capability} onUpdate={onJobUpdate} onRetryJob={onRetryJob} onScan={onScan} scanning={scanJobId === displayedJob.jobId} />}
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
     {version && <SourceFullText sourceId={source.sourceId} sourceVersionId={version.sourceVersionId} />}
+    {version && <SourceProcessingCard projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} aiEnabled={Boolean(capability?.features.aiEnabled)} active={Boolean(activeJob)} />}
     {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。引用展示原句与页码，可展开下方全文片段核对原文件。</p>}
   </article>;
 }

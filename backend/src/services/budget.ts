@@ -17,6 +17,7 @@ const KIND_TO_AI_PURPOSE: Record<string, AiPurpose> = {
   agent_run: 'textEconomy',
   assignment_suggest: 'textEconomy',
   requirement_extract: 'textEconomy',
+  source_summary: 'textEconomy',
   parse_source: 'textEconomy',
   ocr_pages: 'visionEconomy',
   review_run: 'review',

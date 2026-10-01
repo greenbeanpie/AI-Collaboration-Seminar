@@ -7,6 +7,7 @@ import type { DataOf } from '../api/types';
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p' }) }));
 vi.mock('./SourceFullText', () => ({ SourceFullText: () => null }));
+vi.mock('./SourceProcessingCard', () => ({ SourceProcessingCard: () => null }));
 vi.mock('../api/client', async (original) => ({ ...await original<typeof import('../api/client')>(), api: { get: vi.fn().mockResolvedValue({ jobId: 'j', status: 'waiting_input', result: { needsImages: 1 } }) } }));
 afterEach(cleanup);
 

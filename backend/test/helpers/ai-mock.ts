@@ -48,6 +48,11 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
       );
     }
     const systemText = String(first ?? '');
+    if (systemText.includes('总结用户导入的文件')) {
+      const source = String(body.messages?.[1]?.content ?? '');
+      const match = source.match(/\[frag:([0-9a-f-]+) 页(\d+|-)\]\n([^\n]+)/);
+      return openAiResponse(JSON.stringify({ title: '资料总结', summary: '资料介绍了提交事项和相关规则。', keyPoints: ['核对原文中的提交事项'], citations: [{ fragmentId: match?.[1], pageNumber: match?.[2] === '-' ? null : Number(match?.[2]), quote: (match?.[3] ?? '').slice(0,100) }], caveats: [] }));
+    }
     if (systemText.includes('团队分工建议助手')) {
       const userContent = String(body.messages?.[1]?.content ?? '{}');
       const input = JSON.parse(userContent) as {

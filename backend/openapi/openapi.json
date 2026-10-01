@@ -1676,6 +1676,202 @@
           "requestId"
         ]
       },
+      "SourceProcessingResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "textStatus": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "processing",
+                  "waiting_input",
+                  "ready",
+                  "failed"
+                ]
+              },
+              "requirementsStatus": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "processing",
+                  "ready",
+                  "failed"
+                ]
+              },
+              "requirementsError": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "summaryStatus": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "queued",
+                  "running",
+                  "ready",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "summary": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 6000
+                  },
+                  "keyPoints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "minItems": 1,
+                    "maxItems": 15
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fragmentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "pageNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": [
+                        "fragmentId",
+                        "pageNumber",
+                        "quote"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  },
+                  "caveats": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 1000
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "title",
+                  "summary",
+                  "keyPoints",
+                  "citations"
+                ]
+              },
+              "summaryError": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "summaryJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "summaryRevision": {
+                "type": "integer"
+              },
+              "coveredChars": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "totalChars": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "textStatus",
+              "requirementsStatus",
+              "requirementsError",
+              "summaryStatus",
+              "summary",
+              "summaryError",
+              "summaryJobId",
+              "summaryRevision",
+              "coveredChars",
+              "totalChars"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SourceSummaryStartResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "jobId",
+              "revision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "RequirementSetListResponse": {
         "type": "object",
         "properties": {
@@ -8703,6 +8899,134 @@
           },
           "400": {
             "description": "页码/文件不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "查看正文、要求提取与文件总结的独立状态",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceVersionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "处理状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceProcessingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/summary": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "单独生成或重试文件总结（不重复上传、不重新 OCR）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceVersionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedSummaryRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "expectedSummaryRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "总结已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceSummaryStartResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "正文未就绪或总结状态已变化",
             "content": {
               "application/json": {
                 "schema": {

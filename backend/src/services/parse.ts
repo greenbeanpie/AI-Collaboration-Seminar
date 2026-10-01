@@ -12,6 +12,7 @@ import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
 import { aiJsonCall } from './agent';
 import { extractPdfText, hasExtractableText } from './pdf-text';
+import { maybeEnqueueSourceSummary, runSourceSummary, setSourceStage } from './source-summary';
 
 const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-page-v1';
@@ -122,6 +123,7 @@ async function loadVersion(env: Env, sourceVersionId: string): Promise<SourceVer
 export async function extractSourceVersionText(env: Env, sourceVersionId: string): Promise<{ needsImages: number }> {
   const version = await loadVersion(env, sourceVersionId);
   if (version.status === 'ready') return { needsImages: 0 };
+  await setSourceStage(env, version.id, 'text', 'processing');
   await env.DB.prepare("UPDATE source_versions SET status = 'processing' WHERE id = ?1").bind(version.id).run();
 
   let perPage: Array<{ pageNumber: number; text: string }> = [];
@@ -368,7 +370,7 @@ const requirementOutputSchema = z.object({
           .max(10),
       }),
     )
-    .min(1)
+    .min(0)
     .max(50),
 });
 
@@ -436,6 +438,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
     '"title":"≤200字","detail":"≤2000字","dueDate":"YYYY-MM-DD或null","duePrecision":"date|datetime|unknown",',
     '"citations":[{"fragmentId":"片段ID","pageNumber":页码或null,"quote":"逐字原文"}]}]}',
     '每条要求至少一个 citation；quote 必须逐字取自对应片段；缺失信息不要编造。',
+    '如果原文不是比赛通知或没有明确的项目/参赛要求，返回 {"requirements":[]}，不要将教程操作步骤伪造为参赛要求。',
   ].join('\n');
 
   const messages = [
@@ -520,19 +523,25 @@ async function withAiSlot<T>(
 export async function runParseJob(env: Env, jobId: string): Promise<{ status: string }> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
+  if ((JSON.parse(job.input_json) as { operation?: string }).operation === 'source.summary') return runSourceSummary(env, jobId);
   const input = JSON.parse(job.input_json) as ParseJobInput;
 
   if (input.phase === 'extract') {
     try {
       const { needsImages } = await extractSourceVersionText(env, input.sourceVersionId);
       if (needsImages > 0) {
+        await setSourceStage(env, input.sourceVersionId, 'text', 'waiting_input');
         await waitJobInput(env, jobId, { needsImages, message: '存在扫描页，请上传页面图片' });
         return { status: 'waiting_input' };
       }
+      await setSourceStage(env, input.sourceVersionId, 'text', 'ready');
+      await maybeEnqueueSourceSummary(env, input.sourceVersionId);
+      await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing');
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
         extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
       );
       await succeedJob(env, jobId, result);
+      await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready');
       return { status: 'succeeded' };
     } catch (err) {
       await handleJobError(env, jobId, input.sourceVersionId, err);
@@ -551,10 +560,14 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     }
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
+    await setSourceStage(env, input.sourceVersionId, 'text', 'ready');
+    await maybeEnqueueSourceSummary(env, input.sourceVersionId);
+    await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing');
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
       extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
     );
     await succeedJob(env, jobId, result);
+    await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready');
     return { status: 'succeeded' };
   } catch (err) {
     await handleJobError(env, jobId, input.sourceVersionId, err);
@@ -566,6 +579,8 @@ async function handleJobError(env: Env, jobId: string, sourceVersionId: string, 
   const code = err instanceof AppError ? err.code : 'INTERNAL';
   const message = err instanceof Error ? err.message : String(err);
   const details = err instanceof AppError ? err.details : undefined;
+  const processing = await env.DB.prepare('SELECT text_status FROM source_processing WHERE source_version_id = ?1').bind(sourceVersionId).first<{ text_status: string }>();
+  await setSourceStage(env, sourceVersionId, processing?.text_status === 'ready' ? 'requirements' : 'text', 'failed', message.slice(0,500));
   await env.DB.prepare("UPDATE source_versions SET status = 'failed', parse_error = ?2 WHERE id = ?1")
     .bind(sourceVersionId, message.slice(0, 500))
     .run();

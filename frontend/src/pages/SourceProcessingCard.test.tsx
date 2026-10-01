@@ -1,0 +1,35 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SourceProcessingCard } from './SourceProcessingCard';
+import { api } from '../api/client';
+import type { DataOf } from '../api/types';
+
+vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), api:{ get:vi.fn(),post:vi.fn() } }));
+afterEach(cleanup);
+const base: DataOf<'SourceProcessingResponse'> = { textStatus:'ready',requirementsStatus:'ready',requirementsError:null,summaryStatus:'pending',summary:null,summaryError:null,summaryJobId:null,summaryRevision:0,coveredChars:null,totalChars:null };
+function view(state=base,aiEnabled=true) {
+  vi.mocked(api.get).mockResolvedValue(state as never);
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><SourceProcessingCard projectId="p" sourceId="s" versionId="v" aiEnabled={aiEnabled} active={false}/></QueryClientProvider>);
+}
+describe('independent file summary UI',()=>{
+  it('does not invent a summary before generation and explains the separate AI action',async()=>{
+    view(); expect(await screen.findByRole('button',{name:'生成文件总结'})).toBeEnabled();
+    expect(screen.getByText(/可能产生 AI 用量/)).toBeInTheDocument(); expect(api.post).not.toHaveBeenCalled();
+  });
+  it('shows a grounded completed summary, citations and an explicit partial-coverage warning',async()=>{
+    view({...base,summaryStatus:'ready',summary:{title:'文件内容',summary:'实际模型总结',keyPoints:['关键事项'],citations:[{fragmentId:'f',pageNumber:4,quote:'原文引句'}],caveats:['信息需核对']},coveredChars:50,totalChars:100});
+    expect(await screen.findByText('实际模型总结')).toBeInTheDocument(); expect(screen.getByText(/50\/100/)).toBeInTheDocument(); expect(screen.getByText('第 4 页：原文引句')).toBeInTheDocument();
+  });
+  it('retains failure and successful requirements, sends only version metadata, and never reports fake success',async()=>{
+    view({...base,summaryStatus:'failed',summaryRevision:3,summaryError:'供应商暂不可用'});
+    vi.mocked(api.post).mockRejectedValue(new Error('网络连接失败'));
+    fireEvent.click(await screen.findByRole('button',{name:'单独重试文件总结'}));
+    await waitFor(()=>expect(api.post).toHaveBeenCalledWith('/api/v1/projects/p/sources/s/versions/v/processing/summary',{expectedSummaryRevision:3},expect.objectContaining({idempotencyKey:expect.any(String)})));
+    expect(await screen.findByText('网络连接失败')).toBeInTheDocument(); expect(screen.getByText('供应商暂不可用')).toBeInTheDocument(); expect(screen.queryByText('实际模型总结')).not.toBeInTheDocument();
+  });
+  it('does not allow AI-disabled or incomplete sources to generate summary',async()=>{
+    view({...base,textStatus:'waiting_input'},false);
+    expect(await screen.findByRole('button',{name:'生成文件总结'})).toBeDisabled(); expect(api.post).not.toHaveBeenCalled();
+  });
+});
