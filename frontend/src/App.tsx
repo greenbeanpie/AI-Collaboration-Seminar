@@ -1,3 +1,6 @@
+import { NotificationRuntime } from './notifications/NotificationRuntime';
+import { NotificationSettings } from './notifications/NotificationSettings';
+import { InstallationSettings } from './notifications/InstallationSettings';
 import { SettingsLayout } from './pages/SettingsLayout';
 import { SettingsEditGuard } from './pages/SettingsEditGuard';
 import { ThemeSelector } from './components/ThemeSelector';
@@ -72,7 +75,12 @@ function ProtectedApp() {
   if (session.isLoading) return <main className="center-screen"><Spinner label="正在检查账户" /></main>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
   if (!session.data) return <Navigate to="/login" replace />;
-  return <AppShell user={session.data}>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
+  return <AppShell user={session.data}><NotificationRuntime userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
+}
+
+function AccountNotifications() {
+  const session = useSession();
+  return session.data ? <NotificationSettings userId={session.data.id}/> : null;
 }
 
 function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
@@ -111,6 +119,8 @@ export default function App() {
           <Route path="profile" element={<AccountSettingsPage section="profile" />} />
           <Route path="privacy" element={<Navigate to="/app/profile" replace />} />
           <Route path="security" element={<AccountSettingsPage section="security" />} />
+          <Route path="installation" element={<InstallationSettings/>} />
+          <Route path="notifications" element={<AccountNotifications/>} />
           <Route path="appearance" element={<ThemeSelector variant="field" />} />
           <Route element={<SystemAdminOnly />}>
             <Route path="accounts" element={<AdminAccountsPage />} />

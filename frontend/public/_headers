@@ -11,3 +11,6 @@
   Cache-Control: no-cache
 /guest/index.html
   Cache-Control: no-cache
+
+/push-worker.js
+  Cache-Control: no-cache

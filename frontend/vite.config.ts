@@ -31,7 +31,7 @@ export default defineConfig({
         skipWaiting: false,
         clientsClaim: true,
         navigateFallbackDenylist: [/^\/api(?:\/.*)?$/],
-        importScripts: ['/asset-compat.js'],
+        importScripts: ['/asset-compat.js', '/push-worker.js'],
         runtimeCaching: [{
           urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[^/]+-[A-Za-z0-9_-]+\.(?:js|css)$/.test(url.pathname),
           handler: 'CacheFirst',

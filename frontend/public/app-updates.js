@@ -119,8 +119,8 @@ export class UpdateController {
 export class NotificationHistory {
   constructor() { this.items = []; this.scope = ''; }
   reset(scope) { if (scope !== this.scope) { this.scope = scope; this.items = []; } }
-  add(id, text, kind = 'info', action = '') {
-    const item = { id, text, kind, action, time: Date.now(), unread: true };
+  add(id, text, kind = 'info', action = '', metadata = {}) {
+    const item = { id, text, kind, action, time: Date.now(), unread: true, ...metadata };
     this.items = [item, ...this.items.filter(old => old.id !== id)].slice(0, 30);
     return item;
   }
@@ -150,6 +150,7 @@ export function mountUpdates() {
     document.documentElement.style.setProperty('--app-notification-height', `${host.getBoundingClientRect().height}px`);
   }).observe(host);
   const history = new NotificationHistory();
+  let inboxUrl = '/app/settings/notifications', inboxUnread = 0;
   let open = false, timer, remaining = 5000, started = 0, active = null, sequence = 0;
   const panelHistoryKey = `notifications-${Date.now()}`;
   const env = { sw: navigator.serviceWorker, enabled: !document.querySelector('script[src*="/@vite/client"]') && window.isSecureContext,
@@ -166,21 +167,30 @@ export function mountUpdates() {
     button.type = 'button';
     if (item.action === 'update' && controller.state === 'refresh') { button.textContent = '确认重新加载'; button.onclick = () => controller.apply(); return button; }
     if (item.action === 'update' && controller.state === 'ready') { button.textContent = '确认更新'; button.onclick = () => controller.apply(); }
+    else if (item.url || item.action === 'inbox') { button.textContent = '查看通知'; button.onclick = () => window.dispatchEvent(new CustomEvent('app-notification-open', { detail: { url: item.url || inboxUrl } })); }
     else if (item.action === 'install') { button.textContent = '安装到桌面'; button.onclick = () => window.dispatchEvent(new Event('app-install-request')); }
     else return null;
     return button;
   };
   function render() {
-    find('badge').textContent = history.items.some(item => item.unread) ? `(${history.items.filter(item => item.unread).length})` : '';
+    const unread = inboxUnread + history.items.filter(item => !item.remoteId && item.unread).length;
+    find('badge').textContent = unread ? `(${unread})` : '';
     find('entries').replaceChildren();
-    if (!history.items.length) find('entries').textContent = '暂无通知。仅保存当前页面会话的最近 30 条通知。';
-    for (const item of history.items) {
+    if (!history.items.length) find('entries').textContent = '暂无通知。账户通知历史可在设置的推送与通知页面查看。';
+    for (const item of history.items.filter(item => !item.dismissedAt)) {
       const entry = document.createElement('div'); entry.className = 'entry';
       const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = `${item.kind === 'error' ? '错误' : item.kind === 'success' ? '成功' : '提示'} · ${new Date(item.time).toLocaleTimeString()}`;
       const text = document.createElement('div'); text.textContent = item.text;
       entry.append(meta, text); const action = actionButton(item); if (action) entry.append(action);
+      if (item.remoteId) {
+        for (const state of item.unread ? ['read', 'dismiss'] : ['dismiss']) {
+          const button = document.createElement('button'); button.type = 'button'; button.textContent = state === 'read' ? '标记已读' : '收起提醒';
+          button.onclick = () => window.dispatchEvent(new CustomEvent('app-notification-state', { detail: { id: item.remoteId, action: state } })); entry.append(button);
+        }
+      }
       find('entries').append(entry);
     }
+    if (history.items.some(item => item.remoteId)) { const more = actionButton({ action: 'inbox' }); more.textContent = '完整通知历史与设置'; find('entries').append(more); }
   }
   function dismiss() { clearTimeout(timer); active = null; find('toast').hidden = true; }
   function resume() { clearTimeout(timer); started = Date.now(); timer = setTimeout(dismiss, remaining); }
@@ -211,7 +221,7 @@ export function mountUpdates() {
     // Same-URL entry: Back dismisses the panel without leaving an edited form.
     const previous = window.history.state ?? {};
     window.history.pushState({ ...previous, idx: typeof previous.idx === 'number' ? previous.idx + 1 : previous.idx, appNotificationPanel: panelHistoryKey }, '', location.href);
-    history.items.forEach(item => { item.unread = false; }); render(); find('history').hidden = false; find('bell').setAttribute('aria-expanded', 'true'); find('close').focus();
+    history.items.forEach(item => { if (!item.remoteId) item.unread = false; }); render(); find('history').hidden = false; find('bell').setAttribute('aria-expanded', 'true'); find('close').focus();
   };
   find('close').onclick = () => closePanel();
   root.addEventListener('keydown', event => { if (event.key === 'Escape' && open) { event.stopPropagation(); closePanel(); } });
@@ -231,10 +241,19 @@ export function mountUpdates() {
   window.addEventListener('online', () => notify('network', '网络已恢复，可以检查更新。'));
   window.addEventListener('app-notification-scope', event => {
     if (history.scope === event.detail) return;
-    history.reset(event.detail); dismiss(); closePanel(false);
+    history.reset(event.detail); inboxUnread = 0; dismiss(); closePanel(false);
     // System update readiness is not account content; expose the current action after a scope switch.
     if (['ready', 'refresh', 'downloading', 'applying'].includes(controller.state)) history.add('update', details[controller.state], 'info', 'update');
     window.dispatchEvent(new Event('app-install-status-request'));
+    render();
+  });
+  window.addEventListener('app-notification-inbox', event => {
+    const detail = event.detail;
+    if (!detail || !Array.isArray(detail.items)) return;
+    inboxUrl = typeof detail.url === 'string' ? detail.url : inboxUrl;
+    inboxUnread = Number.isSafeInteger(detail.unreadCount) ? detail.unreadCount : detail.items.filter(item => !item.readAt && !item.dismissedAt).length;
+    const remote = detail.items.filter(item => typeof item.id === 'string').map(item => ({ id: `server:${item.id}`, remoteId: item.id, text: `${item.title} ${item.body}`, kind: 'info', action: '', url: item.url, time: Date.parse(item.createdAt), unread: !item.readAt && !item.dismissedAt, dismissedAt: item.dismissedAt }));
+    history.items = [...remote, ...history.items.filter(item => !item.remoteId)].sort((a, b) => b.time - a.time).slice(0, 80);
     render();
   });
   window.addEventListener('app-notification', event => {
