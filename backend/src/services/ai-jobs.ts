@@ -4,6 +4,7 @@ import { runAgentJob } from './agent';
 import { runReviewJob } from './review';
 import { runRehearsalTurnJob } from './rehearsal';
 import { runAssignmentSuggestionJob } from './assignment';
+import { runCollaborationAiJob } from './collaboration-ai';
 
 /** AI 类任务的统一入口（AgentRunWorkflow 按 job.kind 路由到对应执行器） */
 export async function runAiJob(env: Env, jobId: string): Promise<void> {
@@ -11,6 +12,10 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
+      if (typeof JSON.parse(job.input_json).operation === 'string' && JSON.parse(job.input_json).operation.startsWith('collaboration.')) {
+        await runCollaborationAiJob(env, jobId);
+        return;
+      }
       await runAgentJob(env, jobId);
       return;
     case 'review_run':

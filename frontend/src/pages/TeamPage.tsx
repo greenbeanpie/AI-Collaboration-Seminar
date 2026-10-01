@@ -49,9 +49,10 @@ export function TeamPage() {
   const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
   const tasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
   const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
-  const pendingTasks = tasks.filter((task) => task.status !== 'done');
+  const pendingTasks = tasks.filter((task) => task.status !== 'done' && !task.lifecycleState);
   const assignmentTaskLimit = capabilities.data?.limits.assignmentSuggestionMaxTasks;
   const suggestionTasks = assignmentTaskLimit ? pendingTasks.slice(0, assignmentTaskLimit) : [];
+  const [majorValue, setMajorValue] = useState<string | null>(null);
   const [skillsValue, setSkillsValue] = useState<string | null>(null);
   const [hoursValue, setHoursValue] = useState<string | null>(null);
   const [maxUses, setMaxUses] = useState('');
@@ -68,6 +69,7 @@ export function TeamPage() {
 
   const saveProfile = useMutation({
     mutationFn: () => api.patch<'MemberResponse'>(projectPath(projectId, '/members/me'), {
+      major: (majorValue ?? meQuery.data?.major ?? '').trim(),
       skills: (skillsValue ?? (meQuery.data?.skills.join(', ') ?? '')).split(',').map((skill) => skill.trim()).filter(Boolean).slice(0, 10),
       hoursPerWeek: (hoursValue ?? (meQuery.data?.hoursPerWeek === null || meQuery.data?.hoursPerWeek === undefined ? '' : String(meQuery.data.hoursPerWeek))) === '' ? null : Number(hoursValue ?? meQuery.data?.hoursPerWeek),
     }),
@@ -168,7 +170,7 @@ export function TeamPage() {
       <SectionCard title="团队成员" detail="成员可维护自己的技能与每周可投入时间。">
         {members.length ? <div className="team-member-list">{members.map((member) => <div className="team-member" key={member.userId}>
           <span className="avatar">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>
-          <div className="team-member-main"><div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{member.role === 'owner' ? '负责人' : '成员'}</StatusPill></div><small>{member.email}</small><div className="chip-list">{member.skills.length ? member.skills.map((skill) => <span className="chip" key={skill}>{skill}</span>) : <span className="muted">尚未登记技能</span>}</div><small>{member.hoursPerWeek === null ? '每周投入时间待填写' : `每周约 ${member.hoursPerWeek} 小时`}</small></div>
+          <div className="team-member-main"><div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{member.role === 'owner' ? '负责人' : '成员'}</StatusPill></div><small>{member.email}</small><div className="chip-list">{member.skills.length ? member.skills.map((skill) => <span className="chip" key={skill}>{skill}</span>) : <span className="muted">尚未登记技能</span>}</div>{member.major && <small>专业方向：{member.major}</small>}<small>{member.hoursPerWeek === null ? '每周投入时间待填写' : `每周约 ${member.hoursPerWeek} 小时`}</small></div>
           {project.myRole === 'owner' && member.role !== 'owner' && <ConfirmButton className="icon-button" aria-label={`移除成员 ${member.displayName}`} disabled={removeMember.isPending} onClick={() => removeMember.mutate(member.userId)}><UserMinus size={17} /></ConfirmButton>}
         </div>)}</div> : <EmptyState title="暂无成员数据" detail="项目成员接口暂未返回记录。" />}
         {removeMember.error && <ErrorNotice error={removeMember.error} />}
@@ -178,6 +180,7 @@ export function TeamPage() {
       <SectionCard title="我的投入信息" detail="技能和可投入时间会用于分工建议；只有你可以修改自己的信息。">
         {me ? <form className="stack" onSubmit={(event) => { event.preventDefault(); saveProfile.mutate(); }}>
           <div className="profile-ident"><span className="avatar">{me.displayName.slice(0, 1).toLocaleUpperCase()}</span><div><strong>{me.displayName}</strong><small>{me.email}</small></div></div>
+          <Field label="专业方向（选填）" hint="本人自愿填写，供团队协作参考，不代表能力评估。"><input className="input" maxLength={120} value={majorValue ?? me?.major ?? ''} onChange={event => setMajorValue(event.target.value)} placeholder="例如：计算机科学、视觉设计" /></Field>
           <Field label="技能关键词" hint="用逗号分隔，最多 10 项，例如：前端开发、文案、演讲。"><textarea className="input textarea" rows={3} maxLength={400} value={profileSkills} onChange={(event) => setSkillsValue(event.target.value)} placeholder="填写你愿意贡献的技能" /></Field>
           <Field label="每周可投入小时" hint="允许 0–168 小时；留空表示尚未确认。"><input className="input" type="number" min="0" max="168" step="0.5" value={profileHours} onChange={(event) => setHoursValue(event.target.value)} placeholder="例如 6" /></Field>
           {saveProfile.error && <ErrorNotice error={saveProfile.error} />}
@@ -204,7 +207,7 @@ export function TeamPage() {
       {revokeInvitation.error && <ErrorNotice error={revokeInvitation.error} />}
     </SectionCard>}
 
-    <SectionCard title="AI 分工建议" detail="建议只供团队讨论。采用后逐条写回当前任务，负责人、状态和版本仍由后端校验。">
+    {project.myRole === 'owner' && <SectionCard title="AI 分工建议（普通任务）" detail="建议只供团队讨论。采用后逐条写回当前任务，负责人、状态和版本仍由后端校验。">
       {!capabilities.data ? <div className="callout">能力信息尚未加载，暂不能判断 AI 分工是否可用。</div> : !capabilities.data.features.aiEnabled ? <div className="notice notice-warn"><Lightbulb size={17} /><div className="notice-copy"><strong>后端 AI 当前未启用</strong><small>你仍可在任务页手动分配；此处不会生成模拟建议。</small></div></div> : <div className="assignment-controls">
         <Field label="参考要求集"><select className="input" value={assignmentRequirementSetId} onChange={(event) => { setAssignmentRequirementSetId(event.target.value); suggestionIntent.current = null; }}><option value="">不指定要求集</option>{requirements.filter((set) => set.status === 'confirmed').map((set: RequirementSet) => <option key={set.requirementSetId} value={set.requirementSetId}>已确认 · {set.requirementSetId.slice(0, 8)} · {set.requirements.length} 条</option>)}</select></Field>
         <button className="button button-primary" disabled={suggestion.isPending || !suggestionTasks.length || !members.length || Boolean(jobQuery.data && !['succeeded', 'failed', 'cancelled'].includes(jobQuery.data.status))} onClick={requestSuggestions}><Lightbulb size={16} />{suggestion.isPending ? '提交中…' : `为 ${suggestionTasks.length} 项未完成任务生成建议`}</button>
@@ -231,6 +234,6 @@ export function TeamPage() {
         return <div className="assignment-row" key={task.taskId}><div className="assignment-row-copy"><strong>{task.title}</strong><small>{assignment.reason || '服务端未提供理由'}</small><small>当前负责人：{getMemberName(task.assigneeId)}</small></div><Field label="建议负责人"><select className="input input-sm" value={selected} onChange={(event) => setChosenAssignments((current) => ({ ...current, [task.taskId]: event.target.value }))}><option value="">未分配</option>{members.map((member: Member) => <option key={member.userId} value={member.userId}>{member.displayName}</option>)}</select></Field><button className={`button ${applied ? 'button-quiet' : 'button-primary'} button-small`} disabled={applied || applyAssignment.isPending} onClick={() => applySuggestion(task, assignment, selected || null)}>{applied ? '已应用' : '确认并应用'}</button></div>;
       })}{assignmentResult.considerations.length > 0 && <div className="callout"><strong>建议中的注意事项</strong><ul>{assignmentResult.considerations.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}</div>}
       {applyAssignment.error && <ErrorNotice error={applyAssignment.error} />}
-    </SectionCard>
+    </SectionCard>}
   </div>;
 }

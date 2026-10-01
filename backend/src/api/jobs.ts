@@ -83,6 +83,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     if (job.status !== 'failed') throw invalidState('仅失败任务可重试');
     const input = JSON.parse(job.input_json) as Record<string, unknown>;
+    if (typeof input.operation === 'string' && input.operation.startsWith('collaboration.')) throw invalidState('协作任务请从当前任务重新发起，以重新核对版本与预算');
     const newJobId = newId();
     const now = nowIso();
     const reservedAiKind = new Set(['assignment_suggest', 'agent_run', 'review_run', 'rehearsal_turn']).has(job.kind);

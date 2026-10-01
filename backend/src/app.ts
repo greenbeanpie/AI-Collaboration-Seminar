@@ -1,3 +1,4 @@
+import { registerCollaborationRoutes } from './api/collaboration';
 import { registerSupportTicketRoutes } from './api/support-tickets';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from './env';
@@ -75,6 +76,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerRequirementRoutes(app);
   registerJobRoutes(app);
   registerTaskRoutes(app);
+  registerCollaborationRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerAgentRoutes(app);

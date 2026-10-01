@@ -723,6 +723,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        major?: string;
                         skills?: string[];
                         hoursPerWeek?: number | null;
                     };
@@ -2103,6 +2104,642 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["CommentResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /settings */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSettingsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 协作流程 /settings */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {string} */
+                        assignmentMode?: "manual" | "automatic";
+                        /** @enum {string} */
+                        evaluationMode?: "manual" | "automatic";
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSettingsResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /tasks */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 协作流程 /tasks */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        title: string;
+                        /** @default  */
+                        detail?: string;
+                        criteria: string;
+                        /** @default 1 */
+                        effortHours?: number;
+                        /**
+                         * Format: uuid
+                         * @default null
+                         */
+                        parentTaskId?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 协作流程 /tasks/{taskId} */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        title?: string;
+                        detail?: string;
+                        criteria?: string;
+                        effortHours?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /tasks/{taskId}/claim */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /tasks/{taskId}/assign */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** Format: uuid */
+                        assigneeId: string;
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /tasks/{taskId}/submissions */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSubmissionListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 协作流程 /tasks/{taskId}/submissions */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        body: string;
+                        /** @default [] */
+                        materialVersionIds?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSubmissionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /submissions/{submissionId}/decide */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    submissionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {string} */
+                        decision: "accept" | "improve" | "rework";
+                        feedback: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSubmissionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /proposals */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationProposalListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/proposals/{proposalId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /proposals/{proposalId}/apply */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    proposalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationApplyResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/decompose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /decompose */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        brief: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationJobResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /assign */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        taskIds: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationJobResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /submissions/{submissionId}/evaluate */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    submissionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationJobResponse"];
                     };
                 };
             };
@@ -4385,6 +5022,7 @@ export interface components {
                     displayName: string;
                     /** @enum {string} */
                     role: "owner" | "member";
+                    major: string;
                     skills: string[];
                     hoursPerWeek: number | null;
                     joinedAt: string;
@@ -4403,6 +5041,7 @@ export interface components {
                 displayName: string;
                 /** @enum {string} */
                 role: "owner" | "member";
+                major: string;
                 skills: string[];
                 hoursPerWeek: number | null;
                 joinedAt: string;
@@ -4745,6 +5384,7 @@ export interface components {
             data: {
                 /** Format: uuid */
                 taskId: string;
+                lifecycleState: string | null;
                 title: string;
                 detail: string;
                 /** Format: uuid */
@@ -4768,6 +5408,7 @@ export interface components {
                 items: {
                     /** Format: uuid */
                     taskId: string;
+                    lifecycleState: string | null;
                     title: string;
                     detail: string;
                     /** Format: uuid */
@@ -4821,6 +5462,233 @@ export interface components {
                     createdAt: string;
                 }[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationSettingsResponse: {
+            data: {
+                /** @enum {string} */
+                assignmentMode: "manual" | "automatic";
+                /** @enum {string} */
+                evaluationMode: "manual" | "automatic";
+                revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationTaskListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    taskId: string;
+                    title: string;
+                    detail: string;
+                    /** @enum {string} */
+                    status: "todo" | "doing" | "blocked" | "done";
+                    /** Format: uuid */
+                    assigneeId: string | null;
+                    revision: number;
+                    /** @enum {string} */
+                    lifecycleState: "open" | "in_progress" | "submitted" | "accepted" | "improve" | "rework";
+                    criteria: string;
+                    effortHours: number;
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    /** Format: uuid */
+                    currentSubmissionId: string | null;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationTaskResponse: {
+            data: {
+                /** Format: uuid */
+                taskId: string;
+                title: string;
+                detail: string;
+                /** @enum {string} */
+                status: "todo" | "doing" | "blocked" | "done";
+                /** Format: uuid */
+                assigneeId: string | null;
+                revision: number;
+                /** @enum {string} */
+                lifecycleState: "open" | "in_progress" | "submitted" | "accepted" | "improve" | "rework";
+                criteria: string;
+                effortHours: number;
+                /** Format: uuid */
+                parentTaskId: string | null;
+                /** Format: uuid */
+                currentSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationSubmissionListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    submissionId: string;
+                    /** Format: uuid */
+                    taskId: string;
+                    round: number;
+                    /** Format: uuid */
+                    submittedBy: string;
+                    body: string;
+                    materialVersionIds: string[];
+                    materialVersions?: {
+                        /** Format: uuid */
+                        versionId: string;
+                        /** Format: uuid */
+                        materialId: string;
+                        title: string;
+                        revision: number;
+                    }[];
+                    criteria: string;
+                    /** @enum {string} */
+                    status: "pending" | "evaluated" | "accept" | "improve" | "rework";
+                    /** @enum {string|null} */
+                    aiDecision: "accept" | "improve" | "rework" | null;
+                    aiFeedback: string | null;
+                    aiReport: {
+                        /** @enum {string} */
+                        decision: "accept" | "improve" | "rework";
+                        feedback: string;
+                        evidence: {
+                            /** Format: uuid */
+                            materialVersionId: string;
+                            quote: string;
+                        }[];
+                        limitations: string[];
+                        /** @enum {string} */
+                        coverage: "complete" | "needs_human";
+                        manualReviewReason?: string;
+                    } | null;
+                    /** @enum {string|null} */
+                    decision: "accept" | "improve" | "rework" | null;
+                    feedback: string | null;
+                    /** Format: uuid */
+                    evaluationJobId: string | null;
+                    evaluationAttempts: number;
+                    evaluationError?: string;
+                    revision: number;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationSubmissionResponse: {
+            data: {
+                /** Format: uuid */
+                submissionId: string;
+                /** Format: uuid */
+                taskId: string;
+                round: number;
+                /** Format: uuid */
+                submittedBy: string;
+                body: string;
+                materialVersionIds: string[];
+                materialVersions?: {
+                    /** Format: uuid */
+                    versionId: string;
+                    /** Format: uuid */
+                    materialId: string;
+                    title: string;
+                    revision: number;
+                }[];
+                criteria: string;
+                /** @enum {string} */
+                status: "pending" | "evaluated" | "accept" | "improve" | "rework";
+                /** @enum {string|null} */
+                aiDecision: "accept" | "improve" | "rework" | null;
+                aiFeedback: string | null;
+                aiReport: {
+                    /** @enum {string} */
+                    decision: "accept" | "improve" | "rework";
+                    feedback: string;
+                    evidence: {
+                        /** Format: uuid */
+                        materialVersionId: string;
+                        quote: string;
+                    }[];
+                    limitations: string[];
+                    /** @enum {string} */
+                    coverage: "complete" | "needs_human";
+                    manualReviewReason?: string;
+                } | null;
+                /** @enum {string|null} */
+                decision: "accept" | "improve" | "rework" | null;
+                feedback: string | null;
+                /** Format: uuid */
+                evaluationJobId: string | null;
+                evaluationAttempts: number;
+                evaluationError?: string;
+                revision: number;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationProposalListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    proposalId: string;
+                    /** @enum {string} */
+                    kind: "decompose" | "assign";
+                    payload: {
+                        brief?: string;
+                        tasks?: {
+                            title: string;
+                            /** @default  */
+                            detail: string;
+                            criteria: string;
+                            /** @default 1 */
+                            effortHours: number;
+                            /**
+                             * Format: uuid
+                             * @default null
+                             */
+                            parentTaskId: string | null;
+                        }[];
+                        assignments?: {
+                            /** Format: uuid */
+                            taskId: string;
+                            /** Format: uuid */
+                            assigneeId: string | null;
+                            expectedRevision: number;
+                            reason: string;
+                        }[];
+                        considerations?: string[];
+                    };
+                    /** @enum {string} */
+                    status: "pending" | "applied" | "stale";
+                    revision: number;
+                    createdAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationApplyResponse: {
+            data: {
+                applied: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationJobResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

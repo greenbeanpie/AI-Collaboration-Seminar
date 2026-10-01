@@ -13,6 +13,7 @@ const memberSchema = z.object({
   isAdmin: z.boolean(),
   displayName: z.string(),
   role: z.enum(['owner', 'member']),
+  major: z.string(),
   skills: z.array(z.string()),
   hoursPerWeek: z.number().nullable(),
   joinedAt: z.string(),
@@ -23,6 +24,7 @@ const memberRemoveResponse = apiEnvelope(z.object({ removed: z.boolean() }), 'Me
 const memberLeaveResponse = apiEnvelope(z.object({ left: z.boolean() }), 'MemberLeaveResponse');
 
 const patchMeBody = z.object({
+  major: z.string().max(120).optional(),
   skills: z.array(z.string().min(1).max(30)).max(10).optional(),
   hoursPerWeek: z.number().min(0).max(168).nullable().optional(),
 });
@@ -89,6 +91,7 @@ interface MemberRow {
   is_admin: number;
   display_name: string;
   role: 'owner' | 'member';
+  major: string;
   skills_json: string;
   hours_per_week: number | null;
   joined_at: string;
@@ -102,13 +105,14 @@ function toMember(row: MemberRow) {
     isAdmin: row.is_admin === 1,
     displayName: row.display_name,
     role: row.role,
+    major: row.major,
     skills: JSON.parse(row.skills_json) as string[],
     hoursPerWeek: row.hours_per_week,
     joinedAt: row.joined_at,
   };
 }
 
-const memberSelect = `SELECT pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.skills_json, pm.hours_per_week, pm.joined_at
+const memberSelect = `SELECT pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.major, pm.skills_json, pm.hours_per_week, pm.joined_at
   FROM project_members pm JOIN users u ON u.id = pm.user_id LEFT JOIN auth_accounts a ON a.user_id = u.id`;
 
 export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
@@ -148,7 +152,7 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     await c.env.DB.prepare(
       `UPDATE project_members
-       SET skills_json = COALESCE(?3, skills_json),
+       SET major = COALESCE(?6, major), skills_json = COALESCE(?3, skills_json),
            hours_per_week = CASE WHEN ?4 = 1 THEN ?5 ELSE hours_per_week END
        WHERE project_id = ?1 AND user_id = ?2`,
     )
@@ -158,6 +162,7 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
         body.skills === undefined ? null : JSON.stringify(body.skills),
         body.hoursPerWeek === undefined ? 0 : 1,
         body.hoursPerWeek ?? null,
+        body.major ?? null,
       )
       .run();
     const row = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id = ?1 AND pm.user_id = ?2`)

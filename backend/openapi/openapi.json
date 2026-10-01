@@ -747,6 +747,9 @@
                         "member"
                       ]
                     },
+                    "major": {
+                      "type": "string"
+                    },
                     "skills": {
                       "type": "array",
                       "items": {
@@ -770,6 +773,7 @@
                     "isAdmin",
                     "displayName",
                     "role",
+                    "major",
                     "skills",
                     "hoursPerWeek",
                     "joinedAt"
@@ -826,6 +830,9 @@
                   "member"
                 ]
               },
+              "major": {
+                "type": "string"
+              },
               "skills": {
                 "type": "array",
                 "items": {
@@ -849,6 +856,7 @@
               "isAdmin",
               "displayName",
               "role",
+              "major",
               "skills",
               "hoursPerWeek",
               "joinedAt"
@@ -2179,6 +2187,12 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "lifecycleState": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "title": {
                 "type": "string"
               },
@@ -2234,6 +2248,7 @@
             },
             "required": [
               "taskId",
+              "lifecycleState",
               "title",
               "detail",
               "assigneeId",
@@ -2270,6 +2285,12 @@
                     "taskId": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "lifecycleState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "title": {
                       "type": "string"
@@ -2326,6 +2347,7 @@
                   },
                   "required": [
                     "taskId",
+                    "lifecycleState",
                     "title",
                     "detail",
                     "assigneeId",
@@ -2481,6 +2503,916 @@
             "required": [
               "items",
               "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "assignmentMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "evaluationMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "assignmentMode",
+              "evaluationMode",
+              "revision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationTaskListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "todo",
+                        "doing",
+                        "blocked",
+                        "done"
+                      ]
+                    },
+                    "assigneeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "lifecycleState": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "submitted",
+                        "accepted",
+                        "improve",
+                        "rework"
+                      ]
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "title",
+                    "detail",
+                    "status",
+                    "assigneeId",
+                    "revision",
+                    "lifecycleState",
+                    "criteria",
+                    "effortHours",
+                    "parentTaskId",
+                    "currentSubmissionId",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationTaskResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "todo",
+                  "doing",
+                  "blocked",
+                  "done"
+                ]
+              },
+              "assigneeId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "lifecycleState": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "in_progress",
+                  "submitted",
+                  "accepted",
+                  "improve",
+                  "rework"
+                ]
+              },
+              "criteria": {
+                "type": "string"
+              },
+              "effortHours": {
+                "type": "number"
+              },
+              "parentTaskId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "currentSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "title",
+              "detail",
+              "status",
+              "assigneeId",
+              "revision",
+              "lifecycleState",
+              "criteria",
+              "effortHours",
+              "parentTaskId",
+              "currentSubmissionId",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationSubmissionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "submissionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "round": {
+                      "type": "number"
+                    },
+                    "submittedBy": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "body": {
+                      "type": "string"
+                    },
+                    "materialVersionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "materialVersions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "versionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "materialId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "revision": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "versionId",
+                          "materialId",
+                          "title",
+                          "revision"
+                        ]
+                      }
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "evaluated",
+                        "accept",
+                        "improve",
+                        "rework"
+                      ]
+                    },
+                    "aiDecision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accept",
+                        "improve",
+                        "rework",
+                        null
+                      ]
+                    },
+                    "aiFeedback": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "aiReport": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "decision": {
+                          "type": "string",
+                          "enum": [
+                            "accept",
+                            "improve",
+                            "rework"
+                          ]
+                        },
+                        "feedback": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "materialVersionId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "quote": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "materialVersionId",
+                              "quote"
+                            ]
+                          }
+                        },
+                        "limitations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "coverage": {
+                          "type": "string",
+                          "enum": [
+                            "complete",
+                            "needs_human"
+                          ]
+                        },
+                        "manualReviewReason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "decision",
+                        "feedback",
+                        "evidence",
+                        "limitations",
+                        "coverage"
+                      ]
+                    },
+                    "decision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accept",
+                        "improve",
+                        "rework",
+                        null
+                      ]
+                    },
+                    "feedback": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evaluationJobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "evaluationAttempts": {
+                      "type": "number"
+                    },
+                    "evaluationError": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "submissionId",
+                    "taskId",
+                    "round",
+                    "submittedBy",
+                    "body",
+                    "materialVersionIds",
+                    "criteria",
+                    "status",
+                    "aiDecision",
+                    "aiFeedback",
+                    "aiReport",
+                    "decision",
+                    "feedback",
+                    "evaluationJobId",
+                    "evaluationAttempts",
+                    "revision",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationSubmissionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "submissionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "round": {
+                "type": "number"
+              },
+              "submittedBy": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "body": {
+                "type": "string"
+              },
+              "materialVersionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "materialVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "materialId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "versionId",
+                    "materialId",
+                    "title",
+                    "revision"
+                  ]
+                }
+              },
+              "criteria": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "evaluated",
+                  "accept",
+                  "improve",
+                  "rework"
+                ]
+              },
+              "aiDecision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "accept",
+                  "improve",
+                  "rework",
+                  null
+                ]
+              },
+              "aiFeedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "aiReport": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "accept",
+                      "improve",
+                      "rework"
+                    ]
+                  },
+                  "feedback": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "materialVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "quote": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "materialVersionId",
+                        "quote"
+                      ]
+                    }
+                  },
+                  "limitations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "coverage": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "needs_human"
+                    ]
+                  },
+                  "manualReviewReason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "decision",
+                  "feedback",
+                  "evidence",
+                  "limitations",
+                  "coverage"
+                ]
+              },
+              "decision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "accept",
+                  "improve",
+                  "rework",
+                  null
+                ]
+              },
+              "feedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evaluationJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "evaluationAttempts": {
+                "type": "number"
+              },
+              "evaluationError": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "submissionId",
+              "taskId",
+              "round",
+              "submittedBy",
+              "body",
+              "materialVersionIds",
+              "criteria",
+              "status",
+              "aiDecision",
+              "aiFeedback",
+              "aiReport",
+              "decision",
+              "feedback",
+              "evaluationJobId",
+              "evaluationAttempts",
+              "revision",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationProposalListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "proposalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "decompose",
+                        "assign"
+                      ]
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "brief": {
+                          "type": "string"
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 4000,
+                                "default": ""
+                              },
+                              "criteria": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4000
+                              },
+                              "effortHours": {
+                                "type": "number",
+                                "minimum": 0.25,
+                                "maximum": 200,
+                                "default": 1
+                              },
+                              "parentTaskId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid",
+                                "default": null
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "criteria"
+                            ]
+                          }
+                        },
+                        "assignments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "assigneeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "expectedRevision": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "taskId",
+                              "assigneeId",
+                              "expectedRevision",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "considerations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "applied",
+                        "stale"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "proposalId",
+                    "kind",
+                    "payload",
+                    "status",
+                    "revision",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationApplyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "applied"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationJobResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "jobId"
             ]
           },
           "requestId": {
@@ -6051,6 +6983,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "major": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
                   "skills": {
                     "type": "array",
                     "items": {
@@ -7984,6 +8920,875 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommentListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/settings": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /settings",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /settings",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "assignmentMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  },
+                  "evaluationMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "default": ""
+                  },
+                  "criteria": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "effortHours": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 200,
+                    "default": 1
+                  },
+                  "parentTaskId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "title",
+                  "criteria"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}": {
+      "patch": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "criteria": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "effortHours": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/claim": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/claim",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assign": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/assign",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "assigneeId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "assigneeId",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/decide": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /submissions/{submissionId}/decide",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "submissionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "accept",
+                      "improve",
+                      "rework"
+                    ]
+                  },
+                  "feedback": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "decision",
+                  "feedback"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/proposals": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /proposals",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationProposalListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/proposals/{proposalId}/apply": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /proposals/{proposalId}/apply",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationApplyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/decompose": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /decompose",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "brief": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12000
+                  }
+                },
+                "required": [
+                  "brief"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationJobResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/assign": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /assign",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  }
+                },
+                "required": [
+                  "taskIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationJobResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/evaluate": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /submissions/{submissionId}/evaluate",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "submissionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationJobResponse"
                 }
               }
             }

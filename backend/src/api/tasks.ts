@@ -15,6 +15,7 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const taskSchema = z.object({
   taskId: z.string().uuid(),
+  lifecycleState: z.string().nullable(),
   title: z.string(),
   detail: z.string(),
   assigneeId: z.string().uuid().nullable(),
@@ -152,6 +153,7 @@ const commentListRoute = createRoute({
 
 interface TaskRow {
   id: string;
+  lifecycle_state: string | null;
   project_id: string;
   title: string;
   detail: string;
@@ -168,6 +170,7 @@ interface TaskRow {
 function toTask(r: TaskRow) {
   return {
     taskId: r.id,
+    lifecycleState: r.lifecycle_state,
     title: r.title,
     detail: r.detail,
     assigneeId: r.assignee_id,
@@ -274,6 +277,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(taskId, projectId)
       .first<TaskRow>();
     if (!current) throw notFound('任务不存在');
+    if (current.lifecycle_state) throw invalidState('协作任务必须使用协作流程接口，不能绕过提交与验收');
     if (current.revision !== body.expectedRevision) throw versionConflict(current.revision);
 
     const statusChanged = body.status !== undefined && body.status !== current.status;
@@ -288,7 +292,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
          requirement_id = CASE WHEN ?14 = 1 THEN ?8 ELSE requirement_id END,
          revision = revision + 1,
          updated_at = ?9
-       WHERE id = ?1 AND project_id = ?10 AND revision = ?11
+       WHERE id = ?1 AND project_id = ?10 AND revision = ?11 AND lifecycle_state IS NULL
          AND (?12 = 0 OR ?4 IS NULL OR EXISTS (
            SELECT 1 FROM project_members pm WHERE pm.project_id = ?10 AND pm.user_id = ?4
          ))
@@ -359,12 +363,13 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(taskId, projectId)
       .first<TaskRow>();
     if (!current) throw notFound('任务不存在');
+    if (current.lifecycle_state) throw invalidState('协作任务必须使用协作流程接口，不能绕过提交与验收');
     if (current.revision !== expectedRevision) throw versionConflict(current.revision);
 
     // 版本与成员资格都在同一 UPDATE 内复核，防止预读后并发改任务或移除成员。
     const updated = await c.env.DB.prepare(
       `UPDATE tasks SET assignee_id = ?3, revision = revision + 1, updated_at = ?4
-       WHERE id = ?1 AND project_id = ?2 AND revision = ?5
+       WHERE id = ?1 AND project_id = ?2 AND revision = ?5 AND lifecycle_state IS NULL
          AND (?3 IS NULL OR EXISTS (
            SELECT 1 FROM project_members pm WHERE pm.project_id = ?2 AND pm.user_id = ?3
          ))`,

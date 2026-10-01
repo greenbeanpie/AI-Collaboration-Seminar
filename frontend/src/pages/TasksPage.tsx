@@ -9,6 +9,7 @@ import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
 import { CommentsPanel } from './TasksMaterialsShared';
 import './TasksMaterials.css';
+import { CollaborationWorkspace } from './CollaborationWorkspace';
 
 type TaskListItem = DataOf<'TaskListResponse'>['items'][number];
 type MemberItem = DataOf<'MemberListResponse'>['items'][number];
@@ -216,7 +217,7 @@ export function TasksPage() {
 
   const memberNames = useMemo(() => new Map((membersQuery.data ?? []).map((member) => [member.userId, member.displayName])), [membersQuery.data]);
   const requirementNames = useMemo(() => new Map(requirements.map((requirement) => [requirement.requirementId, requirement.title])), [requirements]);
-  const tasks = tasksQuery.data ?? [];
+  const tasks = (tasksQuery.data ?? []).filter(task => !task.lifecycleState);
   const completed = tasks.filter((task) => task.status === 'done').length;
 
   return (
@@ -227,6 +228,8 @@ export function TasksPage() {
         detail="从真实项目服务读取任务；状态、负责人、截止日期和关联要求会留在项目记录中。"
         action={<button className="button button-primary" onClick={() => { setCreateDraft(emptyTaskDraft()); createTask.reset(); setShowCreate(true); }}><Plus size={16} />新建任务</button>}
       />
+
+      <CollaborationWorkspace />
 
       <section className="tm-task-summary" aria-label="任务概况">
         <div><span>当前筛选任务</span><strong>{tasksQuery.isLoading ? '—' : tasks.length}</strong></div>
