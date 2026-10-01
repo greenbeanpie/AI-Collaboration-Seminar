@@ -27,7 +27,7 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
         if (!active) return;
         settings = preferences;
         const fresh = feed.accept(page.items);
-        window.dispatchEvent(new CustomEvent('app-notification-inbox', { detail: { items: page.items, unreadCount: page.unreadCount, url: settingsUrl } }));
+        window.dispatchEvent(new CustomEvent('app-notification-inbox', { detail: { userId, items: page.items, nextCursor: page.nextCursor, unreadCount: page.unreadCount, url: settingsUrl } }));
         if (settings.inAppEnabled && fresh.length) window.dispatchEvent(new CustomEvent('app-notification', { detail: { id: 'inbox-new', text: fresh.length === 1 ? '收到新的更新，可在通知中心查看。' : `收到 ${fresh.length} 条新更新，可在通知中心查看。`, action: 'inbox' } }));
       } catch { /* Disconnected/auth errors are retried on reconnect; never replay history as toast. */ }
       finally { loading = false; }
@@ -39,8 +39,11 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
       void notificationRequest(`/notifications/${encodeURIComponent(detail.id)}/${detail.action}`, 'POST', {}, undefined, userId).then(refresh).catch(() => window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: 'error', text: '通知状态未能保存，请重试。' } })));
     };
     const open = (event: Event) => {
-      const url = safeNotificationUrl((event as CustomEvent<{ url: string }>).detail?.url, settingsUrl);
-      navigate(url);
+      const detail=(event as CustomEvent<{url:string;replace?:boolean}>).detail;
+      const url = safeNotificationUrl(detail?.url, settingsUrl);
+      window.dispatchEvent(new CustomEvent('app-notification-refresh',{detail:{userId}}));
+      refresh();
+      if(url!==window.location.pathname+window.location.search+window.location.hash)navigate(url,{replace:Boolean(detail?.replace)});
     };
     const received = (event: MessageEvent) => {
       if (event.data?.userId !== userId) return;

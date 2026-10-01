@@ -83,3 +83,14 @@ export async function subscribeDevice(userId: string, publicKey: string, request
   rememberDevice(userId, result.id);
   await notifyWorkerAccount(userId);
 }
+
+/** Canonical latest page, plus previously loaded older pages. Receipts are monotonic. */
+export function mergeNotificationPage(previous: NotificationItem[], page: NotificationPage, keepOlder = false): NotificationItem[] {
+ const old = new Map(previous.map(item => [item.id,item]));
+ const recent = page.items.map(item => ({...item,readAt:item.readAt??old.get(item.id)?.readAt??null,dismissedAt:item.dismissedAt??old.get(item.id)?.dismissedAt??null}));
+ const boundary = page.items.at(-1);
+ if (!keepOlder || !page.nextCursor || !boundary) return recent;
+ const ids = new Set(recent.map(item => item.id));
+ const older = previous.filter(item => !ids.has(item.id) && (item.createdAt<boundary.createdAt || (item.createdAt===boundary.createdAt && item.id<boundary.id)));
+ return [...recent,...older];
+}

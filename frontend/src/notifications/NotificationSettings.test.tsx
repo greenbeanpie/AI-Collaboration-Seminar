@@ -1,4 +1,4 @@
-import { fireEvent,render,screen,waitFor,cleanup } from '@testing-library/react';
+import { act,fireEvent,render,screen,waitFor,cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach,expect,it,vi } from 'vitest';
 import { NotificationSettings } from './NotificationSettings';
@@ -31,4 +31,30 @@ it('requests permission only from a click and prevents duplicate subscription su
 });
 it('keeps the prior preference on failed save and passes the starting account guard',async()=>{
  setup();const toggle=screen.getByRole('checkbox',{name:/网页顶部提醒/});await waitFor(()=>expect(toggle).toBeEnabled());request.mockImplementationOnce(async()=>{throw new Error('offline');});fireEvent.click(toggle);await screen.findByText('offline');expect(toggle).toBeChecked();expect(request).toHaveBeenCalledWith('/notifications/settings','PUT',{inAppEnabled:false},undefined,'account');
+});
+
+const testNotice={id:'831cab18-6eec-4738-a7bb-52f246e3b492',kind:'push_test',title:'通知推送测试',body:'单次测试摘要',url:'/app/settings/notifications',createdAt:'2026-10-01T12:28:24.136Z',readAt:null,dismissedAt:null};
+it('updates an already-open history page from the normal live inbox snapshot without sending anything',async()=>{
+ setup();await waitFor(()=>expect(screen.getByRole('checkbox',{name:/网页顶部提醒/})).toBeEnabled());expect(screen.getByText('暂无通知。')).toBeInTheDocument();
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[testNotice],nextCursor:null,unreadCount:1}})));
+ expect(screen.getByText('通知推送测试')).toBeInTheDocument();expect(screen.queryByText('暂无通知。')).not.toBeInTheDocument();expect(request.mock.calls.filter(([,method])=>method&&method!=='GET')).toHaveLength(0);
+});
+it('ignores a different-account snapshot and does not let a late initial empty response erase newer history',async()=>{
+ let finish:(value:unknown)=>void=()=>{};setup();
+ const initial=request.mock.calls.length;
+ // A fresh identity mounts with a deliberately delayed first history response.
+ cleanup();request.mockImplementation(async <T,>(path:string)=>{
+  if(path.includes('/push/status'))return {configured:false,publicKey:''} as T;
+  if(path.includes('/settings'))return {inAppEnabled:true,pushEnabled:true} as T;
+  return await new Promise<T>(resolve=>{finish=value=>resolve(value as T);});
+ });
+ render(<MemoryRouter><NotificationSettings userId="account"/></MemoryRouter>);expect(request.mock.calls.length).toBeGreaterThan(initial);
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'other',items:[testNotice],nextCursor:null,unreadCount:1}})));expect(screen.queryByText('通知推送测试')).not.toBeInTheDocument();
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[testNotice],nextCursor:null,unreadCount:1}})));expect(screen.getByText('通知推送测试')).toBeInTheDocument();
+ await act(async()=>{finish({items:[],nextCursor:null,unreadCount:0});await Promise.resolve();});expect(screen.getByText('通知推送测试')).toBeInTheDocument();
+});
+it('refreshes history on a same-route full-history request without needing a remount',async()=>{
+ setup();await waitFor(()=>expect(screen.getByRole('checkbox',{name:/网页顶部提醒/})).toBeEnabled());
+ request.mockImplementation(async <T,>(path:string)=>path.includes('/push/status')?{configured:false,publicKey:''} as T:path.includes('/settings')?{inAppEnabled:true,pushEnabled:true} as T:{items:[testNotice],nextCursor:null,unreadCount:1} as T);
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-refresh',{detail:{userId:'account'}})));expect(await screen.findByText('通知推送测试')).toBeInTheDocument();
 });

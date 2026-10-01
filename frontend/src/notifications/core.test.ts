@@ -1,5 +1,5 @@
 import { afterEach,expect,it,vi } from 'vitest';
-import { NotificationFeed,notificationPermission,safeNotificationUrl,subscribeDevice,unsubscribeDevice,subscriptionPayload,type NotificationItem,type NotificationRequest } from './core';
+import { mergeNotificationPage,NotificationFeed,notificationPermission,safeNotificationUrl,subscribeDevice,unsubscribeDevice,subscriptionPayload,type NotificationItem,type NotificationRequest } from './core';
 afterEach(()=>vi.unstubAllGlobals());
 const item=(id:string,extra:Partial<NotificationItem>={}):NotificationItem=>({id,kind:'ticket_reply',title:'更新',body:'查看应用',url:'/app/support/fixture',createdAt:new Date().toISOString(),readAt:null,dismissedAt:null,...extra});
 it('hydrates history silently, deduplicates later polling and excludes read/dismissed entries from toasts',()=>{
@@ -34,4 +34,11 @@ it('retains login/device state on server revoke failure and cancels only after c
  const t=browser();t.stored.set('app-push-device:account','owned');
  const failed:NotificationRequest=async()=>{throw new Error('offline');};await expect(unsubscribeDevice('account',failed)).rejects.toThrow('offline');expect(t.subscription.unsubscribe).not.toHaveBeenCalled();expect(t.stored.get('app-push-device:account')).toBe('owned');
  const request:NotificationRequest=async <T,>()=>({id:'owned'}) as T;await unsubscribeDevice('account',request);expect(t.subscription.unsubscribe).toHaveBeenCalledOnce();expect(t.stored.has('app-push-device:account')).toBe(false);expect(t.registration.active.postMessage).toHaveBeenLastCalledWith({type:'PUSH_ACCOUNT',userId:null},expect.any(Array));
+});
+
+it('keeps loaded older pages and monotonic receipts while applying the canonical recent history',()=>{
+ const older=item('old',{createdAt:'2026-09-01T00:00:00Z'});const current=item('current',{createdAt:'2026-10-01T00:00:00Z',readAt:'read',dismissedAt:'dismissed'});
+ const page={items:[item('new',{createdAt:'2026-10-02T00:00:00Z'}),item('current',{createdAt:current.createdAt})],nextCursor:'older',unreadCount:1};
+ const merged=mergeNotificationPage([current,older],page,true);expect(merged.map(row=>row.id)).toEqual(['new','current','old']);expect(merged[1]).toMatchObject({readAt:'read',dismissedAt:'dismissed'});
+ expect(mergeNotificationPage(merged,{items:[],nextCursor:null,unreadCount:0},true)).toEqual([]);
 });

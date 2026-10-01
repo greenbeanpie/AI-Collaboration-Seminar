@@ -23,3 +23,13 @@ it('preserves unread badge, server read action and Back dismissal after inline m
  window.dispatchEvent(new PopStateEvent('popstate'));expect(t.root.getElementById('history').hidden).toBe(true);expect(bell).toHaveAttribute('aria-expanded','false');
  const slot=mounted.parentElement;window.dispatchEvent(new CustomEvent('app-topbar-detach',{detail:slot}));expect(mounted.parentElement).toBe(document.body);expect(mounted).not.toHaveClass('inline');window.dispatchEvent(new Event('app-topbar-ready'));expect(mounted.parentElement).toBe(slot);
 });
+
+it('closes full-history actions on the same route, restores bell focus and preserves local update entries',async()=>{
+ window.history.replaceState({},'', '/app/settings/notifications');const t=await setup();
+ window.dispatchEvent(new CustomEvent('app-notification',{detail:{id:'local-update-fixture',text:'本地更新提示',action:'update'}}));
+ const item={id:'831cab18-6eec-4738-a7bb-52f246e3b492',title:'通知推送测试',body:'单次摘要',url:'/app/settings/notifications',createdAt:new Date().toISOString(),readAt:null,dismissedAt:null};
+ window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{items:[item],unreadCount:1,url:'/app/settings/notifications'}}));
+ const bell=t.root.getElementById('bell');bell.click();expect(t.root.getElementById('entries').textContent).toContain('本地更新提示');expect(t.root.getElementById('entries').textContent).toContain('通知推送测试');
+ const listener=vi.fn();window.addEventListener('app-notification-open',listener);
+ try{Array.from(t.root.querySelectorAll('button')).find(button=>button.textContent==='完整通知历史与设置').click();expect(t.root.getElementById('history').hidden).toBe(true);expect(t.root.activeElement).toBe(bell);expect(listener.mock.calls[0][0].detail).toEqual({url:'/app/settings/notifications',replace:false});await vi.waitFor(()=>expect(window.history.state?.appNotificationPanel).toBeUndefined());}finally{window.removeEventListener('app-notification-open',listener);}
+});

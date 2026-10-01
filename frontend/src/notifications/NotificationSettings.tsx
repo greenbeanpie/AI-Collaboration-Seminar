@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationRequest } from './api';
-import { notificationPermission, safeNotificationUrl, subscribeDevice, unsubscribeDevice, type DeliverySettings, type NotificationItem, type NotificationPage, type PushStatus } from './core';
+import { mergeNotificationPage, notificationPermission, safeNotificationUrl, subscribeDevice, unsubscribeDevice, type DeliverySettings, type NotificationItem, type NotificationPage, type PushStatus } from './core';
 
 export function NotificationSettings({ userId, enabled = true }: { userId: string; enabled?: boolean }) {
   const navigate = useNavigate();
@@ -14,11 +14,24 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const lock = useRef(false);
+  const loadedEarlier = useRef(false);
   useEffect(() => {
     if (!enabled) return;
     let active = true;
     const abort = new AbortController();
+    let snapshotGeneration=0,loading=false,again=false;
+    const applyPage=(page:NotificationPage)=>{
+      setItems(previous=>mergeNotificationPage(previous,page,loadedEarlier.current));
+      if(!loadedEarlier.current || !page.nextCursor)setCursor(page.nextCursor);
+    };
+    const receiveSnapshot=(event:Event)=>{
+      const detail=(event as CustomEvent<NotificationPage & {userId:string}>).detail;
+      if(!active || detail?.userId!==userId || !Array.isArray(detail.items))return;
+      snapshotGeneration++;applyPage(detail);
+    };
     const load = async () => {
+      if(loading){again=true;return;}loading=true;
+      const generation=snapshotGeneration;
       try {
         const [preferences, push, page] = await Promise.all([
           notificationRequest<DeliverySettings>('/notifications/settings', 'GET', undefined, abort.signal),
@@ -26,7 +39,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
           notificationRequest<NotificationPage>('/notifications?limit=50', 'GET', undefined, abort.signal),
         ]);
         if (!active) return;
-        setSettings(preferences); setStatus(push); setItems(page.items); setCursor(page.nextCursor);
+        setSettings(preferences); setStatus(push); if(generation===snapshotGeneration)applyPage(page);
         const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
         const subscription = await registration?.pushManager?.getSubscription();
         if (subscription) {
@@ -35,9 +48,16 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
         }
         if (active) setPermission(notificationPermission());
       } catch (error) { if (active) setMessage(error instanceof Error ? error.message : '通知设置加载失败，请刷新重试。'); }
+      finally {loading=false;if(active&&again){again=false;void load();}}
     };
+    const refresh=(event:Event)=>{
+      const account=(event as CustomEvent<{userId?:string}>).detail?.userId;
+      if(!account || account===userId)void load();
+    };
+    window.addEventListener('app-notification-inbox',receiveSnapshot);
+    window.addEventListener('app-notification-refresh',refresh);
     void load();
-    return () => { active = false; abort.abort(); };
+    return () => { active = false; abort.abort(); window.removeEventListener('app-notification-inbox',receiveSnapshot);window.removeEventListener('app-notification-refresh',refresh); };
   }, [userId, enabled]);
 
   async function run(action: () => Promise<void>) {
@@ -70,7 +90,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
     void run(async () => {
       await notificationRequest(`/notifications/${encodeURIComponent(id)}/${action}`, 'POST', {}, undefined, userId);
       const page = await notificationRequest<NotificationPage>('/notifications?limit=50');
-      setItems(page.items); setCursor(page.nextCursor);
+      setItems(previous=>mergeNotificationPage(previous,page,loadedEarlier.current)); if(!loadedEarlier.current || !page.nextCursor)setCursor(page.nextCursor);
       window.dispatchEvent(new Event('app-notification-settings-changed'));
       setMessage(action === 'read' ? '已标记为已读。' : '已收起，历史记录仍保留。');
     });
@@ -93,7 +113,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
     {message && <p role="status" className="notification-feedback">{message}</p>}
     <section className="delivery-card"><h2>通知历史</h2>{!items.length && <p>暂无通知。</p>}
       {items.map(item => <article className="delivery-entry" key={item.id}><div><strong>{item.title}</strong><small>{new Date(item.createdAt).toLocaleString('zh-CN')} · {item.dismissedAt ? '已收起' : item.readAt ? '已读' : '未读'}</small></div><p>{item.body}</p><div className="notification-buttons"><button type="button" onClick={() => navigate(safeNotificationUrl(item.url, './'))}>查看相关内容</button>{!item.readAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'read')}>标记已读</button>}{!item.dismissedAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'dismiss')}>收起提醒</button>}</div></article>)}
-      {cursor && <button type="button" disabled={busy} onClick={() => void run(async () => { const page = await notificationRequest<NotificationPage>(`/notifications?limit=50&cursor=${encodeURIComponent(cursor)}`); setItems(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))]); setCursor(page.nextCursor); })}>加载更早通知</button>}
+      {cursor && <button type="button" disabled={busy} onClick={() => void run(async () => { loadedEarlier.current=true; const page = await notificationRequest<NotificationPage>(`/notifications?limit=50&cursor=${encodeURIComponent(cursor)}`); setItems(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))]); setCursor(page.nextCursor); })}>加载更早通知</button>}
     </section>
   </div>;
 }
