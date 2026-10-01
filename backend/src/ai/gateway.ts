@@ -21,6 +21,10 @@ export interface GatewayCallInput {
   privateContext?: boolean;
   maxOutputTokens?: number;
   beforeFetch?: () => Promise<void>;
+  /** Resolve sensitive context after all config/key/budget I/O; no awaited work may follow before fetch. */
+  prepareMessages?: () => Promise<ChatMessage[]>;
+  /** Synchronous accounting marker only; must not start or await I/O. */
+  onDispatch?: () => void;
   /** Stable opaque job/conversation ID; used only by the opt-in Go adapter. */
   sessionId?: string;
 }
@@ -109,17 +113,24 @@ export async function gatewayChat(
   if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || input.maxOutputTokens > input.config.maxOutputTokens)) {
     throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
   }
-  const { protocol, headers, body } = buildProviderRequest(input.config, input.messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
+  const started = Date.now();
+  let res: Response;
+  await input.beforeFetch?.();
+  const messages = input.prepareMessages ? await input.prepareMessages() : input.messages;
+  const dispatchChars = messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
+  if (dispatchChars > input.config.maxInputChars || messages.length > 32) {
+    throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
+  }
+  // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
+  const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
   if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
   if (input.privateContext) {
     headers['cf-aig-skip-cache'] = 'true';
     headers['cf-aig-collect-log'] = 'false';
   }
 
-  const started = Date.now();
-  let res: Response;
-  await input.beforeFetch?.();
   try {
+    input.onDispatch?.();
     res = await fetchImpl(url, {
       method: 'POST',
       headers,

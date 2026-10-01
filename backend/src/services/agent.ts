@@ -88,6 +88,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     schema: S;
     privateContext?: boolean;
     beforeCall?: () => Promise<void>;
+    prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
 ): Promise<{ data: z.infer<S>; repaired: boolean }> {
   const endpoint = {
@@ -133,10 +134,16 @@ export async function aiJsonCall<S extends z.ZodType>(
         beforeFetch: async () => {
           await params.beforeCall?.();
           await markAiCallStarted(env, params.jobId);
-          // Budget writes also yield control; recheck withdrawal immediately before fetch.
+          // Config/member preflight may yield; the final sensitive context read comes afterward.
           await params.beforeCall?.();
-          attempted = true;
         },
+        prepareMessages: params.prepareMessages ? async () => {
+          const repairMessages = messages.slice(params.messages.length);
+          const freshMessages = await params.prepareMessages!();
+          messages = [...freshMessages,...repairMessages];
+          return messages;
+        } : undefined,
+        onDispatch: () => { attempted = true; },
       });
     } catch (error) {
       if (!attempted) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。

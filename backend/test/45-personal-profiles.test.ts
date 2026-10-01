@@ -3,7 +3,8 @@ import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { seedUser, seedProject, authCookie } from './helpers/seed';
 import { profileStamp, finishRecommendationJob } from '../src/services/personal-profiles';
-import { generateAssignmentSuggestions, type AssignmentSuggestionInput } from '../src/services/assignment';
+import { generateAssignmentSuggestions, runAssignmentSuggestionJob, type AssignmentSuggestionInput } from '../src/services/assignment';
+import { runCollaborationAiJob } from '../src/services/collaboration-ai';
 import { loadAiConfig } from '../src/ai/config';
 import { configureGoFixture } from './helpers/provider-config';
 import { applyProposal } from '../src/services/collaboration';
@@ -183,5 +184,72 @@ describe('explicit personal AI consent',()=>{
   }});
   const database=new Proxy(env.DB,{get(target,key){if(key==='prepare')return (sql:string)=>{const statement=target.prepare(sql);return sql.includes('UPDATE usage_reservations SET attempts_started')?wrap(statement):statement;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
   const fetch=captureModel(f,[]);await expect(generateAssignmentSuggestions({...env,DB:database},jobId,f.input,f.config)).rejects.toThrow();expect(fetch).not.toHaveBeenCalled();
+ });
+});
+
+describe('last dispatch authorization',()=>{
+ it.each([
+  ['assignment',1],['assignment',2],['collaboration',1],['collaboration',2],
+ ] as const)('blocks %s request %i when withdrawal completes during its final config read',async(kind,attempt)=>{
+  const f=await assignmentFixture();const jobId=crypto.randomUUID();const now=new Date().toISOString();
+  const input=kind==='assignment'?{...f.input,configVersionId:f.config.id}:{
+   operation:'collaboration.assign',projectId:f.projectId,requestedBy:f.a.userId,settingsRevision:1,configVersionId:f.config.id,profileStamp:f.input.profileStamp,
+   tasks:f.input.tasks.map(t=>({...t,criteria:'Deliver work',effortHours:1})),
+   members:[{userId:f.a.userId,major:'LEGACY-MAJOR',skills:['LEGACY-SKILL'],hoursPerWeek:99,loadHours:0}],
+  };
+  await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,?3,'queued',?4,?5,?6,?6)")
+   .bind(jobId,f.projectId,kind==='assignment'?'assignment_suggest':'agent_run',JSON.stringify(input),f.a.userId,now).run();
+  await reserveAiSlot(env,{projectId:f.projectId,jobId,purpose:'assignment_suggest',configVersionId:f.config.id});
+  let budgetWrites=0;let withdrawn=false;const events:string[]=[];
+  const wrap=(statement:D1PreparedStatement,sql:string):D1PreparedStatement=>new Proxy(statement,{get(target,key){
+   if(key==='bind')return (...values:unknown[])=>wrap(target.bind(...values),sql);
+   if(key==='run'&&sql.includes('UPDATE usage_reservations SET attempts_started'))return async()=>{
+    const result=await target.run();budgetWrites++;events.push('budget-write');return result;
+   };
+   if(key==='first'&&sql.includes('FROM ai_config_versions ORDER BY'))return async()=>{
+    const result=await target.first();
+    if(budgetWrites===attempt&&!withdrawn){
+     events.push('config-read');expect((await save(f.a.token,{...blank,expectedRevision:1})).status).toBe(200);
+     withdrawn=true;events.push('withdrawn');
+    }
+    return result;
+   };
+   const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+  }});
+  const database=new Proxy(env.DB,{get(target,key){
+   if(key==='prepare')return (sql:string)=>wrap(target.prepare(sql),sql);
+   const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+  }});
+  const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+   events.push('provider-fetch');expect(withdrawn).toBe(false);expect(String(init?.body)).toContain(blank.bio);
+   return Response.json({choices:[{message:{content:JSON.stringify({bad:blank.bio})}}]});
+  });vi.stubGlobal('fetch',fetch);
+  if(kind==='assignment')await runAssignmentSuggestionJob({...env,DB:database},jobId);
+  else await runCollaborationAiJob({...env,DB:database},jobId);
+  expect(withdrawn).toBe(true);expect(budgetWrites).toBe(attempt);expect(fetch).toHaveBeenCalledTimes(attempt-1);
+  expect(events.slice(-3)).toEqual(['budget-write','config-read','withdrawn']);
+  expect((await env.DB.prepare('SELECT status,result_json FROM jobs WHERE id=?1').bind(jobId).first())).toMatchObject({status:'failed',result_json:null});
+  expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM collaboration_proposals WHERE job_id=?1').bind(jobId).first<{n:number}>())?.n).toBe(0);
+ });
+
+ it.each(['consent','member','config'] as const)('rejects a %s change at the final context read',async(kind)=>{
+  const f=await assignmentFixture();let checked=false;
+  const wrap=(statement:D1PreparedStatement):D1PreparedStatement=>new Proxy(statement,{get(target,key){
+   if(key==='bind')return (...values:unknown[])=>wrap(target.bind(...values));
+   if(key==='first')return async()=>{
+    checked=true;
+    if(kind==='consent')expect((await save(f.a.token,{...blank,expectedRevision:1})).status).toBe(200);
+    else if(kind==='member')await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1').bind(f.projectId).run();
+    else await env.DB.prepare('UPDATE ai_config_versions SET enabled=0 WHERE id=?1').bind(f.config.id).run();
+    return target.first();
+   };
+   const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+  }});
+  const database=new Proxy(env.DB,{get(target,key){
+   if(key==='prepare')return (sql:string)=>{const statement=target.prepare(sql);return sql.includes('/* recommendation-dispatch */')?wrap(statement):statement;};
+   const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+  }});
+  const fetch=captureModel(f,[]);await expect(generateAssignmentSuggestions({...env,DB:database},undefined as unknown as string,f.input,f.config)).rejects.toThrow();
+  expect(checked).toBe(true);expect(fetch).not.toHaveBeenCalled();
  });
 });

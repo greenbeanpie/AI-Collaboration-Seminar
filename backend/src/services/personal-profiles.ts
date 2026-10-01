@@ -26,18 +26,23 @@ export async function profileStamp(env: Env, projectId: string): Promise<string>
 export async function assertProfileStamp(env: Env, projectId: string, expected: string | undefined) {
   if (!expected || await profileStamp(env, projectId) !== expected) throw invalidState('成员或个人资料已变化，请重新生成任务推荐');
 }
-export async function recommendationProfiles(env: Env, projectId: string) {
-  const rows = await env.DB.prepare(`SELECT m.user_id,p.bio,p.major,p.specialties,p.preferred_roles
-    FROM project_members m JOIN personal_profiles p ON p.user_id=m.user_id WHERE m.project_id=?1 AND p.ai_use_allowed=1 ORDER BY m.user_id`).bind(projectId)
-    .all<{ user_id: string; bio: string; major: string; specialties: string; preferred_roles: string }>();
-  return rows.results.map(p => ({ userId: p.user_id, bio: p.bio, major: p.major, specialties: p.specialties, preferredRoles: p.preferred_roles }));
-}
-
-/** Business task workload only. Legacy major/skills/availability/nickname never bypass consent. */
-export async function recommendationMembers(env: Env, projectId: string) {
-  const rows = await env.DB.prepare(`SELECT m.user_id,COALESCE((SELECT SUM(t.effort_hours) FROM tasks t WHERE t.project_id=m.project_id AND t.assignee_id=m.user_id AND t.status!='done'),0) load_hours
-    FROM project_members m WHERE m.project_id=?1 ORDER BY m.user_id`).bind(projectId).all<{user_id:string;load_hours:number}>();
-  return rows.results.map(m => ({ userId:m.user_id,loadHours:m.load_hours }));
+/** Last dispatch read: current text, consent, member scope and config validity share one DB snapshot. */
+export async function recommendationDispatch(env: Env, projectId: string, requestedBy: string, expectedStamp: string | undefined, configVersionId: string) {
+  if (!expectedStamp) throw invalidState('缺少个人资料授权快照，请重新生成推荐');
+  const guard = profileSnapshotGuard('?2','?1');
+  const row = await env.DB.prepare(`/* recommendation-dispatch */ SELECT
+    (SELECT json_group_array(json_object('userId',m.user_id,'loadHours',COALESCE((SELECT SUM(t.effort_hours) FROM tasks t WHERE t.project_id=m.project_id AND t.assignee_id=m.user_id AND t.status!='done'),0)))
+      FROM project_members m WHERE m.project_id=?1) members_json,
+    (SELECT json_group_array(json_object('userId',m.user_id,'bio',p.bio,'major',p.major,'specialties',p.specialties,'preferredRoles',p.preferred_roles))
+      FROM project_members m JOIN personal_profiles p ON p.user_id=m.user_id WHERE m.project_id=?1 AND p.ai_use_allowed=1) profiles_json
+    WHERE ${guard}
+      AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?3)
+      AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?4 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`)
+    .bind(projectId,expectedStamp,requestedBy,configVersionId).first<{members_json:string;profiles_json:string}>();
+  if (!row) throw invalidState('资料授权、成员或 AI 设置已变化，请重新生成推荐');
+  // Only synchronous parsing follows the last read; the caller must not await other I/O before fetch.
+  return { members:JSON.parse(row.members_json) as Array<{userId:string;loadHours:number}>,
+    preferences:JSON.parse(row.profiles_json) as Array<{userId:string;bio:string;major:string;specialties:string;preferredRoles:string}> };
 }
 
 /** Trusted SQL expressions only; gate reads and publication against the current consent snapshot. */

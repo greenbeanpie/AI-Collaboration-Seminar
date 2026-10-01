@@ -14,7 +14,7 @@ This repair is limited to the existing `feat/private-member-profiles` worktree. 
 
 ## Withdrawal
 
-Consent state is part of profileStamp and every owner save increments revision. Validate before each provider request and repair, on both sides of the budget claim, after inference, and atomically when inserting proposals or publishing job results. A withdrawn snapshot cannot be published or applied.
+Consent state is part of profileStamp and every owner save increments revision. The follow-up F2-R1 dispatch fix in `profile-ai-dispatch-fix.md` supersedes the earlier check ordering: finish configuration/key/budget I/O, then read and validate current sensitive context in one final SQL snapshot for every request and repair, with no further awaited I/O before fetch. Validate after inference and atomically when inserting proposals or publishing job results. A withdrawn snapshot cannot be published or applied.
 
 GET recommendation jobs rejects stale snapshots without output. Collaboration proposal pagination keeps rows but returns stale status and an empty payload. Client/server no-store prevents stale HTTP cache reuse. The existing safe templates and request/response redaction remain.
 
