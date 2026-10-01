@@ -18,6 +18,10 @@ describe('模型端点地址策略（A15）', () => {
     expect(isAllowedModelEndpoint('http://127.0.0.1:8788/v1/chat/completions', 'local')).toBe(true);
     expect(isAllowedModelEndpoint('http://localhost:8788/v1', 'local')).toBe(true);
     expect(isAllowedModelEndpoint('http://10.0.0.5/v1', 'local')).toBe(false);
+    expect(isAllowedModelEndpoint('https://localhost./v1', 'production')).toBe(false);
+    expect(isAllowedModelEndpoint('https://service.internal./v1', 'production')).toBe(false);
+    expect(isAllowedModelEndpoint('http://user:secret@localhost:8788/v1', 'local')).toBe(false);
+    expect(isAllowedModelEndpoint('http://localhost:8788/v1?key=secret', 'local')).toBe(false);
     expect(isAllowedModelEndpoint('http://127.0.0.1:8788/v1', 'production')).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -13,7 +14,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1').run();
+await configureGoFixture();
 
 /** 等待任务终态；引擎不可用时按 kind 同步执行 */
 async function ensureJobDone(cookie: string, jobId: string, kind: 'parse' | 'agent'): Promise<{ status: string; result: unknown; error: unknown }> {

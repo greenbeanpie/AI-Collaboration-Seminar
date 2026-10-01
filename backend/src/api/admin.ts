@@ -13,6 +13,7 @@ import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../servic
 import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
 import { isAllowedModelEndpoint } from '../ai/gateway';
+import { providerOptionErrors, sameCredentialDestination } from '../../../shared/ai-providers';
 
 const BEARER_PREFIX_RE = /^Bearer\s+/i;
 
@@ -40,7 +41,7 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).optional(), clearKey: z.boolean().optional() });
+const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/, 'API key 不能包含控制字符').optional(), clearKey: z.boolean().optional() });
 const configShape = z.object({
   textEconomy: editableModel,
   visionEconomy: editableModel,
@@ -198,10 +199,16 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const config = aiConfigSchema.parse(body);
     for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) {
       const input = body[purpose];
+      const optionErrors = providerOptionErrors(input);
+      if (optionErrors.length) throw validationFailed(`${purpose}: ${optionErrors.join('；')}`);
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
         throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');
       }
-      config[purpose].apiKeyEncrypted = input.clearKey ? undefined : input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : latest?.config[purpose].apiKeyEncrypted;
+      const previous = latest?.config[purpose];
+      if (previous?.apiKeyEncrypted && !input.apiKey && !input.clearKey && !sameCredentialDestination(input, previous)) {
+        throw validationFailed('切换供应商或 API URL 时，请重新填写密钥或明确清除旧密钥；旧密钥不会转发到新地址');
+      }
+      config[purpose].apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
     if (enabled) {
       if (!latest || JSON.stringify(aiConfigSchema.parse(config)) !== JSON.stringify(latest.config)) throw invalidState('请先保存配置并测试全部模型，配置变化后必须重新测试');
@@ -211,7 +218,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     await c.env.DB.prepare(
       'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
     )
-      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, 'admin', nowIso())
+      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso())
       .run();
     return c.json(apiData(c, { id, version, enabled }), 201);
   });

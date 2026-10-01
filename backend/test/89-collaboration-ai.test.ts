@@ -1,3 +1,4 @@
+import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
 import type { Env } from '../src/env';
@@ -7,11 +8,11 @@ import { reserveAiSlot } from '../src/services/budget';
 import { getJob } from '../src/services/jobs';
 import { runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 afterEach(() => vi.unstubAllGlobals());
-await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();
+await configureGoFixture();
 const id = () => crypto.randomUUID();
 const stamp = () => new Date().toISOString();
 function model(content: unknown, before?: () => Promise<void>) {
-    return vi.fn(async () => { await before?.(); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 30, completion_tokens: 25 } }), { headers: { 'content-type': 'application/json' } }); });
+    return vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => { assertGoRequest(url, init); await before?.(); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 30, completion_tokens: 25 } }), { headers: { 'content-type': 'application/json' } }); });
 }
 async function job(input: CollaborationAiInput) {
     const jobId = id();
@@ -170,6 +171,7 @@ describe('bounded decomposition and assignment continuation', () => {
         await env.DB.prepare('UPDATE projects SET assignment_mode=?2 WHERE id=?1').bind(projectId, mode).run();
         const jobId = await job({ operation: 'collaboration.decompose', projectId, requestedBy: user.userId, settingsRevision: 1, brief: '制作可交付的研究成果' });
         const provider = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+            assertGoRequest(_url, init);
             const input = JSON.parse(String(init?.body)) as {
                 messages: Array<{
                     content: string;

@@ -1,3 +1,4 @@
+import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -8,7 +9,7 @@ import { runParseJob } from '../src/services/parse';
 import { LIMITS } from '../src/core/limits';
 
 // 种子配置默认 enabled=0（需探测后启用）；本文件测试直接启用
-await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1').run();
+await configureGoFixture();
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -213,7 +214,7 @@ describe('来源解析流水线', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.startsWith('https://api.cloudflare.com/')) {
+        if (url.startsWith('https://opencode.ai/zen/go/v1/')) {
           return gateway(input, init);
         }
         if (url.startsWith('https://example.com/')) {

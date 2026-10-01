@@ -83,6 +83,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     promptVersion: string;
     jobId?: string;
     runId?: string;
+    sessionId?: string;
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     schema: S;
   },
@@ -117,6 +118,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       status,
     });
 
+  const sessionId = params.sessionId ?? params.jobId ?? params.runId ?? crypto.randomUUID();
   let messages = params.messages;
   for (let attempt = 0; attempt < 2; attempt++) {
     const started = Date.now();
@@ -125,7 +127,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     let failure: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config: params.modelConfig, messages, jsonMode: true,
+        config: params.modelConfig, messages, jsonMode: true, sessionId,
         beforeFetch: async () => { await markAiCallStarted(env, params.jobId); attempted = true; },
       });
     } catch (error) {
@@ -141,6 +143,8 @@ export async function aiJsonCall<S extends z.ZodType>(
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
     if (!failure) return { data: data!, repaired: attempt === 1 };
+    // Auth/entitlement/unsupported requests must surface as-is, not become a paid repair retry.
+    if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE' && !failure.retryable) throw failure;
     if (attempt === 1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
     messages = [
       ...params.messages,
@@ -320,6 +324,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         projectId: input.projectId,
         jobId,
         runId: input.runId,
+        sessionId: run.session_id ?? input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,
@@ -334,6 +339,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         projectId: input.projectId,
         jobId,
         runId: input.runId,
+        sessionId: run.session_id ?? input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,
@@ -348,6 +354,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         projectId: input.projectId,
         jobId,
         runId: input.runId,
+        sessionId: run.session_id ?? input.runId,
         purpose: 'textEconomy',
         configVersionId: config.id,
         model: textModel.model,

@@ -11958,6 +11958,28 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "providerPreset": {
+                        "type": "string",
+                        "enum": [
+                          "custom",
+                          "openai",
+                          "anthropic",
+                          "gemini",
+                          "deepseek",
+                          "openrouter",
+                          "opencode-zen",
+                          "opencode-go"
+                        ]
+                      },
+                      "apiProtocol": {
+                        "type": "string",
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "messages",
+                          "gemini"
+                        ]
+                      },
                       "model": {
                         "type": "string"
                       },
@@ -11990,6 +12012,40 @@
                         "minimum": 0,
                         "maximum": 2
                       },
+                      "topP": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "goUsageAcknowledged": {
+                        "type": "boolean"
+                      },
+                      "goHeaders": {
+                        "type": "object",
+                        "properties": {
+                          "userAgent": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "sessionPrefix": {
+                            "type": "string",
+                            "maxLength": 32
+                          }
+                        },
+                        "additionalProperties": false
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -12009,7 +12065,8 @@
                       },
                       "apiKey": {
                         "type": "string",
-                        "maxLength": 4096
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
                       },
                       "clearKey": {
                         "type": "boolean"
@@ -12032,6 +12089,28 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "providerPreset": {
+                        "type": "string",
+                        "enum": [
+                          "custom",
+                          "openai",
+                          "anthropic",
+                          "gemini",
+                          "deepseek",
+                          "openrouter",
+                          "opencode-zen",
+                          "opencode-go"
+                        ]
+                      },
+                      "apiProtocol": {
+                        "type": "string",
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "messages",
+                          "gemini"
+                        ]
+                      },
                       "model": {
                         "type": "string"
                       },
@@ -12064,6 +12143,40 @@
                         "minimum": 0,
                         "maximum": 2
                       },
+                      "topP": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "goUsageAcknowledged": {
+                        "type": "boolean"
+                      },
+                      "goHeaders": {
+                        "type": "object",
+                        "properties": {
+                          "userAgent": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "sessionPrefix": {
+                            "type": "string",
+                            "maxLength": 32
+                          }
+                        },
+                        "additionalProperties": false
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -12083,7 +12196,8 @@
                       },
                       "apiKey": {
                         "type": "string",
-                        "maxLength": 4096
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
                       },
                       "clearKey": {
                         "type": "boolean"
@@ -12106,6 +12220,28 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "providerPreset": {
+                        "type": "string",
+                        "enum": [
+                          "custom",
+                          "openai",
+                          "anthropic",
+                          "gemini",
+                          "deepseek",
+                          "openrouter",
+                          "opencode-zen",
+                          "opencode-go"
+                        ]
+                      },
+                      "apiProtocol": {
+                        "type": "string",
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "messages",
+                          "gemini"
+                        ]
+                      },
                       "model": {
                         "type": "string"
                       },
@@ -12138,6 +12274,40 @@
                         "minimum": 0,
                         "maximum": 2
                       },
+                      "topP": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "goUsageAcknowledged": {
+                        "type": "boolean"
+                      },
+                      "goHeaders": {
+                        "type": "object",
+                        "properties": {
+                          "userAgent": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "sessionPrefix": {
+                            "type": "string",
+                            "maxLength": 32
+                          }
+                        },
+                        "additionalProperties": false
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -12157,7 +12327,8 @@
                       },
                       "apiKey": {
                         "type": "string",
-                        "maxLength": 4096
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
                       },
                       "clearKey": {
                         "type": "boolean"

@@ -1,3 +1,4 @@
+import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -9,7 +10,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1').run();
+await configureGoFixture();
 
 interface JobView {
   status: string;

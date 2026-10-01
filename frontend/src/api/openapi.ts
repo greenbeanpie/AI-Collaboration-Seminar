@@ -4396,6 +4396,10 @@ export interface paths {
                     "application/json": {
                         textEconomy: {
                             provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
                             /** @default  */
                             apiUrl?: string;
@@ -4405,6 +4409,14 @@ export interface paths {
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -4415,6 +4427,10 @@ export interface paths {
                         };
                         visionEconomy: {
                             provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
                             /** @default  */
                             apiUrl?: string;
@@ -4424,6 +4440,14 @@ export interface paths {
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -4434,6 +4458,10 @@ export interface paths {
                         };
                         review: {
                             provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
                             /** @default  */
                             apiUrl?: string;
@@ -4443,6 +4471,14 @@ export interface paths {
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,

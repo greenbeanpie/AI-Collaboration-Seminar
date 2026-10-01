@@ -1,3 +1,4 @@
+import { assertGoRequest } from './provider-config';
 import { vi } from 'vitest';
 
 export interface GatewayMockOptions {
@@ -38,6 +39,7 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
   let textCalls = 0;
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? '{}')) as ChatBody;
+    if (body.model === 'glm-5.2') assertGoRequest(_input, init);
     const first = body.messages?.[0]?.content;
     if (Array.isArray(first)) {
       if (options?.visionInvalid) return openAiResponse('{"unexpected": true}');

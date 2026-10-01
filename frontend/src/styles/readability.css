@@ -107,3 +107,10 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 @media print { .theme-toolbar { display: none; } }
+
+/* Provider settings remain usable on narrow screens, including the Go-specific header panel. */
+.ai-model-settings [role="note"] { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--palette-f7faff-surface); overflow-wrap: anywhere; }
+.ai-model-settings [role="note"] p { margin: 0; }
+.ai-model-settings [role="note"] fieldset { display: grid; gap: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.ai-model-settings details > .field { margin-top: 16px; }
+.ai-model-settings details > label:not(.field) { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }

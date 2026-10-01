@@ -272,6 +272,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     try {
       const out = await gatewayChat(endpoint, {
         config: vision,
+        sessionId: sourceVersionId,
         jsonMode: true,
         beforeFetch: async () => { await markAiCallStarted(env, jobId); attempted = true; },
         messages: [
@@ -448,6 +449,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
   const { data: parsed } = await aiJsonCall(env, {
     projectId: version.project_id,
     jobId,
+    sessionId: sourceVersionId,
     purpose: 'textEconomy',
     configVersionId: config.id,
     model: textModel.model,

@@ -58,9 +58,10 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
     envName: env.ENV_NAME,
   };
 
+  const sessionId = `probe-${crypto.randomUUID()}`;
   async function callAndRecord(messages: ChatMessage[], jsonMode: boolean): Promise<GatewayCallOutput> {
     try {
-      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode });
+      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode, sessionId });
       await recordAiCall(env, {
         purpose,
         configVersionId: loaded!.id,

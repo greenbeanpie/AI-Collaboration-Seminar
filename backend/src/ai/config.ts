@@ -1,11 +1,15 @@
 import { z } from 'zod';
 import type { D1Database } from '@cloudflare/workers-types';
 import { AppError, aiUnavailable } from '../core/errors';
+import { API_PROTOCOLS, PROVIDER_PRESETS, REASONING_EFFORTS } from '../../../shared/ai-providers';
 
 export type AiPurpose = 'textEconomy' | 'visionEconomy' | 'review';
 
 export const aiModelConfigSchema = z.object({
   provider: z.string().min(1),
+  // Optional so old saved/frozen configurations retain their original adapter semantics.
+  providerPreset: z.enum(PROVIDER_PRESETS).optional(),
+  apiProtocol: z.enum(API_PROTOCOLS).optional(),
   model: z.string(),
   apiUrl: z.string().default(''),
   apiKeyEncrypted: z.string().optional(),
@@ -15,6 +19,10 @@ export const aiModelConfigSchema = z.object({
   supportsJson: z.boolean(),
   supportsVision: z.boolean(),
   temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
+  goUsageAcknowledged: z.boolean().optional(),
+  goHeaders: z.object({ userAgent: z.string().max(100).optional(), sessionPrefix: z.string().max(32).optional() }).strict().optional(),
   /** 每百万 token 价格 [输入 USD, 输出 USD]；null 表示未配置 → 费用记未知，不填零 */
   pricePerMTokens: z.tuple([z.number().nonnegative(), z.number().nonnegative()]).nullable().default(null),
 });

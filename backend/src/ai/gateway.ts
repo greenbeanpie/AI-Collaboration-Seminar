@@ -1,6 +1,8 @@
 import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
+import { providerOptionErrors } from '../../../shared/ai-providers';
+import { buildProviderRequest, normalizeProviderResponse } from './transport';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -18,6 +20,8 @@ export interface GatewayCallInput {
   jsonMode?: boolean;
   maxOutputTokens?: number;
   beforeFetch?: () => Promise<void>;
+  /** Stable opaque job/conversation ID; used only by the opt-in Go adapter. */
+  sessionId?: string;
 }
 
 export interface GatewayCallOutput {
@@ -50,7 +54,9 @@ export function isAllowedModelEndpoint(raw: string, envName?: string): boolean {
   } catch {
     return false;
   }
-  if (envName === 'local' && LOOPBACK_HOSTS.has(target.hostname) && (target.protocol === 'http:' || target.protocol === 'https:')) {
+  if (target.username || target.password || target.search || target.hash) return false;
+  const hostname = target.hostname.toLowerCase().replace(/\.$/, '');
+  if (envName === 'local' && LOOPBACK_HOSTS.has(hostname) && (target.protocol === 'http:' || target.protocol === 'https:')) {
     return true;
   }
   return (
@@ -59,8 +65,8 @@ export function isAllowedModelEndpoint(raw: string, envName?: string): boolean {
     !target.password &&
     !target.search &&
     !target.hash &&
-    !target.hostname.includes(':') &&
-    !/^([0-9.]+|localhost|.*\.local|.*\.internal)$/.test(target.hostname)
+    !hostname.includes(':') &&
+    !/^([0-9.]+|localhost|.*\.localhost|.*\.local|.*\.internal)$/.test(hostname)
   );
 }
 
@@ -77,6 +83,8 @@ export async function gatewayChat(
   input: GatewayCallInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<GatewayCallOutput> {
+  const optionErrors = providerOptionErrors(input.config);
+  if (optionErrors.length) throw new AppError('AI_UNAVAILABLE', optionErrors.join('；'), 503, false);
   const custom = input.config.provider !== 'workers-ai';
   if (!custom && (!endpoint.apiToken || !endpoint.accountId || !endpoint.gatewayId)) {
     throw aiUnavailable('AI Gateway 未配置（缺少 Account/Gateway/Token）');
@@ -86,22 +94,19 @@ export async function gatewayChat(
   if (custom) {
     if (!url || !input.config.apiKeyEncrypted || !input.config.model) throw aiUnavailable('请填写 API URL、key 和模型名称');
     if (!isAllowedModelEndpoint(url, endpoint.envName)) throw aiUnavailable('模型 API 必须使用公开 HTTPS 域名且不能包含查询参数');
-    token = await unseal(input.config.apiKeyEncrypted, endpoint.authSecret ?? '');
+    try { token = await unseal(input.config.apiKeyEncrypted, endpoint.authSecret ?? ''); }
+    catch { throw new AppError('AI_UNAVAILABLE', '模型密钥解密失败，请重新配置', 503, false); }
+    if (/[\x00-\x1f\x7f]/.test(token)) throw new AppError('AI_UNAVAILABLE', '模型密钥含无效控制字符，请重新配置', 503, false);
   }
   const textChars = input.messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
   if (textChars > input.config.maxInputChars || input.messages.length > 32) {
     throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
   }
-  if (input.maxOutputTokens !== undefined && input.maxOutputTokens > input.config.maxOutputTokens) {
+  if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || input.maxOutputTokens > input.config.maxOutputTokens)) {
     throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
   }
-  const body: Record<string, unknown> = {
-    model: input.config.model,
-    messages: input.messages,
-    max_tokens: input.maxOutputTokens ?? input.config.maxOutputTokens,
-  };
-  if (typeof input.config.temperature === 'number') body.temperature = input.config.temperature;
-  if (input.jsonMode && input.config.supportsJson) body.response_format = { type: 'json_object' };
+  const { protocol, headers, body } = buildProviderRequest(input.config, input.messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
+  if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
 
   const started = Date.now();
   let res: Response;
@@ -109,11 +114,7 @@ export async function gatewayChat(
   try {
     res = await fetchImpl(url, {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        ...(!custom ? { 'cf-aig-gateway-id': endpoint.gatewayId } : {}),
-        'content-type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(input.config.timeoutMs),
       redirect: 'error',
@@ -122,7 +123,7 @@ export async function gatewayChat(
     // 网络失败/超时：费用未知，由调用方保留待核对记录
     throw aiUnavailable('模型请求失败或超时', {
       timeout: err instanceof Error && err.name === 'TimeoutError',
-      cause: err instanceof Error ? err.message : String(err),
+      cause: 'network_error',
     });
   }
   const latencyMs = Date.now() - started;
@@ -136,20 +137,8 @@ export async function gatewayChat(
     });
   }
 
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') {
-    throw new AppError('AI_OUTPUT_INVALID', '模型响应缺少内容', 502, false);
-  }
-  return {
-    content,
-    promptTokens: data.usage?.prompt_tokens ?? null,
-    completionTokens: data.usage?.completion_tokens ?? null,
-    latencyMs,
-  };
+  const data: unknown = await readProviderJson(res);
+  return { ...normalizeProviderResponse(protocol, data), latencyMs };
 }
 
 /** 应用层统一的一次额外重试（仅对可重试错误） */
@@ -162,4 +151,27 @@ export async function withSingleRetry<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw err;
   }
+}
+
+/** Bound provider payloads and never expose parser snippets from an untrusted response. */
+async function readProviderJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new AppError('AI_OUTPUT_INVALID', '模型响应没有 JSON 内容', 502, false);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > 4 * 1024 * 1024) { await reader.cancel(); throw new Error('too large'); }
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new AppError('AI_OUTPUT_INVALID', '模型响应不是有效 JSON 或超出大小限制', 502, false);
+  } finally { reader.releaseLock(); }
 }
