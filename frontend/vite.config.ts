@@ -27,6 +27,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // A waiting update activates only after SKIP_WAITING, then takes control.
+        skipWaiting: false,
+        clientsClaim: true,
         navigateFallbackDenylist: [/^\/api(?:\/.*)?$/],
         importScripts: ['/asset-compat.js'],
         runtimeCaching: [{

@@ -5,9 +5,9 @@ const { UpdateController, NotificationHistory } = await import('../public/app-up
 
 function setup({ controlled = true, online = true, enabled = true } = {}) {
   vi.useFakeTimers();
-  const sw = new EventTarget(); sw.controller = controlled ? {} : null;
+  const sw = new EventTarget(); sw.controller = controlled ? { state: 'activated' } : null;
   const registration = new EventTarget();
-  Object.assign(registration, { active: controlled ? {} : null, waiting: null, installing: null, update: vi.fn(async () => {}) });
+  Object.assign(registration, { active: controlled ? { state: 'activated' } : null, waiting: null, installing: null, update: vi.fn(async () => {}) });
   sw.register = vi.fn(async () => registration);
   const env = { sw, enabled, online: () => online, confirm: vi.fn(() => true), reload: vi.fn(), setTimeout, clearTimeout };
   const states = [];
@@ -41,6 +41,12 @@ describe('application update lifecycle', () => {
     expect(t.states).not.toContain('ready'); expect(t.states).not.toContain('downloading');
     expect(t.env.reload).not.toHaveBeenCalled();
   });
+  it('never reloads or announces an update when the first installation claims the page', async () => {
+    const t = setup({ controlled: false }); const worker = t.worker(); t.registration.installing = worker;
+    await t.controller.start(); worker.advance('installed'); worker.advance('activating');
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange')); worker.advance('activated');
+    expect(t.env.reload).not.toHaveBeenCalled(); expect(t.states).not.toContain('ready');
+  });
   it('shows downloading then ready and keeps cancellation inert', async () => {
     const t = setup(); await t.controller.start(); const worker = t.worker(); t.registration.installing = worker;
     t.registration.dispatchEvent(new Event('updatefound')); expect(t.controller.state).toBe('downloading');
@@ -53,14 +59,45 @@ describe('application update lifecycle', () => {
     t.controller.apply(); t.controller.apply();
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'SKIP_WAITING' });
     expect(t.env.confirm).toHaveBeenCalledTimes(1); expect(t.env.reload).not.toHaveBeenCalled();
-    t.sw.dispatchEvent(new Event('controllerchange')); worker.advance('activated'); t.sw.dispatchEvent(new Event('controllerchange'));
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange')); worker.advance('activated'); t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).toHaveBeenCalledTimes(1);
   });
+  it('does not reload an activated update while the old worker still controls the page', async () => {
+    const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
+    t.controller.apply(); worker.advance('activated');
+    expect(t.env.reload).not.toHaveBeenCalled();
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).toHaveBeenCalledTimes(1);
+  });
+  it('waits for activation to finish when the new worker claims the page first', async () => {
+    const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
+    t.controller.apply(); worker.advance('activating');
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).not.toHaveBeenCalled();
+    worker.advance('activated'); t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).toHaveBeenCalledTimes(1);
+  });
+  it('ignores an unrelated controller and a late takeover after an activation timeout', async () => {
+    const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
+    t.controller.apply(); worker.advance('activated');
+    t.sw.controller = { state: 'activated' }; t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(20000); expect(t.controller.state).toBe('error');
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).not.toHaveBeenCalled();
+  });
   it('does not reload another tab until that tab confirms', async () => {
-    const t = setup(); await t.controller.start(); t.sw.dispatchEvent(new Event('controllerchange'));
+    const t = setup(); await t.controller.start(); const other = t.worker(); other.advance('activated'); t.sw.controller = other; t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).not.toHaveBeenCalled(); expect(t.controller.state).toBe('ready');
     t.env.confirm.mockReturnValue(false); t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
     t.env.confirm.mockReturnValue(true); t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
+  });
+  it('waits for an update from another tab to finish activating after this tab confirms', async () => {
+    const t = setup(); await t.controller.start(); const worker = t.worker(); worker.advance('activating');
+    t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
+    expect(t.env.reload).not.toHaveBeenCalled(); t.controller.apply();
+    expect(t.env.reload).not.toHaveBeenCalled(); worker.advance('activated');
+    expect(t.env.reload).toHaveBeenCalledTimes(1); expect(worker.postMessage).not.toHaveBeenCalled();
   });
   it('deduplicates checks and distinguishes latest, failure and retry', async () => {
     const t = setup(); await t.controller.start();

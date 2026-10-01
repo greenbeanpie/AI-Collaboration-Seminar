@@ -8,9 +8,11 @@ export class UpdateController {
     this.applying = false;
     this.reloaded = false;
     this.changedElsewhere = false;
+    this.activationTarget = null;
+    this.stopWatchingActivation = null;
     this.watched = new WeakSet();
     env.sw?.addEventListener('controllerchange', () => {
-      if (this.applying) this.reloadOnce();
+      if (this.applying) this.reloadWhenControlled();
       else if (this.hadController) { this.changedElsewhere = true; this.set('ready'); }
       this.hadController = true;
     });
@@ -77,21 +79,39 @@ export class UpdateController {
     if (!worker && !this.changedElsewhere && !confirmedRefresh) { this.set('error'); return; }
     this.applying = true;
     this.set('applying');
-    if ((this.changedElsewhere || confirmedRefresh) && !worker) { this.reloadOnce(); return; }
-    // Never reload on an unsolicited activation in another tab.
-    const activated = () => { if (worker.state === 'activated' && this.applying) this.reloadOnce(); };
+    if (confirmedRefresh && !worker) { this.reloadOnce(); return; }
+    if (this.changedElsewhere && !worker) { this.watchActivation(this.env.sw?.controller); return; }
+    this.watchActivation(worker);
+    try { worker.postMessage({ type: 'SKIP_WAITING' }); }
+    catch { this.cancelActivation(); this.applying = false; this.set('error'); }
+  }
+  watchActivation(worker) {
+    if (!worker) { this.applying = false; this.set('error'); return; }
+    this.activationTarget = worker;
+    const activated = () => this.reloadWhenControlled();
     worker.addEventListener('statechange', activated);
+    this.stopWatchingActivation = () => worker.removeEventListener('statechange', activated);
     this.applyTimer = this.env.setTimeout(() => {
-      worker.removeEventListener('statechange', activated);
+      this.cancelActivation();
       if (!this.reloaded) { this.applying = false; this.set('error'); }
     }, 20000);
-    try { worker.postMessage({ type: 'SKIP_WAITING' }); }
-    catch { this.env.clearTimeout(this.applyTimer); this.applying = false; this.set('error'); }
+    this.reloadWhenControlled();
+  }
+  reloadWhenControlled() {
+    // Activation alone does not mean this document has left its old controller.
+    // Claiming can also precede the end of activate/cache cleanup. Wait for both.
+    if (this.activationTarget?.state === 'activated' && this.env.sw?.controller === this.activationTarget) this.reloadOnce();
+  }
+  cancelActivation() {
+    this.env.clearTimeout(this.applyTimer);
+    this.stopWatchingActivation?.();
+    this.stopWatchingActivation = null;
+    this.activationTarget = null;
   }
   reloadOnce() {
     if (!this.applying || this.reloaded) return;
     this.reloaded = true;
-    this.env.clearTimeout(this.applyTimer);
+    this.cancelActivation();
     this.env.reload();
   }
 }
