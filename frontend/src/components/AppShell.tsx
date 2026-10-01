@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, KeyRound, LogOut, Plus, Settings, UsersRound } from 'lucide-react';
+import { FolderKanban, KeyRound, LogOut, Plus, Search, Settings, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
@@ -36,6 +36,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
         <NavLink to="/app/join" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UsersRound size={18} />加入项目</NavLink>
         <NavLink to="/app/support" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} />支持工单</NavLink>
         <NavLink to="/app/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />设置</NavLink>
+        <NavLink to="/app/people" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Search size={18} />搜索用户</NavLink>
       </nav>
       <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>
       <div className="sidebar-spacer" />

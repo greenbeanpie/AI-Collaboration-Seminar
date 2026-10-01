@@ -1,4 +1,4 @@
-/* global URL, document, innerWidth, console */
+/* global URL, document, innerWidth, console, process */
 // Synthetic local-only browser QA: all API calls mocked, no actual configuration writes.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -6,8 +6,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../../../yso-update/frontend/node_modules/playwright');
-const base = 'http://127.0.0.1:5187';
-const output = path.resolve('../../qa'); mkdirSync(output, { recursive: true });
+const base = process.env.WORKBENCH_URL || 'http://127.0.0.1:5187';
+assert.equal(new URL(base).hostname, '127.0.0.1');
+const output = path.resolve(process.env.QA_OUTPUT || '../../qa'); mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', headless: true });
 const results = [], errors = [], puts = [], external = [];
 const model = { provider: 'openai-compatible', model: 'synthetic-old-model', apiUrl: 'https://fixture.invalid/v1/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };

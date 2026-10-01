@@ -9,8 +9,18 @@ vi.mock('../components/AppShell', () => ({ AppShell: ({ children }: { children: 
 vi.mock('./AccountSettingsPage', () => ({ AccountSettingsPage: ({ section }: { section: string }) => <p>Account section {section}</p> }));
 vi.mock('./AiSettings', () => ({ AiSettings: () => <p>Privileged AI content</p> }));
 vi.mock('./AdminAccountsPage', () => ({ AdminAccountsPage: () => <p>Privileged accounts content</p> }));
+vi.mock('./PersonalProfiles', () => ({ PersonalProfilePage: () => <p>Private profile editor</p>, ProfileSearchPage: () => <p>Exact username search</p>, PublicProfilePage: () => <p>Published profile fields</p> }));
 function setup(path: string) { const router = createMemoryRouter([{ path: '*', element: <App /> }], { initialEntries: [path] }); render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>); return router; }
 afterEach(() => { cleanup(); state.role = 'user'; state.isAdmin = false; });
+it('all account roles can reach privacy and people routes through authenticated routing', async () => {
+ for (const role of ['user', 'admin', 'super_admin']) {
+  state.role = role; state.isAdmin = role !== 'user';
+  setup('/app/settings/privacy'); await screen.findByText('Private profile editor');
+  expect(screen.getByRole('link', { name: '资料与隐私' }).getAttribute('href')).toBe('/app/settings/privacy'); cleanup();
+  setup('/app/people'); await screen.findByText('Exact username search'); cleanup();
+  setup('/app/people/fixture'); await screen.findByText('Published profile fields'); cleanup();
+ }
+});
 it('direct settings URLs do not render privileged pages for ordinary users', async () => {
  setup('/app/settings/accounts'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged accounts content')).toBeNull(); cleanup();
  setup('/app/settings/ai'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged AI content')).toBeNull();

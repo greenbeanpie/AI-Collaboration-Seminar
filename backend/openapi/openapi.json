@@ -515,6 +515,175 @@
           "requestId"
         ]
       },
+      "PersonalProfileResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "searchable": {
+                "type": "boolean"
+              },
+              "bio": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "major": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "specialties": {
+                "type": "string",
+                "maxLength": 800
+              },
+              "preferredRoles": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "visibility": {
+                "type": "object",
+                "properties": {
+                  "bio": {
+                    "type": "boolean"
+                  },
+                  "major": {
+                    "type": "boolean"
+                  },
+                  "specialties": {
+                    "type": "boolean"
+                  },
+                  "preferredRoles": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "bio",
+                  "major",
+                  "specialties",
+                  "preferredRoles"
+                ],
+                "additionalProperties": false
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "searchable",
+              "bio",
+              "major",
+              "specialties",
+              "preferredRoles",
+              "visibility",
+              "revision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ProfileSearchResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "username": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "username",
+                    "displayName"
+                  ]
+                },
+                "maxItems": 1
+              },
+              "nextCursor": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "PublicProfileResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "bio": {
+                    "type": "string"
+                  },
+                  "major": {
+                    "type": "string"
+                  },
+                  "specialties": {
+                    "type": "string"
+                  },
+                  "preferredRoles": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "username",
+                  "displayName"
+                ]
+              }
+            },
+            "required": [
+              "profile"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "ProjectResponse": {
         "type": "object",
         "properties": {
@@ -6635,6 +6804,186 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountPasswordResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/personal-profile": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "responses": {
+          "200": {
+            "description": "Own private profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "profiles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "searchable": {
+                    "type": "boolean"
+                  },
+                  "bio": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "major": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "specialties": {
+                    "type": "string",
+                    "maxLength": 800
+                  },
+                  "preferredRoles": {
+                    "type": "string",
+                    "maxLength": 400
+                  },
+                  "visibility": {
+                    "type": "object",
+                    "properties": {
+                      "bio": {
+                        "type": "boolean"
+                      },
+                      "major": {
+                        "type": "boolean"
+                      },
+                      "specialties": {
+                        "type": "boolean"
+                      },
+                      "preferredRoles": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bio",
+                      "major",
+                      "specialties",
+                      "preferredRoles"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "searchable",
+                  "bio",
+                  "major",
+                  "specialties",
+                  "preferredRoles",
+                  "visibility",
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Own private profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profiles/search": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 32,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "username",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact match only; zero or one result, no directory enumeration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileSearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profiles/{username}": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 32,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Only explicitly public fields, or null for unavailable profiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicProfileResponse"
                 }
               }
             }

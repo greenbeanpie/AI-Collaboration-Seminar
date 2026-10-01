@@ -1,3 +1,4 @@
+import { registerPersonalProfileRoutes } from './api/personal-profiles';
 import { registerCollaborationRoutes } from './api/collaboration';
 import { registerSupportTicketRoutes } from './api/support-tickets';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -42,7 +43,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:support(?:\/|$)|admin\/accounts(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:profiles(?:\/|$)|support(?:\/|$)|admin\/accounts(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -69,6 +70,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerCapabilitiesRoutes(app);
   registerAuthRoutes(app);
   registerAccountSettingsRoutes(app);
+  registerPersonalProfileRoutes(app);
   registerProjectRoutes(app);
   registerMemberRoutes(app);
   registerInvitationRoutes(app);

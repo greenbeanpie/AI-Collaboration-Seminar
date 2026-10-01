@@ -14,6 +14,9 @@ import { PwaInstallBanner } from './components/PwaInstallBanner';
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
 const SupportTicketDetailPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketDetailPage })));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage').then(module => ({ default: module.AccountSettingsPage })));
+const PersonalProfilePage = lazy(() => import('./pages/PersonalProfiles').then(module => ({ default: module.PersonalProfilePage })));
+const ProfileSearchPage = lazy(() => import('./pages/PersonalProfiles').then(module => ({ default: module.ProfileSearchPage })));
+const PublicProfilePage = lazy(() => import('./pages/PersonalProfiles').then(module => ({ default: module.PublicProfilePage })));
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
 const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
@@ -98,9 +101,12 @@ export default function App() {
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/support" element={<SupportTicketsPage />} />
         <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
+        <Route path="/app/people" element={<ProfileSearchPage />} />
+        <Route path="/app/people/:username" element={<PublicProfilePage />} />
         <Route path="/app/settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
           <Route path="profile" element={<AccountSettingsPage section="profile" />} />
+          <Route path="privacy" element={<PersonalProfilePage />} />
           <Route path="security" element={<AccountSettingsPage section="security" />} />
           <Route path="appearance" element={<ThemeSelector />} />
           <Route element={<SystemAdminOnly />}>

@@ -42,6 +42,7 @@ export function SettingsLayout() {
     return () => { window.removeEventListener('settings-before-leave', beforeLeave); window.removeEventListener('settings-leave-failed', failed); };
   }, []);
   const tabs = [['profile', '个人资料'], ['security', '账户安全'], ['appearance', '外观']];
+  tabs.splice(1, 0, ['privacy', '资料与隐私']);
   if (session.data?.isAdmin === true) {
     tabs.push(['accounts', '账户管理']);
     if (session.data.role === 'super_admin') tabs.push(['ai', 'AI 配置']);

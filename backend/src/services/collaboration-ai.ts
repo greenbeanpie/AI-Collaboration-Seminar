@@ -1,3 +1,4 @@
+import { profileStamp } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
@@ -14,6 +15,7 @@ export interface CollaborationAiInput {
     requestedBy: string;
     settingsRevision: number;
     configVersionId?: string;
+    profileStamp?: string;
     brief?: string;
     submissionId?: string;
     tasks?: Array<{
@@ -89,7 +91,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
             if (!input.tasks?.length || !input.members?.length)
                 throw invalidState('没有待分配任务或项目成员');
             const output = await generateAssignmentSuggestions(env, jobId, {
-                projectId: input.projectId, requestedBy: input.requestedBy, configVersionId: config.id, requirementSetId: null, requirements: [],
+                profileStamp: input.profileStamp, projectId: input.projectId, requestedBy: input.requestedBy, configVersionId: config.id, requirementSetId: null, requirements: [],
                 tasks: input.tasks.map(t => ({ ...t, dueDate: null, duePrecision: 'unknown', status: 'todo', assigneeId: null })),
                 members: input.members.map(m => ({ ...m, displayName: m.userId })),
             }, config);
@@ -181,7 +183,7 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
     await reserveAiSlot(env, { projectId: input.projectId, jobId: proposalId, purpose: 'assignment_suggest', configVersionId: config.id });
     try {
         await createJobAndDispatch(env, { projectId: input.projectId, kind: 'agent_run', jobId: proposalId, createdBy: input.requestedBy, input: {
-                operation: 'collaboration.assign', parentProposalId: proposalId, projectId: input.projectId, requestedBy: input.requestedBy, settingsRevision: input.settingsRevision, configVersionId: config.id,
+                profileStamp: await profileStamp(env, input.projectId), operation: 'collaboration.assign', parentProposalId: proposalId, projectId: input.projectId, requestedBy: input.requestedBy, settingsRevision: input.settingsRevision, configVersionId: config.id,
                 tasks: tasks.results.map(t => ({ taskId: t.id, title: t.title, detail: t.detail, criteria: t.criteria, effortHours: t.effort_hours, revision: t.revision })),
                 members: members.results.map(m => ({ userId: m.user_id, major: m.major, skills: JSON.parse(m.skills_json), hoursPerWeek: m.hours_per_week, loadHours: m.load_hours })),
             } });

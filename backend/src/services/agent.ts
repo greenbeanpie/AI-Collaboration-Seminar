@@ -86,6 +86,8 @@ export async function aiJsonCall<S extends z.ZodType>(
     sessionId?: string;
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     schema: S;
+    privateContext?: boolean;
+    beforeCall?: () => Promise<void>;
   },
 ): Promise<{ data: z.infer<S>; repaired: boolean }> {
   const endpoint = {
@@ -110,8 +112,8 @@ export async function aiJsonCall<S extends z.ZodType>(
       configVersionId: params.configVersionId,
       promptVersion: params.promptVersion,
       model: params.model,
-      input,
-      output,
+      input: params.privateContext ? { redacted: true } : input,
+      output: params.privateContext ? { redacted: true } : output,
       promptTokens: tokens.promptTokens,
       completionTokens: tokens.completionTokens,
       latencyMs,
@@ -127,11 +129,11 @@ export async function aiJsonCall<S extends z.ZodType>(
     let failure: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config: params.modelConfig, messages, jsonMode: true, sessionId,
-        beforeFetch: async () => { await markAiCallStarted(env, params.jobId); attempted = true; },
+        config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
+        beforeFetch: async () => { await params.beforeCall?.(); await markAiCallStarted(env, params.jobId); attempted = true; },
       });
     } catch (error) {
-      if (!attempted) throw error; // 验证拒绝时没有请求，也不重试。
+      if (!attempted) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
       failure = error;
     }
     let data: z.infer<S> | undefined;
@@ -144,7 +146,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
     if (!failure) return { data: data!, repaired: attempt === 1 };
     // Auth/entitlement/unsupported requests must surface as-is, not become a paid repair retry.
-    if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE' && !failure.retryable) throw failure;
+    if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE' && !failure.retryable) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw failure; }
     if (attempt === 1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
     messages = [
       ...params.messages,

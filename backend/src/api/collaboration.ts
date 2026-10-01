@@ -1,3 +1,4 @@
+import { profileStamp } from '../services/personal-profiles';
 import { loadAiConfig } from '../ai/config';
 import { aiUnavailable } from '../core/errors';
 import { enqueueEvaluation } from '../services/collaboration-evaluation';
@@ -183,6 +184,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                         hours_per_week: number | null;
                         load_hours: number;
                     }>();
+                    input.profileStamp = await profileStamp(c.env, projectId);
                     input.members = members.results.map(m => ({ userId: m.user_id, major: m.major, skills: JSON.parse(m.skills_json), hoursPerWeek: m.hours_per_week, loadHours: m.load_hours }));
                 }
                 if (operation === 'evaluate')

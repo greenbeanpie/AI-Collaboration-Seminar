@@ -1,0 +1,19 @@
+import { cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react';
+import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter,Routes,Route } from 'react-router-dom';
+import { afterEach,it,expect,vi } from 'vitest';
+import { PersonalProfilePage,ProfileSearchPage,PublicProfilePage } from './PersonalProfiles';
+import { SettingsDirtyContext } from './settings-dirty';
+const user={id:'fixture',username:'alice',displayName:'Alice',email:null,isAdmin:false,role:'user'};
+const profile={revision:0,searchable:false,bio:'',major:'',specialties:'',preferredRoles:'',visibility:{bio:false,major:false,specialties:false,preferredRoles:false}};
+const response=(data:unknown)=>Response.json({data,requestId:'test'});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+function setup(path='/app/settings/privacy',dirty=vi.fn()) {const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});client.setQueryData(['session'],user);render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><SettingsDirtyContext.Provider value={dirty}><Routes><Route path="/app/settings/privacy" element={<PersonalProfilePage/>}/><Route path="/app/people" element={<ProfileSearchPage/>}/><Route path="/app/people/:username" element={<PublicProfilePage/>}/></Routes></SettingsDirtyContext.Provider></MemoryRouter></QueryClientProvider>);return dirty;}
+it('keeps private edits out of public preview, saves visibility with revision and dirty guard',async()=>{
+ let saved:unknown;vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{if(init?.method==='PUT'){saved=JSON.parse(init.body);return response({...profile,...saved as object,revision:1});}return response(profile);}));const dirty=setup();
+ const major=await screen.findByLabelText('专业');fireEvent.change(major,{target:{value:'PRIVATE FIELD'}});expect(screen.queryByText('PRIVATE FIELD',{selector:'p'})).toBeNull();expect(dirty).toHaveBeenLastCalledWith(expect.any(String),true);
+ fireEvent.click(screen.getByLabelText('公开专业'));expect(screen.getByText('PRIVATE FIELD',{selector:'p'})).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'保存资料与隐私'}));await screen.findByText('资料与隐私设置已保存');expect(saved).toMatchObject({expectedRevision:0,major:'PRIVATE FIELD',visibility:{major:true},searchable:false});expect(dirty).toHaveBeenLastCalledWith(expect.any(String),false);
+});
+it('retains edits on version conflict without silently overwriting',async()=>{vi.stubGlobal('fetch',vi.fn(async(_url,init)=>init?.method==='PUT'?Response.json({error:{code:'VERSION_CONFLICT',message:'资料已更新',retryable:false},requestId:'test'},{status:409}):response(profile)));setup();fireEvent.change(await screen.findByLabelText('专业'),{target:{value:'My edit'}});fireEvent.click(screen.getByRole('button',{name:'保存资料与隐私'}));await screen.findByText('资料已更新');expect(screen.getByLabelText('专业')).toHaveValue('My edit');});
+it('search uses full username only and links to the public page',async()=>{const fetch=vi.fn(async(url: string)=>{expect(url).toContain('username=alice');return response({items:[{username:'alice',displayName:'Alice'}],nextCursor:null});});vi.stubGlobal('fetch',fetch);setup('/app/people');expect(fetch).not.toHaveBeenCalled();fireEvent.change(screen.getByLabelText('用户名'),{target:{value:'alice'}});fireEvent.click(screen.getByRole('button',{name:'查找'}));expect(await screen.findByRole('link')).toHaveAttribute('href','/app/people/alice');expect(fetch.mock.calls[0]?.[0]).toContain('username=alice');});
+it('unavailable public profile has no identity or hidden fields',async()=>{vi.stubGlobal('fetch',vi.fn(async()=>response({profile:null})));setup('/app/people/alice');await waitFor(()=>expect(screen.getByText('未找到可查看的账号')).toBeInTheDocument());expect(screen.queryByText('Alice')).toBeNull();});

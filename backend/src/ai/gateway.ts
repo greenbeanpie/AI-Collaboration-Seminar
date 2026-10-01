@@ -18,6 +18,7 @@ export interface GatewayCallInput {
   messages: ChatMessage[];
   /** 需要 JSON 输出时置 true；模型不支持结构化约束时由调用方改用 JSON 提示 + Zod 校验 */
   jsonMode?: boolean;
+  privateContext?: boolean;
   maxOutputTokens?: number;
   beforeFetch?: () => Promise<void>;
   /** Stable opaque job/conversation ID; used only by the opt-in Go adapter. */
@@ -110,6 +111,10 @@ export async function gatewayChat(
   }
   const { protocol, headers, body } = buildProviderRequest(input.config, input.messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
   if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
+  if (input.privateContext) {
+    headers['cf-aig-skip-cache'] = 'true';
+    headers['cf-aig-collect-log'] = 'false';
+  }
 
   const started = Date.now();
   let res: Response;

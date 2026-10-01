@@ -1,0 +1,13 @@
+.personal-profiles{max-width:860px;margin:auto;display:grid;gap:18px;overflow-wrap:anywhere;width:100%;box-sizing:border-box}
+.personal-profiles fieldset{border:0;padding:0;min-width:0;display:grid;gap:20px}
+.personal-profiles section{display:grid;gap:8px}
+.personal-profiles textarea{display:block;width:100%;box-sizing:border-box;resize:vertical}
+.personal-profiles textarea,.personal-profiles input:not([type=checkbox]){border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper);color:var(--ink);max-width:100%}
+.personal-profiles>form:not(.section-card){display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.personal-profiles .section-card{padding:20px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper)}
+.personal-profiles h2,.personal-profiles h3,.personal-profiles p{margin-top:0;margin-bottom:0}
+.personal-profiles label{display:block;margin-bottom:6px}
+.personal-profiles input[type=checkbox]{width:auto;margin-right:8px}
+.profile-markdown p{white-space:pre-wrap;margin:6px 0}
+.profile-markdown code{background:var(--paper-soft);padding:2px 4px;border-radius:4px}
+.profile-card{display:grid;gap:16px}
