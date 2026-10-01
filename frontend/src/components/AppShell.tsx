@@ -1,3 +1,5 @@
+import { unsubscribeDevice, deviceSubscriptionId } from '../notifications/core';
+import { notificationRequest } from '../notifications/api';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useMatch, useNavigate } from 'react-router-dom';
@@ -40,7 +42,9 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     if (!window.dispatchEvent(new Event('settings-before-leave', { cancelable: true }))) return;
     setBusy(true); setLogoutError(null);
     try {
-      await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session');
+      const subscriptionId = deviceSubscriptionId(user.id);
+      await unsubscribeDevice(user.id,notificationRequest);
+      await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{'X-Push-Subscription-Id':subscriptionId,'X-Notification-Account':user.id}});
       clearAccountStorage(user.id);
       await queryClient.clear();
       navigate('/login', { replace: true });

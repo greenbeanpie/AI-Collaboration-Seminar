@@ -75,12 +75,12 @@ function ProtectedApp() {
   if (session.isLoading) return <main className="center-screen"><Spinner label="正在检查账户" /></main>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
   if (!session.data) return <Navigate to="/login" replace />;
-  return <AppShell user={session.data}><NotificationRuntime userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
+  return <AppShell user={session.data}><NotificationRuntime key={session.data.id} userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
 }
 
 function AccountNotifications() {
   const session = useSession();
-  return session.data ? <NotificationSettings userId={session.data.id}/> : null;
+  return session.data ? <NotificationSettings key={session.data.id} userId={session.data.id}/> : null;
 }
 
 function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
