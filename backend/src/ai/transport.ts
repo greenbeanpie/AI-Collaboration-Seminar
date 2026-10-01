@@ -3,7 +3,7 @@ import type { ChatMessage } from './gateway';
 import { AppError } from '../core/errors';
 import { GO_DEFAULT_USER_AGENT, modelCapabilities, protocolForConfig, type ApiProtocol } from '../../../shared/ai-providers';
 
-const invalid = (message: string) => new AppError('AI_OUTPUT_INVALID', message, 502, false);
+const invalid = (message: string, details?: Record<string, unknown>) => new AppError('AI_OUTPUT_INVALID', message, 502, false, details);
 const inputError = (message: string) => new AppError('AI_UNAVAILABLE', message, 503, false);
 function dataImage(url: string) {
   const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(url);
@@ -59,7 +59,9 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
       body = { model: config.model, messages, [caps.tokenField]: maxOutputTokens };
       if (jsonMode && config.supportsJson) body.response_format = { type: 'json_object' };
       if (config.reasoningEffort !== undefined) {
-        if (config.providerPreset === 'openrouter') body.reasoning = { effort: config.reasoningEffort };
+        // DeepSeek Chat toggles thinking separately; "none" is not a Chat effort.
+        if (config.providerPreset === 'deepseek' && config.reasoningEffort === 'none') body.thinking = { type: 'disabled' };
+        else if (config.providerPreset === 'openrouter') body.reasoning = { effort: config.reasoningEffort };
         else body.reasoning_effort = config.reasoningEffort;
       }
       if (config.providerPreset === 'openrouter') body.provider = { require_parameters: true };
@@ -111,6 +113,7 @@ export function normalizeProviderResponse(protocol: ApiProtocol, value: unknown)
     promptTokens = count(metadata.promptTokenCount); completionTokens = sum(metadata.candidatesTokenCount, metadata.thoughtsTokenCount);
   } else {
     const choice = items(data.choices)[0];
+    if (choice?.finish_reason === 'length') throw invalid('模型输出被截断：达到 token 上限；思考 token 也占输出预算，请调整输出上限或思考强度后重新测试', { cause: 'output_limit', finishReason: 'length' });
     if ((choice?.finish_reason !== undefined && choice.finish_reason !== 'stop') || obj(choice?.message).refusal || obj(choice?.message).tool_calls || obj(choice?.message).function_call) throw invalid('模型 Chat 输出被截断、过滤或需要工具执行');
     const text = obj(choice?.message).content;
     content = typeof text === 'string' ? text : '';

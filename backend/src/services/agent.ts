@@ -158,6 +158,8 @@ export async function aiJsonCall<S extends z.ZodType>(
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
     if (!failure) return { data: data!, repaired: attempt === 1 };
+    // An exhausted output budget cannot be repaired using the same cap. Keep JSON/schema repairs.
+    if (!out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
     // Auth/entitlement/unsupported requests must surface as-is, not become a paid repair retry.
     if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE' && !failure.retryable) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw failure; }
     if (attempt === 1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);

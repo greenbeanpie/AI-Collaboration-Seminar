@@ -129,20 +129,25 @@ export async function gatewayChat(
     headers['cf-aig-collect-log'] = 'false';
   }
 
+  const timeoutSignal = AbortSignal.timeout(input.config.timeoutMs);
   try {
     input.onDispatch?.();
     res = await fetchImpl(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(input.config.timeoutMs),
+      signal: timeoutSignal,
       redirect: 'error',
     });
   } catch (err) {
     // 网络失败/超时：费用未知，由调用方保留待核对记录
-    throw aiUnavailable('模型请求失败或超时', {
-      timeout: err instanceof Error && err.name === 'TimeoutError',
-      cause: 'network_error',
+    const timeout = timeoutSignal.aborted || (err instanceof Error && err.name === 'TimeoutError');
+    throw aiUnavailable(timeout
+      ? `模型请求超时（${input.config.timeoutMs / 1000} 秒）；尚未收到 HTTP 响应，请检查超时设置及供应商服务状态`
+      : '模型网络请求失败，尚未收到 HTTP 响应；请检查 API 地址、重定向和供应商服务可达性', {
+      timeout,
+      timeoutMs: input.config.timeoutMs,
+      cause: timeout ? 'timeout' : 'network_error',
     });
   }
   const latencyMs = Date.now() - started;

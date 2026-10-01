@@ -1,10 +1,34 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AiSettings } from './AiSettings';
 
 function setup(admin = true, advanced = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); if (advanced) fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } }); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
+  const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };
+  const legacy = { ...deepseek, provider: 'workers-ai', providerPreset: undefined, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', apiUrl: '' };
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 3, enabled: false, config: { routingMode: 'unified', unified: deepseek, textEconomy: legacy, visionEconomy: legacy, review: legacy } } }));
+    expect(init?.method).toBe('PUT');
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ expectedVersion: 3, routingMode: 'unified', enabled: false, unified: { providerPreset: 'deepseek', model: modelId, reasoningEffort: 'none', maxOutputTokens: 4096 } });
+    return new Response(JSON.stringify({ data: { version: 4 } }));
+  });
+  vi.stubGlobal('fetch', mock); setup(true, false);
+  fireEvent.click(screen.getByRole('button', { name: '读取已保存配置' }));
+  await screen.findByText('当前 AI 未启用。');
+  const effort = screen.getByLabelText(/统一模型思考强度/);
+  expect(within(effort).getAllByRole('option').map(o => (o as HTMLOptionElement).value)).toEqual(['', 'none', 'low', 'high', 'max']);
+  for (const value of ['low', 'high', 'max', 'none']) { fireEvent.change(effort, { target: { value } }); expect(effort).toHaveValue(value); }
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
+  expect(within(screen.getByLabelText(/文本与要求提取思考强度/)).getAllByRole('option')).toHaveLength(1);
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
+  expect(screen.getByLabelText(/统一模型思考强度/)).toHaveValue('none');
+  fireEvent.click(screen.getByRole('button', { name: '保存配置并停用 AI' }));
+  await screen.findByText('配置已保存，AI 暂停启用。请逐项测试。');
+  expect(mock).toHaveBeenCalledTimes(2);
+});
 it('system admin session saves blank configuration, tests connections, and cannot enable failed probes', async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

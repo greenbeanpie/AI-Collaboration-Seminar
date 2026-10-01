@@ -67,7 +67,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     ['openai', 'gpt-5', { reasoningEffort: 'low', apiProtocol: 'chat-completions' }, { reasoning_effort: 'low', max_completion_tokens: 2048 }],
     ['openai', 'gpt-5.4', { reasoningEffort: 'none', temperature: 0.2, topP: 0.9 }, { reasoning: { effort: 'none' }, temperature: 0.2, top_p: 0.9 }],
     ['deepseek', 'deepseek-flash', { reasoningEffort: 'high', topP: 0.98 }, { reasoning_effort: 'high', top_p: 0.98 }],
-    ['deepseek', 'deepseek-flash', { reasoningEffort: 'none', temperature: 0.5 }, { reasoning_effort: 'none', temperature: 0.5 }],
+    ['deepseek', 'deepseek-flash', { reasoningEffort: 'none', temperature: 0.5 }, { thinking: { type: 'disabled' }, temperature: 0.5 }],
     ['openrouter', 'openai/gpt-5', { reasoningEffort: 'minimal' }, { reasoning: { effort: 'minimal' }, provider: { require_parameters: true } }],
     ['anthropic', 'claude-sonnet-5-5', { reasoningEffort: 'xhigh' }, { output_config: { effort: 'xhigh' } }],
     ['gemini', 'gemini-3.8-flash', { reasoningEffort: 'medium' }, { generationConfig: { thinkingConfig: { thinkingLevel: 'medium' } } }],
@@ -79,6 +79,31 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(body).toMatchObject(expected);
     if (preset === 'openrouter' || protocolForConfig(cfg) === 'responses' || preset === 'gemini') expect(body.reasoning_effort).toBeUndefined();
     expect(body.apiKeyEncrypted).toBeUndefined();
+    if (preset === 'deepseek' && options.reasoningEffort === 'none') expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it('DeepSeek preserves the configured output cap and extracts only a completed answer', async () => {
+    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high', maxOutputTokens: 4096 });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { content: '{"ok":true}', reasoning_content: 'synthetic private thought' } }],
+      usage: { prompt_tokens: 9, completion_tokens: 100, completion_tokens_details: { reasoning_tokens: 94 } },
+    })));
+    expect(await gatewayChat(endpoint, { config: cfg, messages, jsonMode: true }, fetchMock)).toMatchObject({ content: '{"ok":true}', completionTokens: 100 });
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body).toMatchObject({ max_tokens: 4096, reasoning_effort: 'high', response_format: { type: 'json_object' } });
+    expect(body.response_format).not.toHaveProperty('json_schema');
+    expect(() => normalizeProviderResponse('chat-completions', {
+      choices: [{ finish_reason: 'length', message: { content: null, reasoning_content: 'synthetic private thought' } }],
+      usage: { prompt_tokens: 9, completion_tokens: 4096, completion_tokens_details: { reasoning_tokens: 4096 } },
+    })).toThrow('token 上限');
+  });
+
+  it('reports timeout and network failure separately without echoing the exception', async () => {
+    const cfg = config('deepseek', 'deepseek-flash');
+    const timedOut = vi.fn(async () => { throw new DOMException('synthetic-secret', 'TimeoutError'); });
+    await expect(gatewayChat(endpoint, { config: cfg, messages }, timedOut)).rejects.toMatchObject({ message: expect.stringContaining('90 秒'), details: { timeout: true, cause: 'timeout' } });
+    const unreachable = vi.fn(async () => { throw new TypeError('synthetic-secret'); });
+    await expect(gatewayChat(endpoint, { config: cfg, messages }, unreachable)).rejects.toMatchObject({ message: expect.stringContaining('网络请求失败'), details: { timeout: false, cause: 'network_error' } });
   });
 
   it.each([
@@ -132,6 +157,18 @@ async function putConfig(model: AiModelConfig, apiKey?: string, enabled = false)
   return SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ textEconomy: withKey, visionEconomy: withKey, review: withKey, enabled }) });
 }
 describe('versioned configuration, authorization, and reservations', () => {
+  it('does not pay for a same-budget repair when DeepSeek exhausts output tokens', async () => {
+    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high', maxOutputTokens: 4096 });
+    expect((await putConfig(cfg, 'fixture-provider-key')).status).toBe(201);
+    const loaded = (await loadAiConfig(env.DB))!;
+    const user = await seedUser(); const projectId = await seedProject(user.userId); const jobId = crypto.randomUUID();
+    await reserveAiSlot(env, { projectId, jobId, purpose: 'agent_run', configVersionId: loaded.id });
+    const mock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: null, reasoning_content: 'synthetic thought' } }], usage: { prompt_tokens: 3, completion_tokens: 4096 } })));
+    vi.stubGlobal('fetch', mock);
+    await expect(aiJsonCall(env, { projectId, jobId, configVersionId: loaded.id, purpose: 'textEconomy', model: cfg.model, modelConfig: cfg, promptVersion: 'fixture', messages, schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_OUTPUT_INVALID', details: { cause: 'output_limit' } });
+    expect(mock).toHaveBeenCalledOnce();
+    expect((await env.DB.prepare('SELECT attempts_started FROM usage_reservations WHERE job_id=?1').bind(jobId).first<{ attempts_started: number }>())?.attempts_started).toBe(1);
+  });
   it('new options round-trip without exposing keys and freeze across later edits', async () => {
     const original = config('openai', 'gpt-5', { reasoningEffort: 'low' });
     expect((await putConfig(original, 'fixture-provider-key')).status).toBe(201);
@@ -199,7 +236,7 @@ it('control characters and unsafe Go header keys are rejected and network errors
   expect((await putConfig(unsafe, 'fixture-key')).status).toBe(400);
   const mock = vi.fn(async () => { throw new Error('network failure contains fixture-provider-key'); });
   try { await gatewayChat(endpoint, { config: good, messages, sessionId: 'job' }, mock); throw new Error('should fail'); }
-  catch (error) { expect(JSON.stringify(error)).not.toContain('fixture-provider-key'); expect(String(error)).toContain('模型请求失败'); }
+  catch (error) { expect(JSON.stringify(error)).not.toContain('fixture-provider-key'); expect(String(error)).toContain('网络请求失败'); }
 });
 
 it('malformed provider bodies never expose parser snippets and oversized bodies are bounded', async () => {

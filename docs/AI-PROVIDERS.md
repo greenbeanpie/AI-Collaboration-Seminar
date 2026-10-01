@@ -36,7 +36,8 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - OpenAI：精确识别 GPT-5/mini/nano、GPT-5.1、GPT-5.2、GPT-5.4、o3/o4-mini 的已核实取值；不把 Codex 或未知后缀盲目归入同一类
 - OpenAI Chat 使用 `reasoning_effort` 和 `max_completion_tokens`；Responses 使用 `reasoning.effort` 和 `max_output_tokens`
 - GPT-5.1/5.2/5.4 仅在显式 `none` 时开放采样参数；GPT-5 原版和 o 系列不发送这些采样参数
-- DeepSeek `deepseek-flash` / `deepseek-v4-pro`：`none/low/high/max`。非思考模式才允许 temperature；思考模式才允许 `top_p ≥ 0.95`。不同时发送冲突的 thinking 开关
+- DeepSeek `deepseek-flash` / `deepseek-v4-pro`：`none/low/high/max`。Chat 的 `none` 映射为 `thinking: {type: "disabled"}`，不发送 `reasoning_effort: "none"`；其余档位发送 `reasoning_effort`。默认不发送时沿用供应商默认开启的 high 思考。非思考模式才允许 temperature；思考模式才允许 `top_p ≥ 0.95`
+- DeepSeek 思考 token 和正文共同占用最大输出 token。保持用户配置的预算和超时，不自动增加费用上限；达到 `finish_reason=length` 时明确提示调整预算/强度，不自动再发同预算的付费修复。超时与未收到 HTTP 响应的网络失败分别显示，不把它们误报成密钥或模型不支持
 - OpenRouter：只对公开模型元数据明确列出档位的 `openai/gpt-5` 暴露 `minimal/low/medium/high`，映射为嵌套 `reasoning.effort`。o3/o4-mini 元数据未列出档位，保持省略
 - Gemini `gemini-3.8-flash`：`low/medium/high` 映射为 `generationConfig.thinkingConfig.thinkingLevel`。2.5 的 numeric thinkingBudget 暂不开放。Gemini 3.x 采样参数依官方建议保持默认（并非 API 不接受这些字段）
 - Claude `claude-sonnet-5-5`：`low/medium/high/xhigh/max` 映射 `output_config.effort`；默认 adaptive thinking，不发送猜测的 off/disabled 开关。其他未核实的 Claude/Go/Zen 模型参数保持默认，不猜测可用档位；仍可调整文本长度、输出上限、超时等调用限制
