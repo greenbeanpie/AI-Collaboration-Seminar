@@ -6,8 +6,9 @@ import type { Task } from '../api/types';
 import { TasksPage } from './TasksPage';
 const context = vi.hoisted(() => ({ projectId: 'p' }));
 vi.mock('../components/ProjectShell', () => ({ useProject: () => context }));
+vi.mock('./CollaborationWorkspace', () => ({ CollaborationWorkspace: () => null }));
 vi.mock('./TasksMaterialsShared', () => ({ CommentsPanel: () => <div>评论区域</div> }));
-function task(id: string, lifecycleState?: string): Task & { lifecycleState?: string } {
+function task(id: string, lifecycleState: string | null = null): Task {
   return { taskId: id, title: `Task ${id}`, detail: '', assigneeId: null, dueDate: null, duePrecision: 'unknown', status: 'todo', requirementId: null, revision: 1, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', lifecycleState };
 }
 function Harness() {
