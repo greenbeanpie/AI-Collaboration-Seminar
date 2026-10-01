@@ -1,4 +1,4 @@
-import { assertProfileStamp, recommendationProfiles } from './personal-profiles';
+import { assertProfileStamp, recommendationProfiles, recommendationMembers, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
@@ -6,9 +6,9 @@ import { AppError } from '../core/errors';
 import { recordEvent } from './events';
 import { settleReservation } from './budget';
 import { aiJsonCall } from './agent';
-import { failJob, getJob, succeedJob } from './jobs';
+import { failJob, getJob } from './jobs';
 
-const PROMPT_VERSION = 'assignment-v2-private';
+const PROMPT_VERSION = 'assignment-v3-consent';
 
 export interface AssignmentSuggestionInput {
   configVersionId?: string;
@@ -59,13 +59,14 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
     throw new AppError('INVALID_STATE', '项目成员已变化，请重新生成推荐', 409, false);
   }
   const profiles = await recommendationProfiles(env, input.projectId);
+  const members = await recommendationMembers(env, input.projectId);
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const model = config.config.textEconomy;
     const modelInput = {
       requirementSetId: input.requirementSetId,
       requirements: input.requirements,
       tasks: input.tasks,
-      members: input.members,
+      members,
       preferences: profiles,
     };
     const { data } = await aiJsonCall(env, {
@@ -171,7 +172,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
       dedupKey: jobId,
       payload: { assignmentCount: result.assignments.length, requirementSetId: input.requirementSetId },
     });
-    await succeedJob(env, jobId, result);
+    await finishRecommendationJob(env, jobId, result);
   } catch (error) {
 
     await settleReservation(env, jobId, 'released');

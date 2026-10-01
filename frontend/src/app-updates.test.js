@@ -22,6 +22,14 @@ function setup({ controlled = true, online = true, enabled = true } = {}) {
 
 afterEach(() => { vi.useRealTimers(); });
 describe('application update lifecycle', () => {
+  it('offers honest confirmed recovery for missing resources without claiming a downloaded update', async () => {
+    const t = setup(); await t.controller.start(); t.controller.resourcesMissing = true; await t.controller.check();
+    expect(t.controller.state).toBe('refresh'); expect(t.states).not.toContain('ready');
+    t.env.confirm.mockReturnValue(false); t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
+    t.env.confirm.mockReturnValue(true); t.controller.apply(); t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
+    const unsupported = setup({ enabled: false }); unsupported.controller.resourcesMissing = true; await unsupported.controller.check();
+    expect(unsupported.controller.state).toBe('refresh'); expect(unsupported.env.reload).not.toHaveBeenCalled();
+  });
   it('finds an already waiting update without initiating activation', async () => {
     const t = setup(); t.registration.waiting = t.worker(); await t.controller.start();
     expect(t.controller.state).toBe('ready'); expect(t.registration.waiting.postMessage).not.toHaveBeenCalled();

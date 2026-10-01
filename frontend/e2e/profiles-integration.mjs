@@ -18,7 +18,7 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(12000);
   const errors = [], outside = [], writes = [], adminReads = [];
   const needles = ['PRIVATE-BIO', 'PRIVATE-MAJOR', 'PRIVATE-SPECIALTIES', 'PRIVATE-ROLE'];
-  let own = { revision: 0, searchable: false, bio: '', major: '', specialties: '', preferredRoles: '', visibility: { bio: false, major: false, specialties: false, preferredRoles: false } };
+  let own = { revision: 0, searchable: false, aiUseAllowed: false, bio: '', major: '', specialties: '', preferredRoles: '', visibility: { bio: false, major: false, specialties: false, preferredRoles: false } };
   const publiclyVisible = () => own.searchable ? { username: 'fixture', displayName: 'Synthetic owner', ...Object.fromEntries(Object.keys(own.visibility).filter(k => own.visibility[k]).map(k => [k, own[k]])) } : null;
   page.on('pageerror', error => errors.push(error.message));
   await context.route('**/*', route => {
@@ -50,7 +50,7 @@ try {
   assert.equal(await page.locator('.main-nav a[href="/app/settings"]').count(), 1);
   assert.equal(await page.locator('.main-nav a[href="/app/people"]').count(), 1);
   const boxes = page.locator('.personal-profiles form input[type="checkbox"]');
-  for (let i = 0; i < 5; i++) assert.equal(await boxes.nth(i).isChecked(), false, 'legacy default stays private');
+  for (let i = 0; i < 6; i++) assert.equal(await boxes.nth(i).isChecked(), false, 'legacy default stays private and denies AI');
   for (const [i, field] of ['bio', 'major', 'specialties', 'preferredRoles'].entries()) await page.locator(`#profile-${field}`).fill(needles[i]);
   const preview = page.locator('.profile-card');
   for (const needle of needles) assert(!(await preview.innerText()).includes(needle));
@@ -62,12 +62,12 @@ try {
   const historyText = await page.locator('app-updates').evaluate(el => el.shadowRoot.textContent);
   for (const needle of needles) assert(!historyText.includes(needle));
   page.once('dialog', d => d.dismiss()); await page.locator('.profile-row button').click(); assert.deepEqual(writes, []);
-  await boxes.nth(0).check(); await boxes.nth(1).check();
+  await boxes.nth(0).check(); await boxes.nth(2).check();
   await page.locator('#profile-bio').fill('**Public bio** <script>window.profileXss=1</script> ![tracking](https://invalid.example/image.png)');
   assert.equal(await preview.locator('img,script').count(), 0);
   assert.equal(await page.evaluate(() => window.profileXss), undefined);
   await page.locator('.personal-profiles button[type="submit"]').click(); await page.waitForFunction(() => document.querySelector('.personal-profiles [role="status"]'));
-  assert.equal(writes.length, 1); assert.equal(own.revision, 1);
+  assert.equal(writes.length, 1); assert.equal(own.revision, 1); assert.equal(own.aiUseAllowed, false, 'publishing does not authorize AI');
   await page.locator('.main-nav a[href="/app/people"]').click(); await page.waitForURL('**/app/people');
   await page.locator('#profile-search').fill('fixture'); await page.locator('.personal-profiles form button').click();
   await page.locator('a[href="/app/people/fixture"]').click(); await page.waitForURL('**/app/people/fixture');
@@ -85,7 +85,13 @@ try {
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: path.join(output, `integration-editor-${role}-mobile.png`), fullPage: true });
   await page.locator('.personal-profiles form input[type="checkbox"]').first().uncheck();
+  const consent = page.locator('input[aria-describedby="profile-ai-consent-description"]');
+  assert.equal(await consent.isChecked(), false); await consent.check();
   await page.locator('.personal-profiles button[type="submit"]').click(); await page.waitForFunction(() => document.querySelector('.personal-profiles [role="status"]'));
+  assert.equal(own.searchable, false); assert.equal(own.aiUseAllowed, true, 'owner opts in independently of publication');
+  await consent.uncheck(); await page.locator('.personal-profiles button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('.personal-profiles [role="status"]'));
+  assert.equal(own.aiUseAllowed, false, 'owner withdraws consent');
   await page.locator('.main-nav a[href="/app/people"]').click(); await page.locator('#profile-search').fill('fixture'); await page.locator('.personal-profiles form button').click();
   await page.waitForFunction(() => document.querySelector('.personal-profiles [role="status"]').textContent.length > 0);
   assert.equal(await page.locator('a[href="/app/people/fixture"]').count(), 0, 'disable hides account on subsequent read');
@@ -95,7 +101,7 @@ try {
   if (role !== 'super_admin') { await page.getByRole('alert').waitFor(); assert(!adminReads.some(p => p.includes('ai-config'))); }
   else await page.locator('.ai-model-settings').first().waitFor();
   assert.deepEqual(errors, []); assert.deepEqual(outside, []);
-  results.push({ role, passed: true, checks: ['authenticated deep links', 'private defaults', 'public preview filters fields', 'shared dirty cancel', 'logout cancel no write', 'notification history no private text', 'native notification Back retains draft', 'optimistic fixture save', 'exact search route', 'public fields only', 'Markdown inert/no images', 'Back/Forward', '390px layout', 'privacy withdrawal', 'AI permission guard', 'no external requests'], writes });
+  results.push({ role, passed: true, checks: ['authenticated deep links', 'private defaults and AI denied', 'public preview filters fields', 'shared dirty cancel', 'logout cancel no write', 'notification history no private text', 'native notification Back retains draft', 'optimistic fixture save', 'exact search route', 'public fields only', 'Markdown inert/no images', 'Back/Forward', '390px mobile navigation', 'privacy withdrawal', 'publication never implies AI consent', 'explicit owner opt-in and withdrawal', 'AI permission guard', 'no external requests'], writes });
   console.log(`PASS integrated profiles: ${role}`); await context.close();
  }
  const anonymous = await browser.newContext({ serviceWorkers: 'block' });

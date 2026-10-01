@@ -28,13 +28,13 @@ export class UpdateController {
     finally { this.env.clearTimeout(timer); }
   }
   async start() {
-    if (!this.env.sw || !this.env.enabled) { this.set('unsupported'); return; }
+    if (!this.env.sw || !this.env.enabled) { this.set(this.resourcesMissing && this.env.online() ? 'refresh' : 'unsupported'); return; }
     if (this.starting) return this.starting;
     this.starting = this.bounded(this.env.sw.register('/sw.js', { scope: '/', updateViaCache: 'none' })).then(registration => {
       this.registration = registration;
       registration.addEventListener('updatefound', () => this.inspect());
       this.inspect();
-    }).catch(() => this.set(this.env.online() ? 'error' : 'offline')).finally(() => { this.starting = null; });
+    }).catch(() => this.set(this.env.online() ? (this.resourcesMissing ? 'refresh' : 'error') : 'offline')).finally(() => { this.starting = null; });
     return this.starting;
   }
   inspect() {
@@ -57,7 +57,7 @@ export class UpdateController {
     if (this.applying || this.checking || this.state === 'downloading') return;
     if (this.registration?.waiting || this.changedElsewhere) { this.set('ready'); return; }
     if (!this.env.online()) { this.set('offline'); return; }
-    if (!this.env.sw || !this.env.enabled) { this.set('unsupported'); return; }
+    if (!this.env.sw || !this.env.enabled) { this.set(this.resourcesMissing ? 'refresh' : 'unsupported'); return; }
     this.checking = true;
     this.set('checking');
     try {
@@ -65,18 +65,19 @@ export class UpdateController {
       if (!this.registration) return;
       await this.bounded(this.registration.update());
       this.inspect();
-      if (!this.registration.installing && !this.registration.waiting && !this.changedElsewhere) this.set('latest');
-    } catch { this.set(this.env.online() ? 'error' : 'offline'); }
+      if (!this.registration.installing && !this.registration.waiting && !this.changedElsewhere) this.set(this.resourcesMissing ? 'refresh' : 'latest');
+    } catch { this.set(this.env.online() ? (this.resourcesMissing ? 'refresh' : 'error') : 'offline'); }
     finally { this.checking = false; }
   }
   apply() {
-    if (this.applying || this.state !== 'ready') return;
+    if (this.applying || !['ready', 'refresh'].includes(this.state)) return;
     if (!this.env.confirm('更新将重新加载页面。请先保存未提交的编辑、草稿和附件。确认现在更新？')) return;
     const worker = this.registration?.waiting;
-    if (!worker && !this.changedElsewhere) { this.set('error'); return; }
+    const confirmedRefresh = this.state === 'refresh' && this.resourcesMissing;
+    if (!worker && !this.changedElsewhere && !confirmedRefresh) { this.set('error'); return; }
     this.applying = true;
     this.set('applying');
-    if (this.changedElsewhere && !worker) { this.reloadOnce(); return; }
+    if ((this.changedElsewhere || confirmedRefresh) && !worker) { this.reloadOnce(); return; }
     // Never reload on an unsolicited activation in another tab.
     const activated = () => { if (worker.state === 'activated' && this.applying) this.reloadOnce(); };
     worker.addEventListener('statechange', activated);
@@ -107,6 +108,9 @@ export class NotificationHistory {
 
 const labels = { idle: '检查更新', checking: '检查中…', latest: '已是最新 · 再检查', downloading: '正在下载…', ready: '下载完成 · 更新', applying: '正在更新…', error: '更新失败 · 重试', offline: '离线 · 重试', unsupported: '当前环境不支持更新' };
 const details = { checking: '正在检查应用更新。', latest: '当前已是最新版本。', downloading: '发现新版本，正在下载。完成后可手动确认更新。', ready: '新版本已就绪。请保存编辑后确认重新加载。', applying: '正在应用已确认的更新。', error: '更新未完成，请稍后重试。页面编辑仍保留。', offline: '当前离线，联网后可重试检查更新。', unsupported: '当前浏览器或开发环境不支持应用更新。' };
+
+labels.refresh = '页面资源不可用 · 重新加载';
+details.refresh = '页面资源加载失败。请先保存编辑，再确认重新加载；取消会保留页面。';
 
 export function mountUpdates() {
   if (document.querySelector('app-updates')) return;
@@ -140,6 +144,7 @@ export function mountUpdates() {
   const actionButton = item => {
     const button = document.createElement('button');
     button.type = 'button';
+    if (item.action === 'update' && controller.state === 'refresh') { button.textContent = '确认重新加载'; button.onclick = () => controller.apply(); return button; }
     if (item.action === 'update' && controller.state === 'ready') { button.textContent = '确认更新'; button.onclick = () => controller.apply(); }
     else if (item.action === 'install') { button.textContent = '安装到桌面'; button.onclick = () => window.dispatchEvent(new Event('app-install-request')); }
     else return null;
@@ -192,14 +197,24 @@ export function mountUpdates() {
   root.addEventListener('keydown', event => { if (event.key === 'Escape' && open) { event.stopPropagation(); closePanel(); } });
   document.addEventListener('pointerdown', event => { if (open && !event.composedPath().includes(host)) closePanel(); });
   window.addEventListener('popstate', () => { if (open) closePanel(true, false); });
-  find('update').onclick = () => controller.state === 'ready' ? controller.apply() : void controller.check();
+  find('update').onclick = () => ['ready', 'refresh'].includes(controller.state) ? controller.apply() : void controller.check();
+  window.addEventListener('app-update-request', () => {
+    if (['ready', 'refresh'].includes(controller.state)) controller.apply();
+    else void controller.check().then(() => { if (['ready', 'refresh'].includes(controller.state)) controller.apply(); });
+  });
+  window.addEventListener('app-assets-unavailable', () => {
+    controller.resourcesMissing = true;
+    notify('assets', '页面资源暂时不可用。请先保存编辑，再检查并确认更新；页面不会自动重载。', 'error');
+    void controller.check();
+  });
   window.addEventListener('offline', () => notify('network', '当前离线。请保留未提交的编辑，联网后检查并确认提交。'));
   window.addEventListener('online', () => notify('network', '网络已恢复，可以检查更新。'));
   window.addEventListener('app-notification-scope', event => {
     if (history.scope === event.detail) return;
     history.reset(event.detail); dismiss(); closePanel(false);
     // System update readiness is not account content; expose the current action after a scope switch.
-    if (['ready', 'downloading', 'applying'].includes(controller.state)) history.add('update', details[controller.state], 'info', 'update');
+    if (['ready', 'refresh', 'downloading', 'applying'].includes(controller.state)) history.add('update', details[controller.state], 'info', 'update');
+    window.dispatchEvent(new Event('app-install-status-request'));
     render();
   });
   window.addEventListener('app-notification', event => {
@@ -208,6 +223,16 @@ export function mountUpdates() {
     notify(id || `notice-${++sequence}`, text, kind, action);
   });
   window.addEventListener('app-install-unavailable', () => { history.items = history.items.filter(item => item.action !== 'install'); if (active?.action === 'install') dismiss(); render(); });
+  window.addEventListener('app-install-state', event => {
+    if (event.detail === true) {
+      if (!history.items.some(item => item.action === 'install')) history.add('install', '安装工作台可获得独立窗口和桌面入口。', 'info', 'install');
+    } else {
+      history.items = history.items.filter(item => item.action !== 'install');
+      if (active?.action === 'install') dismiss();
+    }
+    render();
+  });
+  window.dispatchEvent(new Event('app-install-status-request'));
   render(); void controller.start();
 }
 

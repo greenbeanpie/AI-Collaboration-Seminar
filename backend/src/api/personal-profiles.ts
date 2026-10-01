@@ -9,7 +9,7 @@ import { consumePasswordRateLimit } from '../services/accounts';
 import { ownProfile, publicProfile, type ProfileRow } from '../services/personal-profiles';
 
 const visibility = z.object({ bio: z.boolean(), major: z.boolean(), specialties: z.boolean(), preferredRoles: z.boolean() }).strict();
-const fields = { searchable: z.boolean(), bio: z.string().max(4000), major: z.string().max(160), specialties: z.string().max(800), preferredRoles: z.string().max(400), visibility };
+const fields = { searchable: z.boolean(), aiUseAllowed: z.boolean(), bio: z.string().max(4000), major: z.string().max(160), specialties: z.string().max(800), preferredRoles: z.string().max(400), visibility };
 const own = z.object({ ...fields, revision: z.number().int().min(0) });
 const visible = z.object({ username: z.string(), displayName: z.string(), bio: z.string().optional(), major: z.string().optional(), specialties: z.string().optional(), preferredRoles: z.string().optional() });
 const username = z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_-]+$/);
@@ -26,12 +26,12 @@ export function registerPersonalProfileRoutes(app: OpenAPIHono<AppEnv>) {
     if (c.req.header('X-Account-Settings') !== '1') throw permissionDenied();
     const id = c.get('user')!.id; const b = c.req.valid('json');
     await consumePasswordRateLimit(c.env, 'personal-profile-save', id, 30, 3600);
-    const result = await c.env.DB.prepare(`INSERT INTO personal_profiles(user_id,searchable,bio,major,specialties,preferred_roles,bio_public,major_public,specialties_public,preferred_roles_public,revision,updated_at)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,1,?11 WHERE ?12=0
-      ON CONFLICT(user_id) DO NOTHING`).bind(id,+b.searchable,b.bio,b.major,b.specialties,b.preferredRoles,+b.visibility.bio,+b.visibility.major,+b.visibility.specialties,+b.visibility.preferredRoles,nowIso(),b.expectedRevision).run();
+    const result = await c.env.DB.prepare(`INSERT INTO personal_profiles(user_id,searchable,bio,major,specialties,preferred_roles,bio_public,major_public,specialties_public,preferred_roles_public,revision,updated_at,ai_use_allowed)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,1,?11,?13 WHERE ?12=0
+      ON CONFLICT(user_id) DO NOTHING`).bind(id,+b.searchable,b.bio,b.major,b.specialties,b.preferredRoles,+b.visibility.bio,+b.visibility.major,+b.visibility.specialties,+b.visibility.preferredRoles,nowIso(),b.expectedRevision,+b.aiUseAllowed).run();
     if (!result.meta.changes) {
-      const updated = await c.env.DB.prepare(`UPDATE personal_profiles SET searchable=?2,bio=?3,major=?4,specialties=?5,preferred_roles=?6,bio_public=?7,major_public=?8,specialties_public=?9,preferred_roles_public=?10,revision=revision+1,updated_at=?11 WHERE user_id=?1 AND revision=?12`)
-        .bind(id,+b.searchable,b.bio,b.major,b.specialties,b.preferredRoles,+b.visibility.bio,+b.visibility.major,+b.visibility.specialties,+b.visibility.preferredRoles,nowIso(),b.expectedRevision).run();
+      const updated = await c.env.DB.prepare(`UPDATE personal_profiles SET searchable=?2,bio=?3,major=?4,specialties=?5,preferred_roles=?6,bio_public=?7,major_public=?8,specialties_public=?9,preferred_roles_public=?10,ai_use_allowed=?13,revision=revision+1,updated_at=?11 WHERE user_id=?1 AND revision=?12`)
+        .bind(id,+b.searchable,b.bio,b.major,b.specialties,b.preferredRoles,+b.visibility.bio,+b.visibility.major,+b.visibility.specialties,+b.visibility.preferredRoles,nowIso(),b.expectedRevision,+b.aiUseAllowed).run();
       if (!updated.meta.changes) throw versionConflict((await readOwn(c,id))?.revision ?? 0);
     }
     return c.json(apiData(c, ownProfile(await readOwn(c,id))),200);

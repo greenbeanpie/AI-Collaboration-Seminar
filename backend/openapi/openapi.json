@@ -524,6 +524,9 @@
               "searchable": {
                 "type": "boolean"
               },
+              "aiUseAllowed": {
+                "type": "boolean"
+              },
               "bio": {
                 "type": "string",
                 "maxLength": 4000
@@ -571,6 +574,7 @@
             },
             "required": [
               "searchable",
+              "aiUseAllowed",
               "bio",
               "major",
               "specialties",
@@ -6843,6 +6847,9 @@
                   "searchable": {
                     "type": "boolean"
                   },
+                  "aiUseAllowed": {
+                    "type": "boolean"
+                  },
                   "bio": {
                     "type": "string",
                     "maxLength": 4000
@@ -6890,6 +6897,7 @@
                 },
                 "required": [
                   "searchable",
+                  "aiUseAllowed",
                   "bio",
                   "major",
                   "specialties",

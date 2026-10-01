@@ -52,6 +52,7 @@ function refresh(): InstallState {
 
 function emit(): void {
   refresh();
+  publishInstallState();
   if (!snapshot.canInstall) window.dispatchEvent(new Event('app-install-unavailable'));
   for (const listener of [...listeners]) listener();
 }
@@ -76,6 +77,11 @@ function ensureListening(): void {
   window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   window.addEventListener('appinstalled', handleAppInstalled);
   window.addEventListener('app-install-request', handleInstallRequest);
+  window.addEventListener('app-install-status-request', publishInstallState);
+}
+
+function publishInstallState(): void {
+  window.dispatchEvent(new CustomEvent('app-install-state', { detail: refresh().canInstall }));
 }
 
 function handleInstallRequest(): void { void promptInstall(); }
@@ -124,6 +130,7 @@ export function resetForTest(): void {
     window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.removeEventListener('appinstalled', handleAppInstalled);
     window.removeEventListener('app-install-request', handleInstallRequest);
+    window.removeEventListener('app-install-status-request', publishInstallState);
   }
   listening = false;
   deferredPrompt = null;

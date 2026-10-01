@@ -1,6 +1,7 @@
 import { SettingsLayout } from './pages/SettingsLayout';
 import { ThemeSelector } from './components/ThemeSelector';
-import { lazy, Suspense, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
+import { resilientLazy as lazy } from './resilient-lazy';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight } from 'lucide-react';

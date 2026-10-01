@@ -149,13 +149,14 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     route(app, 'get', '/proposals', undefined, async (c) => {
         const paging = parsePaging(c.req.query());
         const cursor = paging.cursor;
-        const rows = await c.env.DB.prepare(`SELECT * FROM collaboration_proposals WHERE project_id=?1
-            AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
-            ORDER BY created_at DESC,id DESC LIMIT ?4`)
-            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal>();
+        const rows = await c.env.DB.prepare(`SELECT p.*,json_extract(j.input_json,'$.profileStamp') profile_stamp FROM collaboration_proposals p JOIN jobs j ON j.id=p.job_id WHERE p.project_id=?1
+            AND (?2 IS NULL OR p.created_at < ?2 OR (p.created_at = ?2 AND p.id < ?3))
+            ORDER BY p.created_at DESC,p.id DESC LIMIT ?4`)
+            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal & {profile_stamp:string|null}>();
         const page = rows.results.slice(0, paging.limit);
         const last = page.at(-1);
-        return c.json(apiData(c, { items: page.map(toProposal), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
+        const currentStamp = await profileStamp(c.env, ids(c).projectId);
+        return c.json(apiData(c, { items: page.map(p => p.kind === 'assign' && p.profile_stamp !== currentStamp ? {...toProposal(p),status:'stale',payload:{}} : toProposal(p)), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
     });
     route(app, 'post', '/proposals/{proposalId}/apply', z.object({ expectedRevision: revision }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await applyProposal(c.env, projectId, c.req.param('proposalId')!, b.expectedRevision, userId); return c.json(apiData(c, { applied: true })); });
     for (const operation of ['decompose', 'assign', 'evaluate'] as const) {

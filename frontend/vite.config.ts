@@ -26,7 +26,15 @@ export default defineConfig({
           { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
-      workbox: { navigateFallbackDenylist: [/^\/api(?:\/.*)?$/], runtimeCaching: [] },
+      workbox: {
+        navigateFallbackDenylist: [/^\/api(?:\/.*)?$/],
+        importScripts: ['/asset-compat.js'],
+        runtimeCaching: [{
+          urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[^/]+-[A-Za-z0-9_-]+\.(?:js|css)$/.test(url.pathname),
+          handler: 'CacheFirst',
+          options: { cacheName: 'ai-office-assets-compat-v1', cacheableResponse: { statuses: [200] }, expiration: { maxEntries: 256, maxAgeSeconds: 7 * 24 * 60 * 60 } },
+        }],
+      },
     }),
   ],
   server: {

@@ -33,6 +33,20 @@ afterEach(() => {
   resetForTest();
 });
 
+it('restores the still-valid native installation opportunity on scope status requests without prompting', async () => {
+  const states: boolean[] = [];
+  const collect = (event: Event) => states.push((event as CustomEvent<boolean>).detail);
+  window.addEventListener('app-install-state', collect);
+  try {
+    const event = createPromptEvent('dismissed'); window.dispatchEvent(event);
+    window.dispatchEvent(new Event('app-install-status-request'));
+    window.dispatchEvent(new Event('app-install-status-request'));
+    expect(states).toEqual([true, true, true]); expect(event.prompt).not.toHaveBeenCalled();
+    await promptInstall(); window.dispatchEvent(new Event('app-install-status-request'));
+    expect(states.slice(-2)).toEqual([false, false]); expect(event.prompt).toHaveBeenCalledTimes(1);
+  } finally { window.removeEventListener('app-install-state', collect); }
+});
+
 describe('应用内 PWA 安装入口', () => {
   it('beforeinstallprompt 到达后进入可安装状态并通知订阅者', () => {
     const seen: InstallState[] = [];

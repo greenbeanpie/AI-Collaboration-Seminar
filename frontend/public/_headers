@@ -3,6 +3,8 @@
   Cache-Control: no-cache, no-store, must-revalidate
 /app-updates.js
   Cache-Control: no-cache
+/asset-compat.js
+  Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
 /
