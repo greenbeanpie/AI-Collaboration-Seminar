@@ -462,6 +462,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         searchable: boolean;
+                        aiUseAllowed: boolean;
                         bio: string;
                         major: string;
                         specialties: string;
@@ -5153,6 +5154,7 @@ export interface components {
         PersonalProfileResponse: {
             data: {
                 searchable: boolean;
+                aiUseAllowed: boolean;
                 bio: string;
                 major: string;
                 specialties: string;

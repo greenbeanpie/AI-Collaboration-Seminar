@@ -7,6 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { getJob, tryDispatchJob } from '../services/jobs';
 import { reserveAiSlot, settleReservation } from '../services/budget';
+import { assertProfileStamp } from '../services/personal-profiles';
 
 const jobParams = z.object({ jobId: z.string().uuid() });
 
@@ -58,6 +59,10 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         .bind(job.project_id, c.get('user')!.id)
         .first<{ role: string }>();
       if (!member) throw permissionDenied('不是项目成员');
+    }
+    const input = JSON.parse(job.input_json) as {operation?:string;profileStamp?:string};
+    if (job.project_id && (job.kind === 'assignment_suggest' || input.operation === 'collaboration.assign')) {
+      await assertProfileStamp(c.env,job.project_id,input.profileStamp);
     }
     return c.json(
       apiData(c, {

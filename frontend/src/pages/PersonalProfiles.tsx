@@ -35,11 +35,17 @@ export function PersonalProfilePage() {
   async function reload() { if (dirty && !window.confirm('重新读取将放弃当前未保存修改，是否继续？')) return; setError(null); try {const p=await api.get<'PersonalProfileResponse'>('/auth/personal-profile');setSaved(p);setDraft(p);}catch(e){setError(e);} }
   return <div className="personal-profiles"><PageHeading title="个人资料与隐私" detail="自行决定哪些资料可被其他已登录用户看到。" />
     <p>开启搜索后，其他已登录用户可通过完整用户名找到你，并查看勾选公开的字段。关闭后，搜索与个人主页立即不可用。</p>
-    <p>无论是否公开，已填写资料均可用于你所在项目的任务偏好推荐，并发送给项目所用的已配置 AI 服务处理。隐藏资料不会展示给其他组员；推荐说明不会引用个人资料。此功能不用于成绩、人格或雇佣评价。</p>
+    <p>公开展示和 AI 使用分别由你决定。未启用 AI 使用时，你填写的个人资料不会被用于模型请求。</p>
     {error !== null && <ErrorNotice error={error} onRetry={()=>void reload()} />}{notice && <p role="status">{notice}</p>}
     {!draft ? <Spinner /> : <><form onSubmit={save} className="section-card"><fieldset disabled={busy}>
       <label><input type="checkbox" checked={draft.searchable} onChange={e=>setDraft({...draft,searchable:e.target.checked})} />允许通过用户名搜索我</label>
       <p>用户名：@{session.data?.username ?? '此旧账号尚无用户名，暂不可搜索'}</p>
+      <section aria-labelledby="profile-ai-consent-title">
+        <h2 id="profile-ai-consent-title">AI 任务偏好推荐</h2>
+        <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。</p>
+        <p>默认关闭。取消勾选并保存可撤回授权，阻止后续请求及旧推荐输出；已发送给提供商的请求无法收回。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
+        <label><input type="checkbox" aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={e=>setDraft({...draft,aiUseAllowed:e.target.checked})} />我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
+      </section>
       {Object.entries(names).map(([field,label])=> {const key=field as keyof typeof names;return <section key={key}><label htmlFor={`profile-${key}`}>{label}{key==='bio' ? '（Markdown）' : ''}</label>
         <textarea id={`profile-${key}`} rows={key==='bio' ? 6 : 2} maxLength={limits[key]} value={draft[key]} onChange={e=>setDraft({...draft,[key]:e.target.value})} />
         <label><input type="checkbox" checked={draft.visibility[key]} onChange={e=>setDraft({...draft,visibility:{...draft.visibility,[key]:e.target.checked}})} />公开{label}</label></section>;})}
