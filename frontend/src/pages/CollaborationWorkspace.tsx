@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, UserRound } from 'lucide-react';
-import { api, listAllItems, projectPath } from '../api/client';
+import { ApiError, api, listAllItems, projectPath } from '../api/client';
 import { collaborationApi, type CollaborationTask, type SubmissionDecision, type TaskSubmission } from '../api/collaboration';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
@@ -15,6 +15,11 @@ const decisionLabels = { accept: '通过', improve: '改进', rework: '重做' }
 const defaultDraft = { title: '', detail: '', criteria: '', effortHours: '1', parentTaskId: '' };
 
 export function CollaborationWorkspace() {
+  const { projectId } = useProject();
+  return <ProjectCollaborationWorkspace key={projectId} />;
+}
+
+function ProjectCollaborationWorkspace() {
   const { projectId, project } = useProject();
   const client = useQueryClient();
   const owner = project.myRole === 'owner';
@@ -106,9 +111,18 @@ function ProposalPreview({ payload, members, tasks }: { payload: Record<string, 
 function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, members, aiEnabled, onChanged }: { projectId: string; task: CollaborationTask; childrenTasks: CollaborationTask[]; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; aiEnabled: boolean; onChanged: () => Promise<void> }) {
   const client = useQueryClient();
   const [editDraft, setEditDraft] = useState({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours) });
+  const [editBaseRevision, setEditBaseRevision] = useState(task.revision);
+  const [editConflicted, setEditConflicted] = useState(false);
+  const editOutdated = editConflicted || editBaseRevision !== task.revision;
   const [editSaved, setEditSaved] = useState(false);
   const [assigneeId, setAssigneeId] = useState(task.assigneeId ?? '');
   const [reason, setReason] = useState('');
+  const [assignmentBase, setAssignmentBase] = useState(task.revision);
+  const [assignmentConflict, setAssignmentConflict] = useState(false);
+  const assignmentOutdated = assignmentConflict || assignmentBase !== task.revision;
+  const [submissionBase, setSubmissionBase] = useState(task.revision);
+  const [submissionConflict, setSubmissionConflict] = useState(false);
+  const submissionOutdated = submissionConflict || submissionBase !== task.revision;
   const [body, setBody] = useState('');
   const [materialId, setMaterialId] = useState('');
   const [versions, setVersions] = useState<{ id: string; label: string }[]>([]);
@@ -120,9 +134,17 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
   const materialVersions = useQuery({ queryKey: ['materialVersions', projectId, materialId], queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(materialId)}/versions`)), enabled: !!materialId });
   const refresh = async () => { await onChanged(); await client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); } }, [job.isSettled, jobId, projectId, task.taskId, client]);
-  const edit = useMutation({ mutationFn: () => collaborationApi.updateTask(projectId, task, { title: editDraft.title.trim(), detail: editDraft.detail.trim(), criteria: editDraft.criteria.trim(), effortHours: Number(editDraft.effortHours) }), onSuccess: async () => { setEditSaved(true); await refresh(); }, onError: refresh });
-  const assign = useMutation({ mutationFn: () => collaborationApi.assign(projectId, task, assigneeId, reason.trim()), onSuccess: refresh, onError: refresh });
-  const submit = useMutation({ mutationFn: () => collaborationApi.submit(projectId, task, body.trim(), versions.map(version => version.id)), onSuccess: async result => { setBody(''); setVersions([]); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: refresh });
+  const edit = useMutation({
+    mutationFn: () => {
+      if (editOutdated) throw new Error('任务版本已变化，请先明确重新载入最新任务，再编辑保存。');
+      return collaborationApi.updateTask(projectId, { ...task, revision: editBaseRevision }, { title: editDraft.title.trim(), detail: editDraft.detail.trim(), criteria: editDraft.criteria.trim(), effortHours: Number(editDraft.effortHours) });
+    },
+    onSuccess: async updated => { setEditBaseRevision(updated.revision); setEditSaved(true); setEditConflicted(false); await refresh(); },
+    onError: async error => { if (error instanceof ApiError && error.status === 409) setEditConflicted(true); await refresh(); },
+  });
+
+  const assign = useMutation({ mutationFn: () => { if (assignmentOutdated) throw new Error('分工依据已变化，请重新载入并核对。'); return collaborationApi.assign(projectId, { ...task, revision: assignmentBase }, assigneeId, reason.trim()); }, onSuccess: async updated => { setAssignmentBase(updated.revision); setAssignmentConflict(false); setReason(''); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setAssignmentConflict(true); await refresh(); } });
+  const submit = useMutation({ mutationFn: () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), versions.map(version => version.id)); }, onSuccess: async result => { setBody(''); setVersions([]); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
   const evaluate = useMutation({ mutationFn: (submissionId: string) => collaborationApi.evaluate(projectId, submissionId), onSuccess: result => setJobId(result.jobId) });
   const current = history.data?.items.find(submission => submission.submissionId === task.currentSubmissionId);
   useEffect(() => { if (!jobId && current?.evaluationJobId && !current.decision) setJobId(current.evaluationJobId); }, [current?.evaluationJobId, current?.decision, jobId]);
@@ -138,15 +160,22 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
       <Field label="调整任务说明"><textarea className="input" rows={3} maxLength={4000} value={editDraft.detail} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, detail: event.target.value }); }} /></Field>
       <Field label="调整验收标准"><textarea className="input" required rows={4} maxLength={4000} value={editDraft.criteria} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, criteria: event.target.value }); }} /></Field>
       <Field label="调整预计投入（小时）"><input className="input" required type="number" min="0.25" max="200" step="0.25" value={editDraft.effortHours} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, effortHours: event.target.value }); }} /></Field>
-      {edit.error && <ErrorNotice error={edit.error} />}{editSaved && <p role="status">任务调整已保存</p>}<button className="button" disabled={edit.isPending || !editDraft.title.trim() || !editDraft.criteria.trim()}>{edit.isPending ? '保存中…' : '保存任务调整'}</button>
+      <p className="form-note">本地修改基于 r{editBaseRevision} · 当前任务 r{task.revision}</p>
+      {editOutdated && <div className="notice notice-warn">任务已被更新，本地修改仍保留。为避免覆盖新内容，请先重新载入最新任务（将替换此处未保存的修改），再重新编辑。</div>}
+      {editOutdated && <button type="button" className="button button-quiet" onClick={() => { setEditDraft({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours) }); setEditBaseRevision(task.revision); setEditConflicted(false); setEditSaved(false); edit.reset(); }}>重新载入最新任务</button>}
+      {edit.error && <ErrorNotice error={edit.error} />}{editSaved && <p role="status">任务调整已保存</p>}<button className="button" disabled={edit.isPending || editOutdated || !editDraft.title.trim() || !editDraft.criteria.trim()}>{edit.isPending ? '保存中…' : '保存任务调整'}</button>
     </form></details>}
     {owner && ['open', 'in_progress', 'submitted', 'improve', 'rework'].includes(task.lifecycleState) && <details><summary>负责人分工</summary><form className="stack" onSubmit={event => { event.preventDefault(); assign.mutate(); }}>
       {task.lifecycleState === 'submitted' && <p className="notice notice-warn">重新分配会撤回当前提交并使待处理评价失效，历史保留。请确认后填写调整理由。</p>}
       <Field label="任务执行人"><select className="input" required value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">选择成员</option>{members.map(member => <option key={member.userId} value={member.userId}>{member.displayName}</option>)}</select></Field>
       <Field label="分工理由"><textarea className="input" required maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明匹配的技能、投入时间及调整原因" /></Field>
-      {assign.error && <ErrorNotice error={assign.error} />}<button className="button" disabled={assign.isPending || !reason.trim() || !assigneeId}>确认分工</button>
+      {assignmentOutdated && <div className="notice notice-warn">任务分工已变化，不能用旧表单覆盖当前执行人。请重新载入并填写理由。</div>}
+      {assignmentOutdated && <button type="button" className="button button-quiet" onClick={() => { setAssigneeId(task.assigneeId ?? ''); setReason(''); setAssignmentBase(task.revision); setAssignmentConflict(false); assign.reset(); }}>重新载入当前分工</button>}
+      {assign.error && <ErrorNotice error={assign.error} />}<button className="button" disabled={assign.isPending || assignmentOutdated || !reason.trim() || !assigneeId}>确认分工</button>
     </form></details>}
     {canSubmit && <section className="collab-submit"><h3>{task.currentSubmissionId ? '提交新一轮成果' : '提交成果'}</h3><form className="stack" onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
+      {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请核对上方最新标准，再重新填写成果说明与绑定版本；当前草稿尚未提交。</div>}
+      {submissionOutdated && <button type="button" className="button button-quiet" onClick={() => { setBody(''); setVersions([]); setSubmissionBase(task.revision); setSubmissionConflict(false); submit.reset(); }}>已核对标准，重新填写本轮提交</button>}
       <Field label="成果说明"><textarea className="input" required rows={4} maxLength={12000} value={body} onChange={event => setBody(event.target.value)} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
       <Field label="绑定材料版本" hint="选择已保存的固定版本；之后编辑材料不会改变本轮提交。可跨材料选择，最多 10 个版本。"><select className="input" value={materialId} onChange={event => setMaterialId(event.target.value)}><option value="">选择材料</option>{materials.data?.map(material => <option key={material.materialId} value={material.materialId}>{material.title}</option>)}</select></Field>
       {materials.error && <ErrorNotice error={materials.error} />}{materialVersions.isLoading && <Spinner label="读取固定版本" />}{materialVersions.error && <ErrorNotice error={materialVersions.error} />}
@@ -154,7 +183,7 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
       <div className="collab-version-list">{materialVersions.data?.map(version => <label key={version.versionId} className="collab-version"><input type="checkbox" disabled={versions.length >= 10 && !versions.some(item => item.id === version.versionId)} checked={versions.some(item => item.id === version.versionId)} onChange={event => setVersions(currentVersions => event.target.checked ? [...currentVersions, { id: version.versionId, label: `${materials.data?.find(material => material.materialId === materialId)?.title ?? '材料'} · r${version.revision}` }] : currentVersions.filter(item => item.id !== version.versionId))} /><span>r{version.revision} · {new Date(version.createdAt).toLocaleString('zh-CN')}{version.attachments.length > 0 && <small>含 {version.attachments.length} 个附件，仅供人工参考</small>}</span></label>)}</div>
       {versions.length > 0 && <div className="chip-list">{versions.map(version => <button type="button" className="chip" key={version.id} onClick={() => setVersions(items => items.filter(item => item.id !== version.id))}>{version.label} ×</button>)}</div>}
       <p className="form-note">AI 仅依据提交说明和材料文本评价。图片、音视频及附件内容不视为已读取，请负责人另行核验。</p>
-      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
+      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
     </form></section>}
     {!task.assigneeId && <p className="form-note">请先认领任务或由负责人分工，再提交成果。</p>}
     {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由负责人手动验收。</div>}
@@ -175,8 +204,11 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
 function SubmissionDecisionForm({ projectId, submission, onChanged }: { projectId: string; submission: TaskSubmission; onChanged: () => Promise<void> }) {
   const [decision, setDecision] = useState<SubmissionDecision>('accept');
   const [feedback, setFeedback] = useState('');
-  const decide = useMutation({ mutationFn: () => collaborationApi.decide(projectId, submission, decision, feedback.trim()), onSuccess: onChanged, onError: onChanged });
-  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate(); }}><h4>负责人明确验收</h4><Field label={`第 ${submission.round} 轮验收结论`}><select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label={`第 ${submission.round} 轮验收理由`}><textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" /></Field>{decide.error && <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending || !feedback.trim()}>{decide.isPending ? '记录中…' : '确认验收决定'}</button></form>;
+  const [decisionBase, setDecisionBase] = useState(submission.revision);
+  const [decisionConflict, setDecisionConflict] = useState(false);
+  const decisionOutdated = decisionConflict || decisionBase !== submission.revision;
+  const decide = useMutation({ mutationFn: () => { if (decisionOutdated) throw new Error('评价记录已变化，请先重新核对。'); return collaborationApi.decide(projectId, { ...submission, revision: decisionBase }, decision, feedback.trim()); }, onSuccess: onChanged, onError: async error => { if (error instanceof ApiError && error.status === 409) setDecisionConflict(true); await onChanged(); } });
+  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate(); }}><h4>负责人明确验收</h4><Field label={`第 ${submission.round} 轮验收结论`}><select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label={`第 ${submission.round} 轮验收理由`}><textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" /></Field>{decisionOutdated && <div className="notice notice-warn">本轮评价已更新，请核对新记录后重新填写验收决定。</div>}{decisionOutdated && <button type="button" className="button button-quiet" onClick={() => { setDecisionBase(submission.revision); setDecisionConflict(false); setFeedback(''); setDecision('accept'); decide.reset(); }}>已核对最新评价，重新填写决定</button>}{decide.error && <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending || decisionOutdated || !feedback.trim()}>{decide.isPending ? '记录中…' : '确认验收决定'}</button></form>;
 }
 
 function BoundMaterialVersion({ projectId, version }: { projectId: string; version: NonNullable<TaskSubmission['materialVersions']>[number] }) {

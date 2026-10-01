@@ -37,7 +37,7 @@ export const decompositionSchema = z.object({
         title: z.string().trim().min(1).max(200),
         detail: z.string().trim().max(4000),
         criteria: z.string().trim().min(1).max(4000),
-        effortHours: z.number().positive().max(200),
+        effortHours: z.number().min(0.25).max(200),
     }).strict()).min(1).max(20),
 }).strict();
 export const taskEvaluationSchema = z.object({
@@ -78,7 +78,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
                 throw invalidState('缺少任务需求');
             const model = config.config.textEconomy;
             const { data } = await aiJsonCall(env, { projectId: input.projectId, jobId, purpose: 'textEconomy', configVersionId: config.id, model: model.model, modelConfig: model, promptVersion: 'collaboration-decompose-v1', messages: [
-                    { role: 'system', content: `${dataRule}\n把任务需求拆成1至20个可独立认领、可交付、可验收的具体子任务。每项明确标题、工作内容、可核对的验收标准和预计工时(0至200，不含0)。不要重复任务，不分配人员，不递归调用工具。不确定的假设需写在detail中。只输出JSON：{"tasks":[{"title":"标题","detail":"工作内容和假设","criteria":"成果验收标准","effortHours":1}]}。` },
+                    { role: 'system', content: `${dataRule}\n把任务需求拆成1至20个可独立认领、可交付、可验收的具体子任务。每项明确标题、工作内容、可核对的验收标准和预计工时(0.25至200)。不要重复任务，不分配人员，不递归调用工具。不确定的假设需写在detail中。只输出JSON：{"tasks":[{"title":"标题","detail":"工作内容和假设","criteria":"成果验收标准","effortHours":1}]}。` },
                     { role: 'user', content: JSON.stringify({ brief: input.brief }) },
                 ], schema: decompositionSchema });
             if (new Set(data.tasks.map(t => t.title)).size !== data.tasks.length)
@@ -211,7 +211,7 @@ export function assessEvidence(report: TaskEvaluation, materials: EvaluationMate
         reasons.push('没有可核对的材料正文');
     if (materials.some(m => m.attachments.length > 0))
         reasons.push('附件内容未读取，需要人工核对');
-    if (materials.some(m => /(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:www\.|mailto:|data:|file:))|!?\[[^\]]*\]\s*(?:\(|\[)|^\s*\[[^\]]+\]:/im.test(m.markdown)))
+    if (materials.some(m => /(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:www\.|mailto:|data:|file:))|!?\[[^\]]*\]\s*(?:\(|\[)|^\s*\[[^\]]+\]:|<(?:img|iframe|video|audio|object|embed|source|a)\b/im.test(m.markdown)))
         reasons.push('材料包含链接或图片引用，引用内容未读取');
     if (!report.evidence.length)
         reasons.push('评估没有提供材料原文证据');
@@ -225,8 +225,8 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     if (!input.submissionId)
         throw invalidState('缺少提交记录');
     const submission = await env.DB.prepare(`SELECT s.* FROM task_submissions s JOIN tasks t ON t.current_submission_id=s.id AND t.id=s.task_id JOIN project_members m ON m.project_id=t.project_id AND m.user_id=t.assignee_id
-    WHERE s.id=?1 AND s.project_id=?2 AND s.evaluation_job_id=?3 AND s.status IN ('pending','evaluated') AND t.lifecycle_state='submitted' AND t.revision=s.task_revision AND t.assignee_id=s.submitted_by`)
-        .bind(input.submissionId, input.projectId, jobId).first<Submission & {
+    WHERE s.id=?1 AND s.project_id=?2 AND s.evaluation_job_id=?3 AND s.status IN ('pending','evaluated') AND t.lifecycle_state='submitted' AND t.revision=s.task_revision AND t.assignee_id=s.submitted_by AND EXISTS(SELECT 1 FROM project_members requester WHERE requester.project_id=s.project_id AND requester.user_id=?4 AND (requester.role='owner' OR requester.user_id=s.submitted_by))`)
+        .bind(input.submissionId, input.projectId, jobId, input.requestedBy).first<Submission & {
         ai_report_json: string | null;
     }>();
     if (!submission)
@@ -265,7 +265,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
       WHERE id=?1 AND project_id=?2 AND evaluation_job_id=?3 AND revision=?8 AND status='pending' AND ai_report_json IS NULL
       AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running'))
       AND EXISTS(SELECT 1 FROM tasks t JOIN project_members m ON m.project_id=t.project_id AND m.user_id=t.assignee_id WHERE t.id=task_submissions.task_id AND t.current_submission_id=?1 AND t.revision=task_submissions.task_revision AND t.assignee_id=task_submissions.submitted_by AND t.lifecycle_state='submitted')
-      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.collaboration_revision=?9 AND m.user_id=?10)
+      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.collaboration_revision=?9 AND m.user_id=?10 AND (m.role='owner' OR m.user_id=task_submissions.submitted_by))
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?11 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`)
             .bind(submission.id, input.projectId, jobId, report.decision, report.feedback, JSON.stringify(persistedReport), nowIso(), submission.revision, input.settingsRevision, input.requestedBy, config.id).run();
         if (!updated.meta.changes)

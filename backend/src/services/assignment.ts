@@ -42,9 +42,9 @@ export const assignmentOutputSchema = z.object({
     taskId: z.string().uuid(),
     assigneeId: z.string().uuid().nullable(),
     reason: z.string().min(1).max(1000),
-  })).max(20),
+  }).strict()).max(20),
   considerations: z.array(z.string().min(1).max(1000)).max(20).default([]),
-});
+}).strict();
 
 async function assertCurrentMember(env: Env, projectId: string, userId: string): Promise<void> {
   const row = await env.DB.prepare('SELECT 1 AS present FROM project_members WHERE project_id = ?1 AND user_id = ?2')

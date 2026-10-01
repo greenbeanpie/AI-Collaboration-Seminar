@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { CollaborationWorkspace } from './CollaborationWorkspace';
 import { CollaborationSettings } from './CollaborationSettings';
-const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false }));
-vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p1', project: { myRole: identity.role } }) }));
+const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId: 'p1' }));
+vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }) }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
 const task = { taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
@@ -20,10 +20,10 @@ function setup({ tasks = [task], submissions = [] as unknown[], component = 'wor
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
   client.setQueryData(['materialVersions', 'p1', 'mat1'], [{ versionId: 'v1', revision: 4, createdAt: '2026-10-01T00:00:00Z', attachments: [] }]);
-  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: options?.method === 'PATCH' ? { assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: options?.method === 'PATCH' ? { assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}><NavigationProbe />{component === 'settings' ? <CollaborationSettings /> : <CollaborationWorkspace />}</MemoryRouter></QueryClientProvider>);
-  return { client, fetchMock };
+  const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}><NavigationProbe />{component === 'settings' ? <CollaborationSettings /> : <CollaborationWorkspace />}</MemoryRouter></QueryClientProvider>);
+  return { client, fetchMock, view };
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
@@ -113,6 +113,81 @@ describe('collaboration lifecycle', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/tasks/t1') && opts?.method === 'PATCH')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/tasks/t1') && opts?.method === 'PATCH')!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 3, title: '交付原型', detail: '完成交互', criteria: '增加键盘操作验收', effortHours: 4 });
+  });
+  it('pins task edits to their base revision until explicitly reloaded', async () => {
+    const { client, fetchMock } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('调整验收标准'), { target: { value: '旧版草稿' } });
+    act(() => { client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '另一成员的新标准' }] }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存任务调整' })).toBeDisabled());
+    expect(screen.getByLabelText('调整验收标准')).toHaveValue('旧版草稿');
+    fireEvent.click(screen.getByRole('button', { name: '保存任务调整' }));
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'PATCH')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '重新载入最新任务' }));
+    expect(screen.getByLabelText('调整验收标准')).toHaveValue('另一成员的新标准');
+    fireEvent.click(screen.getByRole('button', { name: '保存任务调整' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'PATCH')).toBe(true));
+    const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'PATCH')!;
+    expect(JSON.parse(call[1]!.body as string)).toMatchObject({ expectedRevision: 4, criteria: '另一成员的新标准' });
+  });
+  it('does not silently rebase an owner assignment over a newer claim', async () => {
+    const { client, fetchMock } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('分工理由'), { target: { value: '旧分工理由' } });
+    act(() => { client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, assigneeId: 'someone-else' }] }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '确认分工' })).toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: '确认分工' }));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/assign'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '重新载入当前分工' }));
+    expect(screen.getByLabelText('分工理由')).toHaveValue('');
+  });
+  it('requires fresh review before submitting a draft against changed criteria', async () => {
+    const { client, fetchMock } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '旧标准成果' } });
+    act(() => { client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '增加无障碍检查' }] }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeDisabled());
+    expect(screen.getByLabelText('成果说明')).toHaveValue('旧标准成果');
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '已核对标准，重新填写本轮提交' }));
+    expect(screen.getByLabelText('成果说明')).toHaveValue('');
+  });
+  it('pins an owner decision to the reviewed submission revision', async () => {
+    const { client, fetchMock } = setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '旧评价结论' } });
+    act(() => { client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: [{ ...submission, revision: 3, status: 'evaluated', aiDecision: 'improve', aiFeedback: '新增缺口' }] }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '确认验收决定' })).toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: '确认验收决定' }));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/decide'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '已核对最新评价，重新填写决定' }));
+    expect(screen.getByLabelText('第 1 轮验收理由')).toHaveValue('');
+  });
+  it('does not rebase a local mode change over refreshed collaboration settings', async () => {
+    const { client, fetchMock } = setup({ component: 'settings' });
+    fireEvent.change(screen.getByLabelText('分工方式'), { target: { value: 'automatic' } });
+    act(() => { client.setQueryData(['collaboration-settings', 'p1'], { assignmentMode: 'manual', evaluationMode: 'automatic', revision: 8 }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存协作规则' })).toBeDisabled());
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '重新载入协作规则' }));
+    expect(screen.getByLabelText('分工方式')).toHaveValue('manual');
+    expect(screen.getByLabelText('成果验收方式')).toHaveValue('automatic');
+  });
+  it('resets open drafts and task details when changing projects', () => {
+    const { client, view } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '新建协作任务' }));
+    fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '旧项目草稿' } });
+    for (const key of ['collaboration-tasks', 'collaboration-proposals']) client.setQueryData([key, 'p2'], { items: [] });
+    client.setQueryData(['collaboration-settings', 'p2'], { assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 });
+    client.setQueryData(['members', 'p2'], []);
+    client.setQueryData(['member-me', 'p2'], { userId: 'm1' });
+    identity.projectId = 'p2';
+    view.rerender(<QueryClientProvider client={client}><MemoryRouter><NavigationProbe /><CollaborationWorkspace /></MemoryRouter></QueryClientProvider>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '新建协作任务' }));
+    expect(screen.getByLabelText('任务名称')).toHaveValue('');
+    expect(screen.queryByText('交付原型')).not.toBeInTheDocument();
   });
   it('saves assignment and evaluation modes independently', async () => {
     const { fetchMock } = setup({ component: 'settings' });

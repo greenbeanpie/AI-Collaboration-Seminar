@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
 import type { Env } from '../src/env';
+import { assignmentOutputSchema } from '../src/services/assignment';
 import { seedProject, seedUser } from './helpers/seed';
 import { reserveAiSlot } from '../src/services/budget';
 import { getJob } from '../src/services/jobs';
@@ -41,8 +42,16 @@ async function fixture(mode = 'manual', attachments: unknown[] = [], markdown = 
 function report(versionId: string, decision: 'accept' | 'improve' | 'rework' = 'accept', quote = '成果包含三个验证案例。') { return { decision, feedback: '成果证据满足当前标准', evidence: [{ materialVersionId: versionId, quote }], limitations: [], coverage: 'complete' }; }
 describe('artifact-only evaluation safety', () => {
     it('strict schemas reject invented grade/person-ranking and empty criteria', () => {
+        expect(assignmentOutputSchema.safeParse({ assignments: [{ taskId: id(), assigneeId: null, reason: '没有匹配成员', abilityRank: 1 }], considerations: [] }).success).toBe(false);
         expect(taskEvaluationSchema.safeParse({ ...report(id()), grade: 90 }).success).toBe(false);
         expect(decompositionSchema.safeParse({ tasks: [{ title: '目标', detail: '', criteria: '', effortHours: 1 }] }).success).toBe(false);
+    });
+    it('relative HTML and Markdown evidence references need human review', () => {
+        const versionId = id();
+        const evaluation = taskEvaluationSchema.parse(report(versionId));
+        for (const link of ['<img src="/proof.png">', '[proof](/proof)', '[proof][source]', 'www.example.test']) {
+            expect(assessEvidence(evaluation, [{ versionId, markdown: '成果包含三个验证案例。' + link, attachments: [] }]).join(' ')).toContain('引用内容未读取');
+        }
     });
     it('evidence quotes must occur in the referenced immutable version', () => {
         const versionId = id();
@@ -96,6 +105,21 @@ describe('artifact-only evaluation safety', () => {
             ai_report_json: string | null;
             status: string;
         }>())).toMatchObject({ ai_report_json: null, status: 'pending' });
+    });
+    it('a requesting owner demoted during evaluation cannot commit their former authority', async () => {
+        const f = await fixture('automatic');
+        const requester = await seedUser();
+        await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'owner',?4)").bind(id(), f.projectId, requester.userId, stamp()).run();
+        const prior = await getJob(env, f.jobId);
+        const input = JSON.parse(prior.input_json);
+        input.requestedBy = requester.userId;
+        await env.DB.prepare('UPDATE jobs SET input_json=?2 WHERE id=?1').bind(f.jobId, JSON.stringify(input)).run();
+        vi.stubGlobal('fetch', model(report(f.versionId), async () => { await env.DB.prepare("UPDATE project_members SET role='member' WHERE project_id=?1 AND user_id=?2").bind(f.projectId, requester.userId).run(); }));
+        await runCollaborationAiJob(env, f.jobId);
+        expect((await getJob(env, f.jobId)).status).toBe('failed');
+        expect((await env.DB.prepare('SELECT ai_report_json FROM task_submissions WHERE id=?1').bind(f.submissionId).first<{
+            ai_report_json: string | null;
+        }>())?.ai_report_json).toBeNull();
     });
     it('a newer submission or task edit makes old AI output stale', async () => {
         const f = await fixture('automatic');

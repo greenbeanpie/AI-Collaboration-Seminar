@@ -23,7 +23,7 @@ const now = '2026-10-01T01:00:00Z';
     else if (path === '/api/v1/capabilities') data = { environment: 'local', apiVersion: 'v1', features: { aiEnabled: false }, limits: { assignmentSuggestionMaxTasks: 20 }, competitionTemplate: {} };
     else if (path === '/api/v1/projects/p1') data = { projectId: 'p1', name: '协作闭环验证', description: '仅本地模拟数据', myRole: role, status: 'active', revision: 1, deadlineDate: null, deadlinePrecision: 'unknown', updatedAt: now };
     else if (path.endsWith('/collaboration/settings')) { if (method === 'PATCH') settings = { ...settings, ...body, revision: settings.revision + 1 }; data = settings; }
-    else if (path.endsWith('/collaboration/tasks')) data = { items: [task] };
+    else if (path.endsWith('/collaboration/tasks')) data = { items: [task], nextCursor: null };
     else if (path.endsWith('/claim')) { assert.equal(body.expectedRevision, task.revision); task = { ...task, assigneeId: 'm1', revision: task.revision + 1, lifecycleState: 'in_progress' }; data = task; }
     else if (path.endsWith('/submissions')) {
      if (method === 'POST') {
@@ -58,13 +58,18 @@ const now = '2026-10-01T01:00:00Z';
    await page.getByText('三个页面已实现，支持移动端布局', { exact: true }).waitFor();
    await page.screenshot({ path: `/tmp/collaboration-${role}-desktop.png`, fullPage: true });
    if (role === 'owner') {
+    const reviewDecision = page.getByRole('button', { name: '已核对最新评价，重新填写决定' });
+    if (await reviewDecision.isVisible()) await reviewDecision.click();
     await page.getByLabel('第 1 轮验收结论').selectOption('improve');
     await page.getByLabel('第 1 轮验收理由').fill('补充错误反馈');
     await page.getByRole('button', { name: '确认验收决定' }).click();
     await page.getByRole('heading', { name: '提交新一轮成果' }).waitFor();
+    await page.getByRole('button', { name: '已核对标准，重新填写本轮提交' }).click();
     await page.getByLabel('成果说明', { exact: true }).fill('已补充错误反馈');
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: '提交本轮成果' }).click();
+    await page.getByLabel('第 2 轮验收理由').waitFor();
+    if (await reviewDecision.isVisible()) await reviewDecision.click();
     await page.getByLabel('第 2 轮验收理由').fill('逐项核验通过');
     await page.getByRole('button', { name: '确认验收决定' }).click();
     await page.getByText('验收决定：通过', { exact: true }).waitFor();

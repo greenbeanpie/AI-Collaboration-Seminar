@@ -2651,10 +2651,17 @@
                     "updatedAt"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -3360,10 +3367,17 @@
                     "createdAt"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -9041,6 +9055,22 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {
@@ -9556,6 +9586,22 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {

@@ -64,12 +64,14 @@
 
 新增后端测试覆盖两开关四组合、当前配置与模式变化、claim 冲突、已认领不被覆盖、旧提交/执行人失效、跨项目材料拒绝、完整正文超限、伪造证据、未读附件、父目标人工验收、有界修复与重试、独立预算的自动拆解/分工。
 
+任务和建议沿用游标分页，界面加载全部分页，不会因旧任务超出固定上限而隐藏。编辑、分工、提交、验收与模式表单固定其开始时的版本；后台刷新或冲突不会偷偷提高旧草稿的 expectedRevision，必须明确重载/核对后再提交。切换项目会清空旧项目草稿和轮询。
+
 前端交互测试覆盖 owner/member 控件、手动流程、固定版本与历史、深链接关闭/返回、模式说明与异步结果。`scripts/verify-collaboration-ui.cjs` 是 loopback-only 浏览器 fixture；当前云环境 Chromium 启动遇到 socket EPERM，云浏览器访问 loopback 被客户端阻止，未声称视觉浏览器通过。真实模型表现及人工完整成果复核不由 fixture 测试替代。
 
 ### 本地验证记录（2026-10-01）
 
-- 后端完整套件：34 文件 / 198 项通过（保留既有 Workflow 收尾的 RPC disposal / workerd cancellation 警告）
-- 前端完整套件：25 文件 / 102 项通过
+- 后端完整套件：35 文件 / 203 项通过（保留既有 Workflow 收尾的 RPC disposal / workerd cancellation 警告）
+- 前端完整套件：26 文件 / 111 项通过
 - 前后端 TypeScript、前端 lint、生产构建、Worker Service Binding 校验、git diff 检查通过
 - 46 个迁移前表的逐列数据保留、增量默认值及外键检查通过
 - 独立浏览器视觉 fixture 受上述执行环境限制，未运行成功；完整 loopback HTTP 脚本未在本次新工作区运行（其账户 bootstrap 与独立本地服务未设置），已运行的 Worker 集成/端到端测试包括完整后端套件内的真实 D1/API 路由测试

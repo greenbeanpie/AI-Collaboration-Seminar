@@ -47,3 +47,27 @@ describe('collaboration lifecycle', () => {
     it('removed assignee cannot submit or be approved through stale membership', async () => { const { req, p, m, o } = await fixture(); const t = (await req('/collaboration/tasks', 'POST', { title: 't', criteria: 'x' })).json.data; await req(`/collaboration/tasks/${t.taskId}/claim`, 'POST', { expectedRevision: 1 }, true); const submission = (await req(`/collaboration/tasks/${t.taskId}/submissions`, 'POST', { expectedRevision: 2, body: 'draft' }, true)).json.data; await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(p, m.userId).run(); expect((await req(`/collaboration/submissions/${submission.submissionId}/decide`, 'POST', { expectedRevision: 1, decision: 'accept', feedback: 'yes' })).status).toBe(409); const recovery = await req(`/collaboration/tasks/${t.taskId}/assign`, 'POST', { expectedRevision: 3, assigneeId: o.userId, reason: '原成员退出，重新接手' }); expect(recovery.status).toBe(200); expect(recovery.json.data.currentSubmissionId).toBeNull(); expect(recovery.json.data.lifecycleState).toBe('in_progress'); expect((await req(`/collaboration/tasks/${t.taskId}/submissions`)).json.data.items).toHaveLength(1); });
     it('owner edits criteria with revision and submission freezes prior criteria', async () => { const { req } = await fixture(); const t = (await req('/collaboration/tasks', 'POST', { title: 't', criteria: 'original' })).json.data; expect((await req(`/collaboration/tasks/${t.taskId}`, 'PATCH', { expectedRevision: 1, criteria: 'new' }, true)).status).toBe(403); const edit = await req(`/collaboration/tasks/${t.taskId}`, 'PATCH', { expectedRevision: 1, criteria: 'new', effortHours: 4 }); expect(edit.status).toBe(200); expect(edit.json.data.criteria).toBe('new'); expect((await req(`/collaboration/tasks/${t.taskId}`, 'PATCH', { expectedRevision: 2, status: 'done' })).status).toBe(400); await req(`/collaboration/tasks/${t.taskId}/claim`, 'POST', { expectedRevision: 2 }, true); const submission = (await req(`/collaboration/tasks/${t.taskId}/submissions`, 'POST', { expectedRevision: 3, body: 'draft' }, true)).json.data; expect(submission.criteria).toBe('new'); expect(submission.evaluationError).toBeTruthy(); expect(submission.evaluationAttempts).toBe(0); expect((await req(`/collaboration/tasks/${t.taskId}`, 'PATCH', { expectedRevision: 4, criteria: 'changed' })).status).toBe(409); expect((await req(`/collaboration/tasks/${t.taskId}/submissions`)).json.data.items[0].criteria).toBe('new'); });
 });
+it('creation idempotency remains scoped to the URL project even with ignored body fields', async () => {
+    const owner = await seedUser();
+    const first = await seedProject(owner.userId);
+    const second = await seedProject(owner.userId);
+    const key = newId();
+    const create = (projectId: string) => SELF.fetch(`${BASE}/api/v1/projects/${projectId}/collaboration/tasks`, {
+        method: 'POST',
+        headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': key },
+        body: JSON.stringify({ title: 'Scoped', criteria: 'Preserve scope', projectId: 'ignored-in-body' }),
+    });
+    const created = await create(first);
+    expect(created.status).toBe(201);
+    await created.text();
+    const wrongScope = await create(second);
+    expect(wrongScope.status).toBe(409);
+    expect((await wrongScope.json() as {
+        error: {
+            code: string;
+        };
+    }).error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(second).first<{
+        n: number;
+    }>())?.n).toBe(0);
+});

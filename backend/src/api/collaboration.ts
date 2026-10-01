@@ -8,6 +8,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { newId, nowIso } from '../core/db';
+import { parsePaging, nextCursor } from '../core/pagination';
 import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
 import { withIdempotency } from '../services/idempotency';
 import { withReservedAiJob } from '../services/budget';
@@ -27,11 +28,11 @@ function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path:
     const extras: Record<string, z.ZodString> = {};
     for (const match of path.matchAll(/\{(\w+)\}/g))
         extras[match[1]!] = z.string().uuid();
-    const [out, name] = path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean() }), 'CollaborationApplyResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema) }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema) }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
-    const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
+    const [out, name] = path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean() }), 'CollaborationApplyResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
+    const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals') ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
     app.openapi(r, (async (c: Context<AppEnv>) => {
         if (method === 'post' && path === '/tasks') {
-            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: 'collaboration.createTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), ...await c.req.json() }) }, async () => {
+            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: 'collaboration.createTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), body: await c.req.json() }) }, async () => {
                 const response = await handler(c);
                 const json = await response.json() as {
                     data: unknown;
@@ -73,7 +74,17 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             throw invalidState('设置已变化');
         return c.json(apiData(c, await settings(c)));
     });
-    route(app, 'get', '/tasks', undefined, async (c) => { const rows = await c.env.DB.prepare('SELECT * FROM tasks WHERE project_id=?1 AND lifecycle_state IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 200').bind(ids(c).projectId).all<CollaborationTask>(); return c.json(apiData(c, { items: rows.results.map(toCollaborationTask) })); });
+    route(app, 'get', '/tasks', undefined, async (c) => {
+        const paging = parsePaging(c.req.query());
+        const cursor = paging.cursor;
+        const rows = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND lifecycle_state IS NOT NULL
+            AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
+            ORDER BY created_at DESC,id DESC LIMIT ?4`)
+            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<CollaborationTask>();
+        const page = rows.results.slice(0, paging.limit);
+        const last = page.at(-1);
+        return c.json(apiData(c, { items: page.map(toCollaborationTask), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
+    });
     route(app, 'post', '/tasks', taskInput, async (c) => {
         const { projectId, userId } = ids(c);
         await owner(c.env, projectId, userId);
@@ -134,7 +145,17 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         return c.json(apiData(c, { ...toSubmission(row!), ...(evaluationError ? { evaluationError } : {}) }), 201);
     }, 201);
     route(app, 'post', '/submissions/{submissionId}/decide', z.object({ expectedRevision: revision, decision: z.enum(['accept', 'improve', 'rework']), feedback: z.string().min(1).max(5000) }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await decideSubmission(c.env, projectId, c.req.param('submissionId')!, b.expectedRevision, b.decision, b.feedback, userId); const row = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(c.req.param('submissionId')).first<Submission>(); return c.json(apiData(c, toSubmission(row!))); });
-    route(app, 'get', '/proposals', undefined, async (c) => { const rows = await c.env.DB.prepare('SELECT * FROM collaboration_proposals WHERE project_id=?1 ORDER BY created_at DESC LIMIT 100').bind(ids(c).projectId).all<Proposal>(); return c.json(apiData(c, { items: rows.results.map(toProposal) })); });
+    route(app, 'get', '/proposals', undefined, async (c) => {
+        const paging = parsePaging(c.req.query());
+        const cursor = paging.cursor;
+        const rows = await c.env.DB.prepare(`SELECT * FROM collaboration_proposals WHERE project_id=?1
+            AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
+            ORDER BY created_at DESC,id DESC LIMIT ?4`)
+            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal>();
+        const page = rows.results.slice(0, paging.limit);
+        const last = page.at(-1);
+        return c.json(apiData(c, { items: page.map(toProposal), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
+    });
     route(app, 'post', '/proposals/{proposalId}/apply', z.object({ expectedRevision: revision }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await applyProposal(c.env, projectId, c.req.param('proposalId')!, b.expectedRevision, userId); return c.json(apiData(c, { applied: true })); });
     for (const operation of ['decompose', 'assign', 'evaluate'] as const) {
         const path = operation === 'evaluate' ? '/submissions/{submissionId}/evaluate' : '/' + operation;

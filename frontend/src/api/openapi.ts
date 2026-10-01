@@ -2196,7 +2196,10 @@ export interface paths {
         /** 协作流程 /tasks */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
                 header?: never;
                 path: {
                     /** @description 项目 ID */
@@ -2541,7 +2544,10 @@ export interface paths {
         /** 协作流程 /proposals */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
                 header?: never;
                 path: {
                     /** @description 项目 ID */
@@ -5500,6 +5506,7 @@ export interface components {
                     createdAt: string;
                     updatedAt: string;
                 }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -5674,6 +5681,7 @@ export interface components {
                     revision: number;
                     createdAt: string;
                 }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
