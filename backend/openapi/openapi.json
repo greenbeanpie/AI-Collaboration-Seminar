@@ -3024,6 +3024,40 @@
                     "criteria": {
                       "type": "string"
                     },
+                    "citations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sourceVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "fragmentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "pageNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "quote": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000
+                          }
+                        },
+                        "required": [
+                          "sourceVersionId",
+                          "fragmentId",
+                          "pageNumber",
+                          "quote"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "effortHours": {
                       "type": "number"
                     },
@@ -3136,6 +3170,40 @@
               },
               "criteria": {
                 "type": "string"
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "fragmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  },
+                  "required": [
+                    "sourceVersionId",
+                    "fragmentId",
+                    "pageNumber",
+                    "quote"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "effortHours": {
                 "type": "number"

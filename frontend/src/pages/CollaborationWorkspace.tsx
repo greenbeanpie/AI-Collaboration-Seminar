@@ -197,6 +197,7 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
     </form></section>}
     {!task.assigneeId && <p className="form-note">请先认领任务或由负责人分工，再提交成果。</p>}
     {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由负责人手动验收。</div>}
+    {task.citations && task.citations.length > 0 && <details><summary>任务来源原文依据</summary><p className="form-note">以下是生成或 AI 调整任务时的固定版本引用；后续人工调整标准时，请重新核对其适用范围。</p>{task.citations.map((cite, index) => <p className="collab-preserve" key={index}>固定来源 {cite.sourceVersionId}{cite.pageNumber ? ` · 第${cite.pageNumber}页` : ''}：{cite.quote}</p>)}</details>}
     <h3>提交与验收历史</h3>
     {history.isLoading && <Spinner label="读取提交历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
     {history.data?.items.length === 0 && <p className="muted">尚未提交成果。</p>}

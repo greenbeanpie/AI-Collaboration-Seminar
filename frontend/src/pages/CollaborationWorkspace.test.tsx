@@ -8,7 +8,7 @@ const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId:
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
-const task = { taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
+const task = { citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -76,6 +76,14 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(screen.queryByText('负责人分工')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '确认验收决定' })).not.toBeInTheDocument();
+  });
+  it('shows fixed-source provenance directly in a grounded task detail', () => {
+    const citations = [{ sourceVersionId: 'source-version', fragmentId: 'fragment', pageNumber: 2, quote: '原始资料要求支持键盘操作。' }];
+    setup({ tasks: [{ ...task, citations }] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    expect(screen.getByText('任务来源原文依据')).toBeInTheDocument();
+    expect(screen.getByText(/原始资料要求支持键盘操作/)).toBeInTheDocument();
+    expect(screen.getByText(/后续人工调整标准时/)).toBeInTheDocument();
   });
   it('does not let the project owner submit for another assignee', () => {
     setup({ tasks: [{ ...task, assigneeId: 'another-member' }] });

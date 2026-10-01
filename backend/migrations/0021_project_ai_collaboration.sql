@@ -3,3 +3,6 @@ ALTER TABLE projects ADD COLUMN ai_collaboration_enabled INTEGER NOT NULL DEFAUL
 
 -- Human assistive override is separate; never replace immutable AI evidence.
 ALTER TABLE task_submissions ADD COLUMN human_score_override_json TEXT;
+
+-- Keep grounded task provenance available in task detail as well as the plan audit.
+ALTER TABLE tasks ADD COLUMN source_citations_json TEXT NOT NULL DEFAULT '[]';

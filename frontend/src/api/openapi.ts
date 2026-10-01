@@ -6377,6 +6377,14 @@ export interface components {
                     /** @enum {string} */
                     lifecycleState: "open" | "in_progress" | "submitted" | "accepted" | "improve" | "rework";
                     criteria: string;
+                    citations?: {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                        /** Format: uuid */
+                        fragmentId: string;
+                        pageNumber: number | null;
+                        quote: string;
+                    }[];
                     effortHours: number;
                     /** Format: uuid */
                     parentTaskId: string | null;
@@ -6404,6 +6412,14 @@ export interface components {
                 /** @enum {string} */
                 lifecycleState: "open" | "in_progress" | "submitted" | "accepted" | "improve" | "rework";
                 criteria: string;
+                citations?: {
+                    /** Format: uuid */
+                    sourceVersionId: string;
+                    /** Format: uuid */
+                    fragmentId: string;
+                    pageNumber: number | null;
+                    quote: string;
+                }[];
                 effortHours: number;
                 /** Format: uuid */
                 parentTaskId: string | null;

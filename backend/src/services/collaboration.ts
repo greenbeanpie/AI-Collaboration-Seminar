@@ -16,10 +16,11 @@ export interface CollaborationTask {
     effort_hours: number;
     parent_task_id: string | null;
     current_submission_id: string | null;
+    source_citations_json: string;
     created_at: string;
     updated_at: string;
 }
-export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state, criteria: r.criteria, effortHours: r.effort_hours, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
+export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state, criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
 export interface Submission {
     id: string;
     project_id: string;
@@ -76,8 +77,9 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
             criteria: string;
             effortHours: number;
             parentTaskId?: string | null;
+            citations?: unknown[];
         }>;
-        updates?: Array<{ taskId: string; title: string; detail: string; criteria: string; effortHours: number; expectedRevision: number }>;
+        updates?: Array<{ taskId: string; title: string; detail: string; criteria: string; effortHours: number; expectedRevision: number; citations?: unknown[] }>;
         assignments?: Array<{
             taskId: string;
             assigneeId: string | null;
@@ -103,12 +105,12 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
                 throw validationFailed('任务内容无效');
             const taskId = newId();
             taskIds.push(taskId);
-            batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,parent_task_id) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open',?9,?10,?11 WHERE ${gate}`).bind(proposalId, nonce, taskId, projectId, t.title, t.detail || '', actorId, nowIso(), t.criteria, t.effortHours, parentId));
+            batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,parent_task_id,source_citations_json) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open',?9,?10,?11,?12 WHERE ${gate}`).bind(proposalId, nonce, taskId, projectId, t.title, t.detail || '', actorId, nowIso(), t.criteria, t.effortHours, parentId, JSON.stringify(t.citations ?? [])));
         }
         if (new Set(payload.updates?.map(t => t.taskId)).size !== (payload.updates?.length ?? 0)) throw validationFailed('重复的任务调整');
         for (const update of payload.updates ?? []) {
             if (!update.title || !update.criteria || update.title.length > 200 || update.detail.length > 4000 || update.criteria.length > 4000 || !Number.isFinite(update.effortHours) || update.effortHours < 0.25 || update.effortHours > 200) throw validationFailed('任务调整内容无效');
-            batch.push(env.DB.prepare(`UPDATE tasks SET title=?3,detail=?4,criteria=?5,effort_hours=?6,revision=revision+1,updated_at=?7 WHERE id=?8 AND project_id=?9 AND revision=?10 AND lifecycle_state IN ('open','in_progress','improve','rework') AND ${gate}`).bind(proposalId, nonce, update.title, update.detail, update.criteria, update.effortHours, nowIso(), update.taskId, projectId, update.expectedRevision));
+            batch.push(env.DB.prepare(`UPDATE tasks SET title=?3,detail=?4,criteria=?5,effort_hours=?6,source_citations_json=?11,revision=revision+1,updated_at=?7 WHERE id=?8 AND project_id=?9 AND revision=?10 AND lifecycle_state IN ('open','in_progress','improve','rework') AND ${gate}`).bind(proposalId, nonce, update.title, update.detail, update.criteria, update.effortHours, nowIso(), update.taskId, projectId, update.expectedRevision, JSON.stringify(update.citations ?? [])));
         }
     }
     else {

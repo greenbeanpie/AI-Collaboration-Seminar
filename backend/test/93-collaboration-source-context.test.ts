@@ -264,3 +264,71 @@ describe('source context dispatch and atomic application guards', () => {
         await expect(assertProjectSourceContext(env, f.projectId, snapshots)).rejects.toThrow('已变化');
     });
 });
+
+describe('independent 0020 text readiness', () => {
+    async function stage(f: Fixture, s: Source, textStatus: string, requirementsStatus = 'ready') {
+        await env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,text_status,requirements_status,updated_at) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(source_version_id) DO UPDATE SET text_status=excluded.text_status,requirements_status=excluded.requirements_status,updated_at=excluded.updated_at`).bind(s.versionId, f.projectId, textStatus, requirementsStatus, now()).run();
+    }
+    it.each(['pending', 'processing', 'waiting_input', 'failed'])('blocks %s text despite retained old complete fragments', async textStatus => {
+        const f = await fixture(); const s = await source(f);
+        await stage(f, s, textStatus);
+        await expect(readProjectSourceContext(env, f.projectId, [s.versionId])).rejects.toThrow('正文尚未完整就绪');
+        expect((await request(f, '/decompose', { brief: '使用项目原始要求', sourceVersionIds: [s.versionId] })).status).toBe(409);
+    });
+    it('accepts ready immutable text independently of failed requirements extraction', async () => {
+        const f = await fixture(); const s = await source(f);
+        await stage(f, s, 'ready', 'failed');
+        const snapshots = await readProjectSourceContext(env, f.projectId, [s.versionId]);
+        expect(snapshots[0]?.fragments[0]?.content).toBe(s.text);
+    });
+    it.each([false, true])('stops stale text on provider response before repair=%s', async invalidOutput => {
+        const f = await fixture(true); const s = await source(f);
+        await stage(f, s, 'ready'); const j = await job(f, [s]);
+        const fetch = provider(invalidOutput ? { privilegedCommand: 'grant_owner' } : { tasks: [task([s])] }, () => stage(f, s, 'failed'));
+        await runCollaborationAiJob(offline, j.jobId);
+        await noProposal(f, j.jobId); expect(fetch).toHaveBeenCalledTimes(1);
+    });
+    it('rejects a pending manual proposal when text becomes processing', async () => {
+        const f = await fixture(false); const s = await source(f);
+        await stage(f, s, 'ready'); const j = await job(f, [s]); provider({ tasks: [task([s])] });
+        await runCollaborationAiJob(offline, j.jobId);
+        const result = JSON.parse((await getJob(env, j.jobId)).result_json!) as { proposalId: string };
+        await stage(f, s, 'processing');
+        await expect(applyProposal(env, f.projectId, result.proposalId, 1, f.user.userId)).rejects.toThrow();
+        expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(0);
+    });
+    it('atomic proposal insert rejects a text-stage change after final read', async () => {
+        const f = await fixture(true); const s = await source(f);
+        await stage(f, s, 'ready'); const j = await job(f, [s]); provider({ tasks: [task([s])] });
+        await runCollaborationAiJob(beforeStatement('INSERT INTO collaboration_proposals', () => stage(f, s, 'processing')), j.jobId);
+        await noProposal(f, j.jobId);
+    });
+    it('atomic automatic apply rejects a text-stage change after proposal persistence', async () => {
+        const f = await fixture(true); const s = await source(f);
+        await stage(f, s, 'ready'); const j = await job(f, [s]); provider({ tasks: [task([s])] });
+        await runCollaborationAiJob(beforeStatement("UPDATE collaboration_proposals SET status='applied'", () => stage(f, s, 'waiting_input'), true), j.jobId);
+        const result = JSON.parse((await getJob(env, j.jobId)).result_json!) as { autoApplied: boolean; applyError: string };
+        expect(result.autoApplied).toBe(false); expect(result.applyError).toBeTruthy();
+        expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(0);
+    });
+});
+
+describe('grounded task provenance after applying a plan', () => {
+    it('retains exact citations in created child tasks and the project task response', async () => {
+        const f = await fixture(true); const s = await source(f); const j = await job(f, [s]);
+        provider({ tasks: [task([s])] }); await runCollaborationAiJob(offline, j.jobId);
+        const output = JSON.parse((await getJob(env, j.jobId)).result_json!) as { proposalId: string };
+        const row = await env.DB.prepare('SELECT source_citations_json FROM tasks WHERE parent_task_id=?1').bind(output.proposalId).first<{ source_citations_json: string }>();
+        expect(JSON.parse(row!.source_citations_json)).toEqual([cite(s)]);
+        const response = await app.fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/collaboration/tasks`, { headers: { cookie: authCookie(f.user.token) } }), env);
+        expect(response.status).toBe(200);
+        const result = await response.json() as { data: { items: Array<{ title: string; citations: unknown[] }> } };
+        expect(result.data.items.find(item => item.title === '验证案例与结果')?.citations).toEqual([cite(s)]);
+    });
+    it('retains grounded adjustment citations without changing the existing assignee', async () => {
+        const f = await fixture(true); const s = await source(f); const j = await job(f, [s], true);
+        provider({ tasks: [], updates: [{ ...task([s]), taskId: j.taskId }] }); await runCollaborationAiJob(offline, j.jobId);
+        const row = await env.DB.prepare('SELECT source_citations_json,assignee_id FROM tasks WHERE id=?1').bind(j.taskId).first<{ source_citations_json: string; assignee_id: string }>();
+        expect(JSON.parse(row!.source_citations_json)).toEqual([cite(s)]); expect(row!.assignee_id).toBe(f.user.userId);
+    });
+});

@@ -17,6 +17,9 @@ function version(source: Source, ready = false): Version {
   return { sourceVersionId: source.currentVersionId!, sourceId: source.sourceId, revision: 1, origin: 'file', fileId: `${source.sourceId}-file`, status: ready ? 'ready' : 'pending', parseError: null, pageCount: 1, charCount: ready ? 100 : null,
     pages: [{ pageNumber: 1, textStatus: ready ? 'extracted' : 'none', imageStatus: 'none', ocrStatus: 'none', needsReview: false }] };
 }
+function processing(textStatus: DataOf<'SourceProcessingResponse'>['textStatus']): DataOf<'SourceProcessingResponse'> {
+  return { textStatus, requirementsStatus: textStatus === 'ready' ? 'ready' : 'pending', requirementsError: null, summaryStatus: 'pending', summary: null, summaryError: null, summaryJobId: null, summaryRevision: 0, coveredChars: null, totalChars: null };
+}
 function SelectionState({ projectId, enabled }: { projectId: string; enabled: boolean }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [readiness, setReadiness] = useState<Record<string, boolean>>({});
@@ -33,7 +36,11 @@ function SelectionState({ projectId, enabled }: { projectId: string; enabled: bo
 function Harness({ projectId, enabled }: { projectId: string; enabled: boolean }) { return <SelectionState key={projectId} projectId={projectId} enabled={enabled} />; }
 function seed(client: QueryClient, projectId: string, items: Source[], versions?: Version[]) {
   client.setQueryData(['project-assistant-sources', projectId], items);
-  items.filter(source => source.currentVersionId).forEach((source, index) => client.setQueryData(['project-assistant-source-version', projectId, source.sourceId, source.currentVersionId], versions?.[index] ?? version(source)));
+  items.filter(source => source.currentVersionId).forEach((source, index) => {
+    const body = versions?.[index] ?? version(source);
+    client.setQueryData(['project-assistant-source-version', projectId, source.sourceId, source.currentVersionId], body);
+    client.setQueryData(['project-assistant-source-processing', projectId, source.sourceId, source.currentVersionId], processing(body.charCount && body.pages.every(page => page.textStatus !== 'none' || page.ocrStatus === 'ok') ? 'ready' : 'pending'));
+  });
 }
 function setup({ projectId = 'p', enabled = true, items = sources(projectId), versions }: { projectId?: string; enabled?: boolean; items?: Source[]; versions?: Version[] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -85,6 +92,7 @@ describe('grounded project source selection', () => {
         return response({ jobId: 'source-job', status: 'queued' });
       }
       if (path === '/api/v1/jobs/source-job') { readyBody = true; return response({ jobId: 'source-job', status: 'succeeded', result: {} }); }
+      if (path.endsWith('/processing')) return response(processing(readyBody ? 'ready' : 'pending'));
       if (path.includes('/versions/')) return response(version(item, readyBody));
       throw new Error(`Unexpected fixture route ${path}`);
     });
@@ -109,6 +117,7 @@ describe('grounded project source selection', () => {
     const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'POST') return response({ jobId: 'failed-job', status: 'queued' });
       if (String(url).includes('/jobs/')) return response({ jobId: 'failed-job', status: 'failed', result: null });
+      if (String(url).endsWith('/processing')) return response(processing('failed'));
       return response(incomplete);
     });
     vi.stubGlobal('fetch', fetch); setup({ projectId: 'failed', items: [item], versions: [incomplete] });
@@ -142,4 +151,29 @@ describe('grounded project source selection', () => {
     expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeEnabled(); expect(fetch).not.toHaveBeenCalled();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/app/projects/second/sources');
   });
+  it('blocks a failed independent text stage despite retained complete version characters', async () => {
+    const item = sources('stale', 1)[0]; const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const { client } = setup({ projectId: 'stale', items: [item], versions: [version(item, true)] });
+    await waitFor(() => expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeEnabled());
+    act(() => { client.setQueryData(['project-assistant-source-processing', 'stale', item.sourceId, item.currentVersionId], processing('failed')); });
+    await waitFor(() => expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeDisabled());
+    expect(screen.queryByText('正文已就绪')).toBeNull(); expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['running', 'waiting_input'] as const)('recovers server-side %s processing without starting another parse', async status => {
+    const item = sources('recovered', 1)[0];
+    const current = { ...version(item), processingJob: { jobId: 'recovered-job', status, phase: 'extract' as const } };
+    const fetch = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes('/jobs/')) return response({ jobId: 'recovered-job', status, result: null });
+      if (String(url).endsWith('/processing')) return response(processing(status === 'waiting_input' ? 'waiting_input' : 'processing'));
+      return response(current);
+    });
+    vi.stubGlobal('fetch', fetch); setup({ projectId: 'recovered', items: [item], versions: [current] });
+    const button = screen.getByRole('button', { name: status === 'waiting_input' ? '请到来源页面补齐缺页' : '资料处理进行中…' });
+    expect(button).toBeDisabled(); fireEvent.click(button);
+    await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url) === '/api/v1/jobs/recovered-job')).toBe(true));
+    expect(fetch.mock.calls.every(([url]) => !String(url).endsWith('/parse'))).toBe(true);
+    expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeDisabled();
+  });
+
 });

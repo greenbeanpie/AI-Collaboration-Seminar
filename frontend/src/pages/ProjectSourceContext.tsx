@@ -31,10 +31,13 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
   const job = useVisibleJobPoller(jobId);
   const versionId = source.currentVersionId;
   const queryKey = ['project-assistant-source-version', projectId, source.sourceId, versionId];
-  const version = useQuery({ queryKey, queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${source.sourceId}/versions/${versionId}`)), enabled: Boolean(versionId), refetchInterval: jobId && !job.isSettled ? 2500 : false, refetchIntervalInBackground: false });
-  const ready = Boolean(version.data?.charCount && version.data.pages.every(page => page.textStatus !== 'none' || page.ocrStatus === 'ok'));
+  const version = useQuery({ queryKey, queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${source.sourceId}/versions/${versionId}`)), enabled: Boolean(versionId), refetchInterval: query => jobId && !job.isSettled || query.state.data?.processingJob ? 2500 : false, refetchIntervalInBackground: false });
+  const serverJob = version.data?.processingJob;
+  const processing = useQuery({ queryKey: ['project-assistant-source-processing', projectId, source.sourceId, versionId], queryFn: () => api.get<'SourceProcessingResponse'>(projectPath(projectId, `/sources/${source.sourceId}/versions/${versionId}/processing`)), enabled: Boolean(versionId), refetchInterval: query => serverJob || jobId && !job.isSettled || ['pending', 'processing', 'waiting_input'].includes(query.state.data?.textStatus ?? '') && Boolean(jobId) ? 2500 : false, refetchIntervalInBackground: false });
+  const ready = Boolean(processing.data?.textStatus === 'ready' && version.data?.charCount && version.data.pages.every(page => page.textStatus !== 'none' || page.ocrStatus === 'ok'));
+  useEffect(() => { if (serverJob && (!jobId || job.isSettled && jobId !== serverJob.jobId)) setJobId(serverJob.jobId); }, [serverJob, jobId, job.isSettled]);
   useEffect(() => { if (versionId) onReady(versionId, ready); }, [versionId, ready, onReady]);
-  useEffect(() => { if (job.isSettled) void client.invalidateQueries({ queryKey: ['project-assistant-source-version', projectId, source.sourceId, versionId] }); }, [job.isSettled, client, projectId, source.sourceId, versionId]);
+  useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['project-assistant-source-version', projectId, source.sourceId, versionId] }); void client.invalidateQueries({ queryKey: ['project-assistant-source-processing', projectId, source.sourceId, versionId] }); } }, [job.isSettled, client, projectId, source.sourceId, versionId]);
   const parse = useMutation({ mutationFn: async () => {
     const namespace = `project-assistant:parse:${projectId}:${versionId}`;
     const body = { sourceVersionId: versionId };
@@ -42,14 +45,15 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
     const result = await api.post<'SourceParseResponse'>(projectPath(projectId, `/sources/${source.sourceId}/parse`), body, { idempotencyKey: key });
     completeIntent(namespace);
     return result;
-  }, onSuccess: result => { setJobId(result.jobId); void version.refetch(); } });
-  const running = parse.isPending || Boolean(jobId && !job.isSettled);
+  }, onSuccess: result => { setJobId(result.jobId); void version.refetch(); void processing.refetch(); } });
+  const waitingForPages = serverJob?.status === 'waiting_input' || processing.data?.textStatus === 'waiting_input';
+  const running = parse.isPending || Boolean(serverJob || jobId && !job.isSettled);
   return <article className="collab-proposal stack">
-    <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
+    <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : waitingForPages ? '等待缺页识别' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
     {!ready && <p className="form-note">原文件或来源已保留，AI 尚未读取完整正文；选择此来源会阻止拆解，直到正文和缺页处理完成。</p>}
-    {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{running ? '资料处理进行中…' : '读取资料正文'}</button>}
+    {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{waitingForPages ? '请到来源页面补齐缺页' : running ? '资料处理进行中…' : '读取资料正文'}</button>}
     {version.data?.parseError && <p className="notice notice-warn">资料处理提示：{version.data.parseError}。可在来源页面独立核对正文、重试要求提取或生成总结。</p>}
-    {(parse.error || version.error) && <ErrorNotice error={parse.error || version.error} />}
+    {(parse.error || version.error || processing.error) && <ErrorNotice error={parse.error || version.error || processing.error} />}
     {job.job?.status === 'failed' && <p className="notice notice-warn">资料读取未完成，请到来源页面查看错误和缺页状态；不会把未读资料当作已完成。</p>}
   </article>;
 }
