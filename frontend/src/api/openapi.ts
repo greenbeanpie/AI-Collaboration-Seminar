@@ -424,6 +424,152 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/personal-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Own private profile */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PersonalProfileResponse"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        searchable: boolean;
+                        bio: string;
+                        major: string;
+                        specialties: string;
+                        preferredRoles: string;
+                        visibility: {
+                            bio: boolean;
+                            major: boolean;
+                            specialties: boolean;
+                            preferredRoles: boolean;
+                        };
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Own private profile */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PersonalProfileResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    username: string;
+                    page?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Exact match only; zero or one result, no directory enumeration */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProfileSearchResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    username: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Only explicitly public fields, or null for unavailable profiles */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PublicProfileResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -5000,6 +5146,49 @@ export interface components {
         AccountPasswordResponse: {
             data: {
                 revoked: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        PersonalProfileResponse: {
+            data: {
+                searchable: boolean;
+                bio: string;
+                major: string;
+                specialties: string;
+                preferredRoles: string;
+                visibility: {
+                    bio: boolean;
+                    major: boolean;
+                    specialties: boolean;
+                    preferredRoles: boolean;
+                };
+                revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProfileSearchResponse: {
+            data: {
+                items: {
+                    username: string;
+                    displayName: string;
+                }[];
+                nextCursor: null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        PublicProfileResponse: {
+            data: {
+                profile: {
+                    username: string;
+                    displayName: string;
+                    bio?: string;
+                    major?: string;
+                    specialties?: string;
+                    preferredRoles?: string;
+                } | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

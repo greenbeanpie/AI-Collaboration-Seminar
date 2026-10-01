@@ -1,3 +1,4 @@
+import { profileStamp } from '../services/personal-profiles';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -135,6 +136,7 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
         jobId,
         createdBy: user.id,
         input: {
+          profileStamp: await profileStamp(c.env, member.projectId),
           configVersionId,
           projectId: member.projectId,
           requestedBy: user.id,
