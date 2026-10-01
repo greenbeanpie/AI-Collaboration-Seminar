@@ -146,7 +146,7 @@ function SourceJobProgress({
   </div>;
 }
 
-function SourceRecord({
+export function SourceRecord({
   source,
   version,
   projectId,
@@ -179,7 +179,8 @@ function SourceRecord({
 }) {
   const isBusy = parsingSourceId === source.sourceId;
   const latestJob = jobs[0];
-  const activeJob = latestJob?.status && ['queued', 'running', 'waiting_input'].includes(latestJob.status) ? latestJob : undefined;
+  const activeJob = latestJob?.status && ['queued', 'running'].includes(latestJob.status) ? latestJob : undefined;
+  const waitingForImages = latestJob?.status === 'waiting_input';
   const displayedJob = latestJob;
   const currentFileId = version?.fileId ?? (source.currentVersionId ? sourceFileId(projectId, source.currentVersionId) : null);
   const versionBadge = version ? sourceStatus(version.status) : null;
@@ -195,10 +196,11 @@ function SourceRecord({
       </div>
       <div className="sources-record-actions">
         <button className="button button-quiet button-small" type="button" disabled={!source.currentVersionId || !capability?.features.aiEnabled || isBusy || Boolean(activeJob)} onClick={() => source.currentVersionId && onParse(source, source.currentVersionId)}>
-          {isBusy ? <><LoaderCircle className="spin" size={14} /> 正在发起</> : activeJob ? '已有任务处理中' : !capability?.features.aiEnabled ? 'AI 未启用' : version?.status === 'ready' ? '重新解析' : '开始解析'}
+          {isBusy ? <><LoaderCircle className="spin" size={14} /> 正在发起</> : activeJob ? '已有任务处理中' : !capability?.features.aiEnabled ? 'AI 未启用' : waitingForImages ? '重新读取文本层并提取要求' : version?.status === 'ready' ? '重新解析' : '开始解析'}
         </button>
       </div>
     </div>
+    {waitingForImages && <p className="muted">若此 PDF 本来有文本层，可重新读取服务器保留的原文件，无需重复上传；文本完整后会继续使用当前任务模型配置提取要求，可能产生 AI 用量。</p>}
     <div className="sources-record-meta">
       {source.currentVersionId ? <span>版本 {source.currentVersionId.slice(0, 8)}</span> : <span>暂无可解析版本</span>}
       {version?.pageCount !== null && version?.pageCount !== undefined && <span>{version.pageCount} 页</span>}

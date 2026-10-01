@@ -11,6 +11,7 @@ import { markAiCallStarted, reserveAiSlot, settleReservation } from './budget';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
 import { aiJsonCall } from './agent';
+import { extractPdfText, hasExtractableText } from './pdf-text';
 
 const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-page-v1';
@@ -136,15 +137,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
     const bytes = new Uint8Array(await obj.arrayBuffer());
 
     if (file.ext === '.pdf') {
-      const { extractText, getDocumentProxy } = await import('unpdf');
-      let result: { totalPages: number; text: string[] | string };
-      try {
-        const pdf = await getDocumentProxy(bytes.slice().buffer as ArrayBuffer);
-        result = await extractText(pdf, { mergePages: false });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new AppError('SOURCE_PARSE_FAILED', `PDF 解析失败（可能为加密或损坏文件）：${message.slice(0, 120)}`, 422, false);
-      }
+      const result = await extractPdfText(bytes);
       pageCount = result.totalPages;
       if (pageCount > LIMITS.maxPdfPages) {
         throw new AppError('SOURCE_PARSE_FAILED', `PDF 超过 ${LIMITS.maxPdfPages} 页限制`, 422, false, { pageCount });
@@ -175,13 +168,14 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   let needsImages = 0;
   const pageRows = [];
   for (const p of perPage) {
-    const hasText = p.text.trim().length >= 20;
+    const hasText = hasExtractableText(p.text);
     if (!hasText && version.origin === 'file') needsImages++;
     pageRows.push(
       env.DB.prepare(
         `INSERT INTO source_pages (id, source_version_id, project_id, page_number, text_status, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT (source_version_id, page_number) DO NOTHING`,
+         ON CONFLICT (source_version_id, page_number) DO UPDATE SET
+           text_status = excluded.text_status, updated_at = excluded.updated_at`,
       ).bind(
         crypto.randomUUID(),
         version.id,
@@ -200,7 +194,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   await insertFragments(
     env,
     version,
-    perPage.filter((p) => p.text.trim().length >= 20).map((p) => ({
+    perPage.filter((p) => hasExtractableText(p.text)).map((p) => ({
       pageNumber: version.origin === 'file' ? p.pageNumber : null,
       text: p.text,
       kind: (version.origin === 'web' ? 'web' : version.origin === 'paste' ? 'paste' : 'text') as FragmentRow['kind'],
