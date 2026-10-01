@@ -1,3 +1,5 @@
+import { useSession } from '../auth';
+import { PendingTaskPreview } from '../components/PendingTaskPreview';
 import { useQueries } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarCheck2, FileText, ListTodo, UsersRound } from 'lucide-react';
@@ -14,6 +16,7 @@ const modules = [
 ] as const;
 
 export function ProjectOverviewPage() {
+  const session = useSession();
   const { projectId, project } = useProject();
   const queries = useQueries({ queries: [
     { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
@@ -50,12 +53,12 @@ export function ProjectOverviewPage() {
           return <Link className="module-link" key={key} to={`/app/projects/${projectId}/${path}`}><span className="module-icon"><Icon size={18} /></span><span className="module-link-main"><strong>{title}</strong><small>{count === undefined ? '服务数据暂不可用' : `${count} 项记录`}</small></span><ArrowRight size={16} /></Link>;
         })}</div>
       </SectionCard>
-      <SectionCard title="待处理事项" detail="根据当前项目的服务端记录汇总。">
+      <SectionCard title="待处理事项" detail="最新两项未完成任务，优先显示由你负责的任务。">
         <div className="card-list">
+          {!tasks.error && <PendingTaskPreview tasks={taskItems} userId={session.data?.id} projectId={projectId} />}
           {missingDeadline && <Link className="list-row attention-row" to={`/app/projects/${projectId}/settings`}><span className="attention-mark">!</span><span className="list-row-main"><strong>截止日期尚未确认</strong><p>项目设置中可记录官方通知中的日期精度。</p></span><ArrowRight size={15} /></Link>}
           {sources.data?.length === 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/sources`}><span className="attention-mark">+</span><span className="list-row-main"><strong>导入通知或项目资料</strong><p>粘贴原文、填写公开网址或上传文件后再提取要求。</p></span><ArrowRight size={15} /></Link>}
           {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/requirements`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求集等待人工确认</strong><p>系统提取内容保持草稿状态，负责人确认后才成为正式要求。</p></span><ArrowRight size={15} /></Link>}
-          {taskItems.some((task) => task.status !== 'done') && <Link className="list-row attention-row" to={`/app/projects/${projectId}/tasks`}><span className="attention-mark">{taskItems.filter((task) => task.status !== 'done').length}</span><span className="list-row-main"><strong>继续推进未完成任务</strong><p>更新负责人、截止日期和完成状态。</p></span><ArrowRight size={15} /></Link>}
           {checklistDataReady && !missingDeadline && Boolean(sources.data?.length) && !draftSets && !hasOpenTasks && <EmptyState title="暂无待处理事项" detail="系统没有从当前项目记录中发现待处理内容。" />}
         </div>
       </SectionCard>

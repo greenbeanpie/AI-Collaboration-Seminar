@@ -1,6 +1,7 @@
+import { useSearchParams } from 'react-router-dom';
 import { DateInput } from '../components/DateInput';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Check, ClipboardList, Plus, RefreshCw, UserRound } from 'lucide-react';
 import { api, projectPath, listAllItems } from '../api/client';
 import type { DataOf, Task } from '../api/types';
@@ -104,6 +105,9 @@ function taskBody(draft: TaskDraft) {
 
 export function TasksPage() {
   const { projectId } = useProject();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTaskId = searchParams.get('task');
+  const openedFromLink = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showCreate, setShowCreate] = useState(false);
@@ -154,10 +158,36 @@ export function TasksPage() {
     },
   });
 
-  const openTask = (task: TaskListItem) => {
+  const resetUpdate = updateTask.reset;
+  useEffect(() => {
+    const task = tasksQuery.data?.find(item => item.taskId === requestedTaskId);
+    // Lifecycle tasks use the collaboration editor; never route them through this legacy form.
+    const lifecycle = task && (task as Task & { lifecycleState?: string | null }).lifecycleState;
+    if (!requestedTaskId || tasksQuery.error || !task || lifecycle) {
+      openedFromLink.current = null;
+      setSelectedTask(null);
+      return;
+    }
+    const key = `${projectId}:${task.taskId}`;
+    if (openedFromLink.current === key) return; // Preserve unsaved edits across background refetches.
+    openedFromLink.current = key;
     setSelectedTask(task);
     setEditDraft(toTaskDraft(task));
-    updateTask.reset();
+    resetUpdate();
+  }, [projectId, requestedTaskId, tasksQuery.data, tasksQuery.error, resetUpdate]);
+
+  const openTask = (task: TaskListItem) => {
+    if ((task as Task & { lifecycleState?: string | null }).lifecycleState) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('task', task.taskId);
+    setSearchParams(next);
+  };
+  const closeTask = () => {
+    setSelectedTask(null);
+    openedFromLink.current = null;
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next, { replace: true });
   };
 
   const changeDraft = (setter: (next: TaskDraft) => void, current: TaskDraft, field: keyof TaskDraft, value: string) => {
@@ -174,7 +204,7 @@ export function TasksPage() {
     if (!selectedTask) return;
     try {
       await updateTask.mutateAsync({ taskId: selectedTask.taskId, expectedRevision: selectedTask.revision, fields: editDraft });
-      setSelectedTask(null);
+      closeTask();
     } catch {
       // The mutation error remains visible so a stale edit is never reported as saved.
     }
@@ -256,13 +286,13 @@ export function TasksPage() {
         </form>
       </Modal>}
 
-      {selectedTask && <Modal title="编辑任务与讨论" onClose={() => setSelectedTask(null)}>
+      {selectedTask && <Modal title="编辑任务与讨论" onClose={closeTask}>
         <div className="tm-task-detail">
           <form className="tm-modal-form" onSubmit={handleEdit}>
             <p className="tm-form-intro">当前版本 r{selectedTask.revision} · 更新时会提交 expectedRevision。</p>
             <TaskFields draft={editDraft} onChange={(field, value) => changeDraft(setEditDraft, editDraft, field, value)} members={membersQuery.data ?? []} requirements={requirements} includeStatus />
             {updateTask.error && <ErrorNotice error={updateTask.error} />}
-            <div className="tm-form-actions"><button type="button" className="button button-quiet" onClick={() => setSelectedTask(null)}>关闭</button><button type="submit" className="button button-primary" disabled={updateTask.isPending}>{updateTask.isPending ? '保存中…' : '保存修改'}</button></div>
+            <div className="tm-form-actions"><button type="button" className="button button-quiet" onClick={closeTask}>关闭</button><button type="submit" className="button button-primary" disabled={updateTask.isPending}>{updateTask.isPending ? '保存中…' : '保存修改'}</button></div>
           </form>
           <CommentsPanel projectId={projectId} targetType="task" targetId={selectedTask.taskId} />
         </div>
