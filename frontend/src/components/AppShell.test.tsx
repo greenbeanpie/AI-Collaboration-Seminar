@@ -5,8 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AppShell } from './AppShell';
 import { ThemeSelector } from './ThemeSelector';
 const user = { id: 'fixture', username: 'alice', displayName: 'Alice', email: null, isAdmin: false, role: 'user' as const };
-function setup() {
-  const router = createMemoryRouter([{ path: '*', element: <AppShell user={user}><ThemeSelector variant="field"/><p>Workspace content</p></AppShell> }], { initialEntries: ['/app/profile'] });
+function setup(path = '/app/profile') {
+  const router = createMemoryRouter([{ path: '*', element: <AppShell user={user}><ThemeSelector variant="field"/><p>Workspace content</p></AppShell> }], { initialEntries: [path] });
   render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router}/></QueryClientProvider>);
   return router;
 }
@@ -39,4 +39,48 @@ it('an unsaved-editor logout veto prevents account API writes', () => {
   const veto = (event: Event) => event.preventDefault(); window.addEventListener('settings-before-leave', veto);
   try { fireEvent.click(screen.getByRole('button', { name: '退出登录' })); expect(fetch).not.toHaveBeenCalled(); }
   finally { window.removeEventListener('settings-before-leave', veto); }
+});
+
+it('places project links and the compact switcher in the same header as account actions', async () => {
+  const router = setup('/app/projects/fixture/settings');
+  const topbar = screen.getByRole('banner', { name: '工作区顶栏' });
+  const navigation = within(topbar).getByRole('navigation', { name: '项目功能' });
+  expect(screen.getAllByRole('navigation', { name: '项目功能' })).toHaveLength(1);
+  expect(within(navigation).getAllByRole('link')).toHaveLength(12);
+  const select = within(navigation).getByRole('combobox', { name: '切换项目功能' });
+  expect(select).toHaveValue('settings');
+  expect(within(navigation).getByRole('link', { name: '项目设置' })).toHaveAttribute('aria-current', 'page');
+  fireEvent.change(select, { target: { value: 'tasks' } });
+  expect(router.state.location.pathname).toBe('/app/projects/fixture/tasks');
+  expect(select).toHaveValue('tasks');
+  await act(() => router.navigate(-1));
+  expect(select).toHaveValue('settings');
+  await act(() => router.navigate('/app/projects/fixture/materials/document-id'));
+  expect(select).toHaveValue('materials');
+  fireEvent.change(select, { target: { value: 'overview' } });
+  expect(router.state.location.pathname).toBe('/app/projects/fixture');
+});
+it('does not render project controls on the new-project form', () => {
+  setup('/app/projects/new');
+  expect(screen.queryByRole('navigation', { name: '项目功能' })).not.toBeInTheDocument();
+});
+it('keeps compact account actions reachable and closes on Escape, outside press and navigation', async () => {
+  const router = setup('/app/projects/fixture');
+  const toggle = screen.getByRole('button', { name: '主题与账户操作' });
+  const panel = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(panel).toHaveAttribute('data-open', 'true');
+  expect(within(panel).getByRole('combobox', { name: '主题' })).toBeInTheDocument();
+  expect(within(panel).getByRole('button', { name: '退出登录' })).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(toggle).toHaveFocus();
+  fireEvent.click(toggle);
+  fireEvent.pointerDown(screen.getByText('Workspace content'));
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(toggle);
+  await act(() => router.navigate('/app/projects/fixture/tasks'));
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });

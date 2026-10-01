@@ -1,18 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, KeyRound, LifeBuoy, LogOut, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
+import { FolderKanban, KeyRound, LifeBuoy, LogOut, MoreHorizontal, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
 import { ErrorNotice } from './ui';
 import { ThemeSelector } from './ThemeSelector';
+import { ProjectNavigation } from './ProjectNavigation';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const [logoutError, setLogoutError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const projectMatch = useMatch('/app/projects/:projectId/*');
+  const projectId = projectMatch?.params.projectId;
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountControls = useRef<HTMLDivElement>(null);
+  const accountMenuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setAccountMenuOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !accountControls.current?.contains(event.target)) setAccountMenuOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setAccountMenuOpen(false); accountMenuButton.current?.focus(); }
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeEscape); };
+  }, [accountMenuOpen]);
   const queryClient = useQueryClient();
   const label = user.displayName || user.username || user.email || '项目成员';
 
@@ -49,12 +69,15 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     </aside>
     <div className="workspace-frame">
       <header className="workspace-topbar" aria-label="工作区顶栏">
-        <span className="workspace-context">工作空间</span>
-        <div className="workspace-top-actions">
-          <ThemeSelector/>
-          <Link className="topbar-support" to="/app/support" aria-label="支持工单"><LifeBuoy size={17}/><span>支持</span></Link>
+        {projectId && projectId !== 'new' ? <ProjectNavigation projectId={projectId} /> : <span className="workspace-context">工作空间</span>}
+        <div className="workspace-top-actions" ref={accountControls}>
           <Link className="topbar-account" to="/app/profile" aria-label={`个人资料：${label}`}><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="topbar-account-name">{label}</span></Link>
-          <button className="icon-button" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /></button>
+          <button ref={accountMenuButton} className="icon-button topbar-actions-toggle" type="button" aria-label="主题与账户操作" aria-expanded={accountMenuOpen} aria-controls="workspace-account-actions" onClick={() => setAccountMenuOpen(open => !open)}><MoreHorizontal size={20} /></button>
+          <div id="workspace-account-actions" className="workspace-account-panel" data-open={accountMenuOpen}>
+            <ThemeSelector/>
+            <Link className="topbar-support" to="/app/support" aria-label="支持工单"><LifeBuoy size={17}/><span>支持</span></Link>
+            <button className="icon-button topbar-logout" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /><span className="topbar-action-label">退出登录</span></button>
+          </div>
         </div>
       </header>
       <main className="main-shell">{children}</main>

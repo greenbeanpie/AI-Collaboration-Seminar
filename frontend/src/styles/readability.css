@@ -114,3 +114,34 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
 .ai-model-settings [role="note"] fieldset { display: grid; gap: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 .ai-model-settings details > .field { margin-top: 16px; }
 .ai-model-settings details > label:not(.field) { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
+
+/* Project tabs share the workspace header with account actions. Each side owns its width. */
+.topbar-project-navigation { flex: 1 1 0; min-width: 0; max-width: 100%; }
+.topbar-project-links { display: flex; align-items: center; overflow-x: auto; min-width: 0; max-width: 100%; padding: 4px 2px; scroll-padding-inline: 12px; }
+.topbar-project-links .project-tab { min-height: 44px; }
+.topbar-project-links .project-tab.active::after { bottom: 0; }
+.topbar-project-select { display: none; }
+.workspace-top-actions { position: relative; flex: 0 0 auto; width: auto; min-width: 0; }
+.workspace-account-panel { display: flex; align-items: center; gap: 12px; }
+.topbar-actions-toggle, .topbar-action-label { display: none; }
+.form-grid-two, .settings-form, .form-card { min-width: 0; max-width: 100%; }
+.field:has(> .date-input-control), .settings-form, .section-card:has(.date-input-control) { grid-template-columns: minmax(0, 1fr); }
+.form-grid-two > *, .settings-form > *, .form-card > * { min-width: 0; max-width: 100%; }
+@media (max-width: 1080px) {
+  .topbar-account-name, .workspace-topbar .theme-label { display: none; }
+  .workspace-top-actions, .workspace-account-panel { gap: 8px; }
+}
+@media (max-width: 790px) {
+  .workspace-topbar { gap: 12px; }
+  .workspace-context { display: block; min-width: 0; }
+  .topbar-project-links { display: none; }
+  .topbar-project-select { display: block; min-height: 44px; font-size: 16px; }
+  .topbar-actions-toggle { display: inline-grid; min-width: 44px; min-height: 44px; }
+  .workspace-account-panel { display: none; position: absolute; top: calc(100% + 10px); right: 0; z-index: 1; width: min(280px, calc(100vw - 34px)); padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
+  .workspace-account-panel[data-open="true"] { display: grid; gap: 12px; }
+  .workspace-account-panel .theme-selector { width: 100%; justify-content: space-between; }
+  .workspace-account-panel .theme-label { display: inline; }
+  .workspace-account-panel .topbar-support, .workspace-account-panel .topbar-logout { display: flex; justify-content: flex-start; gap: 10px; width: 100%; min-height: 44px; padding: 8px; }
+  .topbar-action-label { display: inline; }
+}
+@media print { .topbar-project-navigation { display: none; } }

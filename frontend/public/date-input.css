@@ -1,6 +1,6 @@
 /* Pointer-focused empty fields stay blank; explicit keyboard editing retains native segments. */
-.date-input-control { position: relative; display: block; min-width: 0; width: 100%; }
-.date-input-control > input { width: 100%; box-sizing: border-box; }
+.date-input-control { position: relative; display: block; min-width: 0; width: 100%; max-width: 100%; }
+.date-input-control > input { display: block; min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; }
 .date-input-control > .date-input-placeholder { display: none; position: absolute; left: 12px; right: 38px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted, #68758a); font-size: inherit; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .date-input-control[data-empty="true"]:not([data-keyboard-editing="true"]) > input { color: transparent; }
 .date-input-control[data-empty="true"]:not([data-keyboard-editing="true"]) > input::-webkit-datetime-edit { color: transparent; opacity: 0; }
@@ -8,3 +8,7 @@
 .date-input-control:has(> input:disabled) > .date-input-placeholder { opacity: .55; }
 
 .date-input-placeholder::before { content: attr(data-placeholder); }
+
+/* Native date segments must shrink with their grid/flex field, including WebKit. */
+.date-input-control > input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+.date-input-control > input::-webkit-date-and-time-value { min-width: 0; text-align: start; }
