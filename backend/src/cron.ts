@@ -1,3 +1,4 @@
+import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
 import { nowIso } from './core/db';
 import { tryDispatchJob, reconcileWorkflowJob, failJob } from './services/jobs';
@@ -11,6 +12,7 @@ import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
  * 3. 清理过期会话与验证码挑战。
  */
 export async function handleScheduled(env: Env): Promise<void> {
+  try { await dispatchNotifications(env); } catch { console.error('[cron] Notification dispatch failed'); }
   const now = nowIso();
   const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
   for (const job of staleRunning.results) {

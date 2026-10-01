@@ -112,6 +112,13 @@ describe('要求集：编辑与确认', () => {
       body: JSON.stringify({ title: '再改' }),
     });
     expect(patchAfter.status).toBe(409);
+
+    const notifications = await SELF.fetch(`${BASE}/api/v1/notifications`, { headers: { cookie: authCookie(member.token) } });
+    const events = (await notifications.json() as { data: { items: { kind: string; body: string }[] } }).data.items;
+    expect(events.filter(event => event.kind === 'requirements_ready')).toHaveLength(1);
+    expect(events.filter(event => event.kind === 'requirements_confirmed')).toHaveLength(1);
+    expect(events.filter(event => event.kind === 'requirement_changed')).toHaveLength(3);
+    expect(JSON.stringify(events)).not.toContain('人工修改后的标题');
   });
 });
 

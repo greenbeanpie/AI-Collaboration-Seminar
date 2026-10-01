@@ -1,3 +1,4 @@
+import { revokeDevice } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -28,7 +29,7 @@ const registerRoute = createRoute({ method: 'post', path: '/api/v1/auth/register
   request: { body: { content: { 'application/json': { schema: registerBody } }, required: true } },
   responses: { 201: { content: { 'application/json': { schema: sessionResponse } }, description: '注册并登录' }, 400: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '参数或邀请码无效' }, 409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '用户名或邮箱已占用，邀请码未消耗' }, 429: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '注册频率已达限制' } } });
 const getRoute = createRoute({ method: 'get', path: '/api/v1/auth/session', tags: ['auth'], summary: '读取当前密码登录用户', responses: { 200: { content: { 'application/json': { schema: sessionGetResponse } }, description: '当前用户' } } });
-const deleteRoute = createRoute({ method: 'delete', path: '/api/v1/auth/session', tags: ['auth'], summary: '立即撤销当前会话', responses: { 200: { content: { 'application/json': { schema: sessionDeleteResponse } }, description: '已撤销' } } });
+const deleteRoute = createRoute({ method: 'delete', path: '/api/v1/auth/session', tags: ['auth'], summary: '立即撤销当前会话及可选当前设备推送订阅', request: { headers: z.object({ 'x-push-subscription-id': z.string().uuid().optional() }) }, responses: { 200: { content: { 'application/json': { schema: sessionDeleteResponse } }, description: '已撤销' } } });
 
 export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/auth/session', requireUser);
@@ -46,6 +47,8 @@ export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(getRoute, c => c.json(apiData(c, { user: c.get('user')! }), 200));
   app.openapi(deleteRoute, async c => {
     const token = parseCookies(c.req.header('cookie'))[SESSION_COOKIE] ?? '';
+    const subscriptionId = c.req.header('X-Push-Subscription-Id');
+    if (subscriptionId && z.string().uuid().safeParse(subscriptionId).success) await revokeDevice(c.env, c.get('user')!.id, subscriptionId, await sha256Hex(token));
     await c.env.DB.prepare('UPDATE sessions SET revoked_at = ?2 WHERE token_hash = ?1 AND revoked_at IS NULL').bind(await sha256Hex(token), nowIso()).run();
     c.header('Set-Cookie', clearSessionCookie());
     return c.json(apiData(c, { revoked: true }), 200);

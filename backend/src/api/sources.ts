@@ -1,3 +1,4 @@
+import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireEnabledAiConfig } from '../ai/config';
@@ -259,6 +260,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         ),
       );
     }
+    inserts.push(...notificationStatements(c.env, { key: `source_added:${sourceId}`, kind: 'source_added', scope: 'project', resourceId: member.projectId, actorId: user.id, now, url: `/app/projects/${member.projectId}/sources`, record: { table: 'sources', id: sourceId } }));
     await c.env.DB.batch(inserts);
     if (body.kind === 'paste' && body.text) {
       await c.env.FILES.put(`sources/${versionId}/paste.txt`, body.text);

@@ -1,3 +1,4 @@
+import { registerNotificationRoutes } from './api/notifications';
 import { registerPersonalProfileRoutes } from './api/personal-profiles';
 import { registerCollaborationRoutes } from './api/collaboration';
 import { registerSupportTicketRoutes } from './api/support-tickets';
@@ -44,7 +45,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:jobs(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:jobs(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -90,6 +91,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAdminRoutes(app);
   registerAiDiagnosticsRoutes(app);
   registerSupportTicketRoutes(app);
+  registerNotificationRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {
     openapi: '3.1.0',

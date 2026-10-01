@@ -1,9 +1,10 @@
+import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
-import { newId, nowIso } from '../core/db';
+import { newId, nowIso, sha256Hex } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { projectParams } from './projects';
 
@@ -276,6 +277,7 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
         "UPDATE requirement_sets SET status = 'confirmed', confirmed_by = ?2, confirmed_at = ?3, updated_at = ?3 WHERE id = ?1",
       ).bind(setId, c.get('user')!.id, now),
       c.env.DB.prepare("UPDATE requirements SET field_state = 'confirmed', updated_at = ?2 WHERE requirement_set_id = ?1").bind(setId, now),
+      ...notificationStatements(c.env, { key: `requirements_confirmed:${setId}`, kind: 'requirements_confirmed', scope: 'project', resourceId: member.projectId, actorId: c.get('user')!.id, now, url: `/app/projects/${member.projectId}/requirements`, record: { table: 'requirement_sets', id: setId } }),
     ]);
     return c.json(apiData(c, await loadSet(c.env, setId, member.projectId)), 200);
   });
@@ -291,7 +293,10 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
       .first<RequirementRow & { set_status: string }>();
     if (!row) throw notFound('要求条目不存在');
     if (row.set_status === 'confirmed') throw invalidState('要求集已确认，不可修改');
-    await c.env.DB.prepare(
+    const now = nowIso();
+    const intent = c.req.header('idempotency-key');
+    const eventKey = `requirement_changed:${requirementId}:${c.get('user')!.id}:${intent ? await sha256Hex(intent + JSON.stringify(body)) : newId()}`;
+    await c.env.DB.batch([c.env.DB.prepare(
       `UPDATE requirements SET
          title = COALESCE(?2, title),
          detail = COALESCE(?3, detail),
@@ -310,9 +315,10 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
         body.dueDate ?? null,
         body.duePrecision ?? null,
         body.category ?? null,
-        nowIso(),
-      )
-      .run();
+        now,
+      ),
+      ...notificationStatements(c.env, { key: eventKey, kind: 'requirement_changed', scope: 'project', resourceId: c.get('member')!.projectId, actorId: c.get('user')!.id, now, url: `/app/projects/${c.get('member')!.projectId}/requirements`, record: { table: 'requirements', id: requirementId } }),
+    ]);
     const updated = await c.env.DB.prepare('SELECT * FROM requirements WHERE id = ?1').bind(requirementId).first<RequirementRow>();
     if (!updated) throw notFound('要求条目不存在');
     return c.json(apiData(c, toRequirement(updated)), 200);

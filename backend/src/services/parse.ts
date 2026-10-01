@@ -1,3 +1,4 @@
+import { notificationStatements } from './notifications';
 import type { Env } from '../env';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
@@ -493,6 +494,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
     );
   }
   inserts.push(env.DB.prepare("UPDATE source_versions SET status = 'ready', parse_error = NULL WHERE id = ?1").bind(version.id));
+  inserts.push(...notificationStatements(env, { key: `requirements_ready:${jobId ?? setId}`, kind: 'requirements_ready', scope: 'project', resourceId: version.project_id, now, url: `/app/projects/${version.project_id}/requirements`, record: { table: 'requirement_sets', id: setId } }));
   await env.DB.batch(inserts);
   return { requirementSetId: setId, count: parsed.requirements.length };
 }

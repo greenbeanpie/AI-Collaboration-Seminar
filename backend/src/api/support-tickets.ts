@@ -1,3 +1,4 @@
+import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv, SessionUser } from '../env';
 import { apiData } from '../core/api';
@@ -74,6 +75,7 @@ export function registerSupportTicketRoutes(app: OpenAPIHono<AppEnv>): void {
         SELECT ?3, id, ?2, 'reply', ?4, ?5 FROM support_tickets WHERE id = ?1 AND status != 'closed' AND (owner_id = ?2 OR ${actorAdmin})`)
         .bind(ticketId, user.id, id, c.req.valid('json').body, now),
       c.env.DB.prepare('UPDATE support_tickets SET updated_at = ?2 WHERE id = ?1 AND EXISTS (SELECT 1 FROM support_ticket_messages WHERE id = ?3)').bind(ticketId, now, id),
+      ...notificationStatements(c.env, { key: `ticket_reply:${id}`, kind: 'ticket_reply', scope: 'ticket', resourceId: ticketId, actorId: user.id, now, url: `/app/support/${ticketId}`, record: { table: 'support_ticket_messages', id } }),
     ]);
     if (result[0]?.meta.changes !== 1) throw invalidState('工单已关闭或权限已变化，请刷新后重试');
     return c.json(apiData(c, { id }), 201);
@@ -82,12 +84,13 @@ export function registerSupportTicketRoutes(app: OpenAPIHono<AppEnv>): void {
     const user = c.get('user')!; if (user.role === 'user') throw permissionDenied('只有管理员可以更改工单状态');
     const id = c.req.valid('param').ticketId; await readable(c.env.DB, id, user);
     await consumePasswordRateLimit(c.env, 'support-status-user', user.id, 120, 3600);
-    const input = c.req.valid('json'); const now = nowIso();
+    const input = c.req.valid('json'); const now = nowIso(); const messageId = newId();
     const result = await c.env.DB.batch([
       c.env.DB.prepare(`UPDATE support_tickets SET status = ?3, revision = revision + 1, updated_at = ?4 WHERE id = ?1 AND revision = ?5 AND ${actorAdmin}`)
         .bind(id, user.id, input.status, now, input.revision),
       c.env.DB.prepare("INSERT INTO support_ticket_messages (id,ticket_id,author_id,kind,body,status,created_at) SELECT ?1,?2,?3,'status',?4,?4,?5 WHERE changes() = 1")
-        .bind(newId(), id, user.id, input.status, now),
+        .bind(messageId, id, user.id, input.status, now),
+      ...notificationStatements(c.env, { key: `ticket_status:${id}:${input.revision}`, kind: 'ticket_status', scope: 'ticket', resourceId: id, actorId: user.id, now, url: `/app/support/${id}`, record: { table: 'support_ticket_messages', id: messageId } }),
     ]);
     if (result[0]?.meta.changes !== 1) throw invalidState('工单状态或管理员权限已变化，请刷新后重试');
     return c.json(apiData(c, { ticket: await readable(c.env.DB, id, user) }), 200);
