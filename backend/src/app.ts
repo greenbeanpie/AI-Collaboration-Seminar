@@ -55,11 +55,11 @@ export function createApp(): OpenAPIHono<AppEnv> {
     const requestId = c.get('requestId') ?? crypto.randomUUID();
     if (err instanceof AppError) {
       if (err.status >= 500) {
-        console.error(`[error] ${requestId} ${err.code}: ${err.message}`, err.details ?? '');
+        console.error(JSON.stringify({event:'request_failed',requestId,code:err.code,httpStatus:err.status,retryable:err.retryable}));
       }
       return c.json(failureBody(err.code, err.message, err.retryable, requestId, err.details), err.status as 400);
     }
-    console.error(`[error] ${requestId} unhandled:`, err);
+    console.error(JSON.stringify({event:'request_failed',requestId,code:'INTERNAL',httpStatus:500,retryable:false}));
     return c.json(failureBody('INTERNAL', '服务器内部错误', false, requestId), 500);
   });
 

@@ -17,9 +17,9 @@
 
 ### 全局输出 token 上限
 
-这是现有模型配置的 `maxOutputTokens`，单位为 **每次模型请求的输出 token**。统一模式只有一个全局值，适用于所有项目的各用途；高级模式保留文本、图片/OCR、预审/答辩三个独立值。界面显示已保存版本与上限，编辑草稿不会改变已保存值、其他用途的草稿或密钥。保存和启用继续走原有版本冲突检查与能力测试流程，旧任务冻结的配置版本不改写。
+每个模型配置用 `enabledOutputLimit` 控制是否发送 `maxOutputTokens`；旧配置缺少开关时默认启用并保持原数值。这是现有模型配置的 `maxOutputTokens`，单位为 **每次模型请求的输出 token**。统一模式只有一个全局值，适用于所有项目的各用途；高级模式保留文本、图片/OCR、预审/答辩三个独立值。界面显示已保存版本与上限，编辑草稿不会改变已保存值、其他用途的草稿或密钥。保存和启用继续走原有版本冲突检查与能力测试流程，旧任务冻结的配置版本不改写。
 
-当前系统校验范围是整数 1–32768。这不是供应商能力保证，具体模型可能有更低的技术上限；部分模型的思考 token 与正文共同占用输出预算。输入长度仍按字符限制，累计 token 用量不是此参数的含义，也没有新增全局累计 token 额度控制。累计费用预算仍在各项目设置中以美元（USD）管理，原有金额预占、并发和重试保护保持独立。
+启用时接受可安全表示的正整数，没有 32768 等固定业务最大值；数字精度校验仍保留。关闭时 Chat Completions（含 `max_completion_tokens`）、Responses 和 Gemini 省略输出上限字段，任何单次调用值也不能重新引入 4096/32768 等回退。保留原数值方便再次启用，不自动修改线上配置。供应商默认值、模型输出和上下文硬上限仍然生效，省略参数不保证无限输出。Messages 协议必填 `max_tokens`，活动配置关闭上限时保存和发送前均明确拒绝，要求用户自行启用并设置数值。这不是供应商能力保证，具体模型可能有更低的技术上限；部分模型的思考 token 与正文共同占用输出预算。输入长度仍按字符限制，累计 token 用量不是此参数的含义，也没有新增全局累计 token 额度控制。累计费用预算仍在各项目设置中以美元（USD）管理，原有金额预占、并发和重试保护保持独立。有限金额预算要求启用输出上限；关闭时无法保守预占，任务明确拒绝。无金额上限的项目继续按返回的实际用量记账。
 
 ## 已接入协议与预设
 
@@ -69,7 +69,8 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - 禁止重定向；HTTP 错误只显示状态，不暴露供应商原始错误体。网络错误不返回底层 err.message，避免运行时泄露 URL/头
 - 该策略是 URL 语法检查，不进行 DNS 固定/重绑定防护。自托管部署必须同时限制网络出口，不能把语法检查当作完整 SSRF 保护
 - 新增字段为可选 JSON 属性，不需要数据库迁移。旧 provider 字符串、旧自定义地址和冻结配置仍走原 Chat 行为
-- 任务继续冻结配置版本（含协议、思考参数和安全头）。修改任何参数都会使探测证据失效；已排队任务不读取新配置覆盖冻结版本
+- 新建的独立文件总结（包括手动单独重试）冻结创建时当前已启用的配置。来源正文和要求仍保留原冻结配置，摘要重试不重复解析正文或要求。已有摘要任务继续使用其创建时的冻结版本。
+- 任务继续冻结配置版本（含协议、思考参数、输出开关和安全头）。修改任何参数都会使探测证据失效；已排队任务不读取新配置覆盖冻结版本
 - 原有两次调用预占、并发限制、费用记录与恢复语义保留。对 401/403 等不可重试服务错误不再发出无意义的付费修复重试；输出 schema 失败/可重试网络错误仍受原两次总数限制
 - 自定义/第三方模型和 OCR 仍不允许有限金额预算；不能假设所有兼容接口的 max_tokens 包含思考 token。原子预占与价格未知状态不变
 - 原生 OpenAI 输出 token 含思考；Claude 输入总量合并普通/缓存读/缓存写，输出不重复添加 thinking；Gemini 输出合并 candidates+thoughts，输入不重复加缓存。供应商差异化缓存价/附加费用不等于本应用简单单价记录，最终以账单核对
@@ -91,6 +92,7 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - [OpenCode Zen 端点](https://opencode.ai/docs/zen/#endpoints)
 - [Go Messages 官方路由](https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/go/v1/messages.ts)
 - [OpenAI GPT-5 参数](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5)、[GPT-5.1](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.1)、[GPT-5.2](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2)、[GPT-5.4](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4)
+- [OpenAI Chat 输出参数](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Responses 输出参数](https://developers.openai.com/api/reference/resources/responses/methods/create)
 - [OpenAI Responses 类型](https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response.py)
 - [Claude 思考强度](https://platform.claude.com/docs/en/build-with-claude/effort#recommended-effort-levels-for-claude-sonnet-55)、[Claude Messages](https://platform.claude.com/docs/en/api/messages/create)、[模型 ID](https://platform.claude.com/docs/en/models/overview)
 - [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)、[思考参数](https://ai.google.dev/gemini-api/docs/generate-content/thinking)、[用量语义](https://ai.google.dev/api/generate-content#UsageMetadata)

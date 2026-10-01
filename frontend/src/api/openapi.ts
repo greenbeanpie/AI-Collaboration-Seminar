@@ -4708,6 +4708,8 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
                             maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
@@ -4740,6 +4742,8 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
                             maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
@@ -4771,6 +4775,8 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
                             maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
@@ -4802,6 +4808,8 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
                             maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
@@ -5681,6 +5689,12 @@ export interface components {
                 code: string;
                 message: string;
                 retryable: boolean;
+                /** @enum {string} */
+                stage: "validation" | "authentication" | "authorization" | "state" | "limits" | "upload" | "source_parse" | "model_configuration" | "model_response" | "delivery" | "internal" | "request" | "network";
+                /** @enum {string} */
+                action: "correct_input" | "sign_in" | "check_access" | "refresh_state" | "wait_then_retry" | "check_file" | "check_source" | "configure_ai" | "review_model_result" | "check_delivery" | "contact_admin" | "check_connection";
+                /** Format: uuid */
+                requestId: string;
                 details?: {
                     [key: string]: unknown;
                 };

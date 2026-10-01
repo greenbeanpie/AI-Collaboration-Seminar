@@ -94,7 +94,7 @@ describe('creation file reconciliation', () => {
 
   it('reports unavailable session storage without suppressing a usable live flow', () => {
     const draft: CreationDraft = { version: 1, userId: 'alice', createKey: 'stable-key', payload: { name: 'Project', description: '', deadlinePrecision: 'unknown', aiCollaborationEnabled: false }, createAttempted: true, project: null, files: [], interrupted: false };
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    vi.stubGlobal('sessionStorage', { setItem: () => { throw new Error('quota'); } });
     expect(writeCreationDraft(draft)).toBe(false);
   });
 });

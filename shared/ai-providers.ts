@@ -28,6 +28,7 @@ export interface ProviderOptions {
   apiUrl?: string;
   apiProtocol?: ApiProtocol;
   supportsJson?: boolean;
+  enabledOutputLimit?: boolean;
   model: string;
   reasoningEffort?: ReasoningEffort;
   temperature?: number;
@@ -83,6 +84,7 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   if (config.apiProtocol && config.apiProtocol !== protocolForConfig({ ...config, apiProtocol: undefined }) && preset !== 'custom' && preset !== 'openai' && (knownModel || ['anthropic', 'gemini', 'deepseek', 'openrouter'].includes(preset))) errors.push('协议与已核实的供应商/模型不匹配；代理接口请选择自定义');
   if (preset === 'openai' && config.apiProtocol && !['responses', 'chat-completions'].includes(config.apiProtocol)) errors.push('OpenAI 仅支持 Responses 或 Chat Completions 协议');
   if (protocolForConfig(config) === 'messages' && config.supportsJson) errors.push('Messages 协议请取消 JSON response_format；仍会使用 JSON 提示和输出校验');
+  if (protocolForConfig(config) === 'messages' && config.enabledOutputLimit === false) errors.push('Messages 协议必填 max_tokens，请启用输出 token 上限并自行设置正整数；该协议无法省略上限');
   if ((preset === 'opencode-zen' || preset === 'opencode-go') && config.model && !providerPresets[preset].models.includes(config.model) && !config.apiProtocol) errors.push('该 OpenCode 模型尚未核实，请显式选择协议；思考参数保持默认');
   if (preset === 'opencode-go' && !config.goUsageAcknowledged) errors.push('请先确认 OpenCode Go 套餐适用于本应用用途');
   if (preset === 'opencode-go' && config.goHeaders?.userAgent !== undefined && !isSafeGoUserAgent(config.goHeaders.userAgent)) errors.push('Go User-Agent 需为真实应用名/版本，不能模拟 OpenCode、Codex 或 Claude 客户端');

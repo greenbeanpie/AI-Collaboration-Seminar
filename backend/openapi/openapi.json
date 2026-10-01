@@ -255,6 +255,45 @@
               "retryable": {
                 "type": "boolean"
               },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "validation",
+                  "authentication",
+                  "authorization",
+                  "state",
+                  "limits",
+                  "upload",
+                  "source_parse",
+                  "model_configuration",
+                  "model_response",
+                  "delivery",
+                  "internal",
+                  "request",
+                  "network"
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "correct_input",
+                  "sign_in",
+                  "check_access",
+                  "refresh_state",
+                  "wait_then_retry",
+                  "check_file",
+                  "check_source",
+                  "configure_ai",
+                  "review_model_result",
+                  "check_delivery",
+                  "contact_admin",
+                  "check_connection"
+                ]
+              },
+              "requestId": {
+                "type": "string",
+                "format": "uuid"
+              },
               "details": {
                 "type": "object",
                 "additionalProperties": {}
@@ -263,7 +302,10 @@
             "required": [
               "code",
               "message",
-              "retryable"
+              "retryable",
+              "stage",
+              "action",
+              "requestId"
             ]
           },
           "requestId": {
@@ -14031,10 +14073,13 @@
                         "type": "integer",
                         "minimum": 1
                       },
+                      "enabledOutputLimit": {
+                        "type": "boolean",
+                        "default": true
+                      },
                       "maxOutputTokens": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32768
+                        "minimum": 1
                       },
                       "supportsJson": {
                         "type": "boolean"
@@ -14166,10 +14211,13 @@
                         "type": "integer",
                         "minimum": 1
                       },
+                      "enabledOutputLimit": {
+                        "type": "boolean",
+                        "default": true
+                      },
                       "maxOutputTokens": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32768
+                        "minimum": 1
                       },
                       "supportsJson": {
                         "type": "boolean"
@@ -14297,10 +14345,13 @@
                         "type": "integer",
                         "minimum": 1
                       },
+                      "enabledOutputLimit": {
+                        "type": "boolean",
+                        "default": true
+                      },
                       "maxOutputTokens": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32768
+                        "minimum": 1
                       },
                       "supportsJson": {
                         "type": "boolean"
@@ -14428,10 +14479,13 @@
                         "type": "integer",
                         "minimum": 1
                       },
+                      "enabledOutputLimit": {
+                        "type": "boolean",
+                        "default": true
+                      },
                       "maxOutputTokens": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32768
+                        "minimum": 1
                       },
                       "supportsJson": {
                         "type": "boolean"

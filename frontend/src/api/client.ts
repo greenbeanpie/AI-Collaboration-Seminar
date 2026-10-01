@@ -1,19 +1,24 @@
 import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
+import { errorInfo, publicErrorMessage } from './error-info';
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string;
   readonly retryable: boolean;
+  readonly stage?: string;
+  readonly action?: string;
   readonly details?: Record<string, unknown>;
 
   constructor(status: number, failure: ApiFailure) {
-    super(failure.error.message || '请求失败');
+    super([publicErrorMessage(failure.error.code,failure.error.message),errorInfo(failure.error,failure.requestId)].filter(Boolean).join('；'));
     this.name = 'ApiError';
     this.status = status;
     this.code = failure.error.code;
     this.requestId = failure.requestId;
     this.retryable = failure.error.retryable;
+    this.stage = failure.error.stage;
+    this.action = failure.error.action;
     this.details = failure.error.details;
   }
 }
@@ -62,7 +67,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ApiError(0, {
-      error: { code: 'NETWORK_ERROR', message: '无法连接服务，请检查网络或后端是否启动。', retryable: true },
+      error: { code: 'NETWORK_ERROR', message: '无法连接服务，请检查网络或后端是否启动。', retryable: true, stage:'network',action:'check_connection' },
       requestId,
     });
   }

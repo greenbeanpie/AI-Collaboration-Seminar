@@ -29,6 +29,9 @@ export function estimateCostUsd(config: LoadedAiConfig | null, purpose: AiPurpos
   const model = config?.config[purpose];
   const price = model?.pricePerMTokens;
   if (!model || !price) return 0;
+  // No bounded estimate is available without an output cap. Unlimited-budget
+  // projects still reconcile actual usage; finite budgets reject below.
+  if (model.enabledOutputLimit === false) return 0;
   // UTF-8/JSON 转义按每个 UTF-16 单元最多 6 字节，加受限消息协议开销。
   // 这是文本规划金额；不覆盖供应商额外收费，需以账单核对。
   const inputTokens = model.maxInputChars * 6 + 4096;
@@ -99,7 +102,7 @@ export async function reserveAiSlot(
   if (project?.ai_budget_usd !== null && project?.ai_budget_usd !== undefined) {
     const model = aiPurpose ? config?.config[aiPurpose] : undefined;
     // 任意兼容 API 的分词/附加计费与视觉输入 token 无法由本系统保证上界。
-    if (!model?.pricePerMTokens || !Number.isFinite(estimatedCost) || aiPurpose === 'visionEconomy' || model.provider !== 'workers-ai') {
+    if (!model?.pricePerMTokens || model.enabledOutputLimit === false || !Number.isFinite(estimatedCost) || aiPurpose === 'visionEconomy' || model.provider !== 'workers-ai') {
       throw quotaExceeded('有限金额预算要求已知价格和可估算的文本模型；图片/OCR或未知分词计费接口不能保证费用上界', { budgetUsd: project.ai_budget_usd, purpose: params.purpose });
     }
   }

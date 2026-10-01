@@ -40,7 +40,7 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
         <p className="sources-inline-note">AI 总结需人工核对，不会替代原文件或要求确认。</p>
       </div>}
       {state.summaryStatus !== 'ready' && !['queued','running'].includes(state.summaryStatus) && <button type="button" className="button button-quiet button-small" disabled={submitting || state.textStatus !== 'ready' || !aiEnabled} onClick={() => void start()}>{submitting ? '正在提交…' : state.summaryStatus === 'failed' || state.summaryStatus === 'cancelled' ? '单独重试文件总结' : '生成文件总结'}</button>}
-      {state.summaryStatus !== 'ready' && <p className="sources-inline-note">正文完整后使用该来源冻结的模型配置总结，可能产生 AI 用量；失败后不会伪造结果或丢弃原文件。</p>}
+      {state.summaryStatus !== 'ready' && <p className="sources-inline-note">正文完整后，单独生成或重试总结会冻结当前已启用的模型配置，可能产生 AI 用量；不会重复解析正文或要求，失败后保留原文件。</p>}
     </>}
     {Boolean(error) && <ErrorNotice error={error} />}
   </section>;

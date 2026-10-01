@@ -5,7 +5,9 @@ import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { mockGatewayFetch } from './helpers/ai-mock';
 import { extractSourceVersionText, runParseJob } from '../src/services/parse';
-import { runSourceSummary, setSourceStage } from '../src/services/source-summary';
+import { enqueueSourceSummary, runSourceSummary, setSourceStage } from '../src/services/source-summary';
+import { loadAiConfig } from '../src/ai/config';
+import type { Env } from '../src/env';
 
 await configureGoFixture();
 afterEach(() => vi.unstubAllGlobals());
@@ -28,6 +30,28 @@ async function summaryJob(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe('independent source summaries', () => {
+  it('freezes the current config for a new summary without parsing text or requirements again', async () => {
+    const f = await fixture(); const old = (await loadAiConfig(env.DB))!;
+    await env.DB.prepare('UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1').bind(f.sourceVersionId, old.id).run();
+    const currentId = crypto.randomUUID(); const config = structuredClone(old.config);
+    config.textEconomy.enabledOutputLimit = false;
+    await env.DB.prepare('INSERT INTO ai_config_versions(id,version,config_json,enabled,created_at) VALUES (?1,?2,?3,1,?4)').bind(currentId,old.version+1,JSON.stringify(config),new Date().toISOString()).run();
+    const dispatch = vi.fn(async () => ({ id: crypto.randomUUID() }));
+    const fetch = vi.fn(); vi.stubGlobal('fetch',fetch);
+    const result = await enqueueSourceSummary({ ...env, PARSE_WORKFLOW: { create:dispatch } } as unknown as Env,f.sourceVersionId,f.owner.userId,0);
+    const job = await env.DB.prepare('SELECT input_json FROM jobs WHERE id = ?1').bind(result.jobId).first<{input_json:string}>();
+    expect(JSON.parse(job!.input_json)).toMatchObject({ operation:'source.summary', configVersionId:currentId, phase:'summary' });
+    expect((await loadAiConfig(env.DB,old.id))!.config.textEconomy.enabledOutputLimit).toBe(true);
+    expect(fetch).not.toHaveBeenCalled(); expect(dispatch).toHaveBeenCalledOnce();
+    expect(await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(f.sourceVersionId).first()).toEqual({ ai_config_version_id: old.id });
+    // A later save cannot replace an already-created summary's frozen config.
+    await env.DB.prepare('INSERT INTO ai_config_versions(id,version,config_json,enabled,created_at) VALUES (?1,?2,?3,1,?4)').bind(crypto.randomUUID(),old.version+2,JSON.stringify(old.config),new Date().toISOString()).run();
+    const summaryFetch = mockGatewayFetch({ outputLimitEnabled: false }); vi.stubGlobal('fetch',summaryFetch);
+    expect((await runSourceSummary(env,result.jobId)).status).toBe('succeeded');
+    expect(JSON.parse(String(summaryFetch.mock.calls[0]?.[1]?.body))).not.toHaveProperty('max_tokens');
+    expect(await env.DB.prepare('SELECT config_version_id FROM ai_calls WHERE job_id = ?1').bind(result.jobId).first()).toEqual({ config_version_id: currentId });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM jobs WHERE project_id = ?1 AND kind = 'parse_source'").bind(f.projectId).first()).toEqual({n:0});
+  });
   it('keeps text and a failed requirements stage, while summary succeeds with validated citations and accounting', async () => {
     const f = await fixture(); const jobId = await summaryJob(f); await setSourceStage(env,f.sourceVersionId,'requirements','failed','要求提取暂时失败');
     const fetch = mockGatewayFetch(); vi.stubGlobal('fetch',fetch);

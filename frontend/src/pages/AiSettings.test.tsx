@@ -199,6 +199,33 @@ it('loads sanitized unified config and retains draft on optimistic version confl
 const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
 
+it('saves the explicit off switch while retaining a value above the former maximum and makes no model call', async () => {
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 4, enabled: true, config: savedConfig } });
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toMatchObject({ unified: { enabledOutputLimit: false, maxOutputTokens: 65536 }, textEconomy: { enabledOutputLimit: true, maxOutputTokens: 1500 } });
+    return Response.json({ data: { version: 5, enabled: false } });
+  });
+  vi.stubGlobal('fetch', mock); await setup(true, false);
+  fireEvent.change(screen.getByLabelText(/统一模型最大输出 token/), { target: { value: '65536' } });
+  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
+  expect(screen.getByLabelText(/统一模型最大输出 token/)).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 已关闭（保留 65536 token）');
+  expect(mock).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
+  expect(screen.getByLabelText(/统一模型最大输出 token/)).toHaveValue(65536);
+});
+
+it('preserves a saved disabled switch and its retained numeric value on load', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { version: 7, enabled: true, config: { ...savedConfig, unified: { ...savedModel, enabledOutputLimit: false, maxOutputTokens: 70000 } } } })));
+  await setup(true, false);
+  expect(screen.getByLabelText('启用统一模型输出 token 上限')).not.toBeChecked();
+  expect(screen.getByLabelText(/统一模型最大输出 token/)).toHaveValue(70000);
+  expect(screen.getByLabelText(/统一模型最大输出 token/)).toBeDisabled();
+});
+
 it('prominent unified output limit retains the saved value and inactive purpose limits until explicitly saved', async () => {
   const persisted = { ...savedConfig, unified: { ...savedModel, maxOutputTokens: 9876 }, textEconomy: { ...savedModel, maxOutputTokens: 2100 }, visionEconomy: { ...savedModel, maxOutputTokens: 3200 }, review: { ...savedModel, maxOutputTokens: 4300 } };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -211,7 +238,8 @@ it('prominent unified output limit retains the saved value and inactive purpose 
   vi.stubGlobal('fetch', mock); await setup(true, false);
   const limits = screen.getByRole('group', { name: '全局输出 token 上限' });
   const input = within(limits).getByLabelText(/统一模型最大输出 token/);
-  expect(input).toHaveValue(9876); expect(input).toHaveAttribute('min', '1'); expect(input).toHaveAttribute('max', '32768'); expect(input).toHaveAttribute('step', '1');
+  expect(input).toHaveValue(9876); expect(input).toHaveAttribute('min', '1'); expect(input).not.toHaveAttribute('max'); expect(input).toHaveAttribute('step', '1');
+  expect(screen.getByLabelText('启用统一模型输出 token 上限')).toBeChecked();
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v11：统一模型 9876 token / 次');
   fireEvent.change(input, { target: { value: '12345' } });
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 9876 token / 次');
@@ -246,13 +274,13 @@ it('advanced output limits remain independent across routing-mode changes withou
   expect(mock).toHaveBeenCalledTimes(2);
 });
 
-it.each(['0', '32769', '1.5'])('rejects invalid output token limit %s without saving or running a model probe', async value => {
+it.each(['0', '9007199254740992', '1.5'])('rejects invalid output token limit %s without saving or running a model probe', async value => {
   const mock = vi.fn(async () => new Response(JSON.stringify({ data: { version: 4, enabled: true, config: savedConfig } })));
   vi.stubGlobal('fetch', mock); await setup(true, false);
   fireEvent.change(screen.getByLabelText(/统一模型最大输出 token/), { target: { value } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByRole('alert');
-  expect(screen.getByRole('alert')).toHaveTextContent('输出上限必须为 1–32768 的整数 token');
+  expect(screen.getByRole('alert')).toHaveTextContent('输出上限必须为可安全表示的正整数 token');
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 1500 token / 次');
   expect(mock).toHaveBeenCalledOnce();
 });
@@ -459,4 +487,15 @@ it('untouched legacy advanced config does not invent a unified draft or force a 
   await setup(true, false);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 保持启用。');
+});
+
+it('explains the required Messages cap and rejects an off switch without saving or probing', async () => {
+  const unified = { ...savedModel, providerPreset: 'anthropic', apiProtocol: 'messages', model: 'claude-sonnet-4-6', apiUrl: 'https://api.anthropic.com/v1/messages', enabledOutputLimit: true };
+  const mock = vi.fn(async () => Response.json({ data: { version: 8, enabled: true, config: { ...savedConfig, unified } } }));
+  vi.stubGlobal('fetch', mock); await setup(true, false);
+  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
+  expect(screen.getByText(/Messages 协议必填 max_tokens，必须启用输出上限/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Messages 协议必填 max_tokens');
+  expect(mock).toHaveBeenCalledOnce();
 });

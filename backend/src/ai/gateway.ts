@@ -115,7 +115,7 @@ export async function gatewayChat(
   if (textChars > input.config.maxInputChars || input.messages.length > 32) {
     throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
   }
-  if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || input.maxOutputTokens > input.config.maxOutputTokens)) {
+  if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || (input.config.enabledOutputLimit !== false && input.maxOutputTokens > input.config.maxOutputTokens))) {
     throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
   }
   const started = Date.now();

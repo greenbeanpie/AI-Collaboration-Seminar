@@ -17,8 +17,11 @@ function textContent(message: ChatMessage): string {
 }
 
 /** No arbitrary headers/body passthrough. Authentication is constructed after validation. */
-export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean, maxOutputTokens: number, sessionId?: string): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
+export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean, maxOutputTokens: number | undefined, sessionId?: string): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
   const protocol = protocolForConfig(config);
+  const outputLimit = config.enabledOutputLimit === false ? undefined : maxOutputTokens ?? config.maxOutputTokens;
+  if (outputLimit !== undefined && (!Number.isSafeInteger(outputLimit) || outputLimit < 1)) throw inputError('输出 token 上限必须为可安全表示的正整数');
+  if (protocol === 'messages' && outputLimit === undefined) throw inputError('Messages 协议必填 max_tokens，请启用输出 token 上限');
   const caps = modelCapabilities(config);
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   let body: Record<string, unknown>;
@@ -26,7 +29,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     headers['x-api-key'] = token;
     headers['anthropic-version'] = '2023-06-01';
     body = {
-      model: config.model, max_tokens: maxOutputTokens,
+      model: config.model, max_tokens: outputLimit,
       messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => {
         if (part.type === 'text') return part;
         const image = dataImage(part.image_url.url);
@@ -38,7 +41,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     if (config.reasoningEffort !== undefined) body.output_config = { effort: config.reasoningEffort };
   } else if (protocol === 'gemini') {
     headers['x-goog-api-key'] = token;
-    const generationConfig: Record<string, unknown> = { maxOutputTokens };
+    const generationConfig: Record<string, unknown> = outputLimit === undefined ? {} : { maxOutputTokens: outputLimit };
     if (jsonMode && config.supportsJson) generationConfig.responseMimeType = 'application/json';
     if (config.reasoningEffort !== undefined) generationConfig.thinkingConfig = { thinkingLevel: config.reasoningEffort };
     if (config.temperature !== undefined) generationConfig.temperature = config.temperature;
@@ -52,11 +55,11 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
   } else {
     headers.authorization = `Bearer ${token}`;
     if (protocol === 'responses') {
-      body = { model: config.model, max_output_tokens: maxOutputTokens, store: false, input: messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => part.type === 'text' ? { type: 'input_text', text: part.text } : { type: 'input_image', image_url: part.image_url.url }) })) };
+      body = { model: config.model, ...(outputLimit === undefined ? {} : { max_output_tokens: outputLimit }), store: false, input: messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => part.type === 'text' ? { type: 'input_text', text: part.text } : { type: 'input_image', image_url: part.image_url.url }) })) };
       if (jsonMode && config.supportsJson) body.text = { format: { type: 'json_object' } };
       if (config.reasoningEffort !== undefined) body.reasoning = { effort: config.reasoningEffort };
     } else {
-      body = { model: config.model, messages, [caps.tokenField]: maxOutputTokens };
+      body = { model: config.model, messages, ...(outputLimit === undefined ? {} : { [caps.tokenField]: outputLimit }) };
       if (jsonMode && config.supportsJson) body.response_format = { type: 'json_object' };
       if (config.reasoningEffort !== undefined) {
         // DeepSeek Chat toggles thinking separately; "none" is not a Chat effort.

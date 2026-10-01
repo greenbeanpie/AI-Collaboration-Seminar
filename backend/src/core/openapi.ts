@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi';
+import { ERROR_STAGES, ERROR_ACTIONS } from './error-guidance';
 
 /**
  * OpenAPI 响应信封：所有成功响应均为 { data, requestId }（与 PLAN 约定的 ApiSuccess 一致）。
@@ -20,6 +21,9 @@ export const apiErrorEnvelope = z
       code: z.string().openapi({ description: '错误码，见 backend_plan.md 4.1 目录' }),
       message: z.string(),
       retryable: z.boolean(),
+      stage: z.enum(ERROR_STAGES),
+      action: z.enum(ERROR_ACTIONS),
+      requestId: z.string().uuid(),
       details: z.record(z.string(), z.unknown()).optional(),
     }),
     requestId: z.string(),

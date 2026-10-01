@@ -26,7 +26,7 @@ export async function setSourceStage(env: Env, versionId: string, stage: 'text' 
 }
 
 export async function enqueueSourceSummary(env: Env, versionId: string, createdBy: string | null, expectedRevision?: number): Promise<{ jobId: string; revision: number }> {
-  const version = await env.DB.prepare('SELECT source_id, project_id, ai_config_version_id, char_count FROM source_versions WHERE id = ?1').bind(versionId).first<{ source_id: string; project_id: string; ai_config_version_id: string | null; char_count: number | null }>();
+  const version = await env.DB.prepare('SELECT source_id, project_id FROM source_versions WHERE id = ?1').bind(versionId).first<{ source_id: string; project_id: string }>();
   if (!version) throw notFound('来源版本不存在');
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(versionId).first<{ n: number }>();
   const fragments = await env.DB.prepare('SELECT COUNT(*) AS n FROM source_fragments WHERE source_version_id = ?1').bind(versionId).first<{ n: number }>();
@@ -38,7 +38,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
   if (!claim) throw invalidState('总结版本已变化或已有任务运行；请刷新状态后重试');
   try {
     await createJobAndDispatch(env, { projectId: version.project_id, kind: 'requirement_extract', jobId, createdBy,
-      input: { operation: 'source.summary', sourceId: version.source_id, sourceVersionId: versionId, phase: 'summary', configVersionId: version.ai_config_version_id ?? config.id, summaryRevision: claim.summary_revision } });
+      input: { operation: 'source.summary', sourceId: version.source_id, sourceVersionId: versionId, phase: 'summary', configVersionId: config.id, summaryRevision: claim.summary_revision } });
   } catch (err) {
     await env.DB.prepare("UPDATE source_processing SET summary_status = 'failed', summary_error = '总结任务未能创建，请重试', updated_at = ?3 WHERE source_version_id = ?1 AND summary_job_id = ?2").bind(versionId, jobId, nowIso()).run();
     throw err;

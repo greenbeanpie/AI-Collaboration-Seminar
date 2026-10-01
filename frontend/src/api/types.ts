@@ -25,6 +25,6 @@ export type Resource = DataOf<'ResourceListResponse'>['items'][number];
 
 export type ApiEnvelope<T> = { data: T; requestId: string };
 export type ApiFailure = {
-  error: { code: string; message: string; retryable: boolean; details?: Record<string, unknown> };
+  error: { code: string; message: string; retryable: boolean; stage?: string; action?: string; requestId?:string; details?: Record<string, unknown> };
   requestId: string;
 };

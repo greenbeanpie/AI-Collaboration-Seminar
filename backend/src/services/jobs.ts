@@ -48,7 +48,9 @@ export async function createJobAndDispatch(
   const supplied = params.input as Record<string, unknown>;
   const latestConfig = await loadAiConfig(env.DB);
   let frozenConfig = supplied.configVersionId ?? latestConfig?.id;
-  if (typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
+  // Independent summaries freeze the config chosen for this job, while parse/OCR
+  // and requirements continue sharing the source's original frozen version.
+  if (supplied.operation !== 'source.summary' && typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
     await env.DB.prepare('UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1 AND ai_config_version_id IS NULL').bind(supplied.sourceVersionId, frozenConfig ?? null).run();
     const source = await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(supplied.sourceVersionId).first<{ ai_config_version_id: string | null }>();
     frozenConfig = source?.ai_config_version_id ?? frozenConfig;

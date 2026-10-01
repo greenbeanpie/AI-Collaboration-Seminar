@@ -2,6 +2,8 @@ import { assertGoRequest } from './provider-config';
 import { vi } from 'vitest';
 
 export interface GatewayMockOptions {
+  /** Assert omission when a job explicitly disables the output cap. */
+  outputLimitEnabled?: boolean;
   /** 第一次要求提取调用返回非法 JSON，触发一次修复重试 */
   repair?: boolean;
   /** 返回伪造 fragmentId 的引用（应导致 AI_OUTPUT_INVALID） */
@@ -39,7 +41,7 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
   let textCalls = 0;
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? '{}')) as ChatBody;
-    if (body.model === 'glm-5.2') assertGoRequest(_input, init);
+    if (body.model === 'glm-5.2') assertGoRequest(_input, init, options?.outputLimitEnabled);
     const first = body.messages?.[0]?.content;
     if (Array.isArray(first)) {
       if (options?.visionInvalid) return openAiResponse('{"unexpected": true}');
