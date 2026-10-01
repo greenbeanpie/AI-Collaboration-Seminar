@@ -28,10 +28,12 @@ export const aiModelConfigSchema = z.object({
 });
 
 export const aiConfigSchema = z.object({
+  routingMode: z.enum(['advanced', 'unified']).optional(),
+  unified: aiModelConfigSchema.optional(),
   textEconomy: aiModelConfigSchema,
   visionEconomy: aiModelConfigSchema,
   review: aiModelConfigSchema,
-});
+}).refine(c => c.routingMode !== 'unified' || Boolean(c.unified), { message: 'Unified mode requires a model', path: ['unified'] });
 
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 export type AiConfig = z.infer<typeof aiConfigSchema>;
@@ -44,7 +46,7 @@ export interface LoadedAiConfig {
 }
 
 /** 读取最新 AI 配置版本；调用方任务固定使用创建时的版本 */
-export async function loadAiConfig(db: D1Database, configVersionId?: string): Promise<LoadedAiConfig | null> {
+export async function loadAiConfig(db: D1Database, configVersionId?: string, resolve = true): Promise<LoadedAiConfig | null> {
   const row = await db
     .prepare(configVersionId ? 'SELECT id, version, config_json, enabled FROM ai_config_versions WHERE id = ?1' : 'SELECT id, version, config_json, enabled FROM ai_config_versions ORDER BY version DESC LIMIT 1')
     .bind(...(configVersionId ? [configVersionId] : []))
@@ -54,7 +56,7 @@ export async function loadAiConfig(db: D1Database, configVersionId?: string): Pr
     id: row.id,
     version: row.version,
     enabled: row.enabled === 1,
-    config: aiConfigSchema.parse(JSON.parse(row.config_json)),
+    config: resolve ? resolveAiConfig(aiConfigSchema.parse(JSON.parse(row.config_json))) : aiConfigSchema.parse(JSON.parse(row.config_json)),
   };
 }
 
@@ -69,5 +71,12 @@ export async function requireEnabledAiConfig(db: D1Database): Promise<LoadedAiCo
 }
 
 export function configForPurpose(loaded: LoadedAiConfig, purpose: AiPurpose): AiModelConfig {
-  return loaded.config[purpose];
+  return resolveAiConfig(loaded.config)[purpose];
+}
+
+/** Resolve once at the frozen version boundary, including every pricing and legacy purpose reader. */
+export function resolveAiConfig(config: AiConfig): AiConfig {
+  if (config.routingMode !== 'unified') return config;
+  if (!config.unified) throw new AppError('AI_UNAVAILABLE', '统一模型尚未配置', 503, false);
+  return { ...config, textEconomy: config.unified, visionEconomy: config.unified, review: config.unified };
 }

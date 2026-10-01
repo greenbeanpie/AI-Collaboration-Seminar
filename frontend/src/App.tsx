@@ -1,9 +1,9 @@
+import { SettingsLayout } from './pages/SettingsLayout';
 import { ThemeSelector } from './components/ThemeSelector';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRegisterSW } from 'virtual:pwa-register/react';
-import { ArrowUpRight, WifiOff } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useCapabilities, useSession } from './auth';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
@@ -78,29 +78,18 @@ function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
 }
 
 function PwaStatus() {
-  // Capture browser install eligibility even before login or dashboard mounting.
+  const session = useSession();
+  const location = useLocation();
+  const projectId = location.pathname.match(/\/projects\/([^/]+)/)?.[1] ?? '';
   useEffect(() => { getInstallState(); }, []);
-  const online = useStateOnline();
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
-  return <>
-    {!online && <div className="offline-banner"><WifiOff size={15} /> 当前离线。已加载内容可能仍可查看；只有页面明确标示的本机草稿会在此设备保留，联网后请检查并确认提交。</div>}
-    {needRefresh && <div className="update-banner">更新会重新载入页面，请先确认材料草稿已保存。<button className="button button-small button-primary" onClick={() => void updateServiceWorker(true)}>立即更新</button></div>}
-  </>;
-}
-
-function useStateOnline(): boolean {
-  const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
-    const on = () => setOnline(true); const off = () => setOnline(false);
-    window.addEventListener('online', on); window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
-  }, []);
-  return online;
+    window.dispatchEvent(new CustomEvent('app-notification-scope', { detail: 'ai:' + (session.data?.id ?? 'anonymous') + ':' + projectId }));
+  }, [session.data?.id, projectId]);
+  return null;
 }
 
 export default function App() {
   return <>
-    <ThemeSelector />
     <PwaStatus />
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />
@@ -109,11 +98,19 @@ export default function App() {
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/support" element={<SupportTicketsPage />} />
         <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
-        <Route path="/app/settings" element={<AccountSettingsPage />} />
-        <Route element={<SystemAdminOnly />}>
-          <Route path="/app/admin/accounts" element={<AdminAccountsPage />} />
-          <Route element={<SystemAdminOnly superOnly />}><Route path="/app/admin/ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>
+        <Route path="/app/settings" element={<SettingsLayout />}>
+          <Route index element={<Navigate to="profile" replace />} />
+          <Route path="profile" element={<AccountSettingsPage section="profile" />} />
+          <Route path="security" element={<AccountSettingsPage section="security" />} />
+          <Route path="appearance" element={<ThemeSelector />} />
+          <Route element={<SystemAdminOnly />}>
+            <Route path="accounts" element={<AdminAccountsPage />} />
+            <Route element={<SystemAdminOnly superOnly />}><Route path="ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>
+          </Route>
+          <Route path="*" element={<Navigate to="/app/settings/profile" replace />} />
         </Route>
+        <Route path="/app/admin/accounts" element={<Navigate to="/app/settings/accounts" replace />} />
+        <Route path="/app/admin/ai" element={<Navigate to="/app/settings/ai" replace />} />
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />
         <Route path="/app/projects/:projectId" element={<ProjectShell />}>

@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, useNavigate } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import App from './App';
 import { resetForTest } from './pwa-install';
@@ -19,7 +19,9 @@ function Harness() {
 afterEach(() => { cleanup(); resetForTest(); sessionStorage.clear(); });
 
 it('captures install eligibility before login but renders the prompt only on the first authenticated /app visit', async () => {
-  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={['/login']}><Harness /></MemoryRouter></QueryClientProvider>);
+  const notifications = vi.fn();
+  window.addEventListener('app-notification', notifications);
+  render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={createMemoryRouter([{ path: '*', element: <Harness /> }], { initialEntries: ['/login'] })} /></QueryClientProvider>);
   await screen.findByText('登录页');
   const prompt = vi.fn(async () => {});
   const event = new Event('beforeinstallprompt', { cancelable: true });
@@ -28,7 +30,8 @@ it('captures install eligibility before login but renders the prompt only on the
   expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '进入我的项目' }));
   await screen.findByRole('heading', { name: '我的项目' });
-  expect(screen.getByRole('button', { name: '关闭安装提示' })).toBeInTheDocument();
+  expect(notifications).toHaveBeenCalledTimes(1);
+  expect(notifications.mock.calls[0][0].detail).toMatchObject({ id: 'install', action: 'install' });
   expect(prompt).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '打开其他页面' }));
   await screen.findByRole('heading', { name: '账户设置' });
@@ -36,4 +39,6 @@ it('captures install eligibility before login but renders the prompt only on the
   fireEvent.click(screen.getByRole('button', { name: '进入我的项目' }));
   await screen.findByRole('heading', { name: '我的项目' });
   expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
+  expect(notifications).toHaveBeenCalledTimes(1);
+  window.removeEventListener('app-notification', notifications);
 });

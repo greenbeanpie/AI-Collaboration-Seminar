@@ -8,7 +8,7 @@ import { nowIso, newId, timingSafeEqual } from '../core/db';
 import { seal } from '../ai/secrets';
 import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { createAccountInvitation } from '../services/accounts';
-import { permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
+import { versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
 import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../services/idempotency';
 import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
@@ -43,6 +43,9 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/, 'API key 不能包含控制字符').optional(), clearKey: z.boolean().optional() });
 const configShape = z.object({
+  routingMode: z.enum(['advanced', 'unified']).optional(),
+  unified: editableModel.optional(),
+  expectedVersion: z.number().int().nonnegative().optional(),
   textEconomy: editableModel,
   visionEconomy: editableModel,
   review: editableModel,
@@ -174,7 +177,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
 
 
   app.openapi(getRoute, async (c) => {
-    const loaded = await loadAiConfig(c.env.DB);
+    const loaded = await loadAiConfig(c.env.DB, undefined, false);
     if (!loaded) {
       return c.json(apiData(c, { id: '', version: 0, enabled: false, config: {}, notes: null }), 200);
     }
@@ -183,7 +186,15 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         id: loaded.id,
         version: loaded.version,
         enabled: loaded.enabled,
-        config: Object.fromEntries(Object.entries(loaded.config).map(([purpose, { apiKeyEncrypted, ...model }]) => [purpose, { ...model, keyConfigured: Boolean(apiKeyEncrypted) }])),
+        config: {
+          routingMode: loaded.config.routingMode ?? 'advanced',
+          ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified'] as const).flatMap(purpose => {
+            const entry = loaded.config[purpose];
+            if (!entry) return [];
+            const { apiKeyEncrypted, ...model } = entry;
+            return [[purpose, { ...model, keyConfigured: Boolean(apiKeyEncrypted) }]];
+          })),
+        },
         notes: null,
       }),
       200,
@@ -192,14 +203,20 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(putRoute, async (c) => {
     const body = c.req.valid('json');
-    const latest = await loadAiConfig(c.env.DB);
+    const latest = await loadAiConfig(c.env.DB, undefined, false);
+    if (body.expectedVersion !== undefined && body.expectedVersion !== (latest?.version ?? 0)) throw versionConflict(latest?.version ?? 0);
     const version = (latest?.version ?? 0) + 1;
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
     const { enabled, notes } = body;
-    const config = aiConfigSchema.parse(body);
-    for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) {
+    // Legacy saves must preserve inactive drafts and must not silently switch the active route.
+    const parsed = aiConfigSchema.safeParse({ ...body, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified });
+    if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
+    const config = parsed.data;
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified'] as const) {
       const input = body[purpose];
-      const optionErrors = providerOptionErrors(input);
+      if (!input) continue;
+      const active = config.routingMode === 'unified' ? purpose === 'unified' : purpose !== 'unified';
+      const optionErrors = active ? providerOptionErrors(input) : [];
       if (optionErrors.length) throw validationFailed(`${purpose}: ${optionErrors.join('；')}`);
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
         throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');
@@ -208,24 +225,26 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       if (previous?.apiKeyEncrypted && !input.apiKey && !input.clearKey && !sameCredentialDestination(input, previous)) {
         throw validationFailed('切换供应商或 API URL 时，请重新填写密钥或明确清除旧密钥；旧密钥不会转发到新地址');
       }
-      config[purpose].apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
+      config[purpose]!.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
     if (enabled) {
-      if (!latest || JSON.stringify(aiConfigSchema.parse(config)) !== JSON.stringify(latest.config)) throw invalidState('请先保存配置并测试全部模型，配置变化后必须重新测试');
+      if (!latest || JSON.stringify(aiConfigSchema.parse({ ...config, routingMode: config.routingMode ?? 'advanced' })) !== JSON.stringify(aiConfigSchema.parse({ ...latest.config, routingMode: latest.config.routingMode ?? 'advanced' }))) throw invalidState('请先保存配置并测试适用模型，配置变化后必须重新测试');
       const probes = await c.env.DB.prepare('SELECT purpose FROM ai_probes WHERE config_version_id = ?1 AND passed = 1').bind(latest.id).all<{ purpose: string }>();
-      if (probes.results.length !== 3) throw invalidState('三个用途的模型测试全部通过后才能启用 AI');
+      const required = config.routingMode === 'unified' && !config.unified?.supportsVision ? ['textEconomy', 'review'] : ['textEconomy', 'visionEconomy', 'review'];
+      if (!required.every(purpose => probes.results.some(probe => probe.purpose === purpose))) throw invalidState('所有适用用途的模型测试通过后才能启用 AI');
     }
-    await c.env.DB.prepare(
-      'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+    const inserted = await c.env.DB.prepare(
+      'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COALESCE(MAX(version), 0) FROM ai_config_versions) = ?8',
     )
-      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso())
+      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso(), version - 1)
       .run();
+    if (!inserted.meta.changes) throw versionConflict((await loadAiConfig(c.env.DB, undefined, false))?.version ?? 0);
     return c.json(apiData(c, { id, version, enabled }), 201);
   });
 
   app.openapi(probeRoute, async (c) => {
     const body = c.req.valid('json');
-    const loaded = await loadAiConfig(c.env.DB);
+    const loaded = await loadAiConfig(c.env.DB, undefined, false);
     if (!loaded) throw invalidState('请先保存模型配置');
     const report = await probeModel(c.env, body.purpose as AiPurpose, loaded);
     await c.env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(config_version_id, purpose) DO UPDATE SET passed = excluded.passed, report_json = excluded.report_json, tested_at = excluded.tested_at')

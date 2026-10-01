@@ -1196,6 +1196,7 @@ body[data-route="login"] .view { padding: 0; }
   </style>
   <link rel="stylesheet" href="/guest/readability.css" />
   <script src="/guest/dialog-focus.js" defer></script>
+<script type="module" src="/app-updates.js"></script>
 </head>
 <body data-route="boot">
   <div class="shell" id="app" hidden>
@@ -1491,6 +1492,7 @@ function saveDB() {
   } catch (e) { /* ignore */ }
 }
 function resetDemo() {
+  window.dispatchEvent(new CustomEvent('app-notification-scope', { detail: 'ai:guest:reset:' + Date.now() }));
   try { localStorage.removeItem('od-bufill-demo-v1'); } catch (e) {}
   DB = seedDB();
   UI.matId = 'mat1'; UI.taskView = 'list'; UI.ledgerFilter = 'all'; UI.imp = { phase: 'idle', file: null, logs: [], result: null };
@@ -1498,13 +1500,7 @@ function resetDemo() {
 }
 /* ═══════════ 吐司 / 模态 / 抽屉 ═══════════ */
 function toast(msg, kind, ms) {
-  const root = $('#toast-root');
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.setAttribute('data-kind', kind || 'info');
-  el.innerHTML = icon(kind === 'success' ? 'check' : kind === 'error' ? 'alert' : kind === 'warn' ? 'alert' : 'info') + '<span>' + esc(msg) + '</span>';
-  root.appendChild(el);
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 260); }, ms || 3200);
+  window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: kind || 'info', text: kind === 'error' ? '演示操作未完成，请检查当前表单后重试。' : '演示操作已完成。' } }));
 }
 function openModal(o) {
   const root = $('#modal-root');
@@ -1660,6 +1656,7 @@ function fallbackCopy(text, done) {
 function pendingReqs() { return DB.requirements.filter((r) => r.status === 'a'); }
 function overdueTasks() { return DB.tasks.filter((t) => t.status !== 'done' && isOverdue(t.due)); }
 const NAV_GROUPS = [
+  { group: '账户', items: [{ route: 'preferences', label: '设置', icon: 'settings' }] },
   { group: '项目', items: [
     { route: 'overview', label: '项目概览', icon: 'home' },
     { route: 'import', label: '通知导入', icon: 'inbox' },
@@ -1681,6 +1678,7 @@ const NAV_GROUPS = [
   ] }
 ];
 const ROUTE_META = {
+  preferences: { title: '设置' },
   overview: { title: '项目概览' }, import: { title: '通知导入' }, requirements: { title: '要求确认' },
   team: { title: '团队分工' }, tasks: { title: '任务工作台' }, ai: { title: 'AI 工作区' },
   materials: { title: '材料中心' }, review: { title: '预审' }, rehearsal: { title: '答辩演练' },
@@ -1703,7 +1701,7 @@ function renderRail() {
     '<nav class="rail-nav">' + nav + '</nav>' +
     '<div class="rail-foot">' +
       '<div class="rail-user">' + avatar(me) + '<span class="rail-user-name"><strong>' + esc(me.name) + '</strong><span>' + esc(me.role) + ' · 演示账户</span></span>' +
-      '<button class="btn-icon" type="button" data-act="account" aria-label="账户与退出">' + icon('more') + '</button></div>' +
+      '</div>' +
     '</div>';
 }
 function renderTopbar() {
@@ -1713,7 +1711,7 @@ function renderTopbar() {
     '<span class="topbar-deadline">' + icon('calendar', 'icon') + '<span>截止 ' + fmtDateCN(DEADLINE) + ' · 剩余 ' + daysLeft() + ' 天</span></span>' +
     '<div class="spacer"></div>' +
     '<span class="badge badge-demo topbar-badge"><span class="dot"></span>演示数据 · 模拟 AI</span>' +
-    '<button class="btn-icon" type="button" data-act="account" aria-label="账户与操作">' + icon('user', 'icon-lg') + '</button>';
+    '';
 }
 function renderTabbar() {
   const items = [
@@ -1739,22 +1737,8 @@ function openMoreNav() {
     ).join('<div style="height:10px"></div>')
   });
 }
-function openAccount() {
-  const me = DB.members[0];
-  openModal({
-    title: '账户', sub: '演示环境：不连接真实服务，数据保存在浏览器本地',
-    body: '<div class="od-row"><span class="avatar avatar-lg avatar-owner">' + esc(initials(me.name)) + '</span><div class="grow"><div style="font-weight:600">' + esc(me.name) + ' · ' + esc(me.role) + '</div><div class="small muted">' + (DB.session.email ? esc(DB.session.email) : '演示账户') + '</div></div></div>' +
-      '<div style="height:16px"></div>' +
-      '<div class="banner banner-info">' + icon('info') + '<div>退出登录会清除本账户的本地演示数据；也可以直接重置演示数据恢复初始状态。</div></div>',
-    footer: '<button class="btn btn-sec" type="button" data-reset>重置演示数据</button>' +
-      '<button class="btn btn-dark" type="button" data-logout>' + icon('logout') + '退出登录</button>',
-    onOpen: (el, close) => {
-      $('[data-reset]', el).addEventListener('click', () => { close(); confirmDialog({ title: '重置演示数据？', body: '所有本地修改（要求确认、任务、材料版本、账本记录）将恢复为初始演示状态。', ok: '重置', danger: true, onOk: resetDemo }); });
-      $('[data-logout]', el).addEventListener('click', () => { close(); logout(); });
-    }
-  });
-}
 function logout() {
+  window.dispatchEvent(new CustomEvent('app-notification-scope', { detail: 'ai:guest:anonymous' }));
   DB.session = { loggedIn: false, email: '' };
   saveDB();
   toast('已退出演示账户（本地数据将在重置时清除）');
@@ -1763,6 +1747,16 @@ function logout() {
 function go(route) { location.hash = '#/' + route; }
 /* ═══════════ 视图 A：登录 / 项目 / 概览 / 导入 / 要求 ═══════════ */
 const VIEWS = {};
+VIEWS.preferences = {
+  render() {
+    const me = DB.members[0];
+    return '<div class="settings-grid"><h1>设置</h1><nav aria-label="设置分类"><a class="btn btn-sec" href="#/preferences" aria-current="page">个人资料</a></nav><section class="card"><div class="card-body"><h2>演示账户</h2><p>' + esc(me.name) + ' · ' + esc(me.role) + '</p><p>' + esc(DB.session.email || '访客') + '</p><p>此页面仅展示本地演示账户，不连接真实账户。</p><button class="btn btn-sec" data-reset-demo>重置演示数据</button> <button class="btn btn-dark" data-logout-demo>退出登录</button></div></section></div>';
+  },
+  bind() {
+    $('[data-reset-demo]').addEventListener('click', () => confirmDialog({ title: '重置演示数据？', body: '所有本地演示修改将恢复为初始状态。', ok: '重置', danger: true, onOk: resetDemo }));
+    $('[data-logout-demo]').addEventListener('click', logout);
+  }
+};
 UI.login = { step: 'email', email: '', code: '', sending: false, left: 0, timer: null };
 
 VIEWS.login = {
@@ -3554,6 +3548,7 @@ function parseRoute() {
   return h;
 }
 function render(resetScroll) {
+  window.dispatchEvent(new CustomEvent('app-notification-scope', { detail: 'ai:guest:' + (DB.session.loggedIn ? DB.session.email || 'demo' : 'anonymous') + ':' + (DB.projects[0]?.id || '') }));
   const r = UI.route;
   const view = VIEWS[r] || VIEWS.login;
   $('#app').hidden = false;
@@ -3582,7 +3577,7 @@ document.addEventListener('click', (e) => {
   const moreLink = t.closest('[data-act="more-nav"]');
   if (moreLink) { e.preventDefault(); openMoreNav(); return; }
   const acc = t.closest('[data-act="account"]');
-  if (acc) { openAccount(); return; }
+  if (acc) { go('preferences'); return; }
   const goEl = t.closest('[data-go]');
   if (goEl) { go(goEl.getAttribute('data-go')); }
 });

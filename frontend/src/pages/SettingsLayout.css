@@ -1,0 +1,6 @@
+.settings-layout { display: grid; gap: 1rem; min-width: 0; }
+.settings-tabs { display: flex; flex-wrap: wrap; gap: .5rem; }
+.settings-tabs a { padding: .65rem .9rem; border: 1px solid var(--line); border-radius: .6rem; text-decoration: none; color: inherit; }
+.settings-tabs a.active { background: var(--palette-eff5ff-surface); font-weight: 700; }
+.settings-content { min-width: 0; }
+.settings-content .theme-toolbar { position: static; padding: 0; }

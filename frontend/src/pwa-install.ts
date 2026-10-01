@@ -52,6 +52,7 @@ function refresh(): InstallState {
 
 function emit(): void {
   refresh();
+  if (!snapshot.canInstall) window.dispatchEvent(new Event('app-install-unavailable'));
   for (const listener of [...listeners]) listener();
 }
 
@@ -74,7 +75,10 @@ function ensureListening(): void {
   listening = true;
   window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   window.addEventListener('appinstalled', handleAppInstalled);
+  window.addEventListener('app-install-request', handleInstallRequest);
 }
+
+function handleInstallRequest(): void { void promptInstall(); }
 
 /** 当前安装状态；配合 subscribe 供 useSyncExternalStore 使用。 */
 export function getInstallState(): InstallState {
@@ -119,6 +123,7 @@ export function resetForTest(): void {
   if (listening && typeof window !== 'undefined') {
     window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.removeEventListener('appinstalled', handleAppInstalled);
+    window.removeEventListener('app-install-request', handleInstallRequest);
   }
   listening = false;
   deferredPrompt = null;

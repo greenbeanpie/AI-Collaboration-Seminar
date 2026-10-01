@@ -94,7 +94,7 @@ describe('AI 能力探测', () => {
   it('自定义地址和密钥加密保存，全部用途探测后启用；变更配置使证据失效', async () => {
     const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
     const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
-    const body = Object.fromEntries(Object.entries(config).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'test-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]));
+    const body = Object.fromEntries((['textEconomy', 'visionEconomy', 'review'] as const).map(p => [p, config[p]] as const).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'test-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]));
     const save = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...body, enabled: false }) });
     expect(save.status).toBe(201);
     const stored = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
@@ -192,7 +192,7 @@ describe('AI 能力探测', () => {
     const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
     const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
     const body = Object.fromEntries(
-      Object.entries(config).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'probe-fail-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]),
+      (['textEconomy', 'visionEconomy', 'review'] as const).map(p => [p, config[p]] as const).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'probe-fail-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]),
     );
     const save = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...body, enabled: false }) });
     expect(save.status).toBe(201);

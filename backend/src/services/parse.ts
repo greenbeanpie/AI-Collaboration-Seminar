@@ -227,6 +227,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
   if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
   const vision = config.config.visionEconomy;
+  if (!vision.supportsVision) throw new AppError('AI_UNAVAILABLE', '当前模型不支持图像 OCR；不会使用其他端点', 503, false);
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,

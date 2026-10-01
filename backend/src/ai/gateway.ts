@@ -83,6 +83,9 @@ export async function gatewayChat(
   input: GatewayCallInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<GatewayCallOutput> {
+  if (!input.config.supportsVision && input.messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'))) {
+    throw new AppError('AI_UNAVAILABLE', '当前模型不支持图像；不会回落到其他端点', 503, false);
+  }
   const optionErrors = providerOptionErrors(input.config);
   if (optionErrors.length) throw new AppError('AI_UNAVAILABLE', optionErrors.join('；'), 503, false);
   const custom = input.config.provider !== 'workers-ai';

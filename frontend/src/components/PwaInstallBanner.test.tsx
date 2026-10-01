@@ -1,6 +1,5 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { getInstallState, resetForTest } from '../pwa-install';
 
 function installEvent() {
   const event = new Event('beforeinstallprompt', { cancelable: true });
@@ -9,58 +8,36 @@ function installEvent() {
   act(() => { window.dispatchEvent(event); });
   return prompt;
 }
+const notices: CustomEvent[] = [];
+const listener = (event: Event) => notices.push(event as CustomEvent);
+window.addEventListener('app-notification', listener);
+afterEach(async () => { cleanup(); (await import('../pwa-install')).resetForTest(); sessionStorage.clear(); vi.restoreAllMocks(); vi.resetModules(); notices.length = 0; });
 
-afterEach(() => { cleanup(); resetForTest(); sessionStorage.clear(); vi.restoreAllMocks(); vi.resetModules(); });
-
-it('closes without prompting and stays dismissed after remount, refresh, and another install event', async () => {
+it('offers one history notification without prompting and does not repeat after remount or refresh', async () => {
   const { PwaInstallBanner } = await import('./PwaInstallBanner');
-  const view = render(<PwaInstallBanner />);
-  const prompt = installEvent();
-  const close = screen.getByRole('button', { name: '关闭安装提示' });
-  close.focus();
-  expect(close).toHaveFocus();
-  fireEvent.click(close);
+  const view = render(<PwaInstallBanner />); const prompt = installEvent();
+  expect(notices).toHaveLength(1); expect(notices[0].detail).toMatchObject({ id: 'install', action: 'install' });
   expect(prompt).not.toHaveBeenCalled();
-  expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
-  expect(getInstallState().canInstall).toBe(true);
-  view.unmount();
-  render(<PwaInstallBanner />); installEvent();
-  expect(screen.queryByRole('button', { name: '关闭安装提示' })).not.toBeInTheDocument();
-  cleanup(); vi.resetModules();
-  const reloaded = await import('./PwaInstallBanner');
-  render(<reloaded.PwaInstallBanner />); installEvent();
-  expect(screen.queryByRole('button', { name: '关闭安装提示' })).not.toBeInTheDocument();
+  view.unmount(); render(<PwaInstallBanner />); installEvent(); expect(notices).toHaveLength(1);
+  cleanup(); (await import('../pwa-install')).resetForTest(); vi.resetModules();
+  const reloaded = await import('./PwaInstallBanner'); render(<reloaded.PwaInstallBanner />); installEvent(); expect(notices).toHaveLength(1);
 });
-
-it('works when session storage is blocked and remains dismissed after remount', async () => {
+it('retains one-time behavior when session storage is unavailable', async () => {
   vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
   const { PwaInstallBanner } = await import('./PwaInstallBanner');
-  const view = render(<PwaInstallBanner />); installEvent();
-  fireEvent.click(screen.getByRole('button', { name: '关闭安装提示' }));
-  view.unmount(); render(<PwaInstallBanner />); installEvent();
-  expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
+  const view = render(<PwaInstallBanner />); installEvent(); view.unmount(); render(<PwaInstallBanner />); installEvent();
+  expect(notices).toHaveLength(1);
 });
-
-it('only invokes the install prompt from the install button, once', async () => {
-  const { PwaInstallBanner } = await import('./PwaInstallBanner');
-  render(<PwaInstallBanner />);
-  const prompt = installEvent();
-  expect(prompt).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '安装到桌面' })); });
-  expect(prompt).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
+it('only invokes the browser prompt from the shared notification action, once', async () => {
+  const { PwaInstallBanner } = await import('./PwaInstallBanner'); render(<PwaInstallBanner />);
+  const prompt = installEvent(); expect(prompt).not.toHaveBeenCalled();
+  await act(async () => { window.dispatchEvent(new Event('app-install-request')); window.dispatchEvent(new Event('app-install-request')); });
+  expect(prompt).toHaveBeenCalledTimes(1); expect((await import('../pwa-install')).getInstallState().canInstall).toBe(false);
 });
-
-it('keeps an early install event for the first dashboard visit and does not repeat on later visits', async () => {
-  const pwa = await import('../pwa-install');
-  pwa.getInstallState();
-  const prompt = installEvent();
-  const { PwaInstallBanner } = await import('./PwaInstallBanner');
-  const view = render(<PwaInstallBanner />);
-  expect(screen.getByRole('button', { name: '安装到桌面' })).toBeInTheDocument();
-  expect(prompt).not.toHaveBeenCalled();
-  view.unmount();
-  render(<PwaInstallBanner />);
-  expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
+it('keeps an early install event for the first dashboard visit', async () => {
+  const pwa = await import('../pwa-install'); pwa.getInstallState(); const prompt = installEvent();
+  const { PwaInstallBanner } = await import('./PwaInstallBanner'); const view = render(<PwaInstallBanner />);
+  expect(notices).toHaveLength(1); expect(prompt).not.toHaveBeenCalled();
+  view.unmount(); render(<PwaInstallBanner />); expect(notices).toHaveLength(1);
 });

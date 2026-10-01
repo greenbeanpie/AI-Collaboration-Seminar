@@ -7,6 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'],
       manifest: {
         name: '补位 · AI 项目办公室',

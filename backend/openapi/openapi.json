@@ -11951,6 +11951,148 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "routingMode": {
+                    "type": "string",
+                    "enum": [
+                      "advanced",
+                      "unified"
+                    ]
+                  },
+                  "unified": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "providerPreset": {
+                        "type": "string",
+                        "enum": [
+                          "custom",
+                          "openai",
+                          "anthropic",
+                          "gemini",
+                          "deepseek",
+                          "openrouter",
+                          "opencode-zen",
+                          "opencode-go"
+                        ]
+                      },
+                      "apiProtocol": {
+                        "type": "string",
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "messages",
+                          "gemini"
+                        ]
+                      },
+                      "model": {
+                        "type": "string"
+                      },
+                      "apiUrl": {
+                        "type": "string",
+                        "default": ""
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 600000
+                      },
+                      "maxInputChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "maxOutputTokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32768
+                      },
+                      "supportsJson": {
+                        "type": "boolean"
+                      },
+                      "supportsVision": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "topP": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "goUsageAcknowledged": {
+                        "type": "boolean"
+                      },
+                      "goHeaders": {
+                        "type": "object",
+                        "properties": {
+                          "userAgent": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "sessionPrefix": {
+                            "type": "string",
+                            "maxLength": 32
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "pricePerMTokens": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        ],
+                        "default": null
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "timeoutMs",
+                      "maxInputChars",
+                      "maxOutputTokens",
+                      "supportsJson",
+                      "supportsVision"
+                    ]
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "textEconomy": {
                     "type": "object",
                     "properties": {

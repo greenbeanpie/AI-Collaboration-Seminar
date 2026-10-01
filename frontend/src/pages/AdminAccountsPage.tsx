@@ -1,3 +1,4 @@
+import { useSettingsDirty } from './settings-dirty';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -16,6 +17,7 @@ export function AdminAccountsPage() {
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
   const [editorVersion, setEditorVersion] = useState(0);
+  useSettingsDirty(created !== null);
   function denyAccess(error: unknown) {
     if (!(error instanceof ApiError) || ![401, 403, 404].includes(error.status)) return;
     setAccessError(error); setCreated(null); setNotice('');
@@ -51,7 +53,7 @@ export function AdminAccountsPage() {
   if (session.error) return <ErrorNotice error={session.error} />;
   if (!authorized) return <SectionCard title="需要系统管理员权限"><p role="alert">只有系统管理员可以管理注册邀请码。项目负责人不具备此权限。</p></SectionCard>;
   return <div className="page-stack">
-    <PageHeading eyebrow="系统管理" title="账户注册邀请码" detail="邀请码允许创建一个新账户，成功注册后即失效。它与团队的项目邀请独立。" action={superAdmin && <Link className="button button-quiet" to="/app/admin/ai">AI 模型设置</Link>} />
+    <PageHeading eyebrow="系统管理" title="账户注册邀请码" detail="邀请码允许创建一个新账户，成功注册后即失效。它与团队的项目邀请独立。" action={superAdmin && <Link className="button button-quiet" to="/app/settings/ai">AI 模型设置</Link>} />
     {notice && <p role="status">{notice}</p>}
     <SectionCard title="账户等级与管理" detail="超级管理员管理账户等级和系统配置；普通管理员管理一般用户与邀请码。项目成员权限独立保留。">
       {accounts.isLoading && <Spinner label="正在读取账户" />}
@@ -79,6 +81,7 @@ const roleLabels: Record<Role, string> = { super_admin: '超级管理员', admin
 function AccountEditor({ account, superAdmin, pending, onSave }: { account: ManagedAccount; superAdmin: boolean; pending: boolean; onSave: (kind: 'role' | 'profile', body: unknown) => void }) {
   const [displayName, setDisplayName] = useState(account.displayName);
   const [role, setRole] = useState<Role>(account.role);
+  useSettingsDirty(displayName !== account.displayName || role !== account.role);
   const canEdit = superAdmin || account.role === 'user';
   return <div className="stack" style={{ marginBottom: '1rem' }}>
     <strong>{account.username || account.email || account.id} · {roleLabels[account.role]}</strong>

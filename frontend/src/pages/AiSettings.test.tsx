@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest';
 import { AiSettings } from './AiSettings';
 
-function setup(admin = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); }
+function setup(admin = true, advanced = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); if (advanced) fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } }); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('system admin session saves blank configuration, tests connections, and cannot enable failed probes', async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -100,4 +100,67 @@ it('old saved custom config is preserved; changing providers clears key reuse an
   fireEvent.click(screen.getByRole('button', { name: '保存配置并停用 AI' }));
   await screen.findByText('配置已保存，AI 暂停启用。请逐项测试。');
   expect(mock).toHaveBeenCalledTimes(2);
+});
+
+it('unified mode preserves advanced drafts, sends one independent model and version, and does not probe automatically', async () => {
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ routingMode: 'unified', expectedVersion: 0, enabled: false, unified: { model: 'one-model', apiKey: 'test-only-key' }, textEconomy: { model: 'advanced-draft', apiKey: '' } });
+    return new Response(JSON.stringify({ data: { version: 1 } }));
+  });
+  vi.stubGlobal('fetch', mock); setup(true, false);
+  expect(screen.queryByLabelText('文本与要求提取模型名称')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'one-model' } });
+  fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'test-only-key' } });
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
+  fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'advanced-draft' } });
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
+  expect(screen.getByLabelText('统一模型模型名称')).toHaveValue('one-model');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('test-only-key');
+  expect(mock).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置并停用 AI' }));
+  await screen.findByText('配置已保存，AI 暂停启用。请逐项测试。');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
+  expect(localStorage.length).toBe(0);
+});
+
+it('text-only unified mode enables after both text probes, requires vision probe when declared, and invalidates reports on mode changes', async () => {
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    if (init?.method === 'PUT') return new Response(JSON.stringify({ data: { version: 1 } }));
+    expect(body.purpose).not.toBe('visionEconomy');
+    return new Response(JSON.stringify({ data: { passed: true, configVersion: 1, checks: [] } }));
+  });
+  vi.stubGlobal('fetch', mock); setup(true, false);
+  expect(screen.getByRole('note')).toHaveTextContent('图片 / OCR 不可用');
+  expect(screen.queryByRole('button', { name: /测试图片/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置并停用 AI' }));
+  await screen.findByText('配置已保存，AI 暂停启用。请逐项测试。');
+  const enable = screen.getByRole('button', { name: '全部测试通过后启用 AI' });
+  fireEvent.click(screen.getByRole('button', { name: /测试文本/ }));
+  await screen.findByText(/^测试通过 · 配置/); expect(enable).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /测试预审/ }));
+  await waitFor(() => expect(enable).toBeEnabled());
+  fireEvent.click(screen.getByLabelText(/声明模型支持图片输入/));
+  expect(enable).toBeDisabled(); expect(screen.getByRole('button', { name: /测试图片/ })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
+  expect(screen.queryByText(/^测试通过 · 配置/)).not.toBeInTheDocument();
+});
+
+it('loads sanitized unified config and retains draft on optimistic version conflict', async () => {
+  const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 7, enabled: false, config: { routingMode: 'unified', unified: model, textEconomy: model, visionEconomy: model, review: model } } }));
+    const body = JSON.parse(String(init?.body)); expect(body.expectedVersion).toBe(7); expect(body.unified.apiKey).toBe('');
+    return new Response(JSON.stringify({ error: { message: '配置版本已变化，请重新读取' } }), { status: 409 });
+  });
+  vi.stubGlobal('fetch', mock); setup(true, false);
+  fireEvent.click(screen.getByRole('button', { name: '读取已保存配置' }));
+  await screen.findByText('当前 AI 未启用。');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'unsaved-change' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置并停用 AI' }));
+  await screen.findByRole('alert');
+  expect(screen.getByLabelText('统一模型模型名称')).toHaveValue('unsaved-change');
+  expect(screen.getByRole('button', { name: '全部测试通过后启用 AI' })).toBeDisabled();
 });

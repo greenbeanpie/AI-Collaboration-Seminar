@@ -17,7 +17,7 @@ async function pricedProject() {
   const owner = await seedUser();
   const pid = await seedProject(owner.userId);
   const cfg = (await loadAiConfig(env.DB))!;
-  for (const model of Object.values(cfg.config)) model.pricePerMTokens = [1_000_000, 1_000_000];
+  for (const model of [cfg.config.textEconomy, cfg.config.visionEconomy, cfg.config.review]) model.pricePerMTokens = [1_000_000, 1_000_000];
   await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1').bind(cfg.id, JSON.stringify(cfg.config)).run();
   return { owner, pid, cfg };
 }

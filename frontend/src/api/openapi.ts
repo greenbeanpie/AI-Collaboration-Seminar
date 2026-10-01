@@ -4394,6 +4394,40 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @enum {string} */
+                        routingMode?: "advanced" | "unified";
+                        unified?: {
+                            provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
+                            model: string;
+                            /** @default  */
+                            apiUrl?: string;
+                            timeoutMs: number;
+                            maxInputChars: number;
+                            maxOutputTokens: number;
+                            supportsJson: boolean;
+                            supportsVision: boolean;
+                            temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
+                            /** @default null */
+                            pricePerMTokens?: [
+                                number,
+                                number
+                            ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
+                        };
+                        expectedVersion?: number;
                         textEconomy: {
                             provider: string;
                             /** @enum {string} */

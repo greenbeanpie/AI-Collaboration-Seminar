@@ -10,6 +10,7 @@ export default tseslint.config(
   },
   { files: ['public/theme.js'], languageOptions: { globals: globals.browser } },
   js.configs.recommended,
+  { files: ['public/app-updates.js', 'src/app-updates.test.js'], languageOptions: { globals: { ...globals.browser, ...globals.es2022 } } },
   ...tseslint.configs.recommended,
   {
     files: ['src/**/*.{ts,tsx}'],

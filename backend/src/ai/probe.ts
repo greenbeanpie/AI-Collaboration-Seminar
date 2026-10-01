@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { AppError } from '../core/errors';
 import { gatewayChat, type ChatMessage, type GatewayCallOutput } from './gateway';
-import { loadAiConfig, type AiModelConfig, type AiPurpose, type LoadedAiConfig } from './config';
+import { configForPurpose, loadAiConfig, type AiModelConfig, type AiPurpose, type LoadedAiConfig } from './config';
 import { recordAiCall } from './calls';
 
 export type ProbeCheckName = 'chinese_text' | 'json_output' | 'vision_accept' | 'usage_fields';
@@ -49,7 +49,8 @@ function extractJson(text: string): Record<string, unknown> {
 export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig): Promise<ProbeReport> {
   const loaded = frozen ?? await loadAiConfig(env.DB);
   if (!loaded) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失，请先通过 /admin/ai-config 写入种子配置', 503, false);
-  const cfg = loaded.config[purpose];
+  const cfg = configForPurpose(loaded, purpose);
+  if (purpose === 'visionEconomy' && !cfg.supportsVision) return finish(purpose, cfg.model, loaded.version, [{ name: 'vision_accept', passed: false, detail: '当前模型不支持图像；未发送图像，也不会回落到其他端点' }]);
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,

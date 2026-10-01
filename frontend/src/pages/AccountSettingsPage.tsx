@@ -1,3 +1,4 @@
+import { useSettingsDirty } from './settings-dirty';
 import './AccountSettingsPage.css';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -8,7 +9,7 @@ import { useSession } from '../auth';
 import { clearAccountStorage } from '../storage';
 import { ErrorNotice, PageHeading } from '../components/ui';
 
-export function AccountSettingsPage() {
+export function AccountSettingsPage({ section }: { section?: 'profile' | 'security' }) {
   const session = useSession();
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export function AccountSettingsPage() {
   const locked = useRef(false);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
+  const clearDirty = useSettingsDirty(name !== (session.data?.displayName ?? '') || Boolean(currentPassword || newPassword || confirmation));
   const headers = { 'X-Account-Settings': '1' };
   function clearPasswords() { setCurrentPassword(''); setNewPassword(''); setConfirmation(''); setConfirming(false); }
   async function saveName(event: FormEvent) {
@@ -46,7 +48,7 @@ export function AccountSettingsPage() {
     locked.current = true; setBusy(true); setError(null);
     try {
       await api.post<'AccountPasswordResponse'>('/api/v1/auth/password', { currentPassword, newPassword }, { headers });
-      clearPasswords();
+      clearPasswords(); clearDirty();
       if (session.data) clearAccountStorage(session.data.id);
       client.clear();
       navigate('/login?passwordChanged=1', { replace: true });
@@ -57,15 +59,15 @@ export function AccountSettingsPage() {
     <PageHeading title="账户设置" detail="管理项目成员看到的昵称和登录密码。" />
     {error !== null && <ErrorNotice error={error} />}
     {notice && <p role="status">{notice}</p>}
-    <section className="section-card"><h2>个人资料</h2><p>账户等级：{session.data?.role === 'super_admin' ? '超级管理员' : session.data?.role === 'admin' ? '普通管理员' : '一般用户'}</p>
+    {section !== 'security' && <section className="section-card"><h2>个人资料</h2><p>账户等级：{session.data?.role === 'super_admin' ? '超级管理员' : session.data?.role === 'admin' ? '普通管理员' : '一般用户'}</p>
       <p>登录账号：{session.data?.username || session.data?.email || '原有账号'}</p>
       <form onSubmit={event => void saveName(event)}>
         <label>昵称<input className="input" value={name} onChange={event => setName(event.target.value)} required maxLength={64} disabled={busy} autoComplete="nickname" /></label>
         <p>1–64 个字符，修改后同步显示在项目成员中。登录账号保持不变。</p>
         <button className="button button-primary" disabled={busy || !name.trim() || name.trim() === session.data?.displayName}>保存昵称</button>
       </form>
-    </section>
-    <section className="section-card"><h2>修改密码</h2>
+    </section>}
+    {section !== 'profile' && <section className="section-card"><h2>修改密码</h2>
       <p>新密码需 12–128 位，建议使用独特的长密码。成功后所有设备（包括当前设备）退出，请使用新密码登录。</p>
       <form onSubmit={reviewPassword}>
         <label>原密码<input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required maxLength={128} autoComplete="current-password" disabled={busy || confirming} /></label>
@@ -74,6 +76,6 @@ export function AccountSettingsPage() {
         {!confirming && <button className="button button-primary" disabled={busy}>修改密码</button>}
       </form>
       {confirming && <div role="group" aria-label="确认修改密码"><p>确认修改密码并退出全部设备？</p><button className="button button-primary" disabled={busy} onClick={() => void changePassword()}>确认修改并退出</button><button className="button button-quiet" disabled={busy} onClick={() => { clearPasswords(); setError(null); }}>取消</button></div>}
-    </section>
+    </section>}
   </div>;
 }
