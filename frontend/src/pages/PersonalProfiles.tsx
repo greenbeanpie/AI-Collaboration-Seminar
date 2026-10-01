@@ -43,7 +43,7 @@ export function PersonalProfilePage() {
       <section aria-labelledby="profile-ai-consent-title">
         <h2 id="profile-ai-consent-title">AI 任务偏好推荐</h2>
         <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。</p>
-        <p>默认关闭。取消勾选并保存可撤回授权，阻止后续请求及旧推荐输出；已发送给提供商的请求无法收回。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
+        <p>默认关闭。取消勾选并保存可撤回授权。每次发送前会重新读取并校验授权；已开始发送的请求无法收回，授权变化后会丢弃其推荐结果。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
         <label><input type="checkbox" aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={e=>setDraft({...draft,aiUseAllowed:e.target.checked})} />我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
       </section>
       {Object.entries(names).map(([field,label])=> {const key=field as keyof typeof names;return <section key={key}><label htmlFor={`profile-${key}`}>{label}{key==='bio' ? '（Markdown）' : ''}</label>
