@@ -46,7 +46,7 @@ function extractJson(text: string): Record<string, unknown> {
  * 探测允许在 enabled=0 时运行——它正是启用前的验证门槛。
  * 探测调用同样计入 ai_calls（费用未知时如实记录，不填零）。
  */
-export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig): Promise<ProbeReport> {
+export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig, diagnosticRequestId?: string): Promise<ProbeReport> {
   const loaded = frozen ?? await loadAiConfig(env.DB);
   if (!loaded) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失，请先通过 /admin/ai-config 写入种子配置', 503, false);
   const cfg = configForPurpose(loaded, purpose);
@@ -57,13 +57,15 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
     gatewayId: env.AI_GATEWAY_ID,
     authSecret: env.AUTH_SECRET,
     envName: env.ENV_NAME,
+    diagnostics: env,
   };
 
   const sessionId = `probe-${crypto.randomUUID()}`;
   async function callAndRecord(messages: ChatMessage[], jsonMode: boolean): Promise<GatewayCallOutput> {
     try {
-      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode, sessionId });
+      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode, sessionId, diagnosticRequestId });
       await recordAiCall(env, {
+        diagnosticRequestId,
         purpose,
         configVersionId: loaded!.id,
         promptVersion: PROMPT_VERSION,
@@ -78,6 +80,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
       return out;
     } catch (err) {
       await recordAiCall(env, {
+        diagnosticRequestId,
         purpose,
         configVersionId: loaded!.id,
         promptVersion: PROMPT_VERSION,

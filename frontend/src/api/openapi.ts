@@ -4875,6 +4875,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ai-diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 超级管理员读取最后1000条、最多1MB的无内容AI诊断记录 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 固定状态和阶段；无业务内容或密钥 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiDiagnosticsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/support/tickets": {
         parameters: {
             query?: never;
@@ -6687,6 +6723,58 @@ export interface components {
         IdempotencyReleaseResponse: {
             data: {
                 released: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiDiagnosticsResponse: {
+            data: {
+                items: {
+                    /** Format: date-time */
+                    timestamp: string;
+                    /** Format: uuid */
+                    requestId: string;
+                    /** @enum {string} */
+                    operation: "config_read" | "config_save" | "config_disable" | "probe" | "model_call";
+                    /** @enum {string} */
+                    phase: "request_started" | "request_finished" | "snapshot_loaded" | "config_persisted" | "probe_result" | "model_result" | "fetch_received" | "fetch_failed";
+                    /** @enum {string} */
+                    status: "started" | "succeeded" | "failed";
+                    durationMs: number;
+                    /** @enum {string} */
+                    errorCode: "NONE" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "VALIDATION_FAILED" | "VERSION_CONFLICT" | "INVALID_STATE" | "AI_UNAVAILABLE" | "AI_OUTPUT_INVALID" | "QUOTA_EXCEEDED" | "TIMEOUT" | "PROBE_FAILED" | "PROVIDER_FAILED" | "REDIRECT_BLOCKED" | "FETCH_FAILED" | "INTERNAL";
+                    httpStatus?: number;
+                    configVersion?: number;
+                    expectedVersion?: number;
+                    /** @enum {string} */
+                    purpose?: "textEconomy" | "visionEconomy" | "review";
+                    /** @enum {string} */
+                    method?: "GET" | "PUT" | "POST";
+                    /** @enum {string} */
+                    redirectMode?: "manual";
+                    /** @enum {string} */
+                    finalHost?: "api.deepseek.com" | "api.openai.com" | "api.anthropic.com" | "generativelanguage.googleapis.com" | "openrouter.ai" | "opencode.ai" | "api.cloudflare.com" | "custom-host-redacted";
+                    /** @enum {string} */
+                    finalPath?: "/chat/completions" | "/v1/chat/completions" | "/responses" | "/v1/responses" | "/messages" | "/v1/messages" | "/api/v1/chat/completions" | "/zen/v1/chat/completions" | "/zen/v1/responses" | "/zen/v1/messages" | "/zen/go/v1/chat/completions" | "/zen/go/v1/responses" | "/zen/go/v1/messages" | "/v1beta/models/{model}:generateContent" | "/client/v4/accounts/{account}/ai/v1/chat/completions" | "root-without-operation" | "duplicate-operation-suffix" | "custom-path-redacted";
+                    /** @enum {string} */
+                    redirectHost?: "api.deepseek.com" | "api.openai.com" | "api.anthropic.com" | "generativelanguage.googleapis.com" | "openrouter.ai" | "opencode.ai" | "api.cloudflare.com" | "custom-host-redacted";
+                    /** @enum {string} */
+                    redirectPath?: "/chat/completions" | "/v1/chat/completions" | "/responses" | "/v1/responses" | "/messages" | "/v1/messages" | "/api/v1/chat/completions" | "/zen/v1/chat/completions" | "/zen/v1/responses" | "/zen/v1/messages" | "/zen/go/v1/chat/completions" | "/zen/go/v1/responses" | "/zen/go/v1/messages" | "/v1beta/models/{model}:generateContent" | "/client/v4/accounts/{account}/ai/v1/chat/completions" | "root-without-operation" | "duplicate-operation-suffix" | "custom-path-redacted";
+                    /** @enum {string} */
+                    protocol?: "chat-completions" | "responses" | "messages" | "gemini";
+                    /** @enum {string} */
+                    failureKind?: "timeout" | "dns" | "tls" | "connection" | "redirect" | "request_encoding" | "fetch_rejected" | "network_unknown";
+                    /** @enum {string} */
+                    exceptionType?: "type_error" | "abort_error" | "timeout_error" | "error" | "unknown";
+                }[];
+                retention: {
+                    /** @enum {number} */
+                    maxEntries: 1000;
+                    /** @enum {number} */
+                    maxBytes: 1000000;
+                    retainedEntries: number;
+                    retainedBytes: number;
+                };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

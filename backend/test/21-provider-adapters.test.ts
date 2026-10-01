@@ -8,6 +8,7 @@ import { gatewayChat } from '../src/ai/gateway';
 import { normalizeProviderResponse } from '../src/ai/transport';
 import { aiJsonCall } from '../src/services/agent';
 import { probeModel } from '../src/ai/probe';
+import { classifyFetchFailure, readAiDiagnostics, safeDiagnosticTarget } from '../src/ai/diagnostics';
 import { reserveAiSlot } from '../src/services/budget';
 import { seedProject, seedUser } from './helpers/seed';
 import { presetEndpoint, protocolForConfig, providerPresets, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
@@ -27,6 +28,35 @@ function response(protocol: ApiProtocol) {
 const messages = [{ role: 'system' as const, content: 'Only JSON' }, { role: 'user' as const, content: 'Reply JSON' }];
 afterEach(() => vi.unstubAllGlobals());
 
+it.each([
+  ['ENOTFOUND', 'dns'], ['EAI_AGAIN', 'dns'], ['ERR_TLS_CERT_ALTNAME_INVALID', 'tls'], ['ECONNRESET', 'connection'], ['UND_ERR_REDIRECT', 'redirect'], ['fixture-secret-code', 'network_unknown'],
+] as const)('safely classifies fetch cause %s as %s without storing exception strings', async (code, failureKind) => {
+  const error = new TypeError('fetch failed with fixture-provider-key', { cause: { code, private: 'fixture-private-cause' } });
+  expect(classifyFetchFailure(error, false)).toEqual({ failureKind, exceptionType: 'type_error' });
+  const requestId = crypto.randomUUID();
+  const mock = vi.fn(async () => { throw error; });
+  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ details: { failureKind, exceptionType: 'type_error', finalHost: 'api.deepseek.com', finalPath: '/chat/completions' } });
+  const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
+  expect(events.find(entry => entry.phase === 'fetch_failed')).toMatchObject({ failureKind, errorCode: 'FETCH_FAILED', finalHost: 'api.deepseek.com', finalPath: '/chat/completions' });
+  expect(JSON.stringify(events)).not.toMatch(/fixture-provider-key|fixture-private-cause|fixture-secret-code/);
+  expect(mock).toHaveBeenCalledOnce();
+});
+
+it('a provider redirect is observed once and rejected without following or forwarding credentials', async () => {
+  const requestId = crypto.randomUUID();
+  const mock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.redirect).toBe('manual');
+    return new Response('', { status: 302, headers: { location: 'https://api.deepseek.com/v1/chat/completions?key=fixture-provider-key' } });
+  });
+  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ retryable: false, details: { status: 302, failureKind: 'redirect', finalHost: 'api.deepseek.com', finalPath: '/chat/completions', redirectHost: 'api.deepseek.com', redirectPath: 'custom-path-redacted' } });
+  expect(mock).toHaveBeenCalledOnce();
+  const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
+  expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ httpStatus: 302, errorCode: 'REDIRECT_BLOCKED', failureKind: 'redirect' });
+  expect(JSON.stringify(events)).not.toContain('fixture-provider-key');
+  expect(safeDiagnosticTarget('https://api.deepseek.com/chat/completions/chat/completions')).toMatchObject({ finalPath: 'duplicate-operation-suffix' });
+  expect(safeDiagnosticTarget('https://custom.example/private-key')).toEqual({ finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted' });
+});
+
 describe('outgoing provider protocol contracts (mocked only)', () => {
   it.each([
     ['openai', 'gpt-5.4', 'responses'], ['openai', 'gpt-4.1-mini', 'chat-completions'],
@@ -43,7 +73,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(beforeFetch).toHaveBeenCalledOnce(); expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(presetEndpoint(preset, model));
-    expect(init.redirect).toBe('error');
+    expect(init.redirect).toBe('manual');
     const headers = new Headers(init.headers); const body = JSON.parse(String(init.body));
     expect(headers.get('content-type')).toBe('application/json');
     expect(headers.get('cf-aig-gateway-id')).toBeNull();

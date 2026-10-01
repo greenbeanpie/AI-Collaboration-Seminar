@@ -234,6 +234,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     gatewayId: env.AI_GATEWAY_ID,
     authSecret: env.AUTH_SECRET,
     envName: env.ENV_NAME,
+    diagnostics: env,
   };
 
   const pages = await env.DB.prepare(

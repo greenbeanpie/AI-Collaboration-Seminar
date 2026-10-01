@@ -1,4 +1,5 @@
 import { useSettingsDirty } from './settings-dirty';
+import { AiDiagnosticsPanel } from './AiDiagnosticsPanel';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminRequest, useSession } from '../auth';
@@ -167,6 +168,7 @@ export function AiSettings() {
       <p className="muted">保存配置和停用 AI 不发起模型请求，连接测试失败不影响保存。修改配置后会安全停用；未改配置时保留当前启用状态。测试会发起少量真实模型请求，可能产生费用；启用前仍须当前版本全部适用测试通过。key 在后端加密保存，不写入浏览器存储。</p>
       <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || dirty || !requiredProbes.every(p => reports[p]?.passed && reports[p]?.configVersion === version)} onClick={() => void run(() => save(true))}>全部测试通过后启用 AI</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
+      <AiDiagnosticsPanel />
     </div>
   </SectionCard>;
 }

@@ -97,6 +97,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     gatewayId: env.AI_GATEWAY_ID,
     authSecret: env.AUTH_SECRET,
     envName: env.ENV_NAME,
+    diagnostics: env,
   };
   const record = async (
     input: unknown,

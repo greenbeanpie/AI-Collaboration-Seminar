@@ -1,8 +1,10 @@
 import type { Env } from '../env';
 import { nowIso, newId } from '../core/db';
 import { loadAiConfig, type AiPurpose } from './config';
+import { recordAiDiagnostic } from './diagnostics';
 
 export interface AiCallRecord {
+  diagnosticRequestId?: string;
   projectId?: string | null;
   jobId?: string | null;
   runId?: string | null;
@@ -32,6 +34,14 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
   const cost = known ? calculated : null;
   const reservation = params.jobId ? await env.DB.prepare("SELECT id FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved' ORDER BY created_at DESC LIMIT 1").bind(params.jobId).first<{ id: string }>() : null;
   const id = newId();
+  await recordAiDiagnostic(env, {
+    requestId: params.diagnosticRequestId ?? params.jobId ?? params.runId ?? id,
+    operation: 'model_call', phase: 'model_result', purpose: params.purpose,
+    status: params.status === 'ok' || params.status === 'repaired' ? 'succeeded' : 'failed',
+    durationMs: Math.max(0, Math.min(3_600_000, Math.round(params.latencyMs))),
+    errorCode: params.status === 'ok' || params.status === 'repaired' ? 'NONE' : params.status === 'timeout' ? 'TIMEOUT' : params.status === 'invalid' ? 'AI_OUTPUT_INVALID' : 'PROVIDER_FAILED',
+    ...(config ? { configVersion: config.version } : {}),
+  });
   const inputKey = `ai-calls/${id}/input.json`;
   const outputKey = `ai-calls/${id}/output.json`;
   await env.FILES.put(inputKey, JSON.stringify(params.input ?? null));

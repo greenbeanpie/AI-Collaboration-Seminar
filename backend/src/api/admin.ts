@@ -8,12 +8,13 @@ import { nowIso, newId, timingSafeEqual } from '../core/db';
 import { seal } from '../ai/secrets';
 import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { createAccountInvitation } from '../services/accounts';
-import { versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
+import { AppError, versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
 import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../services/idempotency';
 import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
 import { isAllowedModelEndpoint } from '../ai/gateway';
 import { providerOptionErrors, sameCredentialDestination } from '../../../shared/ai-providers';
+import { diagnosticErrorCode, recordAiDiagnostic, type DiagnosticEntry } from '../ai/diagnostics';
 
 const BEARER_PREFIX_RE = /^Bearer\s+/i;
 
@@ -178,6 +179,16 @@ const createAccountInvitationRoute = createRoute({ method: 'post', path: '/api/v
 const listAccountInvitationsRoute = createRoute({ method: 'get', path: '/api/v1/admin/account-invitations', tags: ['admin'], summary: '注册码使用状态（无明文码和哈希）', responses: { 200: { content: { 'application/json': { schema: accountInvitationListResponse } }, description: '最近100个注册码' } } });
 
 export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
+  app.use('/api/v1/admin/*', async (c, next) => {
+    if (!/^\/api\/v1\/admin\/ai-config(?:\/probe|\/disable)?$/.test(c.req.path)) return next();
+    const started = Date.now(), requestId = c.get('requestId');
+    const operation: DiagnosticEntry['operation'] = c.req.path.endsWith('/probe') ? 'probe' : c.req.path.endsWith('/disable') ? 'config_disable' : c.req.method === 'PUT' ? 'config_save' : 'config_read';
+    await recordAiDiagnostic(c.env, { requestId, operation, phase: 'request_started', status: 'started', durationMs: 0, errorCode: 'NONE' });
+    await next();
+    const failed = c.res.status >= 400;
+    const current = c.error instanceof AppError ? c.error.details?.currentRevision : undefined;
+    await recordAiDiagnostic(c.env, { requestId, operation, phase: 'request_finished', status: failed ? 'failed' : 'succeeded', durationMs: Math.min(3_600_000, Date.now() - started), httpStatus: c.res.status, errorCode: failed ? diagnosticErrorCode(c.error) : 'NONE', ...(typeof current === 'number' && Number.isSafeInteger(current) && current >= 0 ? { configVersion: current } : {}) });
+  });
   app.use('/api/v1/admin/*', requireAdmin);
   registerAdminAccountRoutes(app);
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
@@ -189,6 +200,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(getRoute, async (c) => {
     const loaded = await loadAiConfig(c.env.DB, undefined, false);
+    await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'config_read', phase: 'snapshot_loaded', status: 'succeeded', durationMs: 0, errorCode: 'NONE', configVersion: loaded?.version ?? 0 });
     if (!loaded) {
       return c.json(apiData(c, { id: '', version: 0, enabled: false, config: {}, notes: null }), 200);
     }
@@ -252,6 +264,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso(), version - 1)
       .run();
     if (!inserted.meta.changes) throw versionConflict((await loadAiConfig(c.env.DB, undefined, false))?.version ?? 0);
+    await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'config_save', phase: 'config_persisted', status: 'succeeded', durationMs: 0, errorCode: 'NONE', configVersion: version, expectedVersion: body.expectedVersion });
     return c.json(apiData(c, { id, version, enabled }), 201);
   });
 
@@ -271,6 +284,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       const current = await c.env.DB.prepare('SELECT MAX(version) AS version FROM ai_config_versions').first<{ version: number }>();
       throw versionConflict(current?.version ?? 0);
     }
+    await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'config_disable', phase: 'config_persisted', status: 'succeeded', durationMs: 0, errorCode: 'NONE', configVersion: version, expectedVersion: body.expectedVersion });
     return c.json(apiData(c, { id, version, enabled: false }), 201);
   });
 
@@ -278,9 +292,11 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const body = c.req.valid('json');
     const loaded = await loadAiConfig(c.env.DB, undefined, false);
     if (!loaded) throw invalidState('请先保存模型配置');
-    const report = await probeModel(c.env, body.purpose as AiPurpose, loaded);
+    const probeStarted = Date.now();
+    const report = await probeModel(c.env, body.purpose as AiPurpose, loaded, c.get('requestId'));
     await c.env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(config_version_id, purpose) DO UPDATE SET passed = excluded.passed, report_json = excluded.report_json, tested_at = excluded.tested_at')
       .bind(loaded.id, report.purpose, report.passed ? 1 : 0, JSON.stringify(report), nowIso()).run();
+    await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'probe', phase: 'probe_result', status: report.passed ? 'succeeded' : 'failed', durationMs: Math.min(3_600_000, Date.now() - probeStarted), errorCode: report.passed ? 'NONE' : 'PROBE_FAILED', configVersion: loaded.version, purpose: body.purpose });
     return c.json(
       apiData(c, {
         purpose: report.purpose,

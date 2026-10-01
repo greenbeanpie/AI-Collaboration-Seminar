@@ -3,6 +3,8 @@ import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
 import { providerOptionErrors } from '../../../shared/ai-providers';
 import { buildProviderRequest, normalizeProviderResponse } from './transport';
+import { classifyFetchFailure, recordAiDiagnostic, safeDiagnosticTarget } from './diagnostics';
+import type { Env } from '../env';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -27,6 +29,8 @@ export interface GatewayCallInput {
   onDispatch?: () => void;
   /** Stable opaque job/conversation ID; used only by the opt-in Go adapter. */
   sessionId?: string;
+  /** HTTP request ID for probes; background calls use their opaque session ID. */
+  diagnosticRequestId?: string;
 }
 
 export interface GatewayCallOutput {
@@ -43,6 +47,7 @@ export interface GatewayEndpoint {
   authSecret?: string;
   /** 当前环境；仅 local 允许回环模型地址，用于零费用本地联调 */
   envName?: string;
+  diagnostics?: Pick<Env, 'DB'>;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
@@ -137,20 +142,36 @@ export async function gatewayChat(
       headers,
       body: JSON.stringify(body),
       signal: timeoutSignal,
-      redirect: 'error',
+      // Inspect a redirect response, but never follow it or forward credentials.
+      redirect: 'manual',
     });
   } catch (err) {
     // 网络失败/超时：费用未知，由调用方保留待核对记录
     const timeout = timeoutSignal.aborted || (err instanceof Error && err.name === 'TimeoutError');
+    const classification = classifyFetchFailure(err, timeout);
+    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_failed', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: timeout ? 'TIMEOUT' : 'FETCH_FAILED', protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...classification });
     throw aiUnavailable(timeout
       ? `模型请求超时（${input.config.timeoutMs / 1000} 秒）；尚未收到 HTTP 响应，请检查超时设置及供应商服务状态`
       : '模型网络请求失败，尚未收到 HTTP 响应；请检查 API 地址、重定向和供应商服务可达性', {
       timeout,
       timeoutMs: input.config.timeoutMs,
       cause: timeout ? 'timeout' : 'network_error',
+      ...classification,
+      ...safeDiagnosticTarget(url),
     });
   }
   const latencyMs = Date.now() - started;
+
+  const redirect = res.status >= 300 && res.status < 400;
+  let redirected: { redirectHost?: ReturnType<typeof safeDiagnosticTarget>['finalHost']; redirectPath?: ReturnType<typeof safeDiagnosticTarget>['finalPath'] } = {};
+  if (redirect) {
+    try { const target = safeDiagnosticTarget(new URL(res.headers.get('location') ?? '', url).href); redirected = { redirectHost: target.finalHost, redirectPath: target.finalPath }; } catch { /* Never retain an untrusted Location header. */ }
+  }
+  if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: res.ok ? 'succeeded' : 'failed', durationMs: Math.min(3_600_000, latencyMs), errorCode: redirect ? 'REDIRECT_BLOCKED' : res.ok ? 'NONE' : 'PROVIDER_FAILED', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...redirected, ...(redirect ? { failureKind: 'redirect' as const } : {}) });
+  if (redirect) {
+    await res.body?.cancel();
+    throw new AppError('AI_UNAVAILABLE', `模型地址返回重定向（HTTP ${res.status}）；未跟随跳转或转发密钥，请核对完整 API 地址`, 502, false, { status: res.status, failureKind: 'redirect', ...safeDiagnosticTarget(url), ...redirected });
+  }
 
   if (!res.ok) {
 

@@ -9,6 +9,7 @@ import { registerSystemRoutes } from './api/health';
 import { registerCapabilitiesRoutes } from './api/capabilities';
 import { registerFileRoutes } from './api/files';
 import { registerAdminRoutes } from './api/admin';
+import { registerAiDiagnosticsRoutes } from './api/ai-diagnostics';
 import { registerAccountSettingsRoutes } from './api/account-settings';
 import { registerAuthRoutes } from './api/auth';
 import { registerProjectRoutes } from './api/projects';
@@ -87,6 +88,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerLedgerRoutes(app);
   registerFileRoutes(app);
   registerAdminRoutes(app);
+  registerAiDiagnosticsRoutes(app);
   registerSupportTicketRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {
