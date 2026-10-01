@@ -10,7 +10,7 @@ export default tseslint.config(
   },
   { files: ['public/theme.js', 'public/asset-compat.js', 'public/push-worker.js'], languageOptions: { globals: { ...globals.browser, ...globals.es2022, ...globals.serviceworker } } },
   js.configs.recommended,
-  { files: ['public/app-updates.js', 'src/app-updates.test.js', 'src/asset-compat.test.js', 'src/push-worker.test.js'], languageOptions: { globals: { ...globals.browser, ...globals.es2022 } } },
+  { files: ['public/app-updates.js', 'src/app-updates.test.js', 'src/asset-compat.test.js', 'src/push-worker.test.js', 'src/notification-controls.test.js'], languageOptions: { globals: { ...globals.browser, ...globals.es2022 } } },
   ...tseslint.configs.recommended,
   {
     files: ['src/**/*.{ts,tsx}'],

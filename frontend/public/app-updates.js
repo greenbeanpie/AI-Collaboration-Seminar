@@ -139,16 +139,44 @@ export function mountUpdates() {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>
     :host{display:block;position:sticky;top:0;z-index:60;font:13px/1.5 system-ui;color:var(--ink,var(--fg,#243447));background:var(--surface,var(--bg,rgb(var(--surface-rgb,255 255 255))));border-bottom:1px solid #a0a0a040;color-scheme:light dark}
+    :host(.inline){display:inline-flex;position:relative;top:auto;background:transparent;border:0;flex:none}
+    :host(.inline) .bar{padding:0;min-height:36px;gap:4px;flex-wrap:nowrap}
+    :host(.inline) .panel{position:fixed;top:var(--app-toast-top,60px);right:12px}
+    :host(.inline) .toast{position:fixed;top:var(--app-toast-top,60px);left:0;right:0;background:var(--paper,var(--surface,var(--bg,rgb(var(--surface-rgb,255 255 255)))));border-bottom:1px solid #a0a0a040;box-shadow:0 6px 16px #0002}
+    .control{position:relative;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0;border-color:transparent}
+    .control:hover{background:#a0a0a018}.control svg{width:19px;height:19px;flex:none}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    .count{position:absolute;top:0;right:-1px;min-width:15px;padding:0 3px;height:15px;line-height:15px;background:#c54949;color:#fff;border-radius:10px;font-size:10px;font-weight:700}
+    .count:empty{display:none}.update-status{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#398565;display:none}
+    #update[data-state=ready] .update-status{display:block}#update[data-state=checking] svg,#update[data-state=downloading] svg,#update[data-state=applying] svg{animation:control-spin 1.2s linear infinite}
+    @keyframes control-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){#update svg{animation:none!important}}
     *{box-sizing:border-box} .bar{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:7px 16px;min-height:46px}
     button{font:inherit;color:inherit;background:transparent;border:1px solid #a0a0a060;border-radius:8px;padding:6px 10px;min-height:32px;cursor:pointer}button:focus-visible{outline:2px solid #3978c6;outline-offset:2px}button:disabled{cursor:wait;opacity:.65}
     .panel{position:absolute;right:12px;top:100%;width:min(420px,calc(100vw - 24px));max-height:65vh;overflow:auto;background:var(--surface,var(--bg,rgb(var(--surface-rgb,255 255 255))));color:var(--ink,var(--fg,#243447));border:1px solid #a0a0a060;border-radius:12px;padding:12px;box-shadow:0 10px 25px #0002}
     [hidden]{display:none!important}.entry{padding:10px 0;border-bottom:1px solid #a0a0a030;overflow-wrap:anywhere}.meta{font-size:11px;opacity:.7}.toast{padding:10px 16px;display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.toast span{max-width:650px}.panel-head{display:flex;justify-content:space-between;align-items:center}
     @media(max-width:500px){.bar{padding:6px 10px}.toast{justify-content:flex-start}}@media print{:host{display:none}}
-  </style><div class="bar"><button id="update" type="button">检查更新</button><button id="bell" type="button" aria-expanded="false" aria-controls="history">通知 <span id="badge"></span></button></div><div id="toast" class="toast" hidden role="status" aria-live="polite" aria-atomic="true"></div><section id="history" class="panel" hidden aria-label="通知中心"><div class="panel-head"><strong>通知中心</strong><button id="close" type="button">关闭</button></div><div id="entries"></div></section>`;
+  </style><div class="bar"><button id="update" class="control" type="button" aria-label="检查更新" title="检查更新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg><span class="update-status" aria-hidden="true"></span><span id="update-label" class="sr-only">检查更新</span></button><button id="bell" class="control" type="button" title="通知中心" aria-label="通知中心" aria-expanded="false" aria-controls="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="badge" class="count" aria-hidden="true"></span></button></div><div id="toast" class="toast" hidden role="status" aria-live="polite" aria-atomic="true"></div><section id="history" class="panel" hidden aria-label="通知中心"><div class="panel-head"><strong>通知中心</strong><button id="close" type="button">关闭</button></div><div id="entries"></div></section>`;
   const find = id => root.getElementById(id);
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => {
-    document.documentElement.style.setProperty('--app-notification-height', `${host.getBoundingClientRect().height}px`);
-  }).observe(host);
+  function layoutControls() {
+    const inline = host.classList.contains('inline');
+    document.documentElement.style.setProperty('--app-notification-height', inline ? '0px' : `${host.getBoundingClientRect().height}px`);
+    const bottom = host.closest('header')?.getBoundingClientRect().bottom ?? host.getBoundingClientRect().bottom;
+    host.style.setProperty('--app-toast-top', `${Math.max(0,bottom)}px`);
+  }
+  const attachControls = () => {
+    const slot = document.querySelector('[data-app-notification-controls]');
+    if (slot) { if (host.parentElement !== slot) slot.append(host); host.classList.add('inline'); }
+    else { host.classList.remove('inline'); if (host.parentElement !== document.body) document.body.prepend(host); }
+    layoutControls();
+  };
+  window.addEventListener('app-topbar-ready', attachControls);
+  window.addEventListener('app-topbar-detach', event => {
+    if (host.parentElement !== event.detail) return;
+    host.classList.remove('inline'); document.body.prepend(host); layoutControls();
+  });
+  window.addEventListener('resize', layoutControls);
+  window.addEventListener('scroll', layoutControls, true);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(layoutControls).observe(host);
+  attachControls();
   const history = new NotificationHistory();
   let inboxUrl = '/app/settings/notifications', inboxUnread = 0;
   let open = false, timer, remaining = 5000, started = 0, active = null, sequence = 0;
@@ -158,7 +186,8 @@ export function mountUpdates() {
     setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: timer => window.clearTimeout(timer),
     reload: () => { window.dispatchEvent(new Event('app-update-reload')); location.reload(); } };
   const controller = new UpdateController(env, state => {
-    find('update').textContent = labels[state];
+    find('update-label').textContent = labels[state];
+    find('update').title = labels[state]; find('update').setAttribute('aria-label',labels[state]); find('update').dataset.state = state;
     find('update').disabled = ['checking', 'downloading', 'applying'].includes(state);
     if (state !== 'idle') notify('update', details[state], state === 'error' ? 'error' : 'info', 'update');
   });
@@ -174,7 +203,8 @@ export function mountUpdates() {
   };
   function render() {
     const unread = inboxUnread + history.items.filter(item => !item.remoteId && item.unread).length;
-    find('badge').textContent = unread ? `(${unread})` : '';
+    find('badge').textContent = unread ? unread > 99 ? '99+' : String(unread) : '';
+    find('bell').title = find('bell').ariaLabel = unread ? `通知中心，${unread} 条未读` : '通知中心';
     find('entries').replaceChildren();
     if (!history.items.length) find('entries').textContent = '暂无通知。账户通知历史可在设置的推送与通知页面查看。';
     for (const item of history.items.filter(item => !item.dismissedAt)) {

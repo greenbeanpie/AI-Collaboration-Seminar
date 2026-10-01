@@ -1,3 +1,4 @@
+import { NotificationControls } from '../notifications/NotificationControls';
 import { unsubscribeDevice, deviceSubscriptionId } from '../notifications/core';
 import { notificationRequest } from '../notifications/api';
 import { useEffect, useRef, useState } from 'react';
@@ -75,6 +76,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       <header className="workspace-topbar" aria-label="工作区顶栏">
         {projectId && projectId !== 'new' ? <ProjectNavigation projectId={projectId} /> : <span className="workspace-context">工作空间</span>}
         <div className="workspace-top-actions" ref={accountControls}>
+            <NotificationControls/>
           <Link className="topbar-account" to="/app/profile" aria-label={`个人资料：${label}`}><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="topbar-account-name">{label}</span></Link>
           <button ref={accountMenuButton} className="icon-button topbar-actions-toggle" type="button" aria-label="主题与账户操作" aria-expanded={accountMenuOpen} aria-controls="workspace-account-actions" onClick={() => setAccountMenuOpen(open => !open)}><MoreHorizontal size={20} /></button>
           <div id="workspace-account-actions" className="workspace-account-panel" data-open={accountMenuOpen}>
