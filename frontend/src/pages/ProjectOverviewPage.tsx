@@ -9,10 +9,10 @@ import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, EmptyState, SectionCard, Spinner, StatusPill } from '../components/ui';
 
 const modules = [
-  { key: 'tasks', title: '任务', path: 'tasks', icon: ListTodo },
+  { key: 'tasks', title: '任务看板', path: 'tasks', icon: ListTodo },
   { key: 'members', title: '团队成员', path: 'team', icon: UsersRound },
-  { key: 'materials', title: '材料', path: 'materials', icon: FileText },
-  { key: 'sources', title: '通知来源', path: 'sources', icon: CalendarCheck2 },
+  { key: 'materials', title: '成果材料', path: 'materials', icon: FileText },
+  { key: 'sources', title: '导入资料', path: 'sources', icon: CalendarCheck2 },
 ] as const;
 
 export function ProjectOverviewPage() {
@@ -63,7 +63,7 @@ export function ProjectOverviewPage() {
         </div>
       </SectionCard>
     </div>
-    <SectionCard title="最近活动" detail="来自项目事件流，记录决策、贡献和 AI 操作。" action={<Link className="button button-quiet button-small" to={`/app/projects/${projectId}/ledger`}>打开过程账本</Link>}>
+    <SectionCard title="最近活动" detail="来自项目事件流，记录决策、贡献和 AI 操作。" action={<Link className="button button-quiet button-small" to={`/app/projects/${projectId}/ledger`}>查看活动历史</Link>}>
       {events.isLoading ? <Spinner label="读取项目事件" /> : events.error ? <ErrorNotice error={events.error} onRetry={() => void events.refetch()} /> : events.data?.length ? <div className="ledger-timeline">{events.data.slice(0, 8).map((event) => { const activity = presentEvent(event); return <div className="ledger-line" key={event.eventId}><span className="ledger-marker" /><div className="ledger-content"><strong>{activity.title}</strong><p>{activity.detail}</p><small>{activity.actor} · {new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>; })}</div> : <EmptyState title="还没有过程记录" detail="补录决策、贡献或 AI 使用信息后，会在这里显示。" />}
     </SectionCard>
     <div className="overview-footer-note"><StatusPill tone="blue">项目空间</StatusPill><span>此页面只呈现 API 返回的真实记录；每个数字在对应数据未加载时保持为空。</span></div>

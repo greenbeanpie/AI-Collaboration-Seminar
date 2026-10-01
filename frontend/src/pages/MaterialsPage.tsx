@@ -1,5 +1,6 @@
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
+import { MaterialAiAssistance } from './MaterialAiAssistance';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
@@ -71,7 +72,7 @@ function downloadMarkdown(title: string, markdown: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function MaterialsPage() {
+export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boolean }) {
   const { projectId } = useProject();
   const session = useSession();
   const queryClient = useQueryClient();
@@ -349,9 +350,11 @@ export function MaterialsPage() {
     <div className="page-stack tm-page tm-materials-page">
       <PageHeading
         eyebrow="成果协作"
-        title="材料中心"
+        title="成果材料"
         detail="编辑服务端正式材料并查看不可变版本。离线修改会尝试保存为当前账户、项目和材料对应的本机草稿，页面会明确显示写入是否成功。"
       />
+
+      <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} />
 
       {materialsQuery.error && <ErrorNotice error={materialsQuery.error} onRetry={() => void materialsQuery.refetch()} />}
       {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}

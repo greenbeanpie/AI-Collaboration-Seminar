@@ -31,13 +31,14 @@ const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((m
 const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage').then((module) => ({ default: module.AcceptInvitationPage })));
 const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage').then((module) => ({ default: module.ProjectOverviewPage })));
 const SourcesPage = lazy(() => import('./pages/SourcesPage').then((module) => ({ default: module.SourcesPage })));
+const DataWorkspacePage = lazy(() => import('./pages/DataWorkspacePage').then((module) => ({ default: module.DataWorkspacePage })));
 const RequirementsPage = lazy(() => import('./pages/RequirementsPage').then((module) => ({ default: module.RequirementsPage })));
 const TasksPage = lazy(() => import('./pages/TasksPage').then((module) => ({ default: module.TasksPage })));
+const WorkWorkspacePage = lazy(() => import('./pages/WorkWorkspacePage').then((module) => ({ default: module.WorkWorkspacePage })));
 const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((module) => ({ default: module.MaterialsPage })));
-const AiWorkspacePage = lazy(() => import('./pages/AiWorkspacePage').then((module) => ({ default: module.AiWorkspacePage })));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage').then((module) => ({ default: module.ReviewsPage })));
 const RehearsalsPage = lazy(() => import('./pages/RehearsalsPage').then((module) => ({ default: module.RehearsalsPage })));
-const TeamPage = lazy(() => import('./pages/TeamPage').then((module) => ({ default: module.TeamPage })));
+const TeamWorkspacePage = lazy(() => import('./pages/TeamWorkspacePage').then((module) => ({ default: module.TeamWorkspacePage })));
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ default: module.LedgerPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));
 const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ default: module.ExportPage })));
@@ -136,10 +137,12 @@ export default function App() {
         <Route path="/app/projects/:projectId" element={<ProjectShell />}>
           <Route index element={<ProjectOverviewPage />} />
           <Route path="sources" element={<SourcesPage />} />
+          <Route path="data" element={<DataWorkspacePage />} />
           <Route path="requirements" element={<RequirementsPage />} />
-          <Route path="team" element={<TeamPage />} />
+          <Route path="team" element={<TeamWorkspacePage />} />
           <Route path="tasks" element={<TasksPage />} />
-          <Route path="ai" element={<AiWorkspacePage />} />
+          <Route path="work" element={<WorkWorkspacePage />} />
+          <Route path="ai" element={<MaterialsPage initialAiOpen />} />
           <Route path="materials" element={<MaterialsPage />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="rehearsals" element={<RehearsalsPage />} />

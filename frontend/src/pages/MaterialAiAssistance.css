@@ -1,0 +1,8 @@
+.material-ai-assistance { min-width: 0; max-width: 100%; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.material-ai-assistance-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.material-ai-assistance-heading > div { flex: 1 1 220px; min-width: 0; }
+.material-ai-assistance-heading h2 { margin: 0; font-size: 16px; }
+.material-ai-assistance-heading p { margin: 7px 0 0; color: var(--muted); line-height: 1.6; font-size: 13px; overflow-wrap: anywhere; }
+.material-ai-assistance-heading button { max-width: 100%; white-space: normal; }
+.material-ai-assistance-content:not([hidden]) { margin-top: 18px; }
+.material-ai-assistance-content[hidden] { display: none; }

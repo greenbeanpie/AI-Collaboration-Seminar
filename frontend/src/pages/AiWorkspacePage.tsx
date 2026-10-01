@@ -39,7 +39,7 @@ function writeAdoptionIntent(key: string, value: AdoptionIntent | null): void {
   } catch { /* In-memory state keeps the retry body stable during this page visit. */ }
 }
 
-export function AiWorkspacePage() {
+export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
@@ -226,7 +226,7 @@ export function AiWorkspacePage() {
   const isLoadingInputs = taskQuery.isLoading || materialQuery.isLoading || sourceQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
-    <PageHeading eyebrow="协作 / AI 工作区" title="让 AI 补上团队暂时缺少的能力" detail="选择真实任务、材料和来源版本。AI 输出始终是待复核草稿，不会自动完成任务或覆盖正式材料。" />
+    {!embedded && <PageHeading eyebrow="资料 / 成果材料" title="AI 协助成果" detail="选择真实任务、材料和来源版本。AI 输出始终是待复核草稿，不会自动完成任务或覆盖正式材料。" />}
     {capabilityStatus}
 
     <div className="ai-workflow-grid">

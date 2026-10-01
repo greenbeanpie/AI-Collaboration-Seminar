@@ -1,7 +1,7 @@
 import { DateInput } from '../components/DateInput';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Check, ExternalLink, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 import { api, projectPath, listAllItems } from '../api/client';
 import type { DataOf } from '../api/types';
@@ -149,6 +149,10 @@ export function RequirementsPage() {
   const { projectId, project } = useProject();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash === '#rubric-versions') document.getElementById('rubric-versions')?.scrollIntoView?.({ block: 'start' });
+  }, [hash]);
   const setFromUrl = searchParams.get('setId');
   const [selectedRubricId, setSelectedRubricId] = useState<string | null>(null);
   const [editingRequirementId, setEditingRequirementId] = useState<string | null>(null);
@@ -404,7 +408,7 @@ export function RequirementsPage() {
       </div>}
     </SectionCard>
 
-    <SectionCard title="评分标准版本" detail="官方规则与自拟细则分开标记。创建版本不会自动确认，也不预填任何示例权重。" action={owner ? <button className="button button-primary button-small" type="button" disabled={rubricMode !== null} onClick={startCreateRubric}><Plus size={14} /> 新建评分草稿</button> : <StatusPill>仅负责人可管理</StatusPill>}>
+    <div id="rubric-versions" className="project-section-anchor"><SectionCard title="评分标准版本" detail="官方规则与自拟细则分开标记。创建版本不会自动确认，也不预填任何示例权重。" action={owner ? <button className="button button-primary button-small" type="button" disabled={rubricMode !== null} onClick={startCreateRubric}><Plus size={14} /> 新建评分草稿</button> : <StatusPill>仅负责人可管理</StatusPill>}>
       {rubricQuery.isLoading ? <Spinner label="正在读取评分标准版本" /> : rubricQuery.error ? <ErrorNotice error={rubricQuery.error} onRetry={() => void rubricQuery.refetch()} /> : <div className="stack">
         {rubricConfirmError ? <ErrorNotice error={rubricConfirmError} /> : null}
         {rubricMode === 'create' && <RubricEditor draft={rubricDraft} onChange={setRubricDraft} onCancel={() => setRubricMode(null)} onSave={() => void saveRubric()} busy={rubricSaving} error={rubricError} isNew />}
@@ -423,6 +427,6 @@ export function RequirementsPage() {
         })}</div>}
         {rubricMode === 'edit' && !rubrics.some((rubric) => rubric.rubricId === selectedRubricIdResolved) && <ErrorNotice error={new Error('所选评分版本已从服务端列表中移除。')} />}
       </div>}
-    </SectionCard>
+    </SectionCard></div>
   </div>;
 }
