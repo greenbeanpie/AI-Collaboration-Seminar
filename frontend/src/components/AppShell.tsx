@@ -45,7 +45,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     try {
       const subscriptionId = deviceSubscriptionId(user.id);
       await unsubscribeDevice(user.id,notificationRequest);
-      await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{'X-Push-Subscription-Id':subscriptionId,'X-Notification-Account':user.id}});
+      await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{...(subscriptionId ? {'X-Push-Subscription-Id':subscriptionId} : {}),'X-Notification-Account':user.id}});
       clearAccountStorage(user.id);
       await queryClient.clear();
       navigate('/login', { replace: true });

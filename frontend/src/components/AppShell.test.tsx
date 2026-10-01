@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within,waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -83,4 +83,11 @@ it('keeps compact account actions reachable and closes on Escape, outside press 
   fireEvent.click(toggle);
   await act(() => router.navigate('/app/projects/fixture/tasks'));
   expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
+
+it('logs out unsubscribed devices without sending an invalid empty UUID header',async()=>{
+ vi.stubGlobal('navigator',{serviceWorker:{getRegistration:vi.fn(async()=>undefined)}});
+ const fetch=vi.fn(async(_path:RequestInfo|URL,_options?:RequestInit)=>{void _path;void _options;return new Response(JSON.stringify({data:{cleared:true},requestId:'fixture-request'}),{status:200,headers:{'Content-Type':'application/json'}});});vi.stubGlobal('fetch',fetch);localStorage.removeItem('app-push-device:fixture');
+ const router=setup();fireEvent.click(screen.getByRole('button',{name:'退出登录'}));await waitFor(()=>expect(router.state.location.pathname).toBe('/login'));
+ expect(fetch).toHaveBeenCalledOnce();const options=fetch.mock.calls[0]?.[1] as RequestInit;const headers=new Headers(options.headers);expect(headers.has('X-Push-Subscription-Id')).toBe(false);expect(headers.get('X-Notification-Account')).toBe('fixture');
 });
