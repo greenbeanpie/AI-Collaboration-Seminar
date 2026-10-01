@@ -15,8 +15,9 @@ afterEach(() => { cleanup(); state.role = 'user'; state.isAdmin = false; });
 it('all account roles can reach privacy and people routes through authenticated routing', async () => {
  for (const role of ['user', 'admin', 'super_admin']) {
   state.role = role; state.isAdmin = role !== 'user';
-  setup('/app/settings/privacy'); await screen.findByText('Private profile editor');
-  expect(screen.getByRole('link', { name: '资料与隐私' }).getAttribute('href')).toBe('/app/settings/privacy'); cleanup();
+  const router = setup('/app/settings/privacy'); await screen.findByText('Private profile editor');
+  expect(router.state.location.pathname).toBe('/app/profile'); expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull(); cleanup();
+  setup('/app/profile'); await screen.findByText('Private profile editor'); cleanup();
   setup('/app/people'); await screen.findByText('Exact username search'); cleanup();
   setup('/app/people/fixture'); await screen.findByText('Published profile fields'); cleanup();
  }

@@ -62,7 +62,8 @@ it('ordinary admin can edit users but has no role controls or system settings li
   setup({ ...user, role: 'admin' });
   expect(await screen.findByLabelText('member 显示名称')).toBeEnabled();
   expect(screen.queryByLabelText('other_admin 显示名称')).not.toBeInTheDocument();
-  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: /账户等级/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: '主题' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: '系统 AI 设置' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'AI 模型设置' })).not.toBeInTheDocument();
 });

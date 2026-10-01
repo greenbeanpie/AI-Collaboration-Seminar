@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Pencil } from 'lucide-react';
 import { api, request } from '../api/client';
 import type { DataOf } from '../api/types';
 import { useSession } from '../auth';
@@ -19,40 +20,118 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
 }
 export function PersonalProfilePage() {
   const session = useSession();
-  const [saved,setSaved] = useState<Profile | null>(null);
-  const [draft,setDraft] = useState<Profile | null>(null);
-  const [error,setError] = useState<unknown>(null); const [notice,setNotice] = useState('');
-  const [busy,setBusy] = useState(false); const lock = useRef(false);
+  const [saved, setSaved] = useState<Profile | null>(null);
+  const [draft, setDraft] = useState<Profile | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
   const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   useSettingsDirty(dirty);
-  useEffect(() => { const controller = new AbortController(); api.get<'PersonalProfileResponse'>('/auth/personal-profile',undefined,controller.signal).then(p=>{setSaved(p);setDraft(p);}).catch(e=>{if (!controller.signal.aborted) setError(e);}); return ()=>controller.abort(); }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api.get<'PersonalProfileResponse'>('/auth/personal-profile', undefined, controller.signal)
+      .then(profile => { if (!controller.signal.aborted) { setSaved(profile); setDraft(profile); } })
+      .catch(error => { if (!controller.signal.aborted) setError(error); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, []);
+
   async function save(event: FormEvent) {
-    event.preventDefault(); if (!draft || lock.current) return;
-    lock.current=true;setBusy(true);setError(null);setNotice('');
-    try { const { revision,...values }=draft; const p=await request<'PersonalProfileResponse'>('/auth/personal-profile',{method:'PUT',body:{...values,expectedRevision:revision},headers:{'X-Account-Settings':'1'}});setSaved(p);setDraft(p);setNotice('资料与隐私设置已保存'); }
-    catch(e) {setError(e);} finally {lock.current=false;setBusy(false);}
+    event.preventDefault();
+    if (!draft || !dirty || lock.current) return;
+    lock.current = true; setBusy(true); setError(null); setNotice('');
+    try {
+      const { revision, ...values } = draft;
+      const profile = await request<'PersonalProfileResponse'>('/auth/personal-profile', {
+        method: 'PUT', body: { ...values, expectedRevision: revision }, headers: { 'X-Account-Settings': '1' },
+      });
+      setSaved(profile); setDraft(profile); setEditing(false); setNotice('资料与隐私设置已保存');
+    } catch (error) { setError(error); }
+    finally { lock.current = false; setBusy(false); }
   }
-  async function reload() { if (dirty && !window.confirm('重新读取将放弃当前未保存修改，是否继续？')) return; setError(null); try {const p=await api.get<'PersonalProfileResponse'>('/auth/personal-profile');setSaved(p);setDraft(p);}catch(e){setError(e);} }
-  return <div className="personal-profiles"><PageHeading title="个人资料与隐私" detail="自行决定哪些资料可被其他已登录用户看到。" />
-    <p>开启搜索后，其他已登录用户可通过完整用户名找到你，并查看勾选公开的字段。关闭后，搜索与个人主页立即不可用。</p>
-    <p>公开展示和 AI 使用分别由你决定。未启用 AI 使用时，你填写的个人资料不会被用于模型请求。</p>
-    {error !== null && <ErrorNotice error={error} onRetry={()=>void reload()} />}{notice && <p role="status">{notice}</p>}
-    {!draft ? <Spinner /> : <><form onSubmit={save} className="section-card"><fieldset disabled={busy}>
-      <label><input type="checkbox" checked={draft.searchable} onChange={e=>setDraft({...draft,searchable:e.target.checked})} />允许通过用户名搜索我</label>
-      <p>用户名：@{session.data?.username ?? '此旧账号尚无用户名，暂不可搜索'}</p>
-      <section aria-labelledby="profile-ai-consent-title">
-        <h2 id="profile-ai-consent-title">AI 任务偏好推荐</h2>
-        <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。</p>
-        <p>默认关闭。取消勾选并保存可撤回授权。每次发送前会重新读取并校验授权；已开始发送的请求无法收回，授权变化后会丢弃其推荐结果。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
-        <label><input type="checkbox" aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={e=>setDraft({...draft,aiUseAllowed:e.target.checked})} />我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
+
+  async function reload() {
+    if (lock.current || (dirty && !window.confirm('重新读取将放弃当前未保存修改，是否继续？'))) return;
+    lock.current = true; setBusy(true); setError(null);
+    try {
+      const profile = await api.get<'PersonalProfileResponse'>('/auth/personal-profile');
+      setSaved(profile); setDraft(profile); setEditing(false); setNotice('');
+    } catch (error) { setError(error); }
+    finally { lock.current = false; setBusy(false); setLoading(false); }
+  }
+
+  function cancelEditing() {
+    if (dirty && !window.confirm('有尚未保存的资料编辑。确定放弃这些编辑吗？')) return;
+    setDraft(saved); setEditing(false); setError(null); setNotice('');
+  }
+
+  function viewProfile(profile: Profile, publicOnly = false): PublicProfile {
+    return {
+      username: session.data?.username ?? '', displayName: session.data?.displayName ?? '',
+      ...(!publicOnly || profile.visibility.bio ? { bio: profile.bio } : {}),
+      ...(!publicOnly || profile.visibility.major ? { major: profile.major } : {}),
+      ...(!publicOnly || profile.visibility.specialties ? { specialties: profile.specialties } : {}),
+      ...(!publicOnly || profile.visibility.preferredRoles ? { preferredRoles: profile.preferredRoles } : {}),
+    };
+  }
+
+  return <div className="personal-profiles">
+    <PageHeading title={editing ? '编辑个人资料' : '个人资料'} detail={editing ? '左侧编辑 Markdown 与资料，右侧即时预览；保存后才会生效。' : '你的个人主页。需要修改时，点击右上角的编辑资料。'}
+      action={!editing && saved ? <button className="button button-quiet" disabled={busy} onClick={() => { setEditing(true); setError(null); setNotice(''); }}><Pencil size={16}/>编辑资料</button> : undefined}/>
+    {error !== null && <ErrorNotice error={error} onRetry={() => void reload()}/>}
+    {notice && <p className="notice notice-success" role="status">{notice}</p>}
+    {loading && <Spinner/>}
+    {saved && !editing && <>
+      <section className="profile-privacy-summary" aria-label="已保存的资料隐私设置">
+        <p><strong>搜索与公开展示</strong><span>{saved.searchable ? '允许已登录用户通过用户名搜索，并查看勾选公开的字段' : '搜索已关闭，其他用户无法查看个人主页'}</span></p>
+        <p><strong>AI 任务推荐</strong><span>{saved.aiUseAllowed ? '已授权项目配置的 AI 提供商使用资料进行任务推荐' : '未授权，个人资料不会用于模型请求'}</span></p>
       </section>
-      {Object.entries(names).map(([field,label])=> {const key=field as keyof typeof names;return <section key={key}><label htmlFor={`profile-${key}`}>{label}{key==='bio' ? '（Markdown）' : ''}</label>
-        <textarea id={`profile-${key}`} rows={key==='bio' ? 6 : 2} maxLength={limits[key]} value={draft[key]} onChange={e=>setDraft({...draft,[key]:e.target.value})} />
-        <label><input type="checkbox" checked={draft.visibility[key]} onChange={e=>setDraft({...draft,visibility:{...draft.visibility,[key]:e.target.checked}})} />公开{label}</label></section>;})}
-      <p>Markdown 支持标题、列表、粗体、行内代码和 HTTPS 链接；不执行 HTML，不加载图片。</p>
-      <button className="button button-primary" type="submit" disabled={!dirty}>{busy?'保存中…':'保存资料与隐私'}</button>
-    </fieldset></form><h2>公开展示预览</h2>{!draft.searchable && <p>当前不允许搜索；以下仅为你自己的预览。</p>}
-    <ProfileView profile={{username:session.data?.username ?? '',displayName:session.data?.displayName ?? '',...Object.fromEntries(Object.keys(names).filter(k=>draft.visibility[k as keyof typeof names]).map(k=>[k,draft[k as keyof typeof names]]))}} /></>}
+      <section aria-label="我的个人主页"><ProfileView profile={viewProfile(saved)}/></section>
+      <p className="muted">以上是仅供你查看的完整资料。其他已登录用户只能看到你勾选公开的字段，且需允许搜索。</p>
+    </>}
+    {draft && editing && <div className="profile-edit-layout">
+      <form className="profile-edit-form" onSubmit={save} aria-label="个人资料编辑">
+        <fieldset disabled={busy}>
+          <section className="section-card profile-editor-card">
+            <h2>Markdown 与个人资料</h2>
+            {Object.entries(names).map(([field, label]) => {
+              const key = field as keyof typeof names;
+              return <section key={key} className="profile-field">
+                <label className="field" htmlFor={`profile-${key}`}><span className="field-label">{label}{key === 'bio' ? '（Markdown）' : ''}</span></label>
+                <textarea className="input textarea" id={`profile-${key}`} rows={key === 'bio' ? 12 : 2} maxLength={limits[key]} value={draft[key]} onChange={event => setDraft({ ...draft, [key]: event.target.value })}/>
+                <label className="profile-toggle"><input type="checkbox" checked={draft.visibility[key]} onChange={event => setDraft({ ...draft, visibility: { ...draft.visibility, [key]: event.target.checked } })}/>公开{label}</label>
+              </section>;
+            })}
+            <p className="muted">Markdown 支持标题、列表、粗体、行内代码和 HTTPS 链接；不执行 HTML，不加载图片。</p>
+          </section>
+          <section className="section-card profile-privacy-controls">
+            <h2>搜索与隐私</h2>
+            <p>用户名：@{session.data?.username ?? '此旧账号尚无用户名，暂不可搜索'}</p>
+            <label className="profile-toggle"><input type="checkbox" checked={draft.searchable} onChange={event => setDraft({ ...draft, searchable: event.target.checked })}/>允许通过用户名搜索我</label>
+            <p>开启搜索后，其他已登录用户可通过完整用户名找到你，并查看勾选公开的字段。关闭后，搜索与个人主页立即不可用。</p>
+            <p>公开展示和 AI 使用分别由你决定。未启用 AI 使用时，你填写的个人资料不会被用于模型请求。</p>
+          </section>
+          <section className="section-card profile-ai-consent" aria-labelledby="profile-ai-consent-title">
+            <h2 id="profile-ai-consent-title">AI 任务偏好推荐</h2>
+            <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。</p>
+            <p>默认关闭。取消勾选并保存可撤回授权。每次发送前会重新读取并校验授权；已开始发送的请求无法收回，授权变化后会丢弃其推荐结果。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
+            <label className="profile-toggle"><input type="checkbox" aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={event => setDraft({ ...draft, aiUseAllowed: event.target.checked })}/>我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
+          </section>
+          <div className="profile-editor-actions">
+            <button className="button button-primary" type="submit" disabled={!dirty}>{busy ? '保存中…' : '保存资料与隐私'}</button>
+            <button className="button button-quiet" type="button" onClick={cancelEditing}>取消编辑</button>
+          </div>
+        </fieldset>
+      </form>
+      <aside className="profile-preview-column" aria-label="个人资料预览">
+        <section aria-label="内容预览，仅自己可见"><h2>内容预览</h2><p className="muted">仅自己可见，包含未勾选公开的字段。</p><ProfileView profile={viewProfile(draft)}/></section>
+        <section aria-label="公开展示预览"><h2>公开展示预览</h2><p className="muted">草稿预览；保存后才生效。{!draft.searchable && '当前不允许搜索，其他用户无法查看个人主页。'}</p><ProfileView profile={viewProfile(draft, true)}/></section>
+      </aside>
+    </div>}
   </div>;
 }
 export function ProfileSearchPage() {

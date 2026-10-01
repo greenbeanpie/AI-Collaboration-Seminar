@@ -485,8 +485,8 @@
 .theme-toolbar { position: relative; z-index: 20; display: flex; justify-content: flex-end; min-height: 52px; padding: 8px clamp(16px, 3vw, 36px); border-bottom: 1px solid var(--line); background: var(--paper); }
 .theme-selector { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 12px; }
 .theme-selector select { min-height: 36px; max-width: 150px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--paper); color: var(--ink); cursor: pointer; }
-.app-frame { min-height: calc(100vh - 52px); }
-.auth-page { min-height: calc(100vh - 52px); }
+.app-frame { min-height: calc(100vh - var(--app-notification-height, 0px)); }
+.auth-page { min-height: calc(100vh - var(--app-notification-height, 0px)); }
 @media (max-width: 480px) { .theme-toolbar { padding: 8px 16px; } }
 
 :root { --action-blue: #2264e6; --action-blue-hover: #174ebe; }

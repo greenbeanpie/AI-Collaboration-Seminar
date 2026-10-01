@@ -1,4 +1,5 @@
 import { SettingsLayout } from './pages/SettingsLayout';
+import { SettingsEditGuard } from './pages/SettingsEditGuard';
 import { ThemeSelector } from './components/ThemeSelector';
 import { Suspense, useEffect } from 'react';
 import { resilientLazy as lazy } from './resilient-lazy';
@@ -104,12 +105,13 @@ export default function App() {
         <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
         <Route path="/app/people" element={<ProfileSearchPage />} />
         <Route path="/app/people/:username" element={<PublicProfilePage />} />
+        <Route path="/app/profile" element={<SettingsEditGuard><PersonalProfilePage /></SettingsEditGuard>} />
         <Route path="/app/settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
           <Route path="profile" element={<AccountSettingsPage section="profile" />} />
-          <Route path="privacy" element={<PersonalProfilePage />} />
+          <Route path="privacy" element={<Navigate to="/app/profile" replace />} />
           <Route path="security" element={<AccountSettingsPage section="security" />} />
-          <Route path="appearance" element={<ThemeSelector />} />
+          <Route path="appearance" element={<ThemeSelector variant="field" />} />
           <Route element={<SystemAdminOnly />}>
             <Route path="accounts" element={<AdminAccountsPage />} />
             <Route element={<SystemAdminOnly superOnly />}><Route path="ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>

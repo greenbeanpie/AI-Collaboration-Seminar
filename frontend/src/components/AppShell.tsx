@@ -2,11 +2,12 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, KeyRound, LogOut, Plus, Search, Settings, UsersRound } from 'lucide-react';
+import { FolderKanban, KeyRound, LifeBuoy, LogOut, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
 import { ErrorNotice } from './ui';
+import { ThemeSelector } from './ThemeSelector';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const [logoutError, setLogoutError] = useState<unknown>(null);
@@ -27,23 +28,36 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     finally { setBusy(false); }
   }
 
-  return <div className="app-frame">
+  return <div className="app-frame office-shell">
     <aside className="sidebar">
-      <Link to="/app" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link>
+      <div className="sidebar-brand"><Link to="/app" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link></div>
+      <div className="sidebar-navigation">
       <div className="nav-label">工作空间</div>
       <nav className="main-nav" aria-label="主导航">
         <NavLink to="/app" end className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><FolderKanban size={18} />我的项目</NavLink>
         <NavLink to="/app/join" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UsersRound size={18} />加入项目</NavLink>
         <NavLink to="/app/support" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} />支持工单</NavLink>
+        <NavLink to="/app/profile" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UserRound size={18} />个人资料</NavLink>
         <NavLink to="/app/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} />设置</NavLink>
         <NavLink to="/app/people" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Search size={18} />搜索用户</NavLink>
       </nav>
       <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>
+      </div>
       <div className="sidebar-spacer" />
       {logoutError !== null && <div className="sidebar-error"><ErrorNotice error={logoutError} /></div>}
-      <div className="profile-row"><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="profile-info"><strong>{label}</strong><small>{user.username || user.email || (user.isAdmin ? '系统管理员' : '协作账户')}</small></span><button className="icon-button" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /></button></div>
       <div className="sidebar-note">登录账户的数据由项目服务保存</div>
     </aside>
-    <main className="main-shell"><div className="mobile-bar"><Link to="/app" className="brand"><span className="brand-mark">补</span><strong>补位</strong></Link><span>{label}</span></div>{children}</main>
+    <div className="workspace-frame">
+      <header className="workspace-topbar" aria-label="工作区顶栏">
+        <span className="workspace-context">工作空间</span>
+        <div className="workspace-top-actions">
+          <ThemeSelector/>
+          <Link className="topbar-support" to="/app/support" aria-label="支持工单"><LifeBuoy size={17}/><span>支持</span></Link>
+          <Link className="topbar-account" to="/app/profile" aria-label={`个人资料：${label}`}><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="topbar-account-name">{label}</span></Link>
+          <button className="icon-button" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /></button>
+        </div>
+      </header>
+      <main className="main-shell">{children}</main>
+    </div>
   </div>;
 }

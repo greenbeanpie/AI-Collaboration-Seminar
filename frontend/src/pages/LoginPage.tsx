@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { Capability, User } from '../api/types';
 import { useCapabilities } from '../auth';
 import { ErrorNotice, Field, Spinner } from '../components/ui';
+import { ThemeSelector } from '../components/ThemeSelector';
 
 type Props = { capabilities?: Capability; capabilityError?: unknown; onRetryCapabilities?: () => unknown };
 
@@ -49,7 +50,7 @@ export function LoginPage(props: Props) {
   }
   return <main className="auth-page">
     <div className="auth-orb orb-one" /><div className="auth-orb orb-two" />
-    <header className="auth-top"><Link to="/" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link><a href="/guest/index.html" className="button button-quiet">游客演示 <ArrowUpRight size={16} /></a></header>
+    <header className="auth-top"><Link to="/" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link><div className="auth-top-actions"><ThemeSelector/><a href="/guest/index.html" className="button button-quiet">游客演示 <ArrowUpRight size={16} /></a></div></header>
     <div className="auth-layout">
       <section className="auth-intro"><span className="intro-badge"><span className="pulse-dot" />真实项目工作区</span><h1>让协作过程<br /><em>清楚、有据、能交接</em></h1><p>从通知要求到团队任务、材料版本与过程记录，让每一步都留在真实项目里。</p><div className="intro-checks"><span><ShieldCheck size={17} /> 项目数据由服务端保存</span><span><ShieldCheck size={17} /> AI 内容须人工复核后采纳</span></div></section>
       <section className="auth-card">
