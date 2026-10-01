@@ -49,7 +49,9 @@ const configShape = z.object({
   textEconomy: editableModel,
   visionEconomy: editableModel,
   review: editableModel,
-  enabled: z.boolean().default(false),
+  // Omitted for ordinary saves: retain an already-enabled unchanged config only.
+  // Explicit true remains the separate, probe-gated activation action.
+  enabled: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });
 
@@ -100,9 +102,18 @@ const putRoute = createRoute({
   method: 'put',
   path: '/api/v1/admin/ai-config',
   tags: ['admin'],
-  summary: '写入新的 AI 配置版本（只增不改；启用前须通过探测）',
+  summary: '保存 AI 配置新版本（无需探测；变更后停用，显式启用仍须探测）',
   request: { body: { content: { 'application/json': { schema: configShape } }, required: true } },
   responses: { 201: { content: { 'application/json': { schema: putResponse } }, description: '新版本已创建' } },
+});
+
+const disableRoute = createRoute({
+  method: 'post',
+  path: '/api/v1/admin/ai-config/disable',
+  tags: ['admin'],
+  summary: '停用当前已保存 AI 配置（不提交表单草稿，不调用模型）',
+  request: { body: { content: { 'application/json': { schema: z.object({ expectedVersion: z.number().int().nonnegative(), enabled: z.literal(false) }).strict() } }, required: true } },
+  responses: { 201: { content: { 'application/json': { schema: putResponse } }, description: '停用版本已创建' } },
 });
 
 const probeRoute = createRoute({
@@ -207,7 +218,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     if (body.expectedVersion !== undefined && body.expectedVersion !== (latest?.version ?? 0)) throw versionConflict(latest?.version ?? 0);
     const version = (latest?.version ?? 0) + 1;
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
-    const { enabled, notes } = body;
+    const { notes } = body;
     // Legacy saves must preserve inactive drafts and must not silently switch the active route.
     const parsed = aiConfigSchema.safeParse({ ...body, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
@@ -227,8 +238,10 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       config[purpose]!.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
-    if (enabled) {
-      if (!latest || JSON.stringify(aiConfigSchema.parse({ ...config, routingMode: config.routingMode ?? 'advanced' })) !== JSON.stringify(aiConfigSchema.parse({ ...latest.config, routingMode: latest.config.routingMode ?? 'advanced' }))) throw invalidState('请先保存配置并测试适用模型，配置变化后必须重新测试');
+    const unchanged = Boolean(latest && JSON.stringify(aiConfigSchema.parse({ ...config, routingMode: config.routingMode ?? 'advanced' })) === JSON.stringify(aiConfigSchema.parse({ ...latest.config, routingMode: latest.config.routingMode ?? 'advanced' })));
+    const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
+    if (body.enabled === true) {
+      if (!latest || !unchanged) throw invalidState('请先保存配置并测试适用模型，配置变化后必须重新测试');
       const probes = await c.env.DB.prepare('SELECT purpose FROM ai_probes WHERE config_version_id = ?1 AND passed = 1').bind(latest.id).all<{ purpose: string }>();
       const required = config.routingMode === 'unified' && !config.unified?.supportsVision ? ['textEconomy', 'review'] : ['textEconomy', 'visionEconomy', 'review'];
       if (!required.every(purpose => probes.results.some(probe => probe.purpose === purpose))) throw invalidState('所有适用用途的模型测试通过后才能启用 AI');
@@ -240,6 +253,25 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       .run();
     if (!inserted.meta.changes) throw versionConflict((await loadAiConfig(c.env.DB, undefined, false))?.version ?? 0);
     return c.json(apiData(c, { id, version, enabled }), 201);
+  });
+
+  app.openapi(disableRoute, async (c) => {
+    const body = c.req.valid('json');
+    // Copy the persisted payload verbatim: disabling must not validate, replace,
+    // decrypt, or send any unsaved provider settings or credentials.
+    const latest = await c.env.DB.prepare('SELECT version, config_json, notes FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ version: number; config_json: string; notes: string | null }>();
+    if (body.expectedVersion !== (latest?.version ?? 0)) throw versionConflict(latest?.version ?? 0);
+    if (!latest) throw invalidState('尚未保存模型配置，AI 已处于停用状态');
+    const version = latest.version + 1;
+    const id = `cfg-v${version}-${newId().slice(0, 8)}`;
+    const inserted = await c.env.DB.prepare(
+      'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) SELECT ?1, ?2, ?3, 0, ?4, ?5, ?6 WHERE (SELECT COALESCE(MAX(version), 0) FROM ai_config_versions) = ?7',
+    ).bind(id, version, latest.config_json, latest.notes, c.get('user')?.id ?? 'operator-token', nowIso(), latest.version).run();
+    if (!inserted.meta.changes) {
+      const current = await c.env.DB.prepare('SELECT MAX(version) AS version FROM ai_config_versions').first<{ version: number }>();
+      throw versionConflict(current?.version ?? 0);
+    }
+    return c.json(apiData(c, { id, version, enabled: false }), 201);
   });
 
   app.openapi(probeRoute, async (c) => {

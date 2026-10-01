@@ -12300,7 +12300,7 @@
         "tags": [
           "admin"
         ],
-        "summary": "写入新的 AI 配置版本（只增不改；启用前须通过探测）",
+        "summary": "保存 AI 配置新版本（无需探测；变更后停用，显式启用仍须探测）",
         "requestBody": {
           "required": true,
           "content": {
@@ -12844,8 +12844,7 @@
                     ]
                   },
                   "enabled": {
-                    "type": "boolean",
-                    "default": false
+                    "type": "boolean"
                   },
                   "notes": {
                     "type": "string",
@@ -12864,6 +12863,53 @@
         "responses": {
           "201": {
             "description": "新版本已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConfigPutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-config/disable": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "停用当前已保存 AI 配置（不提交表单草稿，不调用模型）",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "enabled"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "停用版本已创建",
             "content": {
               "application/json": {
                 "schema": {

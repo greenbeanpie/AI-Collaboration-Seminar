@@ -4530,7 +4530,7 @@ export interface paths {
                 };
             };
         };
-        /** 写入新的 AI 配置版本（只增不改；启用前须通过探测） */
+        /** 保存 AI 配置新版本（无需探测；变更后停用，显式启用仍须探测） */
         put: {
             parameters: {
                 query?: never;
@@ -4668,7 +4668,6 @@ export interface paths {
                             apiKey?: string;
                             clearKey?: boolean;
                         };
-                        /** @default false */
                         enabled?: boolean;
                         notes?: string;
                     };
@@ -4687,6 +4686,50 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ai-config/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停用当前已保存 AI 配置（不提交表单草稿，不调用模型） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedVersion: number;
+                        /** @enum {boolean} */
+                        enabled: false;
+                    };
+                };
+            };
+            responses: {
+                /** @description 停用版本已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiConfigPutResponse"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

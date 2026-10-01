@@ -1,5 +1,5 @@
 import { useSettingsDirty } from './settings-dirty';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminRequest, useSession } from '../auth';
 import { ErrorNotice, Field, SectionCard } from '../components/ui';
@@ -23,20 +23,57 @@ export function AiSettings() {
   const [config, setConfig] = useState<Config>(blank);
   const [reports, setReports] = useState<Partial<Record<Purpose, Report>>>({});
   const [version, setVersion] = useState(0);
+  const [savedEnabled, setSavedEnabled] = useState(false);
+  const [ready, setReady] = useState(false);
   const [dirty, setDirty] = useState(true);
   const [edited, setEdited] = useState(false);
   useSettingsDirty(edited);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const loadSequence = useRef(0);
+  const draftRevision = useRef(0);
+  const hasSavedUnified = useRef(true);
+  const unifiedEdited = useRef(false);
   const [error, setError] = useState<unknown>();
   const [message, setMessage] = useState('');
+  const adminUserId = session.data?.role === 'super_admin' ? session.data.id : undefined;
+  useEffect(() => {
+    if (!adminUserId) return;
+    let cancelled = false;
+    const sequence = ++loadSequence.current;
+    const revision = draftRevision.current;
+    setReady(false); setBusy(true); setError(undefined);
+    void adminRequest<{ config: Config; version: number; enabled: boolean }>('/api/v1/admin/ai-config', { method: 'GET' }).then(data => {
+      if (cancelled || sequence !== loadSequence.current) return;
+      applyLoaded(data, revision);
+    }).catch(value => { if (!cancelled && sequence === loadSequence.current) setError(value); })
+      .finally(() => { if (!cancelled && sequence === loadSequence.current) setBusy(false); });
+    return () => { cancelled = true; };
+    // Session identity is the load boundary; form edits must not trigger reloads.
+  }, [adminUserId]);
+  function applyLoaded(data: { config: Config; version: number; enabled: boolean }, revision: number) {
+    const preserveDraft = draftRevision.current !== revision;
+    if (!preserveDraft) {
+      setConfig(data.version ? { routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), apiKey: '' }])) } as Config : blank());
+      setDirty(false); setEdited(false);
+      hasSavedUnified.current = Boolean(data.config.unified);
+      unifiedEdited.current = false;
+    }
+    setVersion(data.version); setSavedEnabled(data.enabled); setReady(true); setReports({});
+    setMessage(preserveDraft ? '已读取配置版本，编辑中的表单已保留，尚未保存。' : data.enabled ? '当前 AI 已启用。' : '当前 AI 未启用。');
+  }
   async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
     return adminRequest<T>(`/api/v1/admin/ai-config${path}`, { method: method as 'GET' | 'POST' | 'PUT', body, token });
   }
   async function run(action: () => Promise<void>) {
+    if (running.current) return;
+    running.current = true;
     setBusy(true); setError(undefined); setMessage('');
-    try { await action(); } catch (e) { setError(e); } finally { setBusy(false); }
+    try { await action(); } catch (e) { setError(e); } finally { running.current = false; setBusy(false); }
   }
   function edit(p: ModelSlot, patch: Partial<Model>) {
+    draftRevision.current++;
+    if (p === 'unified') unifiedEdited.current = true;
     setConfig(c => ({ ...c, [p]: { ...c[p], ...patch } })); setDirty(true); setEdited(true); setReports({});
   }
   function choosePreset(p: ModelSlot, value: string) {
@@ -59,27 +96,46 @@ export function AiSettings() {
     const caps = modelCapabilities({ ...config[p], reasoningEffort });
     edit(p, { reasoningEffort, temperature: caps.temperature ? config[p].temperature : undefined, topP: caps.topP ? config[p].topP : undefined });
   }
-  async function save(enabled: boolean) {
-    const data = await call<{ version: number }>('PUT', '', { ...config, enabled, expectedVersion: version });
-    setVersion(data.version); setDirty(false); setEdited(false); setReports({});
+  async function save(activate = false) {
+    if (!ready) throw new Error('请先成功读取已保存配置，再保存修改。');
+    const slots = config.routingMode === 'unified' ? ['unified'] as const : purposes;
+    const errors = slots.flatMap(p => providerOptionErrors(config[p]).map(detail => `${labels[p]}：${detail}`));
+    if (errors.length) throw new Error(`配置未保存：${errors.join('；')}`);
+    // Do not materialize an untouched optional legacy slot just by opening the UI.
+    const { unified, ...advanced } = config;
+    const includeUnified = config.routingMode === 'unified' || hasSavedUnified.current || unifiedEdited.current;
+    const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
+    setVersion(data.version); setSavedEnabled(data.enabled); setDirty(false); setEdited(false); setReports({});
+    hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
     setConfig(c => ({ ...c, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
-    setMessage(enabled ? 'AI 已启用，可继续真实业务测试。' : '配置已保存，AI 暂停启用。请逐项测试。');
+    setMessage(activate ? 'AI 已启用，可继续真实业务测试。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+    await qc.invalidateQueries({ queryKey: ['capabilities'] });
+  }
+  async function disable() {
+    if (!ready) throw new Error('请先成功读取已保存配置，再停用 AI。');
+    const data = await call<{ version: number; enabled: false }>('POST', '/disable', { expectedVersion: version, enabled: false });
+    setVersion(data.version); setSavedEnabled(false); setReports({});
+    setMessage(dirty ? 'AI 已停用。未保存的表单修改已保留，请点击保存配置后再测试。' : 'AI 已停用，已保存的模型配置保持不变。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
   const requiredProbes = config.routingMode === 'unified' && !config.unified.supportsVision ? purposes.filter(p => p !== 'visionEconomy') : purposes;
   return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。API URL、key 和模型名称由你填写；设置影响所有项目。">
     <div className="stack">
       {session.data?.role !== 'super_admin' && <p className="muted">需要超级管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
-      <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { setToken(e.target.value); setEdited(true); setReports({}); setError(undefined); setMessage(''); }} /></Field></details>
+      <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { loadSequence.current++; setToken(e.target.value); setReady(false); setEdited(true); setReports({}); setError(undefined); setMessage('请先读取当前令牌可访问的已保存配置。'); }} /></Field></details>
       <button className="button button-quiet" disabled={!access || busy} onClick={() => void run(async () => {
+        const sequence = ++loadSequence.current;
+        const revision = draftRevision.current;
+        setReady(false);
         const data = await call<{ config: Config; version: number; enabled: boolean }>('GET', '');
-        setConfig(data.version ? { routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), apiKey: '' }])) } as Config : blank());
-        setVersion(data.version); setDirty(false); setEdited(false); setReports({}); setMessage(data.enabled ? '当前 AI 已启用。' : '当前 AI 未启用。');
-      })}>读取已保存配置</button>
-      <Field label="模型路由模式"><select className="input" disabled={busy} value={config.routingMode} onChange={e => { setConfig(c => ({ ...c, routingMode: e.target.value as Config['routingMode'] })); setDirty(true); setEdited(true); setReports({}); }}><option value="unified">统一模型（推荐）</option><option value="advanced">高级：按用途配置</option></select></Field>
+        if (sequence === loadSequence.current) applyLoaded(data, revision);
+      })}>{edited ? '丢弃修改并读取已保存配置' : ready ? '重新读取已保存配置' : '读取已保存配置'}</button>
+      {!ready && <p role="status">{busy ? '正在读取已保存配置，请稍候……' : '尚未成功读取配置版本。请先读取或重试，避免覆盖他人的修改。'}</p>}
+      <p className="muted">已保存配置 v{version} · AI {savedEnabled ? '已启用' : '未启用'}{dirty ? ' · 表单修改尚未保存' : ''}</p>
+      <Field label="模型路由模式"><select className="input" disabled={busy || !ready} value={config.routingMode} onChange={e => { draftRevision.current++; setConfig(c => ({ ...c, routingMode: e.target.value as Config['routingMode'] })); setDirty(true); setEdited(true); setReports({}); }}><option value="unified">统一模型（推荐）</option><option value="advanced">高级：按用途配置</option></select></Field>
       <p className="muted">统一模式让提取、评价、拆解、分配和对话使用同一模型配置；高级配置草稿会保留。切换模式后需保存并重新测试。模型不支持图片时，图片任务会明确失败，不会自动改用其他端点。</p>
       {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；文本功能可在文本与评价测试通过后启用。</p>}
-      {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy}><legend>{labels[p]}</legend>
+      {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready}><legend>{labels[p]}</legend>
         <Field label={`${labels[p]}供应商`} hint="选择预设只填入建议地址和模型；不会启用 AI 或发出请求。自定义保留现有兼容接口。"><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
         {preset === 'opencode-go' && <div role="note"><p>{GO_USAGE_NOTICE} <a href="https://opencode.ai/docs/go/#where-can-i-use-it" target="_blank" rel="noreferrer">官方使用说明</a></p><label><input type="checkbox" checked={config[p].goUsageAcknowledged ?? false} onChange={e => edit(p, { goUsageAcknowledged: e.target.checked })} /> 我已确认套餐适用于本应用用途</label><p className="muted">使用本应用真实 User-Agent 和稳定会话 ID；不模拟官方客户端，不绕过服务限制。</p><fieldset><legend>OpenCode Go 专用请求头</legend><Field label={`${labels[p]} Go User-Agent`} hint="仅填写你实际应用的名称/版本；不能填写官方客户端身份或密钥。"><input className="input" value={config[p].goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, userAgent: e.target.value } })} /></Field><Field label={`${labels[p]} Go 会话前缀`} hint="x-opencode-session 默认自动按会话/任务生成，重试保持一致。可选非敏感前缀；不填 key、姓名或用户资料。"><input className="input" maxLength={32} value={config[p].goHeaders?.sessionPrefix ?? ''} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, sessionPrefix: e.target.value } })} /></Field><p className="muted">鉴权头由后端密钥生成，不允许编辑 Authorization、x-api-key、Cookie、Host 或任意请求头。</p></fieldset></div>}
         <Field label={`${labels[p]} API 协议`} hint="协议可手动选择；预设给出推荐值，已核实不兼容的组合会明确拒绝。"><select className="input" value={protocol} disabled={config[p].provider === 'workers-ai'} onChange={e => { const apiProtocol = e.target.value as ApiProtocol; edit(p, { apiProtocol, ...(preset !== 'custom' ? { apiUrl: presetEndpoint(preset, config[p].model, apiProtocol) } : {}), supportsJson: apiProtocol === 'messages' ? false : config[p].supportsJson }); }}>{API_PROTOCOLS.map(style => <option key={style} value={style}>{style}</option>)}</select></Field>
@@ -102,14 +158,14 @@ export function AiSettings() {
         {providerOptionErrors(config[p]).map(detail => <p className="muted" key={detail}>{detail}</p>)}
       </fieldset>; })}
       <div className="form-actions">{requiredProbes.map(p => <div key={p}>
-        <button className="button button-quiet" disabled={!access || busy || dirty || !version} onClick={() => void run(async () => {
+        <button className="button button-quiet" disabled={!access || busy || !ready || dirty || !version} onClick={() => void run(async () => {
           const report = await call<Report>('POST', '/probe', { purpose: p });
           setReports(r => ({ ...r, [p]: report }));
         })}>测试{labels[p]}（连接与能力）</button>
         {reports[p] && <div role="status"><strong>{reports[p]?.passed ? '测试通过' : '测试失败'} · 配置 v{reports[p]?.configVersion}</strong><ul>{reports[p]?.checks.map(c => <li key={c.name}>{c.passed ? '✓' : '✗'} {c.name}：{c.detail}</li>)}</ul></div>}
       </div>)}</div>
-      <p className="muted">测试会发起少量真实模型请求，可能产生费用。先保存，再测试当前模式的可用用途；修改配置后需要重新测试。key 在后端加密保存，不写入浏览器存储。</p>
-      <div className="form-actions"><button className="button button-primary" disabled={!access || busy || (config.routingMode === 'unified' ? ['unified'] as const : purposes).some(p => providerOptionErrors(config[p]).length > 0)} onClick={() => void run(() => save(false))}>保存配置并停用 AI</button><button className="button button-primary" disabled={!access || busy || dirty || !requiredProbes.every(p => reports[p]?.passed && reports[p]?.configVersion === version)} onClick={() => void run(() => save(true))}>全部测试通过后启用 AI</button></div>
+      <p className="muted">保存配置和停用 AI 不发起模型请求，连接测试失败不影响保存。修改配置后会安全停用；未改配置时保留当前启用状态。测试会发起少量真实模型请求，可能产生费用；启用前仍须当前版本全部适用测试通过。key 在后端加密保存，不写入浏览器存储。</p>
+      <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || dirty || !requiredProbes.every(p => reports[p]?.passed && reports[p]?.configVersion === version)} onClick={() => void run(() => save(true))}>全部测试通过后启用 AI</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
     </div>
   </SectionCard>;
