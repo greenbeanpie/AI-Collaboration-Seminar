@@ -1,3 +1,4 @@
+import { DateInput } from '../components/DateInput';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, BookOpenCheck, FilePlus2, History, Plus, Send, ShieldCheck } from 'lucide-react';
@@ -78,7 +79,7 @@ export function LedgerPage() {
         <form className="stack ledger-form" onSubmit={(event) => { event.preventDefault(); createDecision.mutate(); }}>
           <Field label="决策标题"><input className="input" required maxLength={200} value={decisionTitle} onChange={(event) => setDecisionTitle(event.target.value)} placeholder="例如：确定作品介绍结构" /></Field>
           <Field label="决策背景和内容"><textarea className="input textarea" rows={3} maxLength={4000} value={decisionDetail} onChange={(event) => setDecisionDetail(event.target.value)} placeholder="描述决定事项和依据……" /></Field>
-          <Field label="决策时间" hint="未填写时由后端记录当前时间；填写时按本地时区转换为 ISO 时间。"><input className="input" type="datetime-local" value={decisionDate} onChange={(event) => setDecisionDate(event.target.value)} /></Field>
+          <Field label="决策时间" hint="未填写时由后端记录当前时间；填写时按本地时区转换为 ISO 时间。"><DateInput className="input" type="datetime-local" value={decisionDate} onChange={(event) => setDecisionDate(event.target.value)} /></Field>
           {createDecision.error && <ErrorNotice error={createDecision.error} />}
           <button className="button button-primary" disabled={createDecision.isPending || !decisionTitle.trim()}><Plus size={15} />记录决策</button>
         </form>

@@ -1,0 +1,10 @@
+/* Empty display only: focused fields retain native keyboard/date-picker semantics. */
+.date-input-control { position: relative; display: block; min-width: 0; width: 100%; }
+.date-input-control > input { width: 100%; box-sizing: border-box; }
+.date-input-control > .date-input-placeholder { display: none; position: absolute; left: 12px; right: 38px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted, #68758a); font-size: inherit; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.date-input-control[data-empty="true"]:not(:focus-within) > input { color: transparent; }
+.date-input-control[data-empty="true"]:not(:focus-within) > input::-webkit-datetime-edit { color: transparent; }
+.date-input-control[data-empty="true"]:not(:focus-within) > .date-input-placeholder { display: block; }
+.date-input-control:has(> input:disabled) > .date-input-placeholder { opacity: .55; }
+
+.date-input-placeholder::before { content: attr(data-placeholder); }

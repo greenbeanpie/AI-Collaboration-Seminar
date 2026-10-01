@@ -1,3 +1,4 @@
+import { DateInput } from '../components/DateInput';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -83,7 +84,7 @@ function RequirementEditor({
     <Field label="详细说明"><textarea className="input textarea" rows={4} maxLength={2000} value={draft.detail} onChange={(event) => setDraft({ ...draft, detail: event.target.value })} /></Field>
     <div className="form-grid-two">
       <Field label="分类"><select className="input" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as Category })}>{Object.entries(categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-      <Field label="截止日期" hint="此页面只编辑日期；若原文明确具体时刻，请保留在要求说明中。"><input className="input" type="date" value={draft.dueDate} onChange={(event) => { const dueDate = event.target.value; setDraft({ ...draft, dueDate, dueDateChanged: true, duePrecision: dueDate ? 'date' : 'unknown' }); }} /></Field>
+      <Field label="截止日期" hint="此页面只编辑日期；若原文明确具体时刻，请保留在要求说明中。"><DateInput className="input" type="date" value={draft.dueDate} onChange={(event) => { const dueDate = event.target.value; setDraft({ ...draft, dueDate, dueDateChanged: true, duePrecision: dueDate ? 'date' : 'unknown' }); }} /></Field>
     </div>
     <Field label="时间精度" hint="当前页面只记录日期，不提供时刻编辑。"><div className="form-note">{precisionLabels[draft.duePrecision]}{draft.duePrecision === 'datetime' && !draft.dueDateChanged ? ' · 服务端原值会在日期未改动时保留' : ''}</div></Field>
     <div className="callout">若原文未给出日期，请保留为空；若确知具体时刻，可写入要求说明。不要推测补全。</div>

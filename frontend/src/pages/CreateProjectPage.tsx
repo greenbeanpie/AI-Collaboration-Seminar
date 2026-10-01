@@ -1,3 +1,4 @@
+import { DateInput } from '../components/DateInput';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -24,7 +25,7 @@ export function CreateProjectPage() {
     <form className="card form-card" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
       <Field label="项目名称"><input className="input" required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
       <Field label="项目说明" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
-      <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><input className="input" type="date" value={deadlineDate} onChange={(event) => setDeadlineDate(event.target.value)} /></Field>
+      <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" value={deadlineDate} onChange={(event) => setDeadlineDate(event.target.value)} /></Field>
       <div className="form-note"><CalendarDays size={16} />未确认日期时会保留为空；有日期时按“精确到日期”保存，不会自动补上时间。</div>
       {create.error && <ErrorNotice error={create.error} />}
       <div className="form-actions"><Link to="/app" className="button button-quiet">取消</Link><button type="submit" className="button button-primary" disabled={create.isPending || !name.trim()}>{create.isPending ? '正在创建…' : '创建项目'}</button></div>

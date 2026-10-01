@@ -7,6 +7,7 @@
   <meta name="description" content="基于 PLAN.md 的「补位」AI 项目办公室前端高保真原型：导入通知、确认要求、团队分工、AI 补位、材料采纳与留痕、预审与答辩、过程账本。演示数据 · 模拟 AI，不连接真实服务。" />
   <meta name="theme-color" content="#ffffff" />
   <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/date-input.css" />
   <style>
 /* OD-LAYOUT-PRIMITIVES v1 — structure only: display, flex/grid, overflow, wrapping, ratio.
    Put this @layer first; product CSS outside the layer always wins. */
@@ -1920,7 +1921,7 @@ function openNewProject() {
         <div style="height:12px"></div>
         <div class="field"><label for="np-desc">一句话说明</label><input class="input" id="np-desc" placeholder="参加的比赛与作品方向" /></div>
         <div style="height:12px"></div>
-        <div class="field"><label for="np-deadline">材料截止日期</label><input class="input" id="np-deadline" type="date" value="${DEADLINE}" /></div>
+        <div class="field"><label for="np-deadline">材料截止日期</label>${dateInput('np-deadline', DEADLINE)}</div>
       </form>`,
     footer: '<button class="btn btn-sec" type="button" data-mclose>取消</button><button class="btn btn-pri" type="button" data-create>创建并进入</button>',
     onOpen: (el, close) => {
@@ -2598,7 +2599,7 @@ function openTask(id) {
       <hr class="divider" />
       <div class="field"><label for="tk-owner">指派负责人</label>
         <select class="select" id="tk-owner">${['', 'm1', 'm2', 'm3', 'm4', 'm5'].map((o) => '<option value="' + o + '" ' + (t.owner === o ? 'selected' : '') + '>' + (o ? esc(member(o).name + ' · ' + member(o).role) : '未指派') + '</option>').join('')}</select></div>
-      <div class="field"><label for="tk-due">截止日期</label><input class="input" type="date" id="tk-due" value="${t.due}" /></div>
+      <div class="field"><label for="tk-due">截止日期</label>${dateInput('tk-due', t.due)}</div>
       <div class="field"><label>状态</label>
         <div class="seg" style="width:100%">${TASK_COLS.map((c) => '<button type="button" role="tab" aria-selected="' + (t.status === c[0]) + '" data-st="' + c[0] + '" style="flex:1;justify-content:center">' + c[1] + '</button>').join('')}</div></div>
       <hr class="divider" />
@@ -2658,7 +2659,7 @@ function openNewTask(st) {
       <div style="height:12px"></div>
       <div class="od-grid" style="--od-cols:2">
         <div class="field"><label for="nt-owner">负责人</label><select class="select" id="nt-owner">${['', 'm1', 'm2', 'm3', 'm4', 'm5'].map((o) => '<option value="' + o + '">' + (o ? esc(member(o).name + ' · ' + member(o).role) : '未指派') + '</option>').join('')}</select></div>
-        <div class="field"><label for="nt-due">截止日期</label><input class="input" type="date" id="nt-due" value="2026-10-05" /></div>
+        <div class="field"><label for="nt-due">截止日期</label>${dateInput('nt-due', '2026-10-05')}</div>
       </div>
       <div style="height:12px"></div>
       <div class="field"><label>状态</label><select class="select" id="nt-st">${TASK_COLS.map((c) => '<option value="' + c[0] + '" ' + (c[0] === st ? 'selected' : '') + '>' + c[1] + '</option>').join('')}</select></div>`,
@@ -3391,7 +3392,7 @@ VIEWS.ledger = {
           <div style="height:12px"></div>
           <div class="field"><label for="le-detail">说明</label><textarea class="textarea" id="le-detail" rows="3" placeholder="补充细节……"></textarea></div>
           <div style="height:12px"></div>
-          <div class="field"><label for="le-at">时间</label><input class="input" id="le-at" type="datetime-local" value="2026-09-29T11:55" /></div>`,
+          <div class="field"><label for="le-at">时间</label>${dateInput('le-at', '2026-09-29T11:55', 'datetime-local')}</div>`,
         footer: '<button class="btn btn-sec" type="button" data-mclose>取消</button><button class="btn btn-pri" type="button" data-ok>保存补录</button>',
         onOpen: (el, close) => {
           $('[data-ok]', el).addEventListener('click', () => {
@@ -3452,7 +3453,7 @@ VIEWS.settings = {
           <div style="height:12px"></div>
           <div class="field"><label for="st-desc">一句话说明</label><input class="input" id="st-desc" value="${esc(p.desc)}" /></div>
           <div style="height:12px"></div>
-          <div class="field"><label for="st-deadline">材料截止日期</label><input class="input" id="st-deadline" type="date" value="${p.deadline}" /></div>
+          <div class="field"><label for="st-deadline">材料截止日期</label>${dateInput('st-deadline', p.deadline)}</div>
           <div style="height:16px"></div>
           <button class="btn btn-pri" type="button" data-act="save-info">${icon('save')}保存基本信息</button>
         </div>
@@ -3525,6 +3526,16 @@ VIEWS.settings = {
     $('[data-act="logout"]').addEventListener('click', logout);
   }
 };
+// Keep native date input semantics; synchronize the empty placeholder after edits/clear.
+function dateInput(id, value, type = 'date') {
+  return `<span class="date-input-control" data-empty="${!value}"><input class="input" id="${esc(id)}" type="${esc(type)}" value="${esc(value || '')}" /><span class="date-input-placeholder" aria-hidden="true" data-placeholder="请选择日期"></span></span>`;
+}
+function syncDateInput(event) {
+  const input = event.target;
+  if (input instanceof HTMLInputElement && input.parentElement?.classList.contains('date-input-control')) input.parentElement.dataset.empty = String(!input.value);
+}
+document.addEventListener('input', syncDateInput);
+document.addEventListener('change', syncDateInput);
 /* ═══════════ 路由 / 全局交互 / 启动 ═══════════ */
 function parseRoute() {
   const h = decodeURIComponent(String(location.hash || '').replace(/^#\/?/, '')).trim();

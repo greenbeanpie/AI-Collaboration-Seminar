@@ -1,3 +1,4 @@
+import { DateInput } from '../components/DateInput';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { CalendarDays, Check, ClipboardList, Plus, RefreshCw, UserRound } from 'lucide-react';
@@ -75,7 +76,7 @@ function TaskFields({
         </select>
       </Field>
       <Field label="截止日期" hint="只记录日期，不补造具体时刻。">
-        <input type="date" value={draft.dueDate} onChange={(event) => onChange('dueDate', event.target.value)} />
+        <DateInput type="date" value={draft.dueDate} onChange={(event) => onChange('dueDate', event.target.value)} />
       </Field>
       <Field label="关联要求">
         <select value={draft.requirementId} onChange={(event) => onChange('requirementId', event.target.value)}>
