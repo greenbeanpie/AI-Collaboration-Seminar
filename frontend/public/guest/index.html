@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <title>「补位」AI 项目办公室 · 前端原型</title>
   <meta name="description" content="基于 PLAN.md 的「补位」AI 项目办公室前端高保真原型：导入通知、确认要求、团队分工、AI 补位、材料采纳与留痕、预审与答辩、过程账本。演示数据 · 模拟 AI，不连接真实服务。" />
   <meta name="theme-color" content="#ffffff" />
@@ -1697,7 +1699,7 @@ function renderRail() {
     });
   });
   $('#rail').innerHTML =
-    '<div class="rail-brand"><span class="rail-mark" aria-hidden="true">补位</span><span class="rail-name"><strong>AI 项目办公室</strong><span>演示原型 · 本地模拟</span></span></div>' +
+    '<div class="rail-brand"><span class="rail-mark" aria-hidden="true"><img src="/icon.svg" alt="" width="34" height="34" style="display:block;width:100%;height:100%;border-radius:inherit" /></span><span class="rail-name"><strong>AI 项目办公室</strong><span>演示原型 · 本地模拟</span></span></div>' +
     '<nav class="rail-nav">' + nav + '</nav>' +
     '<div class="rail-foot">' +
       '<div class="rail-user">' + avatar(me) + '<span class="rail-user-name"><strong>' + esc(me.name) + '</strong><span>' + esc(me.role) + ' · 演示账户</span></span>' +
@@ -1798,7 +1800,7 @@ VIEWS.login = {
     <div class="login">
       <div class="aurora" aria-hidden="true"><i></i><i></i><i></i><span class="grid-lines"></span></div>
       <div class="login-story">
-        <div class="login-brand"><span class="rail-mark" aria-hidden="true">补位</span><span class="rail-name"><strong>AI 项目办公室</strong><span>前端高保真原型</span></span></div>
+        <div class="login-brand"><span class="rail-mark" aria-hidden="true"><img src="/icon.svg" alt="" width="34" height="34" style="display:block;width:100%;height:100%;border-radius:inherit" /></span><span class="rail-name"><strong>AI 项目办公室</strong><span>前端高保真原型</span></span></div>
         <div class="login-hero">
           <p class="eyebrow">AI 协作 · 材料可追溯</p>
           <h1>把比赛通知，变成一张能交付的清单。</h1>

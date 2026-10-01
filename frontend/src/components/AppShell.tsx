@@ -1,4 +1,5 @@
 import { requestSettingsLeave } from '../dialogs/settings-leave';
+import { BrandMark } from './BrandMark';
 import { NotificationControls } from '../notifications/NotificationControls';
 import { unsubscribeDevice, deviceSubscriptionId } from '../notifications/core';
 import { notificationRequest } from '../notifications/api';
@@ -58,7 +59,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
 
   return <div className="app-frame office-shell">
     <aside className="sidebar">
-      <div className="sidebar-brand"><Link to="/app" className="brand"><span className="brand-mark">补</span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link></div>
+      <div className="sidebar-brand"><Link to="/app" className="brand"><span className="brand-mark"><BrandMark/></span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link></div>
       <div className="sidebar-navigation">
       <div className="nav-label">工作空间</div>
       <nav className="main-nav" aria-label="主导航">

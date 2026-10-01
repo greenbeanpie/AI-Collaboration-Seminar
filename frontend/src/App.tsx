@@ -1,3 +1,4 @@
+import { BrandMark } from './components/BrandMark';
 import { NotificationRuntime } from './notifications/NotificationRuntime';
 import { NotificationSettings } from './notifications/NotificationSettings';
 import { InstallationSettings } from './notifications/InstallationSettings';
@@ -59,7 +60,7 @@ function ServiceFailure({ error, retry }: { error: unknown; retry: () => unknown
 }
 
 function Brand() {
-  return <div className="brand brand-large"><div className="brand-mark">补</div><div><strong>补位</strong><small>AI 项目办公室</small></div></div>;
+  return <div className="brand brand-large"><div className="brand-mark"><BrandMark/></div><div><strong>补位</strong><small>AI 项目办公室</small></div></div>;
 }
 
 function ProtectedApp() {
