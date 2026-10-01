@@ -11,13 +11,13 @@ vi.mock('./SourceProcessingCard', () => ({ SourceProcessingCard: () => null }));
 vi.mock('../api/client', async (original) => ({ ...await original<typeof import('../api/client')>(), api: { get: vi.fn().mockResolvedValue({ jobId: 'j', status: 'waiting_input', result: { needsImages: 1 } }) } }));
 afterEach(cleanup);
 
-function record(status: 'queued' | 'running' | 'waiting_input') {
+function record(status: 'queued' | 'running' | 'waiting_input' | null, serverStatus?: 'running' | 'waiting_input') {
   const onParse = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SourceRecord
     source={{ sourceId: 's', currentVersionId: 'v', kind: 'file', title: '文本 PDF', createdAt: new Date().toISOString() }}
-    version={{ sourceVersionId: 'v', sourceId: 's', revision: 1, origin: 'file', fileId: 'f', status: 'processing', parseError: null, pageCount: 4, charCount: 242, pages: [] }}
+    version={{ sourceVersionId: 'v', sourceId: 's', revision: 1, origin: 'file', fileId: 'f', status: 'processing', parseError: null, pageCount: 4, charCount: 242, pages: serverStatus === 'waiting_input' ? [{pageNumber:4,textStatus:'none',imageStatus:'none',ocrStatus:'none',needsReview:false}] : [], processingJob:serverStatus ? {jobId:'server',status:serverStatus,phase:'extract'} : null }}
     projectId="p" highlighted={false} highlightedPageNumber={null}
-    jobs={[{ jobId: 'j', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文本 PDF', fileId: 'f', status }]}
+    jobs={status ? [{ jobId: 'j', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文本 PDF', fileId: 'f', status }] : []}
     capability={{ features: { aiEnabled: true } } as DataOf<'CapabilitiesResponse'>}
     parsingSourceId={null} scanJobId={null} scanProgress="" onParse={onParse}
     onRetryJob={vi.fn()} onScan={vi.fn()} onJobUpdate={vi.fn()}
@@ -36,5 +36,14 @@ describe('source text-layer retry', () => {
   it.each(['queued', 'running'] as const)('keeps the parse action disabled while a task is %s', (status) => {
     record(status);
     expect(screen.getByRole('button', { name: '已有任务处理中' })).toBeDisabled();
+  });
+  it('recovers waiting sources from server page/job metadata in a new browser without local job tracking', () => {
+    const onParse = record(null,'waiting_input');
+    expect(screen.getByRole('button',{name:'重新读取文本层并提取要求'})).toBeEnabled();
+    expect(onParse).not.toHaveBeenCalled();
+  });
+  it('blocks duplicate parse for a server-running job even when local tracking is absent', () => {
+    record(null,'running');
+    expect(screen.getByRole('button',{name:'已有任务处理中'})).toBeDisabled();
   });
 });

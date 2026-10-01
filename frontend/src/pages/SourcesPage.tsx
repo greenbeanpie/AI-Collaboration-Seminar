@@ -180,9 +180,13 @@ export function SourceRecord({
   onJobUpdate: (jobId: string, status: Job['status']) => void;
 }) {
   const isBusy = parsingSourceId === source.sourceId;
-  const latestJob = jobs[0];
+  const serverJob = version?.processingJob;
+  const localJob = jobs[0];
+  const serverTracked = serverJob && version ? { jobId:serverJob.jobId, status:serverJob.status, sourceId:source.sourceId, sourceVersionId:version.sourceVersionId, sourceTitle:source.title, fileId:version.fileId } : undefined;
+  const latestJob = serverTracked && ['queued','running'].includes(serverTracked.status) ? serverTracked
+    : localJob?.status && ['queued','running'].includes(localJob.status) ? localJob : serverTracked ?? localJob;
   const activeJob = latestJob?.status && ['queued', 'running'].includes(latestJob.status) ? latestJob : undefined;
-  const waitingForImages = latestJob?.status === 'waiting_input';
+  const waitingForImages = latestJob?.status === 'waiting_input' || Boolean(version?.pages.some(page => page.textStatus === 'none' && page.ocrStatus !== 'ok'));
   const displayedJob = latestJob;
   const currentFileId = version?.fileId ?? (source.currentVersionId ? sourceFileId(projectId, source.currentVersionId) : null);
   const versionBadge = version ? sourceStatus(version.status) : null;

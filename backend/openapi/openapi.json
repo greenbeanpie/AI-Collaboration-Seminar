@@ -1490,6 +1490,38 @@
                     "needsReview"
                   ]
                 }
+              },
+              "processingJob": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "waiting_input"
+                    ]
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "extract",
+                      "ocr"
+                    ]
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "status",
+                  "phase"
+                ]
               }
             },
             "required": [

@@ -60,6 +60,7 @@ const versionResponse = apiEnvelope(
     pageCount: z.number().int().nullable(),
     charCount: z.number().int().nullable(),
     pages: z.array(pageStatusSchema),
+    processingJob: z.object({ jobId:z.string().uuid(), status:z.enum(['queued','running','waiting_input']), phase:z.enum(['extract','ocr']) }).nullable().optional(),
   }),
   'SourceVersionResponse',
 );
@@ -318,6 +319,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     )
       .bind(sourceVersionId)
       .all<PageRow>();
+    const processingJob = await c.env.DB.prepare(`SELECT id, status, json_extract(input_json,'$.phase') AS phase FROM jobs WHERE project_id = ?1 AND kind IN ('parse_source','ocr_pages','requirement_extract') AND status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.sourceVersionId') = ?2 AND COALESCE(json_extract(input_json,'$.operation'),'') != 'source.summary' ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated_at DESC LIMIT 1`).bind(c.get('member')!.projectId,sourceVersionId).first<{id:string;status:'queued'|'running'|'waiting_input';phase:string}>();
     return c.json(
       apiData(c, {
         sourceVersionId: version.id,
@@ -336,6 +338,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
           ocrStatus: p.ocr_status,
           needsReview: p.needs_review === 1,
         })),
+        processingJob: processingJob ? { jobId:processingJob.id, status:processingJob.status, phase:processingJob.phase === 'ocr' ? 'ocr' as const : 'extract' as const } : null,
       }),
       200,
     );
@@ -371,6 +374,15 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
       operation: `source.parse:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body),
     }, async () => {
+      const active = await c.env.DB.prepare("SELECT id FROM jobs WHERE project_id=?1 AND kind IN ('parse_source','ocr_pages','requirement_extract') AND status IN ('queued','running') AND json_extract(input_json,'$.sourceVersionId')=?2 AND COALESCE(json_extract(input_json,'$.operation'),'')!='source.summary' LIMIT 1").bind(member.projectId,versionId).first();
+      if (active) throw invalidState('此来源已有解析任务正在运行，请等待或刷新状态');
+      // Explicit reread supersedes obsolete scan-page waits; it never replays
+      // every source or deletes the original file/results.
+      const now = nowIso();
+      await c.env.DB.batch([
+        c.env.DB.prepare("UPDATE jobs SET status='cancelled',updated_at=?3,finished_at=?3 WHERE project_id=?1 AND kind IN ('parse_source','ocr_pages','requirement_extract') AND status='waiting_input' AND json_extract(input_json,'$.sourceVersionId')=?2 AND COALESCE(json_extract(input_json,'$.operation'),'')!='source.summary'").bind(member.projectId,versionId,now),
+        c.env.DB.prepare("UPDATE job_outbox SET status='failed',last_error='SUPERSEDED_SOURCE_REREAD',updated_at=?3 WHERE job_id IN (SELECT id FROM jobs WHERE project_id=?1 AND status='cancelled' AND updated_at=?3 AND json_extract(input_json,'$.sourceVersionId')=?2)").bind(member.projectId,versionId,now),
+      ]);
       const jobId = await createJobAndDispatch(c.env, {
         projectId: member.projectId,
         kind: 'parse_source',

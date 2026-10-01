@@ -5942,6 +5942,14 @@ export interface components {
                     ocrStatus: "none" | "pending" | "ok" | "failed";
                     needsReview: boolean;
                 }[];
+                processingJob?: {
+                    /** Format: uuid */
+                    jobId: string;
+                    /** @enum {string} */
+                    status: "queued" | "running" | "waiting_input";
+                    /** @enum {string} */
+                    phase: "extract" | "ocr";
+                } | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
