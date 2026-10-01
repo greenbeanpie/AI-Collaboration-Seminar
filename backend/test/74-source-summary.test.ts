@@ -4,7 +4,7 @@ import { env, BASE } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { mockGatewayFetch } from './helpers/ai-mock';
-import { extractSourceVersionText } from '../src/services/parse';
+import { extractSourceVersionText, runParseJob } from '../src/services/parse';
 import { runSourceSummary, setSourceStage } from '../src/services/source-summary';
 
 await configureGoFixture();
@@ -73,5 +73,28 @@ describe('independent source summaries', () => {
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({title:'错误总结',summary:'虚假内容',keyPoints:['虚假'],citations:[{fragmentId:crypto.randomUUID(),pageNumber:null,quote:'不存在'}],caveats:[]})}}],usage:{prompt_tokens:20,completion_tokens:20}}),{status:200,headers:{'content-type':'application/json'}})));
     expect((await runSourceSummary(env,jobId)).status).toBe('failed');
     expect((await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string|null}>())?.summary_json).toBeNull();
+  });
+
+  it('bounds total prompt size including instructions and records partial document coverage', async () => {
+    const f = await fixture(); const jobId = await summaryJob(f);
+    const row = await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();
+    const config = JSON.parse(row!.config_json) as {textEconomy:{maxInputChars:number}}; config.textEconomy.maxInputChars = 1200;
+    await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(row!.id,JSON.stringify(config)).run();
+    for(let seq=2;seq<=8;seq++) await env.DB.prepare("INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at) VALUES (?1,?2,?3,NULL,?4,'paste',?5,?6)").bind(crypto.randomUUID(),f.sourceVersionId,f.projectId,seq,'测试资料内容。'.repeat(45),new Date().toISOString()).run();
+    const fetch = mockGatewayFetch();vi.stubGlobal('fetch',fetch);
+    expect((await runSourceSummary(env,jobId)).status).toBe('succeeded');
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {messages:Array<{content:string}>};
+    expect(body.messages.reduce((n,m)=>n+m.content.length,0)).toBeLessThanOrEqual(1200);
+    const coverage = await env.DB.prepare('SELECT covered_chars,total_chars FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{covered_chars:number;total_chars:number}>();
+    expect(coverage!.covered_chars).toBeLessThan(coverage!.total_chars);
+  });
+
+  it('accepts a document with no competition requirements without inventing requirement records', async () => {
+    const f = await fixture(); const jobId = crypto.randomUUID();const now = new Date().toISOString();
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES (?1,?2,'parse_source','queued',?3,0,?4,?5,?5)").bind(jobId,f.projectId,JSON.stringify({sourceId:f.sourceId,sourceVersionId:f.sourceVersionId,phase:'extract'}),f.owner.userId,now).run();
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({choices:[{message:{content:'{"requirements":[]}'}}],usage:{prompt_tokens:20,completion_tokens:10}}),{status:200,headers:{'content-type':'application/json'}})));
+    expect((await runParseJob(env,jobId)).status).toBe('succeeded');
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM requirements WHERE project_id=?1').bind(f.projectId).first<{n:number}>())?.n).toBe(0);
+    expect((await env.DB.prepare('SELECT result_json FROM jobs WHERE id=?1').bind(jobId).first<{result_json:string}>())?.result_json).toContain('"count":0');
   });
 });
