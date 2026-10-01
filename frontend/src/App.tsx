@@ -1,6 +1,6 @@
 import { ThemeSelector } from './components/ThemeSelector';
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { ArrowUpRight, WifiOff } from 'lucide-react';
@@ -8,6 +8,7 @@ import { useCapabilities, useSession } from './auth';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
 import { ErrorNotice, Spinner } from './components/ui';
+import { getInstallState } from './pwa-install';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
@@ -54,6 +55,7 @@ function Brand() {
 }
 
 function ProtectedApp() {
+  const location = useLocation();
   const session = useSession();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -65,7 +67,7 @@ function ProtectedApp() {
   if (session.isLoading) return <main className="center-screen"><Spinner label="正在检查账户" /></main>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
   if (!session.data) return <Navigate to="/login" replace />;
-  return <AppShell user={session.data}><Outlet /></AppShell>;
+  return <AppShell user={session.data}>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
 }
 
 function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
@@ -76,12 +78,13 @@ function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
 }
 
 function PwaStatus() {
+  // Capture browser install eligibility even before login or dashboard mounting.
+  useEffect(() => { getInstallState(); }, []);
   const online = useStateOnline();
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
   return <>
     {!online && <div className="offline-banner"><WifiOff size={15} /> 当前离线。已加载内容可能仍可查看；只有页面明确标示的本机草稿会在此设备保留，联网后请检查并确认提交。</div>}
     {needRefresh && <div className="update-banner">更新会重新载入页面，请先确认材料草稿已保存。<button className="button button-small button-primary" onClick={() => void updateServiceWorker(true)}>立即更新</button></div>}
-    <PwaInstallBanner />
   </>;
 }
 

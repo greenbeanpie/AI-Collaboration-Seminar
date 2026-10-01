@@ -3536,6 +3536,17 @@ function syncDateInput(event) {
 }
 document.addEventListener('input', syncDateInput);
 document.addEventListener('change', syncDateInput);
+function dateEditingMode(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.parentElement?.classList.contains('date-input-control')) return;
+  if (event.type === 'keydown') {
+    if (/^[0-9]$/.test(event.key) || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete'].includes(event.key)) input.parentElement.dataset.keyboardEditing = 'true';
+  } else input.parentElement.dataset.keyboardEditing = 'false';
+}
+document.addEventListener('keydown', dateEditingMode);
+document.addEventListener('pointerdown', dateEditingMode);
+document.addEventListener('focusout', dateEditingMode);
+
 /* ═══════════ 路由 / 全局交互 / 启动 ═══════════ */
 function parseRoute() {
   const h = decodeURIComponent(String(location.hash || '').replace(/^#\/?/, '')).trim();

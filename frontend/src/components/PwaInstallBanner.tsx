@@ -1,5 +1,12 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getInstallState, promptInstall, subscribe } from '../pwa-install';
+
+const SHOWN_KEY = 'ai-office:install-banner-shown';
+let shownInMemory = false;
+function wasShown(): boolean {
+  try { return shownInMemory || sessionStorage.getItem(SHOWN_KEY) === '1'; }
+  catch { return shownInMemory; }
+}
 
 const DISMISSED_KEY = 'ai-office:install-banner-dismissed';
 // Storage can be unavailable; preserve dismissal across route remounts anyway.
@@ -12,7 +19,13 @@ function wasDismissed(): boolean {
 export function PwaInstallBanner() {
   const { canInstall } = useSyncExternalStore(subscribe, getInstallState);
   const [dismissed, setDismissed] = useState(wasDismissed);
-  if (!canInstall || dismissed) return null;
+  const [firstVisit] = useState(() => !wasShown());
+  useEffect(() => {
+    if (!canInstall || dismissed || !firstVisit) return;
+    shownInMemory = true;
+    try { sessionStorage.setItem(SHOWN_KEY, '1'); } catch { /* Keep the in-memory session fallback. */ }
+  }, [canInstall, dismissed, firstVisit]);
+  if (!canInstall || dismissed || !firstVisit) return null;
   function dismiss() {
     dismissedInMemory = true;
     setDismissed(true);

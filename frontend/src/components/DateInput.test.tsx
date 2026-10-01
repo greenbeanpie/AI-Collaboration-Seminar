@@ -42,3 +42,22 @@ it('preserves datetime-local strings, disabled/read-only state and form attribut
   rerender(<DateInput aria-label="决策时间" type="datetime-local" value="" readOnly />);
   expect(input.readOnly).toBe(true); expect(input.parentElement).toHaveAttribute('data-empty', 'true');
 });
+
+it('keeps pointer-focused empty fields blank without writing defaults and reveals explicit keyboard editing', () => {
+  const change = vi.fn(); const key = vi.fn(); const blur = vi.fn(); const pointer = vi.fn();
+  render(<DateInput aria-label="日期" value="" onChange={change} onKeyDown={key} onBlur={blur} onPointerDown={pointer} />);
+  const input = screen.getByLabelText('日期') as HTMLInputElement;
+  fireEvent.pointerDown(input); fireEvent.focus(input); fireEvent.click(input);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'false');
+  expect(input.value).toBe(''); expect(change).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: '2' });
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'true');
+  expect(key).toHaveBeenCalledOnce(); expect(pointer).toHaveBeenCalledOnce();
+  fireEvent.blur(input);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'false');
+  expect(blur).toHaveBeenCalledOnce(); expect(change).not.toHaveBeenCalled();
+  fireEvent.focus(input); fireEvent.keyDown(input, { key: 'ArrowUp' });
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'true');
+  fireEvent.pointerDown(input);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'false');
+});

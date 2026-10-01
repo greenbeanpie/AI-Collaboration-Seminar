@@ -25,3 +25,19 @@ it('guest helper preserves values/labels and updates empty state after clearing'
   expect(input.parentElement).toHaveAttribute('data-empty', 'true');
   expect(input.nextElementSibling).toHaveAttribute('data-placeholder', '请选择日期');
 });
+
+it('guest pointer/cancel stays empty while explicit keyboard editing remains available', () => {
+  const start = html.indexOf('function dateEditingMode(');
+  const helper = html.slice(start, html.indexOf("document.addEventListener('keydown', dateEditingMode)", start));
+  document.body.innerHTML = '<span class="date-input-control" data-empty="true"><input type="date" value=""></span>';
+  const input = document.querySelector('input')!;
+  const context = { HTMLInputElement, input };
+  runInNewContext(helper + '; dateEditingMode({target: input, type: "pointerdown"});', context);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'false');
+  expect(input.value).toBe('');
+  runInNewContext(helper + '; dateEditingMode({target: input, type: "keydown", key: "2"});', context);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'true');
+  runInNewContext(helper + '; dateEditingMode({target: input, type: "focusout"});', context);
+  expect(input.parentElement).toHaveAttribute('data-keyboard-editing', 'false');
+  expect(input.value).toBe('');
+});

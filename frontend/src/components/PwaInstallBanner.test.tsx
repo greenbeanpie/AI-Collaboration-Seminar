@@ -51,3 +51,16 @@ it('only invokes the install prompt from the install button, once', async () => 
   expect(prompt).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
 });
+
+it('keeps an early install event for the first dashboard visit and does not repeat on later visits', async () => {
+  const pwa = await import('../pwa-install');
+  pwa.getInstallState();
+  const prompt = installEvent();
+  const { PwaInstallBanner } = await import('./PwaInstallBanner');
+  const view = render(<PwaInstallBanner />);
+  expect(screen.getByRole('button', { name: '安装到桌面' })).toBeInTheDocument();
+  expect(prompt).not.toHaveBeenCalled();
+  view.unmount();
+  render(<PwaInstallBanner />);
+  expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
+});
