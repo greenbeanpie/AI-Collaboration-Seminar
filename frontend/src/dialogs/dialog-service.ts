@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PageDialog } from './PageDialog';
 
-export interface DialogOptions { kind: 'confirm' | 'prompt' | 'alert'; message: string; title?: string; initialValue?: string; confirmLabel?: string; cancelLabel?: string; signal?: AbortSignal }
+export interface DialogOptions { kind: 'confirm' | 'prompt' | 'alert'; message: string; title?: string; initialValue?: string; confirmLabel?: string; cancelLabel?: string; cancelOnBack?: boolean; signal?: AbortSignal }
 export type DialogResult = boolean | string | null;
 let active: { cancel: () => void } | null = null;
 export function cancelPageDialog(): void { active?.cancel(); }
@@ -32,7 +32,8 @@ export function pageDialog(options: DialogOptions): Promise<DialogResult> {
     };
     const cancel = () => finish(cancelled);
     active = { cancel };
-    window.addEventListener('popstate', cancel); window.addEventListener('pagehide', cancel);
+    if (options.cancelOnBack !== false) window.addEventListener('popstate', cancel);
+    window.addEventListener('pagehide', cancel);
     options.signal?.addEventListener('abort', cancel, { once: true });
     root.render(createElement(PageDialog, { options, onFinish: finish }));
   });
@@ -42,6 +43,7 @@ export async function promptPage(message: string, initialValue = '', options: Om
 
 // The independently loaded update bar can use the same React modal whenever the app is ready.
 if (typeof window !== 'undefined') window.addEventListener('app-page-dialog', (event: Event) => {
+  if (!document.getElementById('root')?.hasChildNodes()) return;
   const detail = (event as CustomEvent<{ options?: DialogOptions; resolve?: (result: DialogResult) => void }>).detail;
   if (!detail?.options || typeof detail.options.message !== 'string' || typeof detail.resolve !== 'function') return;
   event.preventDefault(); void pageDialog(detail.options).then(detail.resolve);

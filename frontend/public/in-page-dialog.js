@@ -46,7 +46,8 @@ export function requestPageDialog(options) {
     panel.append(close, title); form.append(message); if (input) form.append(input);
     if (options.kind !== 'alert') actions.append(cancel); actions.append(accept); form.append(actions); panel.append(form);
     wrapper.append(style, backdrop, panel); document.body.append(wrapper);
-    window.addEventListener('popstate', dismiss); window.addEventListener('pagehide', dismiss); document.addEventListener('keydown', keys);
+    if (options.cancelOnBack !== false) window.addEventListener('popstate', dismiss);
+    window.addEventListener('pagehide', dismiss); document.addEventListener('keydown', keys);
     (input || (options.kind === 'alert' ? accept : cancel)).focus(); input?.select();
   });
 }

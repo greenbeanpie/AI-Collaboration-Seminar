@@ -27,7 +27,7 @@ it('canceling tab navigation preserves unsaved editing; confirming navigates', a
 });
 it('Back cancellation preserves deep link and draft, then Back/Forward work', async()=>{
  const router=setup(['/app/settings/security','/app/settings/profile'],1);fireEvent.change(screen.getByLabelText('draft'),{target:{value:'draft'}});
- await act(()=>router.navigate(-1));await answer('取消');expect(screen.getByLabelText('draft')).toHaveValue('draft');expect(router.state.location.pathname).toBe('/app/settings/profile');
+ await act(()=>router.navigate(-1));await screen.findByRole('dialog');act(()=>{window.dispatchEvent(new PopStateEvent('popstate'));});expect(screen.getByRole('dialog')).toBeInTheDocument();await answer('取消');expect(screen.getByLabelText('draft')).toHaveValue('draft');expect(router.state.location.pathname).toBe('/app/settings/profile');
  await act(()=>router.navigate(-1));await answer('确定');expect(screen.getByText('Security form')).toBeInTheDocument();await act(()=>router.navigate(1));expect(screen.getByLabelText('draft')).toHaveValue('');
 });
 it('same URL navigation does not prompt or discard drafts', async()=>{

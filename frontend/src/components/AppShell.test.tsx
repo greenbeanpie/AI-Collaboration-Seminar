@@ -78,3 +78,9 @@ it('logs out unsubscribed devices without sending an invalid empty UUID header',
  const router=setup();fireEvent.click(screen.getByRole('button',{name:'退出登录'}));await waitFor(()=>expect(router.state.location.pathname).toBe('/login'));
  expect(fetch).toHaveBeenCalledOnce();const options=fetch.mock.calls[0]?.[1] as RequestInit;const headers=new Headers(options.headers);expect(headers.has('X-Push-Subscription-Id')).toBe(false);expect(headers.get('X-Notification-Account')).toBe('fixture');
 });
+it('does not send an empty subscription header and locks repeated logout clicks',async()=>{
+ const calls:RequestInit[]=[];vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{calls.push(init);return Response.json({data:{revoked:true},requestId:'test'});}));setup();
+ const logout=screen.getByRole('button',{name:'退出登录'});await act(async()=>{fireEvent.click(logout);fireEvent.click(logout);});
+ expect(calls).toHaveLength(1);expect(new Headers(calls[0].headers).has('X-Push-Subscription-Id')).toBe(false);expect(new Headers(calls[0].headers).get('X-Notification-Account')).toBe(user.id);
+
+});

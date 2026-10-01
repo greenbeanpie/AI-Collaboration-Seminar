@@ -18,7 +18,7 @@ export function SettingsEditGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     const controller = new AbortController();
-    void confirmPage('设置有尚未保存的编辑。确定放弃这些编辑并离开吗？', { signal: controller.signal }).then(confirmed => {
+    void confirmPage('设置有尚未保存的编辑。确定放弃这些编辑并离开吗？', { signal: controller.signal, cancelOnBack: false }).then(confirmed => {
       if (!controller.signal.aborted) { if (confirmed) blocker.proceed(); else blocker.reset(); }
     });
     return () => controller.abort();

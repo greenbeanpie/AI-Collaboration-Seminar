@@ -1,3 +1,4 @@
+import { requestSettingsLeave } from '../dialogs/settings-leave';
 import { NotificationControls } from '../notifications/NotificationControls';
 import { unsubscribeDevice, deviceSubscriptionId } from '../notifications/core';
 import { notificationRequest } from '../notifications/api';
@@ -13,6 +14,7 @@ import { ErrorNotice } from './ui';
 import { ThemeSelector } from './ThemeSelector';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
+  const logoutLock = useRef(false);
   const [logoutError, setLogoutError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -24,9 +26,11 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   useEffect(() => {
     if (!accountMenuOpen) return;
     const closeOutside = (event: PointerEvent) => {
+      if (document.querySelector('[data-page-dialog]')) return;
       if (event.target instanceof Node && !accountControls.current?.contains(event.target)) setAccountMenuOpen(false);
     };
     const closeEscape = (event: KeyboardEvent) => {
+      if (document.querySelector('[data-page-dialog]')) return;
       if (event.key === 'Escape') { setAccountMenuOpen(false); accountMenuButton.current?.focus(); }
     };
     document.addEventListener('pointerdown', closeOutside);
@@ -37,9 +41,11 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   const label = user.displayName || user.username || user.email || '项目成员';
 
   async function logout() {
-    if (!window.dispatchEvent(new Event('settings-before-leave', { cancelable: true }))) return;
-    setBusy(true); setLogoutError(null);
+    if (logoutLock.current) return;
+    logoutLock.current = true;
     try {
+      if (!await requestSettingsLeave()) return;
+      setBusy(true); setLogoutError(null);
       const subscriptionId = deviceSubscriptionId(user.id);
       await unsubscribeDevice(user.id,notificationRequest);
       await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{...(subscriptionId ? {'X-Push-Subscription-Id':subscriptionId} : {}),'X-Notification-Account':user.id}});
@@ -47,7 +53,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       await queryClient.clear();
       navigate('/login', { replace: true });
     } catch (error) { window.dispatchEvent(new Event('settings-leave-failed')); setLogoutError(error); }
-    finally { setBusy(false); }
+    finally { logoutLock.current = false; setBusy(false); }
   }
 
   return <div className="app-frame office-shell">

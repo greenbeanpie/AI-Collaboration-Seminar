@@ -37,3 +37,9 @@ it('Escape closes a nested decision without dismissing the underlying editor', a
  expect(screen.getAllByRole('dialog')).toHaveLength(2);fireEvent.keyDown(document,{key:'Escape'});expect(await result).toBe(false);
  expect(close).not.toHaveBeenCalled();expect(screen.getByRole('dialog',{name:'编辑中的草稿'})).toBeInTheDocument();expect(screen.getByLabelText('草稿')).toHaveValue('保留');
 });
+it('unmounting an editor with a nested decision restores page scrolling after both close',async()=>{
+ document.body.style.overflow='auto';
+ function Editor(){const dialogs=usePageDialogs('editor');return <Modal title="编辑器" onClose={()=>undefined}><button onClick={()=>void dialogs.confirm('丢弃草稿？')}>取消编辑</button></Modal>;}
+ const view=render(<Editor/>);fireEvent.click(screen.getByRole('button',{name:'取消编辑'}));await waitFor(()=>expect(screen.getAllByRole('dialog')).toHaveLength(2));
+ await act(async()=>view.unmount());expect(screen.queryByRole('dialog')).toBeNull();expect(document.body.style.overflow).toBe('auto');document.body.style.overflow='';
+});

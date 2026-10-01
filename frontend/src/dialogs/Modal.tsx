@@ -1,13 +1,19 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
+let modalCount = 0;
+let originalOverflow = '';
+function lockPageScroll() {
+  if (modalCount++ === 0) { originalOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+  return () => { if (--modalCount === 0) document.body.style.overflow = originalOverflow; };
+}
+
 export function Modal({ title, children, onClose, descriptionId }: { title: string; descriptionId?: string; children: ReactNode; onClose: () => void }) {
   const dialog = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockPageScroll();
     const focusable = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') ?? []).filter(element => element.getClientRects().length > 0);
     (focusable()[0] ?? dialog.current)?.focus();
     const keydown = (event: KeyboardEvent) => {
@@ -21,7 +27,7 @@ export function Modal({ title, children, onClose, descriptionId }: { title: stri
       else if (!event.shiftKey && (document.activeElement === last || !dialog.current?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', keydown);
-    return () => { document.removeEventListener('keydown', keydown); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
+    return () => { document.removeEventListener('keydown', keydown); unlockScroll(); previousFocus?.focus(); };
   }, []);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={title} aria-describedby={descriptionId}><div className="modal-head"><h2>{title}</h2><button className="icon-button" aria-label="关闭" onClick={onClose}>×</button></div>{children}</section></div>;
 }

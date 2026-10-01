@@ -25,8 +25,8 @@ describe('application update lifecycle', () => {
   it('offers honest confirmed recovery for missing resources without claiming a downloaded update', async () => {
     const t = setup(); await t.controller.start(); t.controller.resourcesMissing = true; await t.controller.check();
     expect(t.controller.state).toBe('refresh'); expect(t.states).not.toContain('ready');
-    t.env.confirm.mockReturnValue(false); t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
-    t.env.confirm.mockReturnValue(true); t.controller.apply(); t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
+    t.env.confirm.mockReturnValue(false); await t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
+    t.env.confirm.mockReturnValue(true); await t.controller.apply(); await t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
     const unsupported = setup({ enabled: false }); unsupported.controller.resourcesMissing = true; await unsupported.controller.check();
     expect(unsupported.controller.state).toBe('refresh'); expect(unsupported.env.reload).not.toHaveBeenCalled();
   });
@@ -51,12 +51,12 @@ describe('application update lifecycle', () => {
     const t = setup(); await t.controller.start(); const worker = t.worker(); t.registration.installing = worker;
     t.registration.dispatchEvent(new Event('updatefound')); expect(t.controller.state).toBe('downloading');
     t.registration.waiting = worker; t.registration.installing = null; worker.advance('installed');
-    t.env.confirm.mockReturnValue(false); t.controller.apply();
+    t.env.confirm.mockReturnValue(false); await t.controller.apply();
     expect(t.controller.state).toBe('ready'); expect(worker.postMessage).not.toHaveBeenCalled(); expect(t.env.reload).not.toHaveBeenCalled();
   });
   it('requires confirmation, sends one activation and reloads only once', async () => {
     const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
-    t.controller.apply(); t.controller.apply();
+    await t.controller.apply(); await t.controller.apply();
     expect(worker.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'SKIP_WAITING' });
     expect(t.env.confirm).toHaveBeenCalledTimes(1); expect(t.env.reload).not.toHaveBeenCalled();
     t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange')); worker.advance('activated'); t.sw.dispatchEvent(new Event('controllerchange'));
@@ -64,14 +64,14 @@ describe('application update lifecycle', () => {
   });
   it('does not reload an activated update while the old worker still controls the page', async () => {
     const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
-    t.controller.apply(); worker.advance('activated');
+    await t.controller.apply(); worker.advance('activated');
     expect(t.env.reload).not.toHaveBeenCalled();
     t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).toHaveBeenCalledTimes(1);
   });
   it('waits for activation to finish when the new worker claims the page first', async () => {
     const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
-    t.controller.apply(); worker.advance('activating');
+    await t.controller.apply(); worker.advance('activating');
     t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).not.toHaveBeenCalled();
     worker.advance('activated'); t.sw.dispatchEvent(new Event('controllerchange'));
@@ -79,7 +79,7 @@ describe('application update lifecycle', () => {
   });
   it('ignores an unrelated controller and a late takeover after an activation timeout', async () => {
     const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
-    t.controller.apply(); worker.advance('activated');
+    await t.controller.apply(); worker.advance('activated');
     t.sw.controller = { state: 'activated' }; t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).not.toHaveBeenCalled();
     vi.advanceTimersByTime(20000); expect(t.controller.state).toBe('error');
@@ -89,13 +89,13 @@ describe('application update lifecycle', () => {
   it('does not reload another tab until that tab confirms', async () => {
     const t = setup(); await t.controller.start(); const other = t.worker(); other.advance('activated'); t.sw.controller = other; t.sw.dispatchEvent(new Event('controllerchange'));
     expect(t.env.reload).not.toHaveBeenCalled(); expect(t.controller.state).toBe('ready');
-    t.env.confirm.mockReturnValue(false); t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
-    t.env.confirm.mockReturnValue(true); t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
+    t.env.confirm.mockReturnValue(false); await t.controller.apply(); expect(t.env.reload).not.toHaveBeenCalled();
+    t.env.confirm.mockReturnValue(true); await t.controller.apply(); expect(t.env.reload).toHaveBeenCalledTimes(1);
   });
   it('waits for an update from another tab to finish activating after this tab confirms', async () => {
     const t = setup(); await t.controller.start(); const worker = t.worker(); worker.advance('activating');
     t.sw.controller = worker; t.sw.dispatchEvent(new Event('controllerchange'));
-    expect(t.env.reload).not.toHaveBeenCalled(); t.controller.apply();
+    expect(t.env.reload).not.toHaveBeenCalled(); await t.controller.apply();
     expect(t.env.reload).not.toHaveBeenCalled(); worker.advance('activated');
     expect(t.env.reload).toHaveBeenCalledTimes(1); expect(worker.postMessage).not.toHaveBeenCalled();
   });
@@ -114,12 +114,12 @@ describe('application update lifecycle', () => {
   it('times out stalled downloads and activation without forced reload', async () => {
     const t = setup(); const worker = t.worker(); t.registration.installing = worker; await t.controller.start();
     vi.advanceTimersByTime(120000); expect(t.controller.state).toBe('error');
-    t.registration.waiting = worker; t.registration.installing = null; worker.advance('installed'); t.controller.apply();
+    t.registration.waiting = worker; t.registration.installing = null; worker.advance('installed'); await t.controller.apply();
     vi.advanceTimersByTime(20000); expect(t.controller.state).toBe('error'); expect(t.env.reload).not.toHaveBeenCalled();
   });
   it('does not execute a stale ready action after waiting worker disappears', async () => {
     const t = setup(); t.registration.waiting = t.worker(); await t.controller.start(); t.registration.waiting = null;
-    t.controller.apply(); expect(t.controller.state).toBe('error'); expect(t.env.reload).not.toHaveBeenCalled();
+    await t.controller.apply(); expect(t.controller.state).toBe('error'); expect(t.env.reload).not.toHaveBeenCalled();
   });
 });
 
@@ -133,4 +133,16 @@ describe('session notification history', () => {
     h.reset('account:a:project:1'); expect(h.items).toHaveLength(1);
     for (const scope of ['account:b:project:1', 'guest', 'account:b:project:2']) { h.reset(scope); expect(h.items).toHaveLength(0); h.add('notice', 'safe summary'); }
   });
+});
+it('waits for the in-page answer, ignores duplicate clicks, and rechecks the waiting worker', async () => {
+  const t = setup(); const worker = t.worker(); t.registration.waiting = worker; await t.controller.start();
+  let answer; t.env.confirm.mockImplementation(() => new Promise(resolve => { answer = resolve; }));
+  const pending = t.controller.apply(); await t.controller.apply();
+  expect(t.env.confirm).toHaveBeenCalledTimes(1); expect(worker.postMessage).not.toHaveBeenCalled(); expect(t.env.reload).not.toHaveBeenCalled();
+  answer(false); await pending; expect(worker.postMessage).not.toHaveBeenCalled();
+  const retry = t.controller.apply(); t.registration.waiting = null; answer(true); await retry;
+  expect(t.controller.state).toBe('error'); expect(worker.postMessage).not.toHaveBeenCalled(); expect(t.env.reload).not.toHaveBeenCalled();
+});
+it('a failed in-page confirmation never activates or reloads',async()=>{
+  const t=setup();const worker=t.worker();t.registration.waiting=worker;await t.controller.start();t.env.confirm.mockRejectedValue(new Error('dialog unavailable'));await t.controller.apply();expect(t.controller.state).toBe('error');expect(worker.postMessage).not.toHaveBeenCalled();expect(t.env.reload).not.toHaveBeenCalled();
 });

@@ -12,7 +12,7 @@ async function setup(waiting=false) {
 it('mounts icon controls in the existing topbar with no additional page row and accessible status',async()=>{
  const t=await setup(true);expect(mounted.parentElement).toHaveAttribute('data-app-notification-controls');expect(mounted).toHaveClass('inline');expect(document.documentElement.style.getPropertyValue('--app-notification-height')).toBe('0px');
  const update=t.root.getElementById('update');expect(update.querySelector('svg')).not.toBeNull();expect(update).toHaveAttribute('title','下载完成 · 更新');expect(update).toHaveAttribute('aria-label','下载完成 · 更新');expect(update.dataset.state).toBe('ready');expect(t.root.getElementById('bell').querySelector('svg')).not.toBeNull();
- const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);update.click();expect(confirm).toHaveBeenCalledOnce();expect(t.worker.postMessage).not.toHaveBeenCalled();
+ const confirm=vi.spyOn(window,'confirm');update.focus();update.click();const dialog=document.querySelector('[role="dialog"]');expect(dialog).not.toBeNull();expect(dialog.textContent).toContain('请先保存未提交的编辑、草稿和附件');expect(confirm).not.toHaveBeenCalled();expect(t.worker.postMessage).not.toHaveBeenCalled();Array.from(dialog.querySelectorAll('button')).find(button=>button.textContent==='取消').click();await Promise.resolve();await Promise.resolve();expect(t.worker.postMessage).not.toHaveBeenCalled();expect(t.root.activeElement).toBe(update);
 });
 it('preserves unread badge, server read action and Back dismissal after inline mounting',async()=>{
  const t=await setup();window.dispatchEvent(new CustomEvent('app-notification-scope',{detail:'fixture-account'}));
