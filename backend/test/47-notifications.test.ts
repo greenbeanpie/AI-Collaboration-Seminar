@@ -54,6 +54,7 @@ it('subscription ownership cannot be transferred; lookup and recoverable revoke 
  expect(await data(await call(other,'/notifications/push/lookup','POST',{endpoint:'https://fcm.googleapis.com/send/device-a'}))).toEqual({id:null});
  expect((await call(other,`/notifications/push/subscriptions/${a.id}`,'DELETE')).status).toBe(404);
  await data(await call(user,`/notifications/push/subscriptions/${a.id}`,'DELETE'));
+ expect(await data(await call(user,'/notifications/push/lookup','POST',{endpoint:'https://fcm.googleapis.com/send/device-a'}))).toEqual({id:null});
  expect((await call(other,'/notifications/push/subscriptions','POST',{endpoint:'https://fcm.googleapis.com/send/device-a',keys},pushEnv)).status).toBe(409);
  expect((await sub(user,'device-a')).id).toBe(a.id);
  await data(await call(user,'/auth/session','DELETE',undefined,env,{'X-Push-Subscription-Id':a.id}));
@@ -120,4 +121,21 @@ it('a retried requirement edit with one intent emits one event; forged subscript
  expect((await call(user,'/notifications/push/subscriptions','POST',{endpoint:'https://fcm.googleapis.com/send/forged',keys,userId:newId()},pushEnv)).status).toBe(400);
  expect((await call(user,'/notifications/settings','PUT',{inAppEnabled:true,pushEnabled:true},env,{Origin:'https://evil.test'})).status).toBe(403);
  expect((await call(user,'/notifications/push/subscriptions','POST',{endpoint:'https://evil.test/send',keys},pushEnv)).status).toBe(400);
+});
+it('partial preference updates preserve omitted values and always return the full settings',async()=>{
+ const user=await seedUser();
+ expect(await data(await call(user,'/notifications/settings','PUT',{inAppEnabled:false}))).toEqual({inAppEnabled:false,pushEnabled:true});
+ expect(await data(await call(user,'/notifications/settings','PUT',{pushEnabled:false}))).toEqual({inAppEnabled:false,pushEnabled:false});
+ expect(await data(await call(user,'/notifications/settings','PUT',{inAppEnabled:true}))).toEqual({inAppEnabled:true,pushEnabled:false});
+ expect((await call(user,'/notifications/settings','PUT',{})).status).toBe(400);
+});
+it('expected-account header rejects delayed cross-account mutations without changing either account',async()=>{
+ const previous=await seedUser(),current=await seedUser();const expected={'X-Notification-Account':previous.userId};
+ expect((await call(current,'/notifications/settings','PUT',{pushEnabled:false},env,expected)).status).toBe(409);
+ expect(await data(await call(current,'/notifications/settings'))).toEqual({inAppEnabled:true,pushEnabled:true});
+ expect((await call(current,'/notifications/push/subscriptions','POST',{endpoint:'https://fcm.googleapis.com/send/stale-account',keys},pushEnv,expected)).status).toBe(409);
+ expect(await data(await call(current,'/notifications/push/lookup','POST',{endpoint:'https://fcm.googleapis.com/send/stale-account'}))).toEqual({id:null});
+ expect((await call(current,'/auth/session','DELETE',undefined,env,expected)).status).toBe(409);
+ expect((await call(current,'/auth/session')).status).toBe(200);
+ expect(await data(await call(current,'/notifications/settings','PUT',{pushEnabled:false},env,{'X-Notification-Account':current.userId}))).toEqual({inAppEnabled:true,pushEnabled:false});
 });

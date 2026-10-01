@@ -12,13 +12,14 @@ import { isPushConfigured, safePushEndpoint, validPushKeys } from '../services/w
 
 const itemSchema = z.object({ id: z.string().uuid(), kind: z.string(), title: z.string(), body: z.string(), url: z.string(), createdAt: z.string(), readAt: z.string().nullable(), dismissedAt: z.string().nullable() });
 const settingsSchema = z.object({ inAppEnabled: z.boolean(), pushEnabled: z.boolean() }).strict();
+const settingsUpdateSchema = settingsSchema.partial().refine(value => Object.keys(value).length > 0, '至少提供一个设置');
 const params = z.object({ id: z.string().uuid() });
 const endpointSchema = z.string().min(1).max(2048).refine(safePushEndpoint, '不支持的推送服务地址');
 const ok = (schema: z.ZodType, name: string) => ({ content: { 'application/json': { schema: apiEnvelope(schema, name) } }, description: name });
 const root = '/api/v1/notifications';
 const list = createRoute({ method: 'get', path: root, tags: ['notifications'], request: { query: z.object({ cursor: z.string().max(256).optional(), limit: z.string().regex(/^(?:[1-9]\d?|100)$/).transform(Number).optional() }) }, responses: { 200: ok(z.object({ items: z.array(itemSchema), nextCursor: z.string().nullable(), unreadCount: z.number().int() }), 'NotificationListResponse') } });
 const getSettings = createRoute({ method: 'get', path: `${root}/settings`, tags: ['notifications'], responses: { 200: ok(settingsSchema, 'NotificationSettingsResponse') } });
-const putSettings = createRoute({ method: 'put', path: `${root}/settings`, tags: ['notifications'], request: { body: { required: true, content: { 'application/json': { schema: settingsSchema } } } }, responses: { 200: ok(settingsSchema, 'NotificationSettingsResponse') } });
+const putSettings = createRoute({ method: 'put', path: `${root}/settings`, tags: ['notifications'], request: { body: { required: true, content: { 'application/json': { schema: settingsUpdateSchema } } } }, responses: { 200: ok(settingsSchema, 'NotificationSettingsResponse') } });
 const pushStatus = createRoute({ method: 'get', path: `${root}/push/status`, tags: ['notifications'], responses: { 200: ok(z.object({ configured: z.boolean(), publicKey: z.string() }), 'NotificationPushStatusResponse') } });
 const subscribe = createRoute({ method: 'post', path: `${root}/push/subscriptions`, tags: ['notifications'], request: { body: { required: true, content: { 'application/json': { schema: z.object({ endpoint: endpointSchema, keys: z.object({ p256dh: z.string().max(100), auth: z.string().max(30) }).strict() }).strict() } } } }, responses: { 200: ok(z.object({ id: z.string().uuid() }), 'NotificationSubscriptionResponse') } });
 const lookup = createRoute({ method: 'post', path: `${root}/push/lookup`, tags: ['notifications'], request: { body: { required: true, content: { 'application/json': { schema: z.object({ endpoint: endpointSchema }).strict() } } } }, responses: { 200: ok(z.object({ id: z.string().uuid().nullable() }), 'NotificationSubscriptionLookupResponse') } });
@@ -29,7 +30,11 @@ const selected = 'SELECT e.id,e.kind,e.title,e.body,e.url,e.created_at AS create
 type Item = z.infer<typeof itemSchema>;
 
 export function registerNotificationRoutes(app: OpenAPIHono<AppEnv>): void {
-  app.use(`${root}/*`, requireUser);
+  app.use(`${root}/*`, requireUser, async (c, next) => {
+    const expected = c.req.header('X-Notification-Account');
+    if (!['GET','HEAD','OPTIONS'].includes(c.req.method) && expected && expected !== c.get('user')!.id) throw invalidState('登录账户已变化，请在当前账户重新操作');
+    await next();
+  });
   app.openapi(list, async c => {
     const query = c.req.valid('query'); const cursor = decodeCursor(query.cursor); const limit = query.limit ?? 50;
     if (query.cursor && (!cursor || !z.string().uuid().safeParse(cursor.id).success || !z.string().datetime().safeParse(cursor.createdAt).success)) throw validationFailed('分页游标无效');
@@ -50,11 +55,12 @@ export function registerNotificationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(putSettings, async c => {
     const input=c.req.valid('json'); const id=c.get('user')!.id; const now=nowIso();
     await c.env.DB.batch([
-      c.env.DB.prepare(`INSERT INTO notification_settings(user_id,in_app_enabled,push_enabled,updated_at) VALUES(?1,?2,?3,?4)
-        ON CONFLICT(user_id) DO UPDATE SET in_app_enabled=excluded.in_app_enabled,push_enabled=excluded.push_enabled,updated_at=excluded.updated_at`).bind(id,input.inAppEnabled?1:0,input.pushEnabled?1:0,now),
-      c.env.DB.prepare("UPDATE notification_push_outbox SET status='cancelled',lease_until=NULL,updated_at=?2 WHERE status IN ('pending','sending') AND ?3=0 AND subscription_id IN (SELECT id FROM push_subscriptions WHERE user_id=?1)").bind(id,now,input.pushEnabled?1:0),
+      c.env.DB.prepare(`INSERT INTO notification_settings(user_id,in_app_enabled,push_enabled,updated_at) VALUES(?1,COALESCE(?2,1),COALESCE(?3,1),?4)
+        ON CONFLICT(user_id) DO UPDATE SET in_app_enabled=COALESCE(?2,notification_settings.in_app_enabled),push_enabled=COALESCE(?3,notification_settings.push_enabled),updated_at=excluded.updated_at`).bind(id,input.inAppEnabled===undefined?null:input.inAppEnabled?1:0,input.pushEnabled===undefined?null:input.pushEnabled?1:0,now),
+      c.env.DB.prepare("UPDATE notification_push_outbox SET status='cancelled',lease_until=NULL,updated_at=?2 WHERE status IN ('pending','sending') AND ?3=0 AND subscription_id IN (SELECT id FROM push_subscriptions WHERE user_id=?1)").bind(id,now,input.pushEnabled===false?0:1),
     ]);
-    return c.json(apiData(c,input),200);
+    const saved = await c.env.DB.prepare('SELECT in_app_enabled,push_enabled FROM notification_settings WHERE user_id=?1').bind(id).first<{in_app_enabled:number;push_enabled:number}>();
+    return c.json(apiData(c,{inAppEnabled:saved?.in_app_enabled!==0,pushEnabled:saved?.push_enabled!==0}),200);
   });
   app.openapi(pushStatus, c => { const configured=isPushConfigured(c.env); return c.json(apiData(c,{configured,publicKey:configured?c.env.VAPID_PUBLIC_KEY!:''}),200); });
   app.openapi(subscribe, async c => {
@@ -74,7 +80,7 @@ export function registerNotificationRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!owned) throw invalidState('该设备订阅已绑定其他账户');
     return c.json(apiData(c,{id:owned.id}),200);
   });
-  app.openapi(lookup,async c=>{const row=await c.env.DB.prepare('SELECT id FROM push_subscriptions WHERE user_id=?1 AND endpoint=?2').bind(c.get('user')!.id,c.req.valid('json').endpoint).first<{id:string}>();return c.json(apiData(c,{id:row?.id??null}),200);});
+  app.openapi(lookup,async c=>{const row=await c.env.DB.prepare('SELECT id FROM push_subscriptions WHERE user_id=?1 AND endpoint=?2 AND disabled_at IS NULL').bind(c.get('user')!.id,c.req.valid('json').endpoint).first<{id:string}>();return c.json(apiData(c,{id:row?.id??null}),200);});
   app.openapi(unsubscribe,async c=>{const id=c.req.valid('param').id;const userId=c.get('user')!.id;
     const owned=await c.env.DB.prepare('SELECT id FROM push_subscriptions WHERE id=?1 AND user_id=?2').bind(id,userId).first();if(!owned)throw notFound('订阅不存在');
     await revokeDevice(c.env,userId,id);return c.json(apiData(c,{id}),200);

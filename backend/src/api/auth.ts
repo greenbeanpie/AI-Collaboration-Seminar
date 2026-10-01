@@ -5,7 +5,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { nowIso, sha256Hex } from '../core/db';
 import { clearSessionCookie, parseCookies, requireUser, sessionCookie, SESSION_COOKIE } from '../core/auth';
-import { AppError } from '../core/errors';
+import { AppError, invalidState } from '../core/errors';
 import { loginPasswordAccount, registerPasswordAccount, SESSION_TTL_SECONDS } from '../services/accounts';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../services/password';
 
@@ -29,7 +29,7 @@ const registerRoute = createRoute({ method: 'post', path: '/api/v1/auth/register
   request: { body: { content: { 'application/json': { schema: registerBody } }, required: true } },
   responses: { 201: { content: { 'application/json': { schema: sessionResponse } }, description: '注册并登录' }, 400: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '参数或邀请码无效' }, 409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '用户名或邮箱已占用，邀请码未消耗' }, 429: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '注册频率已达限制' } } });
 const getRoute = createRoute({ method: 'get', path: '/api/v1/auth/session', tags: ['auth'], summary: '读取当前密码登录用户', responses: { 200: { content: { 'application/json': { schema: sessionGetResponse } }, description: '当前用户' } } });
-const deleteRoute = createRoute({ method: 'delete', path: '/api/v1/auth/session', tags: ['auth'], summary: '立即撤销当前会话及可选当前设备推送订阅', request: { headers: z.object({ 'x-push-subscription-id': z.string().uuid().optional() }) }, responses: { 200: { content: { 'application/json': { schema: sessionDeleteResponse } }, description: '已撤销' } } });
+const deleteRoute = createRoute({ method: 'delete', path: '/api/v1/auth/session', tags: ['auth'], summary: '立即撤销当前会话及可选当前设备推送订阅', request: { headers: z.object({ 'x-push-subscription-id': z.string().uuid().optional(), 'x-notification-account': z.string().uuid().optional() }) }, responses: { 200: { content: { 'application/json': { schema: sessionDeleteResponse } }, description: '已撤销' } } });
 
 export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/auth/session', requireUser);
@@ -46,6 +46,8 @@ export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
   });
   app.openapi(getRoute, c => c.json(apiData(c, { user: c.get('user')! }), 200));
   app.openapi(deleteRoute, async c => {
+    const expected = c.req.header('X-Notification-Account');
+    if (expected && expected !== c.get('user')!.id) throw invalidState('登录账户已变化，请在当前账户重新操作');
     const token = parseCookies(c.req.header('cookie'))[SESSION_COOKIE] ?? '';
     const subscriptionId = c.req.header('X-Push-Subscription-Id');
     if (subscriptionId && z.string().uuid().safeParse(subscriptionId).success) await revokeDevice(c.env, c.get('user')!.id, subscriptionId, await sha256Hex(token));

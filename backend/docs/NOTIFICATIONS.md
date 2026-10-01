@@ -1,16 +1,18 @@
 # Notifications
 
-Apply additive D1 migration `0018_notifications.sql` before publishing this backend. It creates notification history, per-user read/dismiss receipts, settings, device subscriptions and a push outbox. Existing business records are not backfilled or deleted.
+Apply additive D1 migration `0019_notifications.sql` before publishing this backend. It creates notification history, per-user read/dismiss receipts, settings, device subscriptions and a push outbox. Existing business records are not backfilled or deleted.
 
 All routes use the standard `{ data, requestId }` envelope and require a current password session:
 
 - `GET /api/v1/notifications?cursor=&limit=50`: visible history, including dismissed entries, with `nextCursor` and `unreadCount` (read/dismissed entries excluded from the count)
 - `POST /api/v1/notifications/{id}/read` and `/dismiss`: idempotent per-user receipts
-- `GET/PUT /api/v1/notifications/settings`: `{ inAppEnabled, pushEnabled }`, both default to true; in-app preference controls presentation, while history remains available
+- `GET/PUT /api/v1/notifications/settings`: `{ inAppEnabled, pushEnabled }`, both default to true; PUT accepts one or both fields and preserves omitted fields atomically; in-app preference controls presentation, while history remains available
 - `GET /api/v1/notifications/push/status`: `{ configured, publicKey }`; missing configuration returns `false` and an empty public key
 - `POST /api/v1/notifications/push/subscriptions`: `{ endpoint, keys: { p256dh, auth } }` → `{ id }`
-- `POST /api/v1/notifications/push/lookup`: `{ endpoint }` → own `{ id }` or `{ id: null }`
+- `POST /api/v1/notifications/push/lookup`: `{ endpoint }` → own active `{ id }` or `{ id: null }` (revoked/expired subscriptions are not reported as active)
 - `DELETE /api/v1/notifications/push/subscriptions/{id}`: recoverably disables the owned subscription
+
+Notification mutations accept an optional `X-Notification-Account` header. A mismatch with the current authenticated user returns 409 before any state change, preventing delayed actions started under a different account. Logout honors the same guard. Requests without the header remain compatible.
 
 Logout accepts the optional `X-Push-Subscription-Id` header. It disables that subscription only when both its account and session match. Dispatch also refuses expired or revoked sessions, so omitted headers cannot keep logged-out session delivery active. Other devices remain registered.
 
