@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { ProjectNavigation } from './ProjectNavigation';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, projectPath } from '../api/client';
@@ -22,6 +23,7 @@ export function ProjectShell() {
   const project = query.data;
   return <ProjectContext.Provider value={{ projectId, project }}>
     <div className="project-banner"><div className="project-breadcrumb"><NavLink to="/app">我的项目</NavLink><span>/</span><span>{project.name}</span></div><div className="project-name-row"><div><h1>{project.name}</h1><p>{project.description || '项目空间与协作进度'}</p></div><StatusPill tone={project.status === 'active' ? 'good' : 'neutral'}>{project.status === 'active' ? '进行中' : '已归档'}</StatusPill></div></div>
+    <ProjectNavigation projectId={projectId} />
     <div className="content-wrap"><Outlet /></div>
   </ProjectContext.Provider>;
 }

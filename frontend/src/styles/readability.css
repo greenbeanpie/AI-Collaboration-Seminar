@@ -115,12 +115,12 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
 .ai-model-settings details > .field { margin-top: 16px; }
 .ai-model-settings details > label:not(.field) { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
 
-/* Project tabs share the workspace header with account actions. Each side owns its width. */
-.topbar-project-navigation { flex: 1 1 0; min-width: 0; max-width: 100%; }
-.topbar-project-links { display: flex; align-items: center; overflow-x: auto; min-width: 0; max-width: 100%; padding: 4px 2px; scroll-padding-inline: 12px; }
-.topbar-project-links .project-tab { min-height: 44px; }
-.topbar-project-links .project-tab.active::after { bottom: 0; }
-.topbar-project-select { display: none; }
+/* Keep project navigation in its full-width content row, separate from account controls. */
+.project-content-navigation { width: min(100%, 1260px); margin: 0 auto; min-width: 0; max-width: 100%; border-bottom: 1px solid var(--line); }
+.project-content-links { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; max-width: 100%; padding: 4px 2px; }
+.project-content-links .project-tab { min-height: 44px; }
+.project-content-links .project-tab.active::after { bottom: 0; }
+.project-content-select { display: none; }
 .workspace-top-actions { position: relative; flex: 0 0 auto; width: auto; min-width: 0; }
 .workspace-account-panel { display: flex; align-items: center; gap: 12px; }
 .topbar-actions-toggle, .topbar-action-label { display: none; }
@@ -134,8 +134,9 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
 @media (max-width: 790px) {
   .workspace-topbar { gap: 12px; }
   .workspace-context { display: block; min-width: 0; }
-  .topbar-project-links { display: none; }
-  .topbar-project-select { display: block; min-height: 44px; font-size: 16px; }
+  .project-content-navigation { padding-bottom: 10px; }
+  .project-content-links { display: none; }
+  .project-content-select { display: block; min-height: 44px; font-size: 16px; }
   .topbar-actions-toggle { display: inline-grid; min-width: 44px; min-height: 44px; }
   .workspace-account-panel { display: none; position: absolute; top: calc(100% + 10px); right: 0; z-index: 1; width: min(280px, calc(100vw - 34px)); padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
   .workspace-account-panel[data-open="true"] { display: grid; gap: 12px; }
@@ -144,4 +145,4 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
   .workspace-account-panel .topbar-support, .workspace-account-panel .topbar-logout { display: flex; justify-content: flex-start; gap: 10px; width: 100%; min-height: 44px; padding: 8px; }
   .topbar-action-label { display: inline; }
 }
-@media print { .topbar-project-navigation { display: none; } }
+@media print { .project-content-navigation { display: none; } }

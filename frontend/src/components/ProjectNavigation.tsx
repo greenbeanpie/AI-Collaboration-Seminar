@@ -6,16 +6,16 @@ const tabs = [
   ['ledger', '过程账本'], ['settings', '项目设置'], ['export', '导出'],
 ] as const;
 
-/** One responsive navigation surface in the workspace header, never a second sticky row. */
+/** Project navigation belongs to the project content, separate from global account controls. */
 export function ProjectNavigation({ projectId }: { projectId: string }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const root = `/app/projects/${encodeURIComponent(projectId)}`;
   const current = tabs.find(([path]) => path !== 'overview' && (pathname === `${root}/${path}` || pathname.startsWith(`${root}/${path}/`)))?.[0] ?? 'overview';
   const destination = (path: string) => path === 'overview' ? root : `${root}/${path}`;
-  return <nav className="topbar-project-navigation" aria-label="项目功能" data-testid="project-tabs">
-    <div className="topbar-project-links">{tabs.map(([path, label]) => <NavLink key={path} end={path === 'overview'} to={destination(path)} className={({ isActive }) => `project-tab ${isActive ? 'active' : ''}`}>{label}</NavLink>)}</div>
-    <select className="input topbar-project-select" aria-label="切换项目功能" value={current} onChange={event => navigate(destination(event.target.value))}>
+  return <nav className="project-content-navigation" aria-label="项目功能" data-testid="project-tabs">
+    <div className="project-content-links">{tabs.map(([path, label]) => <NavLink key={path} end={path === 'overview'} to={destination(path)} className={({ isActive }) => `project-tab ${isActive ? 'active' : ''}`}>{label}</NavLink>)}</div>
+    <select className="input project-content-select" aria-label="切换项目功能" value={current} onChange={event => navigate(destination(event.target.value))}>
       {tabs.map(([path, label]) => <option key={path} value={path}>{label}</option>)}
     </select>
   </nav>;

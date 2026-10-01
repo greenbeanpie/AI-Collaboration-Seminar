@@ -17,3 +17,11 @@ Scope: support tickets `c6c73d0e-4089-407c-86ff-eb4edcc0ad8d` (header alignment)
 - Actual browser measurements and screenshots remain unverified in this cloud executor: system Chromium fails with `socket() failed: Operation not permitted`, and the managed cloud browser rejects the local test URL with `ERR_BLOCKED_BY_CLIENT`. Component/CSS tests are not a substitute for real-device Safari or rendered pixel validation. The deadline overflow report is addressed through its full input/wrapper/grid sizing chain, but a specific device reproduction is not claimed.
 
 No backend, AI settings, provider calls or production project content is changed. Notification development owns its separate App integration and later logout cleanup; this patch owns header JSX/CSS.
+
+## Owner-directed navigation placement rollback
+
+The owner's subsequent screenshot showed that putting project links beside the account controls produced an unnecessarily crowded header and a visible horizontal scrollbar. The latest explicit owner request supersedes the earlier ticket's one-row placement request.
+
+This increment moves only project navigation back into `ProjectShell`, between the project banner and content. Desktop project labels wrap within the content width rather than scrolling horizontally; the compact selector retains all 12 destinations below the title. Account/avatar/theme behavior, notification/update icons, logout subscription cleanup and the separate native-date containment repair remain intact. It is not a wholesale revert of `e189de2`.
+
+Regression coverage checks the structural separation from the account header, every link and compact-selector destination, active-route state, Back and nested routes. Rendered device/browser validation remains subject to the previously documented cloud runtime limitation; no screenshot-based success is asserted. The original header ticket was reopened with a clear explanation of the owner's updated direction.

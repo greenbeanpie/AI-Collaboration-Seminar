@@ -14,10 +14,12 @@ it('constrains the native date control and its wrapper without clipping the pick
   expect(dateCss).toContain('input::-webkit-datetime-edit { min-width: 0');
   expect(layoutCss).toContain('.field:has(> .date-input-control), .settings-form, .section-card:has(.date-input-control) { grid-template-columns: minmax(0, 1fr); }');
 });
-it('uses a shrinkable horizontal tab area and a compact mobile navigation with an unclipped actions panel', () => {
-  expect(layoutCss).toContain('.topbar-project-navigation { flex: 1 1 0; min-width: 0;');
-  expect(layoutCss).toMatch(/\.topbar-project-links \{[^}]*overflow-x: auto/);
-  expect(layoutCss).toContain('.topbar-project-select { display: block; min-height: 44px;');
+it('keeps desktop project links wrap-capable in content and the mobile selector out of the topbar', () => {
+  expect(layoutCss).toContain('.project-content-navigation { width: min(100%, 1260px);');
+  expect(layoutCss).toMatch(/\.project-content-links \{[^}]*flex-wrap: wrap/);
+  expect(layoutCss).not.toContain('topbar-project');
+  expect(layoutCss.match(/\.project-content-links \{[^}]*\}/g)?.join(' ')).not.toContain('overflow-x: auto');
+  expect(layoutCss).toContain('.project-content-select { display: block; min-height: 44px;');
   expect(layoutCss).toContain('.workspace-account-panel[data-open="true"] { display: grid;');
   expect(layoutCss).toContain('width: min(280px, calc(100vw - 34px))');
 });

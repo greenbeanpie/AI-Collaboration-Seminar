@@ -22,8 +22,9 @@ const output = process.env.UI_OUTPUT || '/tmp/p2-ticket-layout';
       await page.goto(origin + '/app/projects/fixture/settings');
       await page.getByRole('heading', { name: '项目基本信息' }).waitFor();
       assert.equal(await page.getByRole('navigation', { name: '项目功能' }).count(), 1);
-      assert.equal(await page.getByRole('banner', { name: '工作区顶栏' }).getByRole('navigation', { name: '项目功能' }).count(), 1);
+      assert.equal(await page.getByRole('banner', { name: '工作区顶栏' }).getByRole('navigation', { name: '项目功能' }).count(), 0);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `page overflow at ${width}`);
+      assert.equal(await page.locator('.project-content-links').evaluate(el => el.scrollWidth > el.clientWidth + 1), false, 'project labels do not require horizontal scrolling');
       const bounds = await page.locator('.date-input-control').first().evaluate(el => {
         const input = el.querySelector('input').getBoundingClientRect();
         const wrapper = el.getBoundingClientRect(); const field = el.closest('.field').getBoundingClientRect(); const card = el.closest('.card').getBoundingClientRect();
@@ -34,8 +35,8 @@ const output = process.env.UI_OUTPUT || '/tmp/p2-ticket-layout';
       if (width <= 790) {
         const toggle = page.getByRole('button', { name: '主题与账户操作' });
         const navigation = page.getByRole('combobox', { name: '切换项目功能' });
-        const navBox = await navigation.boundingBox(), toggleBox = await toggle.boundingBox();
-        assert(Math.abs(navBox.y + navBox.height / 2 - toggleBox.y - toggleBox.height / 2) <= 2, 'controls share one row');
+        const navBox = await navigation.boundingBox(), headerBox = await page.getByRole('banner', { name: '工作区顶栏' }).boundingBox();
+        assert(navBox.y >= headerBox.y + headerBox.height, 'project navigation stays in the content area');
         await toggle.click();
         await page.getByRole('combobox', { name: '主题', exact: true }).selectOption('dark');
         assert(await page.getByRole('button', { name: '退出登录' }).isVisible());
