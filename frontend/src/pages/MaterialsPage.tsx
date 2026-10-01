@@ -87,6 +87,7 @@ export function MaterialsPage() {
   const [draftPersisted, setDraftPersisted] = useState(true);
   const [draftStorageWarning, setDraftStorageWarning] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
+  const [editNotice, setEditNotice] = useState('');
   const [recoveryDraft, setRecoveryDraft] = useState<{ draft: LocalDraft; savedAt: string } | null>(null);
   const [reconnectConfirmation, setReconnectConfirmation] = useState(false);
   const [conflict, setConflict] = useState<ConflictCopy | null>(null);
@@ -153,6 +154,7 @@ export function MaterialsPage() {
     queryFn: () => api.get<'MaterialVersionResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(activeMaterialId!)}/versions/${encodeURIComponent(selectedVersionId!)}`)),
   });
   const material = materialQuery.data;
+  const latestMaterial = useRef(material); latestMaterial.current = material;
 
   const createMaterial = useMutation({
     mutationFn: (title: string) => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: newKind }),
@@ -257,14 +259,16 @@ export function MaterialsPage() {
   const discardDraft = async () => {
     if (!activeMaterialId || !accountId) return;
     if (!await dialogs.confirm('确定放弃这份本机草稿吗？此操作不会修改服务端版本。')) return;
+    if (accountIdRef.current !== accountId || activeMaterialIdRef.current !== activeMaterialId) return;
+    const current = latestMaterial.current;
     const removed = removeDraft(accountId, projectId, activeMaterialId);
     setDraftPersisted(removed);
     setDraftStorageWarning(!removed);
     needsReconnectConfirmationRef.current = false;
     baseRevisionRef.current = currentRevisionRef.current;
-    if (editor && material?.materialId === activeMaterialId) {
+    if (editor && !editor.isDestroyed && current?.materialId === activeMaterialId) {
       hydratingRef.current = true;
-      editor.commands.setContent(material.currentVersion?.doc ?? emptyDoc, { emitUpdate: false });
+      editor.commands.setContent(current.currentVersion?.doc ?? emptyDoc, { emitUpdate: false });
       hydratingRef.current = false;
     }
     setRecoveryDraft(null);
@@ -278,6 +282,7 @@ export function MaterialsPage() {
     const markdown = docToMarkdown(doc);
     if (needsReconnectConfirmationRef.current) {
       if (!await dialogs.confirm('这份材料包含离线期间编辑的内容。确认后会将该本机草稿保存为新的服务端版本。')) return;
+      if (accountIdRef.current !== accountId || activeMaterialIdRef.current !== activeMaterialId || editor.isDestroyed) return;
       needsReconnectConfirmationRef.current = false;
       setReconnectConfirmation(false);
       const saved = saveDraft(accountId, projectId, activeMaterialId, { doc, baseRevision: expectedRevision, needsReconnectConfirmation: false } satisfies LocalDraft);
@@ -420,6 +425,7 @@ export function MaterialsPage() {
               </header>
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
               {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
+              {editNotice && <p className="tm-inline-notice" role="status">{editNotice}</p>}
               <div className="tm-editor-toolbar tm-hide-print" role="toolbar" aria-label="材料格式">
                 <button type="button" aria-label="粗体" title="粗体" onClick={() => editor?.chain().focus().toggleBold().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Bold size={15} /></button>
                 <button type="button" aria-label="斜体" title="斜体" onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Italic size={15} /></button>
@@ -432,10 +438,14 @@ export function MaterialsPage() {
                 <button type="button" aria-label="插入表格" title="插入 3 × 3 表格" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Table2 size={15} /></button>
                 <button type="button" aria-label="设置链接" title="设置链接" onClick={async () => {
                   if (!editor) return;
+                  setEditNotice('');
                   const existing = editor.getAttributes('link').href as string | undefined;
                   const selection = { from: editor.state.selection.from, to: editor.state.selection.to };
+                  const originalDoc = editor.state.doc;
+                  const originalRevision = latestMaterial.current?.revision;
                   const href = await dialogs.prompt('输入完整网址（仅 http、https 或 mailto 链接）', existing ?? 'https://');
                   if (href === null || editor.isDestroyed) return;
+                  if (latestMaterial.current?.revision !== originalRevision || !editor.state.doc.eq(originalDoc)) { setEditNotice('材料内容已变化，请重新选择文字后设置链接。'); return; }
                   if (!href.trim()) editor.chain().focus().setTextSelection(selection).unsetLink().run();
                   else editor.chain().focus().setTextSelection(selection).setLink({ href }).run();
                 }} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Link2 size={15} /></button>

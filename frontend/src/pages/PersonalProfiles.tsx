@@ -69,6 +69,7 @@ export function PersonalProfilePage() {
   }
 
   async function cancelEditing() {
+    if (lock.current) return;
     if (dirty && !await dialogs.confirm('有尚未保存的资料编辑。确定放弃这些编辑吗？')) return;
     setDraft(saved); setEditing(false); setError(null); setNotice('');
   }

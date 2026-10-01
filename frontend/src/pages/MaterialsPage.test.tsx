@@ -15,6 +15,7 @@ function renderMaterial() {
   client.setQueryData(['materialVersions', 'project-1', 'material-1'], []);
   client.setQueryData(['comments', 'project-1', 'material', 'material-1'], []);
   render(<QueryClientProvider client={client}><MaterialsPage /></QueryClientProvider>);
+  return client;
 }
 
 it('opening a server material enables editing without generating an unsaved draft', async () => {
@@ -56,4 +57,16 @@ it('canceling discard keeps the local draft and approval removes only that local
 it('link input is an in-page prompt; cancellation retains the document and default value',async()=>{
  renderMaterial();await waitFor(()=>expect(screen.getByLabelText('材料正文编辑器')).toHaveAttribute('contenteditable','true'));fireEvent.click(screen.getByRole('button',{name:'设置链接'}));
  const dialog=await screen.findByRole('dialog');expect(within(dialog).getByRole('textbox')).toHaveValue('https://');fireEvent.change(within(dialog).getByRole('textbox'),{target:{value:'https://example.test'}});fireEvent.click(within(dialog).getByRole('button',{name:'取消'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect(screen.getByText('内容与服务端版本一致')).toBeInTheDocument();
+});
+it('discarding after a background version refresh restores the latest server document',async()=>{
+ const key='buwei:draft:account-1:project-1:material-1';localStorage.setItem(key,JSON.stringify({savedAt:'2026-09-30T00:00:00Z',value:{doc:{type:'doc',content:[{type:'paragraph'}]},baseRevision:1,needsReconnectConfirmation:false}}));
+ const client=renderMaterial();fireEvent.click(await screen.findByRole('button',{name:'放弃草稿'}));const dialog=await screen.findByRole('dialog');
+ act(()=>{client.setQueryData(['material','project-1','material-1'],{materialId:'material-1',title:'正式材料',revision:2,currentVersion:{revision:2,createdAt:'2026-10-01T00:00:00Z',doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'最新服务端内容'}]}]}}});});
+ await act(async()=>{fireEvent.click(within(dialog).getByRole('button',{name:'确定'}));});expect(localStorage.getItem(key)).toBeNull();expect(screen.getByLabelText('材料正文编辑器')).toHaveTextContent('最新服务端内容');
+});
+it('a link decision does not modify a different document received while the prompt was open',async()=>{
+ const client=renderMaterial();await waitFor(()=>expect(screen.getByLabelText('材料正文编辑器')).toHaveAttribute('contenteditable','true'));fireEvent.click(screen.getByRole('button',{name:'设置链接'}));const dialog=await screen.findByRole('dialog');
+ act(()=>{client.setQueryData(['material','project-1','material-1'],{materialId:'material-1',title:'正式材料',revision:2,currentVersion:{revision:2,createdAt:'2026-10-01T00:00:00Z',doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'已更新正文'}]}]}}});});
+ await waitFor(()=>expect(screen.getByLabelText('材料正文编辑器')).toHaveTextContent('已更新正文'));
+ fireEvent.change(within(dialog).getByRole('textbox'),{target:{value:'https://example.test'}});await act(async()=>{fireEvent.click(within(dialog).getByRole('button',{name:'确定'}));});expect(await screen.findByText('材料内容已变化，请重新选择文字后设置链接。')).toBeInTheDocument();expect(screen.getByLabelText('材料正文编辑器').querySelector('a')).toBeNull();
 });
