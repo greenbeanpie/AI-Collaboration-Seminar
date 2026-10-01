@@ -628,6 +628,8 @@ export interface paths {
                          */
                         deadlinePrecision?: "date" | "datetime" | "unknown";
                         aiBudgetUsd?: number | null;
+                        /** @default false */
+                        aiCollaborationEnabled?: boolean;
                     };
                 };
             };
@@ -2410,6 +2412,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         expectedRevision: number;
+                        aiCollaborationEnabled?: boolean;
                         /** @enum {string} */
                         assignmentMode?: "manual" | "automatic";
                         /** @enum {string} */
@@ -2779,6 +2782,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /submissions/{submissionId}/scores */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    submissionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        scores: {
+                            key: string;
+                            score: number;
+                        }[];
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationSubmissionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/collaboration/proposals": {
         parameters: {
             query?: never;
@@ -2891,6 +2945,8 @@ export interface paths {
                 content: {
                     "application/json": {
                         brief: string;
+                        taskIds?: string[];
+                        sourceVersionIds?: string[];
                     };
                 };
             };
@@ -5751,6 +5807,8 @@ export interface components {
                 status: "active" | "archived";
                 /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
                 aiBudgetUsd: number | null;
+                /** @description 项目 AI 智能协作开关，默认关闭 */
+                aiCollaborationEnabled?: boolean;
                 revision: number;
                 /** @enum {string} */
                 myRole: "owner" | "member";
@@ -5775,6 +5833,8 @@ export interface components {
                     status: "active" | "archived";
                     /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
                     aiBudgetUsd: number | null;
+                    /** @description 项目 AI 智能协作开关，默认关闭 */
+                    aiCollaborationEnabled?: boolean;
                     revision: number;
                     /** @enum {string} */
                     myRole: "owner" | "member";
@@ -6292,6 +6352,7 @@ export interface components {
         };
         CollaborationSettingsResponse: {
             data: {
+                aiCollaborationEnabled: boolean;
                 /** @enum {string} */
                 assignmentMode: "manual" | "automatic";
                 /** @enum {string} */
@@ -6393,6 +6454,54 @@ export interface components {
                         /** @enum {string} */
                         coverage: "complete" | "needs_human";
                         manualReviewReason?: string;
+                        rubricScoring?: {
+                            /** @enum {string} */
+                            kind: "assistive";
+                            /** @enum {string} */
+                            status: "unavailable";
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "assistive";
+                            /** @enum {string} */
+                            status: "scored";
+                            /** Format: uuid */
+                            rubricVersionId: string;
+                            rubricVersion: number;
+                            weights: {
+                                key: string;
+                                label: string;
+                                weight: number;
+                            }[];
+                            weightedTotal: number;
+                            scores: {
+                                key: string;
+                                score: number;
+                                confidence: number;
+                                comment: string;
+                                evidence: {
+                                    /** Format: uuid */
+                                    materialVersionId: string;
+                                    quote: string;
+                                }[];
+                            }[];
+                        };
+                    } | null;
+                    humanScoreOverride?: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** Format: uuid */
+                        rubricVersionId: string;
+                        rubricVersion: number;
+                        scores: {
+                            key: string;
+                            score: number;
+                        }[];
+                        weightedTotal: number;
+                        reason: string;
+                        /** Format: uuid */
+                        decidedBy: string;
+                        decidedAt: string;
                     } | null;
                     /** @enum {string|null} */
                     decision: "accept" | "improve" | "rework" | null;
@@ -6447,6 +6556,54 @@ export interface components {
                     /** @enum {string} */
                     coverage: "complete" | "needs_human";
                     manualReviewReason?: string;
+                    rubricScoring?: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "unavailable";
+                        reason: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "scored";
+                        /** Format: uuid */
+                        rubricVersionId: string;
+                        rubricVersion: number;
+                        weights: {
+                            key: string;
+                            label: string;
+                            weight: number;
+                        }[];
+                        weightedTotal: number;
+                        scores: {
+                            key: string;
+                            score: number;
+                            confidence: number;
+                            comment: string;
+                            evidence: {
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            }[];
+                        }[];
+                    };
+                } | null;
+                humanScoreOverride?: {
+                    /** @enum {string} */
+                    kind: "assistive";
+                    /** Format: uuid */
+                    rubricVersionId: string;
+                    rubricVersion: number;
+                    scores: {
+                        key: string;
+                        score: number;
+                    }[];
+                    weightedTotal: number;
+                    reason: string;
+                    /** Format: uuid */
+                    decidedBy: string;
+                    decidedAt: string;
                 } | null;
                 /** @enum {string|null} */
                 decision: "accept" | "improve" | "rework" | null;
@@ -6471,6 +6628,7 @@ export interface components {
                     kind: "decompose" | "assign";
                     payload: {
                         brief?: string;
+                        sourceVersionIds?: string[];
                         tasks?: {
                             title: string;
                             /** @default  */
@@ -6483,6 +6641,33 @@ export interface components {
                              * @default null
                              */
                             parentTaskId: string | null;
+                            citations?: {
+                                /** Format: uuid */
+                                sourceVersionId: string;
+                                /** Format: uuid */
+                                fragmentId: string;
+                                pageNumber: number | null;
+                                quote: string;
+                            }[];
+                        }[];
+                        updates?: {
+                            title: string;
+                            /** @default  */
+                            detail: string;
+                            criteria: string;
+                            /** @default 1 */
+                            effortHours: number;
+                            /** Format: uuid */
+                            taskId: string;
+                            expectedRevision: number;
+                            citations?: {
+                                /** Format: uuid */
+                                sourceVersionId: string;
+                                /** Format: uuid */
+                                fragmentId: string;
+                                pageNumber: number | null;
+                                quote: string;
+                            }[];
                         }[];
                         assignments?: {
                             /** Format: uuid */

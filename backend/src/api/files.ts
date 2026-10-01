@@ -1,3 +1,4 @@
+import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -77,16 +78,16 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const user = c.get('user')!;
-    const result = await createFileInit(c.env, {
-      projectId: member.projectId,
-      uploaderUserId: user.id,
-      fileName: body.fileName,
-      contentType: body.contentType,
+    const result = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: user.id, operation: 'files.init', rawBody: JSON.stringify({ projectId: member.projectId, ...body }) }, async () => {
+      const file = await createFileInit(c.env, {
+        projectId: member.projectId,
+        uploaderUserId: user.id,
+        fileName: body.fileName,
+        contentType: body.contentType,
+      });
+      return { status: 201 as const, body: { fileId: file.fileId, upload: { method: 'PUT' as const, url: file.uploadUrl } } };
     });
-    return c.json(
-      apiData(c, { fileId: result.fileId, upload: { method: 'PUT' as const, url: result.uploadUrl } }),
-      201,
-    );
+    return c.json(apiData(c, result.body), result.status);
   });
 
   app.openapi(contentRoute, async (c) => {

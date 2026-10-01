@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, UserRound } from 'lucide-react';
@@ -8,6 +8,8 @@ import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { jobStatusLabel, useVisibleJobPoller } from './aiWorkflowSupport';
+import { ProjectSourceContext } from './ProjectSourceContext';
+import { AssistiveRubricScores } from './AssistiveRubricScores';
 import './CollaborationWorkspace.css';
 
 const lifecycleLabels = { open: '待认领', in_progress: '进行中', submitted: '待验收', accepted: '已通过', improve: '需改进', rework: '需重做' };
@@ -24,9 +26,10 @@ function ProjectCollaborationWorkspace() {
   const client = useQueryClient();
   const owner = project.myRole === 'owner';
   const capabilities = useCapabilities();
-  const aiEnabled = capabilities.data?.features.aiEnabled === true;
+  const modelEnabled = capabilities.data?.features.aiEnabled === true;
   const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: () => collaborationApi.tasks(projectId) });
   const settings = useQuery({ queryKey: ['collaboration-settings', projectId], queryFn: () => collaborationApi.settings(projectId) });
+  const aiEnabled = modelEnabled && settings.data?.aiCollaborationEnabled === true;
   const members = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
   const me = useQuery({ queryKey: ['member-me', projectId], queryFn: () => api.get<'MemberResponse'>(projectPath(projectId, '/members/me')) });
   const proposals = useQuery({ queryKey: ['collaboration-proposals', projectId], queryFn: () => collaborationApi.proposals(projectId), enabled: owner });
@@ -36,6 +39,11 @@ function ProjectCollaborationWorkspace() {
   const selectedId = searchParams.get('task') ?? '';
   const setSelectedId = (id: string) => { const next = new URLSearchParams(searchParams); if (id) next.set('task', id); else next.delete('task'); setSearchParams(next, { replace: true }); };
   const [brief, setBrief] = useState('');
+  const [sourceVersions, setSourceVersions] = useState<string[]>([]);
+  const [sourceReadiness, setSourceReadiness] = useState<Record<string, boolean>>({});
+  const sourcesPending = sourceVersions.some(id => sourceReadiness[id] !== true);
+  const sourceReady = useCallback((id: string, ready: boolean) => setSourceReadiness(values => values[id] === ready ? values : { ...values, [id]: ready }), []);
+  const sourceSelection = (id: string, checked: boolean) => setSourceVersions(values => checked ? values.includes(id) || values.length >= 5 ? values : [...values, id] : values.filter(value => value !== id));
   const [jobId, setJobId] = useState<string | null>(null);
   const job = useVisibleJobPoller(jobId);
   const followedJobs = useRef(new Set<string>());
@@ -54,7 +62,7 @@ function ProjectCollaborationWorkspace() {
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-proposals', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId] }); } }, [job.isSettled, jobId, client, projectId]);
   const create = useMutation({ mutationFn: () => collaborationApi.createTask(projectId, { ...draft, title: draft.title.trim(), criteria: draft.criteria.trim(), effortHours: Number(draft.effortHours), parentTaskId: draft.parentTaskId || null }), onSuccess: async () => { setCreateOpen(false); setDraft(defaultDraft); await invalidate(); } });
   const claim = useMutation({ mutationFn: (task: CollaborationTask) => collaborationApi.claim(projectId, task), onSuccess: invalidate, onError: invalidate });
-  const ai = useMutation({ mutationFn: (action: 'decompose' | 'assign') => action === 'decompose' ? collaborationApi.decompose(projectId, brief.trim()) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').slice(0, 20).map(row => row.taskId)), onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
+  const ai = useMutation({ mutationFn: (action: 'decompose' | 'adjust' | 'assign') => action === 'decompose' ? collaborationApi.decompose(projectId, brief.trim(), sourceVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, brief.trim(), rows.filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).slice(0, 20).map(row => row.taskId), sourceVersions) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').slice(0, 20).map(row => row.taskId)), onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
   const apply = useMutation({ mutationFn: (proposal: NonNullable<typeof proposals.data>['items'][number]) => collaborationApi.apply(projectId, proposal), onSuccess: invalidate, onError: invalidate });
   return <SectionCard title="协作任务闭环" detail="明确验收标准 → 认领或分工 → 提交固定版本成果 → 评价与负责人决定。全流程支持手动完成。">
     <div className="collab-toolbar"><div className="chip-list"><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div>{owner && <button className="button button-primary" onClick={() => { create.reset(); setCreateOpen(true); }}><Plus size={16} />新建协作任务</button>}</div>
@@ -68,16 +76,18 @@ function ProjectCollaborationWorkspace() {
       {task.parentTaskId && <small>子任务 · {rows.find(row => row.taskId === task.parentTaskId)?.title ?? task.parentTaskId}</small>}
       <div className="collab-toolbar"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
     </article>)}</div>
-    {owner && <details className="collab-ai"><summary><Sparkles size={16} />AI 拆解与分工</summary>
-      <p className="form-note">拆解和分工遵循项目分工设置：确认模式先预览，自动模式可直接创建及分配。过期结果不会覆盖成员的新操作。</p>
-      {!aiEnabled && <p className="notice notice-warn">AI 当前不可用；可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
-      <Field label="拆解目标"><textarea className="input" rows={3} maxLength={4000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="描述目标、交付范围与约束，AI 将建议可验收的子任务" /></Field>
-      <div className="form-actions"><button className="button" disabled={!aiEnabled || !brief.trim() || ai.isPending || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={!aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工（最多20项）</button></div>
+    {owner && <details className="collab-ai"><summary><Sparkles size={16} />AI 拆解、调整与分工</summary>
+      <p className="form-note">负责人可补充信息、提出要求或要求调整。AI 只在任务范围内执行；拆解、调整和分工遵循项目分工设置：确认模式先预览，自动模式可直接创建及分配。过期结果不会覆盖成员的新操作。</p>
+      {!aiEnabled && <p className="notice notice-warn">{!settings.data?.aiCollaborationEnabled ? '本项目 AI 智能协作已关闭，请由负责人在项目设置开启。' : 'AI 模型当前不可用。'}可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
+      <ProjectSourceContext projectId={projectId} enabled={aiEnabled} selected={sourceVersions} onSelection={sourceSelection} onReady={sourceReady} />
+      {sourcesPending && <p className="notice notice-warn">选定资料尚未完整处理。请先读取正文或在来源页面完成缺页识别，再发起基于资料的拆解；当前不会假报 AI 已完成协作。</p>}
+      <Field label="目标、补充信息或调整要求"><textarea className="input" rows={3} maxLength={12000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="描述目标或要求调整的内容；AI 将创建可验收任务，或仅调整本页尚未提交、尚未验收的任务" /></Field>
+      <div className="form-actions"><button className="button" disabled={!aiEnabled || sourcesPending || !brief.trim() || ai.isPending || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={!aiEnabled || sourcesPending || !brief.trim() || ai.isPending || !rows.some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务（最多20项）</button><button className="button" disabled={!aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工（最多20项）</button></div>
       {ai.error && <ErrorNotice error={ai.error} />}
       {handoffNotice && <p className="form-note">{handoffNotice}</p>}
       <JobProgress job={job} />
       {proposals.error && <ErrorNotice error={proposals.error} />}
-      {proposals.data?.items.map(proposal => <article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /><button className="button button-primary button-small" disabled={proposal.status !== 'pending' || apply.isPending} onClick={() => apply.mutate(proposal)}>确认并应用建议</button></article>)}
+      {proposals.data?.items.map(proposal => <article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /><button className="button button-primary button-small" disabled={proposal.status !== 'pending' || apply.isPending} onClick={() => apply.mutate(proposal)}>确认并应用建议</button></article>)}
       {apply.error && <ErrorNotice error={apply.error} />}
     </details>}
     {createOpen && <Modal title="新建协作任务" onClose={() => setCreateOpen(false)}><form className="stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}>
@@ -100,11 +110,11 @@ function JobProgress({ job }: { job: ReturnType<typeof useVisibleJobPoller> }) {
 }
 
 function ProposalPreview({ payload, members, tasks }: { payload: Record<string, unknown>; members: { userId: string; displayName: string }[]; tasks: CollaborationTask[] }) {
-  const entries = Array.isArray(payload.tasks) ? payload.tasks : Array.isArray(payload.assignments) ? payload.assignments : [];
+  const entries = [...(Array.isArray(payload.tasks) ? payload.tasks : []), ...(Array.isArray(payload.updates) ? payload.updates : []), ...(Array.isArray(payload.assignments) ? payload.assignments : [])];
   return <ul>{entries.map((entry: unknown, index) => {
     if (!entry || typeof entry !== 'object') return null;
     const row = entry as Record<string, unknown>;
-    return <li key={index}><strong>{typeof row.title === 'string' ? row.title : tasks.find(task => task.taskId === row.taskId)?.title ?? String(row.taskId ?? '任务')}</strong>{typeof row.criteria === 'string' && <p>{row.criteria}</p>}{typeof row.effortHours === 'number' && <small>预计 {row.effortHours} 小时 · </small>}{typeof row.assigneeId === 'string' && <span>{members.find(member => member.userId === row.assigneeId)?.displayName ?? row.assigneeId}</span>}{typeof row.reason === 'string' && <p>{row.reason}</p>}</li>;
+    return <li key={index}><strong>{typeof row.title === 'string' ? row.title : tasks.find(task => task.taskId === row.taskId)?.title ?? String(row.taskId ?? '任务')}</strong>{typeof row.criteria === 'string' && <p>{row.criteria}</p>}{typeof row.effortHours === 'number' && <small>预计 {row.effortHours} 小时 · </small>}{typeof row.assigneeId === 'string' && <span>{members.find(member => member.userId === row.assigneeId)?.displayName ?? row.assigneeId}</span>}{typeof row.reason === 'string' && <p>{row.reason}</p>}{Array.isArray(row.citations) && row.citations.length > 0 && <details><summary>任务来源原文依据</summary>{row.citations.map((citation: unknown, citeIndex: number) => { const cite = citation as { sourceVersionId?: string; pageNumber?: number | null; quote?: string }; return <p className="collab-preserve" key={citeIndex}>固定来源 {cite.sourceVersionId}{cite.pageNumber ? ` · 第${cite.pageNumber}页` : ''}：{cite.quote}</p>; })}</details>}</li>;
   })}</ul>;
 }
 
@@ -194,6 +204,7 @@ function TaskLifecycleDetail({ projectId, task, childrenTasks, owner, meId, memb
       <div className="collab-toolbar"><strong>第 {submission.round} 轮</strong><small>{new Date(submission.createdAt).toLocaleString('zh-CN')} · {members.find(member => member.userId === submission.submittedBy)?.displayName ?? '项目成员'}</small><StatusPill>{submission.decision ? decisionLabels[submission.decision] : submission.aiDecision ? 'AI 已评价，待确认' : '待评价'}</StatusPill></div>
       <p className="collab-preserve">{submission.body}</p><details><summary>本轮验收标准与绑定版本</summary><p className="collab-preserve">{submission.criteria}</p>{submission.materialVersionIds.length ? <ul>{submission.materialVersionIds.map(id => <li key={id}>{submission.materialVersions?.find(version => version.versionId === id) ? <BoundMaterialVersion projectId={projectId} version={submission.materialVersions.find(version => version.versionId === id)!} /> : <>材料固定版本：{id}</>}</li>)}</ul> : <p>未绑定材料版本</p>}</details>
       {submission.aiReport && <div className="callout"><strong>证据覆盖：{submission.aiReport.coverage === 'complete' ? '模型认为文本证据完整' : '需要人工核验'}</strong><ul>{submission.aiReport.evidence.map((evidence, index) => <li key={index}><span>固定版本 {evidence.materialVersionId}</span><p className="collab-preserve">{evidence.quote}</p></li>)}</ul>{submission.aiReport.manualReviewReason && <p className="notice notice-warn">{submission.aiReport.manualReviewReason}</p>}{submission.aiReport.limitations.length > 0 && <><strong>限制与待核验项</strong><ul>{submission.aiReport.limitations.map((limitation, index) => <li key={index}>{limitation}</li>)}</ul></>}</div>}
+      <AssistiveRubricScores projectId={projectId} submission={submission} owner={owner} onChanged={refresh} />
       {submission.aiDecision && <div className="callout"><strong>AI 建议：{decisionLabels[submission.aiDecision]}</strong><p className="collab-preserve">{submission.aiFeedback}</p><p className="form-note">仅供协作评价，不是能力评定；未读取的附件需人工核验。</p></div>}
       {submission.decision && <div className="callout"><strong>验收决定：{decisionLabels[submission.decision]}</strong><p className="collab-preserve">{submission.feedback}</p></div>}
       {current?.submissionId === submission.submissionId && !submission.decision && (owner || submission.submittedBy === meId) && <><button className="button button-small" disabled={!aiEnabled || submission.status !== 'pending' || submission.evaluationAttempts >= 3 || evaluate.isPending || (!!jobId && !job.isSettled)} onClick={() => evaluate.mutate(submission.submissionId)}><Sparkles size={14} />请求 AI 评价</button>{!aiEnabled && <p className="form-note">AI 未启用，负责人仍可直接验收。</p>}{submission.evaluationAttempts >= 3 && <p className="form-note">本轮 AI 评价已达 3 次上限，请负责人手动核验。</p>}{owner && <SubmissionDecisionForm projectId={projectId} submission={submission} onChanged={refresh} />}</>}

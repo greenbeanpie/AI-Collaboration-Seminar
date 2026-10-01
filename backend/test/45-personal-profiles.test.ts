@@ -60,6 +60,7 @@ describe('private profiles and exact account search',()=>{
 
 async function assignmentFixture(allowed=true) {
  await configureGoFixture();const a=await user('alice');const outside=await user('outside');const projectId=await seedProject(a.userId);
+ await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(projectId).run();
  await save(a.token,{...blank,aiUseAllowed:allowed});await save(outside.token,{...blank,aiUseAllowed:true,bio:'OUTSIDE-SECRET'});
  const taskId=crypto.randomUUID(); const config=(await loadAiConfig(env.DB))!;
  const input:AssignmentSuggestionInput={projectId,requestedBy:a.userId,profileStamp:await profileStamp(env,projectId),requirementSetId:null,requirements:[],tasks:[{taskId,title:'Task',detail:'Work',dueDate:null,duePrecision:'unknown',status:'todo',assigneeId:null,revision:1}],members:[{userId:a.userId,displayName:'A',skills:[],hoursPerWeek:1}]};

@@ -734,6 +734,10 @@
                 "minimum": 0,
                 "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
               },
+              "aiCollaborationEnabled": {
+                "type": "boolean",
+                "description": "项目 AI 智能协作开关，默认关闭"
+              },
               "revision": {
                 "type": "integer"
               },
@@ -825,6 +829,10 @@
                       ],
                       "minimum": 0,
                       "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
+                    },
+                    "aiCollaborationEnabled": {
+                      "type": "boolean",
+                      "description": "项目 AI 智能协作开关，默认关闭"
                     },
                     "revision": {
                       "type": "integer"
@@ -2922,6 +2930,9 @@
           "data": {
             "type": "object",
             "properties": {
+              "aiCollaborationEnabled": {
+                "type": "boolean"
+              },
               "assignmentMode": {
                 "type": "string",
                 "enum": [
@@ -2942,6 +2953,7 @@
               }
             },
             "required": [
+              "aiCollaborationEnabled",
               "assignmentMode",
               "evaluationMode",
               "revision"
@@ -3321,6 +3333,171 @@
                         },
                         "manualReviewReason": {
                           "type": "string"
+                        },
+                        "rubricScoring": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "assistive"
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unavailable"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1000
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "assistive"
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "scored"
+                                  ]
+                                },
+                                "rubricVersionId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "rubricVersion": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "weights": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 40
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 60
+                                      },
+                                      "weight": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "label",
+                                      "weight"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 1,
+                                  "maxItems": 10
+                                },
+                                "weightedTotal": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "scores": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 40
+                                      },
+                                      "score": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      },
+                                      "confidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      },
+                                      "comment": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      },
+                                      "evidence": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "materialVersionId": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "materialVersionId",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 20
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "score",
+                                      "confidence",
+                                      "comment",
+                                      "evidence"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 1,
+                                  "maxItems": 10
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "status",
+                                "rubricVersionId",
+                                "rubricVersion",
+                                "weights",
+                                "weightedTotal",
+                                "scores"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -3329,6 +3506,69 @@
                         "evidence",
                         "limitations",
                         "coverage"
+                      ]
+                    },
+                    "humanScoreOverride": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "assistive"
+                          ]
+                        },
+                        "rubricVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "rubricVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "score": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "score"
+                            ]
+                          }
+                        },
+                        "weightedTotal": {
+                          "type": "number"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "decidedBy": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "decidedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "rubricVersionId",
+                        "rubricVersion",
+                        "scores",
+                        "weightedTotal",
+                        "reason",
+                        "decidedBy",
+                        "decidedAt"
                       ]
                     },
                     "decision": {
@@ -3551,6 +3791,171 @@
                   },
                   "manualReviewReason": {
                     "type": "string"
+                  },
+                  "rubricScoring": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "assistive"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "assistive"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "scored"
+                            ]
+                          },
+                          "rubricVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "rubricVersion": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "weights": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "weight": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "weight"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 1,
+                            "maxItems": 10
+                          },
+                          "weightedTotal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          "scores": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "score": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "comment": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                },
+                                "evidence": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "materialVersionId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "materialVersionId",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 1,
+                                  "maxItems": 20
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "score",
+                                "confidence",
+                                "comment",
+                                "evidence"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 1,
+                            "maxItems": 10
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "rubricVersionId",
+                          "rubricVersion",
+                          "weights",
+                          "weightedTotal",
+                          "scores"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -3559,6 +3964,69 @@
                   "evidence",
                   "limitations",
                   "coverage"
+                ]
+              },
+              "humanScoreOverride": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "assistive"
+                    ]
+                  },
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "rubricVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "scores": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "score": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "score"
+                      ]
+                    }
+                  },
+                  "weightedTotal": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "decidedBy": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "decidedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rubricVersionId",
+                  "rubricVersion",
+                  "scores",
+                  "weightedTotal",
+                  "reason",
+                  "decidedBy",
+                  "decidedAt"
                 ]
               },
               "decision": {
@@ -3662,6 +4130,13 @@
                         "brief": {
                           "type": "string"
                         },
+                        "sourceVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
                         "tasks": {
                           "type": "array",
                           "items": {
@@ -3695,11 +4170,122 @@
                                 ],
                                 "format": "uuid",
                                 "default": null
+                              },
+                              "citations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "sourceVersionId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "fragmentId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "pageNumber": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "quote": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    }
+                                  },
+                                  "required": [
+                                    "sourceVersionId",
+                                    "fragmentId",
+                                    "pageNumber",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
                               "title",
                               "criteria"
+                            ]
+                          }
+                        },
+                        "updates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 4000,
+                                "default": ""
+                              },
+                              "criteria": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4000
+                              },
+                              "effortHours": {
+                                "type": "number",
+                                "minimum": 0.25,
+                                "maximum": 200,
+                                "default": 1
+                              },
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "expectedRevision": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "citations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "sourceVersionId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "fragmentId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "pageNumber": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "quote": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    }
+                                  },
+                                  "required": [
+                                    "sourceVersionId",
+                                    "fragmentId",
+                                    "pageNumber",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "criteria",
+                              "taskId",
+                              "expectedRevision"
                             ]
                           }
                         },
@@ -7810,6 +8396,10 @@
                       "null"
                     ],
                     "minimum": 0
+                  },
+                  "aiCollaborationEnabled": {
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "required": [
@@ -10256,6 +10846,9 @@
                     "type": "integer",
                     "exclusiveMinimum": 0
                   },
+                  "aiCollaborationEnabled": {
+                    "type": "boolean"
+                  },
                   "assignmentMode": {
                     "type": "string",
                     "enum": [
@@ -10823,6 +11416,100 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/scores": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /submissions/{submissionId}/scores",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "submissionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "scores": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "score": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "score"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "scores",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/collaboration/proposals": {
       "get": {
         "tags": [
@@ -10963,11 +11650,30 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 12000
+                  },
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  },
+                  "sourceVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 5
                   }
                 },
                 "required": [
                   "brief"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }

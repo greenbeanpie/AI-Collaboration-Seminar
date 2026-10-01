@@ -12,15 +12,16 @@ const task = { taskId: 't1', title: '交付原型', detail: '完成交互', crit
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+  client.setQueryData(['project-assistant-sources', 'p1'], []);
   client.setQueryData(['collaboration-tasks', 'p1'], { items: tasks });
-  client.setQueryData(['collaboration-settings', 'p1'], { assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 });
+  client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 });
   client.setQueryData(['collaboration-proposals', 'p1'], { items: [] });
   client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: submissions });
   client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }]);
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
   client.setQueryData(['materialVersions', 'p1', 'mat1'], [{ versionId: 'v1', revision: 4, createdAt: '2026-10-01T00:00:00Z', attachments: [] }]);
-  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: options?.method === 'PATCH' ? { assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}><NavigationProbe />{component === 'settings' ? <CollaborationSettings /> : <CollaborationWorkspace />}</MemoryRouter></QueryClientProvider>);
   return { client, fetchMock, view };
@@ -43,7 +44,7 @@ describe('collaboration lifecycle', () => {
   it('claims atomically using the displayed task revision', async () => {
     const { fetchMock } = setup({ tasks: [{ ...task, assigneeId: null, lifecycleState: 'open' }] });
     fireEvent.click(screen.getByRole('button', { name: '我来认领' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/claim') && opts?.method === 'POST')).toBe(true));
     const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/claim'))!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 3 });
   });
@@ -167,7 +168,7 @@ describe('collaboration lifecycle', () => {
   it('does not rebase a local mode change over refreshed collaboration settings', async () => {
     const { client, fetchMock } = setup({ component: 'settings' });
     fireEvent.change(screen.getByLabelText('分工方式'), { target: { value: 'automatic' } });
-    act(() => { client.setQueryData(['collaboration-settings', 'p1'], { assignmentMode: 'manual', evaluationMode: 'automatic', revision: 8 }); });
+    act(() => { client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'automatic', revision: 8 }); });
     await waitFor(() => expect(screen.getByRole('button', { name: '保存协作规则' })).toBeDisabled());
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '重新载入协作规则' }));
@@ -179,7 +180,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '新建协作任务' }));
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '旧项目草稿' } });
     for (const key of ['collaboration-tasks', 'collaboration-proposals']) client.setQueryData([key, 'p2'], { items: [] });
-    client.setQueryData(['collaboration-settings', 'p2'], { assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 });
+    client.setQueryData(['collaboration-settings', 'p2'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 });
     client.setQueryData(['members', 'p2'], []);
     client.setQueryData(['member-me', 'p2'], { userId: 'm1' });
     identity.projectId = 'p2';
@@ -195,6 +196,6 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存协作规则' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'PATCH')!;
-    expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 7, assignmentMode: 'automatic', evaluationMode: 'manual' });
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 7, aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual' });
   });
 });

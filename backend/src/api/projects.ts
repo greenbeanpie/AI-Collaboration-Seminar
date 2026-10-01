@@ -6,6 +6,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
+import { withIdempotency } from '../services/idempotency';
 
 export const projectParams = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 
@@ -17,6 +18,7 @@ export const projectSchema = z.object({
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']),
   status: z.enum(['active', 'archived']),
   aiBudgetUsd: z.number().nonnegative().nullable().openapi({ description: '项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束' }),
+  aiCollaborationEnabled: z.boolean().optional().openapi({ description: '项目 AI 智能协作开关，默认关闭' }),
   revision: z.number().int(),
   myRole: z.enum(['owner', 'member']),
   createdAt: z.string(),
@@ -36,6 +38,7 @@ const createBody = z.object({
   deadlineDate: dateOnly.optional(),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']).default('unknown'),
   aiBudgetUsd: z.number().nonnegative().nullable().optional(),
+  aiCollaborationEnabled: z.boolean().default(false),
 });
 
 const patchBody = z.object({
@@ -104,6 +107,7 @@ interface ProjectRow {
   competition_deadline_date: string | null;
   deadline_precision: string;
   ai_budget_usd: number | null;
+  ai_collaboration_enabled: number;
   status: string;
   revision: number;
   created_at: string;
@@ -118,6 +122,7 @@ function toProject(row: ProjectRow, role: 'owner' | 'member') {
     deadlineDate: row.competition_deadline_date,
     deadlinePrecision: row.deadline_precision as 'date' | 'datetime' | 'unknown',
     aiBudgetUsd: row.ai_budget_usd,
+    aiCollaborationEnabled: row.ai_collaboration_enabled === 1,
     status: row.status as 'active' | 'archived',
     revision: row.revision,
     myRole: role,
@@ -142,31 +147,36 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(projectCreateRoute, async (c) => {
     const body = c.req.valid('json');
     const user = c.get('user')!;
-    const projectId = newId();
-    const now = nowIso();
-    const teamSizeLimit = await readTeamSizeLimit(c.env.DB);
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9)`,
-      ).bind(
-        projectId,
-        body.name,
-        body.description,
-        body.deadlineDate ?? null,
-        body.deadlinePrecision,
-        teamSizeLimit,
-        body.aiBudgetUsd ?? null,
-        user.id,
-        now,
-      ),
-      c.env.DB.prepare(
-        "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'owner', ?4)",
-      ).bind(newId(), projectId, user.id, now),
-    ]);
-    const row = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1').bind(projectId).first<ProjectRow>();
-    if (!row) throw notFound('项目创建失败');
-    return c.json(apiData(c, toProject(row, 'owner')), 201);
+    const result = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: user.id, operation: 'projects.create', rawBody: JSON.stringify(body) }, async () => {
+      const projectId = newId();
+      const now = nowIso();
+      const teamSizeLimit = await readTeamSizeLimit(c.env.DB);
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9, ?10, ?11, ?11)`,
+        ).bind(
+          projectId,
+          body.name,
+          body.description,
+          body.deadlineDate ?? null,
+          body.deadlinePrecision,
+          teamSizeLimit,
+          body.aiBudgetUsd ?? null,
+          user.id,
+          now,
+          body.aiCollaborationEnabled ? 1 : 0,
+          body.aiCollaborationEnabled ? 'automatic' : 'manual',
+        ),
+        c.env.DB.prepare(
+          "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'owner', ?4)",
+        ).bind(newId(), projectId, user.id, now),
+      ]);
+      const row = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1').bind(projectId).first<ProjectRow>();
+      if (!row) throw notFound('项目创建失败');
+      return { status: 201 as const, body: toProject(row, 'owner') };
+    });
+    return c.json(apiData(c, result.body), result.status);
   });
 
   app.openapi(projectListRoute, async (c) => {
@@ -231,6 +241,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
          description = COALESCE(?3, description),
          competition_deadline_date = CASE WHEN ?4 = 1 THEN ?5 ELSE competition_deadline_date END,
          deadline_precision = COALESCE(?6, deadline_precision),
+         collaboration_revision = collaboration_revision + CASE WHEN ?7 IS NOT NULL AND ?7 != status THEN 1 ELSE 0 END,
          status = COALESCE(?7, status),
          ai_budget_usd = CASE WHEN ?8 = 1 THEN ?9 ELSE ai_budget_usd END,
          revision = revision + 1,

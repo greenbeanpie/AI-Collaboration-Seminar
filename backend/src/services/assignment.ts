@@ -52,7 +52,8 @@ async function assertCurrentMember(env: Env, projectId: string, userId: string):
   if (!row) throw new AppError('PERMISSION_DENIED', '请求者已不属于该项目', 403, false);
 }
 
-export async function generateAssignmentSuggestions(env: Env, jobId: string, input: AssignmentSuggestionInput, config: LoadedAiConfig) {
+export async function generateAssignmentSuggestions(env: Env, jobId: string, input: AssignmentSuggestionInput, config: LoadedAiConfig, beforeCall?: () => Promise<void>) {
+  await beforeCall?.();
   await assertCurrentMember(env, input.projectId, input.requestedBy);
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const currentIds = (JSON.parse(input.profileStamp!) as Array<{ user_id: string }>).map(m => m.user_id).sort();
@@ -82,6 +83,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
       schema: assignmentOutputSchema,
       privateContext: true,
       beforeCall: async () => {
+        await beforeCall?.();
         const current = await loadAiConfig(env.DB);
         if (!current?.enabled || current.id !== config.id) throw new AppError('INVALID_STATE', 'AI 设置已变化', 409, false);
         await assertCurrentMember(env, input.projectId, input.requestedBy);

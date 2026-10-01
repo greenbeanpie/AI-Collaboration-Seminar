@@ -29,7 +29,7 @@ async function fixture(mode = 'manual', attachments: unknown[] = [], markdown = 
     const versionId = id();
     const now = stamp();
     await env.DB.batch([
-        env.DB.prepare('UPDATE projects SET evaluation_mode=?2 WHERE id=?1').bind(projectId, mode),
+        env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,evaluation_mode=?2 WHERE id=?1').bind(projectId, mode),
         env.DB.prepare("INSERT INTO tasks(id,project_id,title,assignee_id,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,current_submission_id) VALUES(?1,?2,'验证案例',?3,'doing',2,?3,?4,?4,'submitted','至少三个验证案例',?5)").bind(taskId, projectId, user.userId, now, submissionId),
         env.DB.prepare("INSERT INTO materials(id,project_id,title,created_by,created_at,updated_at) VALUES(?1,?2,'成果',?3,?4,?4)").bind(materialId, projectId, user.userId, now),
         env.DB.prepare("INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,origin,author_id,created_at,attachments_json) VALUES(?1,?2,?3,1,'{}',?4,'manual',?5,?6,?7)").bind(versionId, materialId, projectId, markdown, user.userId, now, JSON.stringify(attachments)),
@@ -168,7 +168,7 @@ describe('bounded decomposition and assignment continuation', () => {
     it.each(['manual', 'automatic'])('decomposition %s uses separate assignment reservation with no recursive tasks', async (mode) => {
         const user = await seedUser();
         const projectId = await seedProject(user.userId);
-        await env.DB.prepare('UPDATE projects SET assignment_mode=?2 WHERE id=?1').bind(projectId, mode).run();
+        await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2 WHERE id=?1').bind(projectId, mode).run();
         const jobId = await job({ operation: 'collaboration.decompose', projectId, requestedBy: user.userId, settingsRevision: 1, brief: '制作可交付的研究成果' });
         const provider = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
             assertGoRequest(_url, init);
