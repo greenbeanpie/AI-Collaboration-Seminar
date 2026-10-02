@@ -211,7 +211,7 @@ describe('bounded decomposition and assignment continuation', () => {
             const assigned = await getJob(env, result.followupJobId!);
             expect(assigned.status).toBe('succeeded');
             expect(JSON.parse(assigned.result_json!).autoApplied).toBe(true);
-            const children = await env.DB.prepare('SELECT assignee_id,parent_task_id FROM tasks WHERE parent_task_id=?1').bind(result.proposalId).all<{
+            const children = await env.DB.prepare('SELECT assignee_id,parent_task_id FROM tasks WHERE plan_proposal_id=?1').bind(result.proposalId).all<{
                 assignee_id: string;
                 parent_task_id: string;
             }>();

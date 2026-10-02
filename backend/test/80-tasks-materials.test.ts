@@ -12,6 +12,11 @@ async function createTask(cookie: string, pid: string, body: Record<string, unkn
   });
   return { status: res.status, data: ((await res.json()) as { data: Record<string, unknown> }).data };
 }
+async function seedLegacyTask(pid:string,ownerId:string,body:{title:string;detail?:string;dueDate?:string}){
+  const id=crypto.randomUUID(),now=new Date().toISOString();
+  await env.DB.prepare('INSERT INTO tasks(id,project_id,title,detail,due_date,status,revision,created_by,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,\'todo\',1,?6,?7,?7)').bind(id,pid,body.title,body.detail??'',body.dueDate??null,ownerId,now).run();
+  return {status:201,data:{taskId:id,revision:1,status:'todo',title:body.title}};
+}
 
 describe('任务与评论', () => {
   it('任务和评论游标分页不会跳过溢出行', async () => {
@@ -64,12 +69,12 @@ describe('任务与评论', () => {
     expect(pagedCommentIds).toEqual(allCommentIds);
   });
 
-  it('创建 → 列表 → 更新（乐观锁 + 状态事件）', async () => {
+  it('旧任务 → 列表 → 更新（乐观锁 + 状态事件兼容）', async () => {
     const owner = await seedUser();
     const member = await seedUser();
     const pid = await seedProject(owner.userId);
 
-    const created = await createTask(authCookie(owner.token), pid, {
+    const created = await seedLegacyTask(pid,owner.userId, {
       title: '撰写作品介绍', detail: '含教育痛点与创新点', dueDate: '2026-10-08',
     });
     expect(created.status).toBe(201);
@@ -170,7 +175,7 @@ describe('任务与评论', () => {
       .bind(projectId).first<{ count: number }>();
     expect(countBefore?.count).toBe(0);
 
-    const created = await createTask(cookie, projectId, { title: '保持原样' });
+    const created = await seedLegacyTask(projectId,owner.userId, { title: '保持原样' });
     const taskId = String(created.data.taskId);
     const patchBadAssignee = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks/${taskId}`, {
       method: 'PATCH',
