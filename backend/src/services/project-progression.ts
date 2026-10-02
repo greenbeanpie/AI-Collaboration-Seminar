@@ -30,7 +30,7 @@ export async function dispatchProjectProgression(env:Env):Promise<void>{
     state={...state,pending_job_id:null};
    }
   }
-  const event=await env.DB.prepare(`SELECT id,occurred_at FROM events WHERE project_id=?1 AND actor_type='user' AND (occurred_at>?2 OR (occurred_at=?2 AND id>?3)) ORDER BY occurred_at DESC,id DESC LIMIT 1`).bind(project.id,state?.observed_event_at??'',state?.observed_event_id??'').first<{id:string;occurred_at:string}>();
+  const event=await env.DB.prepare(`SELECT id,occurred_at FROM events WHERE project_id=?1 AND actor_type='user' AND type!='collaboration.proposal_revised' AND (occurred_at>?2 OR (occurred_at=?2 AND id>?3)) ORDER BY occurred_at DESC,id DESC LIMIT 1`).bind(project.id,state?.observed_event_at??'',state?.observed_event_id??'').first<{id:string;occurred_at:string}>();
   if(!event||Date.now()-Date.parse(event.occurred_at)<15_000)continue;
   // Existing review is deliberate: a new explicit redo stales it before reaching here.
   const pending=await env.DB.prepare("SELECT updated_at FROM collaboration_proposals WHERE project_id=?1 AND status='pending' ORDER BY updated_at DESC LIMIT 1").bind(project.id).first<{updated_at:string}>();
