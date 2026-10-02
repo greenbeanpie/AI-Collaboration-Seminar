@@ -1,9 +1,10 @@
 import './SupportTicketsPage.css';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { api, apiUrl, ApiError } from '../api/client';
+import { MAX_TICKET_IMAGES, MAX_TICKET_IMAGE_BYTES, ticketImageTypes } from '../../../shared/support-tickets';
 import type { DataOf } from '../api/types';
 import { useSession } from '../auth';
 import { ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -11,6 +12,20 @@ import { ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../c
 type Ticket = DataOf<'SupportTicketResponse'>['ticket'];
 type Status = Ticket['status'];
 const ticketStatuses: Record<Status, string> = { pending: '待处理', in_progress: '处理中', waiting_user: '待用户回复', resolved: '已解决', closed: '已关闭' };
+const urgencies: Record<Ticket['urgency'], string> = { low: '低 · 不影响使用', normal: '普通 · 部分使用受影响', high: '高 · 重要功能受阻', urgent: '紧急 · 无法继续使用' };
+const categories: Record<Ticket['category'], string> = { interface: '界面与显示', functionality: '功能与操作', account: '账户与权限', performance: '性能与稳定性', other: '其他' };
+type SelectedImage = { id: string; file: File; preview: string; state: 'selected' | 'uploading' | 'uploaded' | 'failed'; error?: string };
+function TicketTags({ ticket }: { ticket: Pick<Ticket, 'status' | 'urgency' | 'category'> }) {
+  return <div className="support-tags"><StatusPill>{ticketStatuses[ticket.status]}</StatusPill><span className={`support-urgency support-urgency-${ticket.urgency ?? 'normal'}`}>紧急度：{urgencies[ticket.urgency ?? 'normal']}</span><span className="muted">分类：{categories[ticket.category ?? 'other']}</span></div>;
+}
+function TicketImage({ ticketId, image, index }: { ticketId: string; image: Ticket['images'][number]; index: number }) {
+  const [attempt, setAttempt] = useState(0); const [failed, setFailed] = useState(false);
+  const src = apiUrl(`${ticketPath(ticketId)}/images/${image.id}`, { retry: attempt || undefined });
+  return <figure className="support-image">
+    {failed ? <div role="alert">图片 {index + 1} 加载失败。<button className="button button-quiet" onClick={() => { setFailed(false); setAttempt(n => n + 1); }}>重试加载图片 {index + 1}</button></div> : <a href={src} target="_blank" rel="noreferrer"><img src={src} alt={`工单图片 ${index + 1}`} onError={() => setFailed(true)} /></a>}
+    <figcaption>图片 {index + 1} · {(image.sizeBytes / 1024).toFixed(0)} KiB · 点击查看原图</figcaption>
+  </figure>;
+}
 const roleAdmin = (role?: string) => role === 'super_admin' || role === 'admin';
 const ticketPath = (id: string) => `/support/tickets/${encodeURIComponent(id)}`;
 const denied = (error: unknown): error is ApiError => error instanceof ApiError && [401, 403, 404].includes(error.status);
@@ -29,19 +44,65 @@ export function SupportTicketsPage() {
     }
   }
   const [title, setTitle] = useState(''); const [body, setBody] = useState(''); const locked = useRef(false);
+  const [urgency, setUrgency] = useState<Ticket['urgency']>('normal'); const [category, setCategory] = useState<Ticket['category']>('other');
+  const [images, setImages] = useState<SelectedImage[]>([]); const [imageError, setImageError] = useState('');
+  const [savedTicket, setSavedTicket] = useState<Ticket | null>(null); const previews = useRef(new Set<string>());
+  useEffect(() => { const urls = previews.current; return () => { urls.forEach(url => URL.revokeObjectURL(url)); }; }, []);
+  function selectImages(files: FileList | null) {
+    if (!files) return;
+    const selected = Array.from(files);
+    if (images.length + selected.length > MAX_TICKET_IMAGES) { setImageError(`最多选择 ${MAX_TICKET_IMAGES} 张图片。`); return; }
+    if (selected.some(file => !ticketImageTypes.includes(file.type as typeof ticketImageTypes[number]) || !file.size || file.size > MAX_TICKET_IMAGE_BYTES)) { setImageError('请选择 PNG、JPEG 或 WebP 图片，每张不超过 5 MiB，不能为空。'); return; }
+    setImageError('');
+    setImages(current => [...current, ...selected.map(file => { const preview = URL.createObjectURL(file); previews.current.add(preview); return { id: crypto.randomUUID(), file, preview, state: 'selected' as const }; })]);
+  }
+  function removeImage(image: SelectedImage) { URL.revokeObjectURL(image.preview); previews.current.delete(image.preview); setImages(current => current.filter(item => item.id !== image.id)); setImageError(''); }
   const list = useQuery({ queryKey: ['support-tickets', account?.id, account?.role, cursor, filter], enabled: !!account && !accessError,
     queryFn: ({ signal }) => protect(() => api.get<'SupportTicketListResponse'>('/support/tickets', { cursor, status: filter, limit: 20 }, signal)), retry: false });
-  const create = useMutation({ mutationFn: () => protect(() => api.post<'SupportTicketResponse'>('/support/tickets', { title, body })),
-    onSuccess: data => navigate(`/app/support/${data.ticket.id}`), onSettled: () => { locked.current = false; } });
+  const create = useMutation({ mutationFn: async () => {
+      const ticket = savedTicket ?? (await protect(() => api.post<'SupportTicketResponse'>('/support/tickets', { title, body, urgency, category }))).ticket;
+      setSavedTicket(ticket);
+      let allUploaded = true;
+      for (const image of images.filter(item => item.state !== 'uploaded')) {
+        setImages(current => current.map(item => item.id === image.id ? { ...item, state: 'uploading', error: undefined } : item));
+        try {
+          await protect(() => api.put<'SupportTicketImageResponse'>(`${ticketPath(ticket.id)}/images/${image.id}`, undefined, { rawBody: image.file, headers: { 'Content-Type': image.file.type } }));
+          setImages(current => current.map(item => item.id === image.id ? { ...item, state: 'uploaded' } : item));
+        } catch (error) {
+          allUploaded = false;
+          setImages(current => current.map(item => item.id === image.id ? { ...item, state: 'failed', error: error instanceof Error ? error.message : '上传失败，请重试。' } : item));
+          if (denied(error)) break;
+        }
+      }
+      return { ticket, allUploaded };
+    }, onSuccess: async data => {
+      await queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
+      if (data.allUploaded) navigate(`/app/support/${data.ticket.id}`);
+    }, onSettled: () => { locked.current = false; } });
   function submit(event: FormEvent) { event.preventDefault(); if (locked.current) return; locked.current = true; create.mutate(); }
   return <div className="page-stack support-page">
     <PageHeading eyebrow="站内支持" title={roleAdmin(account?.role) ? '全部工单' : '我的工单'} detail="提交问题或求助，和管理员在站内沟通。请勿填写密码、验证码、API 密钥、支付资料等敏感凭据。" />
     {accessError !== null && <ErrorNotice error={accessError} onRetry={() => setAccessError(null)} />}
-    <SectionCard title="提交工单" detail="仅支持文字，不发送邮件通知。">
+    <SectionCard title="提交工单" detail="可填写紧急度、分类并附上问题截图。">
       <form className="stack" onSubmit={submit}>
-        <label>问题标题<input className="input" value={title} maxLength={160} required disabled={create.isPending} onChange={e => setTitle(e.target.value)} /></label>
-        <label>问题描述<textarea className="input" rows={5} value={body} maxLength={8000} required disabled={create.isPending} onChange={e => setBody(e.target.value)} /></label>
-        <button className="button button-primary" disabled={create.isPending || !title.trim() || !body.trim()}>{create.isPending ? '正在提交……' : '提交工单'}</button>
+        <label>问题标题<input className="input" value={title} maxLength={160} required disabled={create.isPending || !!savedTicket} onChange={e => setTitle(e.target.value)} /></label>
+        <label>问题描述<textarea className="input" rows={5} value={body} maxLength={8000} required disabled={create.isPending || !!savedTicket} onChange={e => setBody(e.target.value)} /></label>
+        <div className="support-fields">
+          <label>紧急度<select className="input" value={urgency} disabled={create.isPending || !!savedTicket} onChange={e => setUrgency(e.target.value as Ticket['urgency'])}>{Object.entries(urgencies).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>问题分类<select className="input" value={category} disabled={create.isPending || !!savedTicket} onChange={e => setCategory(e.target.value as Ticket['category'])}>{Object.entries(categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        </div>
+        <label>上传问题图片<input className="input" type="file" accept={ticketImageTypes.join(',')} multiple disabled={create.isPending || !!savedTicket} aria-describedby="support-image-help" onChange={e => { selectImages(e.target.files); e.target.value = ''; }} /></label>
+        <p id="support-image-help" className="muted">最多 {MAX_TICKET_IMAGES} 张，每张不超过 5 MiB；支持 PNG、JPEG、静态 WebP。截图请遮盖密码、密钥和个人资料。</p>
+        {imageError && <p role="alert">{imageError}</p>}
+        {images.length > 0 && <ul className="support-images" aria-label="已选择图片">{images.map(image => <li className="support-image" key={image.id}>
+          <img src={image.preview} alt={`待上传图片：${image.file.name}`} />
+          <span className="support-image-name">{image.file.name} · {(image.file.size / 1024 / 1024).toFixed(2)} MiB</span>
+          <span role="status">{{ selected: '待上传', uploading: '正在上传……', uploaded: '已上传', failed: '上传失败' }[image.state]}</span>
+          {image.error && <p role="alert">{image.error}</p>}
+          {!savedTicket && <button type="button" className="button button-quiet" disabled={create.isPending} onClick={() => removeImage(image)}>移除 {image.file.name}</button>}
+        </li>)}</ul>}
+        {savedTicket && <p role="status">工单文字已保存。失败的图片可以重试，已成功的图片不会重复上传。<Link to={`/app/support/${savedTicket.id}`}>查看已保存工单</Link></p>}
+        <button className="button button-primary" disabled={create.isPending || !!accessError || !title.trim() || !body.trim()}>{create.isPending ? '正在提交与上传……' : savedTicket ? '重试未上传图片' : '提交工单'}</button>
         {create.error && <ErrorNotice error={create.error} />}
       </form>
     </SectionCard>
@@ -50,7 +111,7 @@ export function SupportTicketsPage() {
       {list.isLoading && <Spinner label="正在读取工单" />}
       {list.error && <ErrorNotice error={list.error} onRetry={() => void list.refetch()} />}
       {list.data && !accessError && !denied(list.error) && <>
-        {list.data.items.length === 0 ? <p className="muted">暂无符合条件的工单。</p> : <ul className="support-ticket-list">{list.data.items.map(ticket => <li key={ticket.id}><Link to={`/app/support/${ticket.id}`}><strong>{ticket.title}</strong></Link><StatusPill>{ticketStatuses[ticket.status]}</StatusPill><small>{roleAdmin(account?.role) && `${ticket.ownerName} · `}创建于 {dateLabel(ticket.createdAt)}</small></li>)}</ul>}
+        {list.data.items.length === 0 ? <p className="muted">暂无符合条件的工单。</p> : <ul className="support-ticket-list">{list.data.items.map(ticket => <li key={ticket.id}><Link to={`/app/support/${ticket.id}`}><strong>{ticket.title}</strong></Link><TicketTags ticket={ticket} /><small>{roleAdmin(account?.role) && `${ticket.ownerName} · `}创建于 {dateLabel(ticket.createdAt)}</small></li>)}</ul>}
         <div className="button-row">{cursor && <button className="button button-quiet" onClick={() => setSearch(filter ? { status: filter } : {})}>回到第一页</button>}{list.data.nextCursor && <button className="button button-quiet" onClick={() => setSearch({ ...(filter ? { status: filter } : {}), cursor: list.data!.nextCursor! })}>下一页</button>}</div>
       </>}
     </SectionCard>
@@ -106,7 +167,7 @@ function SupportTicketThread({ ticketId }: { ticketId: string }) {
     {detail.error && !blocked && <ErrorNotice error={detail.error} onRetry={() => void detail.refetch()} />}
     {ticket && <>
       <PageHeading eyebrow="站内支持工单" title={ticket.title} detail={`${ticket.ownerName} · 创建于 ${dateLabel(ticket.createdAt)}`} />
-      <SectionCard title="问题描述"><StatusPill>{ticketStatuses[ticket.status]}</StatusPill><p className="support-text">{ticket.body}</p></SectionCard>
+      <SectionCard title="问题描述"><TicketTags ticket={ticket} /><p className="support-text">{ticket.body}</p>{(ticket.images ?? []).length > 0 && <div className="support-images" aria-label="工单图片">{ticket.images.map((image, index) => <TicketImage key={image.id} ticketId={ticket.id} image={image} index={index} />)}</div>}</SectionCard>
       {roleAdmin(account?.role) && <SectionCard title="处理状态"><label>工单状态<select className="input" value={selectedStatus || ticket.status} disabled={changeStatus.isPending || detail.isFetching || detail.isError} onChange={e => setSelectedStatus(e.target.value as Status)}>{Object.entries(ticketStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="button button-primary" disabled={changeStatus.isPending || detail.isFetching || detail.isError || !selectedStatus || selectedStatus === ticket.status} onClick={() => { setNotice(''); changeStatus.mutate(); }}>保存状态</button>{changeStatus.error && <ErrorNotice error={changeStatus.error} />}</SectionCard>}
       <SectionCard title="沟通记录">
         {messages.isLoading && <Spinner label="正在读取回复" />}

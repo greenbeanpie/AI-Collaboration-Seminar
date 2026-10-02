@@ -6012,6 +6012,16 @@ export interface paths {
                     "application/json": {
                         title: string;
                         body: string;
+                        /**
+                         * @default normal
+                         * @enum {string}
+                         */
+                        urgency?: "low" | "normal" | "high" | "urgent";
+                        /**
+                         * @default other
+                         * @enum {string}
+                         */
+                        category?: "interface" | "functionality" | "account" | "performance" | "other";
                     };
                 };
             };
@@ -6063,6 +6073,74 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/tickets/{ticketId}/images/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticketId: string;
+                    imageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅工单所有者和管理员可读取图片 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                        "image/jpeg": string;
+                        "image/webp": string;
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ticketId: string;
+                    imageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                };
+            };
+            responses: {
+                /** @description 图片已上传；相同 ID 和内容可安全重试 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportTicketImageResponse"];
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -8691,6 +8769,10 @@ export interface components {
         SupportTicketListResponse: {
             data: {
                 items: {
+                    /** @enum {string} */
+                    urgency: "low" | "normal" | "high" | "urgent";
+                    /** @enum {string} */
+                    category: "interface" | "functionality" | "account" | "performance" | "other";
                     /** Format: uuid */
                     id: string;
                     title: string;
@@ -8711,6 +8793,10 @@ export interface components {
         SupportTicketResponse: {
             data: {
                 ticket: {
+                    /** @enum {string} */
+                    urgency: "low" | "normal" | "high" | "urgent";
+                    /** @enum {string} */
+                    category: "interface" | "functionality" | "account" | "performance" | "other";
                     /** Format: uuid */
                     id: string;
                     title: string;
@@ -8723,6 +8809,28 @@ export interface components {
                     createdAt: string;
                     updatedAt: string;
                     body: string;
+                    images: {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        contentType: "image/png" | "image/jpeg" | "image/webp";
+                        sizeBytes: number;
+                        createdAt: string;
+                    }[];
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        SupportTicketImageResponse: {
+            data: {
+                image: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    contentType: "image/png" | "image/jpeg" | "image/webp";
+                    sizeBytes: number;
+                    createdAt: string;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */

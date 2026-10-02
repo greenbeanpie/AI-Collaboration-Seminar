@@ -8700,6 +8700,25 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "urgency": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ]
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "interface",
+                        "functionality",
+                        "account",
+                        "performance",
+                        "other"
+                      ]
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid"
@@ -8735,6 +8754,8 @@
                     }
                   },
                   "required": [
+                    "urgency",
+                    "category",
                     "id",
                     "title",
                     "status",
@@ -8777,6 +8798,25 @@
               "ticket": {
                 "type": "object",
                 "properties": {
+                  "urgency": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "interface",
+                      "functionality",
+                      "account",
+                      "performance",
+                      "other"
+                    ]
+                  },
                   "id": {
                     "type": "string",
                     "format": "uuid"
@@ -8812,9 +8852,43 @@
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "contentType": {
+                          "type": "string",
+                          "enum": [
+                            "image/png",
+                            "image/jpeg",
+                            "image/webp"
+                          ]
+                        },
+                        "sizeBytes": {
+                          "type": "integer"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "contentType",
+                        "sizeBytes",
+                        "createdAt"
+                      ]
+                    }
                   }
                 },
                 "required": [
+                  "urgency",
+                  "category",
                   "id",
                   "title",
                   "status",
@@ -8823,12 +8897,63 @@
                   "ownerName",
                   "createdAt",
                   "updatedAt",
-                  "body"
+                  "body",
+                  "images"
                 ]
               }
             },
             "required": [
               "ticket"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "SupportTicketImageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "image": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "enum": [
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp"
+                    ]
+                  },
+                  "sizeBytes": {
+                    "type": "integer"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "contentType",
+                  "sizeBytes",
+                  "createdAt"
+                ]
+              }
+            },
+            "required": [
+              "image"
             ]
           },
           "requestId": {
@@ -17452,6 +17577,27 @@
                     "minLength": 1,
                     "maxLength": 8000,
                     "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+$"
+                  },
+                  "urgency": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ],
+                    "default": "normal"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "interface",
+                      "functionality",
+                      "account",
+                      "performance",
+                      "other"
+                    ],
+                    "default": "other"
                   }
                 },
                 "required": [
@@ -17500,6 +17646,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SupportTicketResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/support/tickets/{ticketId}/images/{imageId}": {
+      "put": {
+        "tags": [
+          "support"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "ticketId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "imageId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "图片已上传；相同 ID 和内容可安全重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportTicketImageResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "support"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "ticketId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "imageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "仅工单所有者和管理员可读取图片",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }

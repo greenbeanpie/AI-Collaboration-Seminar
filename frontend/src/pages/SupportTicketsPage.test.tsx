@@ -23,7 +23,7 @@ it('empty list, privacy warning, filtering and pagination have clear states', as
  fireEvent.change(screen.getByLabelText('筛选状态'), { target: { value: 'resolved' } });
  await waitFor(() => expect(mock.mock.calls.some(([url]) => url.includes('status=resolved') && !url.includes('cursor='))).toBe(true));
 });
-it('create sends only title/body and opens detail; repeated clicks cannot duplicate pending submission', async () => {
+it('create sends title/body and default urgency/category and opens detail; repeated clicks cannot duplicate pending submission', async () => {
  let resolve!: (value: Response) => void;
  const mock = vi.fn(async (url: string, options?: RequestInit) => {
   if (options?.method === 'POST') return new Promise<Response>(r => { resolve = r; });
@@ -36,7 +36,7 @@ it('create sends only title/body and opens detail; repeated clicks cannot duplic
  fireEvent.change(screen.getByLabelText('问题描述'), { target: { value: '描述' } });
  const submit = screen.getByRole('button', { name: '提交工单' }); fireEvent.click(submit); fireEvent.click(submit);
  await waitFor(() => expect(mock.mock.calls.filter(([,o]) => o?.method === 'POST')).toHaveLength(1));
- expect(JSON.parse(String(mock.mock.calls.find(([,o]) => o?.method === 'POST')![1]!.body))).toEqual({ title: '测试问题', body: '描述' });
+ expect(JSON.parse(String(mock.mock.calls.find(([,o]) => o?.method === 'POST')![1]!.body))).toEqual({ title: '测试问题', body: '描述', urgency: 'normal', category: 'other' });
  resolve(response({ ticket }, 201)); await screen.findByRole('heading', { name: '测试问题' });
 });
 it('plain text is escaped and ordinary users cannot change status; errors preserve reply draft', async () => {
@@ -134,4 +134,53 @@ it('list access loss hides cached ticket titles and clears their cached records'
  revoked = true; await act(async () => { await client.refetchQueries({ queryKey: ['support-tickets'] }); });
  await screen.findByRole('alert'); expect(screen.queryByRole('link', { name: ticket.title })).not.toBeInTheDocument();
  expect(client.getQueryData(['support-tickets', 'user1', 'admin', null, ''])).toBeUndefined();
+});
+
+function stubPreviews() {
+ const createObjectURL = vi.fn(() => `blob:fixture-${Math.random()}`); const revokeObjectURL = vi.fn();
+ vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL }));
+ return { createObjectURL, revokeObjectURL };
+}
+it('validates image type, size and count before previewing; removing a selection releases its URL', async () => {
+ const { createObjectURL, revokeObjectURL } = stubPreviews();
+ vi.stubGlobal('fetch', vi.fn(async () => response({ items: [], nextCursor: null }))); setup();
+ const input = screen.getByLabelText('上传问题图片');
+ fireEvent.change(input, { target: { files: [new File(['<svg/>'], 'unsafe.svg', { type: 'image/svg+xml' })] } });
+ expect(screen.getByRole('alert')).toHaveTextContent('请选择 PNG'); expect(createObjectURL).not.toHaveBeenCalled();
+ fireEvent.change(input, { target: { files: [new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'huge.png', { type: 'image/png' })] } });
+ expect(screen.getByRole('alert')).toHaveTextContent('5 MiB');
+ const files = Array.from({ length: 5 }, (_, i) => new File(['fixture'], `${i}.png`, { type: 'image/png' }));
+ fireEvent.change(input, { target: { files } }); expect(screen.getByRole('alert')).toHaveTextContent('最多选择 4');
+ fireEvent.change(input, { target: { files: files.slice(0, 1) } });
+ expect(screen.getByRole('img', { name: '待上传图片：0.png' })).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button', { name: '移除 0.png' })); expect(screen.queryByRole('img')).not.toBeInTheDocument(); expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+});
+it('preserves previews after a partial failure and retries only failed immutable image IDs without recreating the ticket', async () => {
+ const { revokeObjectURL } = stubPreviews(); let creates = 0; const uploads: string[] = []; let firstUpload = true;
+ const enriched = { ...ticket, urgency: 'urgent', category: 'interface', images: [] };
+ const mock = vi.fn(async (url: string, options?: RequestInit) => {
+  if (options?.method === 'POST') { creates++; expect(JSON.parse(String(options.body))).toMatchObject({ urgency: 'urgent', category: 'interface' }); return response({ ticket: enriched }, 201); }
+  if (options?.method === 'PUT') { uploads.push(url); expect(options.body).toBeInstanceOf(File); expect(new Headers(options.headers).get('Content-Type')).toBe('image/png'); if (firstUpload) { firstUpload = false; return new Response(JSON.stringify({ error: { code: 'INTERNAL', message: '图片上传暂时失败，请重试', retryable: true }, requestId: 'fixture' }), { status: 503, headers: { 'content-type': 'application/json' } }); } return response({ image: {} }); }
+  if (url.includes('/messages')) return response({ items: [], nextCursor: null });
+  if (url.endsWith('/ticket1')) return response({ ticket: enriched });
+  return response({ items: [], nextCursor: null });
+ });
+ vi.stubGlobal('fetch', mock); setup();
+ fireEvent.change(screen.getByLabelText('问题标题'), { target: { value: '截图问题' } }); fireEvent.change(screen.getByLabelText('问题描述'), { target: { value: '描述' } });
+ fireEvent.change(screen.getByLabelText('紧急度'), { target: { value: 'urgent' } }); fireEvent.change(screen.getByLabelText('问题分类'), { target: { value: 'interface' } });
+ fireEvent.change(screen.getByLabelText('上传问题图片'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } });
+ fireEvent.click(screen.getByRole('button', { name: '提交工单' }));
+ await screen.findByRole('button', { name: '重试未上传图片' }); expect(screen.getByText('上传失败')).toBeInTheDocument(); expect(screen.getByText('已上传')).toBeInTheDocument();
+ expect(screen.getAllByRole('img')).toHaveLength(2); expect(screen.getByLabelText('问题标题')).toBeDisabled(); expect(creates).toBe(1); expect(uploads).toHaveLength(2);
+ fireEvent.click(screen.getByRole('button', { name: '重试未上传图片' })); await screen.findByRole('heading', { name: '测试问题' });
+ expect(creates).toBe(1); expect(uploads).toHaveLength(3); expect(uploads[2]).toBe(uploads[0]); expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+});
+it.each(['user','admin'])('shows urgency, category and private image links for %s with image-load retry', async role => {
+ const enriched = { ...ticket, urgency: 'high', category: 'functionality', images: [{ id: 'image1', contentType: 'image/png', sizeBytes: 1024, createdAt: ticket.createdAt }] };
+ vi.stubGlobal('fetch', vi.fn(async (url: string) => response(url.includes('/messages') ? { items: [], nextCursor: null } : { ticket: enriched })));
+ setup('/app/support/ticket1', role);
+ const image = await screen.findByRole('img', { name: '工单图片 1' }); expect(image).toHaveAttribute('src', '/api/v1/support/tickets/ticket1/images/image1');
+ expect(screen.getByText('紧急度：高 · 重要功能受阻')).toBeInTheDocument(); expect(screen.getByText('分类：功能与操作')).toBeInTheDocument();
+ fireEvent.error(image); fireEvent.click(screen.getByRole('button', { name: '重试加载图片 1' }));
+ expect(screen.getByRole('img')).toHaveAttribute('src', '/api/v1/support/tickets/ticket1/images/image1?retry=1');
 });

@@ -1,0 +1,20 @@
+# Support ticket urgency, categories and screenshots
+
+New tickets accept four urgency levels (low, normal, high, urgent) and five categories (interface, functionality, account, performance, other). The form, owner/admin list and shared detail/processing screen display the selected values. Additive migration `0025_ticket_images.sql` preserves existing tickets/messages and defaults older tickets and clients to normal/other.
+
+Owners can attach up to four PNG, JPEG or static WebP screenshots, each at most 5 MiB. Selection previews can be removed before submission. Text is saved first, then images upload individually. On partial failure, the form keeps previews, identifies failed/successful images and retries only unfinished images with the same UUID. A successful retry cannot recreate the ticket or duplicate a successful image. Detail images support loading retries and opening the original.
+
+The Worker bounds the actual streamed body (including without Content-Length), validates allowed MIME against raster container headers/dimensions and rejects empty, executable, mismatched or oversized attachments. Uploads are owner-only; reads require the existing password session and owner/admin ticket visibility, including immediate administrator demotion. Origin checks and upload rate limits reuse existing middleware/services. D1 reserves at most four slots atomically even across concurrent requests; UUID plus SHA-256 prevents overwriting or cross-ticket reuse. R2 uses an independent private support prefix with no public/signed URL or client-supplied key. Responses use no-store, nosniff, same-origin CORP and a sandbox/default-src-none document CSP. SVG/HTML are never accepted or served.
+
+R2 failures leave a private pending slot that can safely retry; only ready images appear in details. Closing a ticket during upload cannot publish a new attachment. Selected source files live in the current browser form: navigating away/reloading loses unuploaded local selections, while the saved text and successful images persist. There is no attachment deletion, project permission change or AI configuration change in this feature.
+
+## Verification
+
+- Both TypeScript checks, frontend ESLint/production build, Service Binding regression, production configuration preflight and backend production dry run passed.
+- Frontend full regression: 61 files / 343 tests. Focused support UI: 16 tests, including selection validation/removal, defaults, partial failure/idempotent retry and owner/admin display/image-load retry.
+- Backend regression covers old/new ticket payloads, all enum values, real PNG/JPEG/WebP (including alpha and tiny lossless), forged SVG/HTML/MIME, streamed limits, zero bytes/dimensions, owner/admin/stranger and session/demotion checks, concurrent cap, immutable retries, R2 failure and closure races, and rate limiting. Full regression passed: 58 files / 572 tests. The pre-existing workerd Workflow teardown canceled-request warnings still appear, with exit code 0.
+- `python3 backend/test/ticket-images-migration.py` confirms existing tickets/replies and all other tables survive the additive migration.
+- Production-build Chromium UI passed at desktop 1440 and phone widths 390/320, light/dark themes and owner/admin roles: previews, partial failure, upload retry, image-read retry, admin status updates, no JS errors or horizontal overflow. Screenshots inspected visually. Evidence: `/tmp/p2-ticket-images-ui-20261002/results.json` and corresponding preview/failed/detail PNGs.
+- WebKit was attempted with the installed older browser binary; its automation run stalled and was terminated. It is not counted as passed. Phone coverage is responsive browser emulation, not physical iOS/Android hardware.
+
+Reproduce browser QA against a locally served production build with `UI_ORIGIN`, `UI_PLAYWRIGHT_PATH`, and optionally `UI_CHROMIUM_PATH`, `UI_OUTPUT`, `UI_ENGINES=chromium,webkit`, `UI_WEBKIT_PATH`: `node scripts/verify-ticket-images-ui.cjs`. All API interactions are synthetic and loopback-only, including deliberate failures. No paid model tests or real-provider calls were performed.

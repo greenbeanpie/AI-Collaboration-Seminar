@@ -6,3 +6,14 @@
 .support-page small { color: var(--muted); }
 .support-page .button-row { display: flex; flex-wrap: wrap; gap: .5rem; }
 .support-page .page-heading h1 { overflow-wrap: anywhere; }
+
+.support-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.support-tags { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; font-size: .9rem; }
+.support-urgency-high, .support-urgency-urgent { font-weight: 700; color: var(--text); }
+.support-images { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
+.support-image { margin: 0; padding: .75rem; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: .5rem; min-width: 0; align-content: start; overflow-wrap: anywhere; }
+.support-image img { display: block; width: 100%; height: 180px; object-fit: contain; border-radius: 6px; }
+.support-image figcaption, .support-image-name { font-size: .85rem; color: var(--muted); }
+.support-image .button { white-space: normal; }
+.support-page input[type=file] { width: 100%; min-width: 0; }
+@media (max-width: 600px) { .support-fields { grid-template-columns: minmax(0, 1fr); } }
