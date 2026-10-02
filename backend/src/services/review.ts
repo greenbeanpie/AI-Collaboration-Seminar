@@ -1,5 +1,6 @@
 import { assertRequirementSources, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
+import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
@@ -155,6 +156,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
     });
     await succeedJob(env, jobId, { reviewId: review.id });
   } catch (err) {
+    if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await env.DB.prepare("UPDATE reviews SET status = 'failed' WHERE id = ?1 AND status IN ('pending', 'running')").bind(input.reviewId).run();
     await settleReservation(env, jobId, 'released');

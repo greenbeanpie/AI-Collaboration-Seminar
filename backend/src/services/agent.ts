@@ -1,5 +1,6 @@
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
+import { InvestigationContinuation } from './project-investigation';
 import { assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
@@ -487,6 +488,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     });
     await succeedJob(env, jobId, { runId: input.runId, capability: input.capability });
   } catch (err) {
+    if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', output_json = ?2 WHERE id = ?1 AND status = 'running'")
       .bind(input.runId, JSON.stringify({ error: message.slice(0, 500) }))

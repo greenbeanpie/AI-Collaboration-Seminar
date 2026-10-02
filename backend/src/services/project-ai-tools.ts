@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { discoveryDefinitions, discoveryArgs, executeDiscoveryTool } from './project-context';
 import { referencesFromRead, uniqueReadReferences, validateReadReferences, decisionReferences, extractDecisionReferences, type ProjectReference, type DecisionReference } from './project-evidence';
-import { loadInvestigation, saveInvestigation, compactExchanges, redactPrivateExchanges } from './project-investigation';
+import { loadInvestigation, saveInvestigation, compactExchanges, InvestigationContinuation } from './project-investigation';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { AppError, invalidState, notFound, permissionDenied } from '../core/errors';
@@ -291,9 +291,10 @@ export async function projectToolConversation(env: Env, params: {
   };
   let currentStep=restored?.step??0;
   let pendingOutput=restored?.pendingOutput;
-  const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges:params.privateContext?redactPrivateExchanges(exchanges):exchanges,references,trace,compacted,
-    pendingDispatch:pendingDispatch || (!!params.privateContext && !!pendingOutput),
-    content:params.privateContext?undefined:content,pendingOutput:params.privateContext?undefined:pendingOutput});};
+  let pendingResults:ToolExchange['results']=restored?.pendingResults??[];
+  let toolsInSlice=0;
+  const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges,references,trace,compacted,
+    pendingDispatch,content,pendingOutput,pendingResults},params.privateContext);};
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {
     if(pendingOutput && toolMode.definitions.length){await guard();return pendingOutput;}
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
@@ -369,11 +370,13 @@ export async function projectToolConversation(env: Env, params: {
     }
     const discoveryRule:ChatMessage={role:'system',content:'先了解项目概况、资料目录和任务情况，再自主选择相关内容读取。可不断分页，不要求用户预选文件。最终JSON增加referenceIds数组和decisionReferences:[{decisionPath:"tasks[0]等结果字段",referenceIds:["实际读取ID"]}]，标明各项决策依据；仅列目录不算读取正文。'+(compacted?'已读历史元数据，正文可重新读取：'+compacted:'')};
     if(!context.jobId && step>=24) throw invalidState('本轮达到24次模型调用资源预算，不会自动追加付费调用');
+    const resumingResponse=!!pendingOutput;
     const out = await call([...params.messages, rule,projectOverviewMessage,discoveryRule], {
       definitions: defs, exchanges, final: false
     });
     const o = out.toolOutput;
     if(!o) throw invalidState('模型未返回工具协议输出，请检查模型工具能力');
+    if(env.AI_EXECUTION_SLICE && !resumingResponse && o.toolCalls.length) throw new InvestigationContinuation();
     if (!o.toolCalls.length) {
       await guard();
       references=decisionReferences(o.content,references);
@@ -383,8 +386,8 @@ export async function projectToolConversation(env: Env, params: {
         content: o.content, trace, citations,references,investigationId,decisionReferences:extractDecisionReferences(o.content,references)
       };
     }
-    const results: ToolExchange['results'] = [];
-    for (const invocation of o.toolCalls) {
+    const results: ToolExchange['results'] = [...pendingResults];
+    for (const invocation of o.toolCalls.slice(results.length)) {
       usedTools++;
       let output: unknown, status: 'ok' | 'failed' = 'ok';
       let safeArgs: unknown = {
@@ -459,12 +462,18 @@ export async function projectToolConversation(env: Env, params: {
       results.push({
         call: invocation, output
       });
+      pendingResults=results;
+      await checkpoint();
+      toolsInSlice++;
+      if(env.AI_EXECUTION_SLICE && toolsInSlice>=4 && results.length<o.toolCalls.length) throw new InvestigationContinuation();
     }
     exchanges.push({
       assistant: o.assistant, results
     });
     pendingOutput=undefined;
+    pendingResults=[];
     currentStep=step+1;await checkpoint();
     if(exchanges.length>=3){const recent=exchanges.slice(-3).map(e=>JSON.stringify(e.results.map(r=>({name:r.call.name,args:r.call.args}))));if(recent.every(x=>x===recent[0])) throw invalidState('模型连续重复读取且无进展，请重新发起');}
+    if(env.AI_EXECUTION_SLICE) throw new InvestigationContinuation();
   }
 }

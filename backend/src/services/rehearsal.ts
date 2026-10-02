@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
@@ -182,6 +183,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     await settleReservation(env, jobId, 'settled');
     await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });
   } catch (err) {
+    if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await settleReservation(env, jobId, 'released');
     if(input.phase==='summary')await env.DB.prepare("UPDATE assessments SET status='failed' WHERE entity_id=?1 AND status!='succeeded'").bind(input.rehearsalId).run();

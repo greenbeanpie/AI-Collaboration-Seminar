@@ -2,6 +2,7 @@ import { assertProjectSourceContext, projectSourceContextGuard, type ProjectSour
 import { profileStamp, assertProfileStamp, profileSnapshotGuard, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
+import { InvestigationContinuation } from './project-investigation';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
 import { AppError, invalidState } from '../core/errors';
 import { newId, nowIso } from '../core/db';
@@ -478,6 +479,7 @@ export async function runCollaborationAiJob(env: Env, jobId: string): Promise<vo
             await propose(env, jobId, input, config);
     }
     catch (error) {
+        if (error instanceof InvestigationContinuation) throw error;
         await settleReservation(env, jobId, 'released');
         await failJob(env, jobId, { code: error instanceof AppError ? error.code : 'INTERNAL', message: error instanceof Error ? error.message : String(error) });
     }

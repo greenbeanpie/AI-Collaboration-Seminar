@@ -2,6 +2,7 @@ import { assertRequirementSources, assertSourceInputs, type SourceInputSnapshot 
 import { assertProfileStamp, recommendationDispatch, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
+import { InvestigationContinuation } from './project-investigation';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
 import { AppError } from '../core/errors';
 import { recordEvent } from './events';
@@ -188,7 +189,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
     await assertAssignmentSources(env, input);
     await finishRecommendationJob(env, jobId, result);
   } catch (error) {
-
+    if (error instanceof InvestigationContinuation) throw error;
     await settleReservation(env, jobId, 'released');
     await failJob(env, jobId, {
       code: error instanceof AppError ? error.code : 'INTERNAL',
