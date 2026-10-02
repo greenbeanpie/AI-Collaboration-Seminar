@@ -105,41 +105,14 @@ it('resets page and size when the project changes, without reusing the old curso
   expect(api.get).toHaveBeenCalledWith('/api/v1/projects/other/events', { limit: 10, cursor: null }, expect.any(AbortSignal));
 });
 
-it.each(['decision', 'contribution', 'resource'])('returns to a fresh first page after recording a %s', async kind => {
+it('only loads events and removes the heading and all manual recording features', async () => {
   show();
   await screen.findByText('事件 1');
-  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await screen.findByText('事件 11');
-  vi.mocked(api.post).mockImplementationOnce(async () => { state.events.unshift({ ...state.events[0], eventId: 'new', payload: { title: '新增事件' } }); return {} as never; });
-  if (kind === 'decision') { fireEvent.change(screen.getByLabelText('决策标题'), { target: { value: '新决策' } }); fireEvent.click(screen.getByRole('button', { name: '记录决策' })); }
-  if (kind === 'contribution') { fireEvent.change(screen.getByLabelText('具体贡献和依据'), { target: { value: '新贡献' } }); fireEvent.click(screen.getByRole('button', { name: '添加贡献记录' })); }
-  if (kind === 'resource') { fireEvent.change(screen.getByLabelText('资源名称'), { target: { value: '新资源' } }); fireEvent.change(screen.getByLabelText('来源网址'), { target: { value: 'https://example.com' } }); fireEvent.click(screen.getByRole('button', { name: '声明资源' })); }
-  await screen.findByText('新增事件');
-  expect(screen.getByText('第 1 页')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: '上一页' })).toBeDisabled();
-  expect(screen.queryByText('事件 11')).not.toBeInTheDocument();
-  await waitFor(() => expect(screen.getByRole('button', { name: '下一页' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await screen.findByText('事件 10');
-});
-
-it('keeps a successful save successful when refreshing the first page fails', async () => {
-  show();
-  await screen.findByText('事件 1');
-  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await screen.findByText('事件 11');
-  vi.mocked(api.get).mockImplementation(async (path) => {
-    if (path.endsWith('/events')) throw new Error('历史刷新失败');
-    return { items: [], nextCursor: null } as never;
-  });
-  fireEvent.change(screen.getByLabelText('决策标题'), { target: { value: '已保存的决策' } });
-  fireEvent.click(screen.getByRole('button', { name: '记录决策' }));
-  await screen.findByText('历史刷新失败');
-  await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
-  expect(api.post).toHaveBeenCalledTimes(1);
-  expect(screen.getByLabelText('决策标题')).toHaveValue('');
-  expect(screen.getByText('第 1 页')).toBeInTheDocument();
-  vi.mocked(api.get).mockImplementation(async (path, query) => (path.endsWith('/events') ? eventPage(query) : { items: [], nextCursor: null }) as never);
-  fireEvent.click(screen.getByRole('button', { name: '重试' }));
-  await screen.findByText('事件 1');
+  for (const name of ['过程账本', '决策记录', '贡献记录', '第三方资源声明']) {
+    expect(screen.queryByRole('heading', { name })).not.toBeInTheDocument();
+  }
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  expect(listAllItems).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
+  expect(vi.mocked(api.get).mock.calls.every(([path]) => path.endsWith('/events'))).toBe(true);
 });

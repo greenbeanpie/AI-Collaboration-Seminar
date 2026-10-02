@@ -57,7 +57,7 @@ flowchart LR
 | 任务与分工 | `tasks.ts`、`assignment.ts` | `assignment.ts`；任务、评论、建议与人工应用 |
 | 材料与 AI | `materials.ts`、`agents.ts` | `tiptap.ts`、`agent.ts`；不可变版本、AI 会话、三档运行与采纳 |
 | 预审与答辩 | `reviews.ts`、`rehearsals.ts` | `review.ts`、`rehearsal.ts`；固定输入版本、报告与逐题回答 |
-| 过程与导出 | `ledger.ts` | `events.ts`；事件、决策、贡献及更正、资源引用、JSON/Markdown 汇总 |
+| 过程与导出 | `ledger.ts` | `events.ts`；业务事件、JSON/Markdown 汇总 |
 | 异步任务 | `jobs.ts` | `jobs.ts`、`ai-jobs.ts`、`budget.ts`、`cron.ts`；状态、派发、恢复、并发额度 |
 
 契约由 Hono/Zod 路由生成到 `backend/openapi/openapi.json`，前端生成 `frontend/src/api/openapi.ts`。当前契约包含 60 路径、81 操作（本轮新增来源全文片段、答辩历史列表与两个幂等运维端点）；准确字段、方法与响应以该契约为准。接入步骤见 [前端集成说明](../backend/docs/FRONTEND-INTEGRATION.md)。
@@ -82,7 +82,7 @@ flowchart LR
 | 材料 | `materials`、`material_versions` | 材料保存 current_version_id/revision，版本保存正文 JSON/Markdown、作者及 AI 来源 |
 | AI | `agent_sessions`、`agent_turns`、`agent_runs` | 会话 → 轮次/运行；输入版本、输出、采纳关系 |
 | 评估 | `reviews`、`rehearsals`、`rehearsal_turns` | 预审报告、答辩会话及逐轮结果 |
-| 账本 | `events`、`decisions`、`contributions`、`resource_references` | 业务事件、人工决策/贡献、更正与资源引用 |
+| 活动历史 | `events` | 自动记录的业务事件；三项手工记录功能及数据表已由 0033 迁移删除 |
 | 调度 | `jobs`、`job_outbox`、`idempotency_records` | 业务任务、派发记录、请求回放 |
 | 配置与用量 | `ai_config_versions`、`ai_calls`、`usage_reservations`、`app_config` | 模型配置版本、调用快照指针/用量、并发预占、系统模板 |
 
@@ -118,7 +118,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 ### 5.4 预审、答辩与导出
 
-预审使用指定材料/评分版本，AI 输出建议报告；答辩按会话逐题生成问题及反馈，保留真实轮次。答辩跨设备发现历史缺少列表接口 [A11](#a11)。账本汇总真实事件、决策、贡献及资源；贡献更正保留关系。导出提供项目 JSON/Markdown，材料页面可打印；内容正确性由真实材料及人工核对保证，AI 报告不能代替赛事验收 [A14](#a14)。
+预审使用指定材料/评分版本，AI 输出建议报告；答辩按会话逐题生成问题及反馈，保留真实轮次。答辩跨设备发现历史缺少列表接口 [A11](#a11)。活动历史展示真实业务事件，决策记录、贡献补录和第三方资源声明已移除。导出提供项目 JSON/Markdown，材料页面可打印；内容正确性由真实材料及人工核对保证，AI 报告不能代替赛事验收 [A14](#a14)。
 
 ## 6. 异步任务与模型调用
 

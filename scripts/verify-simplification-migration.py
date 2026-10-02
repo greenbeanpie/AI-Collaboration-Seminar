@@ -51,12 +51,30 @@ for migration in sorted(MIGRATIONS.glob("*.sql")):
         db.executescript("BEGIN;\n"+migration.read_text(encoding="utf-8")+"\nCOMMIT;")
 
 for table,(columns,rows) in snapshot.items():
+    if table in {"contributions", "resource_references", "decisions"}:
+        continue  # Deliberately removed by the ledger retirement migration.
     selection=",".join(f'"{column}"' for column in columns)
     after=list(db.execute(f'SELECT {selection} FROM "{table}" ORDER BY rowid'))
     ignored={"project_members":{"major","skills_json","hours_per_week"},"jobs":{"input_json"}}.get(table,set())
     indices=[i for i,column in enumerate(columns) if column not in ignored]
     expected=[tuple(row[i] for i in indices) for row in rows]
     observed=[tuple(row[i] for i in indices) for row in after]
+    if table == "app_config":
+        # Migration 0030 removes the obsolete team-size cap from the default template.
+        value_index = columns.index("value_json")
+        updated_index = columns.index("updated_at")
+        key_index = columns.index("key")
+        def normalize_config(row):
+            if row[key_index] != "competition_template":
+                return row
+            values = list(row)
+            config = json.loads(values[value_index])
+            config.pop("teamSizeLimit", None)
+            values[value_index] = json.dumps(config, sort_keys=True)
+            values[updated_index] = "<migration timestamp>"
+            return tuple(values)
+        expected = [normalize_config(row) for row in expected]
+        observed = [normalize_config(row) for row in observed]
     for row in expected:
         assert row in observed, f"Existing data changed or disappeared in {table}: {row[0]}"
 

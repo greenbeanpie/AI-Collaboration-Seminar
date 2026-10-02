@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "migration": "0033_remove_manual_ledger.sql",
+  "backupRestore": "all tables and rows match",
+  "correctionChainLength": 3,
+  "unrelatedTablesPreserved": 70,
+  "historicalEventsPreserved": true,
+  "freshInstall": "PASS",
+  "foreignKeys": "PASS",
+  "integrity": "PASS"
+}

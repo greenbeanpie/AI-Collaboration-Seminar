@@ -42,10 +42,8 @@ function fixture(p,state) {
  if(p.endsWith('/requirement-sets')) return {items:filled?[requirementSet]:[]};
  if(p.endsWith('/requirement-sets/set1')) return requirementSet;
  if(p.endsWith('/rubrics')) return {items:filled?[rubric]:[]};
- if(p.endsWith('/export')) return {project,generatedAt:date,materials:[],requirementSets:[],tasks:[],rubricVersions:[],decisions:[],contributions:[],resources:[],events:[]};
+ if(p.endsWith('/export')) return {project,generatedAt:date,materials:[],requirementSets:[],tasks:[],rubricVersions:[],events:[]};
  if(p.endsWith('/events')) return {items:filled?[{eventId:'event1',type:'task.created',eventType:'task.created',actorType:'human',actorId:user.id,payload:{title:long},occurredAt:date}]:[],nextCursor:null};
- if(p.endsWith('/resources')) return {items:filled?[{resourceId:'resource1',kind:'url',title:long,url:'https://example.invalid/'+('long-reference-'.repeat(12)),fileId:null,declaredBy:user.id,createdAt:date}]:[]};
- if(p.endsWith('/decisions')) return {items:filled?[{decisionId:'decision1',title:long,detail:long.repeat(8),decidedAt:date,madeBy:user.id,createdAt:date}]:[]};
  return {items:[],nextCursor:null};
 }
 module.exports = { fixture, origin, routes, user };

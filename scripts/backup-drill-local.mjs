@@ -23,7 +23,7 @@ const REQUIRED_TABLES = [
   'auth_accounts', 'account_invitations', 'auth_password_rate_limits', 'sessions', 'users', 'projects', 'project_members', 'sources', 'source_versions', 'source_pages',
   'source_fragments', 'requirement_sets', 'requirements', 'rubric_versions', 'tasks',
   'materials', 'material_versions', 'agent_sessions', 'agent_runs', 'reviews', 'rehearsals',
-  'events', 'contributions', 'jobs', 'job_outbox', 'idempotency_records',
+  'events', 'jobs', 'job_outbox', 'idempotency_records',
   'ai_config_versions', 'ai_calls', 'usage_reservations', 'app_config', 'ai_probes', 'auth_email_daily_usage', 'auth_email_recipient_usage', 'auth_email_ip_attempts',
 ];
 

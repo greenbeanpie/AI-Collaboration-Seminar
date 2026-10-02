@@ -81,7 +81,7 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
   .input, .ai-workflow-select { font-size: 16px; min-height: 44px; }
   .section-head { gap: 12px; }
   .section-head > .button { width: 100%; }
-  .invite-form, .resource-form, .capability-grid { grid-template-columns: minmax(0, 1fr); }
+  .invite-form, .capability-grid { grid-template-columns: minmax(0, 1fr); }
   .resource-form .field:last-of-type, .resource-form > button, .invite-form > button { grid-column: auto; }
   .account-settings { padding: 24px 0; }
   .account-settings .section-card { padding: 18px; }

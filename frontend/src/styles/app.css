@@ -393,7 +393,7 @@ tbody tr:last-child td { border-bottom: 0; }
 }
 
 /* Production workspace pages */
-.team-member-list, .ledger-records, .resource-list { display: grid; gap: 10px; }
+.team-member-list { display: grid; gap: 10px; }
 .team-member { display: flex; align-items: flex-start; gap: 11px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--palette-fff-surface); }
 .team-member-main { display: grid; flex: 1; min-width: 0; gap: 5px; }
 .team-member-main > small, .profile-ident small { color: var(--muted); font-size: 12px; }
@@ -420,8 +420,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .capability-row, .export-summary-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--palette-fbfcfe-surface); color: var(--muted); font-size: 12px; }
 .capability-row strong, .export-summary-item strong { color: var(--ink-soft); font-size: 13px; }
 .form-actions { margin-top: 0; }
-.ledger-warning { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border: 1px solid var(--palette-e5eaf2-border); border-radius: 11px; background: var(--palette-f9fafd-surface); color: var(--palette-76839a-text); font-size: 12px; line-height: 1.6; }
-.ledger-warning svg { flex: none; color: var(--palette-6280b3-text); }
 .ledger-timeline { display: grid; }
 .ledger-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 .ledger-page-size { display: flex; align-items: center; gap: 8px; }
@@ -431,22 +429,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .ledger-event-title span { color: var(--muted); font-size: 12px; }
 .ledger-content p code { display: block; max-height: 120px; overflow: auto; padding: 7px 9px; border-radius: 8px; background: var(--palette-f7f8fb-surface); color: var(--palette-65718a-text); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ledger-content small { font-size: 12px; }
-.ledger-record { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
-.ledger-record > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.ledger-record > div strong { color: var(--ink); font-size: 13px; }
-.ledger-record p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
-.ledger-record small { color: var(--muted); font-size: 12px; }
-.correction-form { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
-.correction-form .input { flex: 1; }
-.resource-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: end; gap: 12px; }
-.resource-form .field:last-of-type { grid-column: 1 / -1; }
-.resource-form > button { grid-column: 1 / -1; justify-self: end; }
-.resource-item { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; }
-.resource-kind { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 9px; background: var(--palette-edf3ff-surface); color: var(--blue); }
-.resource-item > div { display: grid; gap: 4px; min-width: 0; }
-.resource-item strong { color: var(--ink); font-size: 12px; }
-.resource-item small, .resource-item a { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.resource-item a { color: var(--blue); }
 .export-summary-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
 .export-summary-item { display: grid; justify-items: start; gap: 4px; }
 .export-summary-item strong { font-size: 18px; }
@@ -461,10 +443,7 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (max-width: 560px) {
   .assignment-row { grid-template-columns: 1fr; align-items: stretch; }
   .assignment-row > button { justify-self: stretch; }
-  .invite-form, .resource-form, .capability-grid, .export-summary-grid { grid-template-columns: 1fr 1fr; }
-  .resource-form .field:last-of-type, .resource-form > button { grid-column: 1 / -1; }
-  .correction-form { align-items: stretch; flex-direction: column; }
-  .correction-form > button { align-self: flex-start; }
+  .invite-form, .capability-grid, .export-summary-grid { grid-template-columns: 1fr 1fr; }
   .invite-code-box { align-items: flex-start; flex-direction: column; }
 }
 

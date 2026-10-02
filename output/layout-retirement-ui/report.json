@@ -1,0 +1,85 @@
+{
+  "result": "PASS",
+  "errors": [],
+  "checks": [
+    {
+      "width": 1440,
+      "cardHeights": [
+        272.390625,
+        272.390625,
+        272.390625,
+        272.390625,
+        272.390625
+      ],
+      "footerInsets": [
+        15,
+        15,
+        15,
+        15,
+        15
+      ],
+      "toolbar": {
+        "aiLeft": 1088.609375,
+        "createLeft": 1265,
+        "aiTop": 398.203125,
+        "createTop": 398.203125
+      },
+      "settingsColumns": 2,
+      "result": "PASS",
+      "retiredRequests": 0
+    },
+    {
+      "width": 768,
+      "cardHeights": [
+        272.390625,
+        272.390625,
+        272.390625,
+        272.390625,
+        272.390625
+      ],
+      "footerInsets": [
+        15,
+        15,
+        15,
+        15,
+        15
+      ],
+      "toolbar": {
+        "aiLeft": 40,
+        "createLeft": 216.390625,
+        "aiTop": 601.5625,
+        "createTop": 601.5625
+      },
+      "settingsColumns": 1,
+      "result": "PASS",
+      "retiredRequests": 0
+    },
+    {
+      "width": 390,
+      "cardHeights": [
+        312.640625,
+        312.640625,
+        312.640625,
+        312.640625,
+        312.640625
+      ],
+      "footerInsets": [
+        15,
+        15,
+        15,
+        15,
+        15
+      ],
+      "toolbar": {
+        "aiLeft": 34,
+        "createLeft": 226,
+        "aiTop": 71.109375,
+        "createTop": 71.109375
+      },
+      "settingsColumns": 1,
+      "result": "PASS",
+      "retiredRequests": 0
+    }
+  ],
+  "boundary": "Real React app with loopback API fixtures; backend mutations verified separately."
+}

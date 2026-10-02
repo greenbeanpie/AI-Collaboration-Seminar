@@ -56,9 +56,6 @@ function bundleToMarkdown(bundle: JsonObject): string {
     ['成果固定版本', 'materialVersions'],
     ['答辩冻结问答', 'rehearsalTurns'],
     ['评分标准版本', 'rubricVersions'],
-    ['团队决策', 'decisions'],
-    ['成员贡献及更正', 'contributions'],
-    ['第三方资源声明', 'resources'],
     ['近期过程事件', 'events'],
   ];
 
@@ -112,7 +109,7 @@ export function ExportPage() {
     {bundle && <>
       <SectionCard title="服务端汇总" detail={`生成于 ${readString(bundle.generatedAt) ?? '服务端未提供时间'}`} action={<button className="button button-quiet button-small" onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw size={14} />{query.isFetching ? '刷新中' : '刷新数据'}</button>}>
         <div className="export-summary-grid">{[
-          ['材料', 'materials'], ['要求集及状态', 'requirementSets'], ['子任务', 'tasks'], ['依赖关系', 'taskDependencies'], ['任务提交与验收', 'taskSubmissions'], ['统一标准版本', 'standardsVersions'], ['独立评分记录', 'assessments'], ['导入资料', 'sources'], ['来源版本', 'sourceVersions'], ['成果版本', 'materialVersions'], ['答辩问答', 'rehearsalTurns'], ['评分维度版本', 'rubricVersions'], ['决策', 'decisions'], ['贡献记录', 'contributions'], ['资源声明', 'resources'], ['过程事件', 'events'],
+          ['材料', 'materials'], ['要求集及状态', 'requirementSets'], ['子任务', 'tasks'], ['依赖关系', 'taskDependencies'], ['任务提交与验收', 'taskSubmissions'], ['统一标准版本', 'standardsVersions'], ['独立评分记录', 'assessments'], ['导入资料', 'sources'], ['来源版本', 'sourceVersions'], ['成果版本', 'materialVersions'], ['答辩问答', 'rehearsalTurns'], ['评分维度版本', 'rubricVersions'], ['过程事件', 'events'],
         ].map(([label, key]) => <div className="export-summary-item" key={key}><span>{label}</span><strong>{asArray(bundle[key]).length}</strong></div>)}</div>
         <div className="button-row"><button className="button button-primary" onClick={() => downloadFile(`${baseName}-成果说明.md`, markdown, 'text/markdown')}><Download size={15} />下载 Markdown</button><button className="button button-quiet" onClick={() => downloadFile(`${baseName}-服务端汇总.json`, JSON.stringify(bundle, null, 2), 'application/json')}><FileJson2 size={15} />下载 JSON 原始数据</button><button className="button button-quiet" onClick={() => setShowPreview((value) => !value)}>{showPreview ? '收起预览' : '预览 Markdown'}</button></div>
         {showPreview && <pre className="export-preview">{markdown}</pre>}

@@ -1,3 +1,4 @@
+import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiError } from '../api/client';
@@ -32,6 +33,7 @@ export function ProposalCorrection({projectId,proposal,members,onChanged}:{proje
  const busy=revise.isPending || apply.isPending || feedback.isPending;
  const runOnce=(action:(done:()=>void)=>void)=>{if(requestLock.current)return;requestLock.current=true;action(()=>{requestLock.current=false;});};
  return <details><summary>修正建议、部分应用或重新反馈</summary><div className="stack">
+ <RemovedSourceNotice payload={latest.payload} />
  <p className="form-note">本地修改基于 r{base.revision}（{statusLabel(base.status)}）；当前方案 r{latest.revision}（{statusLabel(String(latest.status))}）。先保存修改，再按最新版本应用。已应用方案请通过任务详情修正。</p>
  {outdated&&<div className="notice notice-warn" role="status">方案已变化，本地任务内容、工时、选择和反馈均保留。请读取最新方案，核对其内容与状态后明确确认继续；系统不会自动覆盖。</div>}
  <button className="button button-quiet" disabled={busy || refresh.isPending} onClick={()=>refresh.mutate()}>读取最新方案（保留本地修改）</button>

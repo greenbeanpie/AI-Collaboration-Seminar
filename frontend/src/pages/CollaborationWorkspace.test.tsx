@@ -46,6 +46,7 @@ describe('collaboration lifecycle', () => {
     const warning = screen.getByLabelText('前置任务未完成，可提前认领、执行和提交。');
     expect(warning).toHaveAttribute('tabindex', '0');
     expect(warning.parentElement).toHaveClass('collab-task-status');
+    expect(view.container.querySelector('.collab-task > p.notice')).toBeNull();
     expect(view.container.querySelectorAll('.collab-task-footer')).toHaveLength(2);
     fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'open' } });
     expect(screen.queryByRole('button', { name: '交付原型' })).toBeNull();

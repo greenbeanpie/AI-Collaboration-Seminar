@@ -22,9 +22,6 @@ export type Rehearsal = DataOf<'RehearsalResponse'>;
 export type EventItem = DataOf<'EventListResponse'>['items'][number];
 export type Invitation = DataOf<'InvitationListResponse'>['items'][number];
 export type Comment = DataOf<'CommentListResponse'>['items'][number];
-export type Decision = DataOf<'DecisionListResponse'>['items'][number];
-export type Contribution = DataOf<'ContributionListResponse'>['items'][number];
-export type Resource = DataOf<'ResourceListResponse'>['items'][number];
 
 export type ApiEnvelope<T> = { data: T; requestId: string };
 export type ApiFailure = {

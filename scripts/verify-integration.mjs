@@ -155,10 +155,10 @@ if (!capabilities.features.aiEnabled) {
   assert.equal(failedJob.status, 'failed');
   assert(failedJob.error?.message, 'Failed job details must retain the actual error');
 }
-await call(owner, `${p}/decisions`, { method: 'POST', body: { title: '验证真实服务', detail: '本地 API 数据，不进入生产。' }, status: 201 });
-const contribution = await call(member, `${p}/contributions`, { method: 'POST', body: { description: '完成联调验证' }, status: 201 });
-await call(member, `${p}/contributions/${contribution.contributionId}/corrections`, { method: 'POST', body: { description: '补充材料协作验证' }, status: 201 });
-await call(owner, `${p}/resources`, { method: 'POST', body: { kind: 'other', title: '联调测试资源' }, status: 201 });
+for (const removed of ['decisions', 'contributions', 'resources']) {
+  await call(owner, `${p}/${removed}`, { status: 404 });
+  await call(owner, `${p}/${removed}`, { method: 'POST', body: {}, status: 404 });
+}
 const exported = await call(owner, `${p}/export-bundle`);
 assert(Array.isArray(exported.requirementSets));
 assert.equal(exported.rubricVersions.find(item => item.rubricId === rubric.rubricId)?.status, 'confirmed');

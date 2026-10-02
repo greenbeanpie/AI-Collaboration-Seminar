@@ -32,9 +32,6 @@ const apiServer = createServer((req, res) => {
     const limit = Number(url.searchParams.get('limit') || 10);
     eventRequests.push({ cursor: url.searchParams.get('cursor'), limit });
     data = { items: events.slice(start, start + limit), nextCursor: start + limit < events.length ? String(start + limit) : null };
-  } else if (req.method === 'POST' && endpoint.endsWith('/decisions')) {
-    events.unshift({ ...events[0], eventId: 'new-event', payload: { title: '新增历史事件' } });
-    data = { decisionId: 'new-decision' };
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ data, requestId: 'project-pages-ui-fixture' }));
