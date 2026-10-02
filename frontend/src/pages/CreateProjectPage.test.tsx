@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-li
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
-import { CreateProjectPage } from './CreateProjectPage';
+import { CreateProjectWizardPage as CreateProjectPage } from './CreateProjectPage';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), patch: vi.fn(), request: vi.fn()
 }));
