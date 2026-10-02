@@ -93,6 +93,7 @@ interface ToolFileRow {
   text_status: string | null;
   summary_status: string | null;
   summary_json?: string | null;
+  summary_revision?: number;
 }
 const activeFileSourceJoin = `LEFT JOIN source_versions v ON v.file_id=f.id AND v.project_id=f.project_id
  AND v.id=(SELECT latest.id FROM source_versions latest WHERE latest.file_id=f.id
@@ -128,7 +129,7 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
     throw invalidState('未授权的工具名称');
   }
   const a = readArgs.parse(input), file = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
-  f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.summary_status,p.summary_json,p.text_status
+  f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.summary_status,p.summary_json,p.summary_revision,p.text_status
   FROM files f ${activeFileSourceJoin} WHERE f.id=?1 AND f.project_id=?2 AND f.status='available' AND f.deleted_at IS NULL`)
     .bind(a.fileId, context.projectId).first<ToolFileRow>();
   if (!file) {
@@ -149,7 +150,9 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
     const summary = file.summary_status === 'ready' && file.summary_json ? file.summary_json : null;
     await assertToolAccess(env, context, [captured]);
     return {
-      untrustedData: true, ...captured, status: summary ? 'ready' : 'unavailable', ...(summary ? {
+      untrustedData: true, ...captured, resourceType: 'source_summary', derived: true,
+      note: '这是已保存的AI派生总结，不能作为来源原文逐字引文；需要核对原文时按text模式读取。', offset: a.offset, summaryRevision: file.summary_revision,
+      status: summary ? 'ready' : 'unavailable', ...(summary ? {
         text: summary.slice(a.offset, a.offset + 6000), nextOffset: summary.length > a.offset + 6000 ? a.offset + 6000 : null
       } : {
         reason: '暂无已保存总结；本工具不自动收费生成总结'
@@ -452,7 +455,7 @@ export async function projectToolConversation(env: Env, params: {
           } else {
             safeArgs = invocation.name === 'list_project_files' ? listArgs.parse(invocation.args) : readArgs.parse(invocation.args);
             output = await executeFileTool(env, context, invocation.name, safeArgs);await retainFiles(output);
-            const o=output as Record<string,unknown>,refs=referencesFromRead({...o,resourceType:'source',resourceId:o.sourceId,versionId:o.sourceVersionId,revision:o.sourceLifecycleVersion});
+            const o=output as Record<string,unknown>,refs=referencesFromRead({...o,resourceType:o.resourceType??'source',resourceId:o.sourceId,versionId:o.sourceVersionId,revision:o.sourceLifecycleVersion});
             references=uniqueReadReferences([...references,...refs]);o.referenceIds=refs.map(r=>r.id);
           }
         }

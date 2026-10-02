@@ -14,6 +14,9 @@ export interface ProjectReference {
   pageNumber?: number | null;
   title?: string;
   quote?: string;
+  /** Offset into the read derived summary, never a source fragment identifier. */
+  offset?: number;
+  summaryRevision?: number;
   /** Read metadata is not a claim that this resource supports a decision. */
   usage: 'read' | 'decision';
 }
@@ -22,7 +25,7 @@ export interface DecisionReference { decisionPath: string; referenceIds: string[
 export function uniqueReadReferences(refs:ProjectReference[]):ProjectReference[] {
   const seen=new Set<string>();
   return refs.filter(ref=>{
-    const key=JSON.stringify([ref.id,ref.resourceType,ref.resourceId,ref.versionId,ref.revision,ref.fragmentId,ref.pageNumber,ref.title,ref.quote,ref.usage]);
+    const key=JSON.stringify([ref.id,ref.resourceType,ref.resourceId,ref.versionId,ref.revision,ref.fragmentId,ref.pageNumber,ref.title,ref.quote,ref.offset,ref.summaryRevision,ref.usage]);
     if(seen.has(key))return false;
     seen.add(key);return true;
   });
@@ -52,6 +55,8 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
   if(nested.length) return nested;
   if(typeof output.resourceId!=='string') return [];
   const base={resourceType:String(output.resourceType??'source'),resourceId:output.resourceId,
+    ...(output.resourceType==='source_summary'&&typeof output.offset==='number'?{offset:output.offset}:{}),
+    ...(output.resourceType==='source_summary'&&typeof output.summaryRevision==='number'?{summaryRevision:output.summaryRevision}:{}),
     ...(typeof output.versionId==='string'?{versionId:output.versionId}:{}),
     ...(typeof output.revision==='number'?{revision:output.revision}:{}),
     ...(typeof output.title==='string'?{title:output.title}:{}),usage:'read' as const};
@@ -59,7 +64,7 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
     id:`${base.resourceType}:${base.versionId}:${String(f.fragmentId)}:${String(output.offset??0)}`,
     fragmentId:String(f.fragmentId),pageNumber:f.pageNumber as number|null,quote:String(f.quote)}));
   const text=typeof output.text==='string'?output.text:typeof output.body==='string'?output.body:undefined;
-  return text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${String(output.offset??0)}`,quote:text}] : [];
+  return text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${base.resourceType==='source_summary'?`${String(output.summaryRevision)}:`:''}${String(output.offset??0)}`,quote:text}] : [];
 }
 export async function validateReadReferences(env: Env, projectId: string, refs: ProjectReference[]) {
   if(!Array.isArray(refs))throw invalidState('引用列表格式无效');
@@ -76,7 +81,12 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
     if(ref.resourceType==='source'&&([ref.resourceId,ref.versionId,ref.fragmentId].some(value=>typeof value!=='string'||!value.trim()||value==='undefined')||typeof ref.revision!=='number'))throw invalidState('来源引用版本信息不完整');
     if(ref.resourceType==='material'&&typeof ref.versionId!=='string')throw invalidState('材料引用版本信息不完整');
     if(['proposal','assessment'].includes(ref.resourceType)&&typeof ref.revision!=='number')throw invalidState('方案或评价引用版本信息不完整');
-    if(ref.resourceType==='guide_turn') {
+    if(ref.resourceType==='source_summary') {
+      if(typeof ref.versionId!=='string'||!ref.versionId.trim()||typeof ref.revision!=='number'||!Number.isInteger(ref.offset)||ref.offset!<0||!Number.isInteger(ref.summaryRevision)||ref.summaryRevision!<0||typeof ref.quote!=='string'||!ref.quote.length) throw invalidState('总结引用版本信息不完整');
+      enqueue(`SELECT processing.summary_json FROM source_processing processing JOIN source_versions version ON version.id=processing.source_version_id JOIN sources source ON source.id=version.source_id WHERE processing.project_id=?1 AND version.project_id=?1 AND source.project_id=?1 AND version.id=?2 AND source.id=?3 AND source.lifecycle_version=?4 AND processing.summary_status='ready' AND processing.summary_revision=?5 AND ${sourceLifecycleGuard('version.id','?4')}`,[projectId,ref.versionId,ref.resourceId,ref.revision,ref.summaryRevision!],row=>{
+        if(!row||typeof row.summary_json!=='string'||!row.summary_json.includes(ref.quote!)) throw invalidState('已读取派生总结已变化，引用不符');
+      });
+    } else if(ref.resourceType==='guide_turn') {
       if(typeof ref.versionId!=='string') throw invalidState('带做引用会话信息不完整');
       enqueue(`SELECT ${guideTextSql} body FROM agent_turns turn JOIN agent_sessions session ON session.id=turn.session_id WHERE turn.id=?1 AND turn.project_id=?2 AND session.project_id=?2 AND session.id=?3 AND session.capability='guide' AND session.status='active'`,[ref.resourceId,projectId,ref.versionId],row=>{
         if(!row||(ref.quote!==undefined&&!(row.body as string).includes(ref.quote))) throw invalidState('已读取带做回答引用不符');
