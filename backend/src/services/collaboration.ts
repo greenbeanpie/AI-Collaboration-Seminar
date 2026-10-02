@@ -1,4 +1,6 @@
 import type { Env } from '../env';
+import { projectReferenceGuard } from './project-reference-guard';
+import { validateReadReferences,type ProjectReference } from './project-evidence';
 import { projectSourceContextGuard } from './collaboration-context';
 import { profileSnapshotGuard } from './personal-profiles';
 import { newId, nowIso } from '../core/db';
@@ -71,6 +73,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     if (!p)
         throw notFound();
     const payload = JSON.parse(p.payload_json) as {
+        references?:ProjectReference[];
         brief?: string;
         goal?:{title:string;detail:string};
         tasks?: Array<{
@@ -100,6 +103,8 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
       payload.updates=select(payload.updates,selection.selectedUpdateTaskIds,t=>t.taskId);
       payload.assignments=select(payload.assignments,selection.selectedAssignmentTaskIds,t=>t.taskId);
     }
+    const correction=await env.DB.prepare('SELECT 1 FROM collaboration_proposal_revisions WHERE proposal_id=?1 AND project_id=?2 AND length(trim(reason))>0 LIMIT 1').bind(proposalId,projectId).first();
+    if(automatic||!correction)await validateReadReferences(env,projectId,payload.references??[]);
     const nonce = newId();
     const taskIds: string[] = [];
     const batch: D1PreparedStatement[] = [];
@@ -109,7 +114,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     const validUpdates = p.kind === 'decompose' ? `AND NOT EXISTS(SELECT 1 FROM json_each(?9,'$.updates') u WHERE NOT EXISTS(SELECT 1 FROM tasks t WHERE t.project_id=?2 AND t.id=json_extract(u.value,'$.taskId') AND t.revision=json_extract(u.value,'$.expectedRevision') AND (?6=0 OR (t.lifecycle_state IN ('open','in_progress','improve','rework') OR (t.lifecycle_state IS NULL AND t.status!='done')))))` : '';
     const validAssignments = p.kind === 'assign' ? `AND NOT EXISTS(SELECT 1 FROM json_each(?9,'$.assignments') a WHERE NOT EXISTS(SELECT 1 FROM tasks t WHERE t.project_id=?2 AND t.id=json_extract(a.value,'$.taskId') AND t.revision=json_extract(a.value,'$.expectedRevision') AND (json_extract(a.value,'$.assigneeId') IS NULL OR EXISTS(SELECT 1 FROM project_members m WHERE m.project_id=?2 AND m.user_id=json_extract(a.value,'$.assigneeId'))) AND (?6=0 OR (t.assignee_id IS NULL AND (t.lifecycle_state='open' OR (t.lifecycle_state IS NULL AND t.status!='done'))))))` : '';
 
-    batch.push(env.DB.prepare(`UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?4 AND role='owner') AND EXISTS(SELECT 1 FROM projects WHERE id=?2 AND (?6=0 OR (collaboration_revision=collaboration_proposals.settings_revision AND ai_collaboration_enabled=1 AND status='active' AND CASE WHEN collaboration_proposals.kind='assign' THEN assignment_mode ELSE planning_mode END='automatic'))) AND (?6=0 OR EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?7 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))) ${validAssignments} ${validUpdates} AND (?6=0 OR (1=1 ${validGoal})) AND (EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=collaboration_proposals.id) OR (1=1 ${validProfiles} AND ${projectSourceContextGuard("(SELECT input_json FROM jobs WHERE id=collaboration_proposals.job_id)", '?2')})) AND (?6=0 OR EXISTS(SELECT 1 FROM jobs WHERE id=collaboration_proposals.job_id AND status IN ('queued','running')))`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso(),JSON.stringify(payload)));
+    batch.push(env.DB.prepare(`WITH reference_validation AS (SELECT ${projectReferenceGuard("json_extract(?9,'$.references')",'?2')} valid) UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?4 AND role='owner') AND EXISTS(SELECT 1 FROM projects WHERE id=?2 AND (?6=0 OR (collaboration_revision=collaboration_proposals.settings_revision AND ai_collaboration_enabled=1 AND status='active' AND CASE WHEN collaboration_proposals.kind='assign' THEN assignment_mode ELSE planning_mode END='automatic'))) AND (?6=0 OR EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?7 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))) ${validAssignments} ${validUpdates} AND (?6=0 OR (1=1 ${validGoal})) AND ((?6=0 AND EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=collaboration_proposals.id AND correction.project_id=?2 AND length(trim(correction.reason))>0)) OR (1=1 ${validProfiles} AND ${projectSourceContextGuard("(SELECT input_json FROM jobs WHERE id=collaboration_proposals.job_id)", '?2')} AND (SELECT valid FROM reference_validation))) AND (?6=0 OR EXISTS(SELECT 1 FROM jobs WHERE id=collaboration_proposals.job_id AND status IN ('queued','running')))`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso(),JSON.stringify(payload)));
     const gate = `EXISTS(SELECT 1 FROM collaboration_proposals WHERE id=?1 AND status='applied' AND mutation_token=?2)`;
     if (p.kind === 'decompose') {
         if ((!payload.tasks?.length && !payload.updates?.length))

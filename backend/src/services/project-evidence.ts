@@ -50,20 +50,25 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
   return text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${String(output.offset??0)}`,quote:text}] : [];
 }
 export async function validateReadReferences(env: Env, projectId: string, refs: ProjectReference[]) {
+  if(!Array.isArray(refs))throw invalidState('引用列表格式无效');
   for(const ref of refs) {
+    if(!ref||typeof ref.resourceId!=='string'||typeof ref.resourceType!=='string'||(ref.quote!==undefined&&typeof ref.quote!=='string')||(ref.revision!==undefined&&(!Number.isInteger(ref.revision)||ref.revision<1)))throw invalidState('引用格式无效');
+    if(ref.resourceType==='source'&&(typeof ref.versionId!=='string'||typeof ref.fragmentId!=='string'||typeof ref.revision!=='number'))throw invalidState('来源引用版本信息不完整');
+    if(ref.resourceType==='material'&&typeof ref.versionId!=='string')throw invalidState('材料引用版本信息不完整');
     if(ref.resourceType==='source') {
       const row=await env.DB.prepare(`SELECT f.content FROM source_fragments f JOIN source_versions v ON v.id=f.source_version_id JOIN sources s ON s.id=v.source_id
-        WHERE f.id=?1 AND f.project_id=?2 AND v.id=?3 AND s.id=?4 AND s.lifecycle_version=?5 AND ${sourceLifecycleGuard('v.id','?5')}`).bind(ref.fragmentId,projectId,ref.versionId,ref.resourceId,ref.revision).first<{content:string}>();
+        WHERE f.id=?1 AND f.project_id=?2 AND v.id=?3 AND v.project_id=?2 AND s.id=?4 AND s.project_id=?2 AND s.lifecycle_version=?5 AND ${sourceLifecycleGuard('v.id','?5')}`).bind(ref.fragmentId,projectId,ref.versionId,ref.resourceId,ref.revision).first<{content:string}>();
       if(!row || (ref.quote&&!row.content.includes(ref.quote))) throw invalidState('已读取来源已变化或引用不符，请重新调查');
     } else if(ref.resourceType==='material') {
-      const row=await env.DB.prepare('SELECT v.markdown FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE v.id=?1 AND v.project_id=?2 AND m.id=?3').bind(ref.versionId,projectId,ref.resourceId).first<{markdown:string}>();
-      if(!row || (ref.quote&&!row.markdown.includes(ref.quote))) throw invalidState('已读取材料引用不符');
+      const row=await env.DB.prepare('SELECT v.markdown,v.revision FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE v.id=?1 AND v.project_id=?2 AND m.id=?3 AND m.project_id=?2').bind(ref.versionId,projectId,ref.resourceId).first<{markdown:string;revision:number}>();
+      if(!row || (ref.revision!==undefined&&row.revision!==ref.revision) || (ref.quote&&!row.markdown.includes(ref.quote))) throw invalidState('已读取材料引用不符');
     } else if(ref.resourceType==='submission') {
       const row=await env.DB.prepare('SELECT body,revision FROM task_submissions WHERE id=?1 AND project_id=?2').bind(ref.resourceId,projectId).first<{body:string;revision:number}>();
       if(!row || row.revision!==ref.revision || (ref.quote&&!row.body.includes(ref.quote))) throw invalidState('已读取提交已变化');
     } else {
       const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',decision:'decisions',comment:'comments',event:'events',project:'projects',admin_feedback:'project_admin_feedback'} as Record<string,string>)[ref.resourceType];
       if(!table) throw invalidState('未知引用类型');
+      if(ref.resourceType==='project'&&ref.resourceId!==projectId)throw invalidState('项目引用不属于当前项目');
       const row=await env.DB.prepare(`SELECT * FROM ${table} WHERE id=?1 ${ref.resourceType==='project'?'':'AND project_id=?2'}`).bind(...(ref.resourceType==='project'?[ref.resourceId]:[ref.resourceId,projectId])).first<Record<string,unknown>>();
       if(!row || (ref.revision!==undefined&&row.revision!==ref.revision)) throw invalidState('已读取项目信息已变化');
       if(ref.quote && ref.resourceType!=='project') {
