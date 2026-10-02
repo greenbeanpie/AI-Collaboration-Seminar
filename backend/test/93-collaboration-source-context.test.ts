@@ -21,7 +21,7 @@ const app = createApp();
 async function fixture(automatic = false) {
     const user = await seedUser();
     const projectId = await seedProject(user.userId);
-    await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2 WHERE id=?1').bind(projectId, automatic ? 'automatic' : 'manual').run();
+    await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2,planning_mode=?2 WHERE id=?1').bind(projectId, automatic ? 'automatic' : 'manual').run();
     return { user, projectId };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;

@@ -44,8 +44,8 @@ export interface AssignmentSuggestionInput {
 }
 
 export const assignmentOutputSchema = z.object({
-  assignments: z.array(z.object({ taskId: z.string().uuid(), assigneeId: z.string().uuid().nullable(), reason: z.string().max(1000).optional() }).strict()).max(20),
-  considerations: z.array(z.string().max(1000)).max(20).optional(),
+  assignments: z.array(z.object({ taskId: z.string().uuid(), assigneeId: z.string().uuid().nullable(), reason: z.string().max(1000).optional() }).strict()),
+  considerations: z.array(z.string().max(1000)).optional(),
 }).strict().transform(value => ({ assignments: value.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId })) }));
 
 async function assertCurrentMember(env: Env, projectId: string, userId: string): Promise<void> {
@@ -77,8 +77,9 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
       members: [] as Array<{userId:string;loadHours:number}>,
       preferences: [] as Array<{userId:string;bio:string;major:string;specialties:string;preferredRoles:string}>,
     };
-    const { data } = await aiJsonCall(env, {
+    const answer = await aiJsonCall(env, {
       projectId: input.projectId,
+      projectTools:{projectId:input.projectId,userId:input.requestedBy,jobId,ownerOnly:false},
       jobId,
       purpose: 'textEconomy',
       configVersionId: config.id,
@@ -108,6 +109,8 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
       },
     });
 
+    const {data}=answer;
+    const references=('references' in answer?answer.references:[]) as unknown[];
     const taskById = new Map(input.tasks.map((task) => [task.taskId, task]));
     const memberIds = new Set(input.members.map((member) => member.userId));
     const seen = new Set<string>();
@@ -129,7 +132,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const current = await loadAiConfig(env.DB);
   if (!current?.enabled || current.id !== config.id) throw new AppError('INVALID_STATE', 'AI 设置已变化，请重新生成推荐', 409, false);
-  return { assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
+  return { references,assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
     reason: a.assigneeId ? '任务偏好推荐，请与成员确认意愿和工作量。' : '暂无推荐人选，请由团队协商。' })), considerations: ['推荐仅供任务协作参考，不代表能力评价。'] };
 }
 
@@ -169,6 +172,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
         expectedRevision: taskById.get(item.taskId)!.revision,
       })),
       considerations: data.considerations,
+      references:data.references,
     };
     await settleReservation(env, jobId, 'settled');
     await recordEvent(env, {

@@ -129,9 +129,9 @@ describe('bounded assistive rubric scores', () => {
         vi.stubGlobal('fetch', provider);
         await runCollaborationAiJob(env, jobId);
         await expectFailedUntouched(f, jobId);
-        expect(provider).toHaveBeenCalledTimes(2);
+        expect(provider).toHaveBeenCalledTimes(1);
     });
-    it.each(['missing', 'extra', 'duplicate', 'omitted', 'total'])('refuses %s rubric output with at most one repair', async kind => {
+    it.each(['missing', 'extra', 'duplicate', 'omitted', 'total'])('refuses %s rubric output without repeating the tool session', async kind => {
         const f = await fixture(true);
         await rubric(f);
         const jobId = await f.start();
@@ -145,7 +145,7 @@ describe('bounded assistive rubric scores', () => {
         vi.stubGlobal('fetch', provider);
         await runCollaborationAiJob(env, jobId);
         await expectFailedUntouched(f, jobId);
-        expect(provider).toHaveBeenCalledTimes(2);
+        expect(provider).toHaveBeenCalledTimes(1);
     });
     it.each(['score', 'confidence', 'empty_evidence', 'person_rank'])('strict scoring schema rejects invalid %s', kind => {
         const evidence = [{ materialVersionId: id(), quote: '原文' }];

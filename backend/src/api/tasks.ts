@@ -244,6 +244,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     const row = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1').bind(id).first<TaskRow>();
     if (!row) throw notFound('任务创建失败');
+    await recordEvent(c.env,{projectId:member.projectId,actorType:'user',actorId:c.get('user')!.id,type:'task.created',entityType:'task',entityId:id,dedupKey:id,payload:body});
     return c.json(apiData(c, await taskView(c.env,row)), 201);
   });
 
@@ -299,7 +300,8 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       if(body.status!==undefined||body.assigneeId!==undefined)throw invalidState('任务完成与重新分工需要提交和验收流程');
       await owner(c.env,projectId,c.get('user')!.id);
       if(body.requirementId&&!await c.env.DB.prepare('SELECT 1 FROM requirements WHERE id=?1 AND project_id=?2').bind(body.requirementId,projectId).first())throw validationFailed('要求必须属于当前项目');
-      const updated=await c.env.DB.prepare(`UPDATE tasks SET title=COALESCE(?4,title),detail=COALESCE(?5,detail),criteria=COALESCE(?6,criteria),effort_hours=COALESCE(?7,effort_hours),due_date=CASE WHEN ?8=1 THEN ?9 ELSE due_date END,due_precision=COALESCE(?10,due_precision),requirement_id=CASE WHEN ?13=1 THEN ?14 ELSE requirement_id END,revision=revision+1,updated_at=?11 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status!='done' AND (lifecycle_state IS NULL OR lifecycle_state IN ('open','in_progress','improve','rework')) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?12 AND role='owner') AND (?13=0 OR ?14 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE id=?14 AND project_id=?2))`).bind(taskId,projectId,body.expectedRevision,body.title??null,body.detail??null,body.criteria??null,body.effortHours??null,'dueDate'in body?1:0,body.dueDate??null,body.duePrecision??null,nowIso(),c.get('user')!.id,'requirementId'in body?1:0,body.requirementId??null).run();
+      const updated=await c.env.DB.prepare(`UPDATE tasks SET title=COALESCE(?4,title),detail=COALESCE(?5,detail),criteria=COALESCE(?6,criteria),effort_hours=COALESCE(?7,effort_hours),due_date=CASE WHEN ?8=1 THEN ?9 ELSE due_date END,due_precision=COALESCE(?10,due_precision),requirement_id=CASE WHEN ?13=1 THEN ?14 ELSE requirement_id END,revision=revision+1,updated_at=?11 WHERE id=?1 AND project_id=?2 AND revision=?3 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?12 AND role='owner') AND (?13=0 OR ?14 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE id=?14 AND project_id=?2))`).bind(taskId,projectId,body.expectedRevision,body.title??null,body.detail??null,body.criteria??null,body.effortHours??null,'dueDate'in body?1:0,body.dueDate??null,body.duePrecision??null,nowIso(),c.get('user')!.id,'requirementId'in body?1:0,body.requirementId??null).run();
+      if(updated.meta.changes)await recordEvent(c.env,{projectId,actorType:'user',actorId:c.get('user')!.id,type:'task.updated',entityType:'task',entityId:taskId,dedupKey:String(body.expectedRevision),payload:body});
       if(!updated.meta.changes)throw versionConflict((await c.env.DB.prepare('SELECT revision FROM tasks WHERE id=?1').bind(taskId).first<{revision:number}>())!.revision);
       return c.json(apiData(c,await taskView(c.env,(await c.env.DB.prepare('SELECT * FROM tasks WHERE id=?1').bind(taskId).first<TaskRow>())!)),200);
     }

@@ -12,7 +12,7 @@ export interface ProjectSourceSnapshot {
 
 /** Complete immutable text only; originals and summaries remain separate records. */
 export async function readProjectSourceContext(env: Env, projectId: string, versionIds: string[]): Promise<ProjectSourceSnapshot[]> {
-  if (!versionIds.length || versionIds.length > 5 || new Set(versionIds).size !== versionIds.length) throw validationFailed('每次请选择1至5份不同来源');
+  if (!versionIds.length || new Set(versionIds).size !== versionIds.length) throw validationFailed('请选择不同来源');
   const snapshots: ProjectSourceSnapshot[] = [];
   let totalChars = 0;
   for (const sourceVersionId of versionIds) {

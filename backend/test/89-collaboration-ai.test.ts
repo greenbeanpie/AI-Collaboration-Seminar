@@ -60,7 +60,7 @@ describe('artifact-only evaluation safety', () => {
     });
     it.each([['manual', 'manual'], ['manual', 'automatic'], ['automatic', 'manual'], ['automatic', 'automatic']])('assignment %s and evaluation %s remain independent', async (assignmentMode, mode) => {
         const f = await fixture(mode);
-        await env.DB.prepare('UPDATE projects SET assignment_mode=?2 WHERE id=?1').bind(f.projectId, assignmentMode).run();
+        await env.DB.prepare('UPDATE projects SET assignment_mode=?2,planning_mode=?2 WHERE id=?1').bind(f.projectId, assignmentMode).run();
         vi.stubGlobal('fetch', model(report(f.versionId)));
         await runCollaborationAiJob(env, f.jobId);
         expect((await getJob(env, f.jobId)).status).toBe('succeeded');
@@ -138,13 +138,13 @@ describe('artifact-only evaluation safety', () => {
         expect(fetchMock).not.toHaveBeenCalled();
         await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();
     });
-    it('invalid output has one repair attempt and never silently passes', async () => {
+    it('invalid tool-session output fails without repeating the investigation', async () => {
         const f = await fixture('automatic');
         const fetchMock = model({ decision: 'accept' });
         vi.stubGlobal('fetch', fetchMock);
         await runCollaborationAiJob(env, f.jobId);
         expect((await getJob(env, f.jobId)).status).toBe('failed');
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     it('material bodies beyond the model limit are rejected without truncation or calls', async () => {
         const f = await fixture('automatic', [], '正文'.repeat(50000));
@@ -168,7 +168,7 @@ describe('bounded decomposition and assignment continuation', () => {
     it.each(['manual', 'automatic'])('decomposition %s uses separate assignment reservation with no recursive tasks', async (mode) => {
         const user = await seedUser();
         const projectId = await seedProject(user.userId);
-        await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2 WHERE id=?1').bind(projectId, mode).run();
+        await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2,planning_mode=?2 WHERE id=?1').bind(projectId, mode).run();
         const jobId = await job({ operation: 'collaboration.decompose', projectId, requestedBy: user.userId, settingsRevision: 1, brief: '制作可交付的研究成果' });
         const provider = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
             assertGoRequest(_url, init);
