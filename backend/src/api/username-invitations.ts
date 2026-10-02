@@ -4,9 +4,9 @@ import { requireUser, requireProjectMember } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { nowIso } from '../core/db';
-import { invalidState, notFound } from '../core/errors';
+import { AppError, invalidState, notFound } from '../core/errors';
 import { projectParams } from './projects';
-import { withIdempotency } from '../services/idempotency';
+import { withIdempotency, releaseIdempotencyRecord } from '../services/idempotency';
 import { expireUsernameInvites, sendUsernameInvite, handleUsernameInvite } from '../services/username-invitations';
 const invitationSchema = z.object({
   id: z.string().uuid(), projectId: z.string().uuid(), projectName: z.string(), inviterName: z.string(), username: z.string(), role: z.literal('member'), status: z.enum(['pending', 'accepted', 'declined', 'revoked', 'expired']), expiresAt: z.string(), createdAt: z.string()
@@ -87,11 +87,19 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
       key: c.req.header('idempotency-key'), userId: u, operation: 'username-invitation.send', rawBody: JSON.stringify({
         projectId: p, ...b
       })
-    }, async () => ({
-      status: 201 as const, body: {
-        id: await sendUsernameInvite(c.env, p, u, b.username, b.expiresInDays)
+    }, async () => {
+      try {
+        return {status: 201 as const, body: {id: await sendUsernameInvite(c.env, p, u, b.username, b.expiresInDays)}};
+      } catch (error) {
+        // These service errors occur before invitation insertion or after a
+        // guarded batch inserted nothing. Never release uncertain DB failures.
+        const key = c.req.header('idempotency-key');
+        if (key && error instanceof AppError && ['VALIDATION_FAILED','PERMISSION_DENIED','NOT_FOUND','INVALID_STATE','QUOTA_EXCEEDED','RATE_LIMITED'].includes(error.code)) {
+          await releaseIdempotencyRecord(c.env, {idempotencyKey:key,userId:u,operation:'username-invitation.send'});
+        }
+        throw error;
       }
-    }));
+    });
     return c.json(apiData(c, result.body), 201);
   });
   app.openapi(createRoute({

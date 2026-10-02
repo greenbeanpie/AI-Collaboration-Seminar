@@ -7,7 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
-import { creationPayload, creationGoal, creationTask, getDraft, draftView, assertTeamSize, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
 import { enqueueDraftPreview } from '../services/draft-preview-jobs';
 import { projectTemplates } from '../services/creation-template';
 const base = '/api/v1/creation-drafts';
@@ -46,7 +46,6 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     const body=fromTemplateBody.parse(c.req.valid('json')),user=c.get('user')!;
     const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId:user.id,operation:'creation-draft.from-template',rawBody:JSON.stringify(body)},async()=>{
       const payload=creationPayload.parse({name:'未命名项目',aiCollaborationEnabled:false,workspace:{templateId:body.templateId,materials:[],standards:null}});
-      await assertTeamSize(c.env,payload);
       const id=newId(),now=nowIso();
       await c.env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id,user.id,JSON.stringify(payload),newId(),now).run();
       return {status:201 as const,body:await draftView(c.env,await getDraft(c.env,id,user.id))};
@@ -66,7 +65,6 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     }
   }), async (c) => {
     const body = c.req.valid('json') as z.infer<typeof creationPayload>, user = c.get('user')!;
-    await assertTeamSize(c.env, body);
     const result = await withIdempotency(c.env, {
       key: c.req.header('idempotency-key'), required: true, userId: user.id, operation: 'creation-draft.create', rawBody: JSON.stringify(body)
     }, async () => {

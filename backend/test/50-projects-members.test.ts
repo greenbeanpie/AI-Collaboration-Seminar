@@ -72,11 +72,11 @@ describe('项目生命周期', () => {
     expect(res.status).toBe(201);
     expect(body.data.myRole).toBe('owner');
     expect(body.data.revision).toBe(1);
-    // 团队人数上限取自比赛模板（种子 5），存为项目字段而非硬编码
+    // 项目模板不限制人数；保留 nullable 字段兼容旧客户端。
     const limitRow = await env.DB.prepare('SELECT team_size_limit FROM projects WHERE id = ?1')
       .bind(body.data.id)
       .first<{ team_size_limit: number | null }>();
-    expect(limitRow?.team_size_limit).toBe(5);
+    expect(limitRow?.team_size_limit).toBeNull();
     const pid = body.data.id;
 
     const list = await SELF.fetch(`${BASE}/api/v1/projects`, { headers: { cookie: authCookie(owner.token) } });

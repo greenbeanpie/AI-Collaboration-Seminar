@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
+import { AppError, invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
 import { consumePasswordRateLimit, normalizeUsername } from './accounts';
 import { notificationStatements } from './notifications';
 export interface UsernameInvite {
@@ -52,6 +52,25 @@ export function invitationNotificationStatements(env: Env, id: string, actorId: 
 export async function expireUsernameInvites(env: Env, projectId?: string) {
   await env.DB.prepare("UPDATE project_username_invitations SET status='expired',handled_at=?1 WHERE status='pending' AND expires_at<=?1 AND (?2 IS NULL OR project_id=?2)").bind(nowIso(), projectId ?? null).run();
 }
+/** Diagnose the failed atomic write from fresh state instead of listing guesses. */
+async function invitationWriteFailure(env: Env, projectId: string, ownerId: string, recipientId: string, accepting = false): Promise<never> {
+  const current = await env.DB.prepare(`SELECT p.status,p.team_size_limit,
+    EXISTS(SELECT 1 FROM project_members WHERE project_id=p.id AND user_id=?2 AND role='owner') owner_active,
+    EXISTS(SELECT 1 FROM project_members WHERE project_id=p.id AND user_id=?3) already_member,
+    (SELECT COUNT(*) FROM project_members WHERE project_id=p.id) member_count
+    FROM projects p WHERE p.id=?1`).bind(projectId, ownerId, recipientId).first<{status:string;team_size_limit:number|null;owner_active:number;already_member:number;member_count:number}>();
+  if (!current) throw notFound('项目不存在');
+  if (current.status !== 'active') throw invalidState('项目已归档，不能邀请新成员');
+  if (!current.owner_active) {
+    if (accepting) throw invalidState('邀请发起人已不再是项目负责人');
+    throw permissionDenied('当前账号已不再是项目负责人');
+  }
+  if (current.already_member) throw invalidState(accepting ? '你已经是项目成员' : '对方已经是项目成员');
+  if (current.team_size_limit !== null && current.member_count >= current.team_size_limit) {
+    throw new AppError('QUOTA_EXCEEDED', `项目人数已达到上限：${current.member_count}/${current.team_size_limit}（含负责人）`, 409, false, {teamSizeLimit:current.team_size_limit,memberCount:current.member_count});
+  }
+  throw invalidState('邀请未成功保存，请刷新后重试');
+}
 export async function sendUsernameInvite(env: Env, projectId: string, ownerId: string, username: string, expiresInDays: number) {
   const owner = await env.DB.prepare("SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?1 AND m.user_id=?2 AND m.role='owner' AND p.status='active'").bind(projectId, ownerId).first();
   if (!owner) {
@@ -81,7 +100,7 @@ export async function sendUsernameInvite(env: Env, projectId: string, ownerId: s
     if (duplicate) {
       return duplicate.id;
     }
-    throw invalidState('项目人数已满、权限已变化或对方已经加入');
+    await invitationWriteFailure(env, projectId, ownerId, recipient.userId);
   }
   return id;
 }
@@ -98,7 +117,7 @@ export async function handleUsernameInvite(env: Env, id: string, userId: string,
     };
   }
   if (invite.status !== 'pending') {
-    throw invalidState('邀请已被处理、撤销或过期');
+    throw invalidState(({accepted:'邀请已被接受',declined:'邀请已被拒绝',revoked:'邀请已被撤销',expired:'邀请已过期'} as Record<string,string>)[invite.status] ?? '邀请状态已变化');
   }
   const now = nowIso();
   if (action === 'decline') {
@@ -116,15 +135,19 @@ export async function handleUsernameInvite(env: Env, id: string, userId: string,
     env.DB.prepare("UPDATE project_username_invitations SET status='accepted',handled_at=?3 WHERE id=?1 AND recipient_id=?2 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE id=?4)").bind(id, userId, now, memberId)
   ]);
   if (!result[0]?.meta.changes) {
-    const latest = await env.DB.prepare('SELECT status FROM project_username_invitations WHERE id=?1 AND recipient_id=?2').bind(id, userId).first<{
+    const latest = await env.DB.prepare('SELECT status,expires_at FROM project_username_invitations WHERE id=?1 AND recipient_id=?2').bind(id, userId).first<{
       status: string;
+      expires_at:string;
     }>();
     if (latest?.status === 'accepted') {
       return {
         id, status: 'accepted', projectId: invite.project_id
       };
     }
-    throw invalidState('项目名额已满、已是成员、邀请或负责人权限已变化；待处理邀请不会预占人数');
+    if (!latest) throw notFound('邀请不存在');
+    if (latest.status !== 'pending') throw invalidState(({declined:'邀请已被拒绝',revoked:'邀请已被撤销',expired:'邀请已过期'} as Record<string,string>)[latest.status] ?? '邀请状态已变化');
+    if (latest.expires_at <= nowIso()) throw invalidState('邀请已过期');
+    await invitationWriteFailure(env, invite.project_id, invite.invited_by, userId, true);
   }
   return {
     id, status: target, projectId: invite.project_id

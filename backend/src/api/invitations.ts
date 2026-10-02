@@ -191,7 +191,14 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
     )
       .bind(invitation.id, nowIso())
       .run();
-    if ((claim.meta?.changes ?? 0) === 0) throw invalidState('邀请已失效或已达使用上限');
+    if ((claim.meta?.changes ?? 0) === 0) {
+      const latest = await c.env.DB.prepare('SELECT revoked_at,expires_at,max_uses,used_count FROM invitations WHERE id=?1').bind(invitation.id).first<InvitationRow>();
+      if (!latest) throw invalidState('邀请码不存在');
+      if (latest.revoked_at !== null) throw invalidState('邀请码已被撤销');
+      if (latest.expires_at <= nowIso()) throw invalidState('邀请码已过期');
+      if (latest.max_uses !== null && latest.used_count >= latest.max_uses) throw invalidState('邀请码已达到使用次数上限');
+      throw invalidState('邀请码使用次数未能确认，请刷新后重试');
+    }
 
     const project = await c.env.DB.prepare('SELECT id, name, team_size_limit, status FROM projects WHERE id = ?1')
       .bind(invitation.project_id)
@@ -226,7 +233,17 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
       )
         .bind(newId(), project.id, user.id, nowIso(), invitation.id)
         .run();
-      if (!joined.meta.changes) throw quotaExceeded('项目人数已满或邀请已失效');
+      if (!joined.meta.changes) {
+        const current = await c.env.DB.prepare('SELECT status,team_size_limit,(SELECT COUNT(*) FROM project_members WHERE project_id=projects.id) member_count FROM projects WHERE id=?1').bind(project.id).first<{status:string;team_size_limit:number|null;member_count:number}>();
+        if (!current) throw invalidState('项目不存在');
+        if (current.status !== 'active') throw invalidState('项目已归档');
+        const latest = await c.env.DB.prepare('SELECT revoked_at,expires_at FROM invitations WHERE id=?1').bind(invitation.id).first<{revoked_at:string|null;expires_at:string}>();
+        if (!latest) throw invalidState('邀请码不存在');
+        if (latest.revoked_at !== null) throw invalidState('邀请码已被撤销');
+        if (latest.expires_at <= nowIso()) throw invalidState('邀请码已过期');
+        if (current.team_size_limit !== null && current.member_count >= current.team_size_limit) throw quotaExceeded(`项目人数已达到上限：${current.member_count}/${current.team_size_limit}（含负责人）`);
+        throw invalidState('成员记录未成功保存，请刷新后重试');
+      }
     } catch (err) {
       await release();
       const message = err instanceof Error ? err.message : String(err);

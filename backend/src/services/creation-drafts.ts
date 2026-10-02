@@ -21,7 +21,7 @@ export const creationTask = z.object({
 }).strict();
 export const creationPayload = z.object({
   name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''),goal:creationGoal.optional(),workspace:creationWorkspace.optional(),deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), aiCollaborationEnabled: z.boolean().default(false), teamSize: z.number().int().min(1).max(100).default(1), inviteUsernames: z.array(z.string().trim().min(1).max(64)).max(99).default([]), inviteLabels: z.array(z.string().trim().min(1).max(80)).max(99).default([]), brief: z.string().max(4000).default('')
-}).strict().refine(p => p.inviteLabels.length + p.inviteUsernames.length <= p.teamSize - 1 && new Set(p.inviteLabels).size === p.inviteLabels.length, '邀请不得重复或超过组员人数（人数包括负责人）');
+}).strict().refine(p => new Set(p.inviteLabels).size === p.inviteLabels.length, '邀请标识不能重复');
 export type DraftPayload = z.infer<typeof creationPayload>;
 export interface DraftRow {
   id: string;
@@ -77,15 +77,6 @@ export async function draftView(env: Env, row: DraftRow) {
     } : null, previewRevision: row.preview_revision, previewState: row.preview_state, previewError: row.preview_error, files: (await draftFiles(env, row.id)).map(fileView), removedFiles: removed.results.map(fileView), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
   };
 }
-export async function assertTeamSize(env: Env, payload: DraftPayload) {
-  const row = await env.DB.prepare("SELECT value_json FROM app_config WHERE key='competition_template'").first<{
-    value_json: string;
-  }>();
-  const cap = row ? JSON.parse(row.value_json).teamSizeLimit : null;
-  if (typeof cap === 'number' && payload.teamSize > cap) {
-    throw validationFailed(`当前项目模板最多 ${cap} 人（含负责人）`);
-  }
-}
 function editable(row: DraftRow, revision: number) {
   if (row.status !== 'active') {
     throw invalidState('草稿已取消或已创建；可恢复取消的草稿');
@@ -102,7 +93,6 @@ export async function updateDraft(env: Env, id: string, userId: string, revision
   editable(row, revision);
   const previous=creationPayload.parse(JSON.parse(row.payload_json));
   if(payload.workspace===undefined&&previous.workspace)payload={...payload,workspace:previous.workspace};
-  await assertTeamSize(env, payload);
   await resolveInviteRecipients(env, userId, payload.inviteUsernames);
   const saved = await env.DB.prepare("UPDATE project_creation_drafts SET payload_json=?4,revision=revision+1,preview_state='none',updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running'").bind(id, userId, revision, JSON.stringify(payload), nowIso()).run();
   if (!saved.meta.changes) {
@@ -203,7 +193,6 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
       return draftView(env, row);
     }
   }
-  await assertTeamSize(env, payload);
   const config = mode === 'ai' ? await requireEnabledAiConfig(env.DB) : null;
   if (mode === 'ai' && !payload.aiCollaborationEnabled) {
     throw invalidState('请先开启 AI 协作或使用手动任务预览');
@@ -319,7 +308,6 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     throw invalidState('配置已变化或尚未完成任务预览，请重新预览后确认');
   }
   const p = creationPayload.parse(JSON.parse(row.payload_json));
-  await assertTeamSize(env, p);
   const recipients = await resolveInviteRecipients(env, userId, p.inviteUsernames);
   const preview = JSON.parse(row.preview_json) as {
     tasks: z.infer<typeof creationTask>[];
@@ -342,7 +330,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
   const guard = "EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND commit_token=?3 AND status='committed')";
   const stmt = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(id, userId, token, ...binds);
   const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3").bind(id, userId, revision, token, encrypted, now),
-    stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?12 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', p.teamSize, now, p.aiCollaborationEnabled ? 1 : 0, p.aiCollaborationEnabled ? 'automatic' : 'manual'),
+    stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?12 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', null, now, p.aiCollaborationEnabled ? 1 : 0, p.aiCollaborationEnabled ? 'automatic' : 'manual'),
     stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??(p.brief||p.description),now),...guardedDescriptionStatements(stmt,guard,project,p.description,now)];
   if(p.workspace)batch.push(...workspacePromotionStatements(stmt,guard,project,p.workspace,now));
   const versions = new Map<string, string>();

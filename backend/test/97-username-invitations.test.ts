@@ -15,6 +15,49 @@ const data = async (r: Response) => (await r.json() as {
 }).data;
 const username = (id: string) => `fixture-${id}`;
 describe('username invitations', () => {
+  it('a one-person plan never becomes a capacity and more than five members can accept invitations', async () => {
+    const owner = await seedUser();
+    const recipients = [];
+    for (let i=0;i<6;i++) recipients.push(await seedUser());
+    const drafted = await data(await req(owner.token, '/creation-drafts', {name:'无人数上限项目',teamSize:1,inviteUsernames:recipients.slice(0,2).map(r=>username(r.userId))}));
+    const ready = await data(await req(owner.token, `/creation-drafts/${drafted.id}/preview`, {expectedRevision:drafted.revision,mode:'manual',tasks:[]}));
+    const created = await data(await req(owner.token, `/creation-drafts/${drafted.id}/commit`, {expectedRevision:ready.revision,confirmed:true}));
+    expect(await env.DB.prepare('SELECT team_size_limit FROM projects WHERE id=?1').bind(created.projectId).first()).toEqual({team_size_limit:null});
+    for (const recipient of recipients) {
+      const response = await req(owner.token, `/projects/${created.projectId}/username-invitations`, {username:username(recipient.userId)});
+      expect(response.status).toBe(201);
+      const invite = await data(response);
+      expect((await req(recipient.token, `/invitations/inbox/${invite.id}`, {action:'accept'})).status).toBe(200);
+    }
+    expect((await env.DB.prepare('SELECT COUNT(*) count FROM project_members WHERE project_id=?1').bind(created.projectId).first<{count:number}>())!.count).toBe(7);
+    expect((await data(await req(owner.token, '/capabilities'))).competitionTemplate.teamSizeLimit).toBeNull();
+  });
+  it('reports one verified cause for an explicitly limited legacy project and an existing member', async () => {
+    const owner=await seedUser(),recipient=await seedUser(),projectId=await seedProject(owner.userId);
+    await env.DB.prepare('UPDATE projects SET team_size_limit=1 WHERE id=?1').bind(projectId).run();
+    const full=await req(owner.token,`/projects/${projectId}/username-invitations`,{username:username(recipient.userId)});
+    expect(full.status).toBe(409);
+    const fullBody=await full.json() as {error:{code:string;message:string}};
+    expect(fullBody.error).toMatchObject({code:'QUOTA_EXCEEDED',message:'项目人数已达到上限：1/1（含负责人）'});
+    expect(fullBody.error.message).not.toContain('或');
+    await env.DB.prepare('UPDATE projects SET team_size_limit=NULL WHERE id=?1').bind(projectId).run();
+    const sent=await data(await req(owner.token,`/projects/${projectId}/username-invitations`,{username:username(recipient.userId)}));
+    await req(recipient.token,`/invitations/inbox/${sent.id}`,{action:'accept'});
+    const member=await req(owner.token,`/projects/${projectId}/username-invitations`,{username:username(recipient.userId)});
+    expect(member.status).toBe(409);
+    expect((await member.json() as {error:{message:string}}).error.message).toBe('对方已经是项目成员');
+  });
+  it('allows the same intent key after a confirmed no-write rejection without duplicating a successful invitation',async()=>{
+    const owner=await seedUser(),recipient=await seedUser(),projectId=await seedProject(owner.userId),key=newId();
+    const send=()=>SELF.fetch(`${BASE}/api/v1/projects/${projectId}/username-invitations`,{method:'POST',headers:{cookie:authCookie(owner.token),'content-type':'application/json','idempotency-key':key},body:JSON.stringify({username:username(recipient.userId)})});
+    await env.DB.prepare('UPDATE projects SET team_size_limit=1 WHERE id=?1').bind(projectId).run();
+    expect((await send()).status).toBe(409);
+    expect(await env.DB.prepare('SELECT 1 FROM idempotency_records WHERE idempotency_key=?1').bind(key).first()).toBeNull();
+    await env.DB.prepare('UPDATE projects SET team_size_limit=NULL WHERE id=?1').bind(projectId).run();
+    const one=await send(),two=await send();expect(one.status).toBe(201);expect(two.status).toBe(201);
+    expect((await data(one)).id).toBe((await data(two)).id);
+    expect((await env.DB.prepare('SELECT COUNT(*) count FROM project_username_invitations WHERE project_id=?1').bind(projectId).first<{count:number}>())!.count).toBe(1);
+  });
   it('exact login names create private inbox entries, accepting adds only a member once, and wrong recipients cannot act', async () => {
     const owner = await seedUser(), recipient = await seedUser(), stranger = await seedUser(), p = await seedProject(owner.userId);
     const path = `/projects/${p}/username-invitations`;

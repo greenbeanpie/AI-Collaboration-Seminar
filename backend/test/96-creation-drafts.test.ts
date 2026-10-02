@@ -82,11 +82,11 @@ describe('private creation drafts', () => {
       expectedRevision: 4, confirmed: true
     })).status).toBe(404);
   });
-  it('configuration versions invalidate preview, and invitation counts are checked', async () => {
+  it('configuration versions invalidate preview, and planned team size does not limit invitations', async () => {
     const owner = await seedUser();
     expect((await req(owner.token, '', {
       ...payload, teamSize: 1
-    })).status).toBe(400);
+    })).status).toBe(201);
     const draft = await data(await req(owner.token, '', payload));
     await req(owner.token, `/${draft.id}/preview`, {
       expectedRevision: 1, mode: 'manual', tasks: [task]

@@ -133,14 +133,6 @@ function toProject(row: ProjectRow, role: 'owner' | 'member') {
   };
 }
 
-async function readTeamSizeLimit(db: D1Database): Promise<number | null> {
-  const row = await db
-    .prepare("SELECT value_json FROM app_config WHERE key = 'competition_template'")
-    .first<{ value_json: string }>();
-  if (!row) return null;
-  const parsed = JSON.parse(row.value_json) as { teamSizeLimit?: number };
-  return typeof parsed.teamSizeLimit === 'number' ? parsed.teamSizeLimit : null;
-}
 
 export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects', requireUser);
@@ -152,7 +144,6 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
     const result = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: user.id, operation: 'projects.create', rawBody: JSON.stringify(body) }, async () => {
       const projectId = newId();
       const now = nowIso();
-      const teamSizeLimit = await readTeamSizeLimit(c.env.DB);
       await c.env.DB.batch([
         c.env.DB.prepare(
           `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode)
@@ -163,7 +154,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
           body.description,
           body.deadlineDate ?? null,
           body.deadlinePrecision,
-          teamSizeLimit,
+          null,
           body.aiBudgetUsd ?? null,
           user.id,
           now,
