@@ -1,3 +1,4 @@
+import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -12,6 +13,8 @@ const paramsProject = z.object({ projectId: z.string().uuid().openapi({ descript
 const paramsFile = paramsProject.extend({ fileId: z.string().uuid() });
 
 const initBody = z.object({
+  contributorIds: z.array(z.string().uuid()).min(1).optional(),
+  derivedFromFileId: z.string().uuid().optional(),
   fileName: z.string().min(1).max(255),
   contentType: z.string().min(1).max(127).optional(),
 });
@@ -75,7 +78,7 @@ const downloadRoute = createRoute({
 const fileListResponse = apiEnvelope(z.object({ items:z.array(z.object({
   fileId:z.string().uuid(),name:z.string(),status:z.enum(['pending','available','quarantined','discarded']),
   sizeBytes:z.number().int().nullable(),createdAt:z.string(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),
-  canDelete:z.boolean(),sourceIds:z.array(z.string().uuid()),
+  contributors:z.array(contributorSchema).optional(),uploaderUserId:z.string().uuid().optional(),canDelete:z.boolean(),sourceIds:z.array(z.string().uuid()),
 })),nextCursor:z.string().nullable()}),'FileListResponse');
 const lifecycleBody=z.object({expectedLifecycleVersion:z.number().int().positive()}).strict();
 const lifecycleResponse=apiEnvelope(z.object({fileId:z.string().uuid(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),affectedSourceIds:z.array(z.string().uuid())}),'FileLifecycleResponse');
@@ -104,7 +107,7 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
     const items=await Promise.all(rows.results.slice(0,limit).map(async r=>{
       const sources=await c.env.DB.prepare(`SELECT DISTINCT v.source_id FROM source_versions v WHERE v.project_id=?1 AND
         (v.file_id=?2 OR EXISTS(SELECT 1 FROM source_pages page WHERE page.source_version_id=v.id AND page.image_file_id=?2))`).bind(member.projectId,r.id).all<{source_id:string}>();
-      return {fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,lifecycleVersion:r.lifecycle_version,
+      return {contributors:await fileContributors(c.env,member.projectId,r.id),uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,lifecycleVersion:r.lifecycle_version,
         canDelete:member.role==='owner'||r.uploader_user_id===c.get('user')!.id,sourceIds:sources.results.map(source=>source.source_id)};
     }));
     const last=items.at(-1);return c.json(apiData(c,{items,nextCursor:nextCursor(rows.results.length>limit,last&&{createdAt:last.createdAt,id:last.fileId})??null}),200);
@@ -130,6 +133,8 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
         uploaderUserId: user.id,
         fileName: body.fileName,
         contentType: body.contentType,
+        contributorIds: body.contributorIds,
+        derivedFromFileId: body.derivedFromFileId,
       });
       return { status: 201 as const, body: { fileId: file.fileId, upload: { method: 'PUT' as const, url: file.uploadUrl } } };
     });

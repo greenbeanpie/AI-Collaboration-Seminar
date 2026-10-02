@@ -1,3 +1,4 @@
+import { ContributorNames, FileContributorPicker } from '../components/FileContributors';
 import { SourceFullText } from './SourceFullText';
 import { SourceProcessingCard } from './SourceProcessingCard';
 import { ProjectFileLibrary } from './ProjectFileLibrary';
@@ -204,6 +205,7 @@ export function SourceRecord({
           {versionBadge && <StatusPill tone={versionBadge.tone}>{versionBadge.label}</StatusPill>}
         </div>
         <h3>{source.title}</h3>
+        {source.kind === 'file' && <ContributorNames contributors={source.contributors} />}
         <p>创建于 {new Date(source.createdAt).toLocaleString('zh-CN')}</p>
       </div>
       <div className="sources-record-actions">
@@ -247,6 +249,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
   const [text, setText] = useState('');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [contributorIds, setContributorIds] = useState<string[] | undefined>();
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitStage, setSubmitStage] = useState('');
@@ -453,7 +456,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         for (const image of images) {
           ensureAvailable();
           setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
-          const imageFileId = await uploadProjectFile(projectId, image.file);
+          const imageFileId = await uploadProjectFile(projectId, image.file, undefined, undefined, { derivedFromFileId: fileId });
           uploadedImages.push({ pageNumber: image.pageNumber, fileId: imageFileId });
         }
         pending = {
@@ -515,7 +518,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
             fileInitIntentKey = createIntentKey();
             fileInitIntentKeys.current.set(file, fileInitIntentKey);
           }
-          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey, () => { void queryClient.invalidateQueries({ queryKey: ['files', projectId] }); });
+          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey, () => { void queryClient.invalidateQueries({ queryKey: ['files', projectId] }); }, { contributorIds });
           if (unavailableFileIds.current.has(fileId)) {
             fileInitIntentKeys.current.delete(file);
             throw new Error('该文件已移入回收站，未继续登记来源。可恢复后手动处理，或重新上传。');
@@ -587,12 +590,13 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
           <Field label="选择来源文件" hint={`支持 PDF、TXT、Markdown；单文件上限 ${formatBytes(fileMax)}。PDF 页数上限 ${capability.limits.maxPdfPages} 页。由服务端检查文件头和真实字节数。`}>
             <input className="input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
           </Field>
+          <FileContributorPicker projectId={projectId} value={contributorIds} onChange={ids => { setContributorIds(ids); if (file) fileInitIntentKeys.current.delete(file); }} disabled={submitting || Boolean(pendingUpload)} />
           {file && <div className="callout">已选择 {file.name} · {formatBytes(file.size)}{pendingUpload?.file === file ? ' · 文件内容已上传，重试时会复用上传记录' : ''}</div>}
         </>}
         <Field label="来源标题（可选）"><input className="input" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder={kind === 'file' ? file?.name ?? '使用文件名' : kind === 'web' ? '使用网页标题' : '粘贴文本'} /></Field>
         {actionError ? <ErrorNotice error={actionError} /> : null}
         {successMessage && <div className="notice notice-success" role="status"><FilePlus2 size={17} /><div className="notice-copy"><strong>{successMessage}</strong></div></div>}
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && !file)}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">按服务端单页上限分批读取完整来源列表。</span></div>
+        <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && (!file || contributorIds?.length === 0))}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">按服务端单页上限分批读取完整来源列表。</span></div>
       </form>
     </SectionCard>}
 

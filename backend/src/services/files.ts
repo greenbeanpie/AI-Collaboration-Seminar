@@ -62,7 +62,7 @@ export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
 /** 步骤一：创建文件记录并分配服务端 R2 key（客户端不能指定对象路径） */
 export async function createFileInit(
   env: Env,
-  params: { projectId: string; uploaderUserId: string; fileName: string; contentType?: string },
+  params: { projectId: string; uploaderUserId: string; fileName: string; contentType?: string; contributorIds?: string[]; derivedFromFileId?: string },
 ): Promise<{ fileId: string; uploadUrl: string }> {
   const ext = extOf(params.fileName);
   if (!(ALLOWED_UPLOAD_EXTENSIONS as readonly string[]).includes(ext)) {
@@ -70,14 +70,33 @@ export async function createFileInit(
       allowed: ALLOWED_UPLOAD_EXTENSIONS,
     });
   }
+  if (params.derivedFromFileId && params.contributorIds) throw validationFailed('派生文件不能重新指定贡献人');
+  const ids = [...new Set(params.contributorIds ?? [params.uploaderUserId])];
+  if (!ids.length) throw validationFailed('请选择贡献成员');
+  let contributors: Array<{user_id:string;display_name:string}>;
+  if (params.derivedFromFileId) {
+    const parent = await env.DB.prepare('SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL').bind(params.derivedFromFileId,params.projectId).first();
+    if (!parent) throw validationFailed('派生原文件不属于当前项目或已删除');
+    contributors = (await env.DB.prepare('SELECT user_id,display_name FROM file_contributors WHERE file_id=?1').bind(params.derivedFromFileId).all<{user_id:string;display_name:string}>()).results;
+  } else {
+    contributors = (await env.DB.prepare(`SELECT m.user_id,u.display_name FROM project_members m JOIN users u ON u.id=m.user_id
+      WHERE m.project_id=?1 AND m.user_id IN (SELECT value FROM json_each(?2))`).bind(params.projectId,JSON.stringify(ids)).all<{user_id:string;display_name:string}>()).results;
+    if (contributors.length !== ids.length) throw validationFailed('贡献人必须是当前项目成员');
+  }
   const fileId = newId();
   const r2Key = `${params.projectId}/${fileId}${ext}`;
-  await env.DB.prepare(
+  const insert = env.DB.prepare(
     `INSERT INTO files (id, project_id, uploader_user_id, r2_key, mime_declared, ext, status, created_at, original_name)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8)`,
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8
+     WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3)
+       AND ((?9 IS NOT NULL AND EXISTS(SELECT 1 FROM files WHERE id=?9 AND project_id=?2 AND deleted_at IS NULL))
+         OR (?9 IS NULL AND NOT EXISTS(SELECT 1 FROM json_each(?10) requested WHERE NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=requested.value))))`,
   )
-    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName)
-    .run();
+    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName, params.derivedFromFileId ?? null, JSON.stringify(ids));
+  const result = await env.DB.batch([insert, ...contributors.map(person => env.DB.prepare(
+    `INSERT INTO file_contributors(file_id,user_id,display_name) SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM files WHERE id=?1)`
+  ).bind(fileId,person.user_id,person.display_name))]);
+  if (!result[0]?.meta.changes) throw validationFailed('项目成员或原文件已变化，请刷新后重试');
   return {
     fileId,
     uploadUrl: `/api/v1/projects/${params.projectId}/files/${fileId}/content`,

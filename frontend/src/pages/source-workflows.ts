@@ -130,10 +130,12 @@ export async function uploadProjectFile(
   file: File,
   initIntentKey: string = createIntentKey(),
   onInitialized?: (fileId: string) => void,
+  attribution?: { contributorIds?: string[]; derivedFromFileId?: string },
 ): Promise<string> {
   const init = await api.post<'FileInitResponse'>(projectPath(projectId, '/files'), {
     fileName: file.name,
     contentType: contentTypeFor(file),
+    ...attribution,
   }, { idempotencyKey: initIntentKey });
   onInitialized?.(init.fileId);
   await request<'FileStoredResponse'>(init.upload.url, {

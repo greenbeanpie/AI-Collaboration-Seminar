@@ -1,3 +1,4 @@
+import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -34,6 +35,7 @@ const createBody = z
   .refine((v) => v.kind !== 'web' || !!v.url, { message: 'web 来源必须提供 url' });
 
 const sourceSchema = z.object({
+  contributors:z.array(contributorSchema).optional(),
   sourceId: z.string().uuid(),
   kind: z.enum(['file', 'paste', 'web']),
   title: z.string(),
@@ -58,6 +60,7 @@ const pageStatusSchema = z.object({
 });
 const versionResponse = apiEnvelope(
   z.object({
+    contributors:z.array(contributorSchema).optional(),
     sourceVersionId: z.string().uuid(),
     sourceId: z.string().uuid(),
     revision: z.number().int(),
@@ -309,7 +312,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         title,
         purpose: body.purpose, revision: 1,
         currentVersionId: versionId,
-        createdAt: now,lifecycleVersion:1,canDelete:true,deletedAt:null,fileId:body.fileId??null,
+        contributors:await fileContributors(c.env,member.projectId,body.fileId??null),createdAt: now,lifecycleVersion:1,canDelete:true,deletedAt:null,fileId:body.fileId??null,
       }),
       201,
     );
@@ -329,14 +332,15 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1,query.deleted==='true'?1:0)
       .all<SourceRow>();
     const hasMore = rows.results.length > limit;
-    const items = rows.results.slice(0, limit).map((r) => ({
+    const items = await Promise.all(rows.results.slice(0, limit).map(async (r) => ({
+      contributors:await fileContributors(c.env,member.projectId,r.file_id),
       sourceId: r.id,
       kind: r.kind,
       title: r.title,
       purpose: r.purpose, revision: r.resource_revision + r.lifecycle_version - 1,
       currentVersionId: r.current_version_id,
       createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.role==='owner'||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
-    }));
+    })));
     const lastItem = items.at(-1);
     return c.json(
       apiData(c, {
@@ -363,6 +367,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         revision: version.revision,
         origin: version.origin,
         fileId: version.file_id,
+        contributors:await fileContributors(c.env,c.get('member')!.projectId,version.file_id),
         status: version.status,
         parseError: version.parse_error,
         pageCount: version.page_count,

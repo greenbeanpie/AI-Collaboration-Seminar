@@ -1,3 +1,5 @@
+import { projectPermissionSql } from '../services/project-permissions';
+import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { fileReferenceAvailability } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -7,7 +9,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { resourcePurposeSchema } from './resources';
 import type { ResourcePurpose } from '../services/resources';
 import { newId, nowIso } from '../core/db';
-import { notFound, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
+import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -16,8 +18,9 @@ const DOC_MAX_BYTES = 200 * 1024;
 const materialParams = projectParams.extend({ materialId: z.string().uuid() });
 const versionParams = materialParams.extend({ versionId: z.string().uuid() });
 
-const attachmentSchema = z.object({ fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
+const attachmentSchema = z.object({ contributors:z.array(contributorSchema).optional(), fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
 const materialSchema = z.object({
+  canEdit:z.boolean().optional(),
   materialId: z.string().uuid(),
   title: z.string(),
   kind: z.string(),
@@ -128,6 +131,7 @@ const getVersionRoute = createRoute({
 interface MaterialRow {
   id: string;
   project_id: string;
+  created_by: string;
   title: string;
   kind: string;
   purpose: ResourcePurpose;
@@ -155,7 +159,7 @@ type Attachment = { fileId: string; name: string; availability?: 'unavailable'; 
 async function attachmentReferences(env: AppEnv['Bindings'], projectId: string, json: string): Promise<Attachment[]> {
   const attachments = JSON.parse(json ?? '[]') as Array<{ fileId: string; name: string }>;
   return Promise.all(attachments.map(async attachment => {
-    return { ...attachment, ...await fileReferenceAvailability(env, projectId, attachment.fileId) };
+    return { ...attachment, contributors:await fileContributors(env,projectId,attachment.fileId), ...await fileReferenceAvailability(env, projectId, attachment.fileId) };
   }));
 }
 
@@ -191,11 +195,12 @@ async function loadVersion(env: AppEnv['Bindings'], versionId: string, projectId
   return row;
 }
 
-async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow) {
+async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow, actorId:string) {
   const current = material.current_version_id
     ? await env.DB.prepare('SELECT * FROM material_versions WHERE id = ?1').bind(material.current_version_id).first<VersionRow>()
     : null;
   return {
+    canEdit:material.created_by===actorId || Boolean(await env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(material.project_id,actorId).first()),
     materialId: material.id,
     title: material.title,
     kind: material.kind,
@@ -243,7 +248,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       ).bind(versionId, materialId, member.projectId, JSON.stringify(emptyDoc), docToMarkdown(emptyDoc), user.id, now),
     ]);
     const material = await loadMaterial(c.env, materialId, member.projectId);
-    return c.json(apiData(c, await materialDetail(c.env, material)), 201);
+    return c.json(apiData(c, await materialDetail(c.env, material,c.get('user')!.id)), 201);
   });
 
   app.openapi(listRoute, async (c) => {
@@ -284,7 +289,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(getRoute, async (c) => {
     const material = await loadMaterial(c.env, c.req.valid('param').materialId, c.get('member')!.projectId);
-    return c.json(apiData(c, await materialDetail(c.env, material)), 200);
+    return c.json(apiData(c, await materialDetail(c.env, material,c.get('user')!.id)), 200);
   });
 
   app.openapi(saveRoute, async (c) => {
@@ -292,6 +297,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const materialId = c.req.valid('param').materialId;
     const material = await loadMaterial(c.env, materialId, member.projectId);
+    const actorId=c.get('user')!.id;
+    if (material.created_by!==actorId && !await c.env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(member.projectId,actorId).first()) throw permissionDenied('只能编辑本人创建或有资料管理权限的材料');
     if (material.revision !== body.expectedRevision) throw versionConflict(material.revision);
     if (!isTiptapDoc(body.doc)) throw validationFailed('doc 必须是 Tiptap JSON（{type:"doc", content:[...]}）');
     if (JSON.stringify(body.doc).length > DOC_MAX_BYTES) throw validationFailed('doc 超过大小限制');
@@ -321,7 +328,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       c.env.DB.prepare(
         `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at, attachments_json)
          SELECT ?1,?2,?3,?4,?5,?6,'manual',?7,?8,?9
-         WHERE EXISTS(SELECT 1 FROM materials WHERE id=?2 AND project_id=?3 AND revision=?11)
+         WHERE EXISTS(SELECT 1 FROM materials WHERE id=?2 AND project_id=?3 AND revision=?11 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?3 AND user_id=?7) AND (created_by=?7 OR ${projectPermissionSql('?3','?7','resourceManage')}))
            AND NOT EXISTS(SELECT 1 FROM json_each(?10) captured WHERE NOT EXISTS(SELECT 1 FROM files f WHERE f.id=json_extract(captured.value,'$.fileId') AND f.project_id=?3 AND f.status='available' AND f.deleted_at IS NULL AND f.lifecycle_version=json_extract(captured.value,'$.lifecycleVersion')))`,
       ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now, JSON.stringify(attachments), JSON.stringify(attachmentSnapshots), body.expectedRevision),
       c.env.DB.prepare(
