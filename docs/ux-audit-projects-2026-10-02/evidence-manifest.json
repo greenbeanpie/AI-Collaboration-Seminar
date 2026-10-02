@@ -1,0 +1,155 @@
+{
+  "date": "2026-10-02",
+  "timezone": "Asia/Singapore",
+  "onlineAsset": "/assets/index-DguM8WDk.js",
+  "versionCheck": "页面更新检查返回：当前已是最新版本。线上与本地 dist 的资源名仍不同。",
+  "screenshots": {
+    "01-project-list.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "e47087f0cde34faffc3ebf25f100df0d051a736a64c03a0145480327c48ad09b",
+      "step": 1,
+      "captureFileTime": "2026-10-02T11:36:11.208488+08:00"
+    },
+    "02-project-overview.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "8ba51b9d4b1e5ce4a6996ec334a61916861c0474633825870d4fc5bf071728c7",
+      "step": 1,
+      "captureFileTime": "2026-10-02T11:36:51.635722+08:00"
+    },
+    "03-work-top.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "aba699e8233da5723c4d3c7084f84f160c7d26e39bd39e03767d158e6bd0b0b0",
+      "step": 2,
+      "captureFileTime": "2026-10-02T11:37:11.635446+08:00"
+    },
+    "04-task-workspace.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "b2241b92b0db00ce040086e3556bf3d90ffdbcb5c6e90405c1156c6011b261ea",
+      "step": 2,
+      "captureFileTime": "2026-10-02T11:37:24.098876+08:00"
+    },
+    "05-standard-task-form.jpg": {
+      "width": 1652,
+      "height": 914,
+      "sha256": "b310ecd9e7095d7b671576e657c475358c57de1d29e34df01f8651e00bb505df",
+      "step": 2,
+      "captureFileTime": "2026-10-02T11:37:35.871122+08:00"
+    },
+    "06-collaboration-task-form.jpg": {
+      "width": 1652,
+      "height": 914,
+      "sha256": "26bcd271dc44a2c742db81e0bd596f120290bbc69f6d2953cfb7f96c036e6c9e",
+      "step": 2,
+      "captureFileTime": "2026-10-02T11:37:46.921715+08:00"
+    },
+    "07-data-overview.jpg": {
+      "width": 1652,
+      "height": 914,
+      "sha256": "fb6efe2ebf3ce3c2791a0ddb5b3556017b09a96e12efa4af8bb0f2f1f96a1aa2",
+      "step": 3,
+      "captureFileTime": "2026-10-02T11:38:00.537380+08:00"
+    },
+    "08-source-import.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "1862144ba965c937c3d376dc3fd5f801c14fbf5b08b361e078c27dabc27d73c0",
+      "step": 3,
+      "captureFileTime": "2026-10-02T11:38:22.418296+08:00"
+    },
+    "09-source-file-library.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "4634ef237408a1c054609f8626bf7b61d5632afae159d9c5cac9ce223a4a6c4d",
+      "step": 3,
+      "captureFileTime": "2026-10-02T11:38:30.554906+08:00"
+    },
+    "10-materials-top.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "afbdf3be26ce3279be58d643a297a6066f3081e158c4692bb5b8f7bd49edd6f6",
+      "step": 4,
+      "captureFileTime": "2026-10-02T11:38:37.522159+08:00"
+    },
+    "11-material-ai.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "dde70b78cc933297b949c1440827340f5e3a59c2734aee4f96dc12a64f883f8f",
+      "step": 4,
+      "captureFileTime": "2026-10-02T11:38:48.245331+08:00"
+    },
+    "12-ai-review-mode.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "cf35274985b3ee85c781ffa4f9ad277796d3958190c7d026e33c163a8dbb431c",
+      "step": 4,
+      "captureFileTime": "2026-10-02T11:39:06.843279+08:00"
+    },
+    "13-review-prerequisites.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "9b9f7ca6e093c4e2fe6f1d640b5ce2a894e33ff95b3781ad099afc810293296a",
+      "step": 5,
+      "captureFileTime": "2026-10-02T11:39:29.639109+08:00"
+    },
+    "14-rehearsal.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "b7a40cd3e74f807abb30265bc5b11503c560e92f7f6464b82a9eba6b447c6fb9",
+      "step": 5,
+      "captureFileTime": "2026-10-02T11:39:41.654601+08:00"
+    },
+    "15-team-entry.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "638c4a4dc57a60a59909a78be65cc10dd3c83054990aa6ccadcd8c0d2d5bcaa5",
+      "step": 6,
+      "captureFileTime": "2026-10-02T11:40:33.106565+08:00"
+    },
+    "16-project-settings.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "0d0b33398ff928e21ed8d52ff2af39d84f66b02dc1301a1405a7d25ef583502c",
+      "step": 6,
+      "captureFileTime": "2026-10-02T11:41:00.276227+08:00"
+    },
+    "17-requirements.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "97d16ceaf3db4ab4f75b68131be60ad10e0182a520294d336e621ab315b96788",
+      "step": 7,
+      "captureFileTime": "2026-10-02T11:41:15.630119+08:00"
+    },
+    "18-rubric-form.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "9083e306ac5dbe851b1fb4944189f984d7e3e860de2ce00c8d34584bbc10efba",
+      "step": 7,
+      "captureFileTime": "2026-10-02T11:41:29.186439+08:00"
+    },
+    "19-tasks-direct-route.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "3af5f40f806f0b0c921d809e84ef6663244d967f8d89e2f653f84ae78d06807d",
+      "step": 8,
+      "captureFileTime": "2026-10-02T11:42:04.712662+08:00"
+    },
+    "20-ai-shortcut.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "359d0df59dc6fd71e020e2adc0fd9f60bd6cdb9386262e165ad53ea0b7869f96",
+      "step": 9,
+      "captureFileTime": "2026-10-02T11:46:07.237879+08:00"
+    },
+    "21-export.jpg": {
+      "width": 1637,
+      "height": 906,
+      "sha256": "aa07756723a4c3e74ff919230acfd32bb0c1f08f4d63b99deff26fee1a00f6d1",
+      "step": 10,
+      "captureFileTime": "2026-10-02T11:46:21.886945+08:00"
+    }
+  }
+}

@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 项目办公室 · 主页设计稿 v1.0</title>
+<style>
+/* ============================================================
+   设计令牌 (Design Tokens)
+   想改风格？只改这一段即可，全稿自动联动。
+   ============================================================ */
+:root{
+  /* 品牌 / 强调色 */
+  --accent:#2F6BFF;
+  --accent-hover:#1E56E0;
+  --accent-weak:#EAF1FF;
+
+  /* 深色导航（左侧栏 + 顶栏） */
+  --nav-bg:#151922;
+  --nav-item:#98A0B2;
+  --nav-item-active:#FFFFFF;
+  --nav-active-bg:#242B3B;
+  --nav-line:#252B38;
+
+  /* 浅色内容区 */
+  --bg:#F4F5F7;
+  --surface:#FFFFFF;
+  --surface-2:#F7F8FA;
+  --border:#E5E7EC;
+  --border-strong:#D3D7E0;
+
+  /* 文字 */
+  --text-1:#151922;
+  --text-2:#5B6273;
+  --text-3:#8B91A1;
+
+  /* 语义色（状态色体系，全站只用这 4 组） */
+  --ok:#12A06A;         --ok-bg:#E6F6EF;
+  --info:#2F6BFF;       --info-bg:#EAF1FF;
+  --muted:#6B7280;      --muted-bg:#EFF1F5;
+  --danger:#D64545;     --danger-bg:#FCECEC;
+
+  /* 待响应 / 警戒色（橙红）—— 卡片描边、左侧色条、迷你柱状图最紧急一档共用 */
+  --alert:#EA580C;
+  --alert-bg:#FFF8F4;
+  --alert-border:#F5A97B;
+  --alert-soft:#FDE9DC;
+  --alert-ink:#C2410C;
+
+  /* 圆角 */
+  --r-sm:8px; --r-md:10px; --r-lg:12px; --r-xl:16px; --r-pill:999px;
+
+  /* 阴影（只用两级） */
+  --sh-1:0 1px 2px rgba(21,25,34,.05);
+  --sh-2:0 6px 20px rgba(21,25,34,.09);
+
+  /* 间距阶梯 */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
+
+  /* 字号阶梯 */
+  --fs-cap:12px; --fs-body:13px; --fs-base:14px; --fs-lg:16px;
+  --fs-h2:20px; --fs-h1:28px; --fs-kpi:32px;
+
+  --font:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",Roboto,sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{
+  font-family:var(--font);
+  font-size:var(--fs-base);
+  line-height:1.6;
+  color:var(--text-1);
+  background:var(--bg);
+  padding:var(--s7) var(--s6) 64px;
+}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- 文档外层 ---------- */
+.doc{max-width:1440px;margin:0 auto}
+.doc-head{margin-bottom:var(--s6)}
+.doc-head h1{font-size:22px;font-weight:600;letter-spacing:-.2px}
+.doc-head .sub{font-size:var(--fs-body);color:var(--text-2);margin-top:6px;max-width:760px}
+.doc-head .meta{display:flex;gap:var(--s3);flex-wrap:wrap;margin-top:var(--s4)}
+.chip{
+  font-size:var(--fs-cap);color:var(--text-2);background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-pill);padding:3px 10px;
+}
+.chip b{color:var(--text-1);font-weight:500}
+
+.sec{margin-top:var(--s7)}
+.sec > h2{
+  font-size:var(--fs-lg);font-weight:600;margin-bottom:4px;
+  display:flex;align-items:center;gap:10px;
+}
+.sec > h2 .idx{
+  font-size:var(--fs-cap);font-weight:500;color:var(--accent);
+  background:var(--accent-weak);border-radius:var(--r-sm);padding:2px 8px;
+}
+.sec > p.hint{font-size:var(--fs-body);color:var(--text-2);margin-bottom:var(--s5);max-width:820px}
+
+/* ---------- 工具栏（交互开关） ---------- */
+.toolbar{
+  display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--s3) var(--s4);margin-bottom:var(--s4);box-shadow:var(--sh-1);
+}
+.toolbar .label{font-size:var(--fs-cap);color:var(--text-3)}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:2px}
+.seg button{
+  font:inherit;font-size:var(--fs-cap);color:var(--text-2);background:none;border:0;
+  padding:5px 14px;border-radius:6px;cursor:pointer;transition:.15s;
+}
+.seg button.on{background:var(--surface);color:var(--text-1);box-shadow:var(--sh-1);font-weight:500}
+
+/* ============================================================
+   应用外壳（设计稿主体）
+   ============================================================ */
+.app{
+  display:flex;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-xl);
+  overflow:hidden;box-shadow:var(--sh-2);
+}
+
+/* ---------- 左侧栏 224px ---------- */
+.side{
+  width:224px;flex:0 0 224px;background:var(--nav-bg);
+  display:flex;flex-direction:column;padding:var(--s4) var(--s3);
+}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px var(--s5)}
+.brand .mark{
+  width:30px;height:30px;border-radius:9px;background:var(--accent);
+  display:flex;align-items:center;justify-content:center;flex:0 0 30px;
+}
+.brand .mark svg{width:17px;height:17px}
+.brand .name{font-size:var(--fs-base);font-weight:600;color:#fff;line-height:1.2}
+.brand .desc{font-size:11px;color:var(--nav-item);line-height:1.3}
+
+.nav-group{font-size:11px;color:#5E6678;letter-spacing:.4px;padding:var(--s4) 10px 6px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;
+  border-radius:var(--r-sm);color:var(--nav-item);font-size:var(--fs-body);
+  cursor:pointer;position:relative;transition:.15s;
+}
+.nav-item svg{width:16px;height:16px;flex:0 0 16px}
+.nav-item:hover{background:#1D2330;color:#fff}
+.nav-item.on{background:var(--nav-active-bg);color:var(--nav-item-active);font-weight:500}
+.nav-item.on::before{
+  content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--accent);
+}
+.nav-item .badge{
+  margin-left:auto;font-size:11px;background:var(--accent);color:#fff;
+  border-radius:var(--r-pill);padding:1px 6px;line-height:1.5;
+}
+.side-foot{margin-top:auto;padding-top:var(--s4);border-top:1px solid var(--nav-line)}
+.side-user{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--r-sm);cursor:pointer}
+.side-user:hover{background:#1D2330}
+.side-user .av{
+  width:28px;height:28px;border-radius:50%;background:#2F6BFF;color:#fff;
+  font-size:11px;display:flex;align-items:center;justify-content:center;flex:0 0 28px;font-weight:500;
+}
+.side-user .who{font-size:var(--fs-body);color:#fff;line-height:1.25}
+.side-user .role{font-size:11px;color:var(--nav-item)}
+
+/* ---------- 主区 ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+
+/* 顶栏 56px */
+.topbar{
+  height:56px;flex:0 0 56px;background:var(--nav-bg);
+  display:flex;align-items:center;gap:var(--s4);padding:0 var(--s5);
+}
+.crumb{font-size:var(--fs-body);color:var(--nav-item);display:flex;align-items:center;gap:8px}
+.crumb b{color:#fff;font-weight:500}
+.top-search{
+  margin-left:var(--s5);width:280px;height:32px;border-radius:var(--r-sm);
+  background:#1D2330;border:1px solid #2A3142;color:var(--nav-item);
+  display:flex;align-items:center;gap:8px;padding:0 10px;font-size:var(--fs-body);
+}
+.top-search svg{width:14px;height:14px}
+.top-search .kbd{
+  margin-left:auto;font-size:11px;color:#6B7280;border:1px solid #333A4B;
+  border-radius:4px;padding:0 5px;line-height:16px;
+}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.icon-btn{
+  width:32px;height:32px;border-radius:var(--r-sm);display:flex;align-items:center;
+  justify-content:center;color:var(--nav-item);cursor:pointer;position:relative;
+}
+.icon-btn svg{width:17px;height:17px}
+.icon-btn:hover{background:#1D2330;color:#fff}
+.icon-btn .dot{
+  position:absolute;top:6px;right:7px;width:6px;height:6px;border-radius:50%;
+  background:#FF5A5A;border:1.5px solid var(--nav-bg);
+}
+.top-av{
+  width:30px;height:30px;border-radius:50%;background:#3B465C;color:#fff;
+  font-size:11px;display:flex;align-items:center;justify-content:center;margin-left:6px;font-weight:500;
+}
+/* 页面内容区 */
+.page{padding:var(--s6);display:flex;flex-direction:column;gap:var(--s6)}
+
+/* ① 命令区 */
+.cmd{display:flex;align-items:flex-start;gap:var(--s5);flex-wrap:wrap}
+.cmd .title{font-size:var(--fs-h1);font-weight:600;letter-spacing:-.4px;line-height:1.2}
+.cmd .desc{font-size:var(--fs-body);color:var(--text-2);margin-top:6px}
+.cmd .acts{margin-left:auto;display:flex;gap:var(--s2);align-items:center;padding-top:4px}
+
+.btn{
+  font:inherit;font-size:var(--fs-body);height:36px;padding:0 16px;border-radius:var(--r-sm);
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text-1);
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.btn svg{width:15px;height:15px}
+.btn:hover{border-color:var(--text-3);background:var(--surface-2)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn-sm{height:30px;padding:0 12px;font-size:var(--fs-cap)}
+.btn-ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text-1)}
+
+/* ② 概览带 */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s4)}
+.kpi{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--s4) var(--s4) 14px;box-shadow:var(--sh-1);
+  display:flex;flex-direction:column;gap:2px;
+}
+.kpi .k-label{font-size:var(--fs-cap);color:var(--text-2);display:flex;align-items:center;gap:6px}
+.kpi .k-label svg{width:14px;height:14px;color:var(--text-3)}
+.kpi .k-value{font-size:var(--fs-kpi);font-weight:600;line-height:1.15;letter-spacing:-1px;margin-top:6px}
+.kpi .k-value small{font-size:var(--fs-base);font-weight:500;color:var(--text-3);letter-spacing:0;margin-left:4px}
+.kpi .k-foot{font-size:var(--fs-cap);color:var(--text-3);margin-top:8px;display:flex;align-items:center;gap:6px}
+.trend{font-size:11px;padding:1px 7px;border-radius:var(--r-pill);font-weight:500}
+.trend.up{color:var(--ok);background:var(--ok-bg)}
+.trend.flat{color:var(--muted);background:var(--muted-bg)}
+
+/* 动作卡：与统计卡在视觉上明确区分 */
+.kpi.action{
+  background:transparent;border:1px dashed var(--accent);box-shadow:none;
+  justify-content:center;
+}
+.kpi.action .k-label{color:var(--accent)}
+.kpi.action .k-title{font-size:var(--fs-lg);font-weight:600;margin-top:4px}
+.kpi.action .k-hint{font-size:var(--fs-cap);color:var(--text-3);margin-top:2px}
+.kpi.action .k-go{
+  margin-top:10px;font-size:var(--fs-cap);color:var(--accent);
+  display:inline-flex;align-items:center;gap:5px;cursor:pointer;
+}
+
+/* ③ 主区双栏 2:1 */
+.split{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--s5);align-items:start}
+
+.panel-head{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
+.panel-head h3{font-size:var(--fs-base);font-weight:600}
+.panel-head .count{font-size:var(--fs-cap);color:var(--text-3)}
+.panel-head .tools{margin-left:auto;display:flex;align-items:center;gap:var(--s2)}
+.filters{display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:2px}
+.filters button{
+  font:inherit;font-size:var(--fs-cap);color:var(--text-2);background:none;border:0;
+  padding:4px 12px;border-radius:6px;cursor:pointer;
+}
+.filters button.on{background:var(--surface);color:var(--text-1);font-weight:500;box-shadow:var(--sh-1)}
+
+/* 项目网格 */
+.project-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4)}
+.pcard{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--s4);box-shadow:var(--sh-1);cursor:pointer;
+  display:flex;flex-direction:column;gap:10px;transition:.16s;
+}
+.pcard:hover{box-shadow:var(--sh-2);border-color:var(--border-strong);transform:translateY(-1px)}
+.pcard .row1{display:flex;align-items:center;gap:8px}
+.pcard .row1 .time{margin-left:auto;font-size:11px;color:var(--text-3)}
+.pcard .p-name{font-size:var(--fs-base);font-weight:600;letter-spacing:-.1px}
+.pcard .p-meta{font-size:var(--fs-cap);color:var(--text-3);margin-top:-6px}
+.badge{
+  font-size:11px;font-weight:500;padding:2px 9px;border-radius:var(--r-pill);
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+}
+.badge::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.badge.blue{color:var(--info);background:var(--info-bg)}
+.badge.green{color:var(--ok);background:var(--ok-bg)}
+.badge.alert{color:var(--alert-ink);background:var(--alert-soft)}
+.badge.gray{color:var(--muted);background:var(--muted-bg)}
+.badge.plain::before{display:none}
+
+/* 待响应项目卡：偏黄的琥珀色，网格与列表保持一致 */
+.pcard.alert,.plist-row.alert{
+  --alert:#D9A008;
+  --alert-bg:#FFFCF0;
+  --alert-border:#E8C661;
+  --alert-soft:#FFF1BB;
+  --alert-ink:#8A6100;
+}
+.pcard.alert{
+  background:var(--alert-bg);
+  border-color:var(--alert-border);
+  border-width:1px;
+  position:relative;overflow:hidden;
+}
+.pcard.alert::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--alert);
+}
+.pcard.alert:hover{border-color:var(--alert)}
+.pcard.alert .bar > i{background:var(--alert)}
+.pcard.alert .go{color:var(--alert-ink)}
+.plist-row.alert{
+  background:var(--alert-bg);
+  box-shadow:inset 3px 0 0 var(--alert);
+}
+.plist-row.alert:hover{background:var(--alert-soft)}
+.plist-row.alert .bar > i{background:var(--alert)}
+.plist-row.alert .go{color:var(--alert-ink)}
+
+/* 待响应任务卡内的迷你柱状图 */
+.kpi .k-row{display:flex;align-items:flex-end;gap:12px;margin-top:6px}
+.kpi .k-row .k-value{margin-top:0}
+.spark{
+  margin-left:auto;display:flex;align-items:flex-end;gap:3px;
+  height:34px;border-bottom:1px solid var(--border);
+}
+.spark i{display:block;width:6px;border-radius:2px 2px 0 0;background:var(--accent)}
+.spark i.b0{background:var(--alert)}
+.spark i.b1{background:var(--alert-border)}
+.spark i.b2{background:#6E9BE8}
+.spark i.b3{background:#B5D4F4}
+.spark-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:var(--fs-cap);color:var(--text-2)}
+.spark-legend span{display:inline-flex;align-items:center;gap:6px}
+.spark-legend i{width:8px;height:8px;border-radius:2px;display:block}
+
+/* 筛选无结果 */
+.nomatch{
+  border:1px dashed var(--border-strong);border-radius:var(--r-lg);
+  padding:36px var(--s5);text-align:center;background:var(--surface);
+  font-size:var(--fs-body);color:var(--text-2);
+}
+.nomatch b{display:block;font-size:var(--fs-base);color:var(--text-1);font-weight:600;margin-bottom:4px}
+
+.bar{height:4px;border-radius:2px;background:var(--surface-2);overflow:hidden}
+.bar > i{display:block;height:4px;border-radius:2px;background:var(--accent)}
+.bar > i.done{background:var(--ok)}
+.pcard .row3{display:flex;align-items:center;gap:var(--s2);margin-top:2px}
+.pcard .row3 .pct{font-size:var(--fs-cap);color:var(--text-2);font-weight:500}
+.pcard .row3 .pct span{color:var(--text-3);font-weight:400}
+.pcard .row3 .go{margin-left:auto;font-size:var(--fs-cap);color:var(--accent);display:flex;align-items:center;gap:4px}
+.avatars{display:flex}
+.avatars i{
+  width:22px;height:22px;border-radius:50%;border:2px solid var(--surface);
+  margin-left:-7px;display:block;
+}
+.avatars i:first-child{margin-left:0}
+
+/* 列表视图 */
+.project-list{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden;box-shadow:var(--sh-1)}
+.plist-head,.plist-row{display:grid;grid-template-columns:2.2fr 1fr 1.4fr .9fr 64px;gap:var(--s4);align-items:center;padding:10px var(--s4)}
+.plist-head{background:var(--surface-2);border-bottom:1px solid var(--border);font-size:var(--fs-cap);color:var(--text-3)}
+.plist-row{border-bottom:1px solid var(--border);font-size:var(--fs-body);cursor:pointer}
+.plist-row:last-child{border-bottom:0}
+.plist-row:hover{background:var(--surface-2)}
+.plist-row .pn{font-weight:500}
+.plist-row .ps{font-size:var(--fs-cap);color:var(--text-3)}
+.plist-row .go{color:var(--accent);font-size:var(--fs-cap);text-align:right}
+
+/* 右栏 待办与动态 */
+.rail{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--s4);box-shadow:var(--sh-1);display:flex;flex-direction:column;gap:var(--s4);
+}
+.rail-head{display:flex;align-items:center}
+.rail-head h3{font-size:var(--fs-base);font-weight:600}
+.rail-head .more{margin-left:auto;font-size:var(--fs-cap);color:var(--text-3);cursor:pointer}
+.rail-head .more:hover{color:var(--accent)}
+
+.invite{
+  background:var(--accent-weak);border:1px solid #C9DCFF;border-radius:var(--r-md);
+  padding:var(--s3) var(--s3) 12px;
+}
+.invite .t{font-size:var(--fs-body);font-weight:600;color:#1B4CC4}
+.invite .d{font-size:11px;color:#3A62C9;margin-top:2px}
+.invite .a{display:flex;gap:var(--s2);margin-top:10px}
+.invite .a .btn{height:28px;padding:0 12px;font-size:11px}
+
+.todo{display:flex;flex-direction:column}
+.todo-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.todo-item:last-child{border-bottom:0;padding-bottom:0}
+.todo-item .box{
+  width:15px;height:15px;border:1.5px solid var(--border-strong);border-radius:4px;
+  flex:0 0 15px;margin-top:3px;
+}
+.todo-item:hover .box{border-color:var(--accent)}
+.todo-item .txt{font-size:var(--fs-body);line-height:1.45}
+.todo-item .sub{font-size:11px;color:var(--text-3);margin-top:2px;display:flex;gap:8px}
+.todo-item .sub .due{color:var(--danger)}
+
+.feed{display:flex;flex-direction:column;gap:var(--s3)}
+.feed-item{display:flex;gap:10px;font-size:var(--fs-body);color:var(--text-2);line-height:1.45}
+.feed-item .dot{
+  width:7px;height:7px;border-radius:50%;background:var(--border-strong);
+  flex:0 0 7px;margin-top:7px;
+}
+.feed-item .dot.b{background:var(--accent)}
+.feed-item .dot.g{background:var(--ok)}
+.feed-item b{color:var(--text-1);font-weight:500}
+.feed-item .when{font-size:11px;color:var(--text-3);display:block;margin-top:1px}
+
+/* 空状态 */
+.empty{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:56px var(--s5);text-align:center;box-shadow:var(--sh-1);
+}
+.empty .art{
+  width:64px;height:64px;border-radius:var(--r-lg);background:var(--accent-weak);
+  margin:0 auto var(--s4);display:flex;align-items:center;justify-content:center;
+}
+.empty .art svg{width:28px;height:28px;color:var(--accent)}
+.empty h4{font-size:var(--fs-lg);font-weight:600}
+.empty p{font-size:var(--fs-body);color:var(--text-2);margin:6px 0 var(--s4)}
+.empty .row{display:flex;gap:var(--s2);justify-content:center}
+.empty .tip{font-size:var(--fs-cap);color:var(--text-3);margin-top:var(--s4)}
+
+[hidden]{display:none !important}
+
+/* ============================================================
+   规范展示区
+   ============================================================ */
+.spec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s4)}
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--s5);box-shadow:var(--sh-1);
+}
+.card > h4{font-size:var(--fs-base);font-weight:600;margin-bottom:4px}
+.card > .note{font-size:var(--fs-cap);color:var(--text-3);margin-bottom:var(--s4)}
+.row-wrap{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+
+/* 色板 */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:var(--s3)}
+.sw{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.sw .c{height:52px}
+.sw .m{padding:7px 10px}
+.sw .m .n{font-size:var(--fs-cap);font-weight:500}
+.sw .m .v{font-size:11px;color:var(--text-3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* 字号阶梯 */
+.type-row{display:flex;align-items:baseline;gap:var(--s4);padding:9px 0;border-bottom:1px solid var(--border)}
+.type-row:last-child{border-bottom:0}
+.type-row .tag{font-size:11px;color:var(--text-3);width:120px;flex:0 0 120px;font-family:ui-monospace,Menlo,monospace}
+
+/* 间距阶梯 */
+.space-row{display:flex;align-items:center;gap:var(--s3);padding:6px 0}
+.space-row .tag{font-size:11px;color:var(--text-3);width:78px;flex:0 0 78px;font-family:ui-monospace,Menlo,monospace}
+.space-row .blk{height:14px;background:var(--accent-weak);border:1px solid #C9DCFF;border-radius:3px}
+
+/* 响应式示意 */
+.bp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s4)}
+.bp{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s4);box-shadow:var(--sh-1)}
+.bp .cap{font-size:var(--fs-cap);color:var(--text-2);margin-bottom:10px}
+.bp .cap b{color:var(--text-1);font-weight:600}
+.bp .frame{border:1px solid var(--border-strong);border-radius:var(--r-md);overflow:hidden;background:var(--bg);display:flex;height:150px}
+.bp .fside{background:var(--nav-bg);flex:0 0 30px}
+.bp .fside.wide{flex:0 0 62px}
+.bp .fbody{flex:1;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.bp .fbar{height:9px;background:#DDE1E8;border-radius:3px}
+.bp .frow{display:flex;gap:6px}
+.bp .fbox{flex:1;background:#fff;border:1px solid var(--border);border-radius:5px;height:26px}
+.bp .fbox.tall{height:44px}
+.bp .fnote{font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.5}
+
+.legend{font-size:var(--fs-cap);color:var(--text-3);margin-top:var(--s4);line-height:1.7}
+.legend b{color:var(--text-2);font-weight:500}
+
+/* 背景柱状图：仅通过每列不透明度控制清晰程度，不使用滤镜或复制图层 */
+.kpi.deadline-kpi{position:relative;isolation:isolate;min-height:148px;overflow:hidden}
+.deadline-kpi .k-label,.deadline-kpi .k-value,.deadline-kpi .k-foot{position:relative;z-index:2;width:fit-content}
+.deadline-kpi .k-foot{margin-top:auto}
+.deadline-chart{position:absolute;inset:var(--deadline-chart-top,36px) 16px var(--deadline-chart-bottom,64px) var(--deadline-chart-left,72px);display:grid;grid-template-columns:repeat(15,minmax(0,1fr));gap:4px;z-index:0}
+.deadline-bin{display:flex;flex-direction:column;justify-content:flex-end;min-width:0}
+.deadline-bin .column{height:var(--height);max-height:100%;background:var(--bar-color);opacity:var(--bar-opacity,1);border-radius:3px 3px 0 0}
+.spark-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:var(--fs-cap);color:var(--text-2)}
+.spark-legend span{display:inline-flex;align-items:center;gap:6px}
+.spark-legend i{width:8px;height:8px;border-radius:2px;display:block}
+.archive-button{font-size:11px;white-space:nowrap;padding:4px 8px}
+.archive-dialog{margin:auto;border:1px solid var(--border);border-radius:var(--r-xl);padding:24px;width:min(680px,calc(100vw - 32px));max-height:80vh;overflow:auto;box-shadow:var(--sh-2);color:var(--text-1)}
+.archive-dialog::backdrop{background:rgba(21,25,34,.45);backdrop-filter:blur(3px)}
+.archive-dialog .dialog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px}
+.archive-dialog .dialog-head h3{font-size:18px}
+.archive-dialog .archive-content{margin-top:20px;display:grid;gap:16px}
+.archive-dialog .pcard{cursor:default}
+.archive-dialog .pcard:hover{transform:none}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+
+.kpi.deadline-kpi{min-height:148px}
+.deadline-kpi .deadline-hints{display:flex;flex-wrap:wrap;gap:4px;width:100%;padding:0;background:none;font-size:10px}
+.deadline-hints>span{padding:2px 5px;border-radius:5px;white-space:nowrap;font-weight:500}
+.deadline-today{background:var(--danger-bg);color:var(--danger)}
+.deadline-three{background:var(--alert-soft);color:var(--alert-ink)}
+.deadline-seven{background:var(--info-bg);color:var(--info)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="doc-head">
+    <h1>AI 项目办公室 · 主页设计稿</h1>
+    <p class="sub">
+      按「仪表盘」思路重构工作空间主页：顶部命令区 → 概览带 → 主从双栏。
+      重点解决首屏空状态抢位、KPI 数字过弱、项目卡片过窄、内容列浪费宽度四个问题。
+      v1.1 增补：待响应任务卡内嵌截止时间柱状图、项目区默认显示全部未归档项目、待响应项目置顶并加橙红警戒边框。
+    </p>
+    <div class="meta">
+      <span class="chip">版本 <b>v1.1</b></span>
+      <span class="chip">画布 <b>1440 × 自适应</b></span>
+      <span class="chip">栅格 <b>12 列 / 24px 槽宽</b></span>
+      <span class="chip">字体 <b>系统无衬线</b></span>
+      <span class="chip">可编辑 <b>改顶部 CSS 变量即可</b></span>
+    </div>
+  </div>
+
+  <!-- ===================== 设计稿主体 ===================== -->
+  <section class="sec">
+    <h2><span class="idx">01</span>主页设计稿</h2>
+    <p class="hint">下方开关可以切换数据状态，项目标题右侧可以切换网格与列表视图；项目区右上角的筛选默认停在「全部」，可以直接点开验证置顶排序与警戒边框。</p>
+
+    <div class="toolbar">
+
+      <span class="label">数据状态</span>
+      <div class="seg" id="segState">
+        <button class="on" data-v="data">有数据</button>
+        <button data-v="empty">空状态</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <!-- 左侧栏 -->
+      <aside class="side">
+        <div class="brand">
+          <span class="mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>
+          </span>
+          <span>
+            <span class="name">华印</span>
+            <span class="desc">AI 项目办公室</span>
+          </span>
+        </div>
+
+        <div class="nav-group">工作区</div>
+        <div class="nav-item on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/></svg>
+          我的项目
+          <span class="badge num">6</span>
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0 4-4m-4 4-4-4M4 18h16"/></svg>
+          导入项目
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5a4 4 0 0 0 5 5L9 21H4v-5z"/></svg>
+          支撑工具
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>
+          团队成员
+        </div>
+
+        <div class="nav-group">个人</div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18"/></svg>
+          个人资料
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 2.6 14H2.4a2 2 0 1 1 0-4h.2A1.7 1.7 0 0 0 4.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 2.6V2.4a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          设置
+        </div>
+
+        <div class="side-foot">
+          <div class="side-user">
+            <span class="av">JD</span>
+            <span>
+              <span class="who">jdme</span>
+              <span class="role">管理员</span>
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 主区 -->
+      <div class="main">
+        <header class="topbar">
+          <div class="crumb">工作空间 <span>/</span> <b>概览</b></div>
+          <div class="top-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            搜索项目、成员或任务
+            <span class="kbd">⌘K</span>
+          </div>
+          <div class="top-right">
+            <span class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 4a5 5 0 0 1 5 5v3l1.5 3h-13L7 12V9a5 5 0 0 1 5-5z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg><i class="dot"></i></span>
+            <span class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .9-1 1.7v.3"/><path d="M12 17h.01"/></svg></span>
+            <span class="top-av">JD</span>
+          </div>
+        </header>
+
+        <div class="page">
+
+          <!-- ① 命令区 -->
+          <div class="cmd">
+            <div>
+              <div class="title">我的项目</div>
+              <div class="desc">追踪真实项目状态，查看团队进度并处理待办。</div>
+            </div>
+            <div class="acts">
+              <button class="btn btn-ghost btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v9m0 0 3.5-3.5M12 14l-3.5-3.5M5 19h14"/></svg>
+                导入项目
+              </button>
+              <button class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                新建项目
+              </button>
+            </div>
+          </div>
+
+          <!-- ② 概览带 -->
+          <div class="kpis">
+            <div class="kpi">
+              <span class="k-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/></svg>
+                进行中的项目
+              </span>
+              <span class="k-value num">3<small>个</small></span>
+              <span class="k-foot"><span class="trend up">本周 +1</span> 共 6 个项目</span>
+            </div>
+
+            <div class="kpi deadline-kpi">
+              <span class="k-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 11l2 2 4-4"/><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg>
+                待响应任务
+              </span>
+              <span class="k-value num">48<small>项</small></span>
+<div class="deadline-chart" role="img" aria-label="截止剩余天数从左侧14日及以上到右侧0日，14日2项，13日3项，12日2项，11日3项，10日2项，9日3项，8日2项，7日4项，6日3项，5日2项，4日4项，3日3项，2日5项，1日4项，0日6项。颜色从右向左连续过渡：红、橙、蓝、淡蓝。"><div class="deadline-bin" data-days="14" data-count="2" title="截止还有 14 日及以上：2 项"><span class="column" style="--height:36px;--bar-opacity:0.0600;--bar-color:#b5d4f4"></span></div><div class="deadline-bin" data-days="13" data-count="3" title="截止还有 13 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.0835;--bar-color:#a2c5f6"></span></div><div class="deadline-bin" data-days="12" data-count="2" title="截止还有 12 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.1089;--bar-color:#8fb6f7"></span></div><div class="deadline-bin" data-days="11" data-count="3" title="截止还有 11 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.1366;--bar-color:#7ca7f9"></span></div><div class="deadline-bin" data-days="10" data-count="2" title="截止还有 10 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.1671;--bar-color:#6898fa"></span></div><div class="deadline-bin" data-days="9" data-count="3" title="截止还有 9 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.2008;--bar-color:#5589fc"></span></div><div class="deadline-bin" data-days="8" data-count="2" title="截止还有 8 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.2388;--bar-color:#427afd"></span></div><div class="deadline-bin" data-days="7" data-count="4" title="截止还有 7 日：4 项"><span class="column" style="--height:72px;--bar-opacity:0.2820;--bar-color:#2f6bff"></span></div><div class="deadline-bin" data-days="6" data-count="3" title="截止还有 6 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.3323;--bar-color:#5e6dc8"></span></div><div class="deadline-bin" data-days="5" data-count="2" title="截止还有 5 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.3925;--bar-color:#8c6f91"></span></div><div class="deadline-bin" data-days="4" data-count="4" title="截止还有 4 日：4 项"><span class="column" style="--height:72px;--bar-opacity:0.4672;--bar-color:#bb715a"></span></div><div class="deadline-bin" data-days="3" data-count="3" title="截止还有 3 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.5661;--bar-color:#ea7323"></span></div><div class="deadline-bin" data-days="2" data-count="5" title="截止还有 2 日：5 项"><span class="column" style="--height:90px;--bar-opacity:0.7124;--bar-color:#e3642e"></span></div><div class="deadline-bin" data-days="1" data-count="4" title="截止还有 1 日：4 项"><span class="column" style="--height:72px;--bar-opacity:1.0000;--bar-color:#dd543a"></span></div><div class="deadline-bin" data-days="0" data-count="6" title="截止还有 0 日：6 项"><span class="column" style="--height:108px;--bar-opacity:1.0000;--bar-color:#d64545"></span></div></div>
+              <div class="k-foot deadline-hints" aria-label="累计截止提醒，包含今日"><span class="deadline-today">今日截止 6 项</span><span class="deadline-three">最近3日截止 18 项</span><span class="deadline-seven">最近7日截止 31 项</span></div>
+            </div>
+
+            <div class="kpi">
+              <span class="k-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18V9m5 9V5m5 13v-6m5 6V8"/></svg>
+                本周完成率
+              </span>
+              <span class="k-value num">86<small>%</small></span>
+              <span class="k-foot"><span class="trend up">↑ 4.2%</span> 12 / 14 项任务</span>
+            </div>
+
+            <!-- 动作卡：虚线 + 透明底，和统计卡明确区分 -->
+            <div class="kpi action">
+              <span class="k-label">加入现有团队</span>
+              <span class="k-title">有邀请密码？</span>
+              <span class="k-hint">输入后即可加入团队空间</span>
+              <span class="k-go">输入邀请密码
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+              </span>
+            </div>
+          </div>
+
+          <!-- ③ 主区双栏 -->
+          <div class="split">
+
+            <!-- 左：项目区 -->
+            <section>
+              <div class="panel-head">
+                <h3>项目</h3>
+                <span class="count num" id="projCount">5 个</span>
+                <div class="seg" id="segView" aria-label="项目视图">
+        <button class="on" data-v="grid">网格</button>
+        <button data-v="list">列表</button>
+      </div>
+                <button type="button" class="btn btn-sm btn-ghost archive-button" id="openArchive" aria-haspopup="dialog" aria-controls="archiveDialog">查看归档任务</button>
+                <div class="tools">
+                  <div class="filters" id="filters">
+                    <button data-v="all" class="on">全部</button>
+                    <button data-v="active">进行中</button>
+                    <button data-v="done">已完成</button>
+                  </div>
+                  <button class="btn btn-sm btn-ghost">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 有数据：网格视图 -->
+              <div class="project-grid">
+                <article class="pcard alert" data-status="pending" data-order="0">
+                  <div class="row1">
+                    <span class="badge alert">待响应</span>
+                    <span class="time">3 天前更新</span>
+                  </div>
+                  <div class="p-name">品牌官网改版</div>
+                  <div class="p-meta">团队项目 · 2 个待办待确认</div>
+                  <div class="bar"><i style="width:78%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#85B7EB"></i></span>
+                    <span class="pct num">78% <span>· 7/9</span></span>
+                    <span class="go">进入项目
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+
+                <article class="pcard" data-status="active" data-order="1">
+                  <div class="row1">
+                    <span class="badge blue">进行中</span>
+                    <span class="time">2 小时前更新</span>
+                  </div>
+                  <div class="p-name">智能客服知识库</div>
+                  <div class="p-meta">私人项目 · 8 个待办</div>
+                  <div class="bar"><i style="width:62%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#B5D4F4"></i><i style="background:#C0DD97"></i><i style="background:#FAC775"></i></span>
+                    <span class="pct num">62% <span>· 5/8</span></span>
+                    <span class="go">进入项目
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+
+                <article class="pcard" data-status="active" data-order="2">
+                  <div class="row1">
+                    <span class="badge blue">进行中</span>
+                    <span class="time">昨天更新</span>
+                  </div>
+                  <div class="p-name">数据标注平台</div>
+                  <div class="p-meta">团队项目 · 12 个待办</div>
+                  <div class="bar"><i style="width:35%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#F5C4B3"></i><i style="background:#AFA9EC"></i></span>
+                    <span class="pct num">35% <span>· 4/12</span></span>
+                    <span class="go">进入项目
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+
+                <article class="pcard" data-status="done" data-order="1">
+                  <div class="row1">
+                    <span class="badge green">已完成</span>
+                    <span class="time">上周更新</span>
+                  </div>
+                  <div class="p-name">内部审批流重构</div>
+                  <div class="p-meta">私人项目 · 全部待办已结清</div>
+                  <div class="bar"><i class="done" style="width:100%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#9FE1CB"></i></span>
+                    <span class="pct num">100% <span>· 9/9</span></span>
+                    <span class="go">查看归档
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+
+                <article class="pcard" data-status="active" data-order="3">
+                  <div class="row1">
+                    <span class="badge blue">进行中</span>
+                    <span class="time">5 天前更新</span>
+                  </div>
+                  <div class="p-name">语音转写 Demo</div>
+                  <div class="p-meta">私人项目 · 6 个待办</div>
+                  <div class="bar"><i style="width:20%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#ED93B1"></i></span>
+                    <span class="pct num">20% <span>· 1/5</span></span>
+                    <span class="go">进入项目
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+
+                <article class="pcard" data-status="archived" data-order="1">
+                  <div class="row1">
+                    <span class="badge gray">已归档</span>
+                    <span class="time">2026年8月</span>
+                  </div>
+                  <div class="p-name">用户增长看板</div>
+                  <div class="p-meta">团队项目 · 已交付</div>
+                  <div class="bar"><i class="done" style="width:100%"></i></div>
+                  <div class="row3">
+                    <span class="avatars"><i style="background:#D3D1C7"></i><i style="background:#B4B2A9"></i></span>
+                    <span class="pct num">100% <span>· 14/14</span></span>
+                    <span class="go">查看归档
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+                    </span>
+                  </div>
+                </article>
+              </div>
+
+              <!-- 有数据：列表视图 -->
+              <div class="project-list" hidden>
+                <div class="plist-head">
+                  <span>项目</span><span>状态</span><span>进度</span><span>负责人</span><span></span>
+                </div>
+                <div class="plist-row alert" data-status="pending" data-order="0">
+                  <span><span class="pn">品牌官网改版</span><span class="ps"> · 团队项目</span></span>
+                  <span><span class="badge alert">待响应</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i style="width:78%"></i></span><span class="ps num">78%</span></span>
+                  <span class="avatars"><i style="background:#85B7EB"></i></span>
+                  <span class="go">进入</span>
+                </div>
+                <div class="plist-row" data-status="active" data-order="1">
+                  <span><span class="pn">智能客服知识库</span><span class="ps"> · 私人项目</span></span>
+                  <span><span class="badge blue">进行中</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i style="width:62%"></i></span><span class="ps num">62%</span></span>
+                  <span class="avatars"><i style="background:#B5D4F4"></i><i style="background:#C0DD97"></i></span>
+                  <span class="go">进入</span>
+                </div>
+                <div class="plist-row" data-status="active" data-order="2">
+                  <span><span class="pn">数据标注平台</span><span class="ps"> · 团队项目</span></span>
+                  <span><span class="badge blue">进行中</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i style="width:35%"></i></span><span class="ps num">35%</span></span>
+                  <span class="avatars"><i style="background:#F5C4B3"></i><i style="background:#AFA9EC"></i></span>
+                  <span class="go">进入</span>
+                </div>
+                <div class="plist-row" data-status="active" data-order="3">
+                  <span><span class="pn">语音转写 Demo</span><span class="ps"> · 私人项目</span></span>
+                  <span><span class="badge blue">进行中</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i style="width:20%"></i></span><span class="ps num">20%</span></span>
+                  <span class="avatars"><i style="background:#ED93B1"></i></span>
+                  <span class="go">进入</span>
+                </div>
+                <div class="plist-row" data-status="done" data-order="1">
+                  <span><span class="pn">内部审批流重构</span><span class="ps"> · 私人项目</span></span>
+                  <span><span class="badge green">已完成</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i class="done" style="width:100%"></i></span><span class="ps num">100%</span></span>
+                  <span class="avatars"><i style="background:#9FE1CB"></i></span>
+                  <span class="go">查看</span>
+                </div>
+                <div class="plist-row" data-status="archived" data-order="1">
+                  <span><span class="pn">用户增长看板</span><span class="ps"> · 团队项目</span></span>
+                  <span><span class="badge gray">已归档</span></span>
+                  <span style="display:flex;align-items:center;gap:10px"><span class="bar" style="flex:1"><i class="done" style="width:100%"></i></span><span class="ps num">100%</span></span>
+                  <span class="avatars"><i style="background:#D3D1C7"></i><i style="background:#B4B2A9"></i></span>
+                  <span class="go">查看</span>
+                </div>
+              </div>
+
+              <div class="nomatch" id="noMatch" hidden>
+                <b>当前筛选下没有项目</b>
+                试试切换到「全部」，或新建一个项目。
+              </div>
+
+              <!-- 空状态 -->
+              <div class="empty" data-state="empty" hidden>
+                <div class="art">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M9 13h6"/>
+                  </svg>
+                </div>
+                <h4>还没有项目</h4>
+                <p>新建一个项目，或从其他平台导入已有项目开始协作。</p>
+                <div class="row">
+                  <button class="btn btn-primary">新建项目</button>
+                  <button class="btn">导入项目</button>
+                </div>
+                <p class="tip">也可以让同事在「团队成员」里邀请你加入现有项目</p>
+              </div>
+            </section>
+
+            <!-- 右：待办与动态 -->
+            <aside class="rail">
+              <div class="rail-head">
+                <h3>待办与动态</h3>
+                <span class="more">全部</span>
+              </div>
+
+              <!-- 有邀请时才渲染；无邀请整块隐藏 -->
+              <div class="invite">
+                <div class="t">收到 1 个项目邀请</div>
+                <div class="d">来自「数据标注平台」，接受后进入普通成员流程</div>
+                <div class="a">
+                  <button class="btn btn-primary">接受邀请</button>
+                  <button class="btn">忽略</button>
+                </div>
+              </div>
+
+              <div class="todo">
+                <div class="todo-item">
+                  <span class="box"></span>
+                  <span>
+                    <span class="txt">确认「智能客服知识库」的检索方案</span>
+                    <span class="sub"><span>智能客服知识库</span><span class="due">今日到期</span></span>
+                  </span>
+                </div>
+                <div class="todo-item">
+                  <span class="box"></span>
+                  <span>
+                    <span class="txt">评审品牌官网首页改版稿</span>
+                    <span class="sub"><span>品牌官网改版</span><span>明天</span></span>
+                  </span>
+                </div>
+                <div class="todo-item">
+                  <span class="box"></span>
+                  <span>
+                    <span class="txt">补充数据标注的验收标准</span>
+                    <span class="sub"><span>数据标注平台</span><span>3 天后</span></span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="feed">
+                <div class="feed-item">
+                  <span class="dot b"></span>
+                  <span><b>林可</b> 更新了「智能客服知识库」的进度<span class="when">2 小时前</span></span>
+                </div>
+                <div class="feed-item">
+                  <span class="dot g"></span>
+                  <span><b>你</b> 完成了「内部审批流重构」的全部待办<span class="when">昨天 18:20</span></span>
+                </div>
+                <div class="feed-item">
+                  <span class="dot"></span>
+                  <span><b>周宁</b> 加入了「数据标注平台」<span class="when">3 天前</span></span>
+                </div>
+              </div>
+            </aside>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 规范 ===================== -->
+  <section class="sec">
+    <h2><span class="idx">02</span>色彩令牌</h2>
+    <p class="hint">深色导航承载品牌，浅色内容区承载数据；状态色全站只用 4 组，颜色即语义。其中「待响应」升级为橙红警戒色，卡片描边、左侧色条、柱状图最紧急一档共用同一个值。</p>
+    <div class="card">
+      <div class="swatches">
+        <div class="sw"><div class="c" style="background:#2F6BFF"></div><div class="m"><div class="n">品牌 / 进行中</div><div class="v">#2F6BFF</div></div></div>
+        <div class="sw"><div class="c" style="background:#EAF1FF"></div><div class="m"><div class="n">品牌浅底</div><div class="v">#EAF1FF</div></div></div>
+        <div class="sw"><div class="c" style="background:#151922"></div><div class="m"><div class="n">导航底 / 主文字</div><div class="v">#151922</div></div></div>
+        <div class="sw"><div class="c" style="background:#F4F5F7"></div><div class="m"><div class="n">页面底</div><div class="v">#F4F5F7</div></div></div>
+        <div class="sw"><div class="c" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px #E5E7EC"></div><div class="m"><div class="n">卡片面</div><div class="v">#FFFFFF</div></div></div>
+        <div class="sw"><div class="c" style="background:#E5E7EC"></div><div class="m"><div class="n">描边</div><div class="v">#E5E7EC</div></div></div>
+        <div class="sw"><div class="c" style="background:#12A06A"></div><div class="m"><div class="n">已完成</div><div class="v">#12A06A</div></div></div>
+        <div class="sw"><div class="c" style="background:#EA580C"></div><div class="m"><div class="n">待响应 / 警戒</div><div class="v">#EA580C</div></div></div>
+        <div class="sw"><div class="c" style="background:#FDE9DC"></div><div class="m"><div class="n">警戒徽章底</div><div class="v">#FDE9DC</div></div></div>
+        <div class="sw"><div class="c" style="background:#F5A97B"></div><div class="m"><div class="n">警戒描边</div><div class="v">#F5A97B</div></div></div>
+        <div class="sw"><div class="c" style="background:#FFF8F4"></div><div class="m"><div class="n">警戒卡底</div><div class="v">#FFF8F4</div></div></div>
+        <div class="sw"><div class="c" style="background:#6B7280"></div><div class="m"><div class="n">已归档</div><div class="v">#6B7280</div></div></div>
+        <div class="sw"><div class="c" style="background:#D64545"></div><div class="m"><div class="n">危险 / 逾期文字</div><div class="v">#D64545</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="idx">03</span>字号 · 间距 · 圆角</h2>
+    <p class="hint">两套阶梯都只用有限档位，避免出现 15px、18px 这类"随手写"的数值。数字统一 tabular-nums 等宽对齐。</p>
+    <div class="spec-grid">
+
+      <div class="card">
+        <h4>字号阶梯</h4>
+        <p class="note">KPI 数字 32px 是页面上唯一的大号字，一屏只有一个视觉主角。</p>
+        <div class="type-row"><span class="tag">32 / 600 KPI</span><span class="num" style="font-size:32px;font-weight:600;letter-spacing:-1px">3 个</span></div>
+        <div class="type-row"><span class="tag">28 / 600 页面标题</span><span style="font-size:28px;font-weight:600;letter-spacing:-.4px">我的项目</span></div>
+        <div class="type-row"><span class="tag">20 / 600 区块标题</span><span style="font-size:20px;font-weight:600">待办与动态</span></div>
+        <div class="type-row"><span class="tag">16 / 600 卡片标题</span><span style="font-size:16px;font-weight:600">智能客服知识库</span></div>
+        <div class="type-row"><span class="tag">14 / 400 正文</span><span style="font-size:14px">追踪真实项目状态，查看团队进度。</span></div>
+        <div class="type-row"><span class="tag">13 / 400 次要</span><span style="font-size:13px;color:var(--text-2)">私人项目 · 8 个待办</span></div>
+        <div class="type-row"><span class="tag">12 / 400 标签</span><span style="font-size:12px;color:var(--text-3)">2 小时前更新</span></div>
+        <div class="type-row"><span class="tag">11 / 500 徽章</span><span class="badge blue">进行中</span></div>
+      </div>
+
+      <div class="card">
+        <h4>间距阶梯</h4>
+        <p class="note">4 的倍数：卡片内 12–16，卡片间 16，区块间 24–32。</p>
+        <div class="space-row"><span class="tag">--s1  4px</span><span class="blk" style="width:4px"></span></div>
+        <div class="space-row"><span class="tag">--s2  8px</span><span class="blk" style="width:8px"></span></div>
+        <div class="space-row"><span class="tag">--s3 12px</span><span class="blk" style="width:12px"></span></div>
+        <div class="space-row"><span class="tag">--s4 16px</span><span class="blk" style="width:16px"></span></div>
+        <div class="space-row"><span class="tag">--s5 24px</span><span class="blk" style="width:24px"></span></div>
+        <div class="space-row"><span class="tag">--s6 32px</span><span class="blk" style="width:32px"></span></div>
+        <div class="space-row"><span class="tag">--s7 40px</span><span class="blk" style="width:40px"></span></div>
+      </div>
+
+      <div class="card">
+        <h4>圆角与阴影</h4>
+        <p class="note">阴影只保留两级：卡片静止用 sh-1，hover / 浮层用 sh-2。</p>
+        <div class="row-wrap" style="margin-bottom:16px">
+          <span style="width:72px;height:44px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">8 小</span>
+          <span style="width:72px;height:44px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">12 卡片</span>
+          <span style="width:72px;height:44px;border-radius:16px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">16 外壳</span>
+          <span style="width:72px;height:44px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">胶囊</span>
+        </div>
+        <div class="row-wrap">
+          <span style="width:104px;height:56px;border-radius:12px;background:#fff;box-shadow:var(--sh-1);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">shadow-1</span>
+          <span style="width:104px;height:56px;border-radius:12px;background:#fff;box-shadow:var(--sh-2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-3)">shadow-2</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="idx">04</span>组件规范</h2>
+    <p class="hint">按钮层级、状态徽章、输入框与空状态是这套界面里复用率最高的四类组件。</p>
+    <div class="spec-grid">
+
+      <div class="card">
+        <h4>按钮层级</h4>
+        <p class="note">一个区块只允许一个主按钮，其余降级为次级或幽灵按钮。</p>
+        <div class="row-wrap" style="margin-bottom:14px">
+          <button class="btn btn-primary">主按钮</button>
+          <button class="btn">次按钮</button>
+          <button class="btn btn-ghost">幽灵按钮</button>
+        </div>
+        <div class="row-wrap" style="margin-bottom:14px">
+          <button class="btn btn-primary btn-sm">小号主按钮</button>
+          <button class="btn btn-sm">小号次按钮</button>
+        </div>
+        <div class="row-wrap">
+          <button class="btn" style="opacity:.45;cursor:not-allowed">禁用</button>
+          <button class="btn" style="border-color:#F0B9B9;color:var(--danger);background:var(--danger-bg)">危险操作</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4>状态徽章</h4>
+        <p class="note">同一状态在全站使用同一颜色与同一文案，不做局部变体。「待响应」用橙红警戒色，与「进行中」的蓝色一眼可分。</p>
+        <div class="row-wrap" style="margin-bottom:14px">
+          <span class="badge blue">进行中</span>
+          <span class="badge green">已完成</span>
+          <span class="badge alert">待响应</span>
+          <span class="badge gray">已归档</span>
+        </div>
+        <div class="row-wrap">
+          <span class="badge blue plain" style="background:transparent;color:var(--info);padding:0">纯文字徽章</span>
+          <span class="badge plain" style="background:var(--danger-bg);color:var(--danger)">已逾期</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4>输入与反馈</h4>
+        <p class="note">默认 / 聚焦 / 错误三态，聚焦用品牌色描边，不做发光效果。</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="height:36px;border:1px solid var(--border-strong);border-radius:var(--r-sm);display:flex;align-items:center;padding:0 12px;font-size:13px;color:var(--text-3);background:#fff">邀请密码</div>
+          <div style="height:36px;border:1px solid var(--accent);border-radius:var(--r-sm);display:flex;align-items:center;padding:0 12px;font-size:13px;color:var(--text-1);background:#fff;box-shadow:0 0 0 3px var(--accent-weak)">AI-OFFICE-2026</div>
+          <div>
+            <div style="height:36px;border:1px solid var(--danger);border-radius:var(--r-sm);display:flex;align-items:center;padding:0 12px;font-size:13px;color:var(--text-1);background:#fff">AI-OFFICE-2025</div>
+            <div style="font-size:12px;color:var(--danger);margin-top:5px">邀请密码无效或已过期</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4>空状态</h4>
+        <p class="note">空状态必须给出下一步动作，不能只写一句"暂无数据"。</p>
+        <div style="border:1px dashed var(--border-strong);border-radius:var(--r-md);padding:24px 16px;text-align:center">
+          <div style="width:44px;height:44px;border-radius:10px;background:var(--accent-weak);margin:0 auto 12px;display:flex;align-items:center;justify-content:center">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#2F6BFF" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M9 13h6"/></svg>
+          </div>
+          <div style="font-size:14px;font-weight:600">还没有项目</div>
+          <div style="font-size:12px;color:var(--text-3);margin:4px 0 12px">新建一个项目开始协作</div>
+          <button class="btn btn-primary btn-sm">新建项目</button>
+        </div>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <h4>项目卡片 · 字段顺序固定</h4>
+        <p class="note">状态 → 时间 → 项目名 → 归属与待办 → 进度 → 负责人与入口。字段顺序固定，用户扫视时不需要重新找位置。</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+          <article class="pcard">
+            <div class="row1"><span class="badge blue">进行中</span><span class="time">2 小时前更新</span></div>
+            <div class="p-name">智能客服知识库</div>
+            <div class="p-meta">私人项目 · 8 个待办</div>
+            <div class="bar"><i style="width:62%"></i></div>
+            <div class="row3">
+              <span class="avatars"><i style="background:#B5D4F4"></i><i style="background:#C0DD97"></i></span>
+              <span class="pct num">62% <span>· 5/8</span></span>
+              <span class="go">进入项目 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+          </article>
+          <article class="pcard alert" style="max-width:240px">
+            <div class="row1"><span class="badge alert">待响应</span><span class="time">3 天前</span></div>
+            <div class="p-name">品牌官网改版</div>
+            <div class="p-meta">团队项目 · 2 个待办待确认</div>
+            <div class="bar"><i style="width:78%"></i></div>
+            <div class="row3">
+              <span class="avatars"><i style="background:#85B7EB"></i></span>
+              <span class="pct num">78% <span>· 7/9</span></span>
+              <span class="go">进入 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></span>
+            </div>
+          </article>
+        </div>
+        <p class="legend">
+          <b>窄容器降级规则：</b>卡片宽度低于 260px 时，隐藏负责人头像只保留进度与入口；低于 200px 时改为单行紧凑列表项，不再挤压内部排版。
+        </p>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <h4>待响应任务卡 · 截止时间柱状图</h4>
+        <p class="note">背景柱状图从左侧远期到右侧今日排列，不显示坐标轴与日期刻度。各列按天数连续插值，从右向左由红色经过橙色、蓝色过渡至淡蓝色；不透明度从右向左按对数曲线递减，不使用模糊或复制图层；今日与剩余1天保持完全不透明，文字与截止提醒位于顶层。悬停可查看天数与数量。</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;align-items:start">
+          <div class="kpi deadline-kpi" style="max-width:330px">
+            <span class="k-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 11l2 2 4-4"/><rect x="3" y="4" width="18" height="16" rx="2.5"/></svg>
+              待响应任务
+            </span>
+            <span class="k-value num">48<small>项</small></span>
+<div class="deadline-chart" role="img" aria-label="截止剩余天数从左侧14日及以上到右侧0日，14日2项，13日3项，12日2项，11日3项，10日2项，9日3项，8日2项，7日4项，6日3项，5日2项，4日4项，3日3项，2日5项，1日4项，0日6项。颜色从右向左连续过渡：红、橙、蓝、淡蓝。"><div class="deadline-bin" data-days="14" data-count="2" title="截止还有 14 日及以上：2 项"><span class="column" style="--height:36px;--bar-opacity:0.0600;--bar-color:#b5d4f4"></span></div><div class="deadline-bin" data-days="13" data-count="3" title="截止还有 13 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.0835;--bar-color:#a2c5f6"></span></div><div class="deadline-bin" data-days="12" data-count="2" title="截止还有 12 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.1089;--bar-color:#8fb6f7"></span></div><div class="deadline-bin" data-days="11" data-count="3" title="截止还有 11 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.1366;--bar-color:#7ca7f9"></span></div><div class="deadline-bin" data-days="10" data-count="2" title="截止还有 10 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.1671;--bar-color:#6898fa"></span></div><div class="deadline-bin" data-days="9" data-count="3" title="截止还有 9 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.2008;--bar-color:#5589fc"></span></div><div class="deadline-bin" data-days="8" data-count="2" title="截止还有 8 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.2388;--bar-color:#427afd"></span></div><div class="deadline-bin" data-days="7" data-count="4" title="截止还有 7 日：4 项"><span class="column" style="--height:72px;--bar-opacity:0.2820;--bar-color:#2f6bff"></span></div><div class="deadline-bin" data-days="6" data-count="3" title="截止还有 6 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.3323;--bar-color:#5e6dc8"></span></div><div class="deadline-bin" data-days="5" data-count="2" title="截止还有 5 日：2 项"><span class="column" style="--height:36px;--bar-opacity:0.3925;--bar-color:#8c6f91"></span></div><div class="deadline-bin" data-days="4" data-count="4" title="截止还有 4 日：4 项"><span class="column" style="--height:72px;--bar-opacity:0.4672;--bar-color:#bb715a"></span></div><div class="deadline-bin" data-days="3" data-count="3" title="截止还有 3 日：3 项"><span class="column" style="--height:54px;--bar-opacity:0.5661;--bar-color:#ea7323"></span></div><div class="deadline-bin" data-days="2" data-count="5" title="截止还有 2 日：5 项"><span class="column" style="--height:90px;--bar-opacity:0.7124;--bar-color:#e3642e"></span></div><div class="deadline-bin" data-days="1" data-count="4" title="截止还有 1 日：4 项"><span class="column" style="--height:72px;--bar-opacity:1.0000;--bar-color:#dd543a"></span></div><div class="deadline-bin" data-days="0" data-count="6" title="截止还有 0 日：6 项"><span class="column" style="--height:108px;--bar-opacity:1.0000;--bar-color:#d64545"></span></div></div>
+            <div class="k-foot deadline-hints" aria-label="累计截止提醒，包含今日"><span class="deadline-today">今日截止 6 项</span><span class="deadline-three">最近3日截止 18 项</span><span class="deadline-seven">最近7日截止 31 项</span></div>
+          </div>
+          <div>
+            <div class="spark-legend" style="margin-top:0"><span><i style="background:var(--danger)"></i>今日</span><span><i style="background:var(--alert)"></i>1–3日</span><span><i style="background:var(--accent)"></i>4–7日</span><span><i style="background:#B5D4F4"></i>8日及以上</span></div>
+            <p class="legend"><b>时间范围：</b>14+ 合并剩余 14 日及以上的任务，之后逐日递减至 0 日。<br><b>不透明度规则：</b>从右向左按对数曲线递减，左端最低为6%；遮盖右边界位于剩余1天处，1、0日保持100%，3日与7日区域加强遮盖。<br><b>样例数据：</b>15 个日期档均有任务，共 48 项。今日 6 项，最近3日 18 项，最近7日 31 项；截止提醒按累计范围统计，包含今日。悬停可查看每日任务数。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <h4>项目区默认视图与排序规则</h4>
+        <p class="note">筛选默认停在「全部」。「进行中」包含「待响应」，因为二者都属于尚未结束的活跃项目，拆成两个 tab 会让用户来回切换。</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:20px">
+          <div>
+            <div class="badge blue plain" style="padding:0">筛选</div>
+            <p style="font-size:13px;color:var(--text-2);margin-top:6px"><b style="color:var(--text-1)">全部（默认）</b> / 进行中 / 已完成。全部包含待响应、进行中、已完成；进行中包含待响应。归档任务通过左侧按钮单独查看。</p>
+          </div>
+          <div>
+            <div class="badge alert plain" style="padding:0">排序</div>
+            <p style="font-size:13px;color:var(--text-2);margin-top:6px">待响应 → 进行中 → 已完成；同一档内按最近更新时间。待响应永远在最前面。</p>
+          </div>
+          <div>
+            <div class="badge gray plain" style="padding:0">无结果</div>
+            <p style="font-size:13px;color:var(--text-2);margin-top:6px">该筛选下没有项目时显示引导文案，不留白板。</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="idx">05</span>响应式断点</h2>
+    <p class="hint">层级在任何宽度下都不能塌陷：先保证主区（项目）完整，再让右栏降级，最后才动导航。</p>
+    <div class="bp-grid">
+
+      <div class="bp">
+        <div class="cap"><b>桌面 ≥ 1280px</b> · 三区并列</div>
+        <div class="frame">
+          <div class="fside wide"></div>
+          <div class="fbody">
+            <div class="fbar" style="width:40%"></div>
+            <div class="frow"><div class="fbox tall"></div><div class="fbox tall"></div><div class="fbox tall"></div><div class="fbox tall"></div></div>
+            <div class="frow" style="flex:1">
+              <div class="fbox" style="flex:2;height:auto"></div>
+              <div class="fbox" style="flex:1;height:auto"></div>
+            </div>
+          </div>
+        </div>
+        <p class="fnote">侧栏 224px 常驻；概览带 4 列；主区 2:1 双栏。</p>
+      </div>
+
+      <div class="bp">
+        <div class="cap"><b>平板 768–1279px</b> · 右栏下沉</div>
+        <div class="frame">
+          <div class="fside"></div>
+          <div class="fbody">
+            <div class="fbar" style="width:40%"></div>
+            <div class="frow"><div class="fbox tall"></div><div class="fbox tall"></div></div>
+            <div class="frow" style="flex:1"><div class="fbox" style="height:auto"></div><div class="fbox" style="height:auto"></div></div>
+            <div class="fbar" style="width:100%;height:14px"></div>
+          </div>
+        </div>
+        <p class="fnote">侧栏收成 64px 图标条；概览带 2×2；右栏折到项目区下方通栏。</p>
+      </div>
+
+      <div class="bp">
+        <div class="cap"><b>移动 &lt; 768px</b> · 单列</div>
+        <div class="frame" style="height:150px">
+          <div class="fbody" style="padding:8px">
+            <div class="fbar" style="width:50%"></div>
+            <div class="frow"><div class="fbox tall"></div><div class="fbox tall"></div></div>
+            <div class="frow"><div class="fbox tall"></div></div>
+            <div class="frow" style="flex:1"><div class="fbox" style="height:auto"></div></div>
+          </div>
+        </div>
+        <p class="fnote">侧栏进抽屉；概览带 2 列；项目卡单列；待办与动态作为独立分页或底部面板。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2><span class="idx">06</span>改造对照</h2>
+    <p class="hint">如果只做三件事，按这个顺序收益最大。</p>
+    <div class="card">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px">
+        <div>
+          <div class="badge blue plain" style="padding:0">优先级 1</div>
+          <div style="font-size:14px;font-weight:600;margin:8px 0 4px">项目卡片改为自适应网格</div>
+          <p style="font-size:13px;color:var(--text-2)">由约 200px 的窄卡改为铺满宽度的 2–3 列网格。这是观感提升最大、改动成本最低的一项。</p>
+        </div>
+        <div>
+          <div class="badge blue plain" style="padding:0">优先级 2</div>
+          <div style="font-size:14px;font-weight:600;margin:8px 0 4px">邀请空状态降级进右栏</div>
+          <p style="font-size:13px;color:var(--text-2)">首屏最显眼的位置不再被一个 99% 时间为空的卡片占据；无邀请时整块不渲染。</p>
+        </div>
+        <div>
+          <div class="badge blue plain" style="padding:0">优先级 3</div>
+          <div style="font-size:14px;font-weight:600;margin:8px 0 4px">KPI 数字放大 + 内容区加宽</div>
+          <p style="font-size:13px;color:var(--text-2)">数字提到 32px 成为视觉主角，内容区最大宽度从约 550px 放宽到 1200px 以上。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<dialog id="archiveDialog" class="archive-dialog" aria-labelledby="archiveTitle" aria-describedby="archiveDescription">
+  <div class="dialog-head"><h3 id="archiveTitle">归档任务</h3><button type="button" class="btn btn-sm btn-ghost" id="closeArchive" aria-label="关闭归档任务弹窗">关闭 ×</button></div>
+  <p id="archiveDescription" style="color:var(--text-2);font-size:13px">已归档的项目与任务在此单独展示。</p>
+  <div id="archiveContent" class="archive-content"></div>
+</dialog>
+
+<script>
+(function () {
+  var grid = document.querySelector('.project-grid');
+  var list = document.querySelector('.project-list');
+  var emptyAll = document.querySelector('.empty');
+  var noMatch = document.getElementById('noMatch');
+  var countEl = document.getElementById('projCount');
+  var segView = document.getElementById('segView');
+  var segState = document.getElementById('segState');
+  var filters = document.getElementById('filters');
+
+  /* 排序优先级：待响应 > 进行中 > 已完成 > 已归档（同一档内按 data-order） */
+  var RANK = { pending: 0, active: 1, done: 2, archived: 3 };
+  /* 「进行中」筛选包含待响应，二者都属未结束的活跃项目 */
+  var MATCH = {
+    all:      function (s) { return s === 'pending' || s === 'active' || s === 'done'; },
+    active:   function (s) { return s === 'active' || s === 'pending'; },
+    done:     function (s) { return s === 'done'; },
+    archived: function (s) { return s === 'archived'; }
+  };
+
+  function picked(box) { return box.querySelector('button.on').dataset.v; }
+
+  function applyFilter() {
+    var m = MATCH[picked(filters)] || MATCH.active;
+    var total = 0;
+    [grid, list].forEach(function (box) {
+      var nodes = Array.prototype.slice.call(box.querySelectorAll('[data-status]'));
+      var shown = nodes.filter(function (n) { return m(n.dataset.status); });
+      shown.sort(function (a, b) {
+        return (RANK[a.dataset.status] - RANK[b.dataset.status]) ||
+               ((+a.dataset.order || 0) - (+b.dataset.order || 0));
+      });
+      nodes.forEach(function (n) { n.hidden = true; });
+      shown.forEach(function (n) { n.hidden = false; box.appendChild(n); });
+      if (box === grid) { total = shown.length; }
+    });
+    countEl.textContent = total + ' 个';
+    noMatch.hidden = total !== 0 || picked(segState) === 'empty';
+  }
+
+  function applyView() {
+    if (picked(segState) === 'empty') {
+      grid.hidden = true; list.hidden = true; emptyAll.hidden = false; noMatch.hidden = true;
+      return;
+    }
+    emptyAll.hidden = true;
+    var v = picked(segView);
+    grid.hidden = v !== 'grid';
+    list.hidden = v !== 'list';
+    applyFilter();
+  }
+
+  function bind(box, fn) {
+    box.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        box.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        fn();
+      });
+    });
+  }
+
+
+  var archiveDialog = document.getElementById('archiveDialog');
+  var archiveContent = document.getElementById('archiveContent');
+  document.getElementById('openArchive').addEventListener('click', function () {
+    archiveContent.replaceChildren();
+    var archived = picked(segState) === 'empty' ? [] : grid.querySelectorAll('[data-status="archived"]');
+    Array.prototype.forEach.call(archived, function (node) {
+      var card = node.cloneNode(true);
+      card.hidden = false;
+      var go = card.querySelector('.go');
+      if (go) go.remove();
+      archiveContent.appendChild(card);
+    });
+    if (!archived.length) archiveContent.textContent = '暂无归档任务';
+    archiveDialog.showModal();
+  });
+  document.getElementById('closeArchive').addEventListener('click', function () { archiveDialog.close(); });
+  archiveDialog.addEventListener('click', function (event) {
+    var rect = archiveDialog.getBoundingClientRect();
+    if (event.target === archiveDialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) archiveDialog.close();
+  });
+
+  function alignDeadlineCharts() {
+    document.querySelectorAll('.deadline-kpi').forEach(function (card) {
+      var value = card.querySelector('.k-value');
+      var left = value.getBoundingClientRect().right - card.getBoundingClientRect().left - card.clientLeft;
+      card.style.setProperty('--deadline-chart-left', left + 'px');
+      var cardRect = card.getBoundingClientRect();
+      var labelRect = card.querySelector('.k-label').getBoundingClientRect();
+      var hintsRect = card.querySelector('.deadline-hints').getBoundingClientRect();
+      card.style.setProperty('--deadline-chart-top', (labelRect.bottom - cardRect.top - card.clientTop) + 'px');
+      card.style.setProperty('--deadline-chart-bottom', (cardRect.bottom - card.clientTop - hintsRect.top + 8) + 'px');
+      var bins = Array.from(card.querySelectorAll('.deadline-chart .deadline-bin'));
+      var maxCount = Math.max(1, ...bins.map(function (bin) { return Number(bin.dataset.count); }));
+      bins.forEach(function (bin) { bin.querySelector('.column').style.setProperty('--height', (Number(bin.dataset.count) / maxCount * 100) + '%'); });
+    });
+  }
+  alignDeadlineCharts();
+  var deadlineResizeObserver = new ResizeObserver(alignDeadlineCharts);
+  document.querySelectorAll('.deadline-kpi,.deadline-kpi .k-value,.deadline-kpi .deadline-hints').forEach(function (value) { deadlineResizeObserver.observe(value); });
+  document.fonts.ready.then(alignDeadlineCharts);
+
+  bind(segView, applyView);
+  bind(segState, applyView);
+  bind(filters, applyFilter);
+  applyView();
+})();
+</script>
+</body>
+</html>
+
+
+
+
+
+
+

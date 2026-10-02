@@ -1,0 +1,146 @@
+{
+  "title": "项目页面独立体验检查",
+  "date": "2026-10-02",
+  "timezone": "Asia/Singapore",
+  "scope": "线上已发布页面；项目负责人兼系统管理员视角；深色主题；桌面浏览器。用户要求更新后，已通过页面的更新按钮应用待安装版本，再重新开始截图。",
+  "site": "https://team.greenbp.dpdns.org",
+  "project": "生产邮箱与材料验收（临时）",
+  "projectPath": "/app/projects/c4f24172-6b00-4893-bec7-937c234bc510",
+  "onlineAsset": "/assets/index-DguM8WDk.js",
+  "localAssetAtComparison": "/assets/index-28N2vrGO.js",
+  "localHead": "9c3a8f74d37f72f812635a2116868798db1c3f06",
+  "versionNote": "当前线上加载资源与本地 dist 构建资源不同。报告只把本轮线上截图和操作作为已确认事实；源码用于解释功能边界，不代表本地未发布内容已经上线。更新前的 00 截图不纳入证据。",
+  "verdict": "主要问题集中在功能选择、跨页引导和信息优先级。多数近似功能有实际差异，但页面仍要求新手自己推断用途、前置条件和操作顺序。",
+  "method": ["刷新并应用页面提示的新版本", "通过当前已登录页面逐项进入项目功能", "只打开、展开、切换和取消表单，检查真实可见状态", "保存原始截图并重新读取检查", "在隔离源码副本中核对路由和功能边界，排除误报"],
+  "limits": [
+    "当前账户只展示一个已归档项目，含一份导入资料、一份成果材料、零任务和一个已确认的空要求集；有数据的任务列表、其他角色和进行中项目未作线上实测。",
+    "没有创建或修改项目、任务、要求、评分、邀请或材料；没有运行模型、解析文件、发起预审或答辩。表单提交成功、模型质量、费用及保存后的反馈不在本轮验证范围内。",
+    "保留已有本机未同步材料草稿；未恢复、丢弃或编辑。",
+    "布局结论来自桌面视口（DOM 1652×914；截图文件依浏览器捕获为 1637×906 或 1652×914），未模拟手机、测试放大模式或完成屏幕阅读器/色差验收。",
+    "这是启发式体验审查，关于新手困惑的判断是基于可见界面的专家判断，尚无真实新手可用性测试数据。",
+    "未修改应用源码，因此未运行构建、单元测试或部署；已验证的是浏览器页面、表单呈现、导航结果及报告证据完整性。",
+    "报告 HTML 已通过本地图片解码、图片引用、内部链接与唯一 ID 检查；浏览器策略禁止直接访问 file: 页面，未进行报告 HTML 的浏览器渲染验收。已请求在 Codex 打开文件，工具返回排队状态。"
+  ],
+  "strengths": [
+    "五个项目主分区已经形成分组；二级标签紧邻主标签，位置稳定。",
+    "资料总览明确解释：导入资料保留原文与附件，成果材料用于编辑成果。两者应保留分工。",
+    "成果 AI 协助已内嵌在成果材料页，默认折叠；/ai 是默认展开同一编辑页的快捷入口，不能认定为两套材料系统。",
+    "只审模式没有选择材料时会禁用开始按钮，并说明需先选择材料版本；预审也会说明缺少评分标准。",
+    "要求与评分区说明重新解析不会覆盖已确认内容，导出页说明整理稿不是官方申报材料，有助于建立正确预期。"
+  ],
+  "findings": [
+    {
+      "id": "F01", "priority": "优先改", "title": "两种新建任务缺少选择依据",
+      "observed": "同一工作台同时提供“新建任务”和“新建协作任务”。前者包含负责人、截止日期、关联要求；后者包含验收标准、预计投入和父任务。普通任务列表却叫“项目任务”，统计叫“当前筛选任务”。",
+      "confusion": "新手会问：普通任务难道不协作？需要负责人和验收标准时选哪种？“项目任务”是否包含上方的协作任务？",
+      "recommendation": "统一为一个“新建任务”入口，在表单中明确选择“简单待办：分配、日期、状态”或“需要验收的任务：认领、提交成果、验收”。列表和统计标明类型与范围。现有两套流程可以保留，不必立即重构数据模型。",
+      "acceptance": "未读文档的新用户能够依据一句说明选对类型；任一任务总数都能看出是否包含协作任务。",
+      "evidence": ["05-standard-task-form.jpg", "06-collaboration-task-form.jpg", "19-tasks-direct-route.jpg"],
+      "source": "frontend/src/pages/TasksPage.tsx:220,229,235,247；frontend/src/pages/CollaborationWorkspace.tsx:70",
+      "boundary": "源码已过滤普通列表中的协作任务，本轮不报告任务重复渲染；没有线上有任务样本验证统计数值。"
+    },
+    {
+      "id": "F02", "priority": "优先改", "title": "预审缺少条件时，告诉用户缺什么却没有通向下一步",
+      "observed": "“成果检查”中评分标准下拉框没有可选项，“发起真实预审”被禁用，旁边只写“没有已确认评分标准”。当前页没有直达创建/确认评分标准的入口。",
+      "confusion": "用户无法判断该去哪里建评分、谁来确认、建好草稿是否就能使用。需要自行返回“要求与任务 → 要求与评分”寻找。",
+      "recommendation": "用前置条件清单替代单条缺项提示：确认项目要求、确认评分标准、选择已保存材料。每项附状态和“去完成”链接；非负责人显示由谁完成。完成返回后保留已选材料。",
+      "acceptance": "从禁用按钮所在区域，可以直接进入缺项对应页面，并知道完成后返回这里。",
+      "evidence": ["13-review-prerequisites.jpg", "18-rubric-form.jpg"],
+      "source": "frontend/src/pages/ReviewsPage.tsx:186,198-200"
+    },
+    {
+      "id": "F03", "priority": "优先改", "title": "评分表单让普通用户填写内部字段键",
+      "observed": "“新建评分草稿”要求填写“字段键”，占位提示仅为“唯一标识”；旁边有正常业务字段“评分项”“权重”。页面又提示“API 不强制合计为 100%”。",
+      "confusion": "新手不知道字段键是中文、英文还是编号，也不知道为什么已经填写评分项还需要另一名称；权重非 100% 的说明没有帮助其判断自己的表格是否正确。",
+      "recommendation": "系统自动生成字段键，默认表单只呈现评分项、权重和来源。必要的标识编辑收进高级选项。权重提示改成“请按通知原文填写；若各项应合计 100%，请核对当前合计”。明确创建后还需负责人确认。",
+      "acceptance": "不了解 JSON/API 的项目负责人也能完成评分草稿，并知道草稿与已确认标准的区别。",
+      "evidence": ["18-rubric-form.jpg"],
+      "source": "frontend/src/pages/RequirementsPage.tsx:135,314,318"
+    },
+    {
+      "id": "F04", "priority": "优先改", "title": "页面层级和摘要卡片把主要工作推到首屏下方",
+      "observed": "项目标题、主标签、子标签、重复分区标题、说明和页面大标题逐层堆叠。/work 首屏主要是要求及评分摘要，底部才出现“任务工作台”；“团队成员”首屏先呈现设置和导出卡片，成员信息在下方。",
+      "confusion": "用户点了“任务看板”却先看到规则摘要，点了“团队成员”却先看到设置和导出，不容易确认自己是否到达预期位置。",
+      "recommendation": "保留项目名和两层导航，正文只保留一个页面标题。任务页先显示任务列表和主操作，规则摘要压缩为一行或可折叠状态；团队页先显示成员，把设置与导出保留为次级入口。",
+      "acceptance": "在相同桌面视口下，任务页无需滚动即可看到任务区域与创建按钮，团队页可看到成员列表的开头。",
+      "evidence": ["02-project-overview.jpg", "03-work-top.jpg", "15-team-entry.jpg", "10-materials-top.jpg"],
+      "source": "frontend/src/components/ProjectNavigation.tsx；frontend/src/pages/WorkWorkspacePage.tsx:14；frontend/src/pages/TeamWorkspacePage.tsx:10"
+    },
+    {
+      "id": "F05", "priority": "随后改", "title": "同名任务看板进入不同版面",
+      "observed": "从“概览 → 查看任务/任务看板”进入 /tasks；从“要求与任务 → 任务看板”进入 /work。二级导航都显示任务看板，但只有 /work 在上方增加要求和评分摘要。两条路径已分别点击核对。",
+      "confusion": "用户可能认为页面内容消失或进入了另一个任务系统，尤其返回同名标签后版面又变化。",
+      "recommendation": "统一任务看板的正式入口及页面结构；如需保留独立汇总页，明确命名为“工作概览”，避免两个版面共享同一个入口名。",
+      "acceptance": "从项目概览、主导航和二级导航进入任务看板，出现相同结构和统计范围。",
+      "evidence": ["03-work-top.jpg", "19-tasks-direct-route.jpg"],
+      "source": "frontend/src/components/ProjectNavigation.tsx:11；frontend/src/pages/ProjectOverviewPage.tsx:12,40；frontend/src/pages/WorkWorkspacePage.tsx:14"
+    },
+    {
+      "id": "F06", "priority": "随后改", "title": "同一上传内容在文件库和来源记录之间难以对应",
+      "observed": "导航叫“导入资料”，主标题叫“通知来源”。同一个 PDF 在“文件库”以原文件名出现，在“已导入来源”中叫“通知文件”；上方主要操作是移入回收站，下方才有原文件、解析和总结。“关联 1 条来源”没有直接定位链接。",
+      "confusion": "用户可能认为有两份资料，或不知道该在文件库还是来源记录查看处理结果；“通知来源”也容易让人以为不能导入一般项目参考资料。",
+      "recommendation": "主名称统一为“项目参考资料”或“导入资料”，为原文件与解析记录保留相同标题和明确链接。把原文件信息、解析状态、总结、提取要求整合到同一资料详情；未完成上传和回收站作为独立管理区。",
+      "acceptance": "用户从任意原文件条目能一步到达对应解析结果，并知道上传文件、解析文本、提取要求的关系。",
+      "evidence": ["07-data-overview.jpg", "08-source-import.jpg", "09-source-file-library.jpg"],
+      "source": "frontend/src/pages/SourcesPage.tsx:567,597；frontend/src/pages/ProjectFileLibrary.tsx:35-47",
+      "boundary": "文件与来源分别承担原文件生命周期和解析结果，具有合理差异；建议改善呈现与关联，不是直接删除其中一个模型。"
+    },
+    {
+      "id": "F07", "priority": "随后改", "title": "AI 只审和成果检查没有在入口处解释适用场景",
+      "observed": "成果材料中的“只审”写着检查已有材料并给出意见；另一个主分区提供“成果检查/预审”，要求选定已确认要求、评分标准和材料。两者都围绕检查材料，但没有互相解释差异。",
+      "confusion": "新手无法判断日常改稿与提交前逐项核查该选哪个；“代做/带做/只审”也比“生成草稿/边问边写/审阅改进”更依赖产品内部叫法。",
+      "recommendation": "将用途显式区分为“自由审阅：检查表达与逻辑”和“按标准预审：逐项核对已确认要求和评分”。在两处提供互相跳转的简短提示；解释输入、产出和使用时机。",
+      "acceptance": "用户不进入两套表单对比，也能选择日常润色或按标准检查。",
+      "evidence": ["12-ai-review-mode.jpg", "13-review-prerequisites.jpg"],
+      "source": "frontend/src/pages/AiWorkspacePage.tsx:17,175-189,239；frontend/src/pages/ReviewsPage.tsx:167",
+      "boundary": "用途相近但并非完全重复；本轮仅验证表单和界面，未运行 AI。"
+    },
+    {
+      "id": "F08", "priority": "随后改", "title": "项目设置与成果导出归在团队下面，名称和范围不一致",
+      "observed": "“团队 → 团队设置”实际打开标题为“项目设置”的页面，编辑项目名、日期、状态；“导出”也位于团队分区，页面却叫“导出成果说明”。左侧同时存在一个全局“设置”。",
+      "confusion": "想改截止日期或导出成果的用户未必会先找团队；三种设置叫法让人难以判断影响当前项目还是整个账户。",
+      "recommendation": "统一称为“项目设置”，靠近项目名称或项目操作菜单；全局设置明确范围。成果材料旁提供“导出当前材料”，项目操作中提供“导出项目记录”，与现有单材料 Markdown/PDF 区分。",
+      "acceptance": "用户可以根据操作对象找到入口，且进入前就知道导出的是单份材料还是整项目记录。",
+      "evidence": ["15-team-entry.jpg", "16-project-settings.jpg", "21-export.jpg", "10-materials-top.jpg"],
+      "source": "frontend/src/components/ProjectNavigation.tsx:16-17；frontend/src/pages/TeamWorkspacePage.tsx:10；frontend/src/pages/ProjectSettingsPage.tsx:55"
+    },
+    {
+      "id": "F09", "priority": "随后改", "title": "说明大量介绍实现方式，却没有回答用户怎么用",
+      "observed": "常规工作页出现“revision 乐观锁”“先初始化记录，再上传二进制内容”“不可变版本 ID”“OpenAPI 版本接口限制”“选择真实会话 ID”等文字；要求集以短 ID 命名，材料版本列表显示长 UUID。",
+      "confusion": "新手需要额外理解技术术语，却仍不清楚上传后去哪里确认要求、为什么要选择版本、发生冲突后如何恢复。大量“真实/后端/API”字样还增加了阅读密度。",
+      "recommendation": "默认说明只回答用途、准备项、下一步和数据影响；ID/API 细节收进“技术详情”。版本显示材料名称、版本号、保存时间，ID 可按需复制。用通知标题与提取日期命名要求集。",
+      "acceptance": "默认页面不要求理解 API、revision 或 ID；每处空状态和禁用操作都有业务语言与可执行下一步。",
+      "evidence": ["04-task-workspace.jpg", "08-source-import.jpg", "11-material-ai.jpg", "17-requirements.jpg", "18-rubric-form.jpg"],
+      "source": "frontend/src/pages/TasksPage.tsx:247；frontend/src/pages/ProjectSettingsPage.tsx:55；frontend/src/pages/RequirementsPage.tsx:135"
+    }
+  ],
+  "secondary": [
+    {"title": "归档状态的操作边界不清", "detail": "样本标记已归档，但仍可打开新建任务与评分草稿表单；成果正文编辑工具则禁用。页面没有统一说明归档后哪些操作仍可用。只确认入口状态，未提交验证后台写入规则。", "evidence": ["05-standard-task-form.jpg", "10-materials-top.jpg", "18-rubric-form.jpg"]},
+    {"title": "空要求集仍显示已确认", "detail": "当前样本显示“已确认 · 0 项要求”，空状态提示检查 API/服务状态。对于本来就不含项目要求的资料，这可能是正常结果；建议区分未提取、提取后未发现要求、处理失败，并解释已确认的对象。不能仅凭该样本认定解析错误。", "evidence": ["17-requirements.jpg", "18-rubric-form.jpg"]},
+    {"title": "可访问性与阅读风险", "detail": "截图中说明文字较密，灰色次要文字承载重要操作条件；DOM 中同时存在项目名称和正文大标题两个一级标题。建议检查标题层级、键盘顺序及小字对比。已有表单控件标签和弹窗焦点返回可观察，但本轮不构成完整无障碍验收。", "evidence": ["12-ai-review-mode.jpg", "19-tasks-direct-route.jpg"]}
+  ],
+  "copySuggestions": [
+    ["任务状态更新使用服务端 revision 乐观锁。", "多人同时修改时会提示冲突；刷新确认最新内容后再保存。", "解释用户会遇到什么，以及如何处理。"],
+    ["选择后会传入这些不可变版本 ID。", "选择要交给 AI 的已保存版本；之后修改正文不会改变本次使用的内容。", "保留版本固定这一重要含义。"],
+    ["字段键 / 唯一标识", "默认由系统自动生成，仅高级设置显示“内部编号”。", "让普通用户只填写评分内容。"],
+    ["没有已确认评分标准", "还差一步：请项目负责人创建并确认评分标准。［去完成］", "在原位置提供明确的补齐路径。"],
+    ["通知来源 / 已导入来源", "项目参考资料 / 已导入资料", "与导航和一般项目场景保持一致。"],
+    ["代做 / 带做 / 只审", "生成草稿 / 边问边写 / 审阅改进", "用结果和操作方式帮助选择。"],
+    ["开始真实 AI 协作", "开始生成草稿（随当前模式变化）", "把主要按钮用于说明即将发生的动作。"],
+    ["文件上传会先初始化记录，再上传二进制内容。", "上传文件后可查看提取的正文、摘要和要求；提取的要求需要你确认。", "解释结果去向；异常时再补充上传恢复说明。"],
+    ["团队设置", "项目设置", "与页面真正修改的对象一致。"],
+    ["下载 Markdown / 下载 JSON 原始数据", "下载可阅读的项目记录（Markdown）/ 下载完整原始记录（JSON）", "说明格式用途，保留真实格式名。"]
+  ],
+  "steps": [
+    {"n":1,"name":"项目列表与概览","health":"入口可用；正文层级偏多","route":"/app → 项目根路径","files":["01-project-list.jpg","02-project-overview.jpg"],"note":"项目列表只含一个归档项目。概览快捷入口可用，但标题、说明、统计占据较大首屏空间。首页本地版本不同，列表截图仅用于记录进入路径。"},
+    {"n":2,"name":"要求与任务及两种创建表单","health":"表单可打开、取消；类型区分不足","route":"/work","files":["03-work-top.jpg","04-task-workspace.jpg","05-standard-task-form.jpg","06-collaboration-task-form.jpg"],"note":"分别打开普通任务与协作任务表单后取消，无提交。字段证明两种流程确有差异；首屏与普通任务统计命名不利于辨认。"},
+    {"n":3,"name":"资料总览、导入与文件库","health":"资料与成果用途有解释；文件到解析结果的对应费解","route":"/data → /sources","files":["07-data-overview.jpg","08-source-import.jpg","09-source-file-library.jpg"],"note":"仅查看已有资料、处理状态与页面结构，没有导入、删除、重解析或上传文件。"},
+    {"n":4,"name":"成果材料与 AI 模式","health":"编辑和 AI 已整合；技术说明与审阅选择负担较重","route":"/materials","files":["10-materials-top.jpg","11-material-ai.jpg","12-ai-review-mode.jpg"],"note":"展开 AI，切换只审并观察材料前置提示，再还原模式、收起面板。已有未同步草稿保持原样，未运行模型。"},
+    {"n":5,"name":"成果检查与答辩演练","health":"条件提示存在；缺少补齐链接","route":"/reviews → /rehearsals","files":["13-review-prerequisites.jpg","14-rehearsal.jpg"],"note":"已确认预审因缺少评分标准不能开始。仅查看答辩表单，未发起演练。"},
+    {"n":6,"name":"团队与项目设置","health":"入口可用；主要内容位置和命名需调整","route":"/team → /settings","files":["15-team-entry.jpg","16-project-settings.jpg"],"note":"团队首屏优先出现设置和导出；团队设置进入项目设置。只查看首屏，不修改配置、邀请或权限。"},
+    {"n":7,"name":"要求与评分草稿","health":"可进入；内部字段与确认概念增加学习成本","route":"/requirements","files":["17-requirements.jpg","18-rubric-form.jpg"],"note":"观察空要求集，展开新建评分草稿后取消。未创建或确认任何内容。"},
+    {"n":8,"name":"任务入口一致性复查","health":"确认同名标签出现不同页面结构","route":"概览 → /tasks；导航 → /work","files":["19-tasks-direct-route.jpg"],"note":"与步骤2的 /work 截图比较；两处任务看板在要求与评分摘要的呈现上不同。"},
+    {"n":9,"name":"AI 快捷入口复查","health":"确认复用成果编辑页，属于合理快捷入口","route":"/data → /ai","files":["20-ai-shortcut.jpg"],"note":"点击 AI 协助成果进入相同成果页面并默认展开 AI；不报告两套独立成果系统。"},
+    {"n":10,"name":"项目导出","health":"用途边界有说明；入口归类不够直观","route":"/team → /export","files":["21-export.jpg"],"note":"读取汇总页并检查格式按钮；没有触发下载或打印，未验证原生保存。"}
+  ]
+}
