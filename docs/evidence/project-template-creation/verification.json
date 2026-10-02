@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-10-02T09:20:11.772Z",
+  "draftId": "aaeb4127-f7b1-4521-b7a3-b353e70a0c7b",
+  "projectId": "53d4d2a3-301c-4107-8651-2462ff541ef1",
+  "checks": [
+    "two creation modes",
+    "blank template",
+    "private five-section workspace",
+    "goal/task/document edits",
+    "draft refresh recovery",
+    "no formal project before commit",
+    "atomic final project",
+    "390px layout"
+  ],
+  "browserErrors": []
+}

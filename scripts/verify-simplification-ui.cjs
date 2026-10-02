@@ -33,6 +33,7 @@ const credentials = JSON.parse(fs.readFileSync(process.env.UI_CREDENTIALS_PATH |
     await page.getByRole('button', { name: '登录工作区', exact: true }).click();
     await page.waitForURL(/\/app$/);
     await page.goto(new URL('/app/projects/new', base).href);
+    await page.getByRole('link', { name: /分步创建/ }).click();
     await page.getByLabel('项目名称').fill(`浏览器验收 ${Date.now()}`);
     await page.getByLabel('主目标（可选）').fill('交付可复核的项目成果');
     await page.getByLabel('项目说明').fill('本地浏览器验证背景：主目标、依赖子任务、资料和评分在同一流程中保存。');

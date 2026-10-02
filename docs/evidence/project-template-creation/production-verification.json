@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "checks": 6,
+  "checkedAt": "2026-10-02T09:27:32.462Z",
+  "base": "https://greenbp-team-office.hddhp.workers.dev",
+  "backendVersion": "36d9d18a-03bc-457c-a301-589448f7683b",
+  "frontendVersion": "235c1274-1855-44a4-8ffe-e803f7c14c54",
+  "checksDescription": "creation route,matching release asset,health,production environment,template catalog and from-template authentication guards",
+  "authenticatedFlow": "validated locally only; current production credentials unavailable"
+}

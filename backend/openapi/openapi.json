@@ -819,6 +819,52 @@
           "requestId"
         ]
       },
+      "ProjectTemplateListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "templateId": {
+                      "type": "string",
+                      "enum": [
+                        "blank"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "templateId",
+                    "name",
+                    "description"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "CreationDraftResponse": {
         "type": "object",
         "properties": {
@@ -871,6 +917,183 @@
                       "title",
                       "detail"
                     ]
+                  },
+                  "workspace": {
+                    "type": "object",
+                    "properties": {
+                      "templateId": {
+                        "type": "string",
+                        "enum": [
+                          "blank"
+                        ]
+                      },
+                      "materials": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "markdown": {
+                              "type": "string",
+                              "maxLength": 200000
+                            },
+                            "purpose": {
+                              "type": "string",
+                              "enum": [
+                                "background",
+                                "reference",
+                                "output"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "title",
+                            "markdown",
+                            "purpose"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 20,
+                        "default": []
+                      },
+                      "standards": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "default": ""
+                          },
+                          "requirements": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "title": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "detail": {
+                                  "type": "string",
+                                  "maxLength": 2000,
+                                  "default": ""
+                                },
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "deadline",
+                                    "deliverable",
+                                    "format",
+                                    "scoring",
+                                    "team",
+                                    "other"
+                                  ],
+                                  "default": "deliverable"
+                                },
+                                "dueDate": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "duePrecision": {
+                                  "type": "string",
+                                  "enum": [
+                                    "date",
+                                    "datetime",
+                                    "unknown"
+                                  ]
+                                },
+                                "dimensionKey": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "title"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 100,
+                            "default": []
+                          },
+                          "weights": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "weight": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "weight"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 10,
+                            "default": []
+                          },
+                          "notes": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2000
+                          }
+                        },
+                        "default": null,
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "templateId"
+                    ],
+                    "additionalProperties": false
                   },
                   "deadlineDate": {
                     "type": "string",
@@ -1219,6 +1442,183 @@
                             "title",
                             "detail"
                           ]
+                        },
+                        "workspace": {
+                          "type": "object",
+                          "properties": {
+                            "templateId": {
+                              "type": "string",
+                              "enum": [
+                                "blank"
+                              ]
+                            },
+                            "materials": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "markdown": {
+                                    "type": "string",
+                                    "maxLength": 200000
+                                  },
+                                  "purpose": {
+                                    "type": "string",
+                                    "enum": [
+                                      "background",
+                                      "reference",
+                                      "output"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "title",
+                                  "markdown",
+                                  "purpose"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 20,
+                              "default": []
+                            },
+                            "standards": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "title": {
+                                  "type": "string",
+                                  "maxLength": 200,
+                                  "default": ""
+                                },
+                                "requirements": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 64
+                                      },
+                                      "title": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      },
+                                      "detail": {
+                                        "type": "string",
+                                        "maxLength": 2000,
+                                        "default": ""
+                                      },
+                                      "category": {
+                                        "type": "string",
+                                        "enum": [
+                                          "deadline",
+                                          "deliverable",
+                                          "format",
+                                          "scoring",
+                                          "team",
+                                          "other"
+                                        ],
+                                        "default": "deliverable"
+                                      },
+                                      "dueDate": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "format": "date-time"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "duePrecision": {
+                                        "type": "string",
+                                        "enum": [
+                                          "date",
+                                          "datetime",
+                                          "unknown"
+                                        ]
+                                      },
+                                      "dimensionKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 40
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "title"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 100,
+                                  "default": []
+                                },
+                                "weights": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 40
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 60
+                                      },
+                                      "weight": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 100
+                                      }
+                                    },
+                                    "required": [
+                                      "key",
+                                      "label",
+                                      "weight"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 10,
+                                  "default": []
+                                },
+                                "notes": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 2000
+                                }
+                              },
+                              "default": null,
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "templateId"
+                          ],
+                          "additionalProperties": false
                         },
                         "deadlineDate": {
                           "type": "string",
@@ -13185,6 +13585,66 @@
         }
       }
     },
+    "/api/v1/project-templates": {
+      "get": {
+        "tags": [
+          "creation"
+        ],
+        "responses": {
+          "200": {
+            "description": "可用项目模板",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/creation-drafts/from-template": {
+      "post": {
+        "tags": [
+          "creation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "templateId": {
+                    "type": "string",
+                    "enum": [
+                      "blank"
+                    ]
+                  }
+                },
+                "required": [
+                  "templateId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "私有模板编辑草稿，尚未创建项目",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationDraftResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creation-drafts": {
       "post": {
         "tags": [
@@ -13224,6 +13684,183 @@
                       "title",
                       "detail"
                     ]
+                  },
+                  "workspace": {
+                    "type": "object",
+                    "properties": {
+                      "templateId": {
+                        "type": "string",
+                        "enum": [
+                          "blank"
+                        ]
+                      },
+                      "materials": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "markdown": {
+                              "type": "string",
+                              "maxLength": 200000
+                            },
+                            "purpose": {
+                              "type": "string",
+                              "enum": [
+                                "background",
+                                "reference",
+                                "output"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "title",
+                            "markdown",
+                            "purpose"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 20,
+                        "default": []
+                      },
+                      "standards": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "default": ""
+                          },
+                          "requirements": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "title": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "detail": {
+                                  "type": "string",
+                                  "maxLength": 2000,
+                                  "default": ""
+                                },
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "deadline",
+                                    "deliverable",
+                                    "format",
+                                    "scoring",
+                                    "team",
+                                    "other"
+                                  ],
+                                  "default": "deliverable"
+                                },
+                                "dueDate": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "duePrecision": {
+                                  "type": "string",
+                                  "enum": [
+                                    "date",
+                                    "datetime",
+                                    "unknown"
+                                  ]
+                                },
+                                "dimensionKey": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "title"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 100,
+                            "default": []
+                          },
+                          "weights": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "weight": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "weight"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 10,
+                            "default": []
+                          },
+                          "notes": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 2000
+                          }
+                        },
+                        "default": null,
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "templateId"
+                    ],
+                    "additionalProperties": false
                   },
                   "deadlineDate": {
                     "type": "string",
@@ -13389,6 +14026,183 @@
                           "title",
                           "detail"
                         ]
+                      },
+                      "workspace": {
+                        "type": "object",
+                        "properties": {
+                          "templateId": {
+                            "type": "string",
+                            "enum": [
+                              "blank"
+                            ]
+                          },
+                          "materials": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "title": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "markdown": {
+                                  "type": "string",
+                                  "maxLength": 200000
+                                },
+                                "purpose": {
+                                  "type": "string",
+                                  "enum": [
+                                    "background",
+                                    "reference",
+                                    "output"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "title",
+                                "markdown",
+                                "purpose"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 20,
+                            "default": []
+                          },
+                          "standards": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "maxLength": 200,
+                                "default": ""
+                              },
+                              "requirements": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    },
+                                    "title": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 200
+                                    },
+                                    "detail": {
+                                      "type": "string",
+                                      "maxLength": 2000,
+                                      "default": ""
+                                    },
+                                    "category": {
+                                      "type": "string",
+                                      "enum": [
+                                        "deadline",
+                                        "deliverable",
+                                        "format",
+                                        "scoring",
+                                        "team",
+                                        "other"
+                                      ],
+                                      "default": "deliverable"
+                                    },
+                                    "dueDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "duePrecision": {
+                                      "type": "string",
+                                      "enum": [
+                                        "date",
+                                        "datetime",
+                                        "unknown"
+                                      ]
+                                    },
+                                    "dimensionKey": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 40
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "title"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 100,
+                                "default": []
+                              },
+                              "weights": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 40
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 60
+                                    },
+                                    "weight": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "maximum": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "label",
+                                    "weight"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 10,
+                                "default": []
+                              },
+                              "notes": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2000
+                              }
+                            },
+                            "default": null,
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "templateId"
+                        ],
+                        "additionalProperties": false
                       },
                       "deadlineDate": {
                         "type": "string",

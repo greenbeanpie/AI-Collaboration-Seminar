@@ -618,6 +618,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/project-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 可用项目模板 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectTemplateListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/from-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        templateId: "blank";
+                    };
+                };
+            };
+            responses: {
+                /** @description 私有模板编辑草稿，尚未创建项目 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creation-drafts": {
         parameters: {
             query?: never;
@@ -662,6 +739,46 @@ export interface paths {
                         goal?: {
                             title: string;
                             detail: string;
+                        };
+                        workspace?: {
+                            /** @enum {string} */
+                            templateId: "blank";
+                            /** @default [] */
+                            materials?: {
+                                key: string;
+                                title: string;
+                                markdown: string;
+                                /** @enum {string} */
+                                purpose: "background" | "reference" | "output";
+                            }[];
+                            /** @default null */
+                            standards?: {
+                                /** @default  */
+                                title?: string;
+                                /** @default [] */
+                                requirements?: {
+                                    key: string;
+                                    title: string;
+                                    /** @default  */
+                                    detail?: string;
+                                    /**
+                                     * @default deliverable
+                                     * @enum {string}
+                                     */
+                                    category?: "deadline" | "deliverable" | "format" | "scoring" | "team" | "other";
+                                    dueDate?: string | null;
+                                    /** @enum {string} */
+                                    duePrecision?: "date" | "datetime" | "unknown";
+                                    dimensionKey?: string;
+                                }[];
+                                /** @default [] */
+                                weights?: {
+                                    key: string;
+                                    label: string;
+                                    weight: number;
+                                }[];
+                                notes?: string | null;
+                            } | null;
                         };
                         deadlineDate?: string;
                         /** @default false */
@@ -749,6 +866,46 @@ export interface paths {
                             goal?: {
                                 title: string;
                                 detail: string;
+                            };
+                            workspace?: {
+                                /** @enum {string} */
+                                templateId: "blank";
+                                /** @default [] */
+                                materials?: {
+                                    key: string;
+                                    title: string;
+                                    markdown: string;
+                                    /** @enum {string} */
+                                    purpose: "background" | "reference" | "output";
+                                }[];
+                                /** @default null */
+                                standards?: {
+                                    /** @default  */
+                                    title?: string;
+                                    /** @default [] */
+                                    requirements?: {
+                                        key: string;
+                                        title: string;
+                                        /** @default  */
+                                        detail?: string;
+                                        /**
+                                         * @default deliverable
+                                         * @enum {string}
+                                         */
+                                        category?: "deadline" | "deliverable" | "format" | "scoring" | "team" | "other";
+                                        dueDate?: string | null;
+                                        /** @enum {string} */
+                                        duePrecision?: "date" | "datetime" | "unknown";
+                                        dimensionKey?: string;
+                                    }[];
+                                    /** @default [] */
+                                    weights?: {
+                                        key: string;
+                                        label: string;
+                                        weight: number;
+                                    }[];
+                                    notes?: string | null;
+                                } | null;
                             };
                             deadlineDate?: string;
                             /** @default false */
@@ -7525,6 +7682,18 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        ProjectTemplateListResponse: {
+            data: {
+                items: {
+                    /** @enum {string} */
+                    templateId: "blank";
+                    name: string;
+                    description: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         CreationDraftResponse: {
             data: {
                 /** Format: uuid */
@@ -7539,6 +7708,46 @@ export interface components {
                     goal?: {
                         title: string;
                         detail: string;
+                    };
+                    workspace?: {
+                        /** @enum {string} */
+                        templateId: "blank";
+                        /** @default [] */
+                        materials: {
+                            key: string;
+                            title: string;
+                            markdown: string;
+                            /** @enum {string} */
+                            purpose: "background" | "reference" | "output";
+                        }[];
+                        /** @default null */
+                        standards: {
+                            /** @default  */
+                            title: string;
+                            /** @default [] */
+                            requirements: {
+                                key: string;
+                                title: string;
+                                /** @default  */
+                                detail: string;
+                                /**
+                                 * @default deliverable
+                                 * @enum {string}
+                                 */
+                                category: "deadline" | "deliverable" | "format" | "scoring" | "team" | "other";
+                                dueDate?: string | null;
+                                /** @enum {string} */
+                                duePrecision?: "date" | "datetime" | "unknown";
+                                dimensionKey?: string;
+                            }[];
+                            /** @default [] */
+                            weights: {
+                                key: string;
+                                label: string;
+                                weight: number;
+                            }[];
+                            notes?: string | null;
+                        } | null;
                     };
                     deadlineDate?: string;
                     /** @default false */
@@ -7619,6 +7828,46 @@ export interface components {
                         goal?: {
                             title: string;
                             detail: string;
+                        };
+                        workspace?: {
+                            /** @enum {string} */
+                            templateId: "blank";
+                            /** @default [] */
+                            materials: {
+                                key: string;
+                                title: string;
+                                markdown: string;
+                                /** @enum {string} */
+                                purpose: "background" | "reference" | "output";
+                            }[];
+                            /** @default null */
+                            standards: {
+                                /** @default  */
+                                title: string;
+                                /** @default [] */
+                                requirements: {
+                                    key: string;
+                                    title: string;
+                                    /** @default  */
+                                    detail: string;
+                                    /**
+                                     * @default deliverable
+                                     * @enum {string}
+                                     */
+                                    category: "deadline" | "deliverable" | "format" | "scoring" | "team" | "other";
+                                    dueDate?: string | null;
+                                    /** @enum {string} */
+                                    duePrecision?: "date" | "datetime" | "unknown";
+                                    dimensionKey?: string;
+                                }[];
+                                /** @default [] */
+                                weights: {
+                                    key: string;
+                                    label: string;
+                                    weight: number;
+                                }[];
+                                notes?: string | null;
+                            } | null;
                         };
                         deadlineDate?: string;
                         /** @default false */
