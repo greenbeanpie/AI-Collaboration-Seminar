@@ -347,7 +347,7 @@ describe('grounded task provenance after applying a plan', () => {
         const f = await fixture(true); const s = await source(f); const j = await job(f, [s]);
         provider({ tasks: [task([s])] }); await runCollaborationAiJob(offline, j.jobId);
         const output = JSON.parse((await getJob(env, j.jobId)).result_json!) as { proposalId: string };
-        const row = await env.DB.prepare('SELECT source_citations_json FROM tasks WHERE parent_task_id=?1').bind(output.proposalId).first<{ source_citations_json: string }>();
+        const row = await env.DB.prepare('SELECT source_citations_json FROM tasks WHERE plan_proposal_id=?1').bind(output.proposalId).first<{ source_citations_json: string }>();
         expect(JSON.parse(row!.source_citations_json)).toEqual([cite(s)]);
         const response = await app.fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/collaboration/tasks`, { headers: { cookie: authCookie(f.user.token) } }), env);
         expect(response.status).toBe(200);

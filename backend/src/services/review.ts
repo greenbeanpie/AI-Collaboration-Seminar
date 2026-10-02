@@ -8,6 +8,7 @@ import { failJob, getJob, succeedJob } from './jobs';
 import { settleReservation } from './budget';
 import { recordEvent } from './events';
 import { z } from 'zod';
+import { runMaterialAssessmentJob } from './assessments';
 
 const PROMPT_VERSION = 'review-v1';
 
@@ -16,6 +17,7 @@ export interface ReviewJobInput {
   reviewId: string;
   projectId: string;
   sourceSnapshots?: SourceInputSnapshot[];
+  assessmentId?:string;
 }
 
 interface ReviewRow {
@@ -52,6 +54,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as ReviewJobInput;
+  if(input.assessmentId){await runMaterialAssessmentJob(env,jobId);return;}
   try {
     const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2')
       .bind(input.reviewId, input.projectId)
@@ -85,7 +88,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       )
         .bind(versionId, input.projectId)
         .first<{ markdown: string; title: string }>();
-      if (row) materialParts.push(`<materials title="${row.title}">\n${row.markdown.slice(0, 8000)}\n</materials>`);
+      if (row) materialParts.push(`<materials title="${row.title}">\n${row.markdown}\n</materials>`);
     }
     if (materialParts.length === 0) throw new AppError('VALIDATION_FAILED', '没有可评审的材料版本', 400, false);
 
