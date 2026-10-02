@@ -216,11 +216,17 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
     }
 
     try {
-      await c.env.DB.prepare(
-        "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'member', ?4)",
+      const joined = await c.env.DB.prepare(
+        `INSERT INTO project_members (id, project_id, user_id, role, joined_at)
+         SELECT ?1, p.id, ?3, 'member', ?4 FROM projects p
+         WHERE p.id = ?2 AND p.status = 'active'
+           AND (p.team_size_limit IS NULL OR
+             (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) < p.team_size_limit)
+           AND EXISTS (SELECT 1 FROM invitations WHERE id = ?5 AND revoked_at IS NULL AND expires_at > ?4)`,
       )
-        .bind(newId(), project.id, user.id, nowIso())
+        .bind(newId(), project.id, user.id, nowIso(), invitation.id)
         .run();
+      if (!joined.meta.changes) throw quotaExceeded('项目人数已满或邀请已失效');
     } catch (err) {
       await release();
       const message = err instanceof Error ? err.message : String(err);
