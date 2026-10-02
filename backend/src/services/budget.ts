@@ -61,8 +61,25 @@ export async function markAiCallStarted(env: Env, jobId: string | undefined): Pr
   if (!jobId) return;
   const active = await findActiveReservation(env, jobId);
   if (!active) throw quotaExceeded('任务没有活动预算预占，拒绝发起模型请求');
+  const row=await env.DB.prepare('SELECT project_id,purpose,attempts_started,max_calls FROM usage_reservations WHERE id=?1').bind(active.id).first<{project_id:string;purpose:string;attempts_started:number;max_calls:number}>();
+  // A finite execution allowance is independent of how many files can be discovered.
+  // Never create another allowance automatically after exhaustion.
+  if(row && row.purpose!=='ocr_pages' && row.attempts_started>=row.max_calls && row.max_calls<24) {
+    const config=await loadAiConfig(env.DB,await frozenConfigVersionIdFor(env,jobId));
+    const purpose=KIND_TO_AI_PURPOSE[row.purpose];
+    const extra=purpose?estimateCostUsd(config,purpose,true):0;
+    const extended=await env.DB.prepare(`UPDATE usage_reservations SET max_calls=MIN(24,max_calls+2),estimated_cost=estimated_cost+?2
+      WHERE id=?1 AND status='reserved' AND max_calls=?3 AND max_calls<24
+      AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND status IN ('running','queued'))
+      AND ((SELECT ai_budget_usd FROM projects WHERE id=?5) IS NULL OR
+        (?2 <= (SELECT ai_budget_usd FROM projects WHERE id=?5) -
+         (SELECT COALESCE(SUM(CASE WHEN status='settled' THEN COALESCE(settled_cost,0) ELSE estimated_cost END),0) FROM usage_reservations WHERE project_id=?5 AND status IN ('reserved','settled','pending_reconcile'))
+         AND NOT EXISTS(SELECT 1 FROM usage_reservations WHERE project_id=?5 AND status='pending_reconcile')))`)
+      .bind(active.id,extra,row.max_calls,jobId,row.project_id).run();
+    if(!extended.meta.changes) throw quotaExceeded('继续调查所需预算不足；读取检查点已保存，可稍后重新发起');
+  }
   const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved' AND (purpose = 'ocr_pages' OR attempts_started < max_calls)").bind(active.id).run();
-  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('已达到本次预占的模型调用次数上限');
+  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('本次调查已达到24次模型调用资源预算；检查点已保存，不会自动追加付费调用');
 }
 
 async function findActiveReservation(env: Env, jobId: string): Promise<{ id: string; created_at: string; attempts_started: number } | null> {
@@ -97,7 +114,7 @@ export async function reserveAiSlot(
 
   const config = await loadAiConfig(env.DB, params.configVersionId ?? await frozenConfigVersionIdFor(env, params.jobId));
   const aiPurpose = KIND_TO_AI_PURPOSE[params.purpose];
-  const maxCalls = Math.max(2, Math.min(5, params.maxCalls ?? 2));
+  const maxCalls = Math.max(2, Math.min(24, params.maxCalls ?? 2));
   const estimatedCost = (aiPurpose ? estimateCostUsd(config, aiPurpose, maxCalls > 2) : 0) * (maxCalls / 2);
   const project = await env.DB.prepare('SELECT ai_budget_usd FROM projects WHERE id = ?1').bind(params.projectId).first<{ ai_budget_usd: number | null }>();
   if (project?.ai_budget_usd !== null && project?.ai_budget_usd !== undefined) {

@@ -97,10 +97,10 @@ export async function aiJsonCall<S extends z.ZodType>(
     beforeCall?: () => Promise<void>;
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
-): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[] }> {
+): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[] }> {
   if (params.projectTools) {
-    const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,beforeCall:params.beforeCall });
-    try { return {data:params.schema.parse(extractJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations}; }
+    const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
+    try { return {data:params.schema.parse(extractJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references}; }
     catch { throw new AppError('AI_OUTPUT_INVALID','工具调用后的最终 JSON 未通过校验，结果已保留供核对；不会自动重复整轮调用',502,false); }
   }
   const endpoint = {
@@ -349,7 +349,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
 
     let outputPayload: Record<string, unknown>;
     if (input.capability === 'do') {
-      const { data,toolTrace,citations } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -364,9 +364,9 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: doOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations };
+      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations,references };
     } else if (input.capability === 'guide') {
-      const { data,toolTrace,citations } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -381,9 +381,9 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: guideOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations };
+      outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations,references } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations,references };
     } else {
-      const { data,toolTrace,citations } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -401,11 +401,11 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
       // 引文核验：quote 必须逐字（归一化空白）出现在本次输入的材料中
       const haystack = normalize(context.materialsMarkdown);
       for (const issue of data.issues) {
-        if (issue.quote !== undefined && !haystack.includes(normalize(issue.quote))) {
+        if (issue.quote !== undefined && !haystack.includes(normalize(issue.quote)) && !(references??[]).some(r=>r.quote&&normalize(r.quote).includes(normalize(issue.quote!)))) {
           throw new AppError('AI_OUTPUT_INVALID', '审阅引文与材料原文不符', 502, false);
         }
       }
-      outputPayload = { issues: data.issues,toolTrace,citations };
+      outputPayload = { issues: data.issues,toolTrace,citations,references };
     }
 
     await validateInputs(env, input.projectId, input);
