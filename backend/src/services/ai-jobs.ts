@@ -1,3 +1,4 @@
+import { runTaskSummaryJob } from './task-summary';
 import type { Env } from '../env';
 import { getJob } from './jobs';
 import { runAgentJob } from './agent';
@@ -12,6 +13,9 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
+      if (JSON.parse(job.input_json).operation === 'collaboration.summary') {
+        await runTaskSummaryJob(env,jobId); return;
+      }
       if (typeof JSON.parse(job.input_json).operation === 'string' && JSON.parse(job.input_json).operation.startsWith('collaboration.')) {
         await runCollaborationAiJob(env, jobId);
         return;
