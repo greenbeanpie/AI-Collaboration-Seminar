@@ -1,0 +1,396 @@
+{
+  "source": "Local API fixture; real React app and Chromium",
+  "checks": [
+    {
+      "page": "overview",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "tasks",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "data",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "assessment",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "team",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "settings",
+      "width": 1440,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "ledger",
+      "width": 1440,
+      "counts": [
+        10,
+        10,
+        2
+      ],
+      "uniqueEvents": 22,
+      "previousPage": "passed",
+      "pageSizes": [
+        10,
+        20,
+        50
+      ],
+      "overflow": false
+    },
+    {
+      "page": "overview",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "tasks",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "data",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "assessment",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "team",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "settings",
+      "width": 390,
+      "overflow": false,
+      "headings": 0,
+      "tabs": [
+        "概览",
+        "任务",
+        "资料",
+        "评分",
+        "团队"
+      ],
+      "singleton": false,
+      "errors": 0,
+      "removed": {
+        "modules": false,
+        "footer": false,
+        "recent": false,
+        "taskGoal": false,
+        "teamShortcuts": false,
+        "aiSettings": false
+      }
+    },
+    {
+      "page": "ledger",
+      "width": 390,
+      "counts": [
+        10,
+        10,
+        2
+      ],
+      "uniqueEvents": 22,
+      "previousPage": "passed",
+      "pageSizes": [
+        10,
+        20,
+        50
+      ],
+      "overflow": false
+    }
+  ],
+  "eventRequests": [
+    {
+      "cursor": null,
+      "limit": 10
+    },
+    {
+      "cursor": null,
+      "limit": 10
+    },
+    {
+      "cursor": "10",
+      "limit": 10
+    },
+    {
+      "cursor": "20",
+      "limit": 10
+    },
+    {
+      "cursor": null,
+      "limit": 20
+    },
+    {
+      "cursor": null,
+      "limit": 50
+    },
+    {
+      "cursor": null,
+      "limit": 10
+    },
+    {
+      "cursor": null,
+      "limit": 10
+    },
+    {
+      "cursor": "10",
+      "limit": 10
+    },
+    {
+      "cursor": "20",
+      "limit": 10
+    },
+    {
+      "cursor": null,
+      "limit": 20
+    },
+    {
+      "cursor": null,
+      "limit": 50
+    }
+  ],
+  "browserErrors": "none",
+  "result": "PASS",
+  "implementationFiles": [
+    "frontend/src/components/ProjectNavigation.css",
+    "frontend/src/components/ProjectNavigation.test.tsx",
+    "frontend/src/components/ProjectNavigation.tsx",
+    "frontend/src/pages/LedgerPage.tsx",
+    "frontend/src/pages/ProjectOverviewPage.test.tsx",
+    "frontend/src/pages/ProjectOverviewPage.tsx",
+    "frontend/src/pages/ProjectSettingsPage.test.tsx",
+    "frontend/src/pages/ProjectSettingsPage.tsx",
+    "frontend/src/pages/ProjectWorkspace.test.tsx",
+    "frontend/src/pages/TasksPage.links.test.tsx",
+    "frontend/src/pages/TasksPage.tsx",
+    "frontend/src/pages/TeamPage.test.tsx",
+    "frontend/src/pages/TeamPage.tsx",
+    "frontend/src/pages/TeamWorkspacePage.tsx",
+    "frontend/src/styles/app.css",
+    "frontend/src/styles/readability.css",
+    "frontend/src/pages/LedgerPage.test.tsx",
+    "scripts/verify-project-page-pagination-ui.cjs"
+  ],
+  "automatedVerification": {
+    "frontendTestFiles": 79,
+    "frontendTests": 422,
+    "lint": "PASS",
+    "backendTypecheck": "PASS",
+    "frontendTypecheck": "PASS",
+    "productionBuild": "PASS",
+    "diffWhitespaceCheck": "PASS"
+  }
+}
