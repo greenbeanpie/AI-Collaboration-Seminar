@@ -11,14 +11,13 @@ export const discoveryDefinitions = [
   ['list_assessments', '分页列出项目评分与演练评价目录；含有效结果来源与固定标准，目录不代表已读报告'],
   ['read_assessment', '按 id 分页读取当前生效报告、独立原AI报告、人工修订理由及固定目标/标准/材料；offset 为字符偏移'],
   ['list_project_resources', '分页列出全部项目来源与材料；query 可按标题过滤'],
-  ['search_project_information', '按 query 在项目资料正文、任务与决策中检索定位；返回摘要，原文需继续读取'],
+  ['search_project_information', '按 query 在项目资料正文与任务中检索定位；返回摘要，原文需继续读取'],
   ['list_resource_versions', '按 id 与 resourceType 分页列出资料历史版本'],
   ['read_resource', '按固定版本分页读取来源正文或材料正文'],
   ['list_tasks', '分页读取任务说明、验收标准、归属、进度和依赖'],
   ['read_task', '读取指定任务及其相关提交、反馈、依赖'],
   ['read_submission', '读取固定成果提交、材料版本及评价反馈'],
   ['read_project_standards', '分页读取已确认要求、统一标准和评分规则'],
-  ['list_project_decisions', '分页读取项目决策和管理员反馈'],
   ['read_admin_feedback', '分页读取管理员明确修正和重新反馈；后续判断须采用最新反馈'],
   ['read_project_history', '分页读取项目事件与协作评论'],
   ['read_member_workload', '分页读取成员项目角色与任务负载，不披露个人资料'],
@@ -63,8 +62,7 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const rows=await env.DB.prepare(`SELECT * FROM (
       SELECT 'source' resourceType,s.id resourceId,s.title,s.current_version_id versionId FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND (instr(lower(s.title),lower(?2))>0 OR EXISTS(SELECT 1 FROM source_fragments f WHERE f.source_version_id=v.id AND instr(lower(f.content),lower(?2))>0))
       UNION ALL SELECT 'material',m.id,m.title,m.current_version_id FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND instr(lower(m.title||v.markdown),lower(?2))>0
-      UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND instr(lower(title||detail||criteria),lower(?2))>0
-      UNION ALL SELECT 'decision',id,title,NULL FROM decisions WHERE project_id=?1 AND instr(lower(title||detail),lower(?2))>0)
+      UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND instr(lower(title||detail||criteria),lower(?2))>0)
       ORDER BY resourceType,resourceId LIMIT 21 OFFSET ?3`).bind(projectId,a.query,a.offset).all();
     return page(rows.results,a.offset);
   }
@@ -131,7 +129,6 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const rubrics=await env.DB.prepare("SELECT id,version,weights_json,notes FROM rubric_versions WHERE project_id=?1 AND status='confirmed' ORDER BY version DESC LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
     return {untrustedData:true,standards:{...page(standards.results,a.offset),resourceType:'standard'},requirements:{...page(requirements.results,a.offset),resourceType:'requirement'},rubrics:{...page(rubrics.results,a.offset),resourceType:'rubric'}};
   }
-  if(name==='list_project_decisions') return {...page((await env.DB.prepare('SELECT id,title,detail,decided_at,related_json FROM decisions WHERE project_id=?1 ORDER BY decided_at DESC,id LIMIT 21 OFFSET ?2').bind(projectId,a.offset).all()).results,a.offset),resourceType:'decision'};
   if(name==='read_admin_feedback') {
     const exists=await env.DB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_admin_feedback'").first();
     if(!exists)return {...page([],a.offset),resourceType:'admin_feedback'};

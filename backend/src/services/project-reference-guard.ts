@@ -24,7 +24,6 @@ const snapshots:Record<string,{table:string;columns:string[];revision?:boolean}>
  standard:{table:'standards_versions',revision:true,columns:['id','version','revision','title','snapshot_json']},
  requirement:{table:'requirements',columns:['id','requirement_set_id','project_id','seq','category','title','detail','due_date','due_precision','citations_json','field_state','updated_at']},
  rubric:{table:'rubric_versions',columns:['id','version','weights_json','notes']},
- decision:{table:'decisions',columns:['id','title','detail','decided_at','related_json']},
  comment:{table:'comments',columns:['id','target_type','target_id','body','created_at']},
  event:{table:'events',columns:['id','type','entity_type','entity_id','payload_json','occurred_at']},
  admin_feedback:{table:'project_admin_feedback',columns:['id','target_type','target_id','feedback','request_ai_redo','created_at']},

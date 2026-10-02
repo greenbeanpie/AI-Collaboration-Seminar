@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { BASE, env } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 
-describe('过程账本与导出', () => {
-  it('决策/贡献/更正/资源声明 + 事件流 + 导出汇总', async () => {
+describe('活动历史与导出', () => {
+  it('移除手工账本接口，保留历史事件分页与导出汇总', async () => {
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);
     const cookie = authCookie(owner.token);
@@ -24,55 +24,26 @@ describe('过程账本与导出', () => {
         .bind(rubricId, pid, JSON.stringify([{ key: 'innovation', label: '创新', weight: 20 }]), owner.userId, createdAt),
     ]);
 
-    // 决策
-    const decision = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/decisions`, {
-      method: 'POST',
-      headers: { ...json, cookie },
-      body: JSON.stringify({ title: '采用三档 AI 补位', detail: '经组内讨论确认' }),
-    });
-    expect(decision.status).toBe(201);
-    const decisions = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/decisions`, { headers: { cookie } });
-    expect((((await decisions.json()) as { data: { items: unknown[] } }).data).items).toHaveLength(1);
-
-    // 贡献 + 更正（原记录保留）
-    const contribution = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/contributions`, {
-      method: 'POST',
-      headers: { ...json, cookie },
-      body: JSON.stringify({ kind: 'manual', description: '完成了通知解析联调' }),
-    });
-    expect(contribution.status).toBe(201);
-    const contributionId = ((await contribution.json()) as { data: { contributionId: string } }).data.contributionId;
-    const correction = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/contributions/${contributionId}/corrections`, {
-      method: 'POST',
-      headers: { ...json, cookie },
-      body: JSON.stringify({ description: '更正：实为完成解析与预审联调' }),
-    });
-    expect(correction.status).toBe(201);
-    const corrections = ((await correction.json()) as { data: { correctionOf: string } }).data;
-    expect(corrections.correctionOf).toBe(contributionId);
-    const contributions = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/contributions`, { headers: { cookie } });
-    const contributionItems = ((await contributions.json()) as { data: { items: Array<{ kind: string }> } }).data.items;
-    expect(contributionItems.map((c) => c.kind).sort()).toEqual(['correction', 'manual']);
-
-    // 资源声明
-    const resource = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/resources`, {
-      method: 'POST',
-      headers: { ...json, cookie },
-      body: JSON.stringify({ kind: 'url', title: '比赛官方通知', url: 'https://example.com/notice' }),
-    });
-    expect(resource.status).toBe(201);
-    // url 类缺 url → 400
-    const badResource = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/resources`, {
-      method: 'POST',
-      headers: { ...json, cookie },
-      body: JSON.stringify({ kind: 'url', title: '缺少地址' }),
-    });
-    expect(badResource.status).toBe(400);
-
-    // 事件流（含决策事件与材料事件）
-    const events = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/events`, { headers: { cookie } });
-    const eventTypes = ((await events.json()) as { data: { items: Array<{ type: string }> } }).data.items.map((e) => e.type);
-    expect(eventTypes).toContain('decision.recorded');
+    // Historic events survive even though their manual entry APIs are gone.
+    await env.DB.prepare("INSERT INTO events (id, project_id, type, actor_type, actor_id, entity_type, entity_id, payload_json, occurred_at) VALUES (?1,?2,'decision.recorded','user',?3,'decision',?4,'{}',?5)").bind(crypto.randomUUID(), pid, owner.userId, crypto.randomUUID(), createdAt).run();
+    for (const path of ['decisions', 'contributions', `contributions/${crypto.randomUUID()}/corrections`, 'resources']) {
+      for (const method of ['GET', 'POST']) {
+        const response = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/${path}`, { method, headers: { ...json, cookie }, ...(method === 'POST' ? { body: '{}' } : {}) });
+        expect(response.status).toBe(404);
+      }
+    }
+    const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('decisions','contributions','resource_references')").all();
+    expect(tables.results).toEqual([]);
+    await env.DB.prepare("INSERT INTO events (id, project_id, type, actor_type, actor_id, entity_type, entity_id, payload_json, occurred_at) VALUES (?1,?2,'task.created','user',?3,'task',?4,'{}','2020-01-01T00:00:00.000Z')").bind(crypto.randomUUID(), pid, owner.userId, crypto.randomUUID()).run();
+    const events = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/events?limit=1`, { headers: { cookie } });
+    expect(events.status).toBe(200);
+    const eventPage = (await events.json()) as { data: { items: Array<{ type: string }>; nextCursor: string | null } };
+    expect(eventPage.data.items).toHaveLength(1);
+    expect(eventPage.data.items[0]!.type).toBe('decision.recorded');
+    expect(eventPage.data.nextCursor).not.toBeNull();
+    const nextPage = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/events?limit=1&cursor=${encodeURIComponent(eventPage.data.nextCursor!)}`, { headers: { cookie } });
+    expect(nextPage.status).toBe(200);
+    expect((await nextPage.json() as { data: { items: Array<{ type: string }>; nextCursor: string | null } }).data).toMatchObject({ items: [{ type: 'task.created' }], nextCursor: null });
 
     // 导出
     const bundle = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/export-bundle`, { headers: { cookie } });
@@ -84,12 +55,10 @@ describe('过程账本与导出', () => {
         requirementSets: Array<{ requirementSetId: string; status: string; requirements: Array<{ requirementId: string; citations: Array<{ fragmentId: string }> }> }>;
         rubricVersions: Array<{ rubricId: string; status: string; weights: Array<{ key: string; weight: number }> }>;
         tasks: unknown[];
-        decisions: unknown[];
-        contributions: unknown[];
-        resources: unknown[];
         aiUsage: { calls: number; costStatus: string };
       };
     };
+    for (const key of ['decisions', 'contributions', 'resources']) expect(bundleBody.data).not.toHaveProperty(key);
     expect(bundleBody.data.project.id).toBe(pid);
     expect(bundleBody.data.requirementSets).toHaveLength(1);
     expect(bundleBody.data.requirementSets[0]).toMatchObject({
@@ -107,8 +76,6 @@ describe('过程账本与导出', () => {
       confirmedAt: createdAt,
       createdAt,
     }]);
-    expect(bundleBody.data.decisions).toHaveLength(1);
-    expect(bundleBody.data.resources).toHaveLength(1);
     expect(bundleBody.data.aiUsage.costStatus).toBe('unknown');
   });
 });

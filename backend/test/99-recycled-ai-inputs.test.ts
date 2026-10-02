@@ -232,22 +232,10 @@ describe('historical material attachments survive recycling', () => {
   });
 });
 
-describe('resource file associations and historical exports', () => {
-  it('resource association CAS rejects a restored newer file lifecycle', async () => {
+describe('historical exports', () => {
+  it('annotates recycled file and source references in retained exports', async () => {
     const f = await fixture();
-    const response = await request(f, 'resources', 'POST', { kind: 'file', title: '新引用', fileId: f.fileId }, beforeRun('INSERT INTO resource_references', () => recycle(f, true)));
-    expect(response.status).toBe(409);
-    expect((await env.DB.prepare('SELECT COUNT(*) n FROM resource_references WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(0);
-  });
-  it('denies new deleted or foreign file references and annotates retained exports', async () => {
-    const f = await fixture(), foreign = await fixture();
-    expect((await request(f, 'resources', 'POST', { kind: 'file', title: '外部附件', fileId: foreign.fileId })).status).toBe(404);
-    const created = await request(f, 'resources', 'POST', { kind: 'file', title: '历史附件', fileId: f.fileId });
-    expect(created.status).toBe(201);
     await recycle(f);
-    expect((await request(f, 'resources', 'POST', { kind: 'file', title: '新附件', fileId: f.fileId })).status).toBe(404);
-    const resources = await request(f, 'resources');
-    expect((await resources.json() as { data: { items: unknown[] } }).data.items).toMatchObject([{ title: '历史附件', fileId: f.fileId, availability: 'unavailable' }]);
     const bundle = await request(f, 'export-bundle');
     expect(bundle.status).toBe(200);
     expect((await bundle.json() as { data: unknown }).data).toMatchObject({ materials: [{ attachments: [{ fileId: f.fileId, availability: 'unavailable' }] }], requirementSets: [{ sourceAvailability: 'unavailable', requirements: [{ citations: [{ ...f.citation, availability: 'unavailable' }] }] }] });

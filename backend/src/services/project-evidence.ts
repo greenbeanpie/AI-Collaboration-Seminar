@@ -78,6 +78,7 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
   };
   for(const ref of refs) {
     if(!ref||typeof ref.resourceId!=='string'||typeof ref.resourceType!=='string'||(ref.quote!==undefined&&typeof ref.quote!=='string')||(ref.revision!==undefined&&(!Number.isInteger(ref.revision)||ref.revision<1)))throw invalidState('引用格式无效');
+    if(ref.resourceType==='decision')throw invalidState('来源已移除，请重新调查');
     if(ref.resourceType==='source'&&([ref.resourceId,ref.versionId,ref.fragmentId].some(value=>typeof value!=='string'||!value.trim()||value==='undefined')||typeof ref.revision!=='number'))throw invalidState('来源引用版本信息不完整');
     if(ref.resourceType==='material'&&typeof ref.versionId!=='string')throw invalidState('材料引用版本信息不完整');
     if(['proposal','assessment'].includes(ref.resourceType)&&typeof ref.revision!=='number')throw invalidState('方案或评价引用版本信息不完整');
@@ -111,7 +112,7 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
         if(!row||row.revision!==ref.revision||(ref.quote!==undefined&&!(row.body as string).includes(ref.quote)))throw invalidState('已读取方案或有效评价已变化，引用不符');
       });
     } else {
-      const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',decision:'decisions',comment:'comments',event:'events',project:'projects',admin_feedback:'project_admin_feedback'} as Record<string,string>)[ref.resourceType];
+      const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',comment:'comments',event:'events',project:'projects',admin_feedback:'project_admin_feedback'} as Record<string,string>)[ref.resourceType];
       if(!table) throw invalidState('未知引用类型');
       if(ref.resourceType==='project'&&ref.resourceId!==projectId)throw invalidState('项目引用不属于当前项目');
       enqueue(`SELECT * FROM ${table} WHERE id=?1 ${ref.resourceType==='project'?'':'AND project_id=?2'}`,ref.resourceType==='project'?[ref.resourceId]:[ref.resourceId,projectId],row=>{
