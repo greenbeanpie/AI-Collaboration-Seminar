@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- API fixtures cover multiple server response shapes in this interaction test. */
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
@@ -56,7 +56,7 @@ beforeEach(() => {
     if (path.endsWith('/preview')) {
       draft = {
         ...draft, preview: {
-          mode: 'manual', tasks: body.tasks
+          mode: body.mode, goal: body.goal, tasks: body.tasks
         }, previewState: 'ready', previewRevision: draft.revision
       };
       return draft;
@@ -93,6 +93,25 @@ async function next() {
   await waitFor(() => expect(screen.queryByText('正在保存或核对结果，请稍候…')).not.toBeInTheDocument());
 }
 describe('project creation wizard', () => {
+  it('previews one editable main goal and stable keyed sibling dependencies without a duplicate root task', async () => {
+    mount(); fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '依赖项目' } });
+    fireEvent.change(screen.getByLabelText(/^主目标（可选）/), { target: { value: '交付可复现成果' } });
+    await next(); await next(); await next();
+    fireEvent.click(screen.getByRole('button', { name: '添加手动任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加手动任务' }));
+    const titles = screen.getAllByLabelText('标题'); const criteria = screen.getAllByLabelText('验收标准');
+    fireEvent.change(titles[0]!, { target: { value: '准备资料' } }); fireEvent.change(criteria[0]!, { target: { value: '正文完整' } });
+    fireEvent.change(titles[1]!, { target: { value: '生成成果' } }); fireEvent.change(criteria[1]!, { target: { value: '复现成功' } });
+    const dependencyGroups = screen.getAllByRole('group', { name: '前置子任务' });
+    fireEvent.click(within(dependencyGroups[1]!).getByLabelText('准备资料'));
+    fireEvent.click(screen.getByRole('button', { name: '保存当前任务预览' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '进入创建预览' })).not.toBeDisabled());
+    const previewBody = mocks.post.mock.calls.find(([path]) => String(path).endsWith('/preview'))?.[1] as { goal: { title: string }; tasks: Array<{ key: string; dependsOn: string[] }> };
+    expect(previewBody.goal.title).toBe('交付可复现成果'); expect(previewBody.tasks).toHaveLength(2);
+    expect(previewBody.tasks[0]?.key).toBeTruthy(); expect(previewBody.tasks[1]?.dependsOn).toEqual([previewBody.tasks[0]?.key]);
+    fireEvent.change(screen.getByLabelText(/^主目标预览/), { target: { value: '尚未保存的新目标' } });
+    expect(screen.getByRole('button', { name: '进入创建预览' })).toBeDisabled();
+  });
   it('does not create a project before all steps, explicit task preview and final review', async () => {
     mount();
     fireEvent.change(screen.getByLabelText('项目名称'), {
@@ -110,7 +129,7 @@ describe('project creation wizard', () => {
     })).toBeInTheDocument();
     await next();
     expect(screen.getByRole('heading', {
-      name: '任务拆分预览'
+      name: '目标与子任务预览'
     })).toBeInTheDocument();
     expect(screen.getByRole('button', {
       name: '进入创建预览'

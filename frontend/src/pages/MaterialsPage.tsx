@@ -15,6 +15,7 @@ import { useSession } from '../auth';
 import { EmptyState, ErrorNotice, PageHeading, Spinner } from '../components/ui';
 import { getDraft, removeDraft, saveDraft } from '../storage';
 import { CommentsPanel, docToMarkdown, loadCursorPages, MaterialDocumentView } from './TasksMaterialsShared';
+import { useSettingsDirty } from './settings-dirty';
 import './TasksMaterials.css';
 
 type Material = DataOf<'MaterialResponse'>;
@@ -72,19 +73,21 @@ function downloadMarkdown(title: string, markdown: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boolean }) {
+export function MaterialsPage({ initialAiOpen = false, embedded = false, materialId: requestedMaterialId, versionId: requestedVersionId }: { initialAiOpen?: boolean; embedded?: boolean; materialId?: string; versionId?: string | null }) {
   const { projectId } = useProject();
   const session = useSession();
   const queryClient = useQueryClient();
   const accountId = session.data?.id ?? '';
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [activeMaterialId, setActiveMaterialId] = useState<string | null>(null);
+  const [activeMaterialId, setActiveMaterialId] = useState<string | null>(requestedMaterialId ?? null);
   const dialogs = usePageDialogs(`${accountId}:${projectId}:${activeMaterialId ?? ""}`);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  useEffect(() => { if (requestedVersionId) setSelectedVersionId(requestedVersionId); }, [requestedVersionId]);
   const [newTitle, setNewTitle] = useState('');
   const [newKind, setNewKind] = useState('document');
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  useSettingsDirty(dirty);
   const [draftPersisted, setDraftPersisted] = useState(true);
   const [draftStorageWarning, setDraftStorageWarning] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
@@ -211,7 +214,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
     setDraftStorageWarning(false);
     setConflict(null);
     setSaveError(null);
-    setSelectedVersionId(null);
+    setSelectedVersionId(requestedVersionId ?? null);
     const storedDraft = accountId ? getDraft<unknown>(accountId, projectId, material.materialId) : null;
     if (storedDraft && isLocalDraft(storedDraft.value)) {
       setDraftPersisted(true);
@@ -224,7 +227,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
       setRecoveryDraft(null);
       setReconnectConfirmation(false);
     }
-  }, [accountId, activeMaterialId, conflict, dirty, editor, material, projectId, recoveryDraft]);
+  }, [accountId, activeMaterialId, conflict, dirty, editor, material, projectId, recoveryDraft, requestedVersionId]);
 
   useEffect(() => {
     if (!editor) return;
@@ -315,6 +318,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
         queryClient.invalidateQueries({ queryKey: ['material', projectId, activeMaterialId] }),
         queryClient.invalidateQueries({ queryKey: ['materials', projectId] }),
         queryClient.invalidateQueries({ queryKey: ['materialVersions', projectId, activeMaterialId] }),
+        queryClient.invalidateQueries({ queryKey: ['resource-library', projectId] }),
       ]);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409 && error.code === 'VERSION_CONFLICT') {
@@ -347,12 +351,12 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
   };
 
   return (
-    <div className="page-stack tm-page tm-materials-page">
-      <PageHeading
+    <div className={`page-stack tm-page tm-materials-page${embedded ? ' tm-material-embedded' : ''}`}>
+      {!embedded && <PageHeading
         eyebrow="成果协作"
         title="成果材料"
         detail="编辑服务端正式材料并查看不可变版本。离线修改会尝试保存为当前账户、项目和材料对应的本机草稿，页面会明确显示写入是否成功。"
-      />
+      />}
 
       <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} />
 
@@ -365,7 +369,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
 
       <div className="tm-materials-layout">
         <aside className="tm-material-sidebar" aria-label="材料列表">
-          <section className="card tm-material-list-card">
+          {!embedded && <section className="card tm-material-list-card">
             <div className="tm-material-list-head"><h2>项目材料</h2><span className="status-pill status-neutral">{materialsQuery.data?.length ?? '—'}</span></div>
             {materialsQuery.isLoading && <Spinner label="正在读取材料" />}
             {!!materialsQuery.data?.length && <div className="tm-material-list">
@@ -380,7 +384,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
               <input id="new-material-title" maxLength={200} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="新材料名称" />
               <button className="button button-primary button-small" type="submit" disabled={!newTitle.trim() || createMaterial.isPending}><Plus size={14} />{createMaterial.isPending ? '创建中' : '创建'}</button>
             </form>
-          </section>
+          </section>}
 
           {activeMaterialId && <section className="card tm-history-card">
             <div className="tm-history-head"><h3>版本历史</h3><span>{historyQuery.data?.length ?? '—'}</span></div>
