@@ -185,14 +185,14 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     route(app, 'get', '/proposals', undefined, async (c) => {
         const paging = parsePaging(c.req.query());
         const cursor = paging.cursor;
-        const rows = await c.env.DB.prepare(`SELECT p.*,json_extract(j.input_json,'$.profileStamp') profile_stamp FROM collaboration_proposals p JOIN jobs j ON j.id=p.job_id WHERE p.project_id=?1
+        const rows = await c.env.DB.prepare(`SELECT p.*,json_extract(j.input_json,'$.profileStamp') profile_stamp,EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=p.id) human_revised FROM collaboration_proposals p JOIN jobs j ON j.id=p.job_id WHERE p.project_id=?1
             AND (?2 IS NULL OR p.created_at < ?2 OR (p.created_at = ?2 AND p.id < ?3))
             ORDER BY p.created_at DESC,p.id DESC LIMIT ?4`)
-            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal & {profile_stamp:string|null}>();
+            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal & {profile_stamp:string|null;human_revised:number}>();
         const page = rows.results.slice(0, paging.limit);
         const last = page.at(-1);
         const currentStamp = await profileStamp(c.env, ids(c).projectId);
-        return c.json(apiData(c, { items: page.map(p => p.kind === 'assign' && p.profile_stamp !== currentStamp ? {...toProposal(p),status:'stale',payload:{}} : toProposal(p)), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
+        return c.json(apiData(c, { items: page.map(p => p.kind === 'assign' && !p.human_revised && p.profile_stamp !== currentStamp ? {...toProposal(p),status:'stale',payload:{}} : toProposal(p)), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
     });
     route(app, 'post', '/proposals/{proposalId}/apply', z.object({ expectedRevision: revision,selectedTaskKeys:z.array(z.string()).optional(),selectedUpdateTaskIds:z.array(z.string().uuid()).optional(),selectedAssignmentTaskIds:z.array(z.string().uuid()).optional() }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await applyProposal(c.env, projectId, c.req.param('proposalId')!, b.expectedRevision, userId,false,undefined,b); return c.json(apiData(c, { applied: true,...await continueConfirmedPlan(c.env,projectId,c.req.param('proposalId')!,userId) })); });
     route(app,'patch','/proposals/{proposalId}',z.object({expectedRevision:revision,payload:proposalSchema.shape.payload,reason:z.string().min(1).max(4000)}),async c=>{
