@@ -54,11 +54,12 @@ it('mobile switching and browser Back retain group state without changing existi
     await act(() => router.navigate(`/app/projects/fixture/${path}?saved=1#evidence`));
     expect(select).toHaveValue(group);
     const navigation = screen.getAllByRole('navigation').find(nav => nav.getAttribute('aria-label')?.endsWith('分区'))!;
-    expect(within(navigation).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
+    if (['data', 'work', 'assessment'].includes(group)) expect(navigation).toBeUndefined();
+    else expect(within(navigation).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
     expect(router.state.location.search + router.state.location.hash).toBe('?saved=1#evidence');
   }
 });
-it('keeps draft cancellation effective for both main navigation and section links', async () => {
+it('keeps draft cancellation effective for both main navigation and resource aliases', async () => {
   const router = setup('/app/projects/fixture/materials');
   fireEvent.change(screen.getByLabelText('Fixture draft'), { target: { value: 'Keep this draft' } });
   const select = screen.getByRole('combobox', { name: '切换项目功能' });
@@ -67,7 +68,7 @@ it('keeps draft cancellation effective for both main navigation and section link
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(select).toHaveValue('data'); expect(screen.getByLabelText('Fixture draft')).toHaveValue('Keep this draft');
-  fireEvent.click(within(screen.getByRole('navigation', { name: '资料分区' })).getByRole('link', { name: '项目资料' }));
+  await act(() => router.navigate('/app/projects/fixture/data?sourceVersionId=v1'));
   dialog = await screen.findByRole('dialog');
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

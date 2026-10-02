@@ -57,7 +57,7 @@ beforeEach(() => {
     }
     const source = sources.find(source => path.includes(`/sources/${source.sourceId}/`))!;
     source.deletedAt = null; source.lifecycleVersion += 1;
-    return { sourceId: source.sourceId, deletedAt: null, lifecycleVersion: source.lifecycleVersion };
+    return { purpose: 'reference', revision: 1, sourceId: source.sourceId, deletedAt: null, lifecycleVersion: source.lifecycleVersion };
   });
 });
 afterEach(async () => { await act(async () => cancelPageDialog()); cleanup(); });
@@ -144,8 +144,8 @@ describe('project file recycle library', () => {
   it('restores paste/web sources once and avoids duplicate file-linked source controls', async () => {
     files = [{ ...pendingFile, deletedAt: now }];
     sources = [
-      { sourceId: 'file-source', kind: 'file', fileId: 'f', title: '文件来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 2, canDelete: true },
-      { sourceId: 'text-source', kind: 'paste', fileId: null, title: '文字来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 7, canDelete: true },
+      { purpose: 'reference', revision: 1, sourceId: 'file-source', kind: 'file', fileId: 'f', title: '文件来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 2, canDelete: true },
+      { purpose: 'reference', revision: 1, sourceId: 'text-source', kind: 'paste', fileId: null, title: '文字来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 7, canDelete: true },
     ];
     mount();
     fireEvent.click(screen.getByRole('button', { name: '回收站' }));
@@ -157,7 +157,7 @@ describe('project file recycle library', () => {
 
   it('removes obsolete local job tracking after a file and its source enter recycle', async () => {
     files = [{ ...pendingFile, sourceIds: ['s'] }];
-    sources = [{ sourceId: 's', kind: 'file', fileId: 'f', title: '文件关联来源', currentVersionId: null, createdAt: now, deletedAt: null, lifecycleVersion: 1, canDelete: true }];
+    sources = [{ purpose: 'reference', revision: 1, sourceId: 's', kind: 'file', fileId: 'f', title: '文件关联来源', currentVersionId: null, createdAt: now, deletedAt: null, lifecycleVersion: 1, canDelete: true }];
     writeTrackedSourceJobs('p', [{ jobId: 'old-job', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文件关联来源', fileId: 'f', status: 'failed' }]);
     mount(true);
     await screen.findByRole('button', { name: '重试任务' });

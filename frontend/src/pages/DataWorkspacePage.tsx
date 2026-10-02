@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { resilientLazy } from '../resilient-lazy';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Upload } from 'lucide-react';
@@ -6,11 +7,11 @@ import { api, projectPath } from '../api/client';
 import { projectRequest, resourceLibrary, resourcePurposeLabels, type ResourceEntry, type ResourcePurpose } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, Spinner, StatusPill } from '../components/ui';
-import { MaterialsPage } from './MaterialsPage';
 import { SourcesPage } from './SourcesPage';
 import { ProjectFileLibrary } from './ProjectFileLibrary';
 import { useCapabilities } from '../auth';
 import './ProjectWorkspace.css';
+const MaterialEditor = resilientLazy(() => import('./MaterialsPage').then(module => ({ default: module.MaterialsPage })));
 
 export function DataWorkspacePage() {
   const { projectId } = useProject();
@@ -51,7 +52,7 @@ export function DataWorkspacePage() {
         {mode === 'import' ? <SourcesPage embedded intakeOnly /> : mode === 'files' ? capabilities.data ? <ProjectFileLibrary projectId={projectId} pageSize={capabilities.data.limits.listMaxPageSize} onChanged={() => void refresh()} /> : <Spinner label="读取附件能力" /> : mode === 'new' ? <form className="card form-card stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}><h2>新建文档</h2><Field label="文档标题"><input className="input" maxLength={200} required value={title} onChange={event => setTitle(event.target.value)} /></Field><Field label="文档用途"><select className="input" value={newPurpose} onChange={event => setNewPurpose(event.target.value as ResourcePurpose)}>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>{create.error && <ErrorNotice error={create.error} />}<button className="button button-primary" disabled={create.isPending || !title.trim()}>创建文档</button></form> : selected ? <>
           <header className="resource-detail-heading"><div><h2>{selected.title}</h2><StatusPill>{resourcePurposeLabels[selected.purpose]}</StatusPill></div>{selected.canManage && <Field label="修改资料用途"><select className="input" value={selected.purpose} disabled={updatePurpose.isPending} onChange={event => updatePurpose.mutate({ resource: selected, purpose: event.target.value as ResourcePurpose })}>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}</header>
           {updatePurpose.error && <ErrorNotice error={updatePurpose.error} />}
-          {selected.resourceType === 'material' ? <MaterialsPage key={selected.resourceId} embedded materialId={selected.resourceId} versionId={params.get('versionId') ?? params.get('materialVersionId')} initialAiOpen={params.get('ai') === '1'} /> : <SourcesPage key={selected.resourceId} embedded selectedSourceId={selected.resourceId} />}
+          {selected.resourceType === 'material' ? <Suspense fallback={<Spinner label="打开文档编辑器" />}><MaterialEditor key={selected.resourceId} embedded materialId={selected.resourceId} versionId={params.get('versionId') ?? params.get('materialVersionId')} initialAiOpen={params.get('ai') === '1'} /></Suspense> : <SourcesPage key={selected.resourceId} embedded selectedSourceId={selected.resourceId} />}
         </> : !library.isLoading && !library.error ? <EmptyState title={requestedId || sourceVersionId ? '对应资料暂不可用' : '选择一份资料'} detail={requestedId || sourceVersionId ? '请检查资料是否在回收站；固定版本的历史引用仍会保留。' : '在左侧选择背景、参考资料或成果，查看原文或编辑文档。'} /> : null}
       </section>
     </div>
