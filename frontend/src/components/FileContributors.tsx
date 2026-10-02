@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, projectPath } from '../api/client';
+import { api, listAllItems, projectPath } from '../api/client';
 import { ErrorNotice } from './ui';
 export type Contributor = { userId: string; displayName: string };
 export function ContributorNames({ contributors }: { contributors?: Contributor[] }) {
@@ -9,9 +9,9 @@ export function ContributorNames({ contributors }: { contributors?: Contributor[
 export function FileContributorPicker({ projectId, value, onChange, disabled = false }: {
   projectId: string; value: string[] | undefined; onChange: (ids: string[]) => void; disabled?: boolean;
 }) {
-  const members = useQuery({ queryKey: ['members', projectId], queryFn: () => api.get<'MemberListResponse'>(projectPath(projectId, '/members')) });
+  const members = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
   const me = useQuery({ queryKey: ['member', projectId, 'me'], queryFn: () => api.get<'MemberResponse'>(projectPath(projectId, '/members/me')) });
-  const all = members.data?.items ?? [];
+  const all = members.data ?? [];
   const selected = value ?? (me.data ? [me.data.userId] : []);
   const checkbox = useRef<HTMLInputElement>(null);
   useEffect(() => { if (checkbox.current) checkbox.current.indeterminate = selected.length > 0 && selected.length < all.length; }, [selected.length, all.length]);

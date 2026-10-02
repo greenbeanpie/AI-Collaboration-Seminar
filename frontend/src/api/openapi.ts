@@ -3905,6 +3905,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 私有任务质询 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskInquiryListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        upstreamTaskId: string;
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 质询已发起 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskInquiryCreatedResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/task-inquiries/{inquiryId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    inquiryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 质询消息已发送 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskInquiryMessageCreatedResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/collaboration/settings": {
         parameters: {
             query?: never;
@@ -8557,6 +8669,9 @@ export interface components {
             data: {
                 items: ({
                     /** Format: uuid */
+                    initiatorId?: string;
+                    canOperate?: boolean;
+                    /** Format: uuid */
                     assessmentId: string;
                     /** @enum {string} */
                     kind: "material_review" | "rehearsal";
@@ -8694,6 +8809,9 @@ export interface components {
                     } | null;
                 } | {
                     /** Format: uuid */
+                    initiatorId?: string;
+                    canOperate?: boolean;
+                    /** Format: uuid */
                     assessmentId: string;
                     /** @enum {string} */
                     kind: "material_review" | "rehearsal";
@@ -8785,6 +8903,9 @@ export interface components {
         AssessmentManualResponse: {
             data: {
                 /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
+                /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
                 kind: "material_review" | "rehearsal";
@@ -8921,6 +9042,9 @@ export interface components {
                     decisionReferences?: unknown[];
                 } | null;
             } | {
+                /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
                 /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
@@ -9011,6 +9135,9 @@ export interface components {
         AssessmentCorrectionResponse: {
             data: {
                 /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
+                /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
                 kind: "material_review" | "rehearsal";
@@ -9147,6 +9274,9 @@ export interface components {
                     decisionReferences?: unknown[];
                 } | null;
             } | {
+                /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
                 /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
@@ -9237,6 +9367,9 @@ export interface components {
         AssessmentResponse: {
             data: {
                 /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
+                /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
                 kind: "material_review" | "rehearsal";
@@ -9373,6 +9506,9 @@ export interface components {
                     decisionReferences?: unknown[];
                 } | null;
             } | {
+                /** Format: uuid */
+                initiatorId?: string;
+                canOperate?: boolean;
                 /** Format: uuid */
                 assessmentId: string;
                 /** @enum {string} */
@@ -10109,6 +10245,57 @@ export interface components {
                     createdAt: string;
                 }[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskInquiryListResponse: {
+            data: {
+                items: {
+                    inquiryId: string;
+                    taskId: string;
+                    upstreamTaskId: string;
+                    taskTitle: string;
+                    upstreamTitle: string;
+                    requesterId: string;
+                    requesterName: string;
+                    recipientId: string;
+                    recipientName: string;
+                    /** @enum {string} */
+                    recipientSource: "submission" | "completion" | "substitute";
+                    createdAt: string;
+                    messages: {
+                        messageId: string;
+                        authorId: string;
+                        authorName: string;
+                        body: string;
+                        createdAt: string;
+                    }[];
+                }[];
+                candidates: {
+                    taskId: string;
+                    title: string;
+                    recipientId: string;
+                    recipientName: string;
+                    /** @enum {string} */
+                    recipientSource: "submission" | "completion" | "substitute";
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskInquiryCreatedResponse: {
+            data: {
+                /** Format: uuid */
+                inquiryId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskInquiryMessageCreatedResponse: {
+            data: {
+                /** Format: uuid */
+                messageId: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -10998,6 +11185,14 @@ export interface components {
                     memberId: string | null;
                     /** @enum {string} */
                     status: "active" | "finished";
+                    /** Format: uuid */
+                    initiatorId: string;
+                    /** Format: uuid */
+                    respondentId: string;
+                    canOperate: boolean;
+                    /** Format: uuid */
+                    processingJobId: string | null;
+                    processingStatus: string | null;
                     createdAt: string;
                     finishedAt: string | null;
                 }[];
@@ -11016,6 +11211,14 @@ export interface components {
                 memberId: string | null;
                 /** @enum {string} */
                 status: "active" | "finished";
+                /** Format: uuid */
+                initiatorId: string;
+                /** Format: uuid */
+                respondentId: string;
+                canOperate: boolean;
+                /** Format: uuid */
+                processingJobId: string | null;
+                processingStatus: string | null;
                 turns: {
                     sequence: number;
                     /** @enum {string} */
@@ -11023,6 +11226,8 @@ export interface components {
                     /** @enum {string} */
                     role: "user" | "assistant";
                     content: string;
+                    /** Format: uuid */
+                    authorId: string | null;
                     references?: unknown[];
                     decisionReferences?: unknown[];
                     createdAt: string;
@@ -11136,6 +11341,9 @@ export interface components {
                     createdAt: string;
                 }[];
                 assessments: ({
+                    /** Format: uuid */
+                    initiatorId?: string;
+                    canOperate?: boolean;
                     /** Format: uuid */
                     assessmentId: string;
                     /** @enum {string} */
@@ -11273,6 +11481,9 @@ export interface components {
                         decisionReferences?: unknown[];
                     } | null;
                 } | {
+                    /** Format: uuid */
+                    initiatorId?: string;
+                    canOperate?: boolean;
                     /** Format: uuid */
                     assessmentId: string;
                     /** @enum {string} */

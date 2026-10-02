@@ -1,3 +1,4 @@
+import { projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv, Env } from '../env';
 import { requireProjectMember, requireUser } from '../core/auth';
@@ -43,7 +44,7 @@ const resourceUnion = `SELECT 'source' resource_type,s.id,s.title,s.purpose,s.cu
   s.created_at,s.updated_at,s.deleted_at,s.lifecycle_version,(SELECT file_id FROM source_versions WHERE id=s.current_version_id) file_id,
   CASE WHEN ?2=1 OR s.created_by=?3 THEN 1 ELSE 0 END can_manage,'source:'||s.id sort_key
   FROM sources s WHERE s.project_id=?1
-  UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,m.created_at,m.updated_at,NULL,NULL,NULL,1,'material:'||m.id
+  UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,m.created_at,m.updated_at,NULL,NULL,NULL,CASE WHEN ?2=1 OR m.created_by=?3 THEN 1 ELSE 0 END,'material:'||m.id
   FROM materials m WHERE m.project_id=?1`;
 
 function toResource(row: ResourceRow) {
@@ -70,30 +71,30 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
       WHERE (deleted_at IS NOT NULL)=?4 AND (?5 IS NULL OR purpose=?5)
         AND (?6 IS NULL OR created_at<?6 OR (created_at=?6 AND sort_key<?7))
       ORDER BY created_at DESC,sort_key DESC LIMIT ?8`)
-      .bind(member.projectId, +(member.role === 'owner'), member.userId, +(query.deleted === 'true'), query.purpose ?? null,
+      .bind(member.projectId, +(member.permissions.resourceManage), member.userId, +(query.deleted === 'true'), query.purpose ?? null,
         paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1).all<ResourceRow>();
     const items = rows.results.slice(0, paging.limit), last = items.at(-1);
     return c.json(apiData(c, { items: items.map(toResource), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.sort_key } : undefined) ?? null }), 200);
   });
   app.openapi(getRoute, async c => {
     const p = c.req.valid('param'), member = c.get('member')!;
-    return c.json(apiData(c, toResource(await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.role === 'owner'))), 200);
+    return c.json(apiData(c, toResource(await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage))), 200);
   });
   app.openapi(patchRoute, async c => {
     const p = c.req.valid('param'), body = c.req.valid('json'), member = c.get('member')!;
-    const resource = await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.role === 'owner');
+    const resource = await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage);
     if (resource.deleted_at) throw notFound('资料已移入回收站，请先恢复');
     if (!resource.can_manage) throw permissionDenied('只有来源创建者或项目负责人可修改其用途');
     if (resource.revision !== body.expectedRevision) throw versionConflict(resource.revision);
     const changed = p.resourceType === 'source'
       ? await c.env.DB.prepare(`UPDATE sources SET purpose=?4,resource_revision=resource_revision+1,updated_at=?5
           WHERE id=?1 AND project_id=?2 AND (resource_revision+lifecycle_version-1)=?3 AND deleted_at IS NULL
-            AND EXISTS(SELECT 1 FROM project_members actor WHERE actor.project_id=?2 AND actor.user_id=?6 AND (actor.role='owner' OR sources.created_by=?6))`)
+            AND EXISTS(SELECT 1 FROM project_members actor WHERE actor.project_id=?2 AND actor.user_id=?6 AND (${projectPermissionSql('?2','?6','resourceManage')} OR sources.created_by=?6))`)
           .bind(p.resourceId, p.projectId, body.expectedRevision, body.purpose, nowIso(), member.userId).run()
       : await c.env.DB.prepare(`UPDATE materials SET purpose=?4,revision=revision+1,updated_at=?5 WHERE id=?1 AND project_id=?2 AND revision=?3
-            AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6)`)
+            AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6) AND (materials.created_by=?6 OR ${projectPermissionSql('?2','?6','resourceManage')})`)
           .bind(p.resourceId, p.projectId, body.expectedRevision, body.purpose, nowIso(), member.userId).run();
-    const current = await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.role === 'owner');
+    const current = await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage);
     if (!changed.meta.changes) throw versionConflict(current.revision);
     return c.json(apiData(c, toResource(current)), 200);
   });

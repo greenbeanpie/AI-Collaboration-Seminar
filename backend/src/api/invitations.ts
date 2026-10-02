@@ -124,12 +124,13 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
     const code = generateInviteCode();
     const createdAt = nowIso();
     const expiresAt = new Date(Date.now() + body.expiresInDays * 86_400_000).toISOString();
-    await c.env.DB.prepare(
+    const inserted = await c.env.DB.prepare(
       `INSERT INTO invitations (id, project_id, code_hash, created_by, expires_at, max_uses, used_count, created_at)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0, ?7 WHERE ${projectPermissionSql('?2','?4','teamManage')}`,
     )
       .bind(invitationId, member.projectId, await sha256Hex(code), c.get('user')!.id, expiresAt, body.maxUses, createdAt)
       .run();
+    if (!inserted.meta.changes) throw invalidState('邀请权限已变化，请刷新');
     return c.json(
       apiData(c, {
         invitationId,

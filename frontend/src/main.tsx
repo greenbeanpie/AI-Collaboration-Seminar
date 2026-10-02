@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
+import { RouteErrorPage } from './components/WorkspaceErrorBoundary';
 import './styles/app.css';
 import './styles/theme.css';
 import './styles/readability.css';
@@ -23,7 +24,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+const router = createBrowserRouter([{ path: '*', element: <App />, errorElement: <RouteErrorPage /> }]);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

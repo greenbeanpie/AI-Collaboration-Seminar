@@ -2737,6 +2737,13 @@
                     {
                       "type": "object",
                       "properties": {
+                        "initiatorId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "canOperate": {
+                          "type": "boolean"
+                        },
                         "assessmentId": {
                           "type": "string",
                           "format": "uuid"
@@ -3407,6 +3414,13 @@
                     {
                       "type": "object",
                       "properties": {
+                        "initiatorId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "canOperate": {
+                          "type": "boolean"
+                        },
                         "assessmentId": {
                           "type": "string",
                           "format": "uuid"
@@ -3838,6 +3852,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -4508,6 +4529,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -4926,6 +4954,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -5596,6 +5631,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -6014,6 +6056,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -6684,6 +6733,13 @@
               {
                 "type": "object",
                 "properties": {
+                  "initiatorId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "canOperate": {
+                    "type": "boolean"
+                  },
                   "assessmentId": {
                     "type": "string",
                     "format": "uuid"
@@ -9682,6 +9738,203 @@
             "required": [
               "items",
               "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskInquiryListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "inquiryId": {
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "upstreamTaskId": {
+                      "type": "string"
+                    },
+                    "taskTitle": {
+                      "type": "string"
+                    },
+                    "upstreamTitle": {
+                      "type": "string"
+                    },
+                    "requesterId": {
+                      "type": "string"
+                    },
+                    "requesterName": {
+                      "type": "string"
+                    },
+                    "recipientId": {
+                      "type": "string"
+                    },
+                    "recipientName": {
+                      "type": "string"
+                    },
+                    "recipientSource": {
+                      "type": "string",
+                      "enum": [
+                        "submission",
+                        "completion",
+                        "substitute"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "messageId": {
+                            "type": "string"
+                          },
+                          "authorId": {
+                            "type": "string"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "messageId",
+                          "authorId",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "inquiryId",
+                    "taskId",
+                    "upstreamTaskId",
+                    "taskTitle",
+                    "upstreamTitle",
+                    "requesterId",
+                    "requesterName",
+                    "recipientId",
+                    "recipientName",
+                    "recipientSource",
+                    "createdAt",
+                    "messages"
+                  ]
+                }
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "recipientId": {
+                      "type": "string"
+                    },
+                    "recipientName": {
+                      "type": "string"
+                    },
+                    "recipientSource": {
+                      "type": "string",
+                      "enum": [
+                        "submission",
+                        "completion",
+                        "substitute"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "title",
+                    "recipientId",
+                    "recipientName",
+                    "recipientSource"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items",
+              "candidates"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskInquiryCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "inquiryId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "inquiryId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskInquiryMessageCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "messageId"
             ]
           },
           "requestId": {
@@ -13191,6 +13444,30 @@
                         "finished"
                       ]
                     },
+                    "initiatorId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "respondentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "canOperate": {
+                      "type": "boolean"
+                    },
+                    "processingJobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "processingStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -13206,6 +13483,11 @@
                     "scope",
                     "memberId",
                     "status",
+                    "initiatorId",
+                    "respondentId",
+                    "canOperate",
+                    "processingJobId",
+                    "processingStatus",
                     "createdAt",
                     "finishedAt"
                   ]
@@ -13264,6 +13546,30 @@
                   "finished"
                 ]
               },
+              "initiatorId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "respondentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "canOperate": {
+                "type": "boolean"
+              },
+              "processingJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "processingStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "turns": {
                 "type": "array",
                 "items": {
@@ -13291,6 +13597,13 @@
                     "content": {
                       "type": "string"
                     },
+                    "authorId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
                     "references": {
                       "type": "array",
                       "items": {}
@@ -13308,6 +13621,7 @@
                     "kind",
                     "role",
                     "content",
+                    "authorId",
                     "createdAt"
                   ]
                 }
@@ -13327,6 +13641,11 @@
               "scope",
               "memberId",
               "status",
+              "initiatorId",
+              "respondentId",
+              "canOperate",
+              "processingJobId",
+              "processingStatus",
               "turns",
               "createdAt",
               "finishedAt"
@@ -13741,6 +14060,13 @@
                     {
                       "type": "object",
                       "properties": {
+                        "initiatorId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "canOperate": {
+                          "type": "boolean"
+                        },
                         "assessmentId": {
                           "type": "string",
                           "format": "uuid"
@@ -14411,6 +14737,13 @@
                     {
                       "type": "object",
                       "properties": {
+                        "initiatorId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "canOperate": {
+                          "type": "boolean"
+                        },
                         "assessmentId": {
                           "type": "string",
                           "format": "uuid"
@@ -23064,6 +23397,159 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommentListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "私有任务质询",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskInquiryListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "upstreamTaskId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "upstreamTaskId",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "质询已发起",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskInquiryCreatedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/task-inquiries/{inquiryId}/messages": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "inquiryId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "质询消息已发送",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskInquiryMessageCreatedResponse"
                 }
               }
             }

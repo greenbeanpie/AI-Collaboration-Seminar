@@ -6,7 +6,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { notFound,invalidState } from '../core/errors';
+import { notFound,invalidState , permissionDenied } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { withReservedAiJob } from '../services/budget';
@@ -140,11 +140,12 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
 
       return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run',maxCalls:24 }, async (jobId, configVersionId) => {
         const reviewId = newId();
-        await c.env.DB.prepare(
+        const inserted=await c.env.DB.prepare(
           `INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) SELECT ?1,?2,?3,?4,?5,'pending',?6,?7 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
         )
           .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
           .run();
+        if(!inserted.meta.changes)throw permissionDenied('评分发起权限已变化');
 
         try {
           await createJobAndDispatch(c.env, {

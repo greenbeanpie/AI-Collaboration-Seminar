@@ -82,11 +82,12 @@ export async function correctAssessment(env:Env,projectId:string,id:string,actor
   const b=correctionInput.parse(raw),row=await env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow & {revision:number}>();
   if(!row)throw notFound();
   if(row.revision!==b.expectedRevision)throw versionConflict(row.revision);
+  if(row.kind==='rehearsal'&&row.created_by!==actorId)throw permissionDenied('只有本轮发起人可以修正答辩评分');
   if(row.kind==='rehearsal'&&row.status==='active')throw invalidState('请结束演练后再人工复评');
   await validateEvidence(env,row,b.scores);
   const report=revise(row,b.scores,b.summary,true),now=nowIso(),token=newId();
   const results=await env.DB.batch([
-    env.DB.prepare(`UPDATE assessments SET ai_report_json=COALESCE(ai_report_json,CASE WHEN origin='ai' THEN report_json END),report_json=?4,origin=CASE WHEN origin='manual' THEN 'manual' ELSE 'ai_adjusted' END,status='succeeded',revision=revision+1 WHERE id=?1 AND project_id=?2 AND revision=?3 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5 AND role='owner')`).bind(id,projectId,b.expectedRevision,JSON.stringify(report),actorId),
+    env.DB.prepare(`UPDATE assessments SET ai_report_json=COALESCE(ai_report_json,CASE WHEN origin='ai' THEN report_json END),report_json=?4,origin=CASE WHEN origin='manual' THEN 'manual' ELSE 'ai_adjusted' END,status='succeeded',revision=revision+1 WHERE id=?1 AND project_id=?2 AND revision=?3 AND (kind!='rehearsal' OR created_by=?5) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5 AND role='owner')`).bind(id,projectId,b.expectedRevision,JSON.stringify(report),actorId),
     env.DB.prepare(`INSERT INTO assessment_corrections(id,assessment_id,project_id,actor_id,revision,reason,previous_report_json,report_json,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE EXISTS(SELECT 1 FROM assessments WHERE id=?2 AND project_id=?3 AND revision=?5 AND report_json=?8)`).bind(token,id,projectId,actorId,b.expectedRevision+1,b.reason,row.report_json,JSON.stringify(report),now),
   ]);
   if(!results[0]?.meta.changes)throw invalidState('评分或权限已变化，请刷新');

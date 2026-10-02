@@ -20,3 +20,12 @@ it('shows unmarked history and retained snapshot names', () => {
   const view=render(<ContributorNames />);expect(screen.getByText('贡献归属：未标记')).toBeInTheDocument();
   view.rerender(<ContributorNames contributors={[{userId:'a',displayName:'Alice'}]} />);expect(screen.getByText('贡献归属：Alice')).toBeInTheDocument();
 });
+it('reuses the same member array cache as team and task pages',async()=>{
+  const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
+  client.setQueryData(['members','cached'],[{userId:'a',displayName:'Cached Alice'},{userId:'b',displayName:'Cached Bob'}]);
+  client.setQueryData(['member','cached','me'],{userId:'a'});
+  render(<QueryClientProvider client={client}><FileContributorPicker projectId="cached" onChange={()=>{}} value={undefined}/></QueryClientProvider>);
+  expect(screen.getByLabelText('Cached Alice')).toBeChecked();
+  expect(screen.getByLabelText('Cached Bob')).not.toBeChecked();
+  expect(Array.isArray(client.getQueryData(['members','cached']))).toBe(true);
+});

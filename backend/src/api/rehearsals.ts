@@ -238,7 +238,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const turnId = newId();
       const saved=await c.env.DB.batch([
-        c.env.DB.prepare("UPDATE rehearsals SET processing_job_id=?3 WHERE id=?1 AND created_by=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND (SELECT kind FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence DESC LIMIT 1) IN ('question','followup')").bind(rehearsal.id,user.id,jobId),
+        c.env.DB.prepare("UPDATE rehearsals SET processing_job_id=?3 WHERE id=?1 AND created_by=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=rehearsals.project_id AND user_id=?2) AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND (SELECT kind FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence DESC LIMIT 1) IN ('question','followup')").bind(rehearsal.id,user.id,jobId),
         c.env.DB.prepare("INSERT INTO rehearsal_turns(id,rehearsal_id,project_id,sequence,kind,content_json,created_at,author_id) SELECT ?1,?2,?3,1+COALESCE((SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=?2),0),'answer',?4,?5,?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND processing_job_id=?7 AND created_by=?6)").bind(turnId,rehearsal.id,member.projectId,JSON.stringify({content:body.content}),nowIso(),user.id,jobId)
       ]);
       if(!saved[0]?.meta.changes)throw invalidState('本轮回答已提交或正在处理');
@@ -271,7 +271,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       if(rehearsal.processing_job_id)throw invalidState('追问仍在处理，请稍后结束');
-      const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,processing_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND created_by=?4`).bind(rehearsal.id,member.projectId,jobId,user.id).run();
+      const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,processing_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND created_by=?4 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?4)`).bind(rehearsal.id,member.projectId,jobId,user.id).run();
       if(!frozen.meta.changes)throw invalidState('演练已经在生成评分');
       try{await createJobAndDispatch(c.env, {
         jobId,

@@ -82,7 +82,8 @@ await call(member, `${p}/comments`, { method: 'POST', body: { targetType: 'task'
 assert.equal((await call(owner, `${p}/comments?targetType=task&targetId=${task.taskId}`)).items[0].body, '真实评论');
 const material = await call(owner, `${p}/materials`, { method: 'POST', body: { title: '联调作品介绍' }, status: 201 });
 const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '这份材料由真实 API 保存。' }] }] };
-const version = await call(member, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: material.revision, doc }, status: 201 });
+await call(member, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: material.revision, doc }, status: 403, code: 'PERMISSION_DENIED' });
+const version = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: material.revision, doc }, status: 201 });
 await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: material.revision, doc }, status: 409, code: 'VERSION_CONFLICT' });
 assert.equal((await call(owner, `${p}/materials/${material.materialId}`)).currentVersion.versionId, version.versionId);
 assert.match(version.markdown, /真实 API/);
@@ -90,7 +91,7 @@ const file = await call(owner, `${p}/files`, { method: 'POST', body: { fileName:
 await call(owner, file.upload.url, { method: 'PUT', body: new TextEncoder().encode('联调测试文件'), status: 201 });
 assert.equal(await call(member, file.upload.url), '联调测试文件');
 const attached = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: 2, doc, attachmentIds: [file.fileId] }, status: 201 });
-assert.deepEqual(attached.attachments, [{ fileId: file.fileId, name: 'integration.txt' }]);
+assert.deepEqual(attached.attachments.map(({fileId,name})=>({fileId,name})), [{ fileId: file.fileId, name: 'integration.txt' }]);
 const detached = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: 3, doc, attachmentIds: [] }, status: 201 });
 assert.deepEqual(detached.attachments, []);
 assert.deepEqual((await call(member, `${p}/materials/${material.materialId}/versions/${attached.versionId}`)).attachments, attached.attachments);

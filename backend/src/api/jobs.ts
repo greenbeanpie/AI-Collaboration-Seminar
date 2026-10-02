@@ -104,7 +104,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     try {
       const written=await c.env.DB.batch([
         c.env.DB.prepare(
-          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE ?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active')",
+          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE ?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5))",
         ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now, job.id),
         c.env.DB.prepare(
           "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) SELECT ?1, ?2, 'pending', ?3, 0, ?4, ?4 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2)",

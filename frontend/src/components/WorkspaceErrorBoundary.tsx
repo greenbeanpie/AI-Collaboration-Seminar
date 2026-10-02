@@ -1,5 +1,5 @@
 import { Component, useState, type ErrorInfo, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useRouteError, useRevalidator } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { errorDiagnostics } from './error-diagnostics';
@@ -14,11 +14,12 @@ function ErrorPage({ diagnostics, retry }: {diagnostics:string; retry:()=>void})
 
 export function ErrorDetails({diagnostics}:{diagnostics:string}) {
   const [copyStatus, setCopyStatus] = useState('');
+  const [open, setOpen] = useState(false);
   async function copy() {
     try { await navigator.clipboard.writeText(diagnostics); setCopyStatus('错误详情已复制，可发送给管理员。'); }
     catch { setCopyStatus('复制失败，请在下方选中并手动复制错误详情。'); }
   }
-  return <details><summary>查看错误详情</summary><p>可以复制以下诊断信息以报告问题。</p><button className="button button-quiet" onClick={()=>void copy()}>复制完整错误详情</button><p role="status">{copyStatus}</p><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'45vh',overflow:'auto',userSelect:'text'}}>{diagnostics}</pre></details>;
+  return <details open={open}><summary onClick={event=>{event.preventDefault();setOpen(value=>!value);}}>查看错误详情</summary>{open && <><p>可以复制以下诊断信息以报告问题。</p><button className="button button-quiet" onClick={()=>void copy()}>复制完整错误详情</button><p role="status">{copyStatus}</p><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'45vh',overflow:'auto',userSelect:'text'}}>{diagnostics}</pre></>}</details>;
 }
 
 class RenderBoundary extends Component<{children:ReactNode;onRetry:()=>void}, {error:unknown;componentStack:string;capturedAt:string}> {
@@ -35,4 +36,8 @@ export function WorkspaceErrorBoundary({children}:{children:ReactNode}) {
   const location=useLocation();
   const client=useQueryClient();
   return <RenderBoundary key={location.pathname} onRetry={()=>{void client.invalidateQueries();}}>{children}</RenderBoundary>;
+}
+export function RouteErrorPage() {
+  const error=useRouteError(), revalidator=useRevalidator(), client=useQueryClient();
+  return <ErrorPage diagnostics={errorDiagnostics(error)} retry={()=>{void client.invalidateQueries();void revalidator.revalidate();}}/>;
 }

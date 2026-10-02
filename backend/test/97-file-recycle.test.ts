@@ -30,19 +30,20 @@ describe('recoverable project file lifecycle',()=>{
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(pid).first<{n:number}>())?.n).toBe(0);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM files WHERE id=?1').bind(id).first<{n:number}>())?.n).toBe(1);
   });
-  it('enforces owner/uploader, revoked membership and cross-project boundaries server-side',async()=>{
+  it('enforces creator/delegated management, revoked membership and cross-project boundaries server-side',async()=>{
     const owner=await seedUser();const uploader=await seedUser();const peer=await seedUser();const outsider=await seedUser();
     const pid=await seedProject(owner.userId);await member(pid,uploader.userId);await member(pid,peer.userId);
     const id=await init(uploader.token,pid);
     await env.DB.prepare("UPDATE auth_accounts SET account_role='admin',is_admin=1 WHERE user_id=?1").bind(peer.userId).run();
-    expect((await list(peer.token,pid))[0]?.canDelete).toBe(false);
-    expect((await change(peer.token,pid,id,1)).status).toBe(403);
+    expect((await list(peer.token,pid))[0]?.canDelete).toBe(true);
+    expect((await change(peer.token,pid,id,1)).status).toBe(200);
+    expect((await change(peer.token,pid,id,2,true)).status).toBe(200);
     expect((await change(outsider.token,pid,id,1)).status).toBe(403);
     expect((await change(owner.token,await seedProject(owner.userId),id,1)).status).toBe(404);
-    expect((await change(uploader.token,pid,id,1)).status).toBe(200);
+    expect((await change(uploader.token,pid,id,3)).status).toBe(200);
     await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(pid,uploader.userId).run();
-    expect((await change(uploader.token,pid,id,2,true)).status).toBe(403);
-    expect((await change(owner.token,pid,id,2,true)).status).toBe(200);
+    expect((await change(uploader.token,pid,id,4,true)).status).toBe(403);
+    expect((await change(owner.token,pid,id,4,true)).status).toBe(200);
   });
   it('retains bytes/history, cancels parse/OCR/summary and outbox; restore cannot revive them',async()=>{
     const owner=await seedUser();const pid=await seedProject(owner.userId);const id=await init(owner.token,pid,'original.txt');

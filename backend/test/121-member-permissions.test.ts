@@ -4,6 +4,7 @@ import { env, BASE } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
 import { memberPermissions, managerPermissions, projectPermissionSql } from '../src/services/project-permissions';
+import { projectGoal, replaceTaskDependencies } from '../src/services/project-simplification';
 
 async function fixture() {
   const owner=await seedUser(), member=await seedUser(), third=await seedUser(); const projectId=await seedProject(owner.userId);
@@ -12,6 +13,18 @@ async function fixture() {
   return {owner,member,third,projectId,req};
 }
 describe('project operation permissions',()=>{
+  it('delegated dependency replacement evaluates the complete graph without transient readiness',async()=>{
+    const f=await fixture(), a=newId(), b=newId(), down=newId();
+    await f.req(f.owner.token,`/members/${f.member.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions});
+    for(const [id,status] of [[a,'todo'],[b,'done'],[down,'doing']])await env.DB.prepare('INSERT INTO tasks(id,project_id,title,status,assignee_id,created_by,created_at,updated_at) VALUES(?1,?2,?1,?3,?4,?5,?6,?6)').bind(id,f.projectId,status,f.third.userId,f.owner.userId,nowIso()).run();
+    const replace=async(ids:string[])=>replaceTaskDependencies(env,f.projectId,f.member.userId,down,(await projectGoal(env,f.projectId)).graphRevision,ids);
+    const count=async()=>(await env.DB.prepare("SELECT COUNT(*) n FROM notification_events WHERE resource_id=?1 AND kind='task_ready'").bind(f.projectId).first<{n:number}>())!.n;
+    await replace([a]);expect(await count()).toBe(0);
+    await replace([b]);expect(await count()).toBe(1);
+    await replace([b]);expect(await count()).toBe(1);
+    await replace([a,b]);expect(await count()).toBe(1);
+    await env.DB.prepare("UPDATE tasks SET status='done' WHERE id=?1").bind(a).run();expect(await count()).toBe(2);
+  });
   it('member read contract is complete and invitations are inaccessible until explicitly delegated',async()=>{
     const f=await fixture();const r=await f.req(f.member.token,'/members');expect(r.status).toBe(200);
     const b=await r.json() as {data:{items:Array<{userId:string;permissions:unknown;permissionsRevision:number}>}};

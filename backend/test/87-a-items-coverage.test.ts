@@ -111,7 +111,7 @@ describe('A09 材料附件与作品介绍模板', () => {
     });
     expect(saved.status).toBe(201);
     const version = (await saved.json() as { data: { attachments: Array<{ fileId: string; name: string }> } }).data;
-    expect(version.attachments).toEqual([{ fileId, name: '证据附件.txt' }]);
+    expect(version.attachments).toMatchObject([{ fileId, name: '证据附件.txt' }]);
 
     const bundle = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/export-bundle`, { headers: { cookie } });
     const exported = (await bundle.json() as { data: { materials: Array<{ attachments: Array<{ fileId: string }> }> } }).data;
