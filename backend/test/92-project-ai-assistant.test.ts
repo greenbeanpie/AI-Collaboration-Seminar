@@ -18,7 +18,7 @@ async function fixture(automatic = true) {
   const taskId = newId();
   const now = nowIso();
   await env.DB.batch([
-    env.DB.prepare("UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2 WHERE id=?1").bind(projectId, automatic ? 'automatic' : 'manual'),
+    env.DB.prepare("UPDATE projects SET ai_collaboration_enabled=1,assignment_mode=?2,planning_mode=?2 WHERE id=?1").bind(projectId, automatic ? 'automatic' : 'manual'),
     env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,assignee_id) VALUES(?1,?2,'旧标题','旧说明','doing',1,?3,?4,?4,'in_progress','旧标准',2,?3)").bind(taskId, projectId, owner.userId, now),
   ]);
   const input: CollaborationAiInput = { operation: 'collaboration.decompose', projectId, requestedBy: owner.userId, settingsRevision: 1, brief: '补充键盘操作验收，并缩小交付范围', taskIds: [taskId], tasks: [{ taskId, title: '旧标题', detail: '旧说明', criteria: '旧标准', effortHours: 2, revision: 1 }], configVersionId: 'cfg-seed-v1' };
@@ -47,10 +47,10 @@ describe('default-off project AI authority', () => {
     expect((await repeat.json() as { data: { id: string } }).data.id).toBe(created.id);
     expect((await request(owner.token, '/projects', { name: '另一意图' }, 'POST', key)).status).toBe(409);
     const settings = await request(owner.token, `/projects/${created.id}/collaboration/settings`);
-    expect((await settings.json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 });
+    expect((await settings.json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', planningMode:'manual',progressionMode:'manual', revision: 1 });
     const enabled = await request(owner.token, '/projects', { name: '明确开启项目', aiCollaborationEnabled: true });
     const enabledId = (await enabled.json() as { data: { id: string } }).data.id;
-    expect((await (await request(owner.token, `/projects/${enabledId}/collaboration/settings`)).json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'automatic', revision: 1 });
+    expect((await (await request(owner.token, `/projects/${enabledId}/collaboration/settings`)).json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'automatic', planningMode:'manual',progressionMode:'manual', revision: 1 });
   });
   it('current project ownership is required, with CAS and one audit event', async () => {
     const owner = await seedUser();
