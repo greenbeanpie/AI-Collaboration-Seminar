@@ -5842,6 +5842,15 @@ export interface paths {
                         "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
+                /** @description 评分标准尚未确认 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -10985,6 +10994,8 @@ export interface components {
                     /** @enum {string} */
                     role: "user" | "assistant";
                     content: string;
+                    references?: unknown[];
+                    decisionReferences?: unknown[];
                     createdAt: string;
                 }[];
                 createdAt: string;

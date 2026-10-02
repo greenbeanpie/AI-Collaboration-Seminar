@@ -12924,6 +12924,14 @@
                     "content": {
                       "type": "string"
                     },
+                    "references": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "decisionReferences": {
+                      "type": "array",
+                      "items": {}
+                    },
                     "createdAt": {
                       "type": "string"
                     }
@@ -26052,6 +26060,16 @@
           },
           "404": {
             "description": "输入不属于本项目",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "评分标准尚未确认",
             "content": {
               "application/json": {
                 "schema": {
