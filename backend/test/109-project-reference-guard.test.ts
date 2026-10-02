@@ -5,7 +5,7 @@ import { seedProject,seedUser } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { newId,nowIso } from '../src/core/db';
 import { applyProposal,reviseProposal } from '../src/services/collaboration';
-import { referencesFromRead,validateReadReferences,type ProjectReference } from '../src/services/project-evidence';
+import { referencesFromRead,uniqueReadReferences,decisionReferences,extractDecisionReferences,validateReadReferences,type ProjectReference } from '../src/services/project-evidence';
 import { dispatchProjectProgression } from '../src/services/project-progression';
 import { executeDiscoveryTool } from '../src/services/project-context';
 await configureGoFixture();
@@ -24,6 +24,43 @@ async function proposal(f:Fixture,refs:ProjectReference[]){const id=newId(),jobI
 function race(before:()=>Promise<unknown>):Env{const db=new Proxy(env.DB,{get(target,key){if(key==='batch')return async(statements:D1PreparedStatement[])=>{await before();return target.batch(statements);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});return {...env,DB:db};}
 async function untouched(f:Fixture,p:string){expect((await env.DB.prepare('SELECT COUNT(*) count FROM tasks WHERE project_id=?1').bind(f.projectId).first<{count:number}>())!.count).toBe(0);expect((await env.DB.prepare('SELECT status FROM collaboration_proposals WHERE id=?1').bind(p).first<{status:string}>())!.status).toBe('pending');}
 describe('atomic autonomous proposal references',()=>{
+ it('retains different quotes and marks decision-only references against all reads',()=>{
+   const ref:ProjectReference={id:'read-1',resourceType:'material',resourceId:'m',versionId:'v',quote:'原文一',usage:'read'};
+   const refs=uniqueReadReferences([ref,{...ref},{...ref,quote:'原文二'},{...ref,id:'read-2'}]);
+   expect(refs).toHaveLength(3);
+   const content=JSON.stringify({referenceIds:[],decisionReferences:[{decisionPath:'tasks[0]',referenceIds:['read-1']}]});
+   const marked=decisionReferences(content,refs);
+   expect(marked.map(r=>r.usage)).toEqual(['decision','decision','read']);
+   expect(extractDecisionReferences(content,marked)[0]!.referenceIds).toEqual(['read-1']);
+   expect(()=>decisionReferences(JSON.stringify({referenceIds:[],decisionReferences:[{decisionPath:'tasks[0]',referenceIds:['unknown']}]}),refs)).toThrow('未读取');
+   expect(()=>decisionReferences(JSON.stringify({referenceIds:['unknown'],decisionReferences:[]}),refs)).toThrow('未读取');
+ });
+ it('deduplicates repeated row reads into bounded batches while checking every captured revision',async()=>{
+   const f=await fixture(),now=nowIso();
+   const refs:ProjectReference[]=Array.from({length:51},()=>({id:newId(),resourceType:'task',resourceId:newId(),revision:1,quote:JSON.stringify({title:'批量参考任务',revision:1}),usage:'read'}));
+   await env.DB.batch(refs.map(ref=>env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria) VALUES(?1,?2,'批量参考任务','原工作','todo',1,?3,?4,?4,'open','标准')").bind(ref.resourceId,f.projectId,f.owner.userId,now)));
+   const batches:number[]=[];
+   const db=new Proxy(env.DB,{get(target,key){if(key==='batch')return async(statements:D1PreparedStatement[])=>{batches.push(statements.length);return target.batch(statements);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+   const counted={...env,DB:db};
+   await validateReadReferences(counted,f.projectId,refs.flatMap(ref=>Array.from({length:8},()=>({...ref}))));
+   expect(batches).toEqual([50,1]);
+   await env.DB.prepare('UPDATE tasks SET revision=2 WHERE id=?1').bind(refs[50]!.resourceId).run();
+   await expect(validateReadReferences(counted,f.projectId,refs)).rejects.toThrow('已变化');
+ });
+ it('never discards a different quote with the same reference ID and rechecks lifecycle on every validation',async()=>{
+   const f=await fixture(),s=await source(f);
+   await validateReadReferences(env,f.projectId,[s.reference,{...s.reference,quote:'验收原文'}]);
+   await expect(validateReadReferences(env,f.projectId,[s.reference,{...s.reference,quote:'伪造的原文'}])).rejects.toThrow('引用不符');
+   await env.DB.prepare('UPDATE sources SET deleted_at=?2,lifecycle_version=lifecycle_version+1 WHERE id=?1').bind(s.sourceId,nowIso()).run();
+   await expect(validateReadReferences(env,f.projectId,[s.reference,s.reference])).rejects.toThrow('已变化');
+ });
+ it.each([undefined,'undefined',''])('rejects incomplete source metadata %s before any query',async versionId=>{
+   const f=await fixture(),s=await source(f);
+   let batches=0;
+   const db=new Proxy(env.DB,{get(target,key){if(key==='batch')return async(statements:D1PreparedStatement[])=>{batches++;return target.batch(statements);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+   await expect(validateReadReferences({...env,DB:db},f.projectId,[{...s.reference,versionId}])).rejects.toThrow('版本信息不完整');
+   expect(batches).toBe(0);
+ });
  it.each([false,true])('rejects recycled dynamically-read file for automatic=%s with no selected snapshot',async automatic=>{const f=await fixture(),s=await source(f),p=await proposal(f,[s.reference]);await env.DB.prepare("UPDATE files SET deleted_at=?2 WHERE id=?1").bind(s.fileId,nowIso()).run();await expect(applyProposal(env,f.projectId,p.id,1,f.owner.userId,automatic,'cfg-seed-v1')).rejects.toThrow();await untouched(f,p.id);});
  it('applies unchanged source evidence and preserves intentional fixed-version reads',async()=>{const f=await fixture(),s=await source(f);const newerVersionId=newId();await env.DB.batch([env.DB.prepare("INSERT INTO source_versions(id,source_id,project_id,revision,origin,status,created_at) VALUES(?1,?2,?3,2,'paste','ready',?4)").bind(newerVersionId,s.sourceId,f.projectId,nowIso()),env.DB.prepare('UPDATE sources SET current_version_id=?2 WHERE id=?1').bind(s.sourceId,newerVersionId)]);const p=await proposal(f,[s.reference]);expect((await applyProposal(env,f.projectId,p.id,1,f.owner.userId,true,'cfg-seed-v1')).taskIds).toHaveLength(1);});
  it('closes lifecycle deletion race after preflight before batch',async()=>{const f=await fixture(),s=await source(f),p=await proposal(f,[s.reference]);await expect(applyProposal(race(()=>env.DB.prepare('UPDATE sources SET deleted_at=?2,lifecycle_version=lifecycle_version+1 WHERE id=?1').bind(s.sourceId,nowIso()).run()),f.projectId,p.id,1,f.owner.userId,true,'cfg-seed-v1')).rejects.toThrow();await untouched(f,p.id);});
