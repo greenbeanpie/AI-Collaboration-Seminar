@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { invalidState } from '../core/errors';
 import { sourceLifecycleGuard } from './source-lifecycle';
 import { projectPlanDocumentSql,assessmentDocumentSql } from './project-reference-guard';
+import { guideTextSql } from './guide-history';
 
 export interface ProjectReference {
   id: string;
@@ -75,7 +76,12 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
     if(ref.resourceType==='source'&&([ref.resourceId,ref.versionId,ref.fragmentId].some(value=>typeof value!=='string'||!value.trim()||value==='undefined')||typeof ref.revision!=='number'))throw invalidState('来源引用版本信息不完整');
     if(ref.resourceType==='material'&&typeof ref.versionId!=='string')throw invalidState('材料引用版本信息不完整');
     if(['proposal','assessment'].includes(ref.resourceType)&&typeof ref.revision!=='number')throw invalidState('方案或评价引用版本信息不完整');
-    if(ref.resourceType==='source') {
+    if(ref.resourceType==='guide_turn') {
+      if(typeof ref.versionId!=='string') throw invalidState('带做引用会话信息不完整');
+      enqueue(`SELECT ${guideTextSql} body FROM agent_turns turn JOIN agent_sessions session ON session.id=turn.session_id WHERE turn.id=?1 AND turn.project_id=?2 AND session.project_id=?2 AND session.id=?3 AND session.capability='guide' AND session.status='active'`,[ref.resourceId,projectId,ref.versionId],row=>{
+        if(!row||(ref.quote!==undefined&&!(row.body as string).includes(ref.quote))) throw invalidState('已读取带做回答引用不符');
+      });
+    } else if(ref.resourceType==='source') {
       enqueue(`SELECT f.content FROM source_fragments f JOIN source_versions v ON v.id=f.source_version_id JOIN sources s ON s.id=v.source_id
         WHERE f.id=?1 AND f.project_id=?2 AND v.id=?3 AND v.project_id=?2 AND s.id=?4 AND s.project_id=?2 AND s.lifecycle_version=?5 AND ${sourceLifecycleGuard('v.id','?5')}`,[ref.fragmentId!,projectId,ref.versionId!,ref.resourceId,ref.revision!],row=>{
         if(!row || (ref.quote&&!(row.content as string).includes(ref.quote))) throw invalidState('已读取来源已变化或引用不符，请重新调查');
