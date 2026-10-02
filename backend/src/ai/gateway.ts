@@ -1,4 +1,4 @@
-import { applyToolMode, normalizeToolResponse, type ToolMode, type ToolOutput } from './tool-transport';
+import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
 import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
@@ -188,7 +188,10 @@ export async function gatewayChat(
   }
 
   const data: unknown = await readProviderJson(res);
-  if(input.toolMode) {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}
+  if(input.toolMode) {
+    try {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}
+    catch {throw new AppError('AI_OUTPUT_INVALID','模型工具响应未通过校验：'+JSON.stringify(toolResponseShape(data)),502,false);}
+  }
   return { ...normalizeProviderResponse(protocol, data), latencyMs };
 }
 

@@ -96,7 +96,7 @@ export function applyToolMode(config: AiModelConfig, protocol: ApiProtocol, body
         }];
       body.include = ['web_search_call.action.sources'];
     }
-    body.max_tool_calls = mode.nativeSearch ? 1 : 4;
+    body.max_tool_calls = mode.nativeSearch ? 1 : 64;
     body.parallel_tool_calls = false;
     body.input = [...(body.input as unknown[]), ...exchanges.flatMap(e => [...(Array.isArray(e.assistant) ? e.assistant : []), ...e.results.map(r => ({
           type: 'function_call_output', call_id: r.call.id, output: JSON.stringify(r.output)
@@ -188,6 +188,12 @@ export function safeWebCitation(url: unknown, title: unknown): WebCitation | nul
   catch {
     return null;
   }
+}
+/** Safe response-shape diagnostics: never retain provider text, arguments, keys or reasoning. */
+export function toolResponseShape(value:unknown) {
+  const data=object(value),choice=object(array(data.choices)[0]),message=object(choice.message);
+  const reason=typeof choice.finish_reason==='string'&&['stop','tool_calls','length','function_call','content_filter'].includes(choice.finish_reason)?choice.finish_reason:'unknown';
+  return {choices:array(data.choices).length,finishReason:reason,toolCalls:array(message.tool_calls).length,answerChars:typeof message.content==='string'?message.content.length:0,providerError:Boolean(data.error),outputItems:array(data.output).length};
 }
 export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nativeSearch = false): ToolOutput & {
   promptTokens: number | null;
@@ -333,7 +339,7 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
     prompt = usage.prompt_tokens;
     completion = usage.completion_tokens;
   }
-  if (calls.length > 4 || new Set(calls.map(c => c.id)).size !== calls.length || (!content.trim() && !calls.length)) {
+  if (calls.length > 64 || new Set(calls.map(c => c.id)).size !== calls.length || (!content.trim() && !calls.length)) {
     throw invalid();
   }
   const tokens = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : null;

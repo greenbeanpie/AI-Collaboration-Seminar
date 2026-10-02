@@ -6,13 +6,20 @@ import { newId, nowIso } from '../src/core/db';
 import { loadAiConfig } from '../src/ai/config';
 import { reserveAiSlot } from '../src/services/budget';
 import { executeFileTool, projectToolConversation } from '../src/services/project-ai-tools';
-import { applyToolMode, nativeSearchCapability, normalizeToolResponse } from '../src/ai/tool-transport';
+import { applyToolMode, nativeSearchCapability, normalizeToolResponse, toolResponseShape } from '../src/ai/tool-transport';
 import { projectToolDefinitions } from '../src/services/project-ai-tools';
 import { presetEndpoint, protocolForConfig } from '../../shared/ai-providers';
 import { changeFileLifecycle } from '../src/services/file-lifecycle';
 import { sourceInputsGuard } from '../src/services/source-inputs';
 import { projectSourceContextGuard } from '../src/services/collaboration-context';
 afterEach(() => vi.unstubAllGlobals());
+it('accepts a complete discovery batch above the former four-tool cap and diagnoses shape without exposing content',()=>{
+ const names=['get_project_overview','list_project_resources','list_tasks','read_project_standards','read_member_workload'];
+ const data={choices:[{finish_reason:'tool_calls',message:{content:null,reasoning_content:'private reasoning',tool_calls:names.map((name,i)=>({id:`c${i}`,type:'function',function:{name,arguments:'{}'}}))}}]};
+ expect(normalizeToolResponse('chat-completions',data).toolCalls).toHaveLength(5);
+ expect(toolResponseShape(data)).toMatchObject({choices:1,finishReason:'tool_calls',toolCalls:5,answerChars:0});
+ expect(JSON.stringify(toolResponseShape(data))).not.toContain('private reasoning');
+});
 async function fixture() {
   await configureGoFixture();
   const owner = await seedUser(), p = await seedProject(owner.userId), f = newId(), s = newId(), v = newId(), now = nowIso();
