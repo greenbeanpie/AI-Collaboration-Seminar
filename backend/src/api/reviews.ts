@@ -1,3 +1,4 @@
+import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { snapshotRequirementSources } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -107,6 +108,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/reviews/*', requireUser, requireProjectMember());
 
   app.openapi(reviewCreateRoute, async (c) => {
+    await requireProjectPermission(c.env,c.get('member')!.projectId,c.get('user')!.id,'scoreInitiate');
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const user = c.get('user')!;
@@ -139,7 +141,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
       return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run',maxCalls:24 }, async (jobId, configVersionId) => {
         const reviewId = newId();
         await c.env.DB.prepare(
-          "INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
+          `INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) SELECT ?1,?2,?3,?4,?5,'pending',?6,?7 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
         )
           .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
           .run();

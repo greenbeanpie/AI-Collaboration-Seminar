@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { nowIso } from '../core/db';
 import { settleReservation } from './budget';
+import { projectAccess, projectPermissionSql } from './project-permissions';
 
 export const lifecycleBodyDescription = '当前生命周期版本，删除和恢复都递增；旧请求不得重放';
 
@@ -9,12 +10,11 @@ export const lifecycleBodyDescription = '当前生命周期版本，删除和恢
 function actorGuard(table: 'files'|'sources'): string {
   const creator = table === 'files' ? 'uploader_user_id' : 'created_by';
   return `EXISTS (SELECT 1 FROM project_members actor WHERE actor.project_id=${table}.project_id AND actor.user_id=?4
-    AND (actor.role='owner' OR ${table}.${creator}=?4))`;
+    AND (${projectPermissionSql(`${table}.project_id`,'?4','resourceManage')} OR ${table}.${creator}=?4))`;
 }
 
 export async function canManageResource(env: Env, projectId: string, actorId: string, creatorId: string): Promise<boolean> {
-  const member = await env.DB.prepare('SELECT role FROM project_members WHERE project_id=?1 AND user_id=?2').bind(projectId,actorId).first<{role:string}>();
-  return Boolean(member && (member.role==='owner' || creatorId===actorId));
+  try { return (await projectAccess(env,projectId,actorId)).permissions.resourceManage || creatorId === actorId; } catch { return false; }
 }
 
 // This predicate includes current and prior source versions, plus generated OCR page images.

@@ -1,3 +1,4 @@
+import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { readTaskSummary, taskSummarySchema } from '../services/task-summary';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -204,6 +205,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/comments/*', requireUser, requireProjectMember());
 
   app.openapi(taskCreateRoute, async (c) => {
+    await requireProjectPermission(c.env,c.get('member')!.projectId,c.get('user')!.id,'taskManage');
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const id = newId();
@@ -215,7 +217,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     if(body.assigneeId&&!await c.env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(member.projectId,body.assigneeId).first())throw validationFailed('负责人必须是当前项目成员');
     if(body.requirementId&&!await c.env.DB.prepare('SELECT 1 FROM requirements WHERE project_id=?1 AND id=?2').bind(member.projectId,body.requirementId).first())throw validationFailed('要求必须属于当前项目');
     const token=newId();
-    const createdResults = await c.env.DB.batch([c.env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND (?5=0 OR role='owner')) AND (?6 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6)) AND (?7 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE project_id=?1 AND id=?7))`).bind(member.projectId,goal.graphRevision,token,c.get('user')!.id,body.dependsOnTaskIds.length?1:0,body.assigneeId,body.requirementId),c.env.DB.prepare(
+    const createdResults = await c.env.DB.batch([c.env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND (?5>=0 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})) AND (?6 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6)) AND (?7 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE project_id=?1 AND id=?7))`).bind(member.projectId,goal.graphRevision,token,c.get('user')!.id,body.dependsOnTaskIds.length?1:0,body.assigneeId,body.requirementId),c.env.DB.prepare(
       `INSERT INTO tasks (id, project_id, title, detail, assignee_id, due_date, due_precision, status, requirement_id, revision, created_by, created_at, updated_at,criteria,effort_hours,lifecycle_state)
        SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, CASE WHEN ?5 IS NOT NULL THEN 'doing' ELSE 'todo' END, ?8, 1, ?9, ?10, ?10,?11,?12,CASE WHEN ?5 IS NULL THEN 'open' ELSE 'in_progress' END
        WHERE (?5 IS NULL OR EXISTS (
@@ -290,6 +292,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(taskPatchRoute, async (c) => {
+    await requireProjectPermission(c.env,c.get('member')!.projectId,c.get('user')!.id,'taskManage');
     const body = c.req.valid('json');
     const taskId = c.req.valid('param').taskId;
     const projectId = c.get('member')!.projectId;
@@ -301,7 +304,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       if(body.status!==undefined||body.assigneeId!==undefined)throw invalidState('任务完成与重新分工需要提交和验收流程');
       await owner(c.env,projectId,c.get('user')!.id);
       if(body.requirementId&&!await c.env.DB.prepare('SELECT 1 FROM requirements WHERE id=?1 AND project_id=?2').bind(body.requirementId,projectId).first())throw validationFailed('要求必须属于当前项目');
-      const updated=await c.env.DB.prepare(`UPDATE tasks SET title=COALESCE(?4,title),detail=COALESCE(?5,detail),criteria=COALESCE(?6,criteria),effort_hours=COALESCE(?7,effort_hours),due_date=CASE WHEN ?8=1 THEN ?9 ELSE due_date END,due_precision=COALESCE(?10,due_precision),requirement_id=CASE WHEN ?13=1 THEN ?14 ELSE requirement_id END,revision=revision+1,updated_at=?11 WHERE id=?1 AND project_id=?2 AND revision=?3 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?12 AND role='owner') AND (?13=0 OR ?14 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE id=?14 AND project_id=?2))`).bind(taskId,projectId,body.expectedRevision,body.title??null,body.detail??null,body.criteria??null,body.effortHours??null,'dueDate'in body?1:0,body.dueDate??null,body.duePrecision??null,nowIso(),c.get('user')!.id,'requirementId'in body?1:0,body.requirementId??null).run();
+      const updated=await c.env.DB.prepare(`UPDATE tasks SET title=COALESCE(?4,title),detail=COALESCE(?5,detail),criteria=COALESCE(?6,criteria),effort_hours=COALESCE(?7,effort_hours),due_date=CASE WHEN ?8=1 THEN ?9 ELSE due_date END,due_precision=COALESCE(?10,due_precision),requirement_id=CASE WHEN ?13=1 THEN ?14 ELSE requirement_id END,revision=revision+1,updated_at=?11 WHERE id=?1 AND project_id=?2 AND revision=?3 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?12 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')}) AND (?13=0 OR ?14 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE id=?14 AND project_id=?2))`).bind(taskId,projectId,body.expectedRevision,body.title??null,body.detail??null,body.criteria??null,body.effortHours??null,'dueDate'in body?1:0,body.dueDate??null,body.duePrecision??null,nowIso(),c.get('user')!.id,'requirementId'in body?1:0,body.requirementId??null).run();
       if(updated.meta.changes)await recordEvent(c.env,{projectId,actorType:'user',actorId:c.get('user')!.id,type:'task.updated',entityType:'task',entityId:taskId,dedupKey:String(body.expectedRevision),payload:body});
       if(!updated.meta.changes)throw versionConflict((await c.env.DB.prepare('SELECT revision FROM tasks WHERE id=?1').bind(taskId).first<{revision:number}>())!.revision);
       return c.json(apiData(c,await taskView(c.env,(await c.env.DB.prepare('SELECT * FROM tasks WHERE id=?1').bind(taskId).first<TaskRow>())!)),200);
@@ -320,7 +323,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
          requirement_id = CASE WHEN ?14 = 1 THEN ?8 ELSE requirement_id END,
          revision = revision + 1,
          updated_at = ?9
-       WHERE id = ?1 AND project_id = ?10 AND revision = ?11 AND lifecycle_state IS NULL
+       WHERE id = ?1 AND project_id = ?10 AND revision = ?11 AND lifecycle_state IS NULL AND ${projectPermissionSql('?10','?15','taskManage')}
          AND (?12 = 0 OR ?4 IS NULL OR EXISTS (
            SELECT 1 FROM project_members pm WHERE pm.project_id = ?10 AND pm.user_id = ?4
          ))
@@ -343,6 +346,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
         body.assigneeId === undefined ? 0 : 1,
         body.dueDate === undefined ? 0 : 1,
         body.requirementId === undefined ? 0 : 1,
+        c.get('user')!.id,
       )
       .run();
     if ((updated.meta?.changes ?? 0) === 0) {
@@ -385,6 +389,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(applyAssignmentRoute, async (c) => {
+    await requireProjectPermission(c.env,c.get('member')!.projectId,c.get('user')!.id,'taskManage');
     const { taskId, assigneeId, expectedRevision } = c.req.valid('json');
     const projectId = c.get('member')!.projectId;
     const current = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?1 AND project_id = ?2')
@@ -397,12 +402,12 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     // 版本与成员资格都在同一 UPDATE 内复核，防止预读后并发改任务或移除成员。
     const updated = await c.env.DB.prepare(
       `UPDATE tasks SET assignee_id = ?3, revision = revision + 1, updated_at = ?4
-       WHERE id = ?1 AND project_id = ?2 AND revision = ?5 AND lifecycle_state IS NULL
+       WHERE id = ?1 AND project_id = ?2 AND revision = ?5 AND lifecycle_state IS NULL AND ${projectPermissionSql('?2','?6','taskManage')}
          AND (?3 IS NULL OR EXISTS (
            SELECT 1 FROM project_members pm WHERE pm.project_id = ?2 AND pm.user_id = ?3
          ))`,
     )
-      .bind(taskId, projectId, assigneeId, nowIso(), expectedRevision)
+      .bind(taskId, projectId, assigneeId, nowIso(), expectedRevision, c.get('user')!.id)
       .run();
 
     if ((updated.meta?.changes ?? 0) === 0) {

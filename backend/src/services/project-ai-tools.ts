@@ -1,3 +1,4 @@
+import { projectPermissionSql, projectAccess } from './project-permissions';
 import { z } from 'zod';
 import { discoveryDefinitions, discoveryArgs, executeDiscoveryTool } from './project-context';
 import { referencesFromRead, uniqueReadReferences, validateReadReferences, decisionReferences, extractDecisionReferences, type ProjectReference, type DecisionReference } from './project-evidence';
@@ -59,7 +60,7 @@ export async function assertToolAccess(env: Env, context: ProjectToolContext, ca
   (?5 IS NULL OR EXISTS(SELECT 1 FROM jobs j WHERE j.id=?5 AND j.project_id=p.id
    AND j.status IN ('queued','running') AND ${sourceInputsGuard('j.input_json', 'p.id')})) job_active
   FROM projects p JOIN project_members m ON m.project_id=p.id
-  WHERE p.id=?1 AND m.user_id=?2 AND p.status='active' AND (?3=0 OR m.role='owner')`)
+  WHERE p.id=?1 AND m.user_id=?2 AND p.status='active' AND (?3=0 OR ${projectPermissionSql('m.project_id','m.user_id','taskManage')})`)
     .bind(context.projectId, context.userId, context.ownerOnly ? 1 : 0, JSON.stringify({
     toolFileSnapshots: captured
   }), context.jobId ?? null)
@@ -281,7 +282,7 @@ export async function projectToolConversation(env: Env, params: {
     });
     const changed = await env.DB.prepare(`UPDATE jobs SET input_json=?3 WHERE id=?1 AND project_id=?2 AND status IN ('queued','running')
    AND input_json=?4 AND ${sourceInputsGuard('?3', '?2')}
-   AND EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?2 AND m.user_id=?5 AND p.status='active' AND (?6=0 OR m.role='owner'))`)
+   AND EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?2 AND m.user_id=?5 AND p.status='active' AND (?6=0 OR ${projectPermissionSql('m.project_id','m.user_id','taskManage')}))`)
       .bind(context.jobId, context.projectId, next, job.input_json, context.userId, context.ownerOnly ? 1 : 0).run();
     if (!changed.meta.changes) {
       throw new ToolLifecycleChanged();

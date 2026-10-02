@@ -2030,6 +2030,33 @@
                   "member"
                 ]
               },
+              "permissions": {
+                "type": "object",
+                "properties": {
+                  "teamManage": {
+                    "type": "boolean"
+                  },
+                  "taskManage": {
+                    "type": "boolean"
+                  },
+                  "resourceManage": {
+                    "type": "boolean"
+                  },
+                  "scoreInitiate": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "teamManage",
+                  "taskManage",
+                  "resourceManage",
+                  "scoreInitiate"
+                ],
+                "additionalProperties": false
+              },
+              "canGrantPermissions": {
+                "type": "boolean"
+              },
               "createdAt": {
                 "type": "string"
               },
@@ -2125,6 +2152,33 @@
                         "owner",
                         "member"
                       ]
+                    },
+                    "permissions": {
+                      "type": "object",
+                      "properties": {
+                        "teamManage": {
+                          "type": "boolean"
+                        },
+                        "taskManage": {
+                          "type": "boolean"
+                        },
+                        "resourceManage": {
+                          "type": "boolean"
+                        },
+                        "scoreInitiate": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "teamManage",
+                        "taskManage",
+                        "resourceManage",
+                        "scoreInitiate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "canGrantPermissions": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "type": "string"
@@ -7116,6 +7170,36 @@
                     },
                     "joinedAt": {
                       "type": "string"
+                    },
+                    "permissions": {
+                      "type": "object",
+                      "properties": {
+                        "teamManage": {
+                          "type": "boolean"
+                        },
+                        "taskManage": {
+                          "type": "boolean"
+                        },
+                        "resourceManage": {
+                          "type": "boolean"
+                        },
+                        "scoreInitiate": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "teamManage",
+                        "taskManage",
+                        "resourceManage",
+                        "scoreInitiate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "permissionsRevision": {
+                      "type": "integer"
+                    },
+                    "canGrantPermissions": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -7125,7 +7209,10 @@
                     "isAdmin",
                     "displayName",
                     "role",
-                    "joinedAt"
+                    "joinedAt",
+                    "permissions",
+                    "permissionsRevision",
+                    "canGrantPermissions"
                   ]
                 }
               }
@@ -7181,6 +7268,36 @@
               },
               "joinedAt": {
                 "type": "string"
+              },
+              "permissions": {
+                "type": "object",
+                "properties": {
+                  "teamManage": {
+                    "type": "boolean"
+                  },
+                  "taskManage": {
+                    "type": "boolean"
+                  },
+                  "resourceManage": {
+                    "type": "boolean"
+                  },
+                  "scoreInitiate": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "teamManage",
+                  "taskManage",
+                  "resourceManage",
+                  "scoreInitiate"
+                ],
+                "additionalProperties": false
+              },
+              "permissionsRevision": {
+                "type": "integer"
+              },
+              "canGrantPermissions": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -7190,7 +7307,10 @@
               "isAdmin",
               "displayName",
               "role",
-              "joinedAt"
+              "joinedAt",
+              "permissions",
+              "permissionsRevision",
+              "canGrantPermissions"
             ]
           },
           "requestId": {
@@ -7608,6 +7728,25 @@
           "data": {
             "type": "object",
             "properties": {
+              "contributors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "displayName"
+                  ]
+                }
+              },
               "sourceId": {
                 "type": "string",
                 "format": "uuid"
@@ -7705,6 +7844,25 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "contributors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "userId",
+                          "displayName"
+                        ]
+                      }
+                    },
                     "sourceId": {
                       "type": "string",
                       "format": "uuid"
@@ -7805,6 +7963,25 @@
           "data": {
             "type": "object",
             "properties": {
+              "contributors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "displayName"
+                  ]
+                }
+              },
               "sourceVersionId": {
                 "type": "string",
                 "format": "uuid"
@@ -11662,6 +11839,9 @@
           "data": {
             "type": "object",
             "properties": {
+              "canEdit": {
+                "type": "boolean"
+              },
               "materialId": {
                 "type": "string",
                 "format": "uuid"
@@ -11708,6 +11888,25 @@
                     "items": {
                       "type": "object",
                       "properties": {
+                        "contributors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "displayName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "userId",
+                              "displayName"
+                            ]
+                          }
+                        },
                         "fileId": {
                           "type": "string",
                           "format": "uuid"
@@ -11799,6 +11998,9 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "canEdit": {
+                      "type": "boolean"
+                    },
                     "materialId": {
                       "type": "string",
                       "format": "uuid"
@@ -11893,6 +12095,25 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "contributors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "userId",
+                          "displayName"
+                        ]
+                      }
+                    },
                     "fileId": {
                       "type": "string",
                       "format": "uuid"
@@ -11989,6 +12210,25 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "contributors": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "userId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "displayName": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "userId",
+                                "displayName"
+                              ]
+                            }
+                          },
                           "fileId": {
                             "type": "string",
                             "format": "uuid"
@@ -15468,6 +15708,29 @@
                     },
                     "lifecycleVersion": {
                       "type": "integer"
+                    },
+                    "contributors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "userId",
+                          "displayName"
+                        ]
+                      }
+                    },
+                    "uploaderUserId": {
+                      "type": "string",
+                      "format": "uuid"
                     },
                     "canDelete": {
                       "type": "boolean"
@@ -20355,6 +20618,113 @@
           },
           "409": {
             "description": "负责人不可退出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/members/{userId}/permissions": {
+      "patch": {
+        "tags": [
+          "members"
+        ],
+        "summary": "负责人或项目内平台管理员调整组员权限",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "permissions": {
+                    "type": "object",
+                    "properties": {
+                      "teamManage": {
+                        "type": "boolean"
+                      },
+                      "taskManage": {
+                        "type": "boolean"
+                      },
+                      "resourceManage": {
+                        "type": "boolean"
+                      },
+                      "scoreInitiate": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "teamManage",
+                      "taskManage",
+                      "resourceManage",
+                      "scoreInitiate"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "permissions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "权限不足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "权限版本变化",
             "content": {
               "application/json": {
                 "schema": {
@@ -26430,6 +26800,18 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "contributorIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1
+                  },
+                  "derivedFromFileId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
                   "fileName": {
                     "type": "string",
                     "minLength": 1,

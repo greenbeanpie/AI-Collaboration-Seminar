@@ -1,3 +1,4 @@
+import { projectPermissionSql } from './project-permissions';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
@@ -11,7 +12,7 @@ export async function projectGoal(env: Env, projectId: string): Promise<Goal> {
   return {projectId:row.project_id,title:row.title,detail:row.detail,revision:row.revision,graphRevision:row.graph_revision};
 }
 export async function updateGoal(env: Env, projectId:string, actorId:string, input:{expectedRevision:number;title?:string;detail?:string}) {
-  await owner(env,projectId,actorId); await projectGoal(env,projectId);
+  await owner(env,projectId,actorId,'owner'); await projectGoal(env,projectId);
   const changed=await env.DB.prepare(`UPDATE project_goals SET title=COALESCE(?3,title),detail=COALESCE(?4,detail),revision=revision+1,updated_at=?5 WHERE project_id=?1 AND revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6 AND role='owner')`).bind(projectId,input.expectedRevision,input.title??null,input.detail??null,nowIso(),actorId).run();
   if(!changed.meta.changes) throw invalidState('主目标或权限已变化，请刷新');
   return projectGoal(env,projectId);
@@ -45,7 +46,7 @@ export async function replaceTaskDependencies(env:Env,projectId:string,actorId:s
   const graph=await graphSnapshot(env,projectId);if(!graph.taskIds.includes(taskId))throw notFound('子任务不存在');
   const edges=[...graph.edges.filter(e=>e.taskId!==taskId),...dependsOnTaskIds.map(id=>({taskId,dependsOnTaskId:id}))];validateTaskGraph(graph.taskIds,edges);
   const token=newId(),now=nowIso(),guard='EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?2)';
-  const batch=[env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND role='owner')`).bind(projectId,expectedGraphRevision,token,actorId),env.DB.prepare(`DELETE FROM task_dependencies WHERE project_id=?1 AND task_id=?3 AND ${guard}`).bind(projectId,token,taskId)];
+  const batch=[env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})`).bind(projectId,expectedGraphRevision,token,actorId),env.DB.prepare(`DELETE FROM task_dependencies WHERE project_id=?1 AND task_id=?3 AND ${guard}`).bind(projectId,token,taskId)];
   for(const dependency of dependsOnTaskIds)batch.push(env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?3,?4,?5 WHERE ${guard}`).bind(projectId,token,taskId,dependency,now));
   const results=await env.DB.batch(batch);if(!results[0]?.meta.changes)throw versionConflict((await projectGoal(env,projectId)).graphRevision);
   return {taskId,...await taskDependencies(env,projectId,taskId),graphRevision:expectedGraphRevision+1};
@@ -71,7 +72,7 @@ export async function standardView(env:Env,row:StandardRow){return {...(row.stat
 export async function confirmedStandard(env:Env,projectId:string,id:string){const row=await env.DB.prepare("SELECT * FROM standards_versions WHERE id=?1 AND project_id=?2 AND status='confirmed'").bind(id,projectId).first<StandardRow>();if(!row?.snapshot_json)throw invalidState('请先发布本项目要求与评分标准');return JSON.parse(row.snapshot_json) as StandardSnapshot;}
 export type StandardsInput={title?:string;requirementSetIds?:string[];rubricVersionId?:string;mappings?:StandardSnapshot['mappings'];requirements?:Array<{title:string;detail:string;category?:string;dimensionKey?:string;dueDate?:string|null;duePrecision?:string;citations?:Array<{sourceVersionId:string;fragmentId:string;pageNumber:number|null;quote:string}>}>;weights?:StandardSnapshot['rubric']['weights'];notes?:string|null};
 export async function saveStandard(env:Env,projectId:string,actorId:string,input:StandardsInput,id?:string,expectedRevision?:number){
-  await owner(env,projectId,actorId);const now=nowIso(),newStandardId=id??newId(),batch:D1PreparedStatement[]=[];
+  await owner(env,projectId,actorId,'owner');const now=nowIso(),newStandardId=id??newId(),batch:D1PreparedStatement[]=[];
   let setIds=input.requirementSetIds,rubricId=input.rubricVersionId,mappings=input.mappings??[];
   const current=id?await env.DB.prepare('SELECT * FROM standards_versions WHERE id=?1 AND project_id=?2').bind(id,projectId).first<StandardRow>():null;
   if(id&&(!current||current.status!=='draft'||current.revision!==expectedRevision))throw invalidState('标准已发布或草稿版本已变化');
@@ -99,7 +100,7 @@ export async function saveStandard(env:Env,projectId:string,actorId:string,input
   return standardView(env,(await env.DB.prepare('SELECT * FROM standards_versions WHERE id=?1').bind(newStandardId).first<StandardRow>())!);
 }
 export async function confirmStandard(env:Env,projectId:string,actorId:string,id:string,expectedRevision:number){
-  await owner(env,projectId,actorId);const row=await env.DB.prepare('SELECT * FROM standards_versions WHERE id=?1 AND project_id=?2').bind(id,projectId).first<StandardRow>();if(!row||row.status!=='draft'||row.revision!==expectedRevision)throw invalidState('标准已发布或草稿版本已变化');
+  await owner(env,projectId,actorId,'owner');const row=await env.DB.prepare('SELECT * FROM standards_versions WHERE id=?1 AND project_id=?2').bind(id,projectId).first<StandardRow>();if(!row||row.status!=='draft'||row.revision!==expectedRevision)throw invalidState('标准已发布或草稿版本已变化');
   const snapshot=await buildStandardsSnapshot(env,row),now=nowIso(),raw=JSON.stringify(snapshot);
   const result=await env.DB.batch([
     env.DB.prepare(`UPDATE standards_versions SET status='confirmed',snapshot_json=?4,confirmed_by=?5,confirmed_at=?6,revision=revision+1,updated_at=?6 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status='draft' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5 AND role='owner') AND EXISTS(SELECT 1 FROM rubric_versions WHERE id=?7 AND project_id=?2 AND weights_json=?8 AND notes IS ?9) AND NOT EXISTS(SELECT 1 FROM json_each(?4,'$.requirements') r WHERE NOT EXISTS(SELECT 1 FROM requirements q WHERE q.id=json_extract(r.value,'$.requirementId') AND q.project_id=?2 AND q.title=json_extract(r.value,'$.title') AND q.detail=json_extract(r.value,'$.detail') AND q.category=json_extract(r.value,'$.category') AND q.due_date IS json_extract(r.value,'$.dueDate') AND q.due_precision=json_extract(r.value,'$.duePrecision') AND q.citations_json=json_extract(r.value,'$.citations'))) AND (SELECT COUNT(*) FROM requirements WHERE project_id=?2 AND requirement_set_id IN(SELECT value FROM json_each(?4,'$.requirementSetIds')))=json_array_length(?4,'$.requirements')`).bind(id,projectId,expectedRevision,raw,actorId,now,snapshot.rubricVersionId,JSON.stringify(snapshot.rubric.weights),snapshot.rubric.notes),

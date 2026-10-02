@@ -1,3 +1,4 @@
+import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,7 +37,7 @@ function ProjectCollaborationWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const { projectId, project } = useProject();
   const client = useQueryClient();
-  const owner = project.myRole === 'owner';
+  const owner = projectPermission(project,'taskManage');
   const capabilities = useCapabilities();
   const modelEnabled = capabilities.data?.features.aiEnabled === true;
   const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: () => collaborationApi.tasks(projectId) });

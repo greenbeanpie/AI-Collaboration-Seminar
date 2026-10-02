@@ -2099,6 +2099,76 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/members/{userId}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 负责人或项目内平台管理员调整组员权限 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        permissions: {
+                            teamManage: boolean;
+                            taskManage: boolean;
+                            resourceManage: boolean;
+                            scoreInitiate: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description 已保存 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemberResponse"];
+                    };
+                };
+                /** @description 权限不足 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 权限版本变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/members/{userId}": {
         parameters: {
             query?: never;
@@ -6343,6 +6413,9 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        contributorIds?: string[];
+                        /** Format: uuid */
+                        derivedFromFileId?: string;
                         fileName: string;
                         contentType?: string;
                     };
@@ -8311,6 +8384,13 @@ export interface components {
                 revision: number;
                 /** @enum {string} */
                 myRole: "owner" | "member";
+                permissions?: {
+                    teamManage: boolean;
+                    taskManage: boolean;
+                    resourceManage: boolean;
+                    scoreInitiate: boolean;
+                };
+                canGrantPermissions?: boolean;
                 createdAt: string;
                 updatedAt: string;
             };
@@ -8337,6 +8417,13 @@ export interface components {
                     revision: number;
                     /** @enum {string} */
                     myRole: "owner" | "member";
+                    permissions?: {
+                        teamManage: boolean;
+                        taskManage: boolean;
+                        resourceManage: boolean;
+                        scoreInitiate: boolean;
+                    };
+                    canGrantPermissions?: boolean;
                     createdAt: string;
                     updatedAt: string;
                 }[];
@@ -9397,6 +9484,14 @@ export interface components {
                     /** @enum {string} */
                     role: "owner" | "member";
                     joinedAt: string;
+                    permissions: {
+                        teamManage: boolean;
+                        taskManage: boolean;
+                        resourceManage: boolean;
+                        scoreInitiate: boolean;
+                    };
+                    permissionsRevision: number;
+                    canGrantPermissions: boolean;
                 }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -9413,6 +9508,14 @@ export interface components {
                 /** @enum {string} */
                 role: "owner" | "member";
                 joinedAt: string;
+                permissions: {
+                    teamManage: boolean;
+                    taskManage: boolean;
+                    resourceManage: boolean;
+                    scoreInitiate: boolean;
+                };
+                permissionsRevision: number;
+                canGrantPermissions: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -9529,6 +9632,11 @@ export interface components {
         };
         SourceCreateResponse: {
             data: {
+                contributors?: {
+                    /** Format: uuid */
+                    userId: string;
+                    displayName: string;
+                }[];
                 /** Format: uuid */
                 sourceId: string;
                 /** @enum {string} */
@@ -9554,6 +9662,11 @@ export interface components {
         SourceListResponse: {
             data: {
                 items: {
+                    contributors?: {
+                        /** Format: uuid */
+                        userId: string;
+                        displayName: string;
+                    }[];
                     /** Format: uuid */
                     sourceId: string;
                     /** @enum {string} */
@@ -9578,6 +9691,11 @@ export interface components {
         };
         SourceVersionResponse: {
             data: {
+                contributors?: {
+                    /** Format: uuid */
+                    userId: string;
+                    displayName: string;
+                }[];
                 /** Format: uuid */
                 sourceVersionId: string;
                 /** Format: uuid */
@@ -10510,6 +10628,7 @@ export interface components {
         };
         MaterialResponse: {
             data: {
+                canEdit?: boolean;
                 /** Format: uuid */
                 materialId: string;
                 title: string;
@@ -10526,6 +10645,11 @@ export interface components {
                     };
                     markdown: string;
                     attachments: {
+                        contributors?: {
+                            /** Format: uuid */
+                            userId: string;
+                            displayName: string;
+                        }[];
                         /** Format: uuid */
                         fileId: string;
                         name: string;
@@ -10548,6 +10672,7 @@ export interface components {
         MaterialListResponse: {
             data: {
                 items: {
+                    canEdit?: boolean;
                     /** Format: uuid */
                     materialId: string;
                     title: string;
@@ -10575,6 +10700,11 @@ export interface components {
                 };
                 markdown: string;
                 attachments: {
+                    contributors?: {
+                        /** Format: uuid */
+                        userId: string;
+                        displayName: string;
+                    }[];
                     /** Format: uuid */
                     fileId: string;
                     name: string;
@@ -10601,6 +10731,11 @@ export interface components {
                     revision: number;
                     markdown: string;
                     attachments: {
+                        contributors?: {
+                            /** Format: uuid */
+                            userId: string;
+                            displayName: string;
+                        }[];
                         /** Format: uuid */
                         fileId: string;
                         name: string;
@@ -11423,6 +11558,13 @@ export interface components {
                     createdAt: string;
                     deletedAt: string | null;
                     lifecycleVersion: number;
+                    contributors?: {
+                        /** Format: uuid */
+                        userId: string;
+                        displayName: string;
+                    }[];
+                    /** Format: uuid */
+                    uploaderUserId?: string;
                     canDelete: boolean;
                     sourceIds: string[];
                 }[];

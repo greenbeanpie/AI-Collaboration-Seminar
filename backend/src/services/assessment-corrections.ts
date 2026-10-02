@@ -1,3 +1,4 @@
+import { projectPermissionSql, requireProjectPermission } from './project-permissions';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -61,13 +62,13 @@ function revise(row: AssessmentRow, overrides: z.infer<typeof dimension>[], summ
 }
 
 export async function createManualAssessment(env:Env,projectId:string,actorId:string,raw:unknown) {
-  await owner(env,projectId,actorId);
+  await requireProjectPermission(env,projectId,actorId,'scoreInitiate');
   const b=manualAssessmentInput.parse(raw),input=await assessmentInputs(env,projectId,b.standardsVersionId,b.materialVersionIds,b.goalRevision),id=newId(),now=nowIso();
   const row:AssessmentRow={id,project_id:projectId,kind:'material_review',entity_id:null,goal_revision:input.goal.revision,standards_version_id:b.standardsVersionId,inputs_json:JSON.stringify(input),status:'succeeded',report_json:null,job_id:null,created_by:actorId,created_at:now};
   await validateEvidence(env,row,b.scores);
   const report=revise(row,b.scores,b.summary,false);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,goal_revision,standards_version_id,inputs_json,status,report_json,created_by,created_at,origin) SELECT ?1,?2,'material_review',?3,?4,?5,'succeeded',?6,?7,?8,'manual' WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?7 AND role='owner')`).bind(id,projectId,input.goal.revision,b.standardsVersionId,row.inputs_json,JSON.stringify(report),actorId,now),
+    env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,goal_revision,standards_version_id,inputs_json,status,report_json,created_by,created_at,origin) SELECT ?1,?2,'material_review',?3,?4,?5,'succeeded',?6,?7,?8,'manual' WHERE ${projectPermissionSql('?2','?7','scoreInitiate')}`).bind(id,projectId,input.goal.revision,b.standardsVersionId,row.inputs_json,JSON.stringify(report),actorId,now),
     env.DB.prepare('INSERT INTO assessment_corrections(id,assessment_id,project_id,actor_id,revision,reason,report_json,created_at) SELECT ?1,?2,?3,?4,1,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM assessments WHERE id=?2)').bind(newId(),id,projectId,actorId,b.reason,JSON.stringify(report),now),
   ]);
   const saved=await env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow>();

@@ -3,6 +3,7 @@ import { createMiddleware } from 'hono/factory';
 import type { AppEnv, Env, SessionUser } from '../env';
 import { nowIso, sha256Hex } from './db';
 import { notFound, permissionDenied, unauthenticated } from './errors';
+import { projectAccess, type PermissionKey } from '../services/project-permissions';
 
 export const SESSION_COOKIE = 'ai_office_session';
 
@@ -62,7 +63,7 @@ export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
  * 项目成员与角色校验。项目不存在返回 404（不泄露存在性）；
  * 非成员 403；需要 owner 而非 owner 时 403。不信任前端角色信息。
  */
-export const requireProjectMember = (options?: { owner?: boolean }) =>
+export const requireProjectMember = (options?: { owner?: boolean; permission?: PermissionKey }) =>
   createMiddleware<AppEnv>(async (c, next) => {
     const user = c.get('user');
     if (!user) throw unauthenticated();
@@ -76,6 +77,8 @@ export const requireProjectMember = (options?: { owner?: boolean }) =>
       .first<{ role: 'owner' | 'member' }>();
     if (!member) throw permissionDenied('不是项目成员');
     if (options?.owner && member.role !== 'owner') throw permissionDenied('需要负责人权限');
-    c.set('member', { projectId, userId: user.id, role: member.role });
+    const access = await projectAccess(c.env, projectId, user.id);
+    if (options?.permission && !access.permissions[options.permission]) throw permissionDenied('没有执行此操作的项目权限');
+    c.set('member', { projectId, userId: user.id, role: member.role, ...access });
     await next();
   });

@@ -237,7 +237,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
     if (!editor) return;
     const detailReady = material?.materialId === activeMaterialId;
     // Editable-state changes do not modify the document or create a local draft.
-    editor.setEditable(Boolean(material && detailReady && !saving && !conflict && !recoveryDraft), false);
+    editor.setEditable(Boolean(material && material.canEdit !== false && detailReady && !saving && !conflict && !recoveryDraft), false);
   }, [activeMaterialId, conflict, editor, material, recoveryDraft, saving]);
 
   const selectMaterial = async (materialId: string) => {
@@ -286,7 +286,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
   };
 
   const saveMaterial = async (expectedRevision = baseRevisionRef.current, docOverride?: Record<string, unknown>) => {
-    if (!editor || !material || material.materialId !== activeMaterialId || !activeMaterialId || !accountId || !online || saving) return;
+    if (!editor || !material || material.canEdit === false || material.materialId !== activeMaterialId || !activeMaterialId || !accountId || !online || saving) return;
     const doc = docOverride ?? editor.getJSON() as Record<string, unknown>;
     const markdown = docToMarkdown(doc);
     if (needsReconnectConfirmationRef.current) {
@@ -435,22 +435,22 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 <div className="tm-editor-actions tm-hide-print">
                   <button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
                   <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button>
-                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={!dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
+                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
               {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
               {editNotice && <p className="tm-inline-notice" role="status">{editNotice}</p>}
               <div className="tm-editor-toolbar tm-hide-print" role="toolbar" aria-label="材料格式">
-                <button type="button" aria-label="粗体" title="粗体" onClick={() => editor?.chain().focus().toggleBold().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Bold size={15} /></button>
-                <button type="button" aria-label="斜体" title="斜体" onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Italic size={15} /></button>
+                <button type="button" aria-label="粗体" title="粗体" onClick={() => editor?.chain().focus().toggleBold().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Bold size={15} /></button>
+                <button type="button" aria-label="斜体" title="斜体" onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Italic size={15} /></button>
                 <span className="tm-toolbar-divider" />
-                <button type="button" aria-label="二级标题" title="二级标题" onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Heading2 size={16} /></button>
-                <button type="button" aria-label="三级标题" title="三级标题" onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Heading3 size={15} /></button>
-                <button type="button" aria-label="无序列表" title="无序列表" onClick={() => editor?.chain().focus().toggleBulletList().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><List size={15} /></button>
-                <button type="button" aria-label="有序列表" title="有序列表" onClick={() => editor?.chain().focus().toggleOrderedList().run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><ListOrdered size={15} /></button>
+                <button type="button" aria-label="二级标题" title="二级标题" onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Heading2 size={16} /></button>
+                <button type="button" aria-label="三级标题" title="三级标题" onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Heading3 size={15} /></button>
+                <button type="button" aria-label="无序列表" title="无序列表" onClick={() => editor?.chain().focus().toggleBulletList().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><List size={15} /></button>
+                <button type="button" aria-label="有序列表" title="有序列表" onClick={() => editor?.chain().focus().toggleOrderedList().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><ListOrdered size={15} /></button>
                 <span className="tm-toolbar-divider" />
-                <button type="button" aria-label="插入表格" title="插入 3 × 3 表格" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Table2 size={15} /></button>
+                <button type="button" aria-label="插入表格" title="插入 3 × 3 表格" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Table2 size={15} /></button>
                 <button type="button" aria-label="设置链接" title="设置链接" onClick={async () => {
                   if (!editor) return;
                   setEditNotice('');
@@ -463,13 +463,13 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                   if (latestMaterial.current?.revision !== originalRevision || !editor.state.doc.eq(originalDoc)) { setEditNotice('材料内容已变化，请重新选择文字后设置链接。'); return; }
                   if (!href.trim()) editor.chain().focus().setTextSelection(selection).unsetLink().run();
                   else editor.chain().focus().setTextSelection(selection).setLink({ href }).run();
-                }} disabled={!editor || Boolean(recoveryDraft) || Boolean(conflict)}><Link2 size={15} /></button>
+                }} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Link2 size={15} /></button>
               </div>
               <div className="tm-editor-content">
                 {editor && <EditorContent editor={editor} />}
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
-              <MaterialAttachments material={material} disabled={dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} />
+              <>{material.canEdit === false && <p className="form-note">此材料可查看；修改需创建者或资料管理权限。</p>}<MaterialAttachments material={material} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
               <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>
 
@@ -483,7 +483,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
               <label className="tm-conflict-confirm"><input type="checkbox" checked={conflict.reviewed} onChange={(event) => setConflict({ ...conflict, reviewed: event.target.checked })} />我已对照本机草稿与服务端版本，确认保留本机内容并以服务端当前 revision 提交。</label>
               <div className="tm-conflict-actions">
                 <button className="button button-quiet button-small" onClick={() => { setConflict(null); setSaveError(null); }}>继续编辑本机草稿</button>
-                <button className="button button-primary button-small" disabled={!conflict.reviewed || saving || !online} onClick={() => void saveMaterial(conflict.server.revision, conflict.localDoc)}>{saving ? '重试中…' : `按 r${conflict.server.revision} 重试保存`}</button>
+                <button className="button button-primary button-small" disabled={material.canEdit === false || !conflict.reviewed || saving || !online} onClick={() => void saveMaterial(conflict.server.revision, conflict.localDoc)}>{saving ? '重试中…' : `按 r${conflict.server.revision} 重试保存`}</button>
               </div>
             </section>}
 

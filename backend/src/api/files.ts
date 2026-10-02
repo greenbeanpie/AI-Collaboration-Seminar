@@ -108,7 +108,7 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
       const sources=await c.env.DB.prepare(`SELECT DISTINCT v.source_id FROM source_versions v WHERE v.project_id=?1 AND
         (v.file_id=?2 OR EXISTS(SELECT 1 FROM source_pages page WHERE page.source_version_id=v.id AND page.image_file_id=?2))`).bind(member.projectId,r.id).all<{source_id:string}>();
       return {contributors:await fileContributors(c.env,member.projectId,r.id),uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,lifecycleVersion:r.lifecycle_version,
-        canDelete:member.role==='owner'||r.uploader_user_id===c.get('user')!.id,sourceIds:sources.results.map(source=>source.source_id)};
+        canDelete:member.permissions.resourceManage||r.uploader_user_id===c.get('user')!.id,sourceIds:sources.results.map(source=>source.source_id)};
     }));
     const last=items.at(-1);return c.json(apiData(c,{items,nextCursor:nextCursor(rows.results.length>limit,last&&{createdAt:last.createdAt,id:last.fileId})??null}),200);
   });

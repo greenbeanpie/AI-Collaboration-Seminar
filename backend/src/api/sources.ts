@@ -339,7 +339,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       title: r.title,
       purpose: r.purpose, revision: r.resource_revision + r.lifecycle_version - 1,
       currentVersionId: r.current_version_id,
-      createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.role==='owner'||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
+      createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.permissions.resourceManage||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
     })));
     const lastItem = items.at(-1);
     return c.json(

@@ -9,6 +9,7 @@ import { notFound, permissionDenied, validationFailed, versionConflict } from '.
 import { parsePaging, nextCursor } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
 import { recordEvent } from '../services/events';
+import { permissionSchema, projectAccess } from '../services/project-permissions';
 
 export const projectParams = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 
@@ -23,6 +24,8 @@ export const projectSchema = z.object({
   aiCollaborationEnabled: z.boolean().optional().openapi({ description: '项目 AI 智能协作开关，默认关闭' }),
   revision: z.number().int(),
   myRole: z.enum(['owner', 'member']),
+  permissions: permissionSchema.optional(),
+  canGrantPermissions: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -201,7 +204,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .all<ProjectRow & { role: 'owner' | 'member' }>();
     const hasMore = rows.results.length > paging.limit;
     const pageRows = rows.results.slice(0, paging.limit);
-    const items = pageRows.map((r) => toProject(r, r.role));
+    const items = await Promise.all(pageRows.map(async r => ({ ...toProject(r,r.role), ...await projectAccess(c.env,r.id,c.get('user')!.id) })));
     const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
@@ -218,7 +221,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(member.projectId)
       .first<ProjectRow>();
     if (!row) throw notFound('项目不存在');
-    return c.json(apiData(c, toProject(row, member.role)), 200);
+    return c.json(apiData(c, { ...toProject(row, member.role), permissions: member.permissions, canGrantPermissions: member.canGrantPermissions }), 200);
   });
 
   app.openapi(projectPatchRoute, async (c) => {

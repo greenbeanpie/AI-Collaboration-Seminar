@@ -1,3 +1,4 @@
+import { projectPermissionSql, projectAccess } from './project-permissions';
 import { assertProjectSourceContext, projectSourceContextGuard, type ProjectSourceSnapshot } from './collaboration-context';
 import { profileStamp, assertProfileStamp, profileSnapshotGuard, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
@@ -145,7 +146,7 @@ async function currentConfig(env: Env, input: CollaborationAiInput): Promise<Loa
     return config;
 }
 async function assertSnapshot(env: Env, input: CollaborationAiInput, ownerOnly: boolean) {
-    const row = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?2 AND m.user_id=?3 AND (?4=0 OR m.role='owner')`)
+    const row = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?2 AND m.user_id=?3 AND (?4=0 OR ${projectPermissionSql('m.project_id','m.user_id','taskManage')})`)
         .bind(input.projectId, input.settingsRevision, input.requestedBy, ownerOnly ? 1 : 0).first();
     if (!row)
         throw invalidState('项目设置或成员权限已变化，请重新发起');
@@ -217,7 +218,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
         const inserted = await env.DB.prepare(`INSERT INTO collaboration_proposals(id,project_id,kind,job_id,payload_json,settings_revision,status,revision,created_at,updated_at)
       SELECT ?1,?2,?3,?4,?5,?6,'pending',1,?7,?7
       WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND project_id=?2 AND status IN ('queued','running'))
-      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?6 AND m.user_id=?8 AND m.role='owner')
+      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?6 AND m.user_id=?8 AND ${projectPermissionSql('m.project_id','m.user_id','taskManage')})
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?9 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))
       ${consentGuard} AND ${projectSourceContextGuard('(SELECT input_json FROM jobs WHERE id=?4)', '?2')}
       ON CONFLICT(job_id) DO NOTHING`).bind(proposalId, input.projectId, kind, jobId, JSON.stringify(payload), input.settingsRevision, now, input.requestedBy, config.id).run();
@@ -278,7 +279,7 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
         return followupId;
     }
     await currentConfig(env, input);
-    const allowed = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.assignment_mode='automatic' AND p.collaboration_revision=?2 AND m.user_id=?3 AND m.role='owner'`).bind(input.projectId, input.settingsRevision, input.requestedBy).first();
+    const allowed = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.assignment_mode='automatic' AND p.collaboration_revision=?2 AND m.user_id=?3 AND ${projectPermissionSql('m.project_id','m.user_id','taskManage')}`).bind(input.projectId, input.settingsRevision, input.requestedBy).first();
     if (!allowed)
         throw invalidState('自动分工设置已变化；已创建的子任务保留，可手动认领');
     const tasks = await env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (?3=1 OR plan_proposal_id=?2 OR parent_task_id=?2) AND lifecycle_state='open' AND assignee_id IS NULL ORDER BY created_at,id`).bind(input.projectId, proposalId,allOpenTasks?1:0).all<{
@@ -375,7 +376,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     await assertEvaluationRubric(env, input);
     const rubric = input.rubricSnapshot ?? null;
     const submission = await env.DB.prepare(`SELECT s.* FROM task_submissions s JOIN tasks t ON t.current_submission_id=s.id AND t.id=s.task_id JOIN project_members m ON m.project_id=t.project_id AND m.user_id=t.assignee_id
-    WHERE s.id=?1 AND s.project_id=?2 AND s.evaluation_job_id=?3 AND s.status IN ('pending','evaluated') AND t.lifecycle_state='submitted' AND t.revision=s.task_revision AND t.assignee_id=s.submitted_by AND EXISTS(SELECT 1 FROM project_members requester WHERE requester.project_id=s.project_id AND requester.user_id=?4 AND (requester.role='owner' OR requester.user_id=s.submitted_by))`)
+    WHERE s.id=?1 AND s.project_id=?2 AND s.evaluation_job_id=?3 AND s.status IN ('pending','evaluated') AND t.lifecycle_state='submitted' AND t.revision=s.task_revision AND t.assignee_id=s.submitted_by AND EXISTS(SELECT 1 FROM project_members requester WHERE requester.project_id=s.project_id AND requester.user_id=?4 AND (${projectPermissionSql('requester.project_id','requester.user_id','taskManage')} OR requester.user_id=s.submitted_by))`)
         .bind(input.submissionId, input.projectId, jobId, input.requestedBy).first<Submission & {
         ai_report_json: string | null;
     }>();
@@ -430,7 +431,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
       WHERE id=?1 AND project_id=?2 AND evaluation_job_id=?3 AND revision=?8 AND status='pending' AND ai_report_json IS NULL
       AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running'))
       AND EXISTS(SELECT 1 FROM tasks t JOIN project_members m ON m.project_id=t.project_id AND m.user_id=t.assignee_id WHERE t.id=task_submissions.task_id AND t.current_submission_id=?1 AND t.revision=task_submissions.task_revision AND t.assignee_id=task_submissions.submitted_by AND t.lifecycle_state='submitted')
-      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?9 AND m.user_id=?10 AND (m.role='owner' OR m.user_id=task_submissions.submitted_by))
+      AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?2 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.collaboration_revision=?9 AND m.user_id=?10 AND (${projectPermissionSql('m.project_id','m.user_id','taskManage')} OR m.user_id=task_submissions.submitted_by))
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?11 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))
       AND (?12=0 OR (?12=1 AND NOT EXISTS(SELECT 1 FROM rubric_versions WHERE project_id=?2 AND status='confirmed')) OR (?12=2 AND EXISTS(SELECT 1 FROM rubric_versions WHERE project_id=?2 AND id=?13 AND status='confirmed' AND version=?14 AND weights_json=?15 AND notes IS ?16 AND version=(SELECT MAX(version) FROM rubric_versions WHERE project_id=?2 AND status='confirmed'))))`)
             .bind(submission.id, input.projectId, jobId, report.decision, report.feedback, JSON.stringify(persistedReport), nowIso(), submission.revision, input.settingsRevision, input.requestedBy, config.id, input.rubricSnapshot === undefined ? 0 : rubric ? 2 : 1, verifiedRubric?.id ?? null, verifiedRubric?.version ?? null, verifiedRubric?.weights_json ?? null, verifiedRubric?.notes ?? null).run();

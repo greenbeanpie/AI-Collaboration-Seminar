@@ -1,3 +1,4 @@
+import { projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser, requireProjectMember } from '../core/auth';
@@ -32,10 +33,10 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
   app.use(inbox, requireUser);
   app.use(inbox + '/*', requireUser);
   app.use('/api/v1/projects/:projectId/username-invitations', requireUser, requireProjectMember({
-    owner: true
+    permission: 'teamManage'
   }));
   app.use('/api/v1/projects/:projectId/username-invitations/*', requireUser, requireProjectMember({
-    owner: true
+    permission: 'teamManage'
   }));
   for (const kind of ['inbox', 'outbox'] as const)
     app.openapi(createRoute({
@@ -154,7 +155,7 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
     if (current.status !== 'pending') {
       throw invalidState('只能撤销待处理邀请');
     }
-    const changed = await c.env.DB.prepare("UPDATE project_username_invitations SET status='revoked',handled_at=?3 WHERE id=?1 AND project_id=?2 AND status='pending'").bind(id, p, nowIso()).run();
+    const changed = await c.env.DB.prepare(`UPDATE project_username_invitations SET status='revoked',handled_at=?3 WHERE id=?1 AND project_id=?2 AND status='pending' AND ${projectPermissionSql('?2','?4','teamManage')}`).bind(id, p, nowIso(), c.get('user')!.id).run();
     if (!changed.meta.changes) {
       throw invalidState('邀请状态已变化');
     }

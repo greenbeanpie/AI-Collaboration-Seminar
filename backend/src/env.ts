@@ -43,6 +43,9 @@ export interface ProjectMember {
   projectId: string;
   userId: string;
   role: 'owner' | 'member';
+  permissions: import('./services/project-permissions').ProjectPermissions;
+  permissionsRevision: number;
+  canGrantPermissions: boolean;
 }
 
 export interface AppVars {
