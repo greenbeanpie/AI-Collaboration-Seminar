@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+
+const base = new URL(process.env.INTEGRATION_URL || 'http://127.0.0.1:5184');
+assert(['127.0.0.1', 'localhost'].includes(base.hostname), 'Only isolated loopback services are supported');
+const credentials = JSON.parse(readFileSync(new URL('../.local-secrets/admin-credentials.json', import.meta.url), 'utf8')).accounts.local;
+let cookie = '', checks = 0;
+async function api(path, { method = 'GET', body, status = 200, key = randomUUID() } = {}) {
+  const response = await fetch(new URL(`/api/v1${path}`, base), { method, headers: { Origin: base.origin, Cookie: cookie, 'Idempotency-Key': key, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  assert.equal(response.status, status, `${method} ${path}: ${response.status}`);
+  const updatedCookie = response.headers.get('set-cookie');
+  if (updatedCookie) cookie = updatedCookie.split(';')[0];
+  checks++;
+  return (await response.json()).data;
+}
+
+assert.equal((await api('/capabilities')).environment, 'local');
+await api('/auth/sessions', { method: 'POST', status: 201, body: { account: credentials.username, password: credentials.password } });
+const templates = await api('/project-templates');
+assert.deepEqual(templates.items.map(item => item.templateId), ['blank']);
+const projectsBefore = (await api('/projects?status=all&limit=100')).items.length;
+const intent = randomUUID();
+let draft = await api('/creation-drafts/from-template', { method: 'POST', status: 201, body: { templateId: 'blank' }, key: intent });
+assert.equal((await api('/creation-drafts/from-template', { method: 'POST', status: 201, body: { templateId: 'blank' }, key: intent })).id, draft.id);
+assert.equal(draft.payload.workspace.templateId, 'blank');
+assert.deepEqual(draft.payload.workspace.materials, []);
+assert.equal((await api('/projects?status=all&limit=100')).items.length, projectsBefore);
+const path = `/creation-drafts/${draft.id}`;
+const payload = { ...draft.payload, name: `模板验收 ${randomUUID().slice(0, 8)}`, goal: { title: '完成模板目标', detail: '确认前只有私有草稿' }, workspace: { ...draft.payload.workspace, materials: [{ key: 'document-a', title: '模板成果', markdown: '# 预览文档\n\n只在最终保存后生效。', purpose: 'output' }], standards: { title: '模板验收标准', requirements: [{ key: 'requirement-a', title: '成果可复核', detail: '保存固定版本', category: 'deliverable', dimensionKey: 'quality' }], weights: [{ key: 'quality', label: '可复核性', weight: 100 }], notes: '' } } };
+draft = await api(path, { method: 'PATCH', body: { expectedRevision: draft.revision, payload } });
+await api(path, { method: 'PATCH', status: 409, body: { expectedRevision: draft.revision - 1, payload } });
+assert.equal((await api(path)).payload.workspace.materials[0].markdown, payload.workspace.materials[0].markdown);
+draft = await api(`${path}/preview`, { method: 'POST', body: { expectedRevision: draft.revision, mode: 'manual', goal: payload.goal, tasks: [{ key: 'task-a', title: '收集', detail: '', criteria: '收集资料', effortHours: 1, citations: [], dependsOn: [] }, { key: 'task-b', title: '整理', detail: '', criteria: '提交成果', effortHours: 1, citations: [], dependsOn: ['task-a'] }], regenerate: true } });
+assert.equal((await api('/projects?status=all&limit=100')).items.length, projectsBefore);
+const saved = await api(`${path}/commit`, { method: 'POST', status: 201, body: { expectedRevision: draft.revision, confirmed: true } });
+assert.equal((await api(`${path}/commit`, { method: 'POST', status: 201, body: { expectedRevision: draft.revision, confirmed: true } })).projectId, saved.projectId);
+assert.equal((await api('/projects?status=all&limit=100')).items.length, projectsBefore + 1);
+const projectPath = `/projects/${saved.projectId}`;
+assert.equal((await api(`${projectPath}/goal`)).title, payload.goal.title);
+const tasks = (await api(`${projectPath}/tasks`)).items;
+assert.equal(tasks.length, 2);
+assert.deepEqual(tasks.find(task => task.title === '整理').dependsOnTaskIds, [tasks.find(task => task.title === '收集').taskId]);
+const materials = (await api(`${projectPath}/resource-library`)).items;
+assert(materials.some(material => material.title === '模板成果'));
+const standards = (await api(`${projectPath}/standards`)).items;
+assert.equal(standards.length, 1);
+assert.equal(standards[0].status, 'confirmed');
+const project = await api(projectPath);
+await api(projectPath, { method: 'PATCH', body: { expectedRevision: project.revision, status: 'archived' } });
+await api('/auth/session', { method: 'DELETE' });
+console.log(`PASS: ${checks} real HTTP checks; only blank template, private draft preview/edit, CAS conflicts, final atomic creation and idempotent replay. Local QA project archived.`);
