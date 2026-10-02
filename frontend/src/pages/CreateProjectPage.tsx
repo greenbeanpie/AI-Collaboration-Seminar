@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { api, request } from '../api/client';
 import type { DataOf } from '../api/types';
@@ -9,6 +9,7 @@ import { Field, ErrorNotice, PageHeading, Spinner } from '../components/ui';
 import { DateInput } from '../components/DateInput';
 import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
+import { isTemplatePayload } from '../api/project-templates';
 import { emptyWizardPayload, wizardSteps, canConfirmDraft, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
 import './ProjectWizard.css';
 type LocalFile = {
@@ -19,7 +20,8 @@ type LocalFile = {
   error?: string;
 };
 const draftPath = (id: string, tail = '') => `/api/v1/creation-drafts/${id}${tail}`;
-export function CreateProjectPage() {
+export { NewProjectEntryPage as CreateProjectPage } from './NewProjectEntryPage';
+export function CreateProjectWizardPage() {
   const session = useSession();
   if (session.isLoading) {
     return <Spinner label="正在确认创建账户"/>;
@@ -38,7 +40,10 @@ export function CreateProjectPage() {
 function CreationWizard({ userId }: {
   userId: string;
 }) {
+  const [searchParams] = useSearchParams();
   const initial = () => {
+    const linkedDraftId = searchParams.get('draftId');
+    if (linkedDraftId) return { id: linkedDraftId, files: [] as LocalFile[] };
     try {
       return JSON.parse(sessionStorage.getItem(wizardStorageKey(userId)) ?? 'null') as {
         id?: string;
@@ -91,6 +96,7 @@ function CreationWizard({ userId }: {
     setLoaded(true);
     if (saved?.id) {
       void api.get<'CreationDraftResponse'>(draftPath(saved.id)).then((next: WizardDraft) => {
+        if (isTemplatePayload(next.payload)) { navigate(`/app/projects/new/template/${encodeURIComponent(next.id)}`, { replace: true }); return; }
         if (!mounted.current) {
           return;
         }
@@ -101,7 +107,7 @@ function CreationWizard({ userId }: {
         setLocals(items => items.filter(f => !next.files.some(done => done.id === f.id)));
       }).catch(setError);
     }
-  }, [saved, loaded]);
+  }, [saved, loaded, navigate]);
   useEffect(() => {
     if (!busy) {
       return;
@@ -231,6 +237,7 @@ function CreationWizard({ userId }: {
   });
   const openDraft = (id: string) => run(async () => {
     const next: WizardDraft = await api.get<'CreationDraftResponse'>(draftPath(id));
+    if (isTemplatePayload(next.payload)) { navigate(`/app/projects/new/template/${encodeURIComponent(next.id)}`); return; }
     accept(next);
     setLocals([]);
     remember(id, []);

@@ -29,6 +29,8 @@ const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ def
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectPage })));
+const CreateProjectWizardPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectWizardPage })));
+const TemplateDraftWorkspace = lazy(() => import('./pages/TemplateDraftWorkspace').then((module) => ({ default: module.TemplateDraftWorkspace })));
 const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage').then((module) => ({ default: module.AcceptInvitationPage })));
 const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage').then((module) => ({ default: module.ProjectOverviewPage })));
 const DataWorkspacePage = lazy(() => import('./pages/DataWorkspacePage').then((module) => ({ default: module.DataWorkspacePage })));
@@ -129,6 +131,8 @@ export default function App() {
         <Route path="/app/admin/accounts" element={<Navigate to="/app/settings/accounts" replace />} />
         <Route path="/app/admin/ai" element={<Navigate to="/app/settings/ai" replace />} />
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
+        <Route path="/app/projects/new/wizard" element={<CreateProjectWizardPage />} />
+        <Route path="/app/projects/new/template/:draftId" element={<SettingsEditGuard message="模板预览有尚未保存的编辑。确定放弃这些编辑并离开吗？"><TemplateDraftWorkspace /></SettingsEditGuard>} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />
         <Route path="/app/projects/:projectId" element={<ProjectShell />}>
           <Route index element={<ProjectOverviewPage />} />
