@@ -398,7 +398,7 @@ export function MaterialsPage({ initialAiOpen = false }: { initialAiOpen?: boole
               {versionQuery.data && <>
                 <header><strong>不可变快照 · r{versionQuery.data.revision}</strong><time>{formatDate(versionQuery.data.createdAt)}</time></header>
                 <MaterialDocumentView doc={versionQuery.data.doc} className="tm-document-preview" />
-                <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}><a href={projectPath(projectId, `/files/${a.fileId}/content`)} download={a.name}>{a.name}</a></li>)}</ul>
+                <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}>{a.availability === 'unavailable' ? <span>{a.name} · 原文件不可用{a.deletedAt ? '（已移入回收站，可恢复）' : ''}；历史关联保留</span> : <a href={projectPath(projectId, `/files/${encodeURIComponent(a.fileId)}/content`)} download={a.name}>{a.name}</a>}</li>)}</ul>
               </>}
             </div>}
           </section>}

@@ -11,6 +11,8 @@ export interface FileRow {
   r2_key: string;
   ext: string;
   status: FileStatus;
+  deleted_at: string | null;
+  lifecycle_version: number;
 }
 
 interface MagicSpec {
@@ -70,10 +72,11 @@ export async function createFileInit(
 
 /** 隔离暂存：校验失败但字节已接收时落 R2，等待定时回收 */
 async function quarantine(env: Env, row: FileRow, bytes: Uint8Array, reason: string): Promise<never> {
-  await env.FILES.put(row.r2_key, bytes);
+  const outputKey = `${row.project_id}/${row.id}.l${row.lifecycle_version}${row.ext}`;
+  await env.FILES.put(outputKey, bytes);
   const gcAfter = new Date(Date.now() + LIMITS.quarantineGcHours * 3600_000).toISOString();
-  await env.DB.prepare("UPDATE files SET status = 'quarantined', gc_after = ?2 WHERE id = ?1")
-    .bind(row.id, gcAfter)
+  await env.DB.prepare("UPDATE files SET status = 'quarantined', gc_after = ?2, r2_key=?4 WHERE id = ?1 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?3")
+    .bind(row.id, gcAfter,row.lifecycle_version,outputKey)
     .run();
   throw unsupportedMediaType(reason);
 }
@@ -88,11 +91,11 @@ export async function storeFileContent(
   params: { projectId: string; fileId: string; bytes: Uint8Array },
 ): Promise<{ sizeBytes: number; sha256: string; mimeDetected: string }> {
   const row = await env.DB.prepare(
-    'SELECT id, project_id, r2_key, ext, status FROM files WHERE id = ?1',
+    'SELECT id, project_id, r2_key, ext, status, deleted_at, lifecycle_version FROM files WHERE id = ?1',
   )
     .bind(params.fileId)
     .first<FileRow>();
-  if (!row || row.project_id !== params.projectId) throw notFound('文件不存在');
+  if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
 
   if (params.bytes.byteLength > LIMITS.maxFileBytes) {
@@ -116,12 +119,14 @@ export async function storeFileContent(
   }
 
   const sha = await sha256Hex(params.bytes);
-  await env.FILES.put(row.r2_key, params.bytes);
-  await env.DB.prepare(
-    "UPDATE files SET status = 'available', mime_detected = ?1, size_bytes = ?2, sha256 = ?3 WHERE id = ?4",
+  const outputKey = `${row.project_id}/${row.id}.l${row.lifecycle_version}${row.ext}`;
+  await env.FILES.put(outputKey, params.bytes);
+  const updated = await env.DB.prepare(
+    "UPDATE files SET status = 'available', mime_detected = ?1, size_bytes = ?2, sha256 = ?3, r2_key=?5 WHERE id = ?4 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?6",
   )
-    .bind(mimeDetected, params.bytes.byteLength, sha, row.id)
+    .bind(mimeDetected, params.bytes.byteLength, sha, row.id, outputKey,row.lifecycle_version)
     .run();
+  if(!updated.meta.changes) throw invalidState('文件生命周期已变化，上传结果未应用');
   return { sizeBytes: params.bytes.byteLength, sha256: sha, mimeDetected };
 }
 
@@ -131,13 +136,16 @@ export async function readFileContent(
   params: { projectId: string; fileId: string },
 ): Promise<{ body: ArrayBuffer; mime: string }> {
   const row = await env.DB.prepare(
-    'SELECT id, project_id, r2_key, status, mime_detected FROM files WHERE id = ?1',
+    'SELECT id, project_id, r2_key, status, mime_detected, deleted_at, lifecycle_version FROM files WHERE id = ?1',
   )
     .bind(params.fileId)
-    .first<{ id: string; project_id: string; r2_key: string; status: FileStatus; mime_detected: string | null }>();
-  if (!row || row.project_id !== params.projectId) throw notFound('文件不存在');
+    .first<{ id: string; project_id: string; r2_key: string; status: FileStatus; mime_detected: string | null; deleted_at: string|null; lifecycle_version:number }>();
+  if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'available') throw notFound('文件不可用');
   const obj = await env.FILES.get(row.r2_key);
   if (!obj) throw notFound('文件内容缺失');
-  return { body: await obj.arrayBuffer(), mime: row.mime_detected ?? 'application/octet-stream' };
+  const body = await obj.arrayBuffer();
+  const active=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL AND lifecycle_version=?3 AND status='available'").bind(row.id,params.projectId,row.lifecycle_version).first();
+  if(!active) throw notFound('文件已移入回收站或生命周期已变化');
+  return { body, mime: row.mime_detected ?? 'application/octet-stream' };
 }

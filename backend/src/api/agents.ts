@@ -1,3 +1,4 @@
+import { snapshotSourceInputs } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -189,6 +190,7 @@ async function createRunAndJob(
     turnSequence: number | null;
   },
 ): Promise<{ runId: string; jobId: string }> {
+  const sourceSnapshots = await snapshotSourceInputs(env, params.projectId, params.sourceVersionIds);
   const runId = newId();
   return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run' }, async (jobId, configVersionId) => {
     await env.DB.prepare(
@@ -205,6 +207,7 @@ async function createRunAndJob(
           roleTemplate: params.roleTemplate,
           materialVersionIds: params.materialVersionIds,
           sourceVersionIds: params.sourceVersionIds,
+          sourceSnapshots,
           turnSequence: params.turnSequence,
         }),
         nowIso(),
@@ -226,6 +229,7 @@ async function createRunAndJob(
           roleTemplate: params.roleTemplate,
           materialVersionIds: params.materialVersionIds,
           sourceVersionIds: params.sourceVersionIds,
+          sourceSnapshots,
           turnSequence: params.turnSequence,
         },
         createdBy: params.userId,
@@ -307,12 +311,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
           .first();
         if (!row) throw notFound(`材料版本 ${versionId} 不存在或不属于本项目`);
       }
-      for (const versionId of body.sourceVersionIds) {
-        const row = await c.env.DB.prepare('SELECT id FROM source_versions WHERE id = ?1 AND project_id = ?2')
-          .bind(versionId, member.projectId)
-          .first();
-        if (!row) throw notFound(`来源版本 ${versionId} 不存在或不属于本项目`);
-      }
+      await snapshotSourceInputs(c.env, member.projectId, body.sourceVersionIds);
 
       const sessionId = newId();
       const now = nowIso();

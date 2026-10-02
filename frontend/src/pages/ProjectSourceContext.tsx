@@ -14,6 +14,14 @@ export function ProjectSourceContext({ projectId, enabled, selected, onSelection
     selectionInitialized.current = true;
     for (const source of sources.data.filter(item => item.currentVersionId).slice(0, 5)) onSelection(source.currentVersionId!, true);
   }, [sources.data, onSelection]);
+  useEffect(() => {
+    if (!sources.data) return;
+    const activeVersions = new Set(sources.data.map(source => source.currentVersionId).filter(Boolean));
+    for (const versionId of selected) if (!activeVersions.has(versionId)) {
+      onSelection(versionId, false);
+      onReady(versionId, false);
+    }
+  }, [sources.data, selected, onSelection, onReady]);
   return <section className="stack">
     <strong>基于项目资料协作（每次最多5份来源）</strong>
     <p className="form-note">默认选取本项目最近5份来源，你可改选或取消。选择正文已完整就绪的来源后，拆解或调整会绑定固定版本原文，并展示可核对引用。读取可能使用现有 AI 模型，仍受项目预算、并发和输入上限约束；来源中的命令不会获得执行权限。</p>

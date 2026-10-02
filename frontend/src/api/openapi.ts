@@ -1142,6 +1142,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 粘贴或网页来源移入回收站，保留历史引用 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sourceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已移入回收站 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SourceLifecycleResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复粘贴或网页来源，不自动启动 AI */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sourceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已恢复 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SourceLifecycleResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/sources": {
         parameters: {
             query?: never;
@@ -1153,6 +1245,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    deleted?: "true" | "false";
                     cursor?: string;
                     limit?: string;
                 };
@@ -4351,7 +4444,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 文件库和回收站（含未完成上传） */
+        get: {
+            parameters: {
+                query?: {
+                    deleted?: "true" | "false";
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 文件列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileListResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         /** 创建文件记录，获取上传地址（服务端分配 R2 key） */
         post: {
@@ -4380,6 +4500,116 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["FileInitResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 移入回收站并取消相关来源任务，保留原文件和历史 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已移入回收站 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileLifecycleResponse"];
+                    };
+                };
+                /** @description 生命周期变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复文件和关联来源，不自动启动 AI */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已恢复 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileLifecycleResponse"];
+                    };
+                };
+                /** @description 生命周期变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
             };
@@ -5957,6 +6187,16 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        SourceLifecycleResponse: {
+            data: {
+                /** Format: uuid */
+                sourceId: string;
+                deletedAt: string | null;
+                lifecycleVersion: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         SourceCreateResponse: {
             data: {
                 /** Format: uuid */
@@ -5967,6 +6207,11 @@ export interface components {
                 /** Format: uuid */
                 currentVersionId: string | null;
                 createdAt: string;
+                lifecycleVersion: number;
+                canDelete: boolean;
+                deletedAt: string | null;
+                /** Format: uuid */
+                fileId: string | null;
                 /** Format: uuid */
                 sourceVersionId: string;
             };
@@ -5984,6 +6229,11 @@ export interface components {
                     /** Format: uuid */
                     currentVersionId: string | null;
                     createdAt: string;
+                    lifecycleVersion: number;
+                    canDelete: boolean;
+                    deletedAt: string | null;
+                    /** Format: uuid */
+                    fileId: string | null;
                 }[];
                 nextCursor: string | null;
             };
@@ -6119,6 +6369,9 @@ export interface components {
                     /** Format: uuid */
                     sourceVersionId: string | null;
                     /** @enum {string} */
+                    sourceAvailability?: "unavailable";
+                    sourceDeletedAt?: string | null;
+                    /** @enum {string} */
                     status: "draft" | "confirmed";
                     revision: number;
                     confirmedAt: string | null;
@@ -6140,6 +6393,9 @@ export interface components {
                             fragmentId: string;
                             pageNumber: number | null;
                             quote: string;
+                            /** @enum {string} */
+                            availability?: "unavailable";
+                            deletedAt?: string | null;
                         }[];
                         /** @enum {string} */
                         fieldState: "ai_suggestion" | "edited" | "confirmed";
@@ -6155,6 +6411,9 @@ export interface components {
                 requirementSetId: string;
                 /** Format: uuid */
                 sourceVersionId: string | null;
+                /** @enum {string} */
+                sourceAvailability?: "unavailable";
+                sourceDeletedAt?: string | null;
                 /** @enum {string} */
                 status: "draft" | "confirmed";
                 revision: number;
@@ -6177,6 +6436,9 @@ export interface components {
                         fragmentId: string;
                         pageNumber: number | null;
                         quote: string;
+                        /** @enum {string} */
+                        availability?: "unavailable";
+                        deletedAt?: string | null;
                     }[];
                     /** @enum {string} */
                     fieldState: "ai_suggestion" | "edited" | "confirmed";
@@ -6204,6 +6466,9 @@ export interface components {
                     fragmentId: string;
                     pageNumber: number | null;
                     quote: string;
+                    /** @enum {string} */
+                    availability?: "unavailable";
+                    deletedAt?: string | null;
                 }[];
                 /** @enum {string} */
                 fieldState: "ai_suggestion" | "edited" | "confirmed";
@@ -6398,6 +6663,9 @@ export interface components {
                         fragmentId: string;
                         pageNumber: number | null;
                         quote: string;
+                        /** @enum {string} */
+                        availability?: "unavailable";
+                        deletedAt?: string | null;
                     }[];
                     effortHours: number;
                     /** Format: uuid */
@@ -6433,6 +6701,9 @@ export interface components {
                     fragmentId: string;
                     pageNumber: number | null;
                     quote: string;
+                    /** @enum {string} */
+                    availability?: "unavailable";
+                    deletedAt?: string | null;
                 }[];
                 effortHours: number;
                 /** Format: uuid */
@@ -6761,6 +7032,9 @@ export interface components {
                         /** Format: uuid */
                         fileId: string;
                         name: string;
+                        /** @enum {string} */
+                        availability?: "unavailable";
+                        deletedAt?: string | null;
                     }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
@@ -6805,6 +7079,9 @@ export interface components {
                     /** Format: uuid */
                     fileId: string;
                     name: string;
+                    /** @enum {string} */
+                    availability?: "unavailable";
+                    deletedAt?: string | null;
                 }[];
                 /** @enum {string} */
                 origin: "manual" | "ai_adoption";
@@ -6828,6 +7105,9 @@ export interface components {
                         /** Format: uuid */
                         fileId: string;
                         name: string;
+                        /** @enum {string} */
+                        availability?: "unavailable";
+                        deletedAt?: string | null;
                     }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
@@ -7147,6 +7427,9 @@ export interface components {
                 url: string | null;
                 /** Format: uuid */
                 fileId: string | null;
+                /** @enum {string} */
+                availability?: "unavailable";
+                deletedAt?: string | null;
                 /** Format: uuid */
                 declaredBy: string;
                 createdAt: string;
@@ -7165,6 +7448,9 @@ export interface components {
                     url: string | null;
                     /** Format: uuid */
                     fileId: string | null;
+                    /** @enum {string} */
+                    availability?: "unavailable";
+                    deletedAt?: string | null;
                     /** Format: uuid */
                     declaredBy: string;
                     createdAt: string;
@@ -7191,6 +7477,9 @@ export interface components {
                     attachments: {
                         fileId: string;
                         name: string;
+                        /** @enum {string} */
+                        availability?: "unavailable";
+                        deletedAt?: string | null;
                     }[];
                 }[];
                 requirementSets: {
@@ -7198,6 +7487,9 @@ export interface components {
                     requirementSetId: string;
                     /** Format: uuid */
                     sourceVersionId: string | null;
+                    /** @enum {string} */
+                    sourceAvailability?: "unavailable";
+                    sourceDeletedAt?: string | null;
                     /** @enum {string} */
                     status: "draft" | "confirmed";
                     revision: number;
@@ -7220,6 +7512,9 @@ export interface components {
                             fragmentId: string;
                             pageNumber: number | null;
                             quote: string;
+                            /** @enum {string} */
+                            availability?: "unavailable";
+                            deletedAt?: string | null;
                         }[];
                         /** @enum {string} */
                         fieldState: "ai_suggestion" | "edited" | "confirmed";
@@ -7277,6 +7572,37 @@ export interface components {
                     costStatus: string;
                     note: string;
                 };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        FileListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    fileId: string;
+                    name: string;
+                    /** @enum {string} */
+                    status: "pending" | "available" | "quarantined" | "discarded";
+                    sizeBytes: number | null;
+                    createdAt: string;
+                    deletedAt: string | null;
+                    lifecycleVersion: number;
+                    canDelete: boolean;
+                    sourceIds: string[];
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        FileLifecycleResponse: {
+            data: {
+                /** Format: uuid */
+                fileId: string;
+                deletedAt: string | null;
+                lifecycleVersion: number;
+                affectedSourceIds: string[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

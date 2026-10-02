@@ -181,7 +181,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
             if (!input.tasks?.length || !input.members?.length)
                 throw invalidState('没有待分配任务或项目成员');
             const output = await generateAssignmentSuggestions(env, jobId, {
-                profileStamp: input.profileStamp, projectId: input.projectId, requestedBy: input.requestedBy, configVersionId: config.id, requirementSetId: null, requirements: [],
+                profileStamp: input.profileStamp, projectId: input.projectId, requestedBy: input.requestedBy, configVersionId: config.id, requirementSetId: null, requirements: [], sourceSnapshots: input.sourceSnapshots,
                 tasks: input.tasks.map(t => ({ ...t, dueDate: null, duePrecision: 'unknown', status: 'todo', assigneeId: null })),
                 members: input.members.map(m => ({ ...m, displayName: m.userId })),
             }, config, async () => { await assertSnapshot(env, input, true); await currentConfig(env, input); });

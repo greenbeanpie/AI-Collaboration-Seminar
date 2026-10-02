@@ -14,7 +14,7 @@ afterEach(cleanup);
 function record(status: 'queued' | 'running' | 'waiting_input' | null, serverStatus?: 'running' | 'waiting_input') {
   const onParse = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SourceRecord
-    source={{ sourceId: 's', currentVersionId: 'v', kind: 'file', title: '文本 PDF', createdAt: new Date().toISOString() }}
+    source={{ sourceId: 's', currentVersionId: 'v', kind: 'file', title: '文本 PDF', createdAt: new Date().toISOString(), lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: 'f' }}
     version={{ sourceVersionId: 'v', sourceId: 's', revision: 1, origin: 'file', fileId: 'f', status: 'processing', parseError: null, pageCount: 4, charCount: 242, pages: serverStatus === 'waiting_input' ? [{pageNumber:4,textStatus:'none',imageStatus:'none',ocrStatus:'none',needsReview:false}] : [], processingJob:serverStatus ? {jobId:'server',status:serverStatus,phase:'extract'} : null }}
     projectId="p" highlighted={false} highlightedPageNumber={null}
     jobs={status ? [{ jobId: 'j', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文本 PDF', fileId: 'f', status }] : []}

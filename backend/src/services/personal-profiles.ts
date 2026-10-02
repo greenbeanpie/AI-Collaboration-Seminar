@@ -1,3 +1,4 @@
+import { sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
 import { invalidState } from '../core/errors';
 import { nowIso } from '../core/db';
@@ -27,7 +28,7 @@ export async function assertProfileStamp(env: Env, projectId: string, expected: 
   if (!expected || await profileStamp(env, projectId) !== expected) throw invalidState('成员或个人资料已变化，请重新生成任务推荐');
 }
 /** Last dispatch read: current text, consent, member scope and config validity share one DB snapshot. */
-export async function recommendationDispatch(env: Env, projectId: string, requestedBy: string, expectedStamp: string | undefined, configVersionId: string) {
+export async function recommendationDispatch(env: Env, projectId: string, requestedBy: string, expectedStamp: string | undefined, configVersionId: string, sourceSnapshots?: SourceInputSnapshot[]) {
   if (!expectedStamp) throw invalidState('缺少个人资料授权快照，请重新生成推荐');
   const guard = profileSnapshotGuard('?2','?1');
   const row = await env.DB.prepare(`/* recommendation-dispatch */ SELECT
@@ -35,10 +36,10 @@ export async function recommendationDispatch(env: Env, projectId: string, reques
       FROM project_members m WHERE m.project_id=?1) members_json,
     (SELECT json_group_array(json_object('userId',m.user_id,'bio',p.bio,'major',p.major,'specialties',p.specialties,'preferredRoles',p.preferred_roles))
       FROM project_members m JOIN personal_profiles p ON p.user_id=m.user_id WHERE m.project_id=?1 AND p.ai_use_allowed=1) profiles_json
-    WHERE ${guard}
+    WHERE ${guard} AND ${sourceInputsGuard('?5', '?1')}
       AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?3)
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?4 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`)
-    .bind(projectId,expectedStamp,requestedBy,configVersionId).first<{members_json:string;profiles_json:string}>();
+    .bind(projectId,expectedStamp,requestedBy,configVersionId,JSON.stringify({ sourceSnapshots: sourceSnapshots ?? [] })).first<{members_json:string;profiles_json:string}>();
   if (!row) throw invalidState('资料授权、成员或 AI 设置已变化，请重新生成推荐');
   // Only synchronous parsing follows the last read; the caller must not await other I/O before fetch.
   return { members:JSON.parse(row.members_json) as Array<{userId:string;loadHours:number}>,
@@ -60,7 +61,7 @@ export function profileSnapshotGuard(stamp: string, projectId: string): string {
 export async function finishRecommendationJob(env: Env, jobId: string, result: unknown) {
   const guard = profileSnapshotGuard("json_extract(jobs.input_json,'$.profileStamp')",'jobs.project_id');
   const changed = await env.DB.prepare(`UPDATE jobs SET status='succeeded',result_json=?2,finished_at=?3,updated_at=?3
-    WHERE id=?1 AND status IN ('running','queued') AND ${guard}`).bind(jobId,JSON.stringify(result),nowIso()).run();
+    WHERE id=?1 AND status IN ('running','queued') AND ${guard} AND ${sourceInputsGuard('jobs.input_json', 'jobs.project_id')}`).bind(jobId,JSON.stringify(result),nowIso()).run();
   if (!changed.meta.changes) throw invalidState('个人资料授权或成员已变化，推荐未发布，请重新生成');
   await env.DB.prepare("UPDATE job_outbox SET status='done',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();
 }

@@ -1313,6 +1313,42 @@
           "requestId"
         ]
       },
+      "SourceLifecycleResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lifecycleVersion": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sourceId",
+              "deletedAt",
+              "lifecycleVersion"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "SourceCreateResponse": {
         "type": "object",
         "properties": {
@@ -1344,6 +1380,25 @@
               "createdAt": {
                 "type": "string"
               },
+              "lifecycleVersion": {
+                "type": "integer"
+              },
+              "canDelete": {
+                "type": "boolean"
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fileId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
               "sourceVersionId": {
                 "type": "string",
                 "format": "uuid"
@@ -1355,6 +1410,10 @@
               "title",
               "currentVersionId",
               "createdAt",
+              "lifecycleVersion",
+              "canDelete",
+              "deletedAt",
+              "fileId",
               "sourceVersionId"
             ]
           },
@@ -1403,6 +1462,25 @@
                     },
                     "createdAt": {
                       "type": "string"
+                    },
+                    "lifecycleVersion": {
+                      "type": "integer"
+                    },
+                    "canDelete": {
+                      "type": "boolean"
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "fileId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
                     }
                   },
                   "required": [
@@ -1410,7 +1488,11 @@
                     "kind",
                     "title",
                     "currentVersionId",
-                    "createdAt"
+                    "createdAt",
+                    "lifecycleVersion",
+                    "canDelete",
+                    "deletedAt",
+                    "fileId"
                   ]
                 }
               },
@@ -1976,6 +2058,18 @@
                       ],
                       "format": "uuid"
                     },
+                    "sourceAvailability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "sourceDeletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -2056,6 +2150,18 @@
                                 },
                                 "quote": {
                                   "type": "string"
+                                },
+                                "availability": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unavailable"
+                                  ]
+                                },
+                                "deletedAt": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 }
                               },
                               "required": [
@@ -2130,6 +2236,18 @@
                   "null"
                 ],
                 "format": "uuid"
+              },
+              "sourceAvailability": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              },
+              "sourceDeletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "status": {
                 "type": "string",
@@ -2211,6 +2329,18 @@
                           },
                           "quote": {
                             "type": "string"
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -2328,6 +2458,18 @@
                     },
                     "quote": {
                       "type": "string"
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -3089,6 +3231,18 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 2000
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -3236,6 +3390,18 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 2000
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -4611,6 +4777,18 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "availability": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable"
+                          ]
+                        },
+                        "deletedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -4774,6 +4952,18 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -4858,6 +5048,18 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6008,6 +6210,18 @@
                 ],
                 "format": "uuid"
               },
+              "availability": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "declaredBy": {
                 "type": "string",
                 "format": "uuid"
@@ -6075,6 +6289,18 @@
                         "null"
                       ],
                       "format": "uuid"
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "declaredBy": {
                       "type": "string",
@@ -6174,6 +6400,18 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6206,6 +6444,18 @@
                         "null"
                       ],
                       "format": "uuid"
+                    },
+                    "sourceAvailability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "sourceDeletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "status": {
                       "type": "string",
@@ -6287,6 +6537,18 @@
                                 },
                                 "quote": {
                                   "type": "string"
+                                },
+                                "availability": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unavailable"
+                                  ]
+                                },
+                                "deletedAt": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 }
                               },
                               "required": [
@@ -6574,6 +6836,141 @@
               "resources",
               "events",
               "aiUsage"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "FileListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fileId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "available",
+                        "quarantined",
+                        "discarded"
+                      ]
+                    },
+                    "sizeBytes": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lifecycleVersion": {
+                      "type": "integer"
+                    },
+                    "canDelete": {
+                      "type": "boolean"
+                    },
+                    "sourceIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  },
+                  "required": [
+                    "fileId",
+                    "name",
+                    "status",
+                    "sizeBytes",
+                    "createdAt",
+                    "deletedAt",
+                    "lifecycleVersion",
+                    "canDelete",
+                    "sourceIds"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "FileLifecycleResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lifecycleVersion": {
+                "type": "integer"
+              },
+              "affectedSourceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "fileId",
+              "deletedAt",
+              "lifecycleVersion",
+              "affectedSourceIds"
             ]
           },
           "requestId": {
@@ -9179,6 +9576,130 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/sources/{sourceId}": {
+      "delete": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "粘贴或网页来源移入回收站，保留历史引用",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已移入回收站",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceLifecycleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/restore": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "恢复粘贴或网页来源，不自动启动 AI",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已恢复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceLifecycleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/sources": {
       "post": {
         "tags": [
@@ -9278,6 +9799,18 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "deleted",
+            "in": "query"
           },
           {
             "schema": {
@@ -13645,6 +14178,65 @@
       }
     },
     "/api/v1/projects/{projectId}/files": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "文件库和回收站（含未完成上传）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "deleted",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "files"
@@ -13695,6 +14287,150 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FileInitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}": {
+      "delete": {
+        "tags": [
+          "files"
+        ],
+        "summary": "移入回收站并取消相关来源任务，保留原文件和历史",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已移入回收站",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLifecycleResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "生命周期变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/restore": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "恢复文件和关联来源，不自动启动 AI",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已恢复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLifecycleResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "生命周期变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }

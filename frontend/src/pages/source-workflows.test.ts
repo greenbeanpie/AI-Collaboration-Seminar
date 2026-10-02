@@ -12,6 +12,16 @@ function response(data: unknown): Response {
 }
 
 describe('project list pagination', () => {
+  it('preserves the recycle filter on every page of file records', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ items: [{ fileId: 'file-1' }], nextCursor: 'cursor-1' }))
+      .mockResolvedValueOnce(response({ items: [{ fileId: 'file-2' }], nextCursor: null }));
+    vi.stubGlobal('fetch', fetchMock);
+    const items = await listAllProjectItems<'FileListResponse'>('project-1', '/files', 1, undefined, { deleted: true });
+    expect(items.map(item => item.fileId)).toEqual(['file-1', 'file-2']);
+    expect(fetchMock.mock.calls.every(([url]) => new URL(String(url), window.location.origin).searchParams.get('deleted') === 'true')).toBe(true);
+  });
+
   it('loads every page before returning source records', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({ items: [{ sourceId: 'source-1' }], nextCursor: 'cursor-1' }))

@@ -101,7 +101,7 @@ function CitationCard({ citation, sourceTitle, sourceId }: { citation: Requireme
     : '';
   const link = `/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(citation.sourceVersionId)}${pageQuery}&fragmentId=${encodeURIComponent(citation.fragmentId)}${hash}`;
   return <div className="requirements-citation">
-    <div className="requirements-citation-head"><span>{sourceTitle ?? `来源版本 ${citation.sourceVersionId.slice(0, 8)}`}{citation.pageNumber ? ` · 第 ${citation.pageNumber} 页` : ' · 网页或文字片段'}</span><Link className="button-link" to={link}>查看来源 <ExternalLink size={12} /></Link></div>
+    <div className="requirements-citation-head"><span>{sourceTitle ?? `来源版本 ${citation.sourceVersionId.slice(0, 8)}`}{citation.pageNumber ? ` · 第 ${citation.pageNumber} 页` : ' · 网页或文字片段'}</span>{citation.availability === 'unavailable' ? <span className="muted">来源不可用{citation.deletedAt ? '（已移入回收站）' : ''} · 历史引文保留</span> : <Link className="button-link" to={link}>查看来源 <ExternalLink size={12} /></Link>}</div>
     <blockquote className="quote-box">{citation.quote}</blockquote>
   </div>;
 }
@@ -377,7 +377,7 @@ export function RequirementsPage() {
       {setQuery.isLoading ? <Spinner label="正在读取项目要求集" /> : setQuery.error ? <ErrorNotice error={setQuery.error} onRetry={() => void setQuery.refetch()} /> : sets.length === 0 ? <EmptyState title="还没有要求草稿" detail="请先在“通知来源”导入原文并发起解析。解析失败或 AI 未启用时，此处不会展示虚构结果。" action={<Link className="button button-primary button-small" to={`/app/projects/${projectId}/sources`}>前往通知来源</Link>} /> : <div className="requirements-layout">
         <nav className="requirements-set-list" aria-label="要求集列表">{sets.map((set) => <button className="requirements-set-button" type="button" key={set.requirementSetId} aria-current={selectedSetId === set.requirementSetId} onClick={() => { setSearchParams({ setId: set.requirementSetId }); setEditingRequirementId(null); }}>
           <div className="requirements-set-meta"><StatusPill tone={set.status === 'confirmed' ? 'good' : 'warn'}>{set.status === 'confirmed' ? '已确认' : '待确认草稿'}</StatusPill><small>{set.requirements.length} 项要求</small></div>
-          <strong>要求集 {set.requirementSetId.slice(0, 8)}</strong><small>{set.sourceVersionId ? `来源版本 ${set.sourceVersionId.slice(0, 8)}` : '未关联来源版本'} · 修订 ${set.revision}</small>
+          <strong>要求集 {set.requirementSetId.slice(0, 8)}</strong><small>{set.sourceVersionId ? `来源版本 ${set.sourceVersionId.slice(0, 8)}` : '未关联来源版本'} · 修订 ${set.revision}</small>{set.sourceAvailability === 'unavailable' && <small>原始来源不可用 · 要求与引文保留</small>}
         </button>)}</nav>
 
         <div className="stack">
@@ -389,7 +389,7 @@ export function RequirementsPage() {
               {setDetail.status === 'draft' && !owner && <div className="callout warning-callout">只有项目负责人可以确认要求集。你仍可编辑草稿中的要求条目。</div>}
               {setDetail.status === 'draft' && owner && <div className="callout">确认前请核对截止日期精度、提交物、团队限制和每条引用。若官方文本未明确，不要补充推测值。</div>}
               {setActionError ? <ErrorNotice error={setActionError} /> : null}
-              {activeSet?.sourceVersionId && <p className="requirements-item-meta"><Link className="button-link" to={`/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(activeSet.sourceVersionId)}`}>查看原始来源 <ExternalLink size={12} /></Link></p>}
+              {activeSet?.sourceVersionId && <p className="requirements-item-meta">{activeSet.sourceAvailability === 'unavailable' ? <span>原始来源不可用{activeSet.sourceDeletedAt ? '（已移入回收站，可恢复）' : ''}。要求与历史引文仍保留。</span> : <Link className="button-link" to={`/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(activeSet.sourceVersionId)}`}>查看原始来源 <ExternalLink size={12} /></Link>}</p>}
             </div>
             {setDetail.requirements.length === 0 ? <EmptyState title="此要求集没有条目" detail="API 返回了空要求集，可重新解析来源或联系项目负责人核对服务状态。" /> : <div className="requirements-item-list">{setDetail.requirements.map((requirement) => {
               return <article className="requirements-item" key={requirement.requirementId}>

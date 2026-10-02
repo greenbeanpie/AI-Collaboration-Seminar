@@ -95,7 +95,7 @@ describe('complete selected original project source context', () => {
         expect(response.status).toBe(202);
         const jobId = (await response.json() as { data: { jobId: string } }).data.jobId;
         const input = JSON.parse((await getJob(env, jobId)).input_json) as CollaborationAiInput;
-        expect(input.sourceSnapshots).toEqual([{ sourceId: s.sourceId, sourceVersionId: s.versionId, title: '比赛项目原始要求', fragments: [{ fragmentId: s.fragmentId, pageNumber: 1, content: s.text }] }]);
+        expect(input.sourceSnapshots).toEqual([{ sourceId: s.sourceId, sourceVersionId: s.versionId, sourceLifecycleVersion: 1, title: '比赛项目原始要求', fragments: [{ fragmentId: s.fragmentId, pageNumber: 1, content: s.text }] }]);
         const output = task([s]); output.citations[0]!.quote = '正文末尾不可丢失';
         const mock = provider({ tasks: [output] });
         await runCollaborationAiJob(offline, jobId);
@@ -137,10 +137,11 @@ describe('complete selected original project source context', () => {
         const ids = kind === 'empty' ? [] : kind === 'duplicate' ? [s.versionId, s.versionId] : kind === 'too_many' ? Array.from({ length: 6 }, id) : [s.versionId];
         await expect(readProjectSourceContext(env, f.projectId, ids)).rejects.toThrow();
     });
-    it.each(['source', 'version', 'title', 'fragment', 'page', 'body'])('refuses mismatched frozen %s before provider', async kind => {
+    it.each(['source', 'version', 'title', 'fragment', 'page', 'body', 'lifecycle'])('refuses mismatched frozen %s before provider', async kind => {
         const f = await fixture(), s = await source(f), j = await job(f, [s]);
         const captured = j.input.sourceSnapshots![0]!;
         if (kind === 'source') captured.sourceId = id();
+        if (kind === 'lifecycle') captured.sourceLifecycleVersion += 1;
         if (kind === 'version') captured.sourceVersionId = id();
         if (kind === 'title') captured.title = '虚构标题';
         if (kind === 'fragment') captured.fragments[0]!.fragmentId = id();
@@ -151,6 +152,32 @@ describe('complete selected original project source context', () => {
         await runCollaborationAiJob(offline, j.jobId);
         await noProposal(f, j.jobId);
         expect(mock).not.toHaveBeenCalled();
+    });
+});
+
+describe('source lifecycle restoration is a fresh context', () => {
+    it('rejects a frozen snapshot after delete and restore, then accepts a fresh snapshot', async () => {
+        const f = await fixture(), s = await source(f);
+        const captured = await readProjectSourceContext(env, f.projectId, [s.versionId]);
+        await changeSource(f, s, 'restored');
+        await expect(assertProjectSourceContext(env, f.projectId, captured)).rejects.toThrow('已变化');
+        const fresh = await readProjectSourceContext(env, f.projectId, [s.versionId]);
+        expect(fresh[0]!.sourceLifecycleVersion).toBe(3);
+        await expect(assertProjectSourceContext(env, f.projectId, fresh)).resolves.toBeUndefined();
+    });
+    it('CAS rejects restoration after the final source read before proposal insertion', async () => {
+        const f = await fixture(), s = await source(f), j = await job(f, [s]);
+        provider({ tasks: [task([s])] });
+        await runCollaborationAiJob(beforeStatement('INSERT INTO collaboration_proposals', () => changeSource(f, s, 'restored')), j.jobId);
+        await noProposal(f, j.jobId);
+    });
+    it('manual apply cannot revive a proposal after source restoration', async () => {
+        const f = await fixture(), s = await source(f), j = await job(f, [s]);
+        provider({ tasks: [task([s])] }); await runCollaborationAiJob(offline, j.jobId);
+        const result = JSON.parse((await getJob(env, j.jobId)).result_json!) as { proposalId: string };
+        await changeSource(f, s, 'restored');
+        await expect(applyProposal(env, f.projectId, result.proposalId, 1, f.user.userId)).rejects.toThrow();
+        expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(0);
     });
 });
 
@@ -209,12 +236,14 @@ async function changeSource(f: Fixture, s: Source, kind: string) {
     if (kind === 'body') await env.DB.prepare('UPDATE source_fragments SET content=?2 WHERE id=?1').bind(s.fragmentId, '新的原始要求').run();
     if (kind === 'version') await env.DB.prepare('UPDATE sources SET current_version_id=?2 WHERE id=?1').bind(s.sourceId, id()).run();
     if (kind === 'removed') await env.DB.prepare('DELETE FROM sources WHERE id=?1').bind(s.sourceId).run();
+    if (kind === 'recycled' || kind === 'restored') await env.DB.prepare('UPDATE sources SET deleted_at=?2,lifecycle_version=lifecycle_version+1 WHERE id=?1').bind(s.sourceId, now()).run();
+    if (kind === 'restored') await env.DB.prepare('UPDATE sources SET deleted_at=NULL,lifecycle_version=lifecycle_version+1 WHERE id=?1').bind(s.sourceId).run();
     if (kind === 'incomplete') await env.DB.prepare("UPDATE source_pages SET text_status='none',ocr_status='pending' WHERE source_version_id=?1").bind(s.versionId).run();
     if (kind === 'original') await env.DB.prepare("UPDATE files SET status='discarded' WHERE id=?1").bind(s.fileId).run();
     if (kind === 'title') await env.DB.prepare('UPDATE sources SET title=?2 WHERE id=?1').bind(s.sourceId, '新的来源标题').run();
 }
 describe('source context dispatch and atomic application guards', () => {
-    it.each(['body', 'version', 'removed', 'incomplete', 'original', 'title'])('%s changed during provider cannot persist or apply', async kind => {
+    it.each(['body', 'version', 'removed', 'recycled', 'restored', 'incomplete', 'original', 'title'])('%s changed during provider cannot persist or apply', async kind => {
         const f = await fixture(true), s = await source(f, '原始要求必须核对案例', 'file'), j = await job(f, [s], true);
         const mock = provider({ tasks: [], updates: [{ ...task([s]), taskId: j.taskId }] }, () => changeSource(f, s, kind));
         await runCollaborationAiJob(offline, j.jobId);
@@ -222,7 +251,7 @@ describe('source context dispatch and atomic application guards', () => {
         expect(await env.DB.prepare('SELECT title,revision FROM tasks WHERE id=?1').bind(j.taskId).first()).toMatchObject({ title: '旧任务', revision: 1 });
         expect(mock).toHaveBeenCalledTimes(1);
     });
-    it.each(['body', 'removed', 'incomplete'])('%s changed by first invalid response blocks repair fetch', async kind => {
+    it.each(['body', 'removed', 'recycled', 'restored', 'incomplete'])('%s changed by first invalid response blocks repair fetch', async kind => {
         const f = await fixture(), s = await source(f), j = await job(f, [s]);
         const mock = provider({ invalid: true }, () => changeSource(f, s, kind));
         await runCollaborationAiJob(offline, j.jobId);

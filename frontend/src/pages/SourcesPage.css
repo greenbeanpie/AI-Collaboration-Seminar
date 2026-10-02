@@ -21,7 +21,15 @@
 .sources-inline-note { margin: 0; color: var(--palette-8893a7-text); font-size: 12px; line-height: 1.6; }
 .sources-scan-progress { color: var(--palette-5373a8-text); font-size: 12px; line-height: 1.6; }
 .sources-error { margin-top: 3px; }
+.sources-file-library { display: grid; gap: 14px; }
+.sources-library-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.sources-library-list { display: grid; gap: 10px; }
+.sources-library-record { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.sources-library-copy { min-width: 0; display: grid; gap: 8px; }
+.sources-library-copy h3 { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.sources-library-record > .button { flex-shrink: 0; }
 @media (max-width: 640px) {
+  .sources-file-library .section-head, .sources-library-record { align-items: stretch; flex-direction: column; }
   .sources-record-heading { display: grid; }
   .sources-record-actions { width: 100%; }
   .sources-record-actions .button { flex: 1; }

@@ -23,7 +23,7 @@ export async function handleScheduled(env: Env): Promise<void> {
   await releaseStaleReservations(env, now);
   try {
     const quarantined = await env.DB
-      .prepare("SELECT id, r2_key FROM files WHERE status = 'quarantined' AND gc_after IS NOT NULL AND gc_after <= ?1")
+      .prepare("SELECT id, r2_key FROM files WHERE status = 'quarantined' AND deleted_at IS NULL AND gc_after IS NOT NULL AND gc_after <= ?1")
       .bind(now)
       .all<{ id: string; r2_key: string }>();
     for (const row of quarantined.results) {
