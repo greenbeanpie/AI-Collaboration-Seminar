@@ -83,6 +83,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
   const dialogs = usePageDialogs(`${accountId}:${projectId}:${activeMaterialId ?? ""}`);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   useEffect(() => { if (requestedVersionId) setSelectedVersionId(requestedVersionId); }, [requestedVersionId]);
+  const [historyPage, setHistoryPage] = useState<{ materialId: string | null; page: number } | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newKind, setNewKind] = useState('document');
   const [saving, setSaving] = useState(false);
@@ -157,6 +158,9 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
     enabled: Boolean(activeMaterialId && selectedVersionId),
     queryFn: () => api.get<'MaterialVersionResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(activeMaterialId!)}/versions/${encodeURIComponent(selectedVersionId!)}`)),
   });
+  const historyPageCount = Math.max(1, Math.ceil((historyQuery.data?.length ?? 0) / 5));
+  const requestedVersionIndex = historyQuery.data?.findIndex(version => version.versionId === requestedVersionId) ?? -1;
+  const currentHistoryPage = Math.min(historyPage?.materialId === activeMaterialId ? historyPage.page : Math.max(0, Math.floor(requestedVersionIndex / 5)), historyPageCount - 1);
   const material = materialQuery.data;
   const latestMaterial = useRef(material); latestMaterial.current = material;
 
@@ -243,6 +247,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
     if (dirty && activeMaterialId !== materialId && !await dialogs.confirm(leavingDraftMessage)) return;
     setActiveMaterialId(materialId);
     setSelectedVersionId(null);
+    setHistoryPage(null);
     setConflict(null);
     setSaveError(null);
   };
@@ -386,16 +391,18 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
             </form>
           </section>}
 
-          {activeMaterialId && <section className="card tm-history-card">
-            <div className="tm-history-head"><h3>版本历史</h3><span>{historyQuery.data?.length ?? '—'}</span></div>
+          {activeMaterialId && <details key={`${activeMaterialId}:${requestedVersionId ?? ''}`} open={requestedVersionId && activeMaterialId === requestedMaterialId ? true : undefined} className="card tm-history-card">
+            <summary className="tm-history-head tm-disclosure-heading"><span>版本历史</span><span>{historyQuery.data?.length ?? '—'}</span></summary>
+            <div className="tm-disclosure-content">
             {historyQuery.isLoading && <Spinner label="正在读取版本" />}
             {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}
             {!historyQuery.isLoading && !historyQuery.error && !historyQuery.data?.length && <p className="tm-form-intro">保存正文后会生成新的不可变版本。</p>}
-            {!!historyQuery.data?.length && <ol className="tm-history-list">{historyQuery.data.map((version) => <li key={version.versionId}>
+            {!!historyQuery.data?.length && <ol className="tm-history-list">{historyQuery.data.slice(currentHistoryPage * 5, (currentHistoryPage + 1) * 5).map((version) => <li key={version.versionId}>
               <button className={`tm-history-item ${selectedVersionId === version.versionId ? 'active' : ''}`} onClick={() => setSelectedVersionId(version.versionId)}>
                 <span><strong>版本 r{version.revision}{version.revision === activeVersion ? ' · 当前' : ''}</strong><span>{version.origin === 'ai_adoption' ? '人工采纳的 AI 草稿' : '人工编辑'} · {formatDate(version.createdAt)}</span></span><span>查看</span>
               </button>
             </li>)}</ol>}
+            {!!historyQuery.data?.length && <nav className="tm-list-pagination" aria-label="版本历史分页"><button type="button" className="button button-quiet button-small" disabled={currentHistoryPage === 0} onClick={() => setHistoryPage({ materialId: activeMaterialId, page: currentHistoryPage - 1 })}>上一页</button><span>{currentHistoryPage + 1} / {historyPageCount}</span><button type="button" className="button button-quiet button-small" disabled={currentHistoryPage === historyPageCount - 1} onClick={() => setHistoryPage({ materialId: activeMaterialId, page: currentHistoryPage + 1 })}>下一页</button></nav>}
             {selectedVersionId && <div className="tm-history-detail">
               {versionQuery.isLoading && <Spinner label="正在读取版本快照" />}
               {versionQuery.error && <ErrorNotice error={versionQuery.error} onRetry={() => void versionQuery.refetch()} />}
@@ -405,7 +412,8 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}>{a.availability === 'unavailable' ? <span>{a.name} · 原文件不可用{a.deletedAt ? '（已移入回收站，可恢复）' : ''}；历史关联保留</span> : <a href={projectPath(projectId, `/files/${encodeURIComponent(a.fileId)}/content`)} download={a.name}>{a.name}</a>}</li>)}</ul>
               </>}
             </div>}
-          </section>}
+            </div>
+          </details>}
         </aside>
 
         <main className="tm-material-main">
