@@ -30,8 +30,9 @@ export default defineConfig({
         // A waiting update activates only after SKIP_WAITING, then takes control.
         skipWaiting: false,
         clientsClaim: true,
-        navigateFallbackDenylist: [/^\/api(?:\/.*)?$/],
-        importScripts: ['/asset-compat.js', '/push-worker.js'],
+        // Imported navigation handler owns network/offline fallback without runtime HTML caching.
+        navigateFallback: null,
+        importScripts: ['/navigation-worker.js', '/asset-compat.js', '/push-worker.js'],
         runtimeCaching: [{
           urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[^/]+-[A-Za-z0-9_-]+\.(?:js|css)$/.test(url.pathname),
           handler: 'CacheFirst',

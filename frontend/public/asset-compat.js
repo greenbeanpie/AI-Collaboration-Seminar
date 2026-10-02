@@ -14,5 +14,5 @@ self.addEventListener('install', event => {
         if (response?.ok) await target.put(new Request(url.origin + url.pathname), response.clone());
       }
     }
-  })());
+  })().catch(() => { /* Static compatibility is best effort; failed cache copies must not reject worker installation. */ }));
 });

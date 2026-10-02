@@ -17,3 +17,6 @@
 
 /in-page-dialog.js
   Cache-Control: no-cache
+
+/navigation-worker.js
+  Cache-Control: no-cache
