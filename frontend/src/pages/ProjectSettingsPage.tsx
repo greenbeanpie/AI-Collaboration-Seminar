@@ -1,3 +1,4 @@
+import './CompactSettings.css';
 import { DateInput } from '../components/DateInput';
 import { useEffect, useState } from 'react';
 import { CollaborationSettings } from './CollaborationSettings';
@@ -66,7 +67,7 @@ export function ProjectSettingsPage() {
       </form>
     </SectionCard>
 
-    <CollaborationSettings />
+    <div className="compact-settings-grid"><CollaborationSettings />
     <SectionCard title="后端能力与限制" detail="上传限制、AI 可用性和比赛模板由公开 capabilities 接口返回。">
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
       {capabilities.data ? <div className="capability-grid">
@@ -84,6 +85,6 @@ export function ProjectSettingsPage() {
       </div> : !capabilities.error && <div className="callout">正在读取后端能力……</div>}
       {capabilities.data?.features.emailMode === 'echo' && capabilities.data.environment === 'local' && <div className="notice notice-warn"><AlertTriangle size={16} /><div className="notice-copy"><strong>本地邮箱回显模式</strong><small>仅本地联调会返回开发验证码；部署环境必须使用真实邮件服务。</small></div></div>}
       <div className="form-note"><AlertTriangle size={16} />官方申报书、签字承诺及正式提交仍以比赛平台为准；本工具中的预审与评分建议不是官方评审结果。</div>
-    </SectionCard>
+    </SectionCard></div>
   </div>;
 }

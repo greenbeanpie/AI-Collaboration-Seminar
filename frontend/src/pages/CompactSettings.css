@@ -1,0 +1,5 @@
+.compact-settings-grid,.compact-team-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}.compact-settings-grid>*,.compact-team-grid>*{min-width:0}.compact-team-grid .team-member-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}.compact-team-grid .team-member{min-width:0}.compact-team-grid .team-member-main small{overflow-wrap:anywhere}.compact-team-grid .invite-form{grid-template-columns:repeat(2,minmax(0,1fr))}.compact-team-grid .invite-form>button{grid-column:1/-1;justify-self:start}.compact-team-grid .invite-code-box{flex-wrap:wrap}.compact-settings-grid .capability-grid{grid-template-columns:minmax(0,1fr)}
+@media(min-width:1100px){.compact-settings-grid{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}.compact-team-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}}
+@media(max-width:600px){.compact-team-grid .invite-form{grid-template-columns:minmax(0,1fr)}.compact-team-grid .invite-form>button{justify-self:stretch}}
+.compact-team-invites{display:grid;gap:20px;min-width:0}
+.compact-team-grid>.section-card:only-child{grid-column:1/-1}

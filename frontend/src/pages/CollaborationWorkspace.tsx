@@ -46,6 +46,7 @@ function ProjectCollaborationWorkspace() {
   const me = useQuery({ queryKey: ['member-me', projectId], queryFn: () => api.get<'MemberResponse'>(projectPath(projectId, '/members/me')) });
   const proposals = useQuery({ queryKey: ['collaboration-proposals', projectId], queryFn: () => collaborationApi.proposals(projectId), enabled: owner });
   const [createOpen, setCreateOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [draft, setDraft] = useState(defaultDraft);
   const [statusFilter, setStatusFilter] = useState('all');
   const [createDependencies, setCreateDependencies] = useState<string[]>([]);
@@ -82,21 +83,8 @@ function ProjectCollaborationWorkspace() {
   const claim = useMutation({ mutationFn: (task: CollaborationTask) => collaborationApi.claim(projectId, task), onSuccess: invalidate, onError: invalidate });
   const ai = useMutation({ mutationFn: (action: 'decompose' | 'adjust' | 'assign') => action === 'decompose' ? collaborationApi.decompose(projectId, brief.trim(), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, brief.trim(), rows.filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).map(row => row.taskId), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').map(row => row.taskId)), onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
   return <SectionCard title="子任务" detail="按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。">
-    <div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><Field label="筛选子任务状态"><select className="input" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div>
-    {[tasks.error, settings.error, members.error, me.error, claim.error].filter(Boolean).map((error, index) => <ErrorNotice key={index} error={error} />)}
-    {tasks.isLoading && <Spinner label="读取协作任务" />}
-    {!tasks.isLoading && !tasks.error && !rows.length && <EmptyState title="把交付目标变成明确任务" detail="先写清完成标准与预计投入，再由成员认领。无需开启 AI。" />}
-    <div className="collab-grid">{rows.filter(task => statusFilter === 'all' || task.lifecycleState === statusFilter).map(task => <article className="collab-task" key={task.taskId}>
-      <div className="collab-toolbar"><StatusPill tone={task.lifecycleState === 'accepted' ? 'good' : ['improve', 'rework'].includes(task.lifecycleState) ? 'warn' : 'blue'}>{taskStateLabel(task)}</StatusPill><small>{task.effortHours} 小时</small></div>
-      <button className="collab-title" onClick={() => setSelectedId(task.taskId)}>{task.title}</button>
-      <p className="collab-criteria">{taskSummaryPreview(task)}</p>{Array.from(taskSummarySource(task)).length > 60 && !task.summary && <small className="collab-summary-status">原文节选{summaries.errors[task.taskId] || task.summaryStatus === 'failed' ? ' · 摘要生成失败' : task.summaryStatus === 'queued' || task.summaryStatus === 'running' ? ' · AI 正在总结' : ''}{aiEnabled && (summaries.errors[task.taskId] || task.summaryStatus === 'failed') && <button className="button button-quiet button-small" disabled={summaries.retryBusy} onClick={() => summaries.retry(task)}>重试摘要</button>}</small>}
-      {(task.dependsOnTaskIds?.length ?? 0) > 0 && <small>前置任务：{task.dependsOnTaskIds!.map(id => rows.find(row => row.taskId === id)?.title ?? id).join('、')}</small>}
-      {(task.unfinishedDependencyIds?.length ?? 0) > 0 && <p className="notice notice-warn">前置任务尚未完成，可提前执行和提交。</p>}
-      {task.parentTaskId && <small>历史父任务 · {rows.find(row => row.taskId === task.parentTaskId)?.title ?? task.parentTaskId}</small>}
-      <div className="collab-toolbar"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-primary button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
-    </article>)}</div>
-    {owner && <ProjectAiFeedback projectId={projectId} />}
-    {owner && <details className="collab-ai"><summary><Sparkles size={16} />AI 拆解、调整与分工</summary>
+    <div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{owner && <button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(open => !open)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
+    {owner && <section id="collab-ai-panel" className="collab-ai" hidden={!aiOpen} aria-label="AI 拆解、调整与分工">
       <p className="form-note">负责人可补充信息、提出要求或要求调整。AI 自主查阅项目内授权信息，所选版本优先参考。自动应用遵循项目设置，负责人始终可以修正结果或重新反馈。过期结果不会覆盖成员的新操作。</p>
       {!aiEnabled && <p className="notice notice-warn">{!settings.data?.aiCollaborationEnabled ? '本项目 AI 智能协作已关闭，请由负责人在项目设置开启。' : 'AI 模型当前不可用。'}可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
       <ProjectSourceContext projectId={projectId} enabled={aiEnabled} selected={sourceVersions} onSelection={sourceSelection} onReady={sourceReady} />
@@ -111,7 +99,20 @@ function ProjectCollaborationWorkspace() {
       {jobId&&<ProjectToolCalls projectId={projectId} jobId={jobId}/>}
       {proposals.error && <ErrorNotice error={proposals.error} />}
       {proposals.data?.items.map(proposal => <article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div><ProposalCorrection key={proposal.proposalId} projectId={projectId} proposal={proposal} members={members.data ?? []} onChanged={invalidate} /><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /></article>)}
-    </details>}
+    </section>}
+    {[tasks.error, settings.error, members.error, me.error, claim.error].filter(Boolean).map((error, index) => <ErrorNotice key={index} error={error} />)}
+    {tasks.isLoading && <Spinner label="读取协作任务" />}
+    {!tasks.isLoading && !tasks.error && !rows.length && <EmptyState title="把交付目标变成明确任务" detail="先写清完成标准与预计投入，再由成员认领。无需开启 AI。" />}
+    <div className="collab-grid">{rows.filter(task => statusFilter === 'all' || task.lifecycleState === statusFilter).map(task => <article className="collab-task" key={task.taskId}>
+      <div className="collab-toolbar"><div className="collab-task-status"><StatusPill tone={task.lifecycleState === 'accepted' ? 'good' : ['improve', 'rework'].includes(task.lifecycleState) ? 'warn' : 'blue'}>{taskStateLabel(task)}</StatusPill>{(task.unfinishedDependencyIds?.length ?? 0) > 0 && <span className="collab-dependency-warning" tabIndex={0} aria-label="前置任务未完成，可提前认领、执行和提交。">前置任务未完成<span role="tooltip">前置任务未完成，可提前认领、执行和提交。</span></span>}</div><small>{task.effortHours} 小时</small></div>
+      <button title={task.title} className="collab-title" onClick={() => setSelectedId(task.taskId)}>{task.title}</button>
+      <p className="collab-criteria">{taskSummaryPreview(task)}</p>{Array.from(taskSummarySource(task)).length > 60 && !task.summary && <small className="collab-summary-status">原文节选{summaries.errors[task.taskId] || task.summaryStatus === 'failed' ? ' · 摘要生成失败' : task.summaryStatus === 'queued' || task.summaryStatus === 'running' ? ' · AI 正在总结' : ''}{aiEnabled && (summaries.errors[task.taskId] || task.summaryStatus === 'failed') && <button className="button button-quiet button-small" disabled={summaries.retryBusy} onClick={() => summaries.retry(task)}>重试摘要</button>}</small>}
+      {(task.dependsOnTaskIds?.length ?? 0) > 0 && <small className="collab-task-dependencies">前置任务：{task.dependsOnTaskIds!.map(id => rows.find(row => row.taskId === id)?.title ?? id).join('、')}</small>}
+      {(task.unfinishedDependencyIds?.length ?? 0) > 0 && <p className="notice notice-warn">前置任务尚未完成，可提前执行和提交。</p>}
+      {task.parentTaskId && <small>历史父任务 · {rows.find(row => row.taskId === task.parentTaskId)?.title ?? task.parentTaskId}</small>}
+      <div className="collab-toolbar collab-task-footer"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-primary button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
+    </article>)}</div>
+    {owner && <ProjectAiFeedback projectId={projectId} />}
     {createOpen && <Modal title="新建子任务" onClose={() => setCreateOpen(false)}><form className="stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}>
       <Field label="任务名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>
       <Field label="任务说明"><textarea className="input" rows={3} maxLength={4000} value={draft.detail} onChange={event => setDraft({ ...draft, detail: event.target.value })} /></Field>
@@ -130,17 +131,18 @@ function DependencyEditor({ projectId, task, tasks, graphRevision, owner, onChan
   const [selected, setSelected] = useState(task.dependsOnTaskIds ?? []);
   const [base, setBase] = useState(graphRevision);
   const [conflicted, setConflicted] = useState(false);
+  const [editing, setEditing] = useState(false);
   const stale = conflicted || base !== graphRevision;
   const save = useMutation({ mutationFn: () => projectRequest<{ graphRevision: number }>(projectId, `/tasks/${encodeURIComponent(task.taskId)}/dependencies`, { method: 'PUT', body: { expectedGraphRevision: base, dependsOnTaskIds: selected } }), onSuccess: async result => { setBase(result.graphRevision); setConflicted(false); await onChanged(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setConflicted(true); await onChanged(); } });
   return <section className="stack collab-dependencies">
-    <h3>前置依赖</h3>
+    <div className="collab-dependency-heading">{owner && <button className="button button-quiet button-small" aria-expanded={editing} aria-controls="task-dependency-editor" onClick={() => setEditing(open => !open)}>调整前置任务</button>}<h3>前置依赖</h3></div>
     <p>{(task.dependsOnTaskIds ?? []).map(id => tasks.find(item => item.taskId === id)?.title ?? id).join('、') || '无前置任务'}</p>
     {(task.unfinishedDependencyIds?.length ?? 0) > 0 && <p className="notice notice-warn">尚未完成：{task.unfinishedDependencyIds!.map(id => tasks.find(item => item.taskId === id)?.title ?? id).join('、')}。你可以提前认领、执行和提交。</p>}
-    {owner && <details><summary>调整前置任务</summary><form className="stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
+    {owner && <div id="task-dependency-editor" hidden={!editing}><form className="stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <fieldset><legend>选择前置任务</legend>{tasks.filter(item => item.taskId !== task.taskId).map(item => <label key={item.taskId} className="collab-version"><input type="checkbox" checked={selected.includes(item.taskId)} onChange={event => setSelected(ids => event.target.checked ? [...ids, item.taskId] : ids.filter(id => id !== item.taskId))} />{item.title}</label>)}</fieldset>
       {stale && <p className="notice notice-warn">依赖图已变化，当前选择保留。请对照最新前置任务，再重新选择。<button className="button button-quiet" type="button" onClick={() => { setSelected(task.dependsOnTaskIds ?? []); setBase(graphRevision); setConflicted(false); save.reset(); }}>载入最新依赖</button></p>}
       {save.error && <ErrorNotice error={save.error} />}<button className="button button-primary" disabled={save.isPending || stale || base === undefined}>保存前置依赖</button>
-    </form></details>}
+    </form></div>}
   </section>;
 }
 
@@ -224,8 +226,7 @@ function TaskLifecycleDetail({ projectId, task, tasks, graphRevision, childrenTa
     <div className="collab-detail-nav" aria-label="任务详情导航"><div className="collab-detail-tabs" role="tablist" aria-label="任务操作"><button role="tab" id="task-submit-tab" aria-controls="task-submit-panel" aria-selected={view === 'submit'} className="button" onClick={() => setView('submit')}>提交和查看</button><button role="tab" id="task-settings-tab" aria-controls="task-settings-panel" aria-selected={view === 'settings'} className="button" onClick={() => setView('settings')}>任务设置</button></div><button className="button button-quiet button-small" aria-pressed={view === 'history'} onClick={() => setView('history')}>历史记录{orderedHistory.length ? `（${orderedHistory.length}）` : ''}</button></div>
     <section id="task-settings-panel" role="tabpanel" aria-labelledby="task-settings-tab" hidden={view !== 'settings'} className="stack">
     <DependencyEditor projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} owner={owner} onChanged={onChanged} />
-    <p className="form-note">执行人：{members.find(member => member.userId === task.assigneeId)?.displayName ?? '尚未认领'} · 预计 {task.effortHours} 小时</p>
-    <p>{task.detail}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>
+    <h3>任务介绍</h3><p className="collab-preserve">{task.detail || '暂无任务介绍'}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>
     {childrenTasks.length > 0 && <div className="callout"><strong>子任务进度</strong><ul>{childrenTasks.map(child => <li key={child.taskId}>{child.title} · {lifecycleLabels[child.lifecycleState]}</li>)}</ul><p className="form-note">父任务的整体交付需要负责人最终验收；即使开启自动评价，也不会自动通过父任务。</p></div>}
     {owner && <details><summary>调整任务与验收标准</summary><form className="stack" onSubmit={event => { event.preventDefault(); edit.mutate(); }}>
       <p className="form-note">用于修正任务拆解结果。新标准仅用于后续提交，历史轮次保留当时标准；已发布的 AI 结果也可事后修正。</p>

@@ -29,6 +29,44 @@ function setup({ tasks = [task], submissions = [] as unknown[], component = 'wor
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('places AI controls in the creation toolbar and preserves the draft when collapsed', () => {
+    const { view } = setup();
+    const toggle = screen.getByRole('button', { name: 'AI 拆解、调整与分工' });
+    expect(toggle.nextElementSibling).toBe(screen.getByRole('button', { name: '新建子任务' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: '生成拆解建议' })).toBeNull();
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '保留拆解草稿' } });
+    fireEvent.click(toggle); fireEvent.click(toggle);
+    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('保留拆解草稿');
+    expect(view.container.querySelector('#collab-ai-panel')?.nextElementSibling?.className).toBe('collab-grid');
+  });
+  it('filters with an inline label and retains focusable dependency guidance next to status', () => {
+    const { view } = setup({ tasks: [task, { ...task, taskId: 't2', title: '待采集', assigneeId: null, lifecycleState: 'open', unfinishedDependencyIds: ['t1'], dependsOnTaskIds: ['t1'] }] });
+    const warning = screen.getByLabelText('前置任务未完成，可提前认领、执行和提交。');
+    expect(warning).toHaveAttribute('tabindex', '0');
+    expect(warning.parentElement).toHaveClass('collab-task-status');
+    expect(view.container.querySelectorAll('.collab-task-footer')).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'open' } });
+    expect(screen.queryByRole('button', { name: '交付原型' })).toBeNull();
+    expect(screen.getByRole('button', { name: '待采集' })).toBeInTheDocument();
+  });
+  it('labels the task introduction and places the dependency editor before its heading', () => {
+    setup(); fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    expect(screen.getByRole('heading', { name: '任务介绍' })).toBeInTheDocument();
+    expect(screen.queryByText(/执行人：/)).toBeNull();
+    const toggle = screen.getByRole('button', { name: '调整前置任务' });
+    expect(toggle.nextElementSibling).toBe(screen.getByRole('heading', { name: '前置依赖' }));
+    expect(screen.queryByRole('button', { name: '保存前置依赖' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: '保存前置依赖' })).toBeInTheDocument();
+  });
+  it('keeps AI and task creation controls unavailable to ordinary members', () => {
+    identity.role = 'member'; setup();
+    expect(screen.queryByRole('button', { name: 'AI 拆解、调整与分工' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
+  });
   it('keeps the new draft above a collapsed latest round and pages one historical submission', () => {
     setup({ tasks: [{ ...task, lifecycleState: 'improve', currentSubmissionId: 's3' }], submissions: [submission, { ...submission, submissionId: 's3', round: 3, body: '第三轮真实内容' }, { ...submission, submissionId: 's2', round: 2, body: '第二轮真实内容' }] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
@@ -72,6 +110,7 @@ describe('collaboration lifecycle', () => {
     const { client, fetchMock } = setup({ tasks: [task, { ...task, taskId: 't2', title: '前置资料整理', assigneeId: null, lifecycleState: 'open' }] });
     fireEvent.click(screen.getAllByRole('button', { name: '查看与提交' })[0]!);
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '调整前置任务' }));
     const selection = screen.getByLabelText('前置资料整理');
     fireEvent.click(selection);
     act(() => client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', revision: 1, graphRevision: 10 }));
@@ -88,6 +127,7 @@ describe('collaboration lifecycle', () => {
   });
   it('keeps manual creation available while AI is disabled', async () => {
     const { fetchMock } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
     expect(screen.getByRole('button', { name: '生成拆解建议' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '校对文稿' } });
