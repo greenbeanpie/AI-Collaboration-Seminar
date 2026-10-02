@@ -20,7 +20,7 @@ const payload = {
 const task = {
   title: '验证交付', detail: '依据资料执行', criteria: '交付报告', effortHours: 2, citations: []
 };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => { vi.unstubAllGlobals(); await env.DB.exec('DROP TRIGGER IF EXISTS fail_task'); });
 describe('private creation drafts', () => {
   it('stages bytes privately, cancels/restores, imports all entities once, and only then activates invitations', async () => {
     const owner = await seedUser(), stranger = await seedUser(), key = newId();
@@ -181,5 +181,18 @@ describe('private creation drafts', () => {
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM projects WHERE created_by=?1').bind(owner.userId).first<{
       n: number;
     }>())?.n).toBe(0);
+  });
+  it('keeps human preview goal edits ahead of the original draft goal',async()=>{
+    const owner=await seedUser(),draft=await data(await req(owner.token,'',{...payload,goal:{title:'原目标',detail:''}}));
+    const editedGoal={title:'人工修正目标',detail:'负责人已补充的目标说明'};
+    const preview=await req(owner.token,`/${draft.id}/preview`,{expectedRevision:1,mode:'manual',goal:editedGoal,tasks:[task]});
+    expect(preview.status).toBe(200);
+    expect((await data(preview)).preview.goal).toEqual(editedGoal);
+    const secondGoal={...editedGoal,detail:'第二次人工修正说明'};
+    const second=await data(await req(owner.token,`/${draft.id}/preview`,{expectedRevision:1,mode:'manual',goal:secondGoal,tasks:[{...task,title:'第二次修改任务'}]}));
+    expect(second.preview.goal).toEqual(secondGoal);
+    expect(second.preview.tasks[0].title).toBe('第二次修改任务');
+    const created=await data(await req(owner.token,`/${draft.id}/commit`,{expectedRevision:1,confirmed:true}));
+    expect(await env.DB.prepare('SELECT title,detail FROM project_goals WHERE project_id=?1').bind(created.projectId).first()).toEqual(secondGoal);
   });
 });
