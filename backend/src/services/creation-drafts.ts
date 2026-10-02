@@ -280,7 +280,9 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         configVersionId: config.id
       } : {})
     };
-    const saved = await env.DB.prepare("UPDATE project_creation_drafts SET preview_json=?5,preview_revision=?3,preview_state='ready',updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_attempt_id=?4").bind(id, userId, revision, attempt, JSON.stringify(preview), nowIso()).run();
+    // Template previews contain edited goal/tasks: version the complete content, not only payload fields.
+    const nextRevision=payload.workspace?revision+1:revision;
+    const saved = await env.DB.prepare("UPDATE project_creation_drafts SET preview_json=?5,revision=?7,preview_revision=?7,preview_state='ready',updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_attempt_id=?4").bind(id, userId, revision, attempt, JSON.stringify(preview), nowIso(),nextRevision).run();
     if (!saved.meta.changes) {
       throw invalidState('草稿已变化，预览未应用');
     }
