@@ -97,10 +97,10 @@ export async function aiJsonCall<S extends z.ZodType>(
     beforeCall?: () => Promise<void>;
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
-): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[] }> {
+): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
   if (params.projectTools) {
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
-    try { return {data:params.schema.parse(extractJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references}; }
+    try { return {data:params.schema.parse(extractJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
     catch { throw new AppError('AI_OUTPUT_INVALID','工具调用后的最终 JSON 未通过校验，结果已保留供核对；不会自动重复整轮调用',502,false); }
   }
   const endpoint = {
@@ -349,7 +349,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
 
     let outputPayload: Record<string, unknown>;
     if (input.capability === 'do') {
-      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references,decisionReferences } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -364,9 +364,9 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: doOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations,references };
+      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations,references,decisionReferences };
     } else if (input.capability === 'guide') {
-      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references,decisionReferences } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -381,9 +381,9 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: guideOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations,references } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations,references };
+      outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations,references,decisionReferences } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations,references,decisionReferences };
     } else {
-      const { data,toolTrace,citations,references } = await aiJsonCall(env, {
+      const { data,toolTrace,citations,references,decisionReferences } = await aiJsonCall(env, {
         projectTools: tools,
         projectId: input.projectId,
         jobId,
@@ -405,7 +405,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
           throw new AppError('AI_OUTPUT_INVALID', '审阅引文与材料原文不符', 502, false);
         }
       }
-      outputPayload = { issues: data.issues,toolTrace,citations,references };
+      outputPayload = { issues: data.issues,toolTrace,citations,references,decisionReferences };
     }
 
     await validateInputs(env, input.projectId, input);

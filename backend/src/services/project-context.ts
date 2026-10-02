@@ -6,6 +6,8 @@ import { sourceLifecycleGuard } from './source-lifecycle';
 export const discoveryDefinitions = [
   ['get_project_overview', '读取项目背景、目标和任务状态统计'],
   ['list_project_resources', '分页列出全部项目来源与材料；query 可按标题过滤'],
+  ['search_project_information', '按 query 在项目资料正文、任务与决策中检索定位；返回摘要，原文需继续读取'],
+  ['list_resource_versions', '按 id 与 resourceType 分页列出资料历史版本'],
   ['read_resource', '按固定版本分页读取来源正文或材料正文'],
   ['list_tasks', '分页读取任务说明、验收标准、归属、进度和依赖'],
   ['read_task', '读取指定任务及其相关提交、反馈、依赖'],
@@ -23,6 +25,22 @@ const page = (rows: unknown[], offset: number) => ({ untrustedData: true, items:
 /** Caller enforces membership before and after each read. Queries never accept project identity from the model. */
 export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown): Promise<Record<string,unknown>> {
   const a = discoveryArgs.parse(input);
+  if(name==='list_resource_versions') {
+    if(!a.id||!a.resourceType)throw invalidState('需要资料 id 与 resourceType');
+    const rows=a.resourceType==='source' ? await env.DB.prepare(`SELECT v.id versionId,v.revision,v.origin,v.status,v.created_at FROM source_versions v WHERE v.project_id=?1 AND v.source_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')} ORDER BY v.revision DESC LIMIT 21 OFFSET ?3`).bind(projectId,a.id,a.offset).all()
+      : await env.DB.prepare('SELECT id versionId,revision,origin,created_at FROM material_versions WHERE project_id=?1 AND material_id=?2 ORDER BY revision DESC LIMIT 21 OFFSET ?3').bind(projectId,a.id,a.offset).all();
+    return page(rows.results,a.offset);
+  }
+  if(name==='search_project_information') {
+    if(!a.query?.trim())throw invalidState('需要非空 query');
+    const rows=await env.DB.prepare(`SELECT * FROM (
+      SELECT 'source' resourceType,s.id resourceId,s.title,s.current_version_id versionId FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND (instr(lower(s.title),lower(?2))>0 OR EXISTS(SELECT 1 FROM source_fragments f WHERE f.source_version_id=v.id AND instr(lower(f.content),lower(?2))>0))
+      UNION ALL SELECT 'material',m.id,m.title,m.current_version_id FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND instr(lower(m.title||v.markdown),lower(?2))>0
+      UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND instr(lower(title||detail||criteria),lower(?2))>0
+      UNION ALL SELECT 'decision',id,title,NULL FROM decisions WHERE project_id=?1 AND instr(lower(title||detail),lower(?2))>0)
+      ORDER BY resourceType,resourceId LIMIT 21 OFFSET ?3`).bind(projectId,a.query,a.offset).all();
+    return page(rows.results,a.offset);
+  }
   if (name === 'get_project_overview') {
     const project = await env.DB.prepare('SELECT id,name,description,revision,competition_deadline_date FROM projects WHERE id=?1').bind(projectId).first();
     const goal = await env.DB.prepare('SELECT title,detail,revision,graph_revision FROM project_goals WHERE project_id=?1').bind(projectId).first();

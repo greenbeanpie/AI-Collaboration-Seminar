@@ -15,6 +15,17 @@ export interface ProjectReference {
   /** Read metadata is not a claim that this resource supports a decision. */
   usage: 'read' | 'decision';
 }
+export interface DecisionReference { decisionPath: string; referenceIds: string[] }
+export function extractDecisionReferences(content:string,reads:ProjectReference[]):DecisionReference[] {
+  let parsed:{decisionReferences?:unknown};try{parsed=JSON.parse(content);}catch{return [];}
+  if(parsed.decisionReferences===undefined)return [];
+  if(!Array.isArray(parsed.decisionReferences))throw invalidState('决策依据格式无效');
+  return parsed.decisionReferences.map((entry:unknown)=>{
+    const e=entry as Partial<DecisionReference>;
+    if(!e || typeof e.decisionPath!=='string'||!e.decisionPath.length||e.decisionPath.length>200||!Array.isArray(e.referenceIds)||e.referenceIds.some(id=>typeof id!=='string'||!reads.some(r=>r.id===id)))throw invalidState('决策引用了未读取的参考资料');
+    return {decisionPath:e.decisionPath,referenceIds:[...new Set(e.referenceIds)]};
+  });
+}
 export function referencesFromRead(output: Record<string,unknown>): ProjectReference[] {
   if(typeof output.resourceType==='string' && Array.isArray(output.items) && !['source','material'].includes(output.resourceType)) {
     return output.items.flatMap((item:Record<string,unknown>)=> typeof item.id==='string' ? [{id:`${output.resourceType}:${item.id}:${String(item.revision??0)}`,resourceType:String(output.resourceType),resourceId:item.id,
