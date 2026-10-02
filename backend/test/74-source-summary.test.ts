@@ -99,7 +99,7 @@ describe('independent source summaries', () => {
     expect((await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string|null}>())?.summary_json).toBeNull();
   });
 
-  it('bounds total prompt size including instructions and records partial document coverage', async () => {
+  it('bounds each prompt including instructions and records complete document coverage', async () => {
     const f = await fixture(); const jobId = await summaryJob(f);
     const row = await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();
     const config = JSON.parse(row!.config_json) as {textEconomy:{maxInputChars:number}}; config.textEconomy.maxInputChars = 1200;
@@ -110,7 +110,7 @@ describe('independent source summaries', () => {
     const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {messages:Array<{content:string}>};
     expect(body.messages.reduce((n,m)=>n+m.content.length,0)).toBeLessThanOrEqual(1200);
     const coverage = await env.DB.prepare('SELECT covered_chars,total_chars FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{covered_chars:number;total_chars:number}>();
-    expect(coverage!.covered_chars).toBeLessThan(coverage!.total_chars);
+    expect(coverage!.covered_chars).toBe(coverage!.total_chars);
   });
 
   it('accepts a document with no competition requirements without inventing requirement records', async () => {
