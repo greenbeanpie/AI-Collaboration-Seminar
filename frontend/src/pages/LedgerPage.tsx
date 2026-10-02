@@ -9,9 +9,22 @@ import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, EmptyState, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 
 export function LedgerPage() {
+  const { projectId } = useProject();
+  return <LedgerWorkspace key={projectId} />;
+}
+
+function LedgerWorkspace() {
   const { projectId, project } = useProject();
   const queryClient = useQueryClient();
-  const eventsQuery = useQuery({ queryKey: ['events', projectId], queryFn: () => listAllItems<'EventListResponse'>(projectPath(projectId, '/events'), { limit: 100 }, { requireNextCursor: true }) });
+  const [pageSize, setPageSize] = useState(10);
+  const [cursors, setCursors] = useState<Array<string | null>>([null]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const cursor = cursors[pageIndex] ?? null;
+  const eventPageOptions = (pageCursor: string | null) => ({
+    queryKey: ['events', projectId, 'page', pageSize, pageCursor],
+    queryFn: ({ signal }: { signal: AbortSignal }) => api.get<'EventListResponse'>(projectPath(projectId, '/events'), { limit: pageSize, cursor: pageCursor }, signal),
+  });
+  const eventsQuery = useQuery(eventPageOptions(cursor));
   const decisionsQuery = useQuery({ queryKey: ['decisions', projectId], queryFn: () => api.get<'DecisionListResponse'>(projectPath(projectId, '/decisions')) });
   const contributionsQuery = useQuery({ queryKey: ['contributions', projectId], queryFn: () => api.get<'ContributionListResponse'>(projectPath(projectId, '/contributions')) });
   const resourcesQuery = useQuery({ queryKey: ['resources', projectId], queryFn: () => api.get<'ResourceListResponse'>(projectPath(projectId, '/resources')) });
@@ -30,20 +43,29 @@ export function LedgerPage() {
   const [resourceNote, setResourceNote] = useState('');
 
   const invalidate = async (key: string) => queryClient.invalidateQueries({ queryKey: [key, projectId] });
+  const refreshEvents = async () => {
+    await queryClient.cancelQueries({ queryKey: ['events', projectId] });
+    await queryClient.invalidateQueries({ queryKey: ['events', projectId], refetchType: 'none' });
+    setCursors([null]);
+    setPageIndex(0);
+    // A failed read belongs to the event query, not to the successful record mutation.
+    // If the first page was garbage-collected, its new observer will fetch it on mount.
+    await queryClient.refetchQueries({ queryKey: eventPageOptions(null).queryKey, exact: true });
+  };
   const createDecision = useMutation({
     mutationFn: () => api.post<'DecisionResponse'>(projectPath(projectId, '/decisions'), { title: decisionTitle.trim(), detail: decisionDetail.trim(), ...(decisionDate ? { decidedAt: new Date(decisionDate).toISOString() } : {}) }),
-    onSuccess: async () => { setDecisionTitle(''); setDecisionDetail(''); setDecisionDate(''); await invalidate('decisions'); await invalidate('events'); },
+    onSuccess: async () => { setDecisionTitle(''); setDecisionDetail(''); setDecisionDate(''); await invalidate('decisions'); await refreshEvents(); },
   });
   const createContribution = useMutation({
     mutationFn: () => api.post<'ContributionResponse'>(projectPath(projectId, '/contributions'), {
       ...(contributionUserId ? { userId: contributionUserId } : {}), kind: contributionKind,
       description: contributionDescription.trim(), evidence: {},
     }),
-    onSuccess: async () => { setContributionDescription(''); await invalidate('contributions'); await invalidate('events'); },
+    onSuccess: async () => { setContributionDescription(''); await invalidate('contributions'); await refreshEvents(); },
   });
   const createCorrection = useMutation({
     mutationFn: ({ id, description }: { id: string; description: string }) => api.post<'ContributionResponse'>(projectPath(projectId, `/contributions/${encodeURIComponent(id)}/corrections`), { description }),
-    onSuccess: async (_result, variables) => { setCorrectionText((current) => ({ ...current, [variables.id]: '' })); await invalidate('contributions'); await invalidate('events'); },
+    onSuccess: async (_result, variables) => { setCorrectionText((current) => ({ ...current, [variables.id]: '' })); await invalidate('contributions'); await refreshEvents(); },
   });
   const createResource = useMutation({
     mutationFn: () => api.post<'ResourceResponse'>(projectPath(projectId, '/resources'), {
@@ -52,12 +74,13 @@ export function LedgerPage() {
       fileId: resourceKind === 'file' && resourceFileId ? resourceFileId.trim() : null,
       meta: resourceNote.trim() ? { note: resourceNote.trim() } : {},
     }),
-    onSuccess: async () => { setResourceTitle(''); setResourceUrl(''); setResourceFileId(''); setResourceNote(''); await invalidate('resources'); await invalidate('events'); },
+    onSuccess: async () => { setResourceTitle(''); setResourceUrl(''); setResourceFileId(''); setResourceNote(''); await invalidate('resources'); await refreshEvents(); },
   });
 
   const loading = eventsQuery.isLoading && decisionsQuery.isLoading && contributionsQuery.isLoading && resourcesQuery.isLoading;
-  const errors = [eventsQuery, decisionsQuery, contributionsQuery, resourcesQuery, membersQuery].filter((query) => query.error);
-  const events = eventsQuery.data ?? [];
+  const errors = [decisionsQuery, contributionsQuery, resourcesQuery, membersQuery].filter((query) => query.error);
+  const events = eventsQuery.data?.items ?? [];
+  const paginationBusy = eventsQuery.isFetching || createDecision.isPending || createContribution.isPending || createCorrection.isPending || createResource.isPending;
   const decisions = decisionsQuery.data?.items ?? [];
   const contributions = contributionsQuery.data?.items ?? [];
   const resources = resourcesQuery.data?.items ?? [];
@@ -70,8 +93,21 @@ export function LedgerPage() {
     {errors.map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
     <div className="ledger-warning"><ShieldCheck size={18} /><span>账本用于留痕与交接。贡献说明可以更正，原始记录会保留；请只记录可核实的事实。</span></div>
 
-    <SectionCard title="事件流" detail="按发生时间列出服务端记录的决策、贡献和 AI 操作。" action={<StatusPill tone="blue">{events.length} 条</StatusPill>}>
-      {events.length ? <div className="ledger-timeline">{events.map((event) => { const activity = presentEvent(event); return <div className="ledger-line" key={event.eventId}><span className={`ledger-marker actor-${event.actorType}`} /><div className="ledger-content"><div className="ledger-event-title"><strong>{activity.title}</strong><span>{activity.actor}</span></div><p>{activity.detail}</p><small>{new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>; })}</div> : <EmptyState title="暂无事件记录" detail="创建项目决策、补录贡献或发生 AI 工作流后，事件会出现在这里。" />}
+    <SectionCard title="事件流" detail="按发生时间列出服务端记录的决策、贡献和 AI 操作。" action={<StatusPill tone="blue">本页 {eventsQuery.isPending || eventsQuery.isError ? '—' : events.length} 条</StatusPill>}>
+      {eventsQuery.isPending ? <Spinner label="正在读取事件记录" /> : eventsQuery.isError ? <ErrorNotice error={eventsQuery.error} onRetry={() => void eventsQuery.refetch()} /> : events.length ? <div className="ledger-timeline">{events.map((event) => { const activity = presentEvent(event); return <div className="ledger-line" key={event.eventId}><span className={`ledger-marker actor-${event.actorType}`} /><div className="ledger-content"><div className="ledger-event-title"><strong>{activity.title}</strong><span>{activity.actor}</span></div><p>{activity.detail}</p><small>{new Date(event.occurredAt).toLocaleString('zh-CN')}</small></div></div>; })}</div> : <EmptyState title="暂无事件记录" detail="创建项目决策、补录贡献或发生 AI 工作流后，事件会出现在这里。" />}
+      <nav className="ledger-pagination" aria-label="事件流分页">
+        <label className="ledger-page-size">每页条数<select className="input" aria-label="每页条数" value={pageSize} disabled={paginationBusy} onChange={event => { setPageSize(Number(event.target.value)); setCursors([null]); setPageIndex(0); }}><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option></select></label>
+        <span aria-live="polite">第 {pageIndex + 1} 页</span>
+        <div className="button-row">
+          <button type="button" className="button button-quiet" disabled={paginationBusy || pageIndex === 0} onClick={() => setPageIndex(index => index - 1)}>上一页</button>
+          <button type="button" className="button button-quiet" disabled={paginationBusy || eventsQuery.isError || !eventsQuery.data?.nextCursor} onClick={() => {
+            const nextCursor = eventsQuery.data?.nextCursor;
+            if (!nextCursor) return;
+            setCursors(current => [...current.slice(0, pageIndex + 1), nextCursor]);
+            setPageIndex(index => index + 1);
+          }}>下一页</button>
+        </div>
+      </nav>
     </SectionCard>
 
     <div className="two-column">

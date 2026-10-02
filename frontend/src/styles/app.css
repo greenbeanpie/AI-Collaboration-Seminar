@@ -423,6 +423,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .ledger-warning { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border: 1px solid var(--palette-e5eaf2-border); border-radius: 11px; background: var(--palette-f9fafd-surface); color: var(--palette-76839a-text); font-size: 12px; line-height: 1.6; }
 .ledger-warning svg { flex: none; color: var(--palette-6280b3-text); }
 .ledger-timeline { display: grid; }
+.ledger-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.ledger-page-size { display: flex; align-items: center; gap: 8px; }
+.ledger-page-size .input { width: auto; }
 .ledger-event-title { display: flex; align-items: center; gap: 9px; }
 .ledger-event-title strong { color: var(--ink-soft); font-size: 12px; }
 .ledger-event-title span { color: var(--muted); font-size: 12px; }
