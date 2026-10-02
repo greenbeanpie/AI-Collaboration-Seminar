@@ -3993,6 +3993,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /tasks/{taskId}/summary */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        retry?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskSummaryResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 协作流程 /tasks/{taskId}/summary */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        retry?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationTaskSummaryResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}": {
         parameters: {
             query?: never;
@@ -10049,6 +10141,12 @@ export interface components {
                 revision: number;
                 createdAt: string;
                 updatedAt: string;
+                summary?: string;
+                /** @enum {string} */
+                summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                /** Format: uuid */
+                summaryJobId?: string;
+                summarySourceHash?: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -10082,6 +10180,12 @@ export interface components {
                     revision: number;
                     createdAt: string;
                     updatedAt: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                    /** Format: uuid */
+                    summaryJobId?: string;
+                    summarySourceHash?: string;
                 }[];
                 nextCursor: string | null;
             };
@@ -10176,8 +10280,26 @@ export interface components {
                     unfinishedDependencyIds: string[];
                     createdAt: string;
                     updatedAt: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                    /** Format: uuid */
+                    summaryJobId?: string;
+                    summarySourceHash?: string;
                 }[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationTaskSummaryResponse: {
+            data: {
+                summary?: string;
+                /** @enum {string} */
+                summaryStatus: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                /** Format: uuid */
+                summaryJobId?: string;
+                summarySourceHash: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -10216,6 +10338,12 @@ export interface components {
                 unfinishedDependencyIds: string[];
                 createdAt: string;
                 updatedAt: string;
+                summary?: string;
+                /** @enum {string} */
+                summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                /** Format: uuid */
+                summaryJobId?: string;
+                summarySourceHash?: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

@@ -93,7 +93,7 @@ function ProjectCollaborationWorkspace() {
       {(task.dependsOnTaskIds?.length ?? 0) > 0 && <small>前置任务：{task.dependsOnTaskIds!.map(id => rows.find(row => row.taskId === id)?.title ?? id).join('、')}</small>}
       {(task.unfinishedDependencyIds?.length ?? 0) > 0 && <p className="notice notice-warn">前置任务尚未完成，可提前执行和提交。</p>}
       {task.parentTaskId && <small>历史父任务 · {rows.find(row => row.taskId === task.parentTaskId)?.title ?? task.parentTaskId}</small>}
-      <div className="collab-toolbar"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
+      <div className="collab-toolbar"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-primary button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
     </article>)}</div>
     {owner && <ProjectAiFeedback projectId={projectId} />}
     {owner && <details className="collab-ai"><summary><Sparkles size={16} />AI 拆解、调整与分工</summary>

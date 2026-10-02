@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { collaborationApi, type CollaborationTask } from '../api/collaboration';
+import { collaborationApi, type CollaborationTask, type TaskSummary } from '../api/collaboration';
 import { taskSummaryPreview, useTaskSummaries } from './useTaskSummaries';
 
 const task = (id: string, detail = '说明'.repeat(40)): CollaborationTask => ({ taskId: id, title: id, detail, criteria: '验收标准', summaryStatus: 'missing' } as CollaborationTask);
@@ -28,18 +28,18 @@ describe('task card summaries', () => {
     expect(summary).not.toHaveBeenCalled();
   });
   it('limits pending requests to two, deduplicates and starts another when ready', async () => {
-    let finish!: (value: { summary: string; summaryStatus: 'ready' }) => void;
+    let finish!: (value: TaskSummary) => void;
     const summary = vi.spyOn(collaborationApi, 'summary').mockImplementation((_project, id) => id === 'a' ? new Promise(resolve => { finish = resolve; }) : new Promise(() => {}));
     const rows = [task('a'), task('b'), task('c')];
     const view = setup(rows);
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(2));
     view.rerender({ rows: [...rows], active: true });
     expect(summary).toHaveBeenCalledTimes(2);
-    await act(async () => finish({ summary: '已总结', summaryStatus: 'ready' }));
+    await act(async () => finish({ summary: '已总结', summaryStatus: 'ready', summarySourceHash: 'a' }));
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(3));
   });
   it('retains failure until explicit retry and prevents stale response overwrite', async () => {
-    const summary = vi.spyOn(collaborationApi, 'summary').mockRejectedValueOnce(new Error('预算不足')).mockResolvedValue({ summary: '重试成功', summaryStatus: 'ready' });
+    const summary = vi.spyOn(collaborationApi, 'summary').mockRejectedValueOnce(new Error('预算不足')).mockResolvedValue({ summary: '重试成功', summaryStatus: 'ready', summarySourceHash: 'a' });
     const row = task('a'); const view = setup([row]);
     await waitFor(() => expect(view.result.current.errors.a).toBe('预算不足'));
     view.rerender({ rows: [row], active: true }); expect(summary).toHaveBeenCalledTimes(1);
@@ -48,13 +48,13 @@ describe('task card summaries', () => {
     expect(summary).toHaveBeenLastCalledWith('p', 'a', true);
     await waitFor(() => expect(view.result.current.errors.a).toBeUndefined());
     view.unmount();
-    let finish!: (value: { summary: string; summaryStatus: 'ready' }) => void;
+    let finish!: (value: TaskSummary) => void;
     summary.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     const stale = setup([row]);
     const changed = { ...row, detail: '新的说明'.repeat(30), summaryStatus: 'queued' as const };
     stale.client.setQueryData(['collaboration-tasks', 'p'], { items: [changed] });
     stale.rerender({ rows: [changed], active: true });
-    await act(async () => finish({ summary: '旧内容摘要', summaryStatus: 'ready' }));
+    await act(async () => finish({ summary: '旧内容摘要', summaryStatus: 'ready', summarySourceHash: 'a' }));
     expect(stale.client.getQueryData<{ items: CollaborationTask[] }>(['collaboration-tasks', 'p'])?.items[0]?.summary).toBeUndefined();
   });
 });

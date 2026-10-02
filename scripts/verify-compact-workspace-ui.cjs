@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const origin = 'http://127.0.0.1:5197';
 const now = '2026-10-02T12:00:00Z';
 const doc = text => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
-const task = { taskId: 't1', title: '演示文稿结构与 5 分钟答辩提纲', detail: '按收集数据、分析、演示的主线组织文稿，说明背景、方法、样本来源、结果与限制，所有缺少验证的数据保留待填写标记，提交五分钟的演示结构及讲稿骨架。', criteria: '提交完整演示结构和讲稿骨架，保留所有待验证标记。', effortHours: 3, revision: 7, assigneeId: 'u', lifecycleState: 'improve', currentSubmissionId: 's3', status: 'doing', dependsOnTaskIds: [], unfinishedDependencyIds: [], createdAt: now, updatedAt: now, summary: '组织五分钟演示结构与讲稿骨架，覆盖报告要点，保留待验证数据标记。', summaryStatus: 'succeeded', summaryJobId: null };
+const task = { taskId: 't1', title: '演示文稿结构与 5 分钟答辩提纲', detail: '按收集数据、分析、演示的主线组织文稿，说明背景、方法、样本来源、结果与限制，所有缺少验证的数据保留待填写标记，提交五分钟的演示结构及讲稿骨架。', criteria: '提交完整演示结构和讲稿骨架，保留所有待验证标记。', effortHours: 3, revision: 7, assigneeId: 'u', lifecycleState: 'improve', currentSubmissionId: 's3', status: 'doing', dependsOnTaskIds: [], unfinishedDependencyIds: [], createdAt: now, updatedAt: now, summary: '组织五分钟演示结构与讲稿骨架，覆盖报告要点，保留待验证数据标记。', summaryStatus: 'ready', summarySourceHash: 'fixture-t1' };
 const versions = Array.from({ length: 12 }, (_, i) => ({ versionId: `v${12 - i}`, materialId: 'mat1', revision: 12 - i, createdAt: now, origin: 'manual', doc: doc(`材料版本 ${12 - i} 正文`), attachments: [] }));
 const material = { materialId: 'mat1', title: '演示结构文档', kind: 'document', purpose: 'output', revision: 12, currentVersionId: 'v12', currentVersion: versions[0], updatedAt: now, createdAt: now };
 let comments = [];
@@ -78,11 +78,11 @@ async function verify() {
       await page.screenshot({ path: path.join(evidence, `task-detail-${width}.png`), fullPage: true });
       if (!baseline) {
         await page.getByLabel('成果说明', { exact: true }).fill('本轮未提交草稿必须保留');
-        await page.getByRole('button', { name: '任务设置', exact: true }).click();
+        await page.getByRole('tab', { name: '任务设置', exact: true }).press('Enter');
         await page.getByText('前置依赖', { exact: true }).waitFor();
         await page.screenshot({ path: path.join(evidence, `task-settings-${width}.png`), fullPage: true });
-        await page.getByRole('button', { name: '提交和查看', exact: true }).click();
-        assert.equal(await page.getByLabel('成果说明', { exact: true }).inputValue(), '本轮未提交草稿必须保留');
+        await page.getByRole('tab', { name: '提交和查看', exact: true }).click();
+        assert.equal(await page.locator('.collab-submit textarea').inputValue(), '本轮未提交草稿必须保留');
         await page.getByRole('button', { name: /历史记录/ }).click();
         await page.locator('.collab-history').filter({ visible: true }).first().waitFor();
         assert.equal(await page.locator('.collab-history:visible').count(), 1);
@@ -92,8 +92,8 @@ async function verify() {
         await page.getByText('第 1 轮成果说明：已提交演示结构与材料，请核验来源。', { exact: true }).waitFor();
         assert(await page.getByRole('button', { name: '下一页', exact: true }).isDisabled());
         await page.screenshot({ path: path.join(evidence, `task-history-${width}.png`), fullPage: true });
-        await page.getByRole('button', { name: '提交和查看', exact: true }).click();
-        assert.equal(await page.getByLabel('成果说明', { exact: true }).inputValue(), '本轮未提交草稿必须保留');
+        await page.getByRole('tab', { name: '提交和查看', exact: true }).click();
+        assert.equal(await page.locator('.collab-submit textarea').inputValue(), '本轮未提交草稿必须保留');
         assert.equal(await page.getByText('第 3 轮成果说明：已提交演示结构与材料，请核验来源。', { exact: true }).isVisible(), false);
       }
       await page.getByRole('button', { name: '关闭', exact: true }).click();
@@ -109,6 +109,10 @@ async function verify() {
         await page.getByText('讨论', { exact: true }).click();
         assert.equal(await page.locator('.tm-comment:visible').count(), 5);
         const discussion = page.locator('.tm-comments');
+        await discussion.locator('summary').press('Enter');
+        assert.equal(await discussion.getAttribute('open'), null);
+        await discussion.locator('summary').press('Space');
+        assert.equal(await discussion.getAttribute('open'), '');
         await discussion.getByRole('button', { name: '下一页', exact: true }).click();
         assert.equal(await page.locator('.tm-comment:visible').count(), 5);
         await discussion.getByRole('button', { name: '下一页', exact: true }).click();
