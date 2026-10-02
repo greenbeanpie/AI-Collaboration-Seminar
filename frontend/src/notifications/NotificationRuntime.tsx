@@ -12,31 +12,49 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
   useEffect(() => {
     if (!userId || !enabled) return;
     const feed = new NotificationFeed();
-    let active = true, loading = false;
+    let active = true, loading = false,readAllBusy=false,syncGeneration=0;
     const abort = new AbortController();
     let settings: DeliverySettings = { inAppEnabled: true, pushEnabled: true };
     const onboardingKey = `app-push-introduction:${userId}`;
-    const sync = async () => {
-      if (!active || loading || !navigator.onLine || document.visibilityState === 'hidden') return;
+    const sync = async (force=false,resetHistory=false) => {
+      if (!active || (!force&&(loading || !navigator.onLine || document.visibilityState === 'hidden'))) return;
+      const generation=++syncGeneration;
       loading = true;
       try {
         const [page, preferences] = await Promise.all([
           notificationRequest<NotificationPage>('/notifications?limit=50', 'GET', undefined, abort.signal),
           notificationRequest<DeliverySettings>('/notifications/settings', 'GET', undefined, abort.signal),
         ]);
-        if (!active) return;
+        if (!active||generation!==syncGeneration) return;
         settings = preferences;
         const fresh = feed.accept(page.items);
-        window.dispatchEvent(new CustomEvent('app-notification-inbox', { detail: { userId, items: page.items, nextCursor: page.nextCursor, unreadCount: page.unreadCount, url: settingsUrl } }));
+        window.dispatchEvent(new CustomEvent('app-notification-inbox', { detail: { userId, items: page.items, nextCursor: page.nextCursor, unreadCount: page.unreadCount, url: settingsUrl,resetHistory } }));
         if (settings.inAppEnabled && fresh.length) window.dispatchEvent(new CustomEvent('app-notification', { detail: { id: 'inbox-new', text: fresh.length === 1 ? '收到新的更新，可在通知中心查看。' : `收到 ${fresh.length} 条新更新，可在通知中心查看。`, action: 'inbox' } }));
-      } catch { /* Disconnected/auth errors are retried on reconnect; never replay history as toast. */ }
-      finally { loading = false; }
+      } catch(error) { if(force)throw error; /* Disconnected/auth errors are retried on reconnect; never replay history as toast. */ }
+      finally { if(generation===syncGeneration)loading = false; }
     };
     const refresh = () => { void sync(); };
     const modify = (event: Event) => {
       const detail = (event as CustomEvent<{ id: string; action: 'read' | 'dismiss' }>).detail;
       if (!detail || !/^[a-zA-Z0-9-]{1,80}$/.test(detail.id) || !['read', 'dismiss'].includes(detail.action)) return;
-      void notificationRequest(`/notifications/${encodeURIComponent(detail.id)}/${detail.action}`, 'POST', {}, undefined, userId).then(refresh).catch(() => window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: 'error', text: '通知状态未能保存，请重试。' } })));
+      void notificationRequest(`/notifications/${encodeURIComponent(detail.id)}/${detail.action}`, 'POST', {}, abort.signal, userId).then(()=>{if(active)refresh();}).catch(() => {if(active)window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: 'error', text: '通知状态未能保存，请重试。' } }));});
+    };
+    const readAll=(event:Event)=>{
+      if(!active||readAllBusy||(event as CustomEvent<{userId?:string}>).detail?.userId!==userId)return;
+      readAllBusy=true;
+      const status=(busy:boolean,message='')=>{if(active)window.dispatchEvent(new CustomEvent('app-notification-read-all-status',{detail:{userId,busy,message}}));};
+      status(true);
+      void (async()=>{
+        let saved=false;
+        try {
+          const result=await notificationRequest<{updatedCount:number;unreadCount:number}>('/notifications/read-all','POST',{},abort.signal,userId);
+          if(!active)return;
+          saved=true;
+          await sync(true,true);
+          status(false,result.updatedCount?'全部通知已标为已读。':'没有未读通知。');
+        }catch(error){status(false,saved?'已保存已读状态，通知列表刷新失败，请重试。':error instanceof Error?error.message:'通知状态未能保存，请重试。');}
+        finally{readAllBusy=false;}
+      })();
     };
     const open = (event: Event) => {
       const detail=(event as CustomEvent<{url:string;replace?:boolean}>).detail;
@@ -74,6 +92,7 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
     window.addEventListener('online', refresh); window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
     window.addEventListener('app-notification-scope', refresh); window.addEventListener('app-notification-settings-changed', refresh);
     window.addEventListener('app-notification-state', modify); window.addEventListener('app-notification-open', open);
+    window.addEventListener('app-notification-read-all',readAll);
     navigator.serviceWorker?.addEventListener('message', received);
     const interval = window.setInterval(refresh, 30_000);
     void sync(); void intro();
@@ -82,6 +101,7 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
       window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('app-notification-scope', refresh); window.removeEventListener('app-notification-settings-changed', refresh);
       window.removeEventListener('app-notification-state', modify); window.removeEventListener('app-notification-open', open);
+      window.removeEventListener('app-notification-read-all',readAll);
       navigator.serviceWorker?.removeEventListener('message', received);
       window.dispatchEvent(new CustomEvent('app-notification-inbox', { detail: { items: [], url: settingsUrl } }));
     };

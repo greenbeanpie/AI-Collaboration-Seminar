@@ -7820,6 +7820,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 标记当前账户全部可见且未收起的未读通知，覆盖所有分页 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description NotificationReadAllResponse */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationReadAllResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications/push/status": {
         parameters: {
             query?: never;
@@ -12110,6 +12146,14 @@ export interface components {
             data: {
                 inAppEnabled: boolean;
                 pushEnabled: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        NotificationReadAllResponse: {
+            data: {
+                updatedCount: number;
+                unreadCount: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

@@ -139,3 +139,29 @@ it('expected-account header rejects delayed cross-account mutations without chan
  expect((await call(current,'/auth/session')).status).toBe(200);
  expect(await data(await call(current,'/notifications/settings','PUT',{pushEnabled:false},env,{'X-Notification-Account':current.userId}))).toEqual({inAppEnabled:true,pushEnabled:false});
 });
+it('marks every visible unread page for only the current account, preserving old receipts and dismissed or hidden rows',async()=>{
+ const owner=await seedUser(),member=await seedUser(),outsider=await seedUser(),project=await seedProject(owner.userId),hiddenProject=await seedProject(owner.userId);
+ await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),project,member.userId,nowIso()).run();
+ const ids=Array.from({length:65},()=>newId()),hiddenId=newId(),now=nowIso(),oldRead='2026-01-01T00:00:00.000Z';
+ await env.DB.batch([...ids.map((id,index)=>env.DB.prepare("INSERT INTO notification_events(id,event_key,kind,scope,resource_id,title,body,url,created_at) VALUES(?1,?1,'source_added','project',?2,'通知','摘要','/app',?3)").bind(id,project,new Date(Date.parse(now)-index*1000).toISOString())),env.DB.prepare("INSERT INTO notification_events(id,event_key,kind,scope,resource_id,title,body,url,created_at) VALUES(?1,?1,'source_added','project',?2,'隐藏','摘要','/app',?3)").bind(hiddenId,hiddenProject,now)]);
+ for(const user of [owner,member])await env.DB.batch([...ids,hiddenId].map(id=>env.DB.prepare('INSERT INTO notification_inbox(event_id,user_id) VALUES(?1,?2)').bind(id,user.userId)));
+ await env.DB.prepare('UPDATE notification_inbox SET read_at=?3 WHERE event_id=?1 AND user_id=?2').bind(ids[0],member.userId,oldRead).run();
+ await env.DB.prepare('UPDATE notification_inbox SET dismissed_at=?3 WHERE event_id=?1 AND user_id=?2').bind(ids[1],member.userId,now).run();
+ expect((await feed(member)).items).toHaveLength(50);expect((await feed(member)).unreadCount).toBe(63);
+ expect((await call(undefined,'/notifications/read-all','POST')).status).toBe(401);
+ expect((await call(member,'/notifications/read-all','POST',{},env,{'X-Notification-Account':owner.userId})).status).toBe(409);
+ expect((await feed(member)).unreadCount).toBe(63);
+ expect(await data(await call(outsider,'/notifications/read-all','POST'))).toEqual({updatedCount:0,unreadCount:0});
+ expect(await data(await call(member,'/notifications/read-all','POST',{},env,{'X-Notification-Account':member.userId}))).toEqual({updatedCount:63,unreadCount:0});
+ const receipts=(await env.DB.prepare('SELECT event_id,read_at FROM notification_inbox WHERE user_id=?1').bind(member.userId).all<{event_id:string;read_at:string|null}>()).results;
+ expect(receipts.find(row=>row.event_id===ids[0])!.read_at).toBe(oldRead);expect(receipts.find(row=>row.event_id===ids[1])!.read_at).toBeNull();expect(receipts.find(row=>row.event_id===hiddenId)!.read_at).toBeNull();expect(receipts.find(row=>row.event_id===ids[64])!.read_at).toBeTruthy();
+ expect(await data(await call(member,'/notifications/read-all','POST'))).toEqual({updatedCount:0,unreadCount:0});
+ expect((await env.DB.prepare('SELECT event_id,read_at FROM notification_inbox WHERE user_id=?1').bind(member.userId).all()).results).toEqual(receipts);
+ expect((await feed(owner)).unreadCount).toBe(66);
+});
+it('read-all immediately excludes notifications whose project permission has been revoked',async()=>{
+ const user=await seedUser(),project=await seedProject(user.userId);await source(user,project);const id=(await feed(user)).items[0]!.id;
+ await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(project,user.userId).run();
+ expect(await data(await call(user,'/notifications/read-all','POST'))).toEqual({updatedCount:0,unreadCount:0});
+ expect((await env.DB.prepare('SELECT read_at FROM notification_inbox WHERE event_id=?1 AND user_id=?2').bind(id,user.userId).first<{read_at:string|null}>())!.read_at).toBeNull();
+});
