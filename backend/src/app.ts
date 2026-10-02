@@ -1,4 +1,5 @@
 import { registerUsernameInvitationRoutes } from './api/username-invitations';
+import { registerTaskInquiryRoutes } from './api/task-inquiries';
 import { registerProjectSimplificationRoutes } from './api/project-simplification';
 import { registerResourceRoutes } from './api/resources';
 import { registerAiToolRoutes } from './api/ai-tools';
@@ -90,6 +91,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerRequirementRoutes(app);
   registerJobRoutes(app);
   registerTaskRoutes(app);
+  registerTaskInquiryRoutes(app);
   registerCollaborationRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);

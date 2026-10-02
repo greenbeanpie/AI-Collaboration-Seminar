@@ -48,7 +48,7 @@ const migrations = import.meta.glob('../migrations/*.sql', {
 
 /**
  * 将迁移 SQL 切分为单条语句（处理行注释、块注释与单双引号内的分号）。
- * 迁移文件由仓库控制，不包含存储过程/触发器等复杂结构。
+ * Supports SQLite CREATE TRIGGER bodies; internal semicolons stay in the statement.
  */
 export function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -116,6 +116,8 @@ export function splitSqlStatements(sql: string): string[] {
     }
     if (ch === ';' && !inSingle && !inDouble) {
       const stmt = current.trim();
+      const code = stmt.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+      if (/^CREATE\s+TRIGGER\b/i.test(code) && !/\bEND\s*$/i.test(code)) { current += ch; continue; }
       if (stmt) statements.push(stmt);
       current = '';
       continue;

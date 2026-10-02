@@ -1,5 +1,6 @@
 import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
+import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -222,6 +223,7 @@ function TaskLifecycleDetail({ projectId, task, tasks, graphRevision, childrenTa
       {current?.submissionId === submission.submissionId && (owner || (!submission.decision && submission.submittedBy === meId)) && <><button className="button button-small" disabled={!aiEnabled || submission.status !== 'pending' || submission.evaluationAttempts >= 3 || evaluate.isPending || (!!jobId && !job.isSettled)} onClick={() => evaluate.mutate(submission.submissionId)}><Sparkles size={14} />请求 AI 评价</button>{!aiEnabled && <p className="form-note">AI 未启用，负责人仍可直接验收。</p>}{submission.evaluationAttempts >= 3 && <p className="form-note">本轮 AI 评价已达 3 次上限，请负责人手动核验。</p>}{owner && <SubmissionDecisionForm projectId={projectId} submission={submission} onChanged={refresh} />}</>}
     </article>);
   return <div className="stack collab-detail">
+    <TaskInquiries key={task.taskId} projectId={projectId} taskId={task.taskId} meId={meId}/>
     <div className="collab-toolbar"><StatusPill>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span></div>
     {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；负责人可安排分工与验收。</p>}
     <div className="collab-detail-nav" aria-label="任务详情导航"><div className="collab-detail-tabs" role="tablist" aria-label="任务操作"><button role="tab" id="task-submit-tab" aria-controls="task-submit-panel" aria-selected={view === 'submit'} className="button" onClick={() => setView('submit')}>提交和查看</button><button role="tab" id="task-settings-tab" aria-controls="task-settings-panel" aria-selected={view === 'settings'} className="button" onClick={() => setView('settings')}>任务设置</button></div><button className="button button-quiet button-small" aria-pressed={view === 'history'} onClick={() => setView('history')}>历史记录{orderedHistory.length ? `（${orderedHistory.length}）` : ''}</button></div>
