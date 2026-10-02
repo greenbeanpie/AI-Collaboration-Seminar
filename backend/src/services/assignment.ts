@@ -111,6 +111,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
 
     const {data}=answer;
     const references=('references' in answer?answer.references:[]) as unknown[];
+    const decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
     const taskById = new Map(input.tasks.map((task) => [task.taskId, task]));
     const memberIds = new Set(input.members.map((member) => member.userId));
     const seen = new Set<string>();
@@ -132,7 +133,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const current = await loadAiConfig(env.DB);
   if (!current?.enabled || current.id !== config.id) throw new AppError('INVALID_STATE', 'AI 设置已变化，请重新生成推荐', 409, false);
-  return { references,assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
+  return { references,decisionReferences,assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
     reason: a.assigneeId ? '任务偏好推荐，请与成员确认意愿和工作量。' : '暂无推荐人选，请由团队协商。' })), considerations: ['推荐仅供任务协作参考，不代表能力评价。'] };
 }
 
@@ -172,7 +173,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
         expectedRevision: taskById.get(item.taskId)!.revision,
       })),
       considerations: data.considerations,
-      references:data.references,
+      references:data.references,decisionReferences:data.decisionReferences,
     };
     await settleReservation(env, jobId, 'settled');
     await recordEvent(env, {
