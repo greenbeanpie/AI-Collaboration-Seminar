@@ -23,6 +23,23 @@ async function material(f:Awaited<ReturnType<typeof fixture>>,markdown='案例�
 function model(output:unknown,inspect?:(body:any)=>void){return vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{assertGoRequest(url,init);inspect?.(JSON.parse(String(init?.body)));return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:20}}),{headers:{'content-type':'application/json'}});});}
 
 describe('one goal and informative subtask dependencies',()=>{
+  it('lets owners independently score with AI disabled, revise partial dimensions and reject stale corrections',async()=>{
+    const f=await fixture(),s=await standard(f);
+    await env.DB.prepare('UPDATE ai_config_versions SET enabled=0').run();
+    const createdResponse=await f.request('/assessments/manual',{standardsVersionId:s.standardsVersionId,scores:[{key:'quality',score:80},{key:'coverage',score:40}],reason:'人工核对'});
+    expect(createdResponse.status).toBe(201);
+    const created=await json(createdResponse);
+    expect(created).toMatchObject({origin:'manual',revision:1,report:{weightedTotal:70}});
+    expect(created.report.scores.every((score:any)=>score.confidence===null&&score.origin==='human')).toBe(true);
+    const correction=await f.request(`/assessments/${created.assessmentId}/scores`,{expectedRevision:1,scores:[{key:'coverage',score:80}],reason:'补充核查覆盖情况'},'PATCH');
+    expect(correction.status).toBe(200);
+    expect(await json(correction)).toMatchObject({origin:'manual',revision:2,report:{weightedTotal:80}});
+    expect((await f.request(`/assessments/${created.assessmentId}/scores`,{expectedRevision:1,scores:[{key:'quality',score:0}],reason:'旧版本'},'PATCH')).status).toBe(409);
+    const outsider=await seedUser();
+    expect((await f.request(`/assessments/${created.assessmentId}/scores`,{expectedRevision:2,scores:[{key:'quality',score:0}],reason:'无权限'},'PATCH',outsider.token)).status).toBe(403);
+    expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessment_corrections WHERE assessment_id=?1').bind(created.assessmentId).first<{n:number}>())!.n).toBe(2);
+    await configureGoFixture();
+  });
   it('normalizes legacy display without modifying IDs, status, revisions or inventing submissions',async()=>{const f=await fixture(),id=await task(f,'历史完成',true,'done');const goal=await json(await f.request('/goal'));expect(goal.title).toBe('测试项目');const list=await json(await f.request('/tasks'));expect(list.items[0]).toMatchObject({taskId:id,status:'done',lifecycleState:'accepted',revision:7,unfinishedDependencyIds:[]});expect(await env.DB.prepare('SELECT lifecycle_state,status,revision FROM tasks WHERE id=?1').bind(id).first()).toEqual({lifecycle_state:null,status:'done',revision:7});expect((await env.DB.prepare('SELECT COUNT(*) n FROM task_submissions').first<{n:number}>())!.n).toBe(0);});
   it('creates criterion-less old-client requests in the canonical lifecycle and prevents completion bypass',async()=>{const f=await fixture(),created=await json(await f.request('/tasks',{title:'待补验收标准'}));expect(created).toMatchObject({lifecycleState:'open',criteria:''});expect((await f.request(`/tasks/${created.taskId}`,{expectedRevision:created.revision,status:'done'},'PATCH')).status).toBe(409);const assigned=await json(await f.request('/tasks',{title:'已分工待补标准',assigneeId:f.user.userId}));expect(assigned).toMatchObject({lifecycleState:'in_progress',status:'doing'});expect((await f.request(`/tasks/${assigned.taskId}/submissions`,{expectedRevision:assigned.revision,body:'成果'})).status).toBe(400);expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1 AND lifecycle_state IS NULL').bind(f.projectId).first<{n:number}>())!.n).toBe(0);});
   it('rejects cycles, self/cross-project edges and stale graph revisions with no partial writes',async()=>{const f=await fixture(),a=await task(f,'A'),b=await task(f,'B'),goal=await projectGoal(env,f.projectId);const saved=await replaceTaskDependencies(env,f.projectId,f.user.userId,b,goal.graphRevision,[a]);expect(saved.unfinishedDependencyIds).toEqual([a]);await expect(replaceTaskDependencies(env,f.projectId,f.user.userId,a,saved.graphRevision,[b])).rejects.toThrow('循环');await expect(replaceTaskDependencies(env,f.projectId,f.user.userId,a,saved.graphRevision,[a])).rejects.toThrow('其他');await expect(replaceTaskDependencies(env,f.projectId,f.user.userId,a,saved.graphRevision,[newId()])).rejects.toThrow('其他');await expect(replaceTaskDependencies(env,f.projectId,f.user.userId,a,goal.graphRevision,[])).rejects.toMatchObject({code:'VERSION_CONFLICT'});expect(await taskDependencies(env,f.projectId,a)).toEqual({dependsOnTaskIds:[],unfinishedDependencyIds:[]});});

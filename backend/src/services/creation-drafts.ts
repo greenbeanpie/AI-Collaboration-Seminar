@@ -182,7 +182,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   }
   return draftView(env, await getDraft(env, id, userId));
 }
-export async function previewDraft(env: Env, id: string, userId: string, revision: number, mode: 'ai' | 'manual', tasks: z.infer<typeof creationTask>[], regenerate: boolean,requestedGoal?:z.infer<typeof creationGoal>) {
+export async function previewDraft(env: Env, id: string, userId: string, revision: number, mode: 'ai' | 'manual', tasks: z.infer<typeof creationTask>[], regenerate: boolean,requestedGoal?:z.infer<typeof creationGoal>,resumeAttempt?:string) {
   const row = await getDraft(env, id, userId);
   if (row.status !== 'active' || row.revision !== revision) {
     throw invalidState('草稿已变化，请刷新后重新预览');
@@ -190,7 +190,8 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
   if (row.preview_state === 'ready' && row.preview_revision === revision && !regenerate) {
     return draftView(env, row);
   }
-  if (row.preview_state === 'running' && (!regenerate || Date.now() - Date.parse(row.updated_at) < 660000)) {
+  if (resumeAttempt && (row.preview_state !== 'running' || row.preview_attempt_id !== resumeAttempt)) throw invalidState('后台预览已替换或取消');
+  if (!resumeAttempt && row.preview_state === 'running' && (!regenerate || Date.now() - Date.parse(row.updated_at) < 660000)) {
     throw invalidState('预览请求仍在运行或结果待核对；刷新草稿，主动重新生成可能再次计费');
   }
   const payload = creationPayload.parse(JSON.parse(row.payload_json));
@@ -199,8 +200,8 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
   if (mode === 'ai' && !payload.aiCollaborationEnabled) {
     throw invalidState('请先开启 AI 协作或使用手动任务预览');
   }
-  const attempt = newId();
-  const claimed = await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_attempt_id=?4,preview_error=NULL,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND (preview_state!='running' OR ?6=1)").bind(id, userId, revision, attempt, nowIso(), regenerate ? 1 : 0).run();
+  const attempt = resumeAttempt ?? newId();
+  const claimed = await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_attempt_id=?4,preview_error=NULL,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND (preview_state!='running' OR ?6=1 OR (?7=1 AND preview_attempt_id=?4))").bind(id, userId, revision, attempt, nowIso(), regenerate ? 1 : 0,resumeAttempt?1:0).run();
   if (!claimed.meta.changes) {
     throw invalidState('预览状态已变化，请刷新');
   }

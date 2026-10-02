@@ -54,6 +54,8 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as ReviewJobInput;
+  const requester=await env.DB.prepare('SELECT created_by FROM jobs WHERE id=?1').bind(jobId).first<{created_by:string}>();
+  if(!requester)throw new AppError('NOT_FOUND','任务请求者不存在',404,false);
   if(input.assessmentId){await runMaterialAssessmentJob(env,jobId);return;}
   try {
     const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2')
@@ -108,7 +110,8 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       { role: 'user' as const, content: [`已确认要求：\n${requirementsText}`, ...materialParts].join('\n\n') },
     ];
 
-    const { data } = await aiJsonCall(env, {
+    const { data,references,decisionReferences } = await aiJsonCall(env, {
+      projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
       projectId: input.projectId,
       jobId,
       purpose: 'review',

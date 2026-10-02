@@ -131,7 +131,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!row) throw notFound(`材料版本 ${versionId} 不存在或不属于本项目`);
       }
 
-      return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run' }, async (jobId, configVersionId) => {
+      return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run',maxCalls:24 }, async (jobId, configVersionId) => {
         const reviewId = newId();
         await c.env.DB.prepare(
           "INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",

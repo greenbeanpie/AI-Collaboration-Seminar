@@ -573,6 +573,10 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         return { status: (await getJob(env, jobId)).status };
       }
       await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+      if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.text'){
+        await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true});
+        return {status:(await getJob(env,jobId)).status};
+      }
       await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
       await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>

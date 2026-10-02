@@ -8,6 +8,7 @@ import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
 import { creationPayload, creationGoal, creationTask, getDraft, draftView, assertTeamSize, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { enqueueDraftPreview } from '../services/draft-preview-jobs';
 import { projectTemplates } from '../services/creation-template';
 const base = '/api/v1/creation-drafts';
 const params = z.object({
@@ -247,7 +248,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/preview', tags: ['creation'], request: {
       params, body: json(z.object({
-        expectedRevision: revision, mode: z.enum(['ai', 'manual']),goal:creationGoal.optional(),tasks: z.array(creationTask).max(20).default([]), regenerate: z.boolean().default(false)
+        expectedRevision: revision, mode: z.enum(['ai', 'manual']),goal:creationGoal.optional(),tasks: z.array(creationTask).max(20).default([]), regenerate: z.boolean().default(false),background:z.boolean().optional()
       }).strict())
     }, responses: {
       200: {
@@ -265,7 +266,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       tasks: z.infer<typeof creationTask>[];
       regenerate: boolean;
       goal?:z.infer<typeof creationGoal>;
+      background?:boolean;
     };
+    if(b.background && b.mode==='ai')return c.json(apiData(c,await enqueueDraftPreview(c.env,c.req.valid('param').draftId,c.get('user')!.id,b.expectedRevision,b.tasks,b.regenerate,b.goal)),200);
     return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate,b.goal)), 200);
   });
   app.openapi(createRoute({

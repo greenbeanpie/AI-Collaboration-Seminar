@@ -196,7 +196,7 @@ async function createRunAndJob(
 ): Promise<{ runId: string; jobId: string }> {
   const sourceSnapshots = await snapshotSourceInputs(env, params.projectId, params.sourceVersionIds);
   const runId = newId();
-  return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run',maxCalls:5 }, async (jobId, configVersionId) => {
+  return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run',maxCalls:24 }, async (jobId, configVersionId) => {
     await env.DB.prepare(
       "INSERT INTO agent_runs (id, session_id, project_id, capability, mode, status, inputs_json, prompt_version, created_at) VALUES (?1, ?2, ?3, ?4, ?4, 'running', ?5, 'agent-v1', ?6)",
     )

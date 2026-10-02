@@ -23,13 +23,16 @@ export interface OrphanGcResult {
   failures: number;
 }
 
-type OwnerKind = 'ai_call' | 'source_version' | 'file';
+type OwnerKind = 'ai_call' | 'source_version' | 'file' | 'investigation';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** 解析受管对象键的归属；返回 null 表示不属于受管命名空间，一律不处理。 */
 export function classifyManagedKey(key: string): { kind: OwnerKind; id: string } | null {
   const segments = key.split('/');
+  if (segments[0] === 'ai' && segments[1] === 'investigations' && segments.length === 3 && segments[2]?.endsWith('.json')) {
+    return { kind: 'investigation', id: segments[2].slice(0,-5) };
+  }
   if (segments[0] === 'ai-calls' && segments.length >= 3 && UUID_RE.test(segments[1] ?? '')) {
     return { kind: 'ai_call', id: segments[1] as string };
   }
@@ -45,6 +48,7 @@ export function classifyManagedKey(key: string): { kind: OwnerKind; id: string }
 }
 
 async function isReferenced(env: Env, owner: { kind: OwnerKind; id: string }, key: string): Promise<boolean> {
+  if(owner.kind==='investigation')return Boolean(await env.DB.prepare('SELECT 1 FROM ai_investigations WHERE id=?1 AND checkpoint_key=?2').bind(owner.id,key).first());
   if (owner.kind === 'ai_call') {
     return Boolean(await env.DB.prepare('SELECT 1 AS ok FROM ai_calls WHERE id = ?1').bind(owner.id).first());
   }

@@ -1,0 +1,2 @@
+# PDF byte offsets must not be rewritten by platform newline conversion.
+*.pdf binary

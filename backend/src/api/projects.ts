@@ -8,6 +8,7 @@ import { newId, nowIso } from '../core/db';
 import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
+import { recordEvent } from '../services/events';
 
 export const projectParams = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 
@@ -179,6 +180,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       ]);
       const row = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1').bind(projectId).first<ProjectRow>();
       if (!row) throw notFound('项目创建失败');
+      await recordEvent(c.env,{projectId,actorType:'user',actorId:user.id,type:'project.created',entityType:'project',entityId:projectId,dedupKey:projectId});
       return { status: 201 as const, body: toProject(row, 'owner') };
     });
     return c.json(apiData(c, result.body), result.status);
@@ -279,6 +281,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(member.projectId)
       .first<ProjectRow>();
     if (!row) throw notFound('项目不存在');
+    await recordEvent(c.env,{projectId:member.projectId,actorType:'user',actorId:c.get('user')!.id,type:'project.updated',entityType:'project',entityId:member.projectId,dedupKey:String(row.revision)});
     return c.json(apiData(c, toProject(row, member.role)), 200);
   });
 }

@@ -170,7 +170,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
       if (!memberRow) throw notFound('成员不存在或不属于本项目');
     }
 
-    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const rehearsalId = newId();
       await c.env.DB.prepare(
         "INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7)",
@@ -219,7 +219,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     if (rehearsal.status !== 'active'||rehearsal.finish_job_id) throw invalidState('演练已结束或正在生成评分');
     if ((await loadTurns(c.env, rehearsal.id)).length === 0) throw invalidState('第一问尚未生成，请稍后');
 
-    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const turnId = newId();
       const saved=await c.env.DB.prepare(
         "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL)",
@@ -253,7 +253,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     if (rehearsal.status !== 'active') throw invalidState('演练已结束');
     if(rehearsal.finish_job_id)return c.json(apiData(c,{jobId:rehearsal.finish_job_id}),202);
 
-    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
+    const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL`).bind(rehearsal.id,member.projectId,jobId).run();
       if(!frozen.meta.changes)throw invalidState('演练已经在生成评分');
       try{await createJobAndDispatch(c.env, {

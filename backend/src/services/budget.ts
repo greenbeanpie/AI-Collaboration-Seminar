@@ -57,14 +57,14 @@ export async function withReservedAiJob<T>(
 }
 
 /** 在真实 fetch 前持久化尝试标记，调用记录写失败也不能释放费用。 */
-export async function markAiCallStarted(env: Env, jobId: string | undefined): Promise<void> {
+export async function markAiCallStarted(env: Env, jobId: string | undefined, expandInvestigation=false): Promise<void> {
   if (!jobId) return;
   const active = await findActiveReservation(env, jobId);
   if (!active) throw quotaExceeded('任务没有活动预算预占，拒绝发起模型请求');
   const row=await env.DB.prepare('SELECT project_id,purpose,attempts_started,max_calls FROM usage_reservations WHERE id=?1').bind(active.id).first<{project_id:string;purpose:string;attempts_started:number;max_calls:number}>();
   // A finite execution allowance is independent of how many files can be discovered.
   // Never create another allowance automatically after exhaustion.
-  if(row && row.purpose!=='ocr_pages' && row.attempts_started>=row.max_calls && row.max_calls<24) {
+  if(expandInvestigation && row && row.purpose!=='ocr_pages' && row.attempts_started>=row.max_calls && row.max_calls<24) {
     const config=await loadAiConfig(env.DB,await frozenConfigVersionIdFor(env,jobId));
     const purpose=KIND_TO_AI_PURPOSE[row.purpose];
     const extra=purpose?estimateCostUsd(config,purpose,true):0;
@@ -79,7 +79,7 @@ export async function markAiCallStarted(env: Env, jobId: string | undefined): Pr
     if(!extended.meta.changes) throw quotaExceeded('继续调查所需预算不足；读取检查点已保存，可稍后重新发起');
   }
   const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved' AND (purpose = 'ocr_pages' OR attempts_started < max_calls)").bind(active.id).run();
-  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('本次调查已达到24次模型调用资源预算；检查点已保存，不会自动追加付费调用');
+  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('已达到本次预占的模型调用次数上限；调查检查点已保存，不会自动追加付费调用');
 }
 
 async function findActiveReservation(env: Env, jobId: string): Promise<{ id: string; created_at: string; attempts_started: number } | null> {

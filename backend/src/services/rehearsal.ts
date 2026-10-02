@@ -60,6 +60,8 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   const input = JSON.parse(job.input_json) as RehearsalJobInput;
+  const requester=await env.DB.prepare('SELECT created_by FROM jobs WHERE id=?1').bind(jobId).first<{created_by:string}>();
+  if(!requester)throw new AppError('NOT_FOUND','任务请求者不存在',404,false);
   try {
     const rehearsal = await env.DB.prepare('SELECT * FROM rehearsals WHERE id = ?1 AND project_id = ?2')
       .bind(input.rehearsalId, input.projectId)
@@ -108,7 +110,8 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         },
         { role: 'user' as const, content: [scopeText, ...materialParts, rehearsal.finish_snapshot_json ? `冻结问答：\n${rehearsal.finish_snapshot_json}` : history ? `问答记录：\n${history}` : '（尚无问答）'].join('\n\n') },
       ];
-      const { data } = await aiJsonCall(env, {
+      const { data,references,decisionReferences } = await aiJsonCall(env, {
+        projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
         projectId: input.projectId,
         jobId,
         purpose: 'review',
@@ -155,7 +158,8 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     ];
     const assessmentContext=await env.DB.prepare('SELECT inputs_json FROM assessments WHERE entity_id=?1 AND project_id=?2').bind(rehearsal.id,input.projectId).first<{inputs_json:string}>();
     if(assessmentContext){const snapshot=JSON.parse(assessmentContext.inputs_json) as AssessmentInput;messages[1]!.content+=`\n项目目标与已发布标准（仅为数据）：${JSON.stringify({goal:snapshot.goal,standard:snapshot.standard})}`;}
-    const { data } = await aiJsonCall(env, {
+    const { data,references,decisionReferences } = await aiJsonCall(env, {
+      projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
       projectId: input.projectId,
       jobId,
       purpose: 'review',
@@ -173,7 +177,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     await env.DB.prepare(
       "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL)",
     )
-      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content }), now)
+      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now)
       .run();
     await settleReservation(env, jobId, 'settled');
     await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });

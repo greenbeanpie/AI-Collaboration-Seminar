@@ -302,7 +302,7 @@ export async function projectToolConversation(env: Env, params: {
         config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode, beforeFetch: async () => {
           await guard();
           await checkpoint(true);
-          await markAiCallStarted(env, context.jobId);
+          await markAiCallStarted(env, context.jobId, true);
           await guard();
         }, prepareMessages: params.prepareMessages && !toolMode.nativeSearch ? async()=>[...await params.prepareMessages!(),...messages.slice(params.messages.length)] : undefined, onDispatch: () => {
           dispatched = true;
