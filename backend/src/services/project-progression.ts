@@ -41,9 +41,20 @@ export async function dispatchProjectProgression(env:Env):Promise<void>{
   }
   const event=await env.DB.prepare(`SELECT id,occurred_at FROM events WHERE project_id=?1 AND actor_type='user' AND type!='collaboration.proposal_revised' AND (occurred_at>?2 OR (occurred_at=?2 AND id>?3)) ORDER BY occurred_at DESC,id DESC LIMIT 1`).bind(project.id,state?.observed_event_at??'',state?.observed_event_id??'').first<{id:string;occurred_at:string}>();
   if(!event||Date.now()-Date.parse(event.occurred_at)<15_000)continue;
+  // An owner-edited pending draft remains reviewable until explicitly applied/replaced.
+  // Other progress must not silently invalidate local edits while the owner is saving.
+  if(await env.DB.prepare("SELECT 1 FROM collaboration_proposals proposal WHERE proposal.project_id=?1 AND proposal.status='pending' AND EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=proposal.id AND length(trim(correction.reason))>0)").bind(project.id).first())continue;
   // Existing review is deliberate: a new explicit redo stales it before reaching here.
   const pending=await env.DB.prepare("SELECT updated_at FROM collaboration_proposals WHERE project_id=?1 AND status='pending' ORDER BY updated_at DESC LIMIT 1").bind(project.id).first<{updated_at:string}>();
-  if(pending){if(event.occurred_at<=pending.updated_at)continue;await env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2 WHERE project_id=?1 AND status='pending' AND updated_at<?3").bind(project.id,nowIso(),event.occurred_at).run();}
+  if(pending){
+   if(event.occurred_at<=pending.updated_at)continue;
+   const oldPlans=await env.DB.prepare("SELECT id FROM collaboration_proposals proposal WHERE project_id=?1 AND status='pending' AND updated_at<?2 AND NOT EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=proposal.id AND length(trim(correction.reason))>0)").bind(project.id,event.occurred_at).all<{id:string}>();
+   const token=newId(),changedAt=nowIso();
+   await env.DB.batch([
+    env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2,mutation_token=?4 WHERE project_id=?1 AND status='pending' AND updated_at<?3 AND NOT EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=collaboration_proposals.id AND length(trim(correction.reason))>0)").bind(project.id,changedAt,event.occurred_at,token),
+    ...oldPlans.results.map(plan=>env.DB.prepare("INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?1,?2,'system','project-progression','collaboration.proposal_staled','collaboration',?3,?4,?5,?6 WHERE EXISTS(SELECT 1 FROM collaboration_proposals WHERE id=?3 AND mutation_token=?7)").bind(newId(),project.id,plan.id,event.id,JSON.stringify({causeEventId:event.id,reason:'newer_user_progress'}),changedAt,token))
+   ]);
+  }
   if(await env.DB.prepare("SELECT 1 FROM jobs WHERE project_id=?1 AND ((status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.operation') LIKE 'collaboration.%') OR (status IN ('queued','running') AND kind IN ('parse_source','ocr_pages','web_fetch')))").bind(project.id).first())continue;
   const member=await env.DB.prepare("SELECT user_id FROM project_members WHERE project_id=?1 AND role='owner' ORDER BY user_id LIMIT 1").bind(project.id).first<{user_id:string}>();if(!member)continue;
   const jobId=newId(),now=nowIso();

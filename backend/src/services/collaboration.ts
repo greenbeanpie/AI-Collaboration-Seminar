@@ -4,7 +4,7 @@ import { validateReadReferences,type ProjectReference } from './project-evidence
 import { projectSourceContextGuard } from './collaboration-context';
 import { profileSnapshotGuard } from './personal-profiles';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
+import { invalidState, notFound, permissionDenied, validationFailed,versionConflict } from '../core/errors';
 import { projectGoal, graphSnapshot, validateTaskGraph } from './project-simplification';
 export interface CollaborationTask {
     id: string;
@@ -168,6 +168,8 @@ export async function reviseProposal(env:Env,projectId:string,proposalId:string,
  await owner(env,projectId,actorId);
  const p=await env.DB.prepare('SELECT * FROM collaboration_proposals WHERE id=?1 AND project_id=?2').bind(proposalId,projectId).first<Proposal>();
  if(!p)throw notFound();
+ if(p.revision!==expectedRevision)throw versionConflict(p.revision);
+ if(!reason.trim())throw validationFailed('请说明人工修订理由');
  const next=payload as {tasks?:unknown[];updates?:unknown[];assignments?:unknown[];goal?:unknown};
  if(p.status==='applied'&&next.tasks?.length)throw validationFailed('已应用方案只能调整现有任务；新增任务请另建方案，避免重复创建');
  if(p.kind==='assign'&&(next.tasks?.length||next.updates?.length||next.goal))throw validationFailed('分工方案不能修改任务或主目标');
@@ -178,6 +180,6 @@ export async function reviseProposal(env:Env,projectId:string,proposalId:string,
   env.DB.prepare(`UPDATE collaboration_proposals SET payload_json=?4,status='pending',revision=revision+1,updated_at=?5 WHERE id=?1 AND project_id=?2 AND revision=?3 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6 AND role='owner')`).bind(proposalId,projectId,expectedRevision,JSON.stringify(payload),now,actorId),
   audit(env,projectId,actorId,'collaboration.proposal_revised',proposalId,{reason,expectedRevision},true)
  ]);
- if(!results[1]!.meta.changes)throw invalidState('方案版本或权限已变化');
+ if(!results[1]!.meta.changes){const latest=await env.DB.prepare('SELECT revision FROM collaboration_proposals WHERE id=?1 AND project_id=?2').bind(proposalId,projectId).first<{revision:number}>();if(latest&&latest.revision!==expectedRevision)throw versionConflict(latest.revision);throw invalidState('方案权限已变化');}
  return (await env.DB.prepare('SELECT * FROM collaboration_proposals WHERE id=?1').bind(proposalId).first<Proposal>())!;
 }
