@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app';
-import { registerProjectSimplificationRoutes } from '../src/api/project-simplification';
+import { assessmentSchema, registerProjectSimplificationRoutes } from '../src/api/project-simplification';
 import { env, BASE } from './helpers/env';
 import { seedProject, seedUser, authCookie } from './helpers/seed';
 import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
@@ -64,6 +64,22 @@ describe('creation preview and atomic goal graph commit',()=>{
   });
 });
 describe('independent goal assessments with complete evidence',()=>{
+  it('preserves old rehearsal narratives and review JSON under the historical contract without fabricating current grades',async()=>{
+    const f=await fixture(),s=await standard(f),reviewId=newId(),rehearsalId=newId(),now=nowIso();
+    const oldReview={overall:{score:72,summary:'当时的模拟预审总结'},scores:[{key:'quality',score:72,comment:'历史评语',suggestions:['原始建议']}],legacyEvidence:{note:'原始字段不能丢弃'}};
+    const oldRehearsal={content:'以前只有文字演练总结，未产生分数。',strengths:['回答清晰'],improvements:['补充实例'],originalMetadata:{session:'旧问答'}};
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO reviews(id,project_id,requirement_set_id,rubric_version_id,material_version_ids_json,status,report_json,created_by,created_at) VALUES(?1,?2,?3,?4,'[]','succeeded',?5,?6,?7)").bind(reviewId,f.projectId,s.requirementSetIds[0],s.rubricVersionId,JSON.stringify(oldReview),f.user.userId,now),
+      env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,status,created_by,created_at,finished_at) VALUES(?1,?2,'all','finished',?3,?4,?4)").bind(rehearsalId,f.projectId,f.user.userId,now),
+      env.DB.prepare("INSERT INTO rehearsal_turns(id,rehearsal_id,project_id,sequence,kind,content_json,created_at) VALUES(?1,?2,?3,1,'summary',?4,?5)").bind(newId(),rehearsalId,f.projectId,JSON.stringify(oldRehearsal),now),
+    ]);
+    for(const [id,report] of [[reviewId,oldReview],[rehearsalId,oldRehearsal]] as const){
+      const dto=await json(await f.request(`/assessments/${id}`)),parsed=assessmentSchema.parse(dto);
+      expect(parsed).toMatchObject({assessmentId:id,historical:true,goal:null,goalRevision:null,standardsVersionId:null});
+      expect(parsed.report).toEqual(report);expect(assessmentSchema.safeParse({...dto,historical:false}).success).toBe(false);
+    }
+    const list=await json(await f.request('/assessments'));expect(list.items).toHaveLength(2);expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessments WHERE project_id=?1').bind(f.projectId).first<{n:number}>())!.n).toBe(0);
+  });
   it('computes weighted total on server, freezes goal and standard, sends full body beyond old 8000 limit',async()=>{const f=await fixture(),s=await standard(f),text='正文'.repeat(4500)+'案例有明确结果。',versionId=await material(f,text),goal=await projectGoal(env,f.projectId),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId],goalRevision:goal.revision}));const evidence=[{type:'material',materialVersionId:versionId,quote:'案例有明确结果。'}];const fetch=model({scores:[{key:'coverage',score:40,confidence:.9,comment:'范围',evidence},{key:'quality',score:80,confidence:.9,comment:'质量',evidence}],summary:'完整检查',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'met',comment:'有案例',evidence}]},body=>expect(JSON.stringify(body)).toContain(text));vi.stubGlobal('fetch',fetch);await f.request('/goal',{expectedRevision:goal.revision,title:'新目标'},'PATCH');await runMaterialAssessmentJob(offline,created.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report.weightedTotal).toBe(70);expect(result.goal.title).toBe(goal.title);expect(result.goalRevision).toBe(goal.revision);expect(result.jobId).toBe(created.jobId);expect(fetch).toHaveBeenCalledOnce();});
   it('rejects forged citations and missing rubric dimensions',async()=>{const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));vi.stubGlobal('fetch',model({scores:[{key:'quality',score:80,confidence:.9,comment:'虚构',evidence:[{type:'material',materialVersionId:versionId,quote:'不存在的句子'}]}],summary:'检查',limitations:[],requirementChecks:[]}));await runMaterialAssessmentJob(offline,created.jobId);expect((await getJob(env,created.jobId)).status).toBe('failed');expect((await json(await f.request(`/assessments/${created.assessmentId}`))).report).toBeNull();});
   it('does not turn missing evidence into a zero or average score',async()=>{const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));vi.stubGlobal('fetch',model({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'无证据',evidence:[]})),summary:'需要补证据',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'unknown',comment:'证据不足',evidence:[]}]}));await runMaterialAssessmentJob(offline,created.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report).toMatchObject({status:'unscorable',weightedTotal:null});expect(result.report.scores.every((s:any)=>s.score===null)).toBe(true);});
