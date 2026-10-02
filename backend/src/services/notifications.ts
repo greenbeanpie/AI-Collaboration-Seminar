@@ -2,8 +2,9 @@ import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { isPushConfigured, sendWebPush } from './web-push';
 
-export type NotificationKind = 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status';
+export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status';
 const content: Record<NotificationKind, [string, string]> = {
+  project_invitation: ['你有新的项目邀请','负责人邀请你加入项目，请到首页查看并接受或拒绝。'],
   source_added: ['项目新增要求来源', '你参与的项目新增了要求来源，请进入项目查看。'],
   requirements_ready: ['项目要求解析完成', '你参与的项目有新的要求草稿待核对。'],
   requirements_confirmed: ['项目要求已确认', '你参与的项目已确认要求，请查看最新版本。'],
@@ -13,7 +14,8 @@ const content: Record<NotificationKind, [string, string]> = {
 };
 /** Used on feed, read/dismiss and immediately before each send. Current access always wins. */
 export const notificationVisibleSql = (userExpression: string) => `(
-  (e.scope = 'project' AND EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = e.resource_id AND m.user_id = ${userExpression}))
+  (e.kind = 'project_invitation' AND EXISTS(SELECT 1 FROM project_username_invitations i JOIN projects p ON p.id=i.project_id WHERE i.id=e.resource_id AND i.recipient_id=${userExpression} AND i.status='pending' AND i.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now') AND p.status='active'))
+  OR (e.scope = 'project' AND e.kind != 'project_invitation' AND EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = e.resource_id AND m.user_id = ${userExpression}))
   OR (e.scope = 'ticket' AND EXISTS (SELECT 1 FROM support_tickets t WHERE t.id = e.resource_id AND
     (t.owner_id = ${userExpression} OR EXISTS (SELECT 1 FROM auth_accounts a WHERE a.user_id = ${userExpression}
       AND COALESCE(a.account_role,CASE WHEN a.is_admin = 1 THEN 'admin' ELSE 'user' END) IN ('admin','super_admin')))))
@@ -21,12 +23,12 @@ export const notificationVisibleSql = (userExpression: string) => `(
 interface EventInput {
   key: string; kind: NotificationKind; scope: 'project' | 'ticket'; resourceId: string;
   actorId?: string | null; url: string; now?: string;
-  record: { table: 'sources' | 'requirement_sets' | 'requirements' | 'support_ticket_messages'; id: string };
+  record: { table: 'sources' | 'requirement_sets' | 'requirements' | 'support_ticket_messages' | 'project_username_invitations'; id: string };
 }
 /** Append these statements to the same D1 batch as the business change: durable, deduplicated and atomic. */
 export function notificationStatements(env: Env, input: EventInput): D1PreparedStatement[] {
   const now = input.now ?? nowIso(); const [title, body] = content[input.kind];
-  if (!/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
+  if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
   const statements = [
     env.DB.prepare(`INSERT OR IGNORE INTO notification_events(id,event_key,kind,scope,resource_id,actor_id,title,body,url,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS (SELECT 1 FROM ${input.record.table} WHERE id = ?11)`)
@@ -35,7 +37,7 @@ export function notificationStatements(env: Env, input: EventInput): D1PreparedS
       SELECT e.id,u.id FROM notification_events e JOIN users u JOIN auth_accounts a ON a.user_id = u.id
       WHERE e.event_key = ?1 AND a.password_hash IS NOT NULL AND ${notificationVisibleSql('u.id')}
       AND (e.scope = 'project' OR e.actor_id IS NULL OR u.id != e.actor_id)
-      AND (e.scope != 'project' OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = e.resource_id AND m.user_id = u.id AND m.joined_at <= e.created_at))`)
+      AND (e.kind = 'project_invitation' OR e.scope != 'project' OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = e.resource_id AND m.user_id = u.id AND m.joined_at <= e.created_at))`)
       .bind(input.key),
   ];
   if (isPushConfigured(env)) statements.push(env.DB.prepare(`INSERT OR IGNORE INTO notification_push_outbox(event_id,subscription_id,available_at,created_at,updated_at)

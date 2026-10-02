@@ -74,7 +74,7 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - 原有两次调用预占、并发限制、费用记录与恢复语义保留。对 401/403 等不可重试服务错误不再发出无意义的付费修复重试；输出 schema 失败/可重试网络错误仍受原两次总数限制
 - 自定义/第三方模型和 OCR 仍不允许有限金额预算；不能假设所有兼容接口的 max_tokens 包含思考 token。原子预占与价格未知状态不变
 - 原生 OpenAI 输出 token 含思考；Claude 输入总量合并普通/缓存读/缓存写，输出不重复添加 thinking；Gemini 输出合并 candidates+thoughts，输入不重复加缓存。供应商差异化缓存价/附加费用不等于本应用简单单价记录，最终以账单核对
-- Responses/Messages/Gemini 返回未完成、拒绝、工具调用或被过滤结果时不会作为完成成果接受。适配器不执行模型工具调用，只归一答案文本和用量
+- 通用 Responses/Messages/Gemini 调用中，未完成、拒绝、工具调用或被过滤结果不会作为完成成果接受。项目工具流程另有明确白名单，服务器验证用户与项目权限后才执行文件工具或供应商原生搜索
 
 ## 验证与未验证
 
@@ -98,3 +98,25 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)、[思考参数](https://ai.google.dev/gemini-api/docs/generate-content/thinking)、[用量语义](https://ai.google.dev/api/generate-content#UsageMetadata)
 - [DeepSeek Chat API](https://api-docs.deepseek.com/api/create-chat-completion/)
 - [OpenRouter 思考参数](https://github.com/OpenRouterTeam/docs/blob/main/guides/best-practices/reasoning-tokens.mdx)、[公开模型元数据](https://openrouter.ai/api/v1/models)
+
+
+## P2 项目文件工具与原生搜索
+
+项目助手和负责人任务拆分/调整可使用 `list_project_files` 与 `read_project_file`。服务器限定当前项目和当前用户权限，文件列表每页20项，读取正文或已保存总结每次最多6000字符；无已提取正文或已保存总结时明确返回不可用，不自动创建 OCR/总结付费任务。工具返回均视为不可信数据，记录有界元数据和来源，不返回 R2 对象路径或凭据。文件工具排除回收状态，动态读取冻结文件/来源生命周期到任务输入，后续请求、写回与任务建议采纳使用同一原子校验；删除再恢复不能复用旧快照，恢复也不会自动调用模型。最多4轮模型请求、8次本地工具执行，原生搜索最多增加1次请求；无自动整轮修复重试，调用前预占最多5次模型调用。
+
+搜索默认使用已配置模型提供方的服务。用户本轮必须开启搜索并填写可公开查询，工具仅接受与该查询逐字相同的参数。提供商的搜索请求单独构造，不传项目正文、成员资料或工具历史。未收到供应商搜索执行证据及可核对的 HTTPS 来源时，不接受“已联网”结果；不回落新搜索供应商，不安装服务或增加密钥。
+
+| 预设/协议 | 当前适配策略 |
+| --- | --- |
+| OpenAI Responses | `web_search`，单次 hosted tool 上限，记录来源；排除已知不支持的 nano 模型 |
+| Anthropic Messages | 基础 `web_search_20250305`，`max_uses: 1`；不启用动态过滤/代码执行工具 |
+| Gemini | 单独 Google Search grounding 请求后返回本地工具结果，不混合 function 与 Google Search 的协议约束；实际查询数按用量记录 |
+| OpenRouter Chat | 强制 `engine: native`，不使用默认第三方回落；不支持时失败 |
+| DeepSeek Anthropic 兼容 | 预设完整 URL `https://api.deepseek.com/anthropic/v1/messages`；基础 Web Search 请求与返回只通过 fixtures，真实参数兼容性/引用格式尚未验证，界面明确标注 |
+| DeepSeek Chat/Responses、Workers AI、OpenCode Go/Zen、自定义 | 没有已核实的原生服务适配，明确不可用 |
+
+供应商模型/协议仍可手动选择；错误或未知能力不会被猜测成联网成功。DeepSeek 兼容预设不修改任何已保存配置，不自动测试，也不将 Anthropic 的搜索价格套用到 DeepSeek。所有原生搜索的附加费用记录为 unknown，保留供应商返回的 token 和搜索用量字段；有限金额项目预算无法保证搜索费用上界，因此该项目搜索不可用。
+
+模拟契约覆盖四种协议、本地工具继续对话、权限变化、跨项目拒绝、公开查询授权、供应商搜索证据/错误、实际来源链接和费用未知记录。真实供应商请求及账单尚未验证。
+
+参考官方文档：[OpenAI Web Search](https://developers.openai.com/api/docs/guides/tools-web-search)、[Anthropic Web Search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)、[Gemini Google Search](https://ai.google.dev/gemini-api/docs/google-search)、[OpenRouter native search](https://openrouter.ai/docs/guides/features/plugins/web-search)、[DeepSeek Anthropic 兼容](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api/)、[DeepSeek Claude Code](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code/)。

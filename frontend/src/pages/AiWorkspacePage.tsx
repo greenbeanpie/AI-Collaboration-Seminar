@@ -1,3 +1,4 @@
+import { ProjectSearchOption,ProjectToolCalls,ProjectSearchCitations } from './ProjectAiTools';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, FileText, Play, RefreshCw, Send } from 'lucide-react';
@@ -41,6 +42,8 @@ function writeAdoptionIntent(key: string, value: AdoptionIntent | null): void {
 
 export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const { projectId } = useProject();
+  const [allowSearch,setAllowSearch]=useState(false);
+  const [searchQuery,setSearchQuery]=useState('');
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
   const taskQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) });
@@ -168,6 +171,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
     if (!aiEnabled || activeJobPending) return;
     const body = {
       mode,
+      ...(allowSearch&&searchQuery.trim()?{allowSearch:true,searchQuery:searchQuery.trim()}:{}),
       roleTemplate: roleTemplate.trim() || undefined,
       taskId: taskId || null,
       instruction: instruction.trim() || null,
@@ -237,6 +241,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
               {modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.detail}</option>)}
             </select>
           </Field>
+          <ProjectSearchOption projectId={projectId} enabled={allowSearch} onChange={setAllowSearch} query={searchQuery} onQuery={setSearchQuery}/>
           <Field label="AI 扮演角色" hint="作为项目上下文的一部分传给后端。">
             <input className="input" maxLength={200} value={roleTemplate} onChange={(event) => setRoleTemplate(event.target.value)} placeholder="例如：竞赛方案撰写协作者" />
           </Field>
@@ -300,6 +305,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
           {selectedSessionQuery.isLoading ? <Spinner label="正在从后端恢复会话" /> : selectedSessionQuery.error ? <ErrorNotice error={selectedSessionQuery.error} onRetry={() => void selectedSessionQuery.refetch()} /> : session ? <>
             <div className="ai-workflow-meta"><StatusPill tone={session.status === 'active' ? 'blue' : 'neutral'}>{session.status === 'active' ? '会话进行中' : '会话已关闭'}</StatusPill><span>{modeOptions.find((option) => option.value === session.capability)?.label ?? session.capability}</span><span className="mono">ID {session.sessionId}</span><span>{session.turns.length} 个对话回合</span></div>
             {currentJobId && <JobPanel jobId={currentJobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} onRetry={() => void handleRetryJob()} />}
+            {currentJobId&&<ProjectToolCalls projectId={projectId} jobId={currentJobId}/>}
             {jobIsWaitingForInput && <div className="ai-workflow-note is-warning">此任务需要后端补充输入才能继续；请根据后端任务状态处理后再重新载入会话。</div>}
             <div className="ai-workflow-chat">
               {session.turns.map((turn) => <div className={`ai-workflow-turn ${turn.role === 'user' ? 'is-user' : 'is-assistant'}`} key={`${session.sessionId}-${turn.sequence}`}>
@@ -308,6 +314,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
                   void queryClient.invalidateQueries({ queryKey: ['agentSession', projectId, session.sessionId] });
                   void queryClient.invalidateQueries({ queryKey: ['materials', projectId] });
                 }} /> : <p className="ai-workflow-turn-body">{turnText(turn.kind, turn.payload)}</p>}
+                <ProjectSearchCitations payload={turn.payload}/>
               </div>)}
               {session.turns.length === 0 && <EmptyState title="会话尚无对话回合" detail="服务端尚未返回会话内容。" />}
             </div>

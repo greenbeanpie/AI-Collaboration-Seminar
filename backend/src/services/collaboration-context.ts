@@ -1,4 +1,4 @@
-import { assertSourceInputs } from './source-inputs';
+import { assertSourceInputs, toolFileInputsGuard } from './source-inputs';
 import type { Env } from '../env';
 import { invalidState, validationFailed } from '../core/errors';
 
@@ -41,5 +41,6 @@ export function projectSourceContextGuard(inputJsonSql: string, projectIdSql: st
     NOT EXISTS(SELECT 1 FROM source_versions v JOIN sources s ON s.id=v.source_id AND s.current_version_id=v.id WHERE v.id=json_extract(snapshot.value,'$.sourceVersionId') AND v.project_id=${projectIdSql} AND s.id=json_extract(snapshot.value,'$.sourceId') AND s.project_id=${projectIdSql} AND s.deleted_at IS NULL AND s.lifecycle_version=json_extract(snapshot.value,'$.sourceLifecycleVersion') AND s.title=json_extract(snapshot.value,'$.title') AND v.char_count>0 AND NOT EXISTS(SELECT 1 FROM source_processing processing WHERE processing.source_version_id=v.id AND (processing.project_id!=${projectIdSql} OR processing.text_status!='ready')) AND (v.origin!='file' OR EXISTS(SELECT 1 FROM files f WHERE f.id=v.file_id AND f.project_id=${projectIdSql} AND f.status='available' AND f.deleted_at IS NULL)))
     OR EXISTS(SELECT 1 FROM source_pages page WHERE page.source_version_id=json_extract(snapshot.value,'$.sourceVersionId') AND page.text_status='none' AND page.ocr_status!='ok')
     OR (SELECT COUNT(*) FROM source_fragments fragment WHERE fragment.source_version_id=json_extract(snapshot.value,'$.sourceVersionId') AND fragment.project_id=${projectIdSql})!=json_array_length(snapshot.value,'$.fragments')
-    OR EXISTS(SELECT 1 FROM json_each(snapshot.value,'$.fragments') captured WHERE NOT EXISTS(SELECT 1 FROM source_fragments fragment WHERE fragment.id=json_extract(captured.value,'$.fragmentId') AND fragment.source_version_id=json_extract(snapshot.value,'$.sourceVersionId') AND fragment.project_id=${projectIdSql} AND fragment.page_number IS json_extract(captured.value,'$.pageNumber') AND fragment.content=json_extract(captured.value,'$.content'))))`;
+    OR EXISTS(SELECT 1 FROM json_each(snapshot.value,'$.fragments') captured WHERE NOT EXISTS(SELECT 1 FROM source_fragments fragment WHERE fragment.id=json_extract(captured.value,'$.fragmentId') AND fragment.source_version_id=json_extract(snapshot.value,'$.sourceVersionId') AND fragment.project_id=${projectIdSql} AND fragment.page_number IS json_extract(captured.value,'$.pageNumber') AND fragment.content=json_extract(captured.value,'$.content'))))
+    AND ${toolFileInputsGuard(inputJsonSql, projectIdSql)}`;
 }

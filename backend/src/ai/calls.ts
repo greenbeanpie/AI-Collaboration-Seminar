@@ -6,6 +6,8 @@ import { recordAiDiagnostic } from './diagnostics';
 export interface AiCallRecord {
   diagnosticRequestId?: string;
   projectId?: string | null;
+  draftId?: string;
+  searchUsage?: unknown;
   jobId?: string | null;
   runId?: string | null;
   purpose: AiPurpose;
@@ -30,7 +32,7 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
   const validTokens = (value: number | null): value is number => value !== null && Number.isSafeInteger(value) && value >= 0;
   const calculated = price && validTokens(params.promptTokens) && validTokens(params.completionTokens)
     ? (params.promptTokens * price[0] + params.completionTokens * price[1]) / 1_000_000 : null;
-  const known = calculated !== null && Number.isFinite(calculated);
+  const known = !params.searchUsage && calculated !== null && Number.isFinite(calculated);
   const cost = known ? calculated : null;
   const reservation = params.jobId ? await env.DB.prepare("SELECT id FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved' ORDER BY created_at DESC LIMIT 1").bind(params.jobId).first<{ id: string }>() : null;
   const id = newId();
@@ -50,8 +52,8 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
     `INSERT INTO ai_calls (
        id, project_id, job_id, run_id, purpose, config_version_id, prompt_version, model,
        input_r2_key, output_r2_key, prompt_tokens, completion_tokens, cost_usd, cost_status,
-       status, latency_ms, created_at, reservation_id
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)`,
+       status, latency_ms, created_at, reservation_id, draft_id, search_usage_json
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)`,
   )
     .bind(
       id,
@@ -72,6 +74,8 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
       Math.round(params.latencyMs),
       nowIso(),
       reservation?.id ?? null,
+      params.draftId ?? null,
+      params.searchUsage ? JSON.stringify(params.searchUsage) : null,
     )
     .run();
   return id;

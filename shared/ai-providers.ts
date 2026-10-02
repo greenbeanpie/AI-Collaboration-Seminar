@@ -1,5 +1,5 @@
 /** Provider-specific transport policy. Keep UI and server policy identical. See docs/AI-PROVIDERS.md. */
-export const PROVIDER_PRESETS = ['custom', 'openai', 'anthropic', 'gemini', 'deepseek', 'openrouter', 'opencode-zen', 'opencode-go'] as const;
+export const PROVIDER_PRESETS = ['custom', 'openai', 'anthropic', 'deepseek-anthropic', 'gemini', 'deepseek', 'openrouter', 'opencode-zen', 'opencode-go'] as const;
 export type ProviderPreset = typeof PROVIDER_PRESETS[number];
 export const API_PROTOCOLS = ['chat-completions', 'responses', 'messages', 'gemini'] as const;
 export type ApiProtocol = typeof API_PROTOCOLS[number];
@@ -16,6 +16,7 @@ export const providerPresets: Record<ProviderPreset, { label: string; apiUrl: st
   custom: { label: '自定义 OpenAI 兼容接口', apiUrl: '', models: [], supportsJson: true },
   openai: { label: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5.1', 'gpt-5.2', 'gpt-5.4', 'o3', 'o4-mini'], supportsJson: true },
   anthropic: { label: 'Anthropic Claude', apiUrl: 'https://api.anthropic.com/v1/messages', models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-sonnet-4-6'], supportsJson: false },
+  'deepseek-anthropic': { label: 'DeepSeek · Anthropic 兼容（原生搜索待验证）', apiUrl: 'https://api.deepseek.com/anthropic/v1/messages', models: ['deepseek-v4-pro', 'deepseek-flash'], supportsJson: false },
   gemini: { label: 'Google Gemini', apiUrl: '', models: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'], supportsJson: true },
   deepseek: { label: 'DeepSeek', apiUrl: 'https://api.deepseek.com/chat/completions', models: ['deepseek-flash', 'deepseek-v4-pro'], supportsJson: true },
   openrouter: { label: 'OpenRouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', models: ['openai/gpt-4.1-mini', 'openai/gpt-5', 'openai/o3', 'openai/o4-mini'], supportsJson: false },
@@ -47,6 +48,7 @@ export interface ModelCapabilities {
 export function modelCapabilities(config: ProviderOptions): ModelCapabilities {
   const base: ModelCapabilities = { reasoning: [], temperature: true, topP: true, minTopP: 0, tokenField: 'max_tokens' };
   const preset = config.providerPreset ?? 'custom';
+  if (preset === 'deepseek-anthropic') return { ...base, temperature:false, topP:false };
   if (preset === 'anthropic') return { ...base, reasoning: config.model === 'claude-sonnet-5-5' ? ['low', 'medium', 'high', 'xhigh', 'max'] : [], temperature: false, topP: false };
   if (preset === 'gemini') return { ...base, reasoning: config.model === 'gemini-3.8-flash' ? ['low', 'medium', 'high'] : [], temperature: false, topP: false };
   if (preset === 'custom') return { ...base, topP: config.provider !== 'workers-ai' };
@@ -81,7 +83,7 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   if (preset !== 'custom' && config.apiUrl !== presetEndpoint(preset, config.model, config.apiProtocol)) errors.push('预设必须使用对应模型的完整官方 API URL；代理地址请选择自定义');
   if ((preset === 'opencode-go' || preset === 'opencode-zen') && config.apiProtocol === 'gemini') errors.push('此 OpenCode 预设仅支持已接入的 Chat、Responses 和 Messages 协议');
   const knownModel = preset !== 'custom' && providerPresets[preset].models.includes(config.model);
-  if (config.apiProtocol && config.apiProtocol !== protocolForConfig({ ...config, apiProtocol: undefined }) && preset !== 'custom' && preset !== 'openai' && (knownModel || ['anthropic', 'gemini', 'deepseek', 'openrouter'].includes(preset))) errors.push('协议与已核实的供应商/模型不匹配；代理接口请选择自定义');
+  if (config.apiProtocol && config.apiProtocol !== protocolForConfig({ ...config, apiProtocol: undefined }) && preset !== 'custom' && preset !== 'openai' && (knownModel || ['anthropic', 'deepseek-anthropic', 'gemini', 'deepseek', 'openrouter'].includes(preset))) errors.push('协议与已核实的供应商/模型不匹配；代理接口请选择自定义');
   if (preset === 'openai' && config.apiProtocol && !['responses', 'chat-completions'].includes(config.apiProtocol)) errors.push('OpenAI 仅支持 Responses 或 Chat Completions 协议');
   if (protocolForConfig(config) === 'messages' && config.supportsJson) errors.push('Messages 协议请取消 JSON response_format；仍会使用 JSON 提示和输出校验');
   if (protocolForConfig(config) === 'messages' && config.enabledOutputLimit === false) errors.push('Messages 协议必填 max_tokens，请启用输出 token 上限并自行设置正整数；该协议无法省略上限');
@@ -102,7 +104,7 @@ export function protocolForConfig(config: ProviderOptions): ApiProtocol {
   const preset = config.providerPreset ?? 'custom';
   if (preset === 'opencode-go') return goResponses.includes(config.model) ? 'responses' : goMessages.includes(config.model) ? 'messages' : 'chat-completions';
   if (preset === 'opencode-zen') return zenResponses.includes(config.model) ? 'responses' : zenMessages.includes(config.model) ? 'messages' : 'chat-completions';
-  if (preset === 'anthropic') return 'messages';
+  if (preset === 'anthropic' || preset === 'deepseek-anthropic') return 'messages';
   if (preset === 'gemini') return 'gemini';
   if (preset === 'openai') return config.apiProtocol ?? (['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini'].includes(config.model) ? 'chat-completions' : 'responses');
   return config.apiProtocol ?? 'chat-completions';

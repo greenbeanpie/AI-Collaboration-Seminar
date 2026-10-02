@@ -1,3 +1,4 @@
+import { SentUsernameInvitations } from './UsernameInvitations';
 import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Clipboard, Copy, Lightbulb, Plus, RefreshCw, UserMinus, UsersRound } from 'lucide-react';
@@ -163,6 +164,7 @@ export function TeamPage() {
   if (membersQuery.isLoading || tasksQuery.isLoading || requirementsQuery.isLoading || meQuery.isLoading) return <Spinner label="正在读取团队和分工数据" />;
   return <div className="page-stack team-page">
     <PageHeading eyebrow="项目协作" title="团队分工" detail="依据成员登记的技能和时间安排协作；AI 建议必须由成员逐项确认后应用。" action={<StatusPill tone="blue">{members.length}{teamLimit ? ` / ${teamLimit}` : ''} 位成员</StatusPill>} />
+    {project.myRole === 'owner' && <SentUsernameInvitations projectId={projectId}/>}
     {[membersQuery, tasksQuery, requirementsQuery, meQuery].filter((query) => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
     {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
 

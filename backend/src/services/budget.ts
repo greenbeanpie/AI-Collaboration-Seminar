@@ -25,7 +25,7 @@ const KIND_TO_AI_PURPOSE: Record<string, AiPurpose> = {
 };
 
 /** 两次文本请求（含一次修复）的保守计划金额；图片 token 无可靠上界。 */
-export function estimateCostUsd(config: LoadedAiConfig | null, purpose: AiPurpose): number {
+export function estimateCostUsd(config: LoadedAiConfig | null, purpose: AiPurpose, toolContext = false): number {
   const model = config?.config[purpose];
   const price = model?.pricePerMTokens;
   if (!model || !price) return 0;
@@ -34,14 +34,14 @@ export function estimateCostUsd(config: LoadedAiConfig | null, purpose: AiPurpos
   if (model.enabledOutputLimit === false) return 0;
   // UTF-8/JSON 转义按每个 UTF-16 单元最多 6 字节，加受限消息协议开销。
   // 这是文本规划金额；不覆盖供应商额外收费，需以账单核对。
-  const inputTokens = model.maxInputChars * 6 + 4096;
+  const inputTokens = model.maxInputChars * 6 + (toolContext ? 32000 : 4096);
   return 2 * (inputTokens * price[0] + model.maxOutputTokens * price[1]) / 1_000_000;
 }
 
 /** 在业务写入和派发之前冻结配置与预占。创建失败且任务未落库才释放。 */
 export async function withReservedAiJob<T>(
   env: Env,
-  params: { projectId: string; purpose: string },
+  params: { projectId: string; purpose: string; maxCalls?: number },
   create: (jobId: string, configVersionId: string | undefined) => Promise<T>,
 ): Promise<T> {
   const jobId = newId();
@@ -61,7 +61,7 @@ export async function markAiCallStarted(env: Env, jobId: string | undefined): Pr
   if (!jobId) return;
   const active = await findActiveReservation(env, jobId);
   if (!active) throw quotaExceeded('任务没有活动预算预占，拒绝发起模型请求');
-  const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved' AND (purpose = 'ocr_pages' OR attempts_started < 2)").bind(active.id).run();
+  const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved' AND (purpose = 'ocr_pages' OR attempts_started < max_calls)").bind(active.id).run();
   if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('已达到本次预占的模型调用次数上限');
 }
 
@@ -91,13 +91,14 @@ async function frozenConfigVersionIdFor(env: Env, jobId: string): Promise<string
  */
 export async function reserveAiSlot(
   env: Env,
-  params: { projectId: string; jobId: string; purpose: string; configVersionId?: string },
+  params: { projectId: string; jobId: string; purpose: string; configVersionId?: string; maxCalls?: number },
 ): Promise<void> {
   if (await findActiveReservation(env, params.jobId)) return;
 
   const config = await loadAiConfig(env.DB, params.configVersionId ?? await frozenConfigVersionIdFor(env, params.jobId));
   const aiPurpose = KIND_TO_AI_PURPOSE[params.purpose];
-  const estimatedCost = aiPurpose ? estimateCostUsd(config, aiPurpose) : 0;
+  const maxCalls = Math.max(2, Math.min(5, params.maxCalls ?? 2));
+  const estimatedCost = (aiPurpose ? estimateCostUsd(config, aiPurpose, maxCalls > 2) : 0) * (maxCalls / 2);
   const project = await env.DB.prepare('SELECT ai_budget_usd FROM projects WHERE id = ?1').bind(params.projectId).first<{ ai_budget_usd: number | null }>();
   if (project?.ai_budget_usd !== null && project?.ai_budget_usd !== undefined) {
     const model = aiPurpose ? config?.config[aiPurpose] : undefined;
@@ -108,8 +109,8 @@ export async function reserveAiSlot(
   }
 
   const result = await env.DB.prepare(
-    `INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at)
-     SELECT ?1, ?2, ?3, ?4, ?5, 'reserved', ?6
+    `INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at, max_calls)
+     SELECT ?1, ?2, ?3, ?4, ?5, 'reserved', ?6, ?8
       WHERE (SELECT COUNT(*) FROM usage_reservations
               WHERE project_id = ?2 AND status = 'reserved') < ?7
         AND NOT EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?3 AND status = 'reserved')
@@ -128,6 +129,7 @@ export async function reserveAiSlot(
       estimatedCost,
       nowIso(),
       LIMITS.concurrentAiTasksPerProject,
+      maxCalls,
     )
     .run();
 
@@ -146,6 +148,7 @@ export async function reserveAiSlot(
     if ((state?.active ?? 0) >= LIMITS.concurrentAiTasksPerProject) {
       throw quotaExceeded('该项目的 AI 任务并发已达上限，请等待进行中的任务完成', {
         limit: LIMITS.concurrentAiTasksPerProject,
+      maxCalls,
       });
     }
     throw quotaExceeded('项目 AI 预算不足，请提高预算或等待结算后重试', {

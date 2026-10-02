@@ -1,3 +1,4 @@
+import { applyToolMode, normalizeToolResponse, type ToolMode, type ToolOutput } from './tool-transport';
 import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
@@ -16,6 +17,7 @@ export interface ChatMessage {
 }
 
 export interface GatewayCallInput {
+  toolMode?: ToolMode;
   config: AiModelConfig;
   messages: ChatMessage[];
   /** 需要 JSON 输出时置 true；模型不支持结构化约束时由调用方改用 JSON 提示 + Zod 校验 */
@@ -34,6 +36,7 @@ export interface GatewayCallInput {
 }
 
 export interface GatewayCallOutput {
+  toolOutput?: ToolOutput;
   content: string;
   promptTokens: number | null;
   completionTokens: number | null;
@@ -128,6 +131,8 @@ export async function gatewayChat(
   }
   // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
+  if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
+  if (JSON.stringify(body).length > input.config.maxInputChars * 6 + 32000) throw new AppError('QUOTA_EXCEEDED', '工具上下文超过当前模型输入限制', 429, false);
   if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
   if (input.privateContext) {
     headers['cf-aig-skip-cache'] = 'true';
@@ -183,6 +188,7 @@ export async function gatewayChat(
   }
 
   const data: unknown = await readProviderJson(res);
+  if(input.toolMode) {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}
   return { ...normalizeProviderResponse(protocol, data), latencyMs };
 }
 

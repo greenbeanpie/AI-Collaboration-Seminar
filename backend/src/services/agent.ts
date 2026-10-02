@@ -1,3 +1,4 @@
+import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
 import { assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import { nowIso } from '../core/db';
@@ -14,6 +15,9 @@ import { z } from 'zod';
 export type AgentCapability = 'do' | 'guide' | 'review_only';
 
 export interface AgentRunJobInput {
+  requestedBy?: string;
+  allowSearch?: boolean;
+  searchQuery?: string;
   configVersionId?: string;
   runId: string;
   projectId: string;
@@ -78,6 +82,7 @@ export async function aiJsonCall<S extends z.ZodType>(
   env: Env,
   params: {
     projectId: string;
+    projectTools?: ProjectToolContext;
     purpose: 'textEconomy' | 'review';
     configVersionId: string;
     model: string;
@@ -92,7 +97,12 @@ export async function aiJsonCall<S extends z.ZodType>(
     beforeCall?: () => Promise<void>;
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
-): Promise<{ data: z.infer<S>; repaired: boolean }> {
+): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[] }> {
+  if (params.projectTools) {
+    const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,beforeCall:params.beforeCall });
+    try { return {data:params.schema.parse(extractJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations}; }
+    catch { throw new AppError('AI_OUTPUT_INVALID','工具调用后的最终 JSON 未通过校验，结果已保留供核对；不会自动重复整轮调用',502,false); }
+  }
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
@@ -284,6 +294,10 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
     const textModel = config.config.textEconomy;
 
+    const requester = input.requestedBy ?? (await env.DB.prepare('SELECT created_by FROM agent_sessions WHERE id=?1 AND project_id=?2').bind(run.session_id,input.projectId).first<{created_by:string}>())?.created_by;
+    if(!requester) throw new AppError('PERMISSION_DENIED','无法确认本轮请求账户',403,false);
+    const tools:ProjectToolContext={projectId:input.projectId,userId:requester,jobId,allowSearch:input.allowSearch,searchQuery:input.searchQuery};
+    await assertToolAccess(env,tools);
     await validateInputs(env, input.projectId, input);
     const context = await buildContext(env, input);
     const history = input.capability === 'guide' ? await buildGuideHistory(env, run.session_id) : '';
@@ -335,7 +349,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
 
     let outputPayload: Record<string, unknown>;
     if (input.capability === 'do') {
-      const { data } = await aiJsonCall(env, {
+      const { data,toolTrace,citations } = await aiJsonCall(env, {
+        projectTools: tools,
         projectId: input.projectId,
         jobId,
         runId: input.runId,
@@ -349,9 +364,10 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: doOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown) };
+      outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations };
     } else if (input.capability === 'guide') {
-      const { data } = await aiJsonCall(env, {
+      const { data,toolTrace,citations } = await aiJsonCall(env, {
+        projectTools: tools,
         projectId: input.projectId,
         jobId,
         runId: input.runId,
@@ -365,9 +381,10 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         schema: guideOutputSchema,
         beforeCall: () => validateInputs(env, input.projectId, input),
       });
-      outputPayload = data.type === 'question' ? { question: data.content } : { markdown: data.content, doc: markdownToDoc(data.content) };
+      outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations };
     } else {
-      const { data } = await aiJsonCall(env, {
+      const { data,toolTrace,citations } = await aiJsonCall(env, {
+        projectTools: tools,
         projectId: input.projectId,
         jobId,
         runId: input.runId,
@@ -388,17 +405,21 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
           throw new AppError('AI_OUTPUT_INVALID', '审阅引文与材料原文不符', 502, false);
         }
       }
-      outputPayload = { issues: data.issues };
+      outputPayload = { issues: data.issues,toolTrace,citations };
     }
 
     await validateInputs(env, input.projectId, input);
+    await assertToolAccess(env,tools);
     const turnKind = input.capability === 'do' ? 'draft' : input.capability === 'guide' ? (outputPayload['question'] !== undefined ? 'question' : 'draft') : 'review_result';
     const sequence = input.turnSequence ?? 1;
     const now = nowIso();
     const statements = [
       env.DB.prepare(
-        `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running' AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
-      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId),
+        `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running'
+          AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND project_id=?3 AND status IN ('queued','running'))
+          AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?3 AND p.status='active' AND m.user_id=?5)
+          AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
+      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId, requester),
       env.DB.prepare(
         "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, run_id, payload_json, created_at) SELECT ?1,?2,?3,?4,'assistant',?5,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM agent_runs WHERE id=?6 AND status='succeeded')",
       ).bind(

@@ -9,6 +9,28 @@ export interface SourceInputSnapshot {
   sourceLifecycleVersion: number;
 }
 
+/** Dynamic file tools use a separate bounded snapshot from selected source inputs. */
+export interface ToolFileInputSnapshot {
+  fileId: string;
+  fileLifecycleVersion: number;
+  sourceId?: string;
+  sourceVersionId?: string;
+  sourceLifecycleVersion?: number;
+}
+
+export function toolFileInputsGuard(inputJsonSql: string, projectIdSql: string): string {
+  return `NOT EXISTS (SELECT 1 FROM json_each(${inputJsonSql},'$.toolFileSnapshots') tool_file WHERE
+    NOT EXISTS (SELECT 1 FROM files f WHERE f.id=json_extract(tool_file.value,'$.fileId')
+      AND f.project_id=${projectIdSql} AND f.status='available' AND f.deleted_at IS NULL
+      AND f.lifecycle_version=json_extract(tool_file.value,'$.fileLifecycleVersion'))
+    OR (json_extract(tool_file.value,'$.sourceVersionId') IS NOT NULL AND
+      NOT EXISTS (SELECT 1 FROM source_versions v JOIN sources s ON s.id=v.source_id
+        WHERE v.id=json_extract(tool_file.value,'$.sourceVersionId') AND v.project_id=${projectIdSql}
+          AND v.file_id=json_extract(tool_file.value,'$.fileId') AND s.project_id=${projectIdSql}
+          AND s.id=json_extract(tool_file.value,'$.sourceId')
+          AND ${sourceLifecycleGuard('v.id', "json_extract(tool_file.value,'$.sourceLifecycleVersion')")})))`;
+}
+
 export async function snapshotSourceInputs(env: Env, projectId: string, versionIds: string[]): Promise<SourceInputSnapshot[]> {
   const snapshots: SourceInputSnapshot[] = [];
   for (const sourceVersionId of new Set(versionIds)) {
@@ -43,7 +65,8 @@ export function sourceInputsGuard(inputJsonSql: string, projectIdSql: string): s
     json_extract(captured.value,'$.sourceLifecycleVersion') IS NULL OR
     NOT EXISTS (SELECT 1 FROM source_versions v JOIN sources s ON s.id=v.source_id
       WHERE v.id=json_extract(captured.value,'$.sourceVersionId') AND v.project_id=${projectIdSql} AND s.project_id=${projectIdSql}
-      AND s.id=json_extract(captured.value,'$.sourceId') AND ${sourceLifecycleGuard('v.id', "json_extract(captured.value,'$.sourceLifecycleVersion')")}))`;
+      AND s.id=json_extract(captured.value,'$.sourceId') AND ${sourceLifecycleGuard('v.id', "json_extract(captured.value,'$.sourceLifecycleVersion')")}))
+      AND ${toolFileInputsGuard(inputJsonSql, projectIdSql)}`;
 }
 
 /** A set and every cited original must be available before it is new model input. */

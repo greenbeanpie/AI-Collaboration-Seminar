@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import { ErrorNotice, Field, PageHeading } from '../components/ui';
 
 export function AcceptInvitationPage() {
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(() => new URLSearchParams(window.location.search).get('code') ?? '');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const accept = useMutation({
