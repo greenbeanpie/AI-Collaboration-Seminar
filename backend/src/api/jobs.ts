@@ -94,7 +94,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     const now = nowIso();
     const reservedAiKind = new Set(['assignment_suggest', 'agent_run', 'review_run', 'rehearsal_turn']).has(job.kind);
     if (reservedAiKind && job.project_id) {
-      await reserveAiSlot(c.env, { projectId: job.project_id, jobId: newJobId, purpose: job.kind });
+      await reserveAiSlot(c.env, { projectId: job.project_id, jobId: newJobId, purpose: job.kind,maxCalls:job.kind==='agent_run'&&input.requestedBy?5:2 });
     }
     try {
       await c.env.DB.batch([

@@ -19,6 +19,8 @@ const runParams = projectParams.extend({ runId: z.string().uuid() });
 
 // 冻结写请求 #1（PLAN 二.8）：mode、roleTemplate、taskId、instruction、materialVersionIds、sourceVersionIds
 const createBody = z.object({
+  allowSearch: z.boolean().default(false),
+  searchQuery:z.string().trim().min(1).max(500).optional(),
   mode: z.enum(['do', 'guide', 'review_only']),
   roleTemplate: z.string().max(200).optional(),
   taskId: z.string().uuid().nullable().default(null),
@@ -187,10 +189,12 @@ async function createRunAndJob(
     materialVersionIds: string[];
     sourceVersionIds: string[];
     turnSequence: number | null;
+    allowSearch?: boolean;
+    searchQuery?: string;
   },
 ): Promise<{ runId: string; jobId: string }> {
   const runId = newId();
-  return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run' }, async (jobId, configVersionId) => {
+  return withReservedAiJob(env, { projectId: params.projectId, purpose: 'agent_run',maxCalls:5 }, async (jobId, configVersionId) => {
     await env.DB.prepare(
       "INSERT INTO agent_runs (id, session_id, project_id, capability, mode, status, inputs_json, prompt_version, created_at) VALUES (?1, ?2, ?3, ?4, ?4, 'running', ?5, 'agent-v1', ?6)",
     )
@@ -200,6 +204,9 @@ async function createRunAndJob(
         params.projectId,
         params.capability,
         JSON.stringify({
+          allowSearch:params.allowSearch??false,
+          searchQuery:params.searchQuery,
+          requestedBy:params.userId,
           taskId: params.taskId,
           instruction: params.instruction,
           roleTemplate: params.roleTemplate,
@@ -221,6 +228,9 @@ async function createRunAndJob(
           runId,
           projectId: params.projectId,
           capability: params.capability,
+          allowSearch:params.allowSearch??false,
+          searchQuery:params.searchQuery,
+          requestedBy:params.userId,
           taskId: params.taskId,
           instruction: params.instruction,
           roleTemplate: params.roleTemplate,
@@ -333,6 +343,8 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
         materialVersionIds: body.materialVersionIds,
         sourceVersionIds: body.sourceVersionIds,
         turnSequence: 1,
+        allowSearch:body.allowSearch,
+        searchQuery:body.searchQuery,
       });
       await c.env.DB.prepare('UPDATE agent_runs SET job_id = ?2 WHERE id = ?1').bind(runId, jobId).run();
       return { status: 202 as const, body: { sessionId, runId, jobId } };
@@ -424,7 +436,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
     )
       .bind(session.id)
       .first<{ inputs_json: string }>();
-    const lastInputs = lastRun ? (JSON.parse(lastRun.inputs_json) as { taskId: string | null; instruction: string | null; roleTemplate: string | null; materialVersionIds: string[]; sourceVersionIds: string[] }) : { taskId: null, instruction: null, roleTemplate: null, materialVersionIds: [], sourceVersionIds: [] };
+    const lastInputs = lastRun ? (JSON.parse(lastRun.inputs_json) as { allowSearch?: boolean; searchQuery?:string; taskId: string | null; instruction: string | null; roleTemplate: string | null; materialVersionIds: string[]; sourceVersionIds: string[] }) : { taskId: null, instruction: null, roleTemplate: null, materialVersionIds: [], sourceVersionIds: [] };
 
     const { runId, jobId } = await createRunAndJob(c.env, {
       projectId: member.projectId,
@@ -437,6 +449,8 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       materialVersionIds: lastInputs.materialVersionIds,
       sourceVersionIds: lastInputs.sourceVersionIds,
       turnSequence: sequence + 1,
+      allowSearch:lastInputs.allowSearch,
+      searchQuery:lastInputs.searchQuery,
     });
     await c.env.DB.prepare('UPDATE agent_runs SET job_id = ?2 WHERE id = ?1').bind(runId, jobId).run();
     return c.json(apiData(c, { turnId, sequence, runId, jobId }), 202);

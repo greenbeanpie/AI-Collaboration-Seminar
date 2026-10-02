@@ -183,7 +183,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     route(app, 'post', '/proposals/{proposalId}/apply', z.object({ expectedRevision: revision }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await applyProposal(c.env, projectId, c.req.param('proposalId')!, b.expectedRevision, userId); return c.json(apiData(c, { applied: true })); });
     for (const operation of ['decompose', 'assign', 'evaluate'] as const) {
         const path = operation === 'evaluate' ? '/submissions/{submissionId}/evaluate' : '/' + operation;
-        const schema = operation === 'decompose' ? z.object({ brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).max(20).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).max(5).optional() }).strict() : operation === 'assign' ? z.object({ taskIds: z.array(z.string().uuid()).min(1).max(20) }) : z.object({});
+        const schema = operation === 'decompose' ? z.object({ allowSearch:z.boolean().default(false),searchQuery:z.string().trim().min(1).max(500).optional(),brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).max(20).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).max(5).optional() }).strict() : operation === 'assign' ? z.object({ taskIds: z.array(z.string().uuid()).min(1).max(20) }) : z.object({});
         route(app, 'post', path, schema, async (c) => {
             const { projectId, userId } = ids(c);
             const b = schema.parse(await c.req.json()) as Record<string, unknown>;
@@ -221,7 +221,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 }
                 if (operation === 'evaluate')
                     return { status: 202 as const, body: { jobId: await enqueueEvaluation(c.env, projectId, c.req.param('submissionId')!, userId) } };
-                return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest' }, async (jobId, configVersionId) => {
+                return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest',maxCalls:operation==='decompose'?5:2 }, async (jobId, configVersionId) => {
                     try {
                         await createJobAndDispatch(c.env, { projectId, kind: 'agent_run', jobId, createdBy: userId, input: { ...input, configVersionId } });
                     }

@@ -574,6 +574,396 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creation-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前账户最多20个未完成草稿 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        /** @default  */
+                        description?: string;
+                        deadlineDate?: string;
+                        /** @default false */
+                        aiCollaborationEnabled?: boolean;
+                        /** @default 1 */
+                        teamSize?: number;
+                        /** @default [] */
+                        inviteUsernames?: string[];
+                        /** @default [] */
+                        inviteLabels?: string[];
+                        /** @default  */
+                        brief?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 私有草稿，不创建项目 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 草稿状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        payload: {
+                            name: string;
+                            /** @default  */
+                            description?: string;
+                            deadlineDate?: string;
+                            /** @default false */
+                            aiCollaborationEnabled?: boolean;
+                            /** @default 1 */
+                            teamSize?: number;
+                            /** @default [] */
+                            inviteUsernames?: string[];
+                            /** @default [] */
+                            inviteLabels?: string[];
+                            /** @default  */
+                            brief?: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description 已保存，旧预览失效 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {string} */
+                        status: "active" | "cancelled";
+                    };
+                };
+            };
+            responses: {
+                /** @description 取消或恢复；资料保留 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query: {
+                    name: string;
+                    expectedRevision: string;
+                };
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 暂存文件和可读取正文 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        removed: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 可恢复地移除文件 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {string} */
+                        mode: "ai" | "manual";
+                        /** @default [] */
+                        tasks?: {
+                            title: string;
+                            detail: string;
+                            criteria: string;
+                            effortHours: number;
+                            /** @default [] */
+                            citations?: {
+                                /** Format: uuid */
+                                fileId: string;
+                                pageNumber: number;
+                                quote: string;
+                            }[];
+                        }[];
+                        /** @default false */
+                        regenerate?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 保存拆分预览，可直接复用 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {boolean} */
+                        confirmed: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description 原子创建；以草稿ID恢复同一结果 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationCommitResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -1132,6 +1522,196 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    offset?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 邀请元数据，最多20项；接受前不返回项目说明或文件 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsernameInvitationListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/username-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    offset?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 邀请元数据，最多20项；接受前不返回项目说明或文件 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsernameInvitationListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        username: string;
+                        /** @default 7 */
+                        expiresInDays?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已向真实用户名发出邀请 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsernameInvitationCreateResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/inbox/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    invitationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "accept" | "decline";
+                    };
+                };
+            };
+            responses: {
+                /** @description 本人处理邀请；先到先成功，原子人数校验 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsernameInvitationActionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/username-invitations/{invitationId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    invitationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 负责人撤销邀请，可重复确认 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsernameInvitationActionResponse"];
                     };
                 };
             };
@@ -2944,6 +3524,9 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @default false */
+                        allowSearch?: boolean;
+                        searchQuery?: string;
                         brief: string;
                         taskIds?: string[];
                         sourceVersionIds?: string[];
@@ -3441,6 +4024,9 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @default false */
+                        allowSearch?: boolean;
+                        searchQuery?: string;
                         /** @enum {string} */
                         mode: "do" | "guide" | "review_only";
                         roleTemplate?: string;
@@ -3645,6 +4231,85 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/ai-tools/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 项目工具和所配供应商搜索能力 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAiToolsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/ai-tools/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    jobId: string;
+                    offset?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 有界工具元数据，最多20项 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAiToolCallsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4700,7 +5365,7 @@ export interface paths {
                         unified?: {
                             provider: string;
                             /** @enum {string} */
-                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -4734,7 +5399,7 @@ export interface paths {
                         textEconomy: {
                             provider: string;
                             /** @enum {string} */
-                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -4767,7 +5432,7 @@ export interface paths {
                         visionEconomy: {
                             provider: string;
                             /** @enum {string} */
-                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -4800,7 +5465,7 @@ export interface paths {
                         review: {
                             provider: string;
                             /** @enum {string} */
-                            providerPreset?: "custom" | "openai" | "anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -5807,6 +6472,158 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        CreationDraftResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "active" | "cancelled" | "committed";
+                revision: number;
+                payload: {
+                    name: string;
+                    /** @default  */
+                    description: string;
+                    deadlineDate?: string;
+                    /** @default false */
+                    aiCollaborationEnabled: boolean;
+                    /** @default 1 */
+                    teamSize: number;
+                    /** @default [] */
+                    inviteUsernames: string[];
+                    /** @default [] */
+                    inviteLabels: string[];
+                    /** @default  */
+                    brief: string;
+                };
+                preview: {
+                    tasks: {
+                        title: string;
+                        detail: string;
+                        criteria: string;
+                        effortHours: number;
+                        /** @default [] */
+                        citations: {
+                            /** Format: uuid */
+                            fileId: string;
+                            pageNumber: number;
+                            quote: string;
+                        }[];
+                    }[];
+                    /** @enum {string} */
+                    mode: "ai" | "manual";
+                    configVersionId?: string;
+                } | null;
+                previewRevision: number | null;
+                previewState: string;
+                previewError: string | null;
+                files: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    sizeBytes: number;
+                    sha256: string;
+                    textReady: boolean;
+                    textError: string | null;
+                }[];
+                removedFiles: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    sizeBytes: number;
+                    sha256: string;
+                    textReady: boolean;
+                    textError: string | null;
+                }[];
+                projectId: string | null;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CreationDraftListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    status: "active" | "cancelled" | "committed";
+                    revision: number;
+                    payload: {
+                        name: string;
+                        /** @default  */
+                        description: string;
+                        deadlineDate?: string;
+                        /** @default false */
+                        aiCollaborationEnabled: boolean;
+                        /** @default 1 */
+                        teamSize: number;
+                        /** @default [] */
+                        inviteUsernames: string[];
+                        /** @default [] */
+                        inviteLabels: string[];
+                        /** @default  */
+                        brief: string;
+                    };
+                    preview: {
+                        tasks: {
+                            title: string;
+                            detail: string;
+                            criteria: string;
+                            effortHours: number;
+                            /** @default [] */
+                            citations: {
+                                /** Format: uuid */
+                                fileId: string;
+                                pageNumber: number;
+                                quote: string;
+                            }[];
+                        }[];
+                        /** @enum {string} */
+                        mode: "ai" | "manual";
+                        configVersionId?: string;
+                    } | null;
+                    previewRevision: number | null;
+                    previewState: string;
+                    previewError: string | null;
+                    files: {
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                        textReady: boolean;
+                        textError: string | null;
+                    }[];
+                    removedFiles: {
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                        textReady: boolean;
+                        textError: string | null;
+                    }[];
+                    projectId: string | null;
+                    updatedAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CreationCommitResponse: {
+            data: {
+                /** Format: uuid */
+                projectId: string;
+                usernameInvitations?: string[];
+                invitations: {
+                    label: string;
+                    code: string;
+                    expiresAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         ProjectResponse: {
             data: {
                 /** Format: uuid */
@@ -5953,6 +6770,47 @@ export interface components {
                 /** Format: uuid */
                 projectId: string;
                 projectName: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        UsernameInvitationListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: uuid */
+                    projectId: string;
+                    projectName: string;
+                    inviterName: string;
+                    username: string;
+                    /** @enum {string} */
+                    role: "member";
+                    /** @enum {string} */
+                    status: "pending" | "accepted" | "declined" | "revoked" | "expired";
+                    expiresAt: string;
+                    createdAt: string;
+                }[];
+                nextOffset: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        UsernameInvitationCreateResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        UsernameInvitationActionResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                status: string;
+                /** Format: uuid */
+                projectId: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -6932,6 +7790,38 @@ export interface components {
                 /** Format: uuid */
                 materialVersionId: string;
                 revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectAiToolsResponse: {
+            data: {
+                fileTools: boolean;
+                search: {
+                    supported: boolean;
+                    reason: string;
+                };
+                /** @enum {string} */
+                searchCost: "unknown";
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectAiToolCallsResponse: {
+            data: {
+                items: {
+                    id: string;
+                    name: string;
+                    status: string;
+                    args: {
+                        [key: string]: unknown;
+                    };
+                    result: {
+                        [key: string]: unknown;
+                    } | null;
+                    createdAt: string;
+                }[];
+                nextOffset: number | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

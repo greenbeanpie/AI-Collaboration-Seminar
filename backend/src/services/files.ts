@@ -43,6 +43,20 @@ export function extOf(fileName: string): string {
   return fileName.slice(idx).toLowerCase();
 }
 
+/** Shared validation for project and private draft uploads; no network or model calls. */
+export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
+  if (!bytes.length) throw validationFailed('文件不能为空');
+  if (bytes.byteLength > LIMITS.maxFileBytes) throw fileTooLarge(LIMITS.maxFileBytes);
+  const spec = MAGIC_SPECS.find(m => m.exts.includes(ext) && m.detect(bytes));
+  if (spec) return spec.mime;
+  if (ext === '.txt' || ext === '.md') {
+    try { new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes); }
+    catch { throw unsupportedMediaType('文本文件不是有效 UTF-8'); }
+    return ext === '.md' ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8';
+  }
+  throw unsupportedMediaType('文件头与扩展名不符');
+}
+
 /** 步骤一：创建文件记录并分配服务端 R2 key（客户端不能指定对象路径） */
 export async function createFileInit(
   env: Env,

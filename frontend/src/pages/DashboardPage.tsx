@@ -1,3 +1,4 @@
+import { ReceivedInvitations } from './UsernameInvitations';
 import { useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -42,6 +43,7 @@ export function DashboardPage() {
   return <div className="page-stack">
     <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="回到真实项目现场，查看团队进度和下一步要处理的事项。" action={<Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link>} />
     {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}
+    <ReceivedInvitations/>
     <div className="metric-grid"><div className="metric-card"><span>参与项目</span><strong>{projectsQuery.data?.length ?? '—'}</strong><small>{projectsQuery.error ? '项目列表不可用' : `${active} 个进行中`}</small></div><div className="metric-card"><span>待完成任务</span><strong>{projectsQuery.error || taskQueries.some((query) => query.error) ? '—' : openTasks}</strong><small>已读取全部项目分页数据</small></div><div className="metric-card metric-callout"><span>加入现有团队</span><strong>有邀请代码？</strong><Link to="/app/join">输入代码加入 <ArrowUpRight size={14} /></Link></div></div>
     <div className="section-head standalone-head"><div><h2>项目列表</h2><p>账户在后端可访问的项目</p></div><Link className="button button-quiet button-small" to="/app/join">接受邀请</Link></div>
     {projectsQuery.error ? <div className="card"><ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /></div> : projects.length === 0 ? <div className="card"><EmptyState title="还没有项目" detail="创建一个项目，或使用负责人发来的邀请代码加入。" action={<div className="empty-actions"><Link to="/app/projects/new" className="button button-primary"><Plus size={16} />创建第一个项目</Link><Link to="/app/join" className="button button-quiet">输入邀请代码</Link></div>} /></div> : <div className="project-grid">{counts.map(({ project, total, done, error }) => <ProjectCard key={project.id} project={project} taskCount={total} doneCount={done} taskError={error} />)}</div>}

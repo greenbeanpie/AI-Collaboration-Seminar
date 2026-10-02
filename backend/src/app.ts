@@ -1,3 +1,6 @@
+import { registerUsernameInvitationRoutes } from './api/username-invitations';
+import { registerAiToolRoutes } from './api/ai-tools';
+import { registerCreationDraftRoutes } from './api/creation-drafts';
 import { registerNotificationRoutes } from './api/notifications';
 import { registerPersonalProfileRoutes } from './api/personal-profiles';
 import { registerCollaborationRoutes } from './api/collaboration';
@@ -46,7 +49,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:jobs(?:\/|$)|projects\/[^/]+\/(?:sources|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:sources|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -74,9 +77,11 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAuthRoutes(app);
   registerAccountSettingsRoutes(app);
   registerPersonalProfileRoutes(app);
+  registerCreationDraftRoutes(app);
   registerProjectRoutes(app);
   registerMemberRoutes(app);
   registerInvitationRoutes(app);
+  registerUsernameInvitationRoutes(app);
   registerSourceRoutes(app);
   registerSourceProcessingRoutes(app);
   registerRequirementRoutes(app);
@@ -86,6 +91,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerAgentRoutes(app);
+  registerAiToolRoutes(app);
   registerReviewRoutes(app);
   registerRehearsalRoutes(app);
   registerLedgerRoutes(app);

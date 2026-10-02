@@ -1,244 +1,342 @@
-import { DateInput } from '../components/DateInput';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useBlocker, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarDays } from 'lucide-react';
-import { ApiError, api, projectPath } from '../api/client';
-import { useCapabilities, useSession } from '../auth';
-import { ErrorNotice, Field, PageHeading, Spinner } from '../components/ui';
-import { confirmPage } from '../dialogs/dialog-service';
-import { createIntentKey } from './source-workflows';
-import {
-  clearCreationDraft, completeCreationFile, creationFileExtensions, creationFileLimit, newCreationFile,
-  readCreationDraft, validateCreationFiles, writeCreationDraft, type CreationDraft, type CreationFile,
-} from './project-creation-workflow';
-
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { api, request } from '../api/client';
+import type { DataOf } from '../api/types';
+import { useSession, useCapabilities } from '../auth';
+import { Field, ErrorNotice, PageHeading, Spinner } from '../components/ui';
+import { DateInput } from '../components/DateInput';
+import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
+import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
+import { emptyWizardPayload, wizardSteps, canConfirmDraft, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask } from './project-wizard';
+import './ProjectWizard.css';
+type LocalFile = {
+  id: string;
+  name: string;
+  size: number;
+  original?: File;
+  error?: string;
+};
+const draftPath = (id: string, tail = '') => `/api/v1/creation-drafts/${id}${tail}`;
 export function CreateProjectPage() {
   const session = useSession();
-  if (session.isLoading) return <Spinner label="正在确认创建账户" />;
-  if (session.error) return <ErrorNotice error={session.error} onRetry={() => void session.refetch()} />;
-  if (!session.data) return <div className="callout">请先登录，再创建项目。</div>;
-  return <ProjectCreationForm key={session.data.id} userId={session.data.id} />;
+  if (session.isLoading) {
+    return <Spinner label="正在确认创建账户"/>;
+  }
+  if (session.error) {
+    return <ErrorNotice error={session.error}/>;
+  }
+  if (!session.data) {
+    return <div className="callout">请先登录，再创建项目。</div>;
+  }
+  if (readCreationDraft(session.data.id)?.createAttempted) {
+    return <LegacyCreateProjectPage />;
+  }
+  return <CreationWizard key={session.data.id} userId={session.data.id}/>;
 }
-
-function ProjectCreationForm({ userId }: { userId: string }) {
-  const [restored] = useState(() => readCreationDraft(userId));
-  const [draft, setDraft] = useState<CreationDraft | null>(restored);
-  const draftRef = useRef(draft);
-  const [name, setName] = useState(restored?.payload.name ?? '');
-  const [description, setDescription] = useState(restored?.payload.description ?? '');
-  const [deadlineDate, setDeadlineDate] = useState(restored?.payload.deadlineDate ?? '');
-  const [aiCollaborationEnabled, setAiCollaborationEnabled] = useState(restored?.payload.aiCollaborationEnabled ?? false);
-  const [files, setFiles] = useState<CreationFile[]>(restored?.files ?? []);
-  const originals = useRef(new Map<string, File>());
-  const [pending, setPending] = useState(false);
-  const pendingRef = useRef(false);
-  const stopped = useRef(false);
-  const mounted = useRef(true);
-  const [error, setError] = useState<unknown>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [storageUnavailable, setStorageUnavailable] = useState(false);
-  const [archiveConflict, setArchiveConflict] = useState(false);
-  const [finished, setFinished] = useState(false);
-  const capabilities = useCapabilities();
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const projectId = draft?.project?.id;
-  const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: () => api.get<'ProjectResponse'>(projectPath(projectId!)), enabled: Boolean(projectId), retry: false });
-  const frozen = Boolean(draft?.createAttempted);
-
-  const commit = useCallback((next: CreationDraft) => {
-    draftRef.current = next;
-    const saved = writeCreationDraft(next);
-    if (mounted.current) { setDraft(next); setFiles(next.files); if (!saved) setStorageUnavailable(true); }
-  }, []);
-  const interrupt = useCallback(() => {
-    stopped.current = true;
-    if (draftRef.current) commit({ ...draftRef.current, interrupted: true });
-  }, [commit]);
-
-  // The in-flight request is allowed to report its real result. No further writes start after leaving.
+function CreationWizard({ userId }: {
+  userId: string;
+}) {
+  const initial = () => {
+    try {
+      return JSON.parse(sessionStorage.getItem(wizardStorageKey(userId)) ?? 'null') as {
+        id?: string;
+        files?: LocalFile[];
+      } | null;
+    }
+    catch {
+      return null;
+    }
+  };
+  const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
+  const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
+  const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
+  const list = useQuery({
+    queryKey: ['creation-drafts', userId], queryFn: () => api.get<'CreationDraftListResponse'>('/api/v1/creation-drafts'), retry: false
+  });
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; stopped.current = true;
-      if (pendingRef.current && draftRef.current) writeCreationDraft({ ...draftRef.current, interrupted: true });
+    return () => {
+      mounted.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (!pending) return;
-    const unload = (event: BeforeUnloadEvent) => {
-      if (draftRef.current) writeCreationDraft({ ...draftRef.current, interrupted: true });
-      event.preventDefault(); event.returnValue = '';
-    };
-    const pageHide = () => interrupt();
-    window.addEventListener('beforeunload', unload); window.addEventListener('pagehide', pageHide);
-    return () => { window.removeEventListener('beforeunload', unload); window.removeEventListener('pagehide', pageHide); };
-  }, [pending, interrupt]);
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => pendingRef.current && currentLocation.pathname !== nextLocation.pathname);
-  useEffect(() => {
-    if (blocker.state !== 'blocked') return;
-    const controller = new AbortController();
-    void confirmPage('创建或上传尚未完成。离开会停止后续操作；已发出的请求可能已成功，项目与进度会保留。确定离开吗？', { signal: controller.signal, cancelOnBack: false }).then(confirmed => {
-      if (controller.signal.aborted) return;
-      if (confirmed) { interrupt(); blocker.proceed(); } else blocker.reset();
-    });
-    return () => controller.abort();
-  }, [blocker, interrupt]);
-
-  const selectFiles = (selected: FileList | null) => {
-    if (!selected || pendingRef.current) return;
-    const chosen = Array.from(selected);
-    const limit = capabilities.data?.limits.maxFileBytes;
-    const validation = limit ? validateCreationFiles(chosen, limit) : '请先读取后端文件大小限制，再选择文件。';
-    if (validation) { setSelectionError(validation); return; }
-    if (frozen) {
-      let matched = 0;
-      const updated = files.map(file => {
-        if (file.sourceId || file.uploadConfirmed) return file;
-        const original = chosen.find(candidate => candidate.name === file.name && candidate.size === file.size);
-        if (!original) return file;
-        originals.current.set(file.localId, original); matched += 1;
-        return { ...file, status: 'pending' as const, error: undefined };
-      });
-      setSelectionError(matched ? null : '没有匹配的未完成原文件，请核对文件名与大小。');
-      if (draftRef.current) commit({ ...draftRef.current, files: updated });
+  const remember = (id: string | undefined, files: LocalFile[] = locals) => {
+    try {
+      sessionStorage.setItem(wizardStorageKey(userId), JSON.stringify({
+        id, files: files.map(({ id, name, size }) => ({
+          id, name, size
+        }))
+      }));
+    }
+    catch {
+    }
+  };
+  const accept = (next: WizardDraft) => {
+    if (!mounted.current) {
       return;
     }
-    const additions = chosen.filter(original => !files.some(file => file.name === original.name && file.size === original.size && file.lastModified === original.lastModified));
-    const all = [...files, ...additions.map(newCreationFile)];
-    const totalValidation = validateCreationFiles(all, limit!);
-    if (totalValidation) { setSelectionError(totalValidation); return; }
-    additions.forEach((original, index) => originals.current.set(all[files.length + index].localId, original));
-    setFiles(all); setSelectionError(null);
+    setDraft(next);
+    setPayload(next.payload);
+    setConfirmed(false);
+    remember(next.id);
   };
-
-  const run = async () => {
-    if (pendingRef.current || finished || !name.trim()) return;
-    const existing = draftRef.current;
-    const remainingUploads = files.filter(file => !file.uploadConfirmed && !file.sourceId);
-    if (remainingUploads.length) {
-      const validation = validateCreationFiles(remainingUploads, capabilities.data?.limits.maxFileBytes ?? 0);
-      if (validation) { setSelectionError(validation); return; }
+  useEffect(() => {
+    if (loaded) {
+      return;
     }
-    pendingRef.current = true; stopped.current = false; setPending(true); setError(null); setSelectionError(null);
-    commit(existing ? { ...existing, interrupted: false } : {
-      version: 1, userId, createKey: createIntentKey(), createAttempted: true, interrupted: false, project: null, files,
-      payload: { name: name.trim(), description: description.trim(), aiCollaborationEnabled,
-        ...(deadlineDate ? { deadlineDate, deadlinePrecision: 'date' as const } : { deadlinePrecision: 'unknown' as const }) },
-    });
+    setLoaded(true);
+    if (saved?.id) {
+      void api.get<'CreationDraftResponse'>(draftPath(saved.id)).then(next => {
+        if (!mounted.current) {
+          return;
+        }
+        setDraft(next);
+        setPayload(next.payload);
+        setManual(next.preview?.tasks ?? []);
+        setLocals(items => items.filter(f => !next.files.some(done => done.id === f.id)));
+      }).catch(setError);
+    }
+  }, [saved, loaded]);
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+    const leave = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', leave);
+    return () => window.removeEventListener('beforeunload', leave);
+  }, [busy]);
+  const run = async (action: () => Promise<void>) => {
+    if (lock.current) {
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setError(null);
     try {
-      if (!draftRef.current!.project) {
-        const project = await api.post<'ProjectResponse'>('/api/v1/projects', draftRef.current!.payload, { idempotencyKey: draftRef.current!.createKey });
-        if (typeof project.id !== 'string' || !project.id || typeof project.name !== 'string' || !Number.isInteger(project.revision) || project.myRole !== 'owner') throw new Error('创建响应尚未确认，请用原请求重试核对项目。');
-        commit({ ...draftRef.current!, project: { id: project.id, name: project.name, revision: project.revision, status: project.status }, interrupted: stopped.current });
-        if (mounted.current) { queryClient.setQueryData(['project', project.id], project); void queryClient.invalidateQueries({ queryKey: ['projects'] }); }
+      await action();
+    }
+    catch (e) {
+      if (mounted.current) {
+        setError(e);
       }
-      // A replayed creation response can describe an older revision. Recheck access before uploads.
-      if (!stopped.current && (existing?.project || draftRef.current!.files.length)) {
-        const current = await api.get<'ProjectResponse'>(projectPath(draftRef.current!.project!.id));
-        if (mounted.current) queryClient.setQueryData(['project', current.id], current);
-        if (current.id !== draftRef.current!.project!.id || current.status !== 'active' || current.myRole !== 'owner') throw new Error('项目已归档或负责人权限已变化。请先进入已创建项目核对状态，未继续上传。');
-      }
-      if (stopped.current) return;
-      const id = draftRef.current!.project!.id;
-      for (const selected of draftRef.current!.files) {
-        if (stopped.current) break;
-        if (selected.sourceId) continue;
-        const updateFile = (updated: CreationFile) => commit({ ...draftRef.current!, files: draftRef.current!.files.map(file => file.localId === updated.localId ? updated : file), interrupted: stopped.current });
-        try {
-          await completeCreationFile(id, selected, originals.current.get(selected.localId), updateFile, () => stopped.current);
-        } catch (failure) {
-          const latest = draftRef.current!.files.find(file => file.localId === selected.localId)!;
-          updateFile({ ...latest, status: originals.current.has(selected.localId) || latest.uploadConfirmed ? 'failed' : 'needs_file', error: failure instanceof Error ? failure.message : '上传未完成，请重试。' });
-        }
-      }
-      if (!stopped.current && draftRef.current!.files.every(file => Boolean(file.sourceId))) {
-        clearCreationDraft(userId);
-        pendingRef.current = false;
-        if (mounted.current) {
-          if (draftRef.current!.payload.aiCollaborationEnabled && draftRef.current!.files.length) setFinished(true);
-          else navigate(`/app/projects/${id}${draftRef.current!.files.length ? '/sources' : ''}`);
-        }
-      }
-    } catch (failure) { if (mounted.current) setError(failure); }
+    }
     finally {
-      pendingRef.current = false;
-      if (stopped.current && draftRef.current) commit({ ...draftRef.current, interrupted: true });
-      if (mounted.current) setPending(false);
+      lock.current = false;
+      if (mounted.current) {
+        setBusy(false);
+      }
     }
   };
-
-  const enterProject = async (skipRemaining = false) => {
-    if (!projectId || pendingRef.current) return;
-    pendingRef.current = true; stopped.current = false; setPending(true); setError(null);
-    try {
-      const current = await api.get<'ProjectResponse'>(projectPath(projectId));
-      if (current.id !== projectId || !['owner', 'member'].includes(current.myRole)) throw new Error('无法确认当前账户对该项目的访问权限。');
-      if (mounted.current) queryClient.setQueryData(['project', projectId], current);
-      if (mounted.current && !stopped.current) {
-        if (skipRemaining) clearCreationDraft(userId);
-        pendingRef.current = false; navigate(`/app/projects/${projectId}`);
+  const ensure = async () => {
+    if (!payload.name.trim()) {
+      throw new Error('请填写项目名称');
+    }
+    const normalized = {
+      ...payload, name: payload.name.trim(), inviteUsernames: payload.inviteUsernames.map(n => n.trim()).filter(Boolean), inviteLabels: payload.inviteLabels.map(n => n.trim()).filter(Boolean)
+    };
+    let next = draft;
+    if (!next) {
+      next = await api.post<'CreationDraftResponse'>('/api/v1/creation-drafts', normalized, {
+        idempotencyKey: createKey.current
+      });
+    }
+    else if (!sameWizardPayload(normalized, next.payload)) {
+      next = await api.patch<'CreationDraftResponse'>(draftPath(next.id), {
+        expectedRevision: next.revision, payload: normalized
+      });
+    }
+    accept(next);
+    return next;
+  };
+  const next = () => run(async () => {
+    let current = await ensure();
+    if (step === 1) {
+      for (const file of locals) {
+        if (!file.original) {
+          throw new Error(`请重新选择未确认上传的原文件：${file.name}`);
+        }
+        try {
+          current = await request<'CreationDraftResponse'>(draftPath(current.id, `/files/${file.id}`), {
+            method: 'PUT', query: {
+              expectedRevision: current.revision, name: file.name
+            }, rawBody: file.original
+          });
+          accept(current);
+          setLocals(items => {
+            const remaining = items.filter(f => f.id !== file.id);
+            remember(current.id, remaining);
+            return remaining;
+          });
+        }
+        catch (e) {
+          setLocals(items => items.map(f => f.id === file.id ? {
+            ...f, error: e instanceof Error ? e.message : '上传未确认'
+          } : f));
+          throw e;
+        }
       }
-    } catch (failure) { if (mounted.current) setError(failure); }
-    finally { pendingRef.current = false; if (mounted.current) setPending(false); }
+    }
+    setStep(s => Math.min(4, s + 1));
+  });
+  const select = (files: FileList | null) => {
+    if (!files) {
+      return;
+    }
+    const chosen = Array.from(files), validation = validateCreationFiles([...draft?.files.map(f => ({
+        name: f.name, size: f.sizeBytes
+      })) ?? [], ...chosen], capabilities.data?.limits.maxFileBytes ?? 0);
+    if (validation) {
+      setError(new Error(validation));
+      return;
+    }
+    setLocals(items => {
+      let remaining = [...items];
+      for (const original of chosen) {
+        const found = remaining.find(f => f.name === original.name && f.size === original.size);
+        if (found) {
+          remaining = remaining.map(f => f.id === found.id ? {
+            ...f, original, error: undefined
+          } : f);
+        }
+        else {
+          remaining.push({
+            id: crypto.randomUUID(), name: original.name, size: original.size, original
+          });
+        }
+      }
+      if (remaining.length + (draft?.files.length ?? 0) > 10) {
+        setError(new Error('最多10个文件'));
+        return items;
+      }
+      remember(draft?.id, remaining);
+      return remaining;
+    });
   };
-  const archive = async () => {
-    const current = draftRef.current?.project;
-    if (!current || pendingRef.current || projectQuery.data?.myRole !== 'owner' || archiveConflict) return;
-    pendingRef.current = true; setPending(true); setError(null);
-    try {
-      const archived = await api.patch<'ProjectResponse'>(projectPath(current.id), { expectedRevision: current.revision, status: 'archived' });
-      if (mounted.current) { queryClient.setQueryData(['project', current.id], archived); void queryClient.invalidateQueries({ queryKey: ['projects'] }); }
-      clearCreationDraft(userId);
-      pendingRef.current = false;
-      if (mounted.current) navigate('/app');
-    } catch (failure) {
-      if (mounted.current) { setError(failure); if (failure instanceof ApiError && failure.code === 'VERSION_CONFLICT') setArchiveConflict(true); }
-    } finally { pendingRef.current = false; if (mounted.current) setPending(false); }
+  const preview = (mode: 'ai' | 'manual', regenerate = false) => run(async () => {
+    const current = await ensure();
+    const next = await api.post<'CreationDraftResponse'>(draftPath(current.id, '/preview'), {
+      expectedRevision: current.revision, mode, tasks: mode === 'manual' ? manual : [], regenerate
+    });
+    accept(next);
+    setManual(next.preview?.tasks ?? []);
+  });
+  const openDraft = (id: string) => run(async () => {
+    const next = await api.get<'CreationDraftResponse'>(draftPath(id));
+    accept(next);
+    setLocals([]);
+    remember(id, []);
+    setManual(next.preview?.tasks ?? []);
+    setStep(0);
+    setResult(null);
+  });
+  const setField = <K extends keyof WizardPayload>(key: K, value: WizardPayload[K]) => {
+    setPayload(p => ({
+      ...p, [key]: value
+    }));
+    setConfirmed(false);
   };
-
-  return <div className="page-stack narrow-page">
-    <Link className="back-link" to="/app"><ArrowLeft size={16} />返回项目列表</Link>
-    <PageHeading eyebrow="新建项目" title="建立协作空间" detail="项目由真实账户创建，创建者将成为负责人。" />
-    <form className="card form-card" aria-label="新建项目" onSubmit={event => { event.preventDefault(); void run(); }}>
-      <Field label="项目名称"><input className="input" required maxLength={100} disabled={frozen || pending} value={name} onChange={event => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
-      <Field label="项目说明" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
-      <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
-      <div className="form-note"><CalendarDays size={16} />未确认日期时会保留为空；有日期时按“精确到日期”保存，不会自动补上时间。</div>
-      <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>默认关闭。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
-      {aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="form-note">{capabilities.data ? '系统 AI 当前未启用。项目开关可保存，但模型不可用时不会执行 AI 协作。' : '正在确认系统 AI 能力；开关不代表模型已可用。'}</div>}
-      {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
-      <Field label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `每个不超过 ${(capabilities.data.limits.maxFileBytes / (1024 * 1024)).toFixed(1)} MiB。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>
-      {selectionError && <div className="notice notice-error" role="alert">{selectionError}</div>}
-      {files.length > 0 && <ul className="page-stack" aria-label="文件上传进度">{files.map(file => <li key={file.localId}>
-        <strong>{file.name}</strong> · {(file.size / 1024).toFixed(1)} KiB · {file.sourceId ? '已保存原文件并建立来源' : pending && file.status === 'uploading' ? '正在上传或核对原文件' : pending && file.status === 'linking' ? '正在建立来源' : file.uploadConfirmed ? '原文件已上传，来源尚未确认' : file.status === 'failed' ? '上传未完成' : file.status === 'needs_file' ? '需要重新选择原文件' : '等待上传'}
-        {file.error && <div role="status">{file.error}</div>}
-        {!frozen && <button className="button button-quiet button-small" type="button" disabled={pending} aria-label={`移除 ${file.name}`} onClick={() => { originals.current.delete(file.localId); setFiles(items => items.filter(item => item.localId !== file.localId)); }}>移除</button>}
-      </li>)}</ul>}
-      {storageUnavailable && <div className="notice notice-warn" role="alert">此浏览器无法保存恢复进度。离开或刷新可能丢失本次重试信息，请等创建结果确认后保留项目链接。</div>}
-      {draft?.interrupted && <div className="notice notice-warn" role="status">{pending ? '已请求停止后续操作，正在确认已发出的请求。' : '本次创建或上传已中断。'} 已创建项目和已完成文件会保留。刷新后未完成原文件需重新选择；重试沿用同一创建记录，不会另建项目。</div>}
-      {frozen && !projectId && <div className="form-note">创建请求已发出，服务端结果尚未确认。表单已保留，请用原请求重试确认；不要另建同名项目。</div>}
-      {projectId && <section className="callout" aria-label="已创建项目"><strong>项目已创建：{draft?.project?.name}</strong><p>项目编号：{projectId}。上传失败不会撤销或删除项目，已保存的文件不会重复上传。</p><Link to={`/app/projects/${projectId}`}>查看已创建项目</Link>
-        {projectQuery.error && <ErrorNotice error={projectQuery.error} onRetry={() => void projectQuery.refetch()} />}
-        {projectQuery.data?.status === 'archived' && <p>此项目已归档，暂停上传；可进入项目核对。</p>}
-        {projectQuery.data && projectQuery.data.myRole !== 'owner' && <p>负责人权限已变化，暂停本创建流程；可进入项目核对。</p>}
-      </section>}
-      {projectId && aiCollaborationEnabled && files.some(file => Boolean(file.sourceId)) && <section className="callout" aria-label="AI 协作资料下一步">
-        {finished && <strong>项目文件已保存并建立来源</strong>}
-        <p>资料原文件已保存，AI 协作仍待正文读取；请到协作任务选择并处理来源，再发起基于资料的拆解。</p>
-        <Link to={`/app/projects/${projectId}/tasks`}>选择来源并准备协作任务</Link> · <Link to={`/app/projects/${projectId}/sources`}>查看通知与来源</Link>
-      </section>}
-      {Boolean(error) && <ErrorNotice error={error} />}
-      {archiveConflict && <div className="notice notice-warn">项目已被更新，归档未执行。请先进入项目核对当前状态；此页面不会自动覆盖新版本。</div>}
-      <div className="form-actions">
-        <button type="button" className="button button-quiet" disabled={pending && Boolean(draft?.interrupted)} onClick={() => { if (pendingRef.current) interrupt(); else { if (draftRef.current && !finished) commit({ ...draftRef.current, interrupted: true }); navigate('/app'); } }}>{pending ? '停止后续操作' : projectId ? finished ? '返回项目列表' : '保留进度并返回列表' : '取消'}</button>
-        <button type="submit" className="button button-primary" disabled={finished || pending || !name.trim() || Boolean(projectId && (!projectQuery.data || projectQuery.data.status !== 'active' || projectQuery.data.myRole !== 'owner'))}>{pending ? '正在确认进度…' : finished ? '文件已保存' : projectId ? '重试未完成文件' : frozen ? '用原请求重试确认创建' : '创建项目'}</button>
-        {projectId && <button type="button" className="button button-quiet" disabled={pending} onClick={() => void enterProject()}>保留进度并进入项目</button>}
-        {projectId && !finished && files.some(file => !file.sourceId) && <button type="button" className="button button-quiet" disabled={pending} onClick={() => void enterProject(true)}>跳过未完成文件并进入项目</button>}
-        {projectId && <button type="button" className="button button-danger" disabled={pending || archiveConflict || projectQuery.data?.myRole !== 'owner' || projectQuery.data?.status !== 'active'} onClick={() => void archive()}>归档此项目草稿</button>}
-      </div>
-      {projectId && <div className="form-note">“归档此项目草稿”会将整个已创建项目设为已归档，可在项目设置中恢复；不会永久删除项目或原文件。</div>}
-      {projectId && !finished && files.some(file => !file.sourceId) && <div className="form-note">“跳过未完成文件”仅结束本页的上传恢复进度。已创建项目、已保存原文件与来源会保留；之后可在来源页面核对或补充文件。</div>}
-    </form>
-  </div>;
+  const previewCurrent = draft && canConfirmDraft(draft) && sameWizardPayload(payload, draft.payload);
+  if (result) {
+    return <div className="page-stack narrow-page"><PageHeading title="项目已创建" detail="资料、任务和邀请已保存；再次确认会恢复同一个项目。"/><section className="card form-card"><p>{payload.name}</p>{Boolean(result.usernameInvitations?.length) && <p>已向用户名 {result.usernameInvitations?.join("、")} 发送邀请，对方可在首页接受或拒绝。</p>}<Link className="button button-primary" to={`/app/projects/${result.projectId}`}>进入项目</Link>{result.invitations.length > 0 && <><h2>分享邀请</h2><p>每个链接可使用一次，7 天有效。请将对应链接分享给组员，接受邀请后才成为成员。</p>{result.invitations.map(invite => <Field key={invite.code} label={invite.label}><input className="input" readOnly value={`${window.location.origin}/app/join?code=${encodeURIComponent(invite.code)}`}/></Field>)}</>}</section></div>;
+  }
+  return <div className="page-stack narrow-page"><Link className="back-link" to="/app"><ArrowLeft size={16}/>返回项目列表</Link><PageHeading eyebrow="新建项目" title="配置协作项目" detail="完成资料、组员与任务配置，最后确认后创建。"/>
+ {!draft && list.data?.items.length !== 0 && <details className="card form-card"><summary>恢复已有创建草稿</summary>{list.data?.items.map(item => <button key={item.id} type="button" className="button button-quiet" disabled={busy} onClick={() => void openDraft(item.id)}>{item.payload.name} · {item.status === 'cancelled' ? '已取消，可恢复' : '配置中'}</button>)}</details>}
+ <ol className="wizard-steps" aria-label="创建步骤">{wizardSteps.map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
+ <form className="card form-card" aria-label="分步创建项目" onSubmit={event => {
+      event.preventDefault();
+      if (step < 3) {
+        void next();
+      }
+    }}>
+ {draft?.status === 'cancelled' ? <section className="callout"><p>此草稿已取消，配置和文件仍保留。恢复后需重新确认任务预览。</p><button className="button button-primary" type="button" disabled={busy} onClick={() => void run(async () => accept(await api.post<'CreationDraftResponse'>(draftPath(draft.id, '/state'), {
+      expectedRevision: draft.revision, status: 'active'
+    })))}>恢复草稿</button></section> : draft?.status === 'committed' ? <section className="callout"><p>此草稿已经创建项目，结果可以安全恢复。</p><Link to={`/app/projects/${draft.projectId}`}>进入已创建项目</Link><button type="button" className="button button-quiet" onClick={() => void run(async () => setResult(await api.post<'CreationCommitResponse'>(draftPath(draft.id, '/commit'), {
+      expectedRevision: draft.revision, confirmed: true
+    })))}>恢复创建结果与邀请</button></section> : <>
+ <h2>{wizardSteps[step]}</h2>
+ {step === 0 && <><Field label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field label="项目说明"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field label="截止日期" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
+          const date = e.target.value;
+          setPayload(p => {
+            const next = {
+              ...p
+            };
+            if (date) {
+              next.deadlineDate = date;
+            }
+            else {
+              delete next.deadlineDate;
+            }
+            return next;
+          });
+          setConfirmed(false);
+        }}/></Field><label className="field"><span><input type="checkbox" checked={payload.aiCollaborationEnabled} disabled={busy} onChange={e => setField('aiCollaborationEnabled', e.target.checked)}/> AI 智能协作</span><small>开启后可生成拆分预览，并启用项目 AI 分工与评价。预览可能产生现有模型用量；创建时复用已确认结果。</small></label>{payload.aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="callout">系统 AI 当前不可用，可以手动配置任务并继续创建。</div>}</>}
+ {step === 1 && <><Field label="上传项目文件（可选）" hint="最多10个文件，支持 PDF、图片、TXT 和 Markdown。上传只暂存到私有草稿。"><input ref={fileInput} className="input" type="file" multiple accept={creationFileExtensions} disabled={busy || !capabilities.data} onChange={e => {
+      select(e.target.files);
+      e.target.value = '';
+    }}/></Field>{draft?.files.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}</strong><small>{(file.sizeBytes / 1024).toFixed(1)} KiB · 已暂存 · {file.textReady ? '已读取文本' : '尚无可读取文本'}</small>{file.textError && <p>{file.textError}</p>}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void run(async () => {
+      accept(await api.post<'CreationDraftResponse'>(draftPath(draft.id, `/files/${file.id}/state`), {
+        expectedRevision: draft.revision, removed: true
+      }));
+    })}>移出本次创建</button></div>)}{Boolean(draft?.removedFiles?.length) && <details><summary>恢复移出的文件</summary>{draft?.removedFiles.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}</strong><button type="button" className="button button-quiet button-small" disabled={busy || (draft?.files.length ?? 0) >= 10} onClick={() => void run(async () => accept(await api.post<'CreationDraftResponse'>(draftPath(draft.id, `/files/${file.id}/state`), {
+      expectedRevision: draft.revision, removed: false
+    })))}>恢复此文件</button></div>)}</details>}{locals.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}</strong><small>{file.original ? '待上传，下一步会暂存' : '上传尚未确认，请重新选择原文件'}</small>{file.error && <p role="alert">{file.error}</p>}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => {
+      const remaining = locals.filter(f => f.id !== file.id);
+      setLocals(remaining);
+      remember(draft?.id, remaining);
+    }}>移除待上传</button></div>)}</>}
+ {step === 2 && <><Field label="组员总人数（含负责人）"><input type="number" className="input" min={1} max={100} value={payload.teamSize} disabled={busy} onChange={e => setField('teamSize', Number(e.target.value))}/></Field><Field label="邀请对象的完整登录用户名（每行一个，可留空）" hint="只按完整用户名精确匹配，不按昵称查找。正式创建后对方在首页接受或拒绝；邀请不提前占名额。"><textarea className="input textarea" rows={4} disabled={busy} value={payload.inviteUsernames.join('\n')} onChange={e => setField('inviteUsernames', e.target.value.split('\n'))} onBlur={() => setField('inviteUsernames', payload.inviteUsernames.map(n => n.trim()).filter(Boolean))}/></Field><p>正式创建成功后才发送邀请；组员接受后加入普通成员并获得项目权限。</p></>}
+ {step === 3 && <><Field label="拆分要求" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
+        title: '', detail: '', criteria: '', effortHours: 1, citations: []
+      }])}>添加手动任务</button></div><p>手动预览不调用模型；可确认暂不创建任务。重新生成 AI 预览可能再次产生用量。</p>{manual.map((task, index) => <fieldset key={index} className="wizard-task"><legend>任务 {index + 1}</legend><Field label="标题"><input className="input" value={task.title} maxLength={200} disabled={busy} onChange={e => {
+      setManual(items => items.map((t, i) => i === index ? {
+        ...t, title: e.target.value
+      } : t));
+      setConfirmed(false);
+    }}/></Field><Field label="内容"><textarea className="input" value={task.detail} maxLength={4000} disabled={busy} onChange={e => setManual(items => items.map((t, i) => i === index ? {
+      ...t, detail: e.target.value
+    } : t))}/></Field><Field label="验收标准"><textarea className="input" value={task.criteria} maxLength={4000} disabled={busy} onChange={e => setManual(items => items.map((t, i) => i === index ? {
+      ...t, criteria: e.target.value
+    } : t))}/></Field><Field label="预计工时"><input className="input" type="number" min={.25} max={200} step={.25} disabled={busy} value={task.effortHours} onChange={e => setManual(items => items.map((t, i) => i === index ? {
+      ...t, effortHours: Number(e.target.value)
+    } : t))}/></Field>{task.citations.map((cite, i) => <p key={i}>依据：{draft?.files.find(f => f.id === cite.fileId)?.name ?? '项目文件'} 第{cite.pageNumber}页 · “{cite.quote}”</p>)}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => setManual(items => items.filter((_, i) => i !== index))}>移除任务</button></fieldset>)}<button type="button" className="button button-quiet" disabled={busy || manual.some(t => !t.title.trim() || !t.criteria.trim())} onClick={() => void preview('manual', true)}>{manual.length ? '保存当前任务预览' : '确认暂不创建任务'}</button>{draft?.previewError && <p className="notice notice-warn">{draft.previewError}</p>}{draft?.preview && !previewCurrent && <p className="notice notice-warn">配置已变化，请重新保存预览。</p>}{previewCurrent && <p role="status">预览已保存：{draft.preview?.tasks.length} 个任务。进入下一步不会再次调用模型。</p>}</>}
+ {step === 4 && <><dl className="wizard-summary"><dt>项目</dt><dd>{payload.name}</dd><dt>说明</dt><dd>{payload.description || '未填写'}</dd><dt>截止日期</dt><dd>{payload.deadlineDate ?? '未明确'}</dd><dt>文件</dt><dd>{draft?.files.map(f => f.name).join('、') || '无'}</dd><dt>人数与邀请</dt><dd>{payload.teamSize} 人（含负责人），{payload.inviteLabels.length + payload.inviteUsernames.length} 个邀请</dd><dt>AI 协作</dt><dd>{payload.aiCollaborationEnabled ? '开启' : '关闭'}</dd></dl>{draft?.preview?.tasks.map((task, index) => <article key={index} className="wizard-task"><strong>{task.title}</strong><p>{task.detail}</p><p>验收：{task.criteria} · {task.effortHours} 小时</p></article>)}<label className="field"><span><input type="checkbox" disabled={busy || !previewCurrent} checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/> 我已复核项目、文件、人数、邀请与任务配置</span></label><button type="button" className="button button-primary" disabled={busy || !confirmed || !previewCurrent || locals.length > 0} onClick={() => void run(async () => {
+          if (!draft) {
+            return;
+          }
+          const committed = await api.post<'CreationCommitResponse'>(draftPath(draft.id, '/commit'), {
+            expectedRevision: draft.revision, confirmed: true
+          });
+          setResult(committed);
+          remember(undefined, []);
+          void queryClient.invalidateQueries({
+            queryKey: ['projects']
+          });
+        })}>确认并创建项目</button></>}
+ <div className="form-actions">{step > 0 && <button type="button" className="button button-quiet" disabled={busy} onClick={() => {
+      setStep(s => s - 1);
+      setConfirmed(false);
+    }}>上一步</button>}{step < 3 && <button type="submit" className="button button-primary" disabled={busy || !payload.name.trim()}>下一步</button>}{step === 3 && <button type="button" className="button button-primary" disabled={busy || !previewCurrent || !sameTasks(manual, draft?.preview?.tasks ?? [])} onClick={() => {
+      setStep(4);
+      setConfirmed(false);
+    }}>进入创建预览</button>}<button type="button" className="button button-quiet" disabled={busy} onClick={() => void run(async () => {
+        if (payload.name.trim()) {
+          await ensure();
+        }
+        navigate('/app');
+      })}>保存草稿并返回</button>{draft && <button type="button" className="button button-quiet" disabled={busy} onClick={() => void run(async () => {
+      accept(await api.post<'CreationDraftResponse'>(draftPath(draft.id, '/state'), {
+        expectedRevision: draft.revision, status: 'cancelled'
+      }));
+      void list.refetch();
+    })}>取消草稿（保留资料）</button>}</div>
+ </>}
+ {busy && <p role="status">正在保存或核对结果，请稍候…</p>}{Boolean(error) && <ErrorNotice error={error}/>}<p className="form-note">草稿只对当前账户可见。移出创建的原文件会保留在草稿记录中；取消后可恢复。最终创建使用同一草稿标识，失败或网络中断后请刷新核对结果。</p>{draft && <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void openDraft(draft.id)}>刷新草稿状态</button>}
+ </form></div>;
+}
+function sameTasks(a: WizardTask[], b: WizardTask[]) {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
