@@ -7,10 +7,12 @@ export interface ProfileRow {
   user_id: string; searchable: number; bio: string; major: string; specialties: string; preferred_roles: string;
   bio_public: number; major_public: number; specialties_public: number; preferred_roles_public: number;
   revision: number; ai_use_allowed: number;
+  weekly_available_hours: number | null;
 }
 export function ownProfile(row: ProfileRow | null) {
   return { searchable: !!row?.searchable, aiUseAllowed: row?.ai_use_allowed === 1, revision: row?.revision ?? 0,
     bio: row?.bio ?? '', major: row?.major ?? '', specialties: row?.specialties ?? '', preferredRoles: row?.preferred_roles ?? '',
+    weeklyAvailableHours: row?.weekly_available_hours ?? null,
     visibility: { bio: !!row?.bio_public, major: !!row?.major_public, specialties: !!row?.specialties_public, preferredRoles: !!row?.preferred_roles_public } };
 }
 export function publicProfile(row: ProfileRow & { username: string; display_name: string }) {
