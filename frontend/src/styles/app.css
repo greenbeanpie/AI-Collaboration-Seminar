@@ -73,6 +73,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .office-shell .sidebar { padding: 0 0 18px; overflow-y: auto; }
 .sidebar-brand { display: flex; align-items: center; min-height: 76px; padding: 0 16px; border-bottom: 1px solid var(--line); }
 .sidebar-navigation { padding: 0 16px; }
+.sidebar-archive { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-top: 10px; color: var(--muted); font-size: 12px; border-radius: 8px; }
+.sidebar-archive:hover { color: var(--blue); background: var(--blue-soft); }
 .office-shell .nav-label { margin-top: 24px; }
 .office-shell .sidebar-note, .office-shell .sidebar-error { margin: 0 16px; }
 .workspace-frame { display: flex; flex: 1; flex-direction: column; min-width: 0; }

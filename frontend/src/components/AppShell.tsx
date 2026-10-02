@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderKanban, KeyRound, LifeBuoy, LogOut, MoreHorizontal, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
+import { Archive, FolderKanban, KeyRound, LifeBuoy, LogOut, MoreHorizontal, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
@@ -71,6 +71,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
         <NavLink to="/app/people" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Search size={18} />搜索用户</NavLink>
       </nav>
       <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>
+      <Link className="sidebar-archive" to="/app?archive=1" aria-haspopup="dialog"><Archive size={15} />查看归档任务</Link>
       </div>
       <div className="sidebar-spacer" />
       {logoutError !== null && <div className="sidebar-error"><ErrorNotice error={logoutError} /></div>}
