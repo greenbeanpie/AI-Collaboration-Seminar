@@ -1,5 +1,5 @@
 import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
-import { errorInfo, publicErrorMessage } from './error-info';
+import { publicErrorMessage } from './error-info';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -11,7 +11,7 @@ export class ApiError extends Error {
   readonly details?: Record<string, unknown>;
 
   constructor(status: number, failure: ApiFailure) {
-    super([publicErrorMessage(failure.error.code,failure.error.message),errorInfo(failure.error,failure.requestId)].filter(Boolean).join('；'));
+    super(publicErrorMessage(failure.error.code,failure.error.message));
     this.name = 'ApiError';
     this.status = status;
     this.code = failure.error.code;

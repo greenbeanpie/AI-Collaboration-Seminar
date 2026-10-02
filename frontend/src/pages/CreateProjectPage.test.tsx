@@ -127,6 +127,7 @@ describe('project creation wizard', () => {
     expect(screen.getByRole('heading', {
       name: '人数与邀请'
     })).toBeInTheDocument();
+    expect(screen.getByText('用于团队规划，可在创建后继续邀请成员；不设置项目人数上限。')).toBeInTheDocument();
     await next();
     expect(screen.getByRole('heading', {
       name: '目标与子任务预览'
@@ -178,7 +179,7 @@ describe('project creation wizard', () => {
     fireEvent.click(screen.getByRole('button', {
       name: '上一步'
     }));
-    fireEvent.change(screen.getByLabelText('组员总人数（含负责人）'), {
+    fireEvent.change(screen.getByLabelText(/^组员总人数（含负责人）/), {
       target: {
         value: '2'
       }

@@ -17,6 +17,7 @@ const knownCodes = new Set(['VALIDATION_FAILED','UNAUTHENTICATED','AUTH_CHALLENG
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function publicErrorMessage(code:string, message:string): string {
+  if(code==='INVALID_STATE'&&(!message.trim()||message.includes('或')))return '当前操作状态已变化，请刷新核对。';
   const fixed: Record<string,string> = {
     INTERNAL:'服务器内部错误，请核对操作结果并联系管理员',
     AI_UNAVAILABLE:'模型服务暂不可用，请核对已保存的模型配置',

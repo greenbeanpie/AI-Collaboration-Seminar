@@ -47,6 +47,8 @@ it('opens five editable draft areas with no operational tasks, grades or formal-
   await tab('资料'); expect(screen.getByText('尚无文档')).toBeInTheDocument();
   await tab('评分'); expect(screen.getByText('尚无项目标准')).toBeInTheDocument(); expect(screen.queryByText(/本轮总分/)).toBeNull();
   await tab('团队'); expect(screen.getByLabelText('创建后开启 AI 智能协作')).not.toBeChecked(); expect(screen.queryByRole('button', { name: '创建邀请码' })).toBeNull();
+  expect(screen.getByText('用于团队规划，可在创建后继续邀请成员；不设置项目人数上限。')).toBeInTheDocument();
+  expect(screen.getByLabelText(/^计划组员总人数（含负责人）/)).toHaveValue(1);
   expect(writes).toEqual([]);
 });
 it('saves private payload and keyed tasks, then recovers them on a fresh page without creating a project', async () => {
