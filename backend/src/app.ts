@@ -1,4 +1,6 @@
 import { registerUsernameInvitationRoutes } from './api/username-invitations';
+import { registerProjectSimplificationRoutes } from './api/project-simplification';
+import { registerResourceRoutes } from './api/resources';
 import { registerAiToolRoutes } from './api/ai-tools';
 import { registerCreationDraftRoutes } from './api/creation-drafts';
 import { registerNotificationRoutes } from './api/notifications';
@@ -49,7 +51,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:files|sources|ai-tools|username-invitations|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:files|sources|resource-library|goal|standards|assessments|ai-tools|username-invitations|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -79,6 +81,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerPersonalProfileRoutes(app);
   registerCreationDraftRoutes(app);
   registerProjectRoutes(app);
+  registerProjectSimplificationRoutes(app);
   registerMemberRoutes(app);
   registerInvitationRoutes(app);
   registerUsernameInvitationRoutes(app);
@@ -90,6 +93,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerCollaborationRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
+  registerResourceRoutes(app);
   registerAgentRoutes(app);
   registerAiToolRoutes(app);
   registerReviewRoutes(app);

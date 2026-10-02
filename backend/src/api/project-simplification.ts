@@ -40,6 +40,7 @@ async function assessmentById(c:Context<AppEnv>,id:string){
   const summary=await c.env.DB.prepare("SELECT content_json FROM rehearsal_turns WHERE rehearsal_id=?1 AND kind='summary' ORDER BY sequence DESC LIMIT 1").bind(id).first<{content_json:string}>();return {assessmentId:id,kind:'rehearsal' as const,status:rehearsal.status,goalRevision:null,goal:null,standardsVersionId:null,standardsVersion:null,materialVersionIds:JSON.parse(rehearsal.material_version_ids_json),rehearsalId:id,report:summary?JSON.parse(summary.content_json):null,jobId:null,jobError:null,createdAt:rehearsal.created_at,historical:true as const};
 }
 export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
+  app.use('/api/v1/projects/:projectId/tasks/:taskId/dependencies', requireUser, requireProjectMember());
   for(const path of ['goal','standards','assessments']){app.use(`/api/v1/projects/:projectId/${path}`,requireUser,requireProjectMember());app.use(`/api/v1/projects/:projectId/${path}/*`,requireUser,requireProjectMember());}
   endpoint(app,'get','/goal','ProjectGoalResponse',goalSchema,async c=>c.json(apiData(c,await projectGoal(c.env,c.req.param('projectId')!))));
   endpoint(app,'patch','/goal','ProjectGoalResponse',goalSchema,async c=>c.json(apiData(c,await updateGoal(c.env,c.req.param('projectId')!,c.get('user')!.id,await c.req.json()))),z.object({expectedRevision:revision,title:z.string().trim().min(1).max(200).optional(),detail:z.string().max(12000).optional()}).strict());
