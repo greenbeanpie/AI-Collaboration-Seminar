@@ -11,6 +11,7 @@ import { markAiCallStarted, settleReservation } from './budget';
 import { recordEvent } from './events';
 import { markdownToDoc } from './tiptap';
 import { z } from 'zod';
+import { decisionReferences,extractDecisionReferences,validateReadReferences } from './project-evidence';
 
 export type AgentCapability = 'do' | 'guide' | 'review_only';
 
@@ -100,14 +101,40 @@ export async function aiJsonCall<S extends z.ZodType>(
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     schema: S;
     privateContext?: boolean;
+    /** Internal output-only repair limit; never restarts a tool investigation. */
+    maxAttempts?: 1 | 2;
     beforeCall?: () => Promise<void>;
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
 ): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
   if (params.projectTools) {
-    const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
+    const stableSessionId=params.sessionId??params.jobId??params.runId??crypto.randomUUID();
+    const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
     try { return {data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
-    catch { throw new AppError('AI_OUTPUT_INVALID','工具调用后的最终 JSON 未通过校验，结果已保留供核对；不会自动重复整轮调用',502,false); }
+    catch {
+      // Correct only the final output. Before each repair dispatch the original
+      // consent/config/member checks and final sensitive-context read run again.
+      const repairTail:Array<{role:'assistant'|'user';content:string}>=[
+        {role:'assistant',content:out.content.slice(0,8000)},
+        {role:'user',content:'最终JSON未通过业务结构校验。请仅修正格式和业务字段，保持原调查结论，不调用工具；参考资料只能使用已实际读取ID：'+JSON.stringify(out.references.map(r=>r.id))},
+      ];
+      const repairSchema=z.unknown().transform(raw=>{
+        const text=JSON.stringify(raw);
+        return {data:params.schema.parse(businessJson(text)),references:decisionReferences(text,out.references),decisionReferences:extractDecisionReferences(text,out.references)};
+      });
+      const repaired=await aiJsonCall(env,{...params,projectTools:undefined,sessionId:stableSessionId,maxAttempts:1,
+        promptVersion:params.promptVersion+'-final-repair',messages:[...params.messages,...repairTail],schema:repairSchema,
+        beforeCall:async()=>{
+          await params.beforeCall?.();
+          const current=await loadAiConfig(env.DB);
+          if(!current?.enabled||current.id!==params.configVersionId)throw new AppError('INVALID_STATE','模型配置已变化，请重新发起',409,false);
+          await assertToolAccess(env,params.projectTools!);
+          await validateReadReferences(env,params.projectId,out.references);
+        },
+        prepareMessages:params.prepareMessages?async()=>[...await params.prepareMessages!(),...repairTail]:undefined,
+      });
+      return {data:repaired.data.data,repaired:true,toolTrace:out.trace,citations:out.citations,references:repaired.data.references,decisionReferences:repaired.data.decisionReferences};
+    }
   }
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
@@ -142,7 +169,8 @@ export async function aiJsonCall<S extends z.ZodType>(
 
   const sessionId = params.sessionId ?? params.jobId ?? params.runId ?? crypto.randomUUID();
   let messages = params.messages;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const maxAttempts=params.maxAttempts??2;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const started = Date.now();
     let attempted = false;
     let out: Awaited<ReturnType<typeof gatewayChat>> | undefined;
@@ -181,7 +209,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     if (!out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
     // Auth/entitlement/unsupported requests must surface as-is, not become a paid repair retry.
     if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE' && !failure.retryable) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw failure; }
-    if (attempt === 1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
+    if (attempt === maxAttempts-1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
     messages = [
       ...params.messages,
       { role: 'assistant', content: (out?.content ?? '').slice(0, 8000) },

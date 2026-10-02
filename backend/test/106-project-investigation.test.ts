@@ -21,8 +21,21 @@ describe('autonomous project investigation',()=>{
     expect(JSON.stringify(redacted)).not.toContain('private biography');expect(JSON.stringify(redacted)).toContain('list_tasks');
     await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;
     const fetch=vi.fn(async()=>Response.json({choices:[{finish_reason:'stop',message:{content:'{"title":"建议","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}}));vi.stubGlobal('fetch',fetch);
-    const out=await aiJsonCall(env,{runId:newId(),projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'strict-fixture',messages:[{role:'user',content:'请给建议'}],schema:z.object({title:z.string()}).strict()});
+    const out=await aiJsonCall(env,{projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'strict-fixture',messages:[{role:'user',content:'请给建议'}],schema:z.object({title:z.string()}).strict()});
     expect(out.data).toEqual({title:'建议'});expect(out.references?.length).toBeGreaterThan(0);expect(out.decisionReferences).toEqual([]);
+  });
+  it('repairs final JSON once without replaying tools and rechecks private dispatch context',async()=>{
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;let round=0,prepared=0;
+    const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+      const body=JSON.parse(String(init?.body)),i=round++;
+      if(i===0)return Response.json({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{id:'discover',type:'function',function:{name:'list_project_resources',arguments:'{"offset":0}'}}]}}],usage:{prompt_tokens:10,completion_tokens:5}});
+      if(i===1)return Response.json({choices:[{message:{content:'{"wrong":"needs structure repair"}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
+      expect(body.tools).toBeUndefined();expect(new Headers(init?.headers).get('cf-aig-collect-log')).toBe('false');
+      expect(JSON.stringify(body)).toContain('fresh-private-context');
+      return Response.json({choices:[{message:{content:'{"title":"已修复","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
+    });vi.stubGlobal('fetch',fetch);
+    const out=await aiJsonCall(env,{projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'repair-fixture',privateContext:true,messages:[{role:'user',content:'调查项目'}],prepareMessages:async()=>{prepared++;return [{role:'user',content:'fresh-private-context'}];},schema:z.object({title:z.string()}).strict()});
+    expect(out.data).toEqual({title:'已修复'});expect(out.repaired).toBe(true);expect(out.toolTrace).toHaveLength(1);expect(fetch).toHaveBeenCalledTimes(3);expect(prepared).toBe(3);
   });
   it('discovers paste sources and material beyond first page and validates read version evidence',async()=>{
     const {owner,projectId}=await fixture(),now=nowIso(),versionId=newId(),materialId=newId();

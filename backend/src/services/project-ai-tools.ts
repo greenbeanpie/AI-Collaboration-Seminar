@@ -205,6 +205,7 @@ export async function projectToolConversation(env: Env, params: {
   messages: ChatMessage[];
   promptVersion: string;
   runId?: string;
+  sessionId?: string;
   purpose?: 'textEconomy' | 'review';
   privateContext?: boolean;
   prepareMessages?: () => Promise<ChatMessage[]>;
@@ -222,6 +223,7 @@ export async function projectToolConversation(env: Env, params: {
   citations: WebCitation[];
 }> {
   const { context, config } = params;
+  const providerSessionId=context.jobId ?? params.sessionId ?? params.runId ?? newId();
   const investigationId=context.jobId ? context.jobId+'-'+params.promptVersion.replace(/[^a-zA-Z0-9_-]/g,'_') : undefined;
   const restored=investigationId ? await loadInvestigation(env,investigationId) : null;
   let compacted=restored?.compacted??'';
@@ -297,7 +299,7 @@ export async function projectToolConversation(env: Env, params: {
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: context.jobId ?? params.runId, toolMode, beforeFetch: async () => {
+        config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode, beforeFetch: async () => {
           await guard();
           await checkpoint(true);
           await markAiCallStarted(env, context.jobId);
@@ -312,7 +314,7 @@ export async function projectToolConversation(env: Env, params: {
     }
     if (dispatched) {
       await recordAiCall(env, {
-        projectId: context.projectId, jobId: context.jobId, runId: params.runId, purpose: params.purpose ?? 'textEconomy', configVersionId: params.configVersionId, promptVersion: params.promptVersion, model: config.model, input: {
+        projectId: context.projectId, jobId: context.jobId, runId: params.runId, purpose: params.purpose ?? 'textEconomy', configVersionId: params.configVersionId, promptVersion: params.promptVersion, model: config.model, input: params.privateContext ? {redacted:true} : {
           redacted: true, toolMode: true
         }, output: params.privateContext ? {redacted:true} : out?.content ?? {
           error: 'provider_failed'
