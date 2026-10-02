@@ -54,7 +54,11 @@ function CreationWizard({ userId }: {
       return null;
     }
   };
-  const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
+  const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [actionBusy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
+  const previewRunning = draft?.previewState === 'running';
+  const busy = actionBusy || previewRunning;
+  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: () => api.get<'CreationDraftResponse'>(draftPath(draft!.id)), enabled: Boolean(draft?.id && previewRunning), refetchInterval: query => query.state.data?.previewState === 'running' || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  useEffect(() => { const next = draftPoll.data; if (!next) return; setDraft(next); setPayload(next.payload); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description }); setConfirmed(false); } }, [draftPoll.data]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
   const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
@@ -120,7 +124,7 @@ function CreationWizard({ userId }: {
     return () => window.removeEventListener('beforeunload', leave);
   }, [busy]);
   const run = async (action: () => Promise<void>) => {
-    if (lock.current) {
+    if (lock.current || previewRunning) {
       return;
     }
     lock.current = true;
@@ -229,7 +233,7 @@ function CreationWizard({ userId }: {
   const preview = (mode: 'ai' | 'manual', regenerate = false) => run(async () => {
     const current = await ensure();
     const next: WizardDraft = await api.post<'CreationDraftResponse'>(draftPath(current.id, '/preview'), {
-      expectedRevision: current.revision, mode, tasks: mode === 'manual' ? manual : [], ...(mode === 'manual' ? { goal: manualGoal.title.trim() ? manualGoal : { title: payload.name, detail: payload.brief || payload.description } } : {}), regenerate
+      expectedRevision: current.revision, mode, ...(mode === 'ai' ? { background: true } : {}), tasks: mode === 'manual' ? manual : [], ...(mode === 'manual' ? { goal: manualGoal.title.trim() ? manualGoal : { title: payload.name, detail: payload.brief || payload.description } } : {}), regenerate
     });
     accept(next);
     setManual(next.preview?.tasks ?? []);
@@ -302,7 +306,7 @@ function CreationWizard({ userId }: {
       remember(draft?.id, remaining);
     }}>移除待上传</button></div>)}</>}
  {step === 2 && <><Field label="组员总人数（含负责人）"><input type="number" className="input" min={1} max={100} value={payload.teamSize} disabled={busy} onChange={e => setField('teamSize', Number(e.target.value))}/></Field><Field label="邀请对象的完整登录用户名（每行一个，可留空）" hint="只按完整用户名精确匹配，不按昵称查找。正式创建后对方在首页接受或拒绝；邀请不提前占名额。"><textarea className="input textarea" rows={4} disabled={busy} value={payload.inviteUsernames.join('\n')} onChange={e => setField('inviteUsernames', e.target.value.split('\n'))} onBlur={() => setField('inviteUsernames', payload.inviteUsernames.map(n => n.trim()).filter(Boolean))}/></Field><p>正式创建成功后才发送邀请；组员接受后加入普通成员并获得项目权限。</p></>}
- {step === 3 && <><Field label="主目标预览" hint="大目标独立保存，不计入下面的子任务数量或工时。编辑后需保存当前预览。"><input className="input" maxLength={200} value={manualGoal.title} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, title: e.target.value }); setConfirmed(false); }}/></Field><Field label="目标说明预览"><textarea className="input" rows={3} maxLength={4000} value={manualGoal.detail} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, detail: e.target.value }); setConfirmed(false); }}/></Field><Field label="拆分要求" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
+ {step === 3 && <>{previewRunning && <p role="status">AI 正在后台处理文件并调查项目草稿，可刷新页面后继续等待。</p>}{draftPoll.error && <ErrorNotice error={draftPoll.error} onRetry={() => void draftPoll.refetch()} />}<Field label="主目标预览" hint="大目标独立保存，不计入下面的子任务数量或工时。编辑后需保存当前预览。"><input className="input" maxLength={200} value={manualGoal.title} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, title: e.target.value }); setConfirmed(false); }}/></Field><Field label="目标说明预览"><textarea className="input" rows={3} maxLength={4000} value={manualGoal.detail} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, detail: e.target.value }); setConfirmed(false); }}/></Field><Field label="拆分要求" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
         key: crypto.randomUUID(), dependsOn: [], title: '', detail: '', criteria: '', effortHours: 1, citations: []
       }])}>添加手动任务</button></div><p>手动预览不调用模型；可确认暂不创建任务。重新生成 AI 预览可能再次产生用量。</p>{manual.map((task, index) => <fieldset key={task.key ?? index} className="wizard-task"><legend>子任务 {index + 1}</legend><Field label="标题"><input className="input" value={task.title} maxLength={200} disabled={busy} onChange={e => {
       setManual(items => items.map((t, i) => i === index ? {

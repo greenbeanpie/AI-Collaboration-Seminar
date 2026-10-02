@@ -178,10 +178,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
       materialVersionIds: [...selectedMaterialVersionIds].sort(),
       sourceVersionIds: [...selectedSourceVersionIds].sort(),
     };
-    if (mode === 'review_only' && body.materialVersionIds.length === 0) {
-      setCreateError(new Error('只审模式至少选择一个材料版本。'));
-      return;
-    }
+
     setCreateError(null);
     try {
       const namespace = `agent-create:${projectId}`;
@@ -286,8 +283,8 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
           </div>
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
           <div className="ai-workflow-actions ai-workflow-field-wide">
-            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || activeJobPending || (mode === 'review_only' && selectedMaterialVersionIds.length === 0)}><Play size={15} />{activeJobPending ? '当前 AI 任务处理中' : '开始真实 AI 协作'}</button>
-            {mode === 'review_only' && selectedMaterialVersionIds.length === 0 && <span className="muted">只审模式需先选择材料版本</span>}
+            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || activeJobPending}><Play size={15} />{activeJobPending ? '当前 AI 任务处理中' : '开始真实 AI 协作'}</button>
+            {mode === 'review_only' && selectedMaterialVersionIds.length === 0 && <span className="muted">未选择材料时，AI 自动发现相关材料并记录审阅对象</span>}
           </div>
         </form>}
       </SectionCard>

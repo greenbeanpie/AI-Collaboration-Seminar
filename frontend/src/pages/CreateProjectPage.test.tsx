@@ -190,3 +190,18 @@ describe('project creation wizard', () => {
     expect(screen.getByText('配置已变化，请重新保存预览。')).toBeInTheDocument();
   });
 });
+
+it('requests background AI preview, locks edits and adopts the polled result', async () => {
+ let finish!: (value: any) => void;
+ mocks.get.mockImplementation((path: string) => path.endsWith('/draft-1') ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({items:[]}));
+ const original = mocks.post.getMockImplementation()!;
+ mocks.post.mockImplementation(async (path: string, body: any) => path.endsWith('/preview') && body.mode === 'ai' ? {...draft,previewState:'running'} : original(path,body));
+ mount();fireEvent.change(screen.getByLabelText('项目名称'),{target:{value:'异步项目'}});fireEvent.click(screen.getByRole('checkbox',{name:/AI 智能协作/}));await next();await next();await next();
+ fireEvent.click(screen.getByRole('button',{name:'生成 AI 拆分预览'}));
+ await screen.findByText(/AI 正在后台处理文件/);expect(screen.getByLabelText(/^主目标预览/)).toBeDisabled();
+ expect(mocks.post.mock.calls.find(([path])=>String(path).endsWith('/preview'))?.[1]).toMatchObject({background:true});
+ await waitFor(()=>expect(finish).toBeTypeOf('function'));
+ finish({...draft,previewState:'ready',previewRevision:draft.revision,preview:{mode:'ai',goal:{title:'后台目标',detail:'调查后生成'},tasks:[]}});
+ await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('后台目标'));
+ expect(screen.getByRole('button',{name:'进入创建预览'})).not.toBeDisabled();
+});

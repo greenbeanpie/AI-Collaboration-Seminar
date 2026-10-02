@@ -88,7 +88,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '三个页面已联调' } });
     fireEvent.change(screen.getByLabelText(/^绑定材料版本/), { target: { value: 'mat1' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /r4/ }));
     fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/submissions') && opts?.method === 'POST')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/submissions') && opts?.method === 'POST')!;

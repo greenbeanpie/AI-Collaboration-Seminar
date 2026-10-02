@@ -3,7 +3,7 @@ import type { DataOf, SchemaName } from './types';
 import { idempotencyKeyForIntent, completeIntent } from '../pages/aiWorkflowSupport';
 import { projectRequest } from './simplification';
 
-export type CollaborationSettingsData = DataOf<'CollaborationSettingsResponse'>;
+export type CollaborationSettingsData = DataOf<'CollaborationSettingsResponse'> & { planningMode?: 'manual' | 'automatic'; progressionMode?: 'manual' | 'automatic' };
 export type CollaborationMode = CollaborationSettingsData['assignmentMode'];
 export type CollaborationTask = DataOf<'CollaborationTaskResponse'> & Pick<DataOf<'TaskResponse'>, 'dependsOnTaskIds' | 'unfinishedDependencyIds' | 'status'>;
 export type LifecycleState = CollaborationTask['lifecycleState'];
@@ -21,13 +21,13 @@ async function post<Name extends SchemaName>(projectId: string, suffix: string, 
   return result;
 }
 export const collaborationApi = {
-  settings: (id: string) => get<'CollaborationSettingsResponse'>(id, '/settings'),
-  saveSettings: async (id: string, body: Partial<Omit<CollaborationSettingsData, 'revision'>> & { expectedRevision: number }) => api.patch<'CollaborationSettingsResponse'>(path(id, '/settings'), body),
+  settings: (id: string) => get<'CollaborationSettingsResponse'>(id, '/settings') as Promise<CollaborationSettingsData>,
+  saveSettings: async (id: string, body: Partial<Omit<CollaborationSettingsData, 'revision'>> & { expectedRevision: number }) => api.patch<'CollaborationSettingsResponse'>(path(id, '/settings'), body) as Promise<CollaborationSettingsData>,
   tasks: async (id: string) => ({ items: await listAllItems<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { limit: 100 }, { requireNextCursor: true }) as CollaborationTask[] }),
   createTask: (id: string, body: { title: string; detail: string; criteria: string; effortHours: number; dependsOnTaskIds: string[]; expectedGraphRevision: number; dueDate?: string | null; assigneeId?: string | null }) => taskPost<CollaborationTask>(id, '/tasks', body),
   updateTask: (id: string, task: CollaborationTask, fields: { title: string; detail: string; criteria: string; effortHours: number }) => projectRequest<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}`, { method: 'PATCH', body: { expectedRevision: task.revision, ...fields } }),
   claim: (id: string, task: CollaborationTask) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/claim`, { expectedRevision: task.revision }),
-  assign: (id: string, task: CollaborationTask, assigneeId: string, reason: string) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/assign`, { expectedRevision: task.revision, assigneeId, reason }),
+  assign: (id: string, task: CollaborationTask, assigneeId: string | null, reason: string) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/assign`, { expectedRevision: task.revision, assigneeId, reason }),
   submissions: (id: string, taskId: string) => projectRequest<DataOf<'CollaborationSubmissionListResponse'>>(id, `/tasks/${encodeURIComponent(taskId)}/submissions`),
   submit: (id: string, task: CollaborationTask, body: string, materialVersionIds: string[]) => taskPost<TaskSubmission>(id, `/tasks/${encodeURIComponent(task.taskId)}/submissions`, { expectedRevision: task.revision, body, materialVersionIds }),
   decide: (id: string, submission: TaskSubmission, decision: SubmissionDecision, feedback: string) => post<'CollaborationSubmissionResponse'>(id, `/submissions/${encodeURIComponent(submission.submissionId)}/decide`, { expectedRevision: submission.revision, decision, feedback }),
