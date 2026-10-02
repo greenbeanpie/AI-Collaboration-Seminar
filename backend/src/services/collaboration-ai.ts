@@ -292,7 +292,7 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
         user_id: string;
         load_hours: number;
     }>();
-    await reserveAiSlot(env, { projectId: input.projectId, jobId: proposalId, purpose: 'assignment_suggest', configVersionId: config.id });
+    await reserveAiSlot(env, { projectId: input.projectId, jobId: proposalId, purpose: 'assignment_suggest', configVersionId: config.id,maxCalls:24 });
     try {
         await createJobAndDispatch(env, { projectId: input.projectId, kind: 'agent_run', jobId: proposalId, createdBy: input.requestedBy, input: {
                 sourceSnapshots: input.sourceSnapshots, sourceVersionIds: input.sourceVersionIds, profileStamp: await profileStamp(env, input.projectId), operation: 'collaboration.assign', parentProposalId: proposalId, projectId: input.projectId, requestedBy: input.requestedBy, settingsRevision: input.settingsRevision, configVersionId: config.id,

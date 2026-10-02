@@ -257,7 +257,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 }
                 if (operation === 'evaluate')
                     return { status: 202 as const, body: { jobId: await enqueueEvaluation(c.env, projectId, c.req.param('submissionId')!, userId) } };
-                return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest',maxCalls:operation==='decompose'?5:2 }, async (jobId, configVersionId) => {
+                return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest',maxCalls:24 }, async (jobId, configVersionId) => {
                     try {
                         await createJobAndDispatch(c.env, { projectId, kind: 'agent_run', jobId, createdBy: userId, input: { ...input, configVersionId } });
                     }

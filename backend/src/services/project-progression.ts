@@ -44,7 +44,7 @@ export async function dispatchProjectProgression(env:Env):Promise<void>{
    const goal=await projectGoal(env,project.id);
    const rows=await env.DB.prepare("SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (lifecycle_state IN ('open','in_progress','improve','rework') OR (lifecycle_state IS NULL AND status!='done')) ORDER BY created_at,id").bind(project.id).all<{id:string;title:string;detail:string;criteria:string;effort_hours:number;revision:number}>();
    const input:CollaborationAiInput={operation:'collaboration.decompose',projectId:project.id,requestedBy:member.user_id,settingsRevision:project.collaboration_revision,configVersionId:config.id,goalSnapshot:goal,goalRevision:goal.revision,graphRevision:goal.graphRevision,progression:true,causeEventId:event.id,brief:'根据最新用户进度、已完成成果和管理员反馈自主推进项目。主动调查全项目资料与任务。不得重复创建已有或已完成工作，不得虚构用户已完成；仅在确需时新增或调整任务。无需变更时返回tasks:[],updates:[]。',taskIds:rows.results.map(r=>r.id),tasks:rows.results.map(r=>({taskId:r.id,title:r.title,detail:r.detail,criteria:r.criteria,effortHours:r.effort_hours,revision:r.revision}))};
-   await reserveAiSlot(env,{projectId:project.id,jobId,purpose:'assignment_suggest',configVersionId:config.id,maxCalls:5});
+   await reserveAiSlot(env,{projectId:project.id,jobId,purpose:'assignment_suggest',configVersionId:config.id,maxCalls:24});
    await createJobAndDispatch(env,{projectId:project.id,kind:'agent_run',createdBy:member.user_id,jobId,input});
   }catch(error){
    if(!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()){
