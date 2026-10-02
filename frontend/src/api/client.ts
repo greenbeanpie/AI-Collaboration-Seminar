@@ -2,6 +2,7 @@ import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { publicErrorMessage } from './error-info';
 
 export class ApiError extends Error {
+  readonly diagnosticMessage: string;
   readonly status: number;
   readonly code: string;
   readonly requestId: string;
@@ -13,6 +14,7 @@ export class ApiError extends Error {
   constructor(status: number, failure: ApiFailure) {
     super(publicErrorMessage(failure.error.code,failure.error.message));
     this.name = 'ApiError';
+    this.diagnosticMessage = failure.error.message;
     this.status = status;
     this.code = failure.error.code;
     this.requestId = failure.requestId;

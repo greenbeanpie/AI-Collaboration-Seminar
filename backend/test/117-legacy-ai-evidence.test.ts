@@ -66,7 +66,7 @@ describe('legacy AI compatibility retains trustworthy evidence',()=>{
     const f=await fixture(),taskId=newId(),otherTaskId=newId(),now=nowIso();
     for(const [id,assignee,title]of[[taskId,f.member.userId,'目标成员负责的采样'],[otherTaskId,f.owner.userId,'其他成员负责的排版']])await env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,criteria,status,revision,assignee_id,created_by,created_at,updated_at,lifecycle_state) VALUES(?1,?2,?3,'实际任务说明','记录来源','doing',1,?4,?5,?6,?6,'in_progress')").bind(id,f.projectId,title,assignee,f.owner.userId,now).run();
     const rehearsalId=newId();await env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,member_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,'member',?3,'[]','active',?4,?5)").bind(rehearsalId,f.projectId,f.member.userId,f.owner.userId,now).run();
-    const jobId=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'});
+    const jobId=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'});await env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2 WHERE id=?1').bind(rehearsalId,jobId).run();
     provider({summary:'对实际任务和回答的总结',strengths:[],improvements:[],referenceIds:[],decisionReferences:[{decisionPath:'summary',referenceIds:[`project:${f.projectId}:0`]}]},body=>{
       const user=body.messages[1]!.content;expect(user).toContain(f.member.userId);expect(user).toContain(taskId);expect(user).not.toContain(otherTaskId);expect(body.messages[0]!.content).toContain('个人');
     });

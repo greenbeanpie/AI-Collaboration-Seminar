@@ -90,21 +90,28 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     const input = JSON.parse(job.input_json) as Record<string, unknown>;
     if (input.operation === 'source.summary') throw invalidState('请在文件总结状态中单独重试，以核对最新总结版本');
     if (typeof input.operation === 'string' && input.operation.startsWith('collaboration.')) throw invalidState('协作任务请从当前任务重新发起，以重新核对版本与预算');
+    if(job.kind==='rehearsal_turn') {
+      const rehearsal=await c.env.DB.prepare('SELECT created_by,processing_job_id,status FROM rehearsals WHERE id=?1 AND project_id=?2').bind(input.rehearsalId,job.project_id).first<{created_by:string;processing_job_id:string|null;status:string}>();
+      if(!rehearsal || rehearsal.created_by!==c.get('user')!.id)throw permissionDenied('只有本轮发起人可以重试答辩');
+      if(rehearsal.status!=='active'||rehearsal.processing_job_id!==job.id)throw invalidState('答辩作业已变化，不能重试旧作业');
+    }
     const newJobId = newId();
     const now = nowIso();
     const reservedAiKind = new Set(['assignment_suggest', 'agent_run', 'review_run', 'rehearsal_turn']).has(job.kind);
     if (reservedAiKind && job.project_id) {
-      await reserveAiSlot(c.env, { projectId: job.project_id, jobId: newJobId, purpose: job.kind,maxCalls:(job.kind==='agent_run'&&input.requestedBy)||(job.kind==='assignment_suggest'&&input.operation==='collaboration.decompose')?5:2 });
+      await reserveAiSlot(c.env, { projectId: job.project_id, jobId: newJobId, purpose: job.kind,maxCalls:job.kind==='rehearsal_turn'?24:(job.kind==='agent_run'&&input.requestedBy)||(job.kind==='assignment_suggest'&&input.operation==='collaboration.decompose')?5:2 });
     }
     try {
-      await c.env.DB.batch([
+      const written=await c.env.DB.batch([
         c.env.DB.prepare(
-          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6)",
-        ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now),
+          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE ?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active')",
+        ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now, job.id),
         c.env.DB.prepare(
-          "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
+          "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) SELECT ?1, ?2, 'pending', ?3, 0, ?4, ?4 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2)",
         ).bind(newId(), newJobId, now, now),
+        ...(job.kind==='rehearsal_turn'?[c.env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2,finish_job_id=CASE WHEN finish_job_id=?3 THEN ?2 ELSE finish_job_id END WHERE id=?1 AND processing_job_id=?3 AND EXISTS(SELECT 1 FROM jobs WHERE id=?2)').bind(input.rehearsalId,newJobId,job.id),c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND job_id=?3 AND EXISTS(SELECT 1 FROM jobs WHERE id=?2)").bind(input.rehearsalId,newJobId,job.id)]:[]),
       ]);
+      if(!written[0]?.meta.changes)throw invalidState('答辩作业已变化，请刷新');
     } catch (error) {
       if (reservedAiKind) await settleReservation(c.env, newJobId, 'released');
       throw error;

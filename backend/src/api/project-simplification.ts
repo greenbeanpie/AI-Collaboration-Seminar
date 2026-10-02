@@ -5,7 +5,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound } from '../core/errors';
+import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
 import { withReservedAiJob } from '../services/budget';
@@ -14,6 +14,7 @@ import { projectGoal, updateGoal, replaceTaskDependencies, saveStandard, confirm
 import { assessmentInputs, assessmentView, scoringReportSchema, type AssessmentRow } from '../services/assessments';
 import { projectParams } from './projects';
 import { createManualAssessment, correctAssessment, manualAssessmentInput, correctionInput } from '../services/assessment-corrections';
+import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { recordEvent } from '../services/events';
 
 const revision=z.number().int().positive();
@@ -23,7 +24,7 @@ const requirements=z.array(z.object({title:z.string().trim().min(1).max(200),det
 const weights=z.array(z.object({key:z.string().min(1).max(40),label:z.string().min(1).max(60),weight:z.number().min(0).max(100)})).max(10);
 const standardInput=z.object({title:z.string().max(200).optional(),requirements:requirements.optional(),weights:weights.optional(),notes:z.string().max(2000).nullable().optional(),requirementSetIds:z.array(z.string().uuid()).max(50).optional(),rubricVersionId:z.string().uuid().optional(),mappings:z.array(z.object({requirementId:z.string().uuid(),dimensionKey:z.string().min(1).max(40)})).max(100).optional()}).strict().refine(value=>((value.requirements!==undefined&&value.weights!==undefined)||value.rubricVersionId!==undefined)&&((value.requirements!==undefined)===(value.weights!==undefined)),'请填写要求与评分维度，或选择已有要求集和评分版本');
 export const standardSchema=z.object({standardsVersionId:z.string().uuid(),projectId:z.string().uuid(),version:revision,title:z.string(),status:z.enum(['draft','confirmed']),revision,requirementSetIds:z.array(z.string().uuid()),rubricVersionId:z.string().uuid(),mappings:z.array(z.object({requirementId:z.string().uuid(),dimensionKey:z.string()})),requirements:z.array(z.object({requirementId:z.string().uuid(),requirementSetId:z.string().uuid(),title:z.string(),detail:z.string(),category:z.string(),dueDate:z.string().nullable(),duePrecision:z.string(),citations:z.array(z.unknown())})),rubric:z.object({rubricVersionId:z.string().uuid(),version:revision,weights,notes:z.string().nullable()}),confirmedAt:z.string().nullable(),createdAt:z.string()});
-const assessmentMetadataSchema=z.object({assessmentId:z.string().uuid(),kind:z.enum(['material_review','rehearsal']),status:z.string(),goalRevision:revision.nullable(),goal:goalSchema.nullable(),standardsVersionId:z.string().uuid().nullable(),standardsVersion:revision.nullable(),materialVersionIds:z.array(z.string().uuid()),rehearsalId:z.string().uuid().nullable(),jobId:z.string().uuid().nullable(),jobError:z.string().nullable(),createdAt:z.string(),revision:revision.optional(),origin:z.string().optional(),aiReport:scoringReportSchema.nullable().optional()});
+const assessmentMetadataSchema=z.object({initiatorId:z.string().uuid().optional(),canOperate:z.boolean().optional(),assessmentId:z.string().uuid(),kind:z.enum(['material_review','rehearsal']),status:z.string(),goalRevision:revision.nullable(),goal:goalSchema.nullable(),standardsVersionId:z.string().uuid().nullable(),standardsVersion:revision.nullable(),materialVersionIds:z.array(z.string().uuid()),rehearsalId:z.string().uuid().nullable(),jobId:z.string().uuid().nullable(),jobError:z.string().nullable(),createdAt:z.string(),revision:revision.optional(),origin:z.string().optional(),aiReport:scoringReportSchema.nullable().optional()});
 // Historical narrative records keep their original JSON; only new attempts authorize the strict grading contract.
 export const assessmentSchema=z.discriminatedUnion('historical',[
   assessmentMetadataSchema.extend({historical:z.literal(false),report:scoringReportSchema.nullable()}),
@@ -39,11 +40,11 @@ function endpoint(app:OpenAPIHono<AppEnv>,method:'get'|'post'|'patch'|'put',path
   }) as never);
 }
 async function assessmentById(c:Context<AppEnv>,id:string){
-  const projectId=c.req.param('projectId')!,row=await c.env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow>();if(row)return assessmentView(c.env,row);
+  const projectId=c.req.param('projectId')!,row=await c.env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow>();if(row)return {...await assessmentView(c.env,row),initiatorId:row.created_by,canOperate:row.kind!=='rehearsal'||row.created_by===c.get('user')!.id};
   const review=await c.env.DB.prepare('SELECT * FROM reviews WHERE id=?1 AND project_id=?2').bind(id,projectId).first<{id:string;status:string;report_json:string|null;material_version_ids_json:string;created_at:string}>();
   if(review)return {assessmentId:review.id,kind:'material_review' as const,status:review.status,goalRevision:null,goal:null,standardsVersionId:null,standardsVersion:null,materialVersionIds:JSON.parse(review.material_version_ids_json),rehearsalId:null,report:review.report_json?JSON.parse(review.report_json):null,jobId:null,jobError:null,createdAt:review.created_at,historical:true as const};
-  const rehearsal=await c.env.DB.prepare('SELECT * FROM rehearsals WHERE id=?1 AND project_id=?2').bind(id,projectId).first<{id:string;status:string;material_version_ids_json:string;created_at:string}>();if(!rehearsal)throw notFound('评分记录不存在');
-  const summary=await c.env.DB.prepare("SELECT content_json FROM rehearsal_turns WHERE rehearsal_id=?1 AND kind='summary' ORDER BY sequence DESC LIMIT 1").bind(id).first<{content_json:string}>();return {assessmentId:id,kind:'rehearsal' as const,status:rehearsal.status,goalRevision:null,goal:null,standardsVersionId:null,standardsVersion:null,materialVersionIds:JSON.parse(rehearsal.material_version_ids_json),rehearsalId:id,report:summary?JSON.parse(summary.content_json):null,jobId:null,jobError:null,createdAt:rehearsal.created_at,historical:true as const};
+  const rehearsal=await c.env.DB.prepare('SELECT * FROM rehearsals WHERE id=?1 AND project_id=?2').bind(id,projectId).first<{id:string;created_by:string;status:string;material_version_ids_json:string;created_at:string}>();if(!rehearsal)throw notFound('评分记录不存在');
+  const summary=await c.env.DB.prepare("SELECT content_json FROM rehearsal_turns WHERE rehearsal_id=?1 AND kind='summary' ORDER BY sequence DESC LIMIT 1").bind(id).first<{content_json:string}>();return {initiatorId:rehearsal.created_by,canOperate:rehearsal.created_by===c.get('user')!.id,assessmentId:id,kind:'rehearsal' as const,status:rehearsal.status,goalRevision:null,goal:null,standardsVersionId:null,standardsVersion:null,materialVersionIds:JSON.parse(rehearsal.material_version_ids_json),rehearsalId:id,report:summary?JSON.parse(summary.content_json):null,jobId:null,jobError:null,createdAt:rehearsal.created_at,historical:true as const};
 }
 export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
   app.use('/api/v1/projects/:projectId/tasks/:taskId/dependencies', requireUser, requireProjectMember());
@@ -68,10 +69,11 @@ export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
     if(!b.materialVersionIds.length){const found=await c.env.DB.prepare("SELECT current_version_id FROM materials WHERE project_id=?1 AND purpose='output' AND current_version_id IS NOT NULL ORDER BY updated_at DESC,id").bind(projectId).all<{current_version_id:string}>();b.materialVersionIds=found.results.map(m=>m.current_version_id);}
     const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),userId,operation:'assessment.create',rawBody:JSON.stringify({projectId,...b})},async()=>{
       const input=await assessmentInputs(c.env,projectId,b.standardsVersionId,b.materialVersionIds,b.goalRevision);
+      await requireProjectPermission(c.env,projectId,userId,'scoreInitiate');
       return withReservedAiJob(c.env,{projectId,purpose:b.kind==='material_review'?'review_run':'rehearsal_turn',maxCalls:24},async(jobId,configVersionId)=>{
-        const id=newId(),rehearsalId=b.kind==='rehearsal'?newId():null,now=nowIso(),batch=[c.env.DB.prepare('INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)').bind(id,projectId,b.kind,rehearsalId,input.goal.revision,b.standardsVersionId,JSON.stringify(input),b.kind==='rehearsal'?'active':'pending',jobId,userId,now)];
-        if(rehearsalId)batch.push(c.env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,'all',?3,'active',?4,?5)").bind(rehearsalId,projectId,JSON.stringify(b.materialVersionIds),userId,now));
-        await c.env.DB.batch(batch);
+        const id=newId(),rehearsalId=b.kind==='rehearsal'?newId():null,now=nowIso(),batch=[c.env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11 WHERE ${projectPermissionSql('?2','?10','scoreInitiate')}`).bind(id,projectId,b.kind,rehearsalId,input.goal.revision,b.standardsVersionId,JSON.stringify(input),b.kind==='rehearsal'?'active':'pending',jobId,userId,now)];
+        if(rehearsalId)batch.push(c.env.DB.prepare(`INSERT INTO rehearsals(id,project_id,scope,material_version_ids_json,status,created_by,created_at,processing_job_id) SELECT ?1,?2,'all',?3,'active',?4,?5,?6 WHERE ${projectPermissionSql('?2','?4','scoreInitiate')}`).bind(rehearsalId,projectId,JSON.stringify(b.materialVersionIds),userId,now,jobId));
+        const inserted=await c.env.DB.batch(batch);if(!inserted[0]?.meta.changes)throw permissionDenied('评分发起权限已变化');
         try{await createJobAndDispatch(c.env,{jobId,projectId,kind:rehearsalId?'rehearsal_turn':'review_run',input:rehearsalId?{assessmentId:id,rehearsalId,projectId,phase:'question',configVersionId}:{assessmentId:id,projectId,configVersionId},createdBy:userId});}catch(error){if(!await c.env.DB.prepare('SELECT id FROM jobs WHERE id=?1').bind(jobId).first()){await c.env.DB.prepare('DELETE FROM assessments WHERE id=?1').bind(id).run();if(rehearsalId)await c.env.DB.prepare('DELETE FROM rehearsals WHERE id=?1').bind(rehearsalId).run();}throw error;}
         return {status:202 as const,body:{assessmentId:id,jobId,...(rehearsalId?{rehearsalId}:{})}};
       });

@@ -9,7 +9,7 @@ import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, Stat
 import type { DataOf } from '../api/types';
 import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, jobStatusLabel, readPendingJob, readRecentIds, retryBackendJob, useVisibleJobPoller, writePendingJob, writeRecentId } from './aiWorkflowSupport';
 
-type Rehearsal = DataOf<'RehearsalResponse'>;
+type Rehearsal = DataOf<'RehearsalResponse'> & {initiatorId:string;respondentId:string;canOperate:boolean;processingJobId:string|null;processingStatus:string|null;turns:Array<DataOf<'RehearsalResponse'>['turns'][number]&{authorId?:string|null}>};
 type PendingRehearsalJob = { jobId: string; entityId: string; action: 'create' | 'answer' | 'finish' | string };
 const recentIdsKey = (projectId: string) => `ai-office:recent-rehearsals:${projectId}`;
 const pendingJobKey = (projectId: string) => `ai-office:pending-rehearsal-job:${projectId}`;
@@ -51,15 +51,19 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     queryFn: () => api.get<'RehearsalResponse'>(projectPath(projectId, `/rehearsals/${encodeURIComponent(selectedRehearsalId)}`)),
     enabled: Boolean(selectedRehearsalId),
     staleTime: 0,
+    refetchInterval: query => query.state.data?.status === 'active' ? 3000 : false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
   const rehearsal = rehearsalQuery.data as Rehearsal | undefined;
-  const job = useVisibleJobPoller(pendingRehearsalJob?.jobId ?? null);
-  const hasPendingJob = Boolean(pendingRehearsalJob && !job.isSettled);
-  const isFinishPending = pendingRehearsalJob?.entityId === selectedRehearsalId && pendingRehearsalJob.action === 'finish' && !job.isSettled;
-  const answerJobFailed = pendingRehearsalJob?.entityId === selectedRehearsalId && pendingRehearsalJob.action === 'answer' && job.job?.status === 'failed';
+  const serverPending = rehearsal?.processingJobId ? {jobId:rehearsal.processingJobId,entityId:rehearsal.rehearsalId,action:rehearsal.turns.length===0 ? 'create' : rehearsal.turns.at(-1)?.kind==='answer' ? 'answer' : 'finish'} : null;
+  const visiblePending = rehearsal ? serverPending : (pendingRehearsalJob?.entityId===selectedRehearsalId ? pendingRehearsalJob : null);
+  const job = useVisibleJobPoller(visiblePending?.jobId ?? null);
+  const hasPendingJob = Boolean(serverPending || (visiblePending && !job.isSettled));
+  const isFinishPending = visiblePending?.action === 'finish' && !job.isSettled;
+  const answerJobFailed = visiblePending?.action === 'answer' && job.job?.status === 'failed';
   const latestTurn = rehearsal?.turns.at(-1);
-  const canAnswer = rehearsal?.status === 'active' && !hasPendingJob && !isFinishPending && !answerJobFailed && (latestTurn?.kind === 'question' || latestTurn?.kind === 'followup');
+  const canAnswer = rehearsal?.canOperate === true && rehearsal?.status === 'active' && !hasPendingJob && !isFinishPending && !answerJobFailed && (latestTurn?.kind === 'question' || latestTurn?.kind === 'followup');
   useEffect(() => { if (linkedId) setSelectedRehearsalId(linkedId); }, [linkedId]);
 
   useEffect(() => {
@@ -92,7 +96,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    if (!aiEnabled || creating || hasPendingJob || (scope === 'member' && !memberId)) return;
+    if (!aiEnabled || creating || (scope === 'member' && !memberId)) return;
     setCreating(true);
     setCreateError(null);
     const body = { scope, memberId: scope === 'member' ? memberId : null, materialVersionIds: [...selectedMaterialVersionIds].sort() };
@@ -138,7 +142,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   };
 
   const handleFinish = async () => {
-    if (!rehearsal || rehearsal.status !== 'active' || hasPendingJob || !aiEnabled || finishing || rehearsal.turns.length === 0) return;
+    if (!rehearsal || !rehearsal.canOperate || rehearsal.status !== 'active' || hasPendingJob || !aiEnabled || finishing || rehearsal.turns.length === 0) return;
     setFinishing(true);
     setFinishError(null);
     const namespace = `rehearsal-finish:${projectId}:${rehearsal.rehearsalId}`;
@@ -157,12 +161,13 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   };
 
   const handleRetryJob = async () => {
-    if (!aiEnabled || !pendingRehearsalJob || job.job?.status !== 'failed' || retryingJob) return;
+    if (!aiEnabled || !rehearsal?.canOperate || !visiblePending || job.job?.status !== 'failed' || retryingJob) return;
     setRetryingJob(true);
     setRetryError(null);
     try {
-      const nextJobId = await retryBackendJob(projectId, pendingRehearsalJob.jobId);
-      savePending(pendingRehearsalJob.entityId, nextJobId, pendingRehearsalJob.action);
+      const nextJobId = await retryBackendJob(projectId, visiblePending.jobId);
+      savePending(visiblePending.entityId, nextJobId, visiblePending.action);
+      void rehearsalQuery.refetch();
     } catch (error) {
       setRetryError(error);
     } finally {
@@ -177,7 +182,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     setSelectedRehearsalId(next[0] ?? '');
   };
 
-  const createDisabled = !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || hasPendingJob || (scope === 'member' && !memberId);
+  const createDisabled = !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || (scope === 'member' && !memberId);
 
   return <div className="page-stack ai-workflow-layout">
     {!embedded && <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />}
@@ -229,16 +234,17 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
             <button className="button button-quiet button-small" onClick={removeRecent} disabled={!selectedRehearsalId}>从本机最近列表移除</button>
           </div>}
           {rehearsalQuery.isLoading ? <Spinner label="正在恢复答辩演练" /> : rehearsalQuery.error ? <ErrorNotice error={rehearsalQuery.error} onRetry={() => void rehearsalQuery.refetch()} /> : rehearsal ? <>
-            <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
-            {pendingRehearsalJob && <JobPanel jobId={pendingRehearsalJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={pendingRehearsalJob.action} onRetry={() => void handleRetryJob()} />}
+            <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>发起及答辩：{members.find(member=>member.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
+            {visiblePending && <JobPanel jobId={visiblePending.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={rehearsal.canOperate && aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={visiblePending.action} onRetry={() => void handleRetryJob()} />}
             {job.job?.status === 'waiting_input' && <div className="ai-workflow-note is-warning">后端任务正在等待补充信息，当前页面不会补造问题或回答。</div>}
             {rehearsal.turns.length === 0 && <div className="ai-workflow-note">第一问由后端生成中。问题到达后会出现在下方对话记录中。</div>}
             {rehearsal.turns.length > 0 && <div className="ai-workflow-transcript" aria-live="polite">{rehearsal.turns.map((turn) => <article className={`ai-workflow-transcript-turn ${turn.role === 'user' ? 'is-user' : ''} ${turn.kind === 'summary' ? 'is-summary' : ''}`} key={`${rehearsal.rehearsalId}-${turn.sequence}`}>
-              <header><strong>{turn.role === 'user' ? '你的回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><span>{formatWorkflowDate(turn.createdAt)}</span></header>
+              <header><strong>{turn.role === 'user' ? '答辩人回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><span>{formatWorkflowDate(turn.createdAt)}</span></header>
               <p>{turn.content}</p>
             </article>)}</div>}
             {rehearsal.status === 'finished' && <div className="ai-workflow-note"><strong>演练结果已保存。</strong> 下方总结来自后端已保存的 summary 回合。</div>}
-            {rehearsal.status === 'active' && <form className="stack" onSubmit={(event) => void handleAnswer(event)}>
+            {!rehearsal.canOperate && <div className="notice">本轮由 {members.find(m=>m.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId} 发起并答辩，其他成员只读，进展会自动刷新。</div>}
+            {rehearsal.status === 'active' && rehearsal.canOperate && <form className="stack" onSubmit={(event) => void handleAnswer(event)}>
               <Field label="回答当前问题" hint={answerJobFailed ? '上一轮回答已保存，但后端处理失败。请重试任务后再提交下一轮。' : '每次提交会保存一轮回答，并等待后端生成追问或反馈。'}>
                 <textarea className="input textarea ai-workflow-textarea" maxLength={8000} value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={canAnswer ? '围绕项目方案、证据和实施细节作答。' : '等待后端生成下一道问题后才能作答。'} disabled={!canAnswer || !aiEnabled || sendingAnswer || isFinishPending} />
               </Field>

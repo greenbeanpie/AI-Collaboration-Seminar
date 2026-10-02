@@ -4,7 +4,8 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound } from '../core/errors';
+import { invalidState, notFound, permissionDenied } from '../core/errors';
+import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { createJobAndDispatch } from '../services/jobs';
 import { withReservedAiJob } from '../services/budget';
 import { projectParams } from './projects';
@@ -23,6 +24,7 @@ const turnSchema = z.object({
   kind: z.enum(['question', 'answer', 'followup', 'summary']),
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  authorId: z.string().uuid().nullable(),
   references:z.array(z.unknown()).optional(),
   decisionReferences:z.array(z.unknown()).optional(),
   createdAt: z.string(),
@@ -33,6 +35,8 @@ const rehearsalSchema = z.object({
   scope: z.enum(['all', 'member']),
   memberId: z.string().uuid().nullable(),
   status: z.enum(['active', 'finished']),
+  initiatorId:z.string().uuid(), respondentId:z.string().uuid(), canOperate:z.boolean(),
+  processingJobId:z.string().uuid().nullable(), processingStatus:z.string().nullable(),
   turns: z.array(turnSchema),
   createdAt: z.string(),
   finishedAt: z.string().nullable(),
@@ -99,18 +103,20 @@ interface RehearsalRow {
   created_at: string;
   finished_at: string | null;
   finish_job_id:string|null;
+  created_by:string; processing_job_id:string|null; processing_status:string|null;
 }
 
 interface TurnRow {
+  author_id:string|null;
   sequence: number;
   kind: string;
   content_json: string;
   created_at: string;
 }
 
-function toRehearsal(r: RehearsalRow, turns: TurnRow[]) {
+function toRehearsal(r: RehearsalRow, turns: TurnRow[], userId:string) {
   return {
-    rehearsalId: r.id,
+    rehearsalId:r.id, initiatorId:r.created_by, respondentId:r.created_by, canOperate:r.created_by===userId, processingJobId:r.processing_job_id, processingStatus:r.processing_status??null,
     scope: r.scope,
     memberId: r.member_id,
     status: r.status as 'active' | 'finished',
@@ -120,7 +126,7 @@ function toRehearsal(r: RehearsalRow, turns: TurnRow[]) {
       const payload=JSON.parse(t.content_json) as {content?:string;references?:unknown[];decisionReferences?:unknown[];scoring?:{references?:unknown[];decisionReferences?:unknown[]}};
       const references=payload.references??payload.scoring?.references,decisionReferences=payload.decisionReferences??payload.scoring?.decisionReferences;
       return ({
-      sequence: t.sequence,
+      sequence:t.sequence, authorId:t.author_id??null,
       // 表中无 role 列：answer 为答辩人发言，其余为评委侧
       role: (t.kind === 'answer' ? 'user' : 'assistant') as 'user' | 'assistant',
       kind: t.kind as 'question' | 'answer' | 'followup' | 'summary',
@@ -132,7 +138,7 @@ function toRehearsal(r: RehearsalRow, turns: TurnRow[]) {
 }
 
 async function loadRehearsal(env: AppEnv['Bindings'], rehearsalId: string, projectId: string): Promise<RehearsalRow> {
-  const row = await env.DB.prepare('SELECT * FROM rehearsals WHERE id = ?1 AND project_id = ?2')
+  const row = await env.DB.prepare('SELECT r.*, j.status AS processing_status FROM rehearsals r LEFT JOIN jobs j ON j.id=r.processing_job_id WHERE r.id = ?1 AND r.project_id = ?2')
     .bind(rehearsalId, projectId)
     .first<RehearsalRow>();
   if (!row) throw notFound('答辩演练不存在');
@@ -141,7 +147,7 @@ async function loadRehearsal(env: AppEnv['Bindings'], rehearsalId: string, proje
 
 async function loadTurns(env: AppEnv['Bindings'], rehearsalId: string): Promise<TurnRow[]> {
   const rows = await env.DB.prepare(
-    'SELECT sequence, kind, content_json, created_at FROM rehearsal_turns WHERE rehearsal_id = ?1 ORDER BY sequence',
+    'SELECT sequence, kind, content_json, author_id, created_at FROM rehearsal_turns WHERE rehearsal_id = ?1 ORDER BY sequence',
   )
     .bind(rehearsalId)
     .all<TurnRow>();
@@ -155,6 +161,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const user = c.get('user')!;
+    await requireProjectPermission(c.env,member.projectId,user.id,'scoreInitiate');
     for (const versionId of body.materialVersionIds) {
       const row = await c.env.DB.prepare(
         'SELECT v.id FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2',
@@ -178,11 +185,12 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const rehearsalId = newId();
-      await c.env.DB.prepare(
-        "INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7)",
+      const inserted=await c.env.DB.prepare(
+        `INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at, processing_job_id) SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
       )
-        .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(body.materialVersionIds), user.id, nowIso())
+        .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(body.materialVersionIds), user.id, nowIso(), jobId)
         .run();
+      if(!inserted.meta.changes)throw permissionDenied('评分发起权限已变化');
 
       try {
         await createJobAndDispatch(c.env, {
@@ -204,17 +212,17 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(listRoute, async (c) => {
     const { projectId } = c.req.valid('param');
     const paging = parsePaging(c.req.valid('query'));
-    const rows = await c.env.DB.prepare('SELECT * FROM rehearsals WHERE project_id = ?1 AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4')
+    const rows = await c.env.DB.prepare('SELECT r.*, (SELECT status FROM jobs WHERE id=r.processing_job_id) AS processing_status FROM rehearsals r WHERE project_id = ?1 AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4')
       .bind(projectId, paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1).all<RehearsalRow>();
     const page = rows.results.slice(0, paging.limit);
-    const items = page.map(r => ({ rehearsalId: r.id, scope: r.scope, memberId: r.member_id, status: r.status as 'active' | 'finished', createdAt: r.created_at, finishedAt: r.finished_at }));
+    const items = page.map(r => { const { turns: _turns, ...metadata }=toRehearsal(r, [], c.get('user')!.id); return metadata; });
     const last = page.at(-1);
     return c.json(apiData(c, { items, nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }), 200);
   });
 
   app.openapi(getRoute, async (c) => {
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, c.get('member')!.projectId);
-    return c.json(apiData(c, toRehearsal(rehearsal, await loadTurns(c.env, rehearsal.id))), 200);
+    return c.json(apiData(c, toRehearsal(rehearsal, await loadTurns(c.env, rehearsal.id), c.get('user')!.id)), 200);
   });
 
   app.openapi(answerRoute, async (c) => {
@@ -222,17 +230,18 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const user = c.get('user')!;
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, member.projectId);
+    if(rehearsal.created_by!==user.id)throw permissionDenied('只有本轮发起人可以操作');
     if (rehearsal.status !== 'active'||rehearsal.finish_job_id) throw invalidState('演练已结束或正在生成评分');
+    if(rehearsal.processing_job_id)throw invalidState('本轮任务仍在处理或等待重试');
     if ((await loadTurns(c.env, rehearsal.id)).length === 0) throw invalidState('第一问尚未生成，请稍后');
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const turnId = newId();
-      const saved=await c.env.DB.prepare(
-        "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL)",
-      )
-        .bind(turnId, rehearsal.id, member.projectId, rehearsal.id, JSON.stringify({ content: body.content }), nowIso())
-        .run();
-      if(!saved.meta.changes)throw invalidState('演练已开始结束评分，回答未追加');
+      const saved=await c.env.DB.batch([
+        c.env.DB.prepare("UPDATE rehearsals SET processing_job_id=?3 WHERE id=?1 AND created_by=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND (SELECT kind FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence DESC LIMIT 1) IN ('question','followup')").bind(rehearsal.id,user.id,jobId),
+        c.env.DB.prepare("INSERT INTO rehearsal_turns(id,rehearsal_id,project_id,sequence,kind,content_json,created_at,author_id) SELECT ?1,?2,?3,1+COALESCE((SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=?2),0),'answer',?4,?5,?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND processing_job_id=?7 AND created_by=?6)").bind(turnId,rehearsal.id,member.projectId,JSON.stringify({content:body.content}),nowIso(),user.id,jobId)
+      ]);
+      if(!saved[0]?.meta.changes)throw invalidState('本轮回答已提交或正在处理');
 
       try {
         await createJobAndDispatch(c.env, {
@@ -244,7 +253,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
         });
         await c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND status!='succeeded'").bind(rehearsal.id,jobId).run();
       } catch (error) {
-        if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.prepare('DELETE FROM rehearsal_turns WHERE id = ?1').bind(turnId).run();
+        if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.batch([c.env.DB.prepare('DELETE FROM rehearsal_turns WHERE id=?1').bind(turnId),c.env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId)]);
         throw error;
       }
       return { turnId, jobId };
@@ -256,11 +265,13 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const user = c.get('user')!;
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, member.projectId);
+    if(rehearsal.created_by!==user.id)throw permissionDenied('只有本轮发起人可以操作');
     if (rehearsal.status !== 'active') throw invalidState('演练已结束');
     if(rehearsal.finish_job_id)return c.json(apiData(c,{jobId:rehearsal.finish_job_id}),202);
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
-      const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL`).bind(rehearsal.id,member.projectId,jobId).run();
+      if(rehearsal.processing_job_id)throw invalidState('追问仍在处理，请稍后结束');
+      const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,processing_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id IS NULL AND created_by=?4`).bind(rehearsal.id,member.projectId,jobId,user.id).run();
       if(!frozen.meta.changes)throw invalidState('演练已经在生成评分');
       try{await createJobAndDispatch(c.env, {
         jobId,
@@ -268,7 +279,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
         kind: 'rehearsal_turn',
         input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'summary', configVersionId },
         createdBy: user.id,
-      });await c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND status!='succeeded'").bind(rehearsal.id,jobId).run();}catch(error){if(!await c.env.DB.prepare('SELECT id FROM jobs WHERE id=?1').bind(jobId).first())await c.env.DB.prepare('UPDATE rehearsals SET finish_job_id=NULL,finish_snapshot_json=NULL WHERE id=?1 AND finish_job_id=?2').bind(rehearsal.id,jobId).run();throw error;}
+      });await c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND status!='succeeded'").bind(rehearsal.id,jobId).run();}catch(error){if(!await c.env.DB.prepare('SELECT id FROM jobs WHERE id=?1').bind(jobId).first())await c.env.DB.prepare('UPDATE rehearsals SET finish_job_id=NULL,processing_job_id=NULL,finish_snapshot_json=NULL WHERE id=?1 AND finish_job_id=?2').bind(rehearsal.id,jobId).run();throw error;}
       return { jobId };
     });
     return c.json(apiData(c, result), 202);

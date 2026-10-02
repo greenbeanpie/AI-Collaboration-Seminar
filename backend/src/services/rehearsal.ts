@@ -20,6 +20,7 @@ export interface RehearsalJobInput {
 }
 
 interface RehearsalRow {
+  processing_job_id:string|null;
   id: string;
   project_id: string;
   scope: 'all' | 'member';
@@ -67,6 +68,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     const rehearsal = await env.DB.prepare('SELECT * FROM rehearsals WHERE id = ?1 AND project_id = ?2')
       .bind(input.rehearsalId, input.projectId)
       .first<RehearsalRow>();
+    if(rehearsal && rehearsal.processing_job_id!==jobId)throw new AppError('INVALID_STATE','答辩作业已变化',409,false);
     if (!rehearsal) throw new AppError('NOT_FOUND', '答辩演练不存在', 404, false);
 
     const config = await loadAiConfig(env.DB, input.configVersionId);
@@ -98,13 +100,13 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       const assessment=await env.DB.prepare("SELECT * FROM assessments WHERE entity_id=?1 AND project_id=?2 AND kind='rehearsal'").bind(rehearsal.id,input.projectId).first<AssessmentRow>();
       if(rehearsal.finish_job_id&&rehearsal.finish_job_id!==jobId)throw new AppError('INVALID_STATE','演练结束作业已变化',409,false);
       if(assessment){
-        if(assessment.status==='succeeded'){await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{assessmentId:assessment.id,rehearsalId:rehearsal.id});return;}
+        if(assessment.status==='succeeded'){await settleReservation(env,jobId,'settled');await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env,jobId,{assessmentId:assessment.id,rehearsalId:rehearsal.id});return;}
         const turns=JSON.parse(rehearsal.finish_snapshot_json??'[]') as Array<{sequence:number;kind:string;content_json:string}>;
         const answers=turns.filter(t=>t.kind==='answer').map(t=>({sequence:t.sequence,content:(JSON.parse(t.content_json) as {content:string}).content}));
         const report=await scoreAssessment(env,assessment,jobId,input.configVersionId,answers);
         const published=await env.DB.batch([assessmentPublication(env,assessment,jobId,report),env.DB.prepare("INSERT INTO rehearsal_turns(id,rehearsal_id,project_id,sequence,kind,content_json,created_at) SELECT ?1,?2,?3,1+COALESCE((SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=?2),0),'summary',?4,?5 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND finish_job_id=?6 AND status='active') AND EXISTS(SELECT 1 FROM assessments WHERE id=?7 AND status='succeeded' AND job_id=?6)").bind(crypto.randomUUID(),rehearsal.id,input.projectId,JSON.stringify({content:report.summary,scoring:report}),now,jobId,assessment.id),env.DB.prepare("UPDATE rehearsals SET status='finished',finished_at=?2 WHERE id=?1 AND finish_job_id=?3 AND EXISTS(SELECT 1 FROM assessments WHERE id=?4 AND status='succeeded' AND job_id=?3)").bind(rehearsal.id,now,jobId,assessment.id)]);
         if(!published[0]?.meta.changes)throw new AppError('INVALID_STATE','评分作业、来源或成员已变化，结果未发布',409,false);
-        await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{assessmentId:assessment.id,rehearsalId:rehearsal.id,finished:true});return;
+        await settleReservation(env,jobId,'settled');await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env,jobId,{assessmentId:assessment.id,rehearsalId:rehearsal.id,finished:true});return;
       }
       const messages = [
         {
@@ -146,7 +148,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         dedupKey: rehearsal.id,
         payload: {},
       });
-      await succeedJob(env, jobId, { rehearsalId: rehearsal.id, finished: true });
+      await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env, jobId, { rehearsalId: rehearsal.id, finished: true });
       return;
     }
 
@@ -182,12 +184,12 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     // kind 语义（PLAN）：首问 question；后续追问/点评均为 followup；answer 由用户接口写入
     const kind = input.phase === 'question' ? 'question' : 'followup';
     await env.DB.prepare(
-      "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL)",
+      "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id=?8)",
     )
-      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now)
+      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now, jobId)
       .run();
     await settleReservation(env, jobId, 'settled');
-    await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });
+    await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });
   } catch (err) {
     if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);

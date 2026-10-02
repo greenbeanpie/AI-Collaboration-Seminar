@@ -1,3 +1,4 @@
+import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
 import { BrandMark } from './components/BrandMark';
 import { NotificationRuntime } from './notifications/NotificationRuntime';
 import { NotificationSettings } from './notifications/NotificationSettings';
@@ -102,7 +103,7 @@ function PwaStatus() {
 }
 
 export default function App() {
-  return <>
+  return <WorkspaceErrorBoundary>
     <PwaStatus />
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />
@@ -134,7 +135,7 @@ export default function App() {
         <Route path="/app/projects/new/wizard" element={<CreateProjectWizardPage />} />
         <Route path="/app/projects/new/template/:draftId" element={<SettingsEditGuard message="模板预览有尚未保存的编辑。确定放弃这些编辑并离开吗？"><TemplateDraftWorkspace /></SettingsEditGuard>} />
         <Route path="/app/join" element={<AcceptInvitationPage />} />
-        <Route path="/app/projects/:projectId" element={<ProjectShell />}>
+        <Route path="/app/projects/:projectId" element={<WorkspaceErrorBoundary><ProjectShell /></WorkspaceErrorBoundary>}>
           <Route index element={<ProjectOverviewPage />} />
           <Route path="sources" element={<ProjectRouteRedirect destination="data" defaults={{ mode: 'import', resourceType: 'source' }} />} />
           <Route path="sources/:sourceId" element={<ProjectRouteRedirect destination="data" />} />
@@ -159,5 +160,5 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes></Suspense>
-  </>;
+  </WorkspaceErrorBoundary>;
 }
