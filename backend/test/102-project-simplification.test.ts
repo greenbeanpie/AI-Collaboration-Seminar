@@ -11,6 +11,7 @@ import { runMaterialAssessmentJob } from '../src/services/assessments';
 import { runRehearsalTurnJob } from '../src/services/rehearsal';
 import { runCollaborationAiJob } from '../src/services/collaboration-ai';
 import { getJob } from '../src/services/jobs';
+import { InvestigationContinuation } from '../src/services/project-investigation';
 
 await configureGoFixture();
 afterEach(()=>vi.unstubAllGlobals());
@@ -114,4 +115,21 @@ describe('independent goal assessments with complete evidence',()=>{
   it('does not turn missing evidence into a zero or average score',async()=>{const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));vi.stubGlobal('fetch',model({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'无证据',evidence:[]})),summary:'需要补证据',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'unknown',comment:'证据不足',evidence:[]}]}));await runMaterialAssessmentJob(offline,created.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report).toMatchObject({status:'unscorable',weightedTotal:null});expect(result.report.scores.every((s:any)=>s.score===null)).toBe(true);});
   it('finishes no-answer rehearsal as unscorable without a provider call and locks late answers',async()=>{const f=await fixture(),s=await standard(f),created=await json(await f.request('/assessments',{kind:'rehearsal',standardsVersionId:s.standardsVersionId,materialVersionIds:[]}));const end=await json(await f.request(`/rehearsals/${created.rehearsalId}/finish`,{}));const fetch=vi.fn();vi.stubGlobal('fetch',fetch);expect((await f.request(`/rehearsals/${created.rehearsalId}/answers`,{content:'晚到回答'})).status).toBe(409);await runRehearsalTurnJob(offline,end.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report).toMatchObject({status:'unscorable',weightedTotal:null});expect(result.report.scores.every((s:any)=>s.score===null)).toBe(true);expect(fetch).not.toHaveBeenCalled();expect(result.jobId).toBe(end.jobId);});
   it('grades rehearsal from frozen actual answers independently of material review',async()=>{const f=await fixture(),s=await standard(f),created=await json(await f.request('/assessments',{kind:'rehearsal',standardsVersionId:s.standardsVersionId,materialVersionIds:[]}));vi.stubGlobal('fetch',model({action:'question',content:'请说明案例结果。'}));await runRehearsalTurnJob(offline,created.jobId);const answer=await json(await f.request(`/rehearsals/${created.rehearsalId}/answers`,{content:'案例有明确结果。'}));expect(answer.turnId).toBeTruthy();const end=await json(await f.request(`/rehearsals/${created.rehearsalId}/finish`,{}));const evidence=[{type:'answer',turnSequence:2,quote:'案例有明确结果。'}];vi.stubGlobal('fetch',model({scores:s.rubric.weights.map(w=>({key:w.key,score:90,confidence:.9,comment:'回答有依据',evidence})),summary:'演练评分',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'met',comment:'明确说明',evidence}]}));await runRehearsalTurnJob(offline,end.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report.weightedTotal).toBe(90);expect(result.report.scores[0].evidence[0].turnSequence).toBe(2);expect((await json(await f.request('/assessments'))).items).toHaveLength(1);});
+});
+
+describe('material assessment execution continuation',()=>{
+  it('keeps the assessment and reservation active during safe continuation and publishes only the final report',async()=>{
+    const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));
+    const evidence=[{type:'material',materialVersionId:versionId,quote:'案例有明确结果。'}];let round=0;
+    const fetch=vi.fn(async()=>{const first=round++===0;return Response.json({choices:[{finish_reason:first?'tool_calls':'stop',message:first?{tool_calls:[{id:'read',type:'function',function:{name:'list_project_resources',arguments:'{}'}}]}:{content:JSON.stringify({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'可核对',evidence})),summary:'实际材料评分',limitations:[],requirementChecks:s.requirements.map(r=>({requirementId:r.requirementId,status:'met',comment:'有依据',evidence}))})}}],usage:{prompt_tokens:10,completion_tokens:5}});});vi.stubGlobal('fetch',fetch);
+    const sliced={...offline,AI_EXECUTION_SLICE:true as const};
+    await expect(runMaterialAssessmentJob(sliced,created.jobId)).rejects.toBeInstanceOf(InvestigationContinuation);
+    expect((await getJob(env,created.jobId)).status).not.toBe('failed');
+    expect((await env.DB.prepare('SELECT status,report_json FROM assessments WHERE id=?1').bind(created.assessmentId).first())).toMatchObject({status:'pending',report_json:null});
+    await expect(runMaterialAssessmentJob(sliced,created.jobId)).rejects.toBeInstanceOf(InvestigationContinuation);
+    await runMaterialAssessmentJob(sliced,created.jobId);
+    expect((await getJob(env,created.jobId)).status).toBe('succeeded');
+    expect((await json(await f.request(`/assessments/${created.assessmentId}`))).report.weightedTotal).toBe(80);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
