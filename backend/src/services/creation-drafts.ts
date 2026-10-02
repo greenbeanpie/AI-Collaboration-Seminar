@@ -11,7 +11,7 @@ import { gatewayChat } from '../ai/gateway';
 import { recordAiCall } from '../ai/calls';
 import { seal, unseal } from '../ai/secrets';
 import { validateTaskGraph } from './project-simplification';
-import { projectBackgroundStatements } from './resources';
+import { creationWorkspace, guardedDescriptionStatements, workspacePromotionStatements } from './creation-template';
 export const creationGoal=z.object({title:z.string().trim().min(1).max(200),detail:z.string().max(12000)});
 export const creationTask = z.object({
   key:z.string().min(1).max(64).optional(),dependsOn:z.array(z.string().min(1).max(64)).max(20).default([]),
@@ -20,7 +20,7 @@ export const creationTask = z.object({
   }).strict()).max(8).default([])
 }).strict();
 export const creationPayload = z.object({
-  name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''),goal:creationGoal.optional(),deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), aiCollaborationEnabled: z.boolean().default(false), teamSize: z.number().int().min(1).max(100).default(1), inviteUsernames: z.array(z.string().trim().min(1).max(64)).max(99).default([]), inviteLabels: z.array(z.string().trim().min(1).max(80)).max(99).default([]), brief: z.string().max(4000).default('')
+  name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''),goal:creationGoal.optional(),workspace:creationWorkspace.optional(),deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), aiCollaborationEnabled: z.boolean().default(false), teamSize: z.number().int().min(1).max(100).default(1), inviteUsernames: z.array(z.string().trim().min(1).max(64)).max(99).default([]), inviteLabels: z.array(z.string().trim().min(1).max(80)).max(99).default([]), brief: z.string().max(4000).default('')
 }).strict().refine(p => p.inviteLabels.length + p.inviteUsernames.length <= p.teamSize - 1 && new Set(p.inviteLabels).size === p.inviteLabels.length, '邀请不得重复或超过组员人数（人数包括负责人）');
 export type DraftPayload = z.infer<typeof creationPayload>;
 export interface DraftRow {
@@ -100,6 +100,8 @@ function editable(row: DraftRow, revision: number) {
 export async function updateDraft(env: Env, id: string, userId: string, revision: number, payload: DraftPayload) {
   const row = await getDraft(env, id, userId);
   editable(row, revision);
+  const previous=creationPayload.parse(JSON.parse(row.payload_json));
+  if(payload.workspace===undefined&&previous.workspace)payload={...payload,workspace:previous.workspace};
   await assertTeamSize(env, payload);
   await resolveInviteRecipients(env, userId, payload.inviteUsernames);
   const saved = await env.DB.prepare("UPDATE project_creation_drafts SET payload_json=?4,revision=revision+1,preview_state='none',updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running'").bind(id, userId, revision, JSON.stringify(payload), nowIso()).run();
@@ -330,7 +332,8 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
   const stmt = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(id, userId, token, ...binds);
   const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3").bind(id, userId, revision, token, encrypted, now),
     stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?12 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', p.teamSize, now, p.aiCollaborationEnabled ? 1 : 0, p.aiCollaborationEnabled ? 'automatic' : 'manual'),
-    stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??(p.brief||p.description),now),...projectBackgroundStatements(env,project,p.description,userId,now)];
+    stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??(p.brief||p.description),now),...guardedDescriptionStatements(stmt,guard,project,p.description,now)];
+  if(p.workspace)batch.push(...workspacePromotionStatements(stmt,guard,project,p.workspace,now));
   const versions = new Map<string, string>();
   for (const f of files) {
     const source = newId(), version = newId();
