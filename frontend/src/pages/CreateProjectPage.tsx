@@ -70,6 +70,7 @@ function CreationWizard({ userId }: {
       }));
     }
     catch {
+      // Private server drafts remain recoverable when browser storage is unavailable.
     }
   };
   const accept = (next: WizardDraft) => {
