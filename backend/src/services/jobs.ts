@@ -3,6 +3,7 @@ import { loadAiConfig } from '../ai/config';
 import { settleReservation } from './budget';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound } from '../core/errors';
+import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
 
 export type JobKind =
   | 'parse_source'
@@ -32,6 +33,7 @@ export interface ParseJobInput {
   configVersionId?: string;
   sourceId: string;
   sourceVersionId: string;
+  sourceLifecycleVersion?: number;
   phase: 'extract' | 'ocr';
 }
 
@@ -46,34 +48,48 @@ export async function createJobAndDispatch(
   const jobId = params.jobId ?? newId();
   const now = nowIso();
   const supplied = params.input as Record<string, unknown>;
+  const sourceVersionId = typeof supplied.sourceVersionId === 'string' ? supplied.sourceVersionId : null;
+  const lifecycle = sourceVersionId ? await loadActiveSourceVersion(env, sourceVersionId, typeof supplied.sourceLifecycleVersion === 'number' ? supplied.sourceLifecycleVersion : undefined) : null;
+  if (lifecycle && params.projectId !== lifecycle.projectId) throw invalidState('来源不属于任务项目');
   const latestConfig = await loadAiConfig(env.DB);
   let frozenConfig = supplied.configVersionId ?? latestConfig?.id;
   // Independent summaries freeze the config chosen for this job, while parse/OCR
   // and requirements continue sharing the source's original frozen version.
   if (supplied.operation !== 'source.summary' && typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
-    await env.DB.prepare('UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1 AND ai_config_version_id IS NULL').bind(supplied.sourceVersionId, frozenConfig ?? null).run();
+    await env.DB.prepare(`UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1 AND ai_config_version_id IS NULL AND ${sourceLifecycleGuard('?1', '?3')}`).bind(supplied.sourceVersionId, frozenConfig ?? null, lifecycle!.lifecycleVersion).run();
     const source = await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(supplied.sourceVersionId).first<{ ai_config_version_id: string | null }>();
     frozenConfig = source?.ai_config_version_id ?? frozenConfig;
   }
-  const input = { ...supplied, configVersionId: frozenConfig };
-  await env.DB.batch([
+  const input = { ...supplied, configVersionId: frozenConfig, ...(lifecycle ? { sourceLifecycleVersion: lifecycle.lifecycleVersion } : {}) };
+  const writes = await env.DB.batch([
     env.DB.prepare(
-      "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6)",
-    ).bind(jobId, params.projectId, params.kind, JSON.stringify(input), params.createdBy, now),
+      `INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at)
+       SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6
+       WHERE ?7 IS NULL OR ${sourceLifecycleGuard('?7', '?8')}`,
+    ).bind(jobId, params.projectId, params.kind, JSON.stringify(input), params.createdBy, now, sourceVersionId, lifecycle?.lifecycleVersion ?? null),
     env.DB.prepare(
-      "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) VALUES (?1, ?2, 'pending', ?3, 0, ?4, ?4)",
+      "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) SELECT ?1, ?2, 'pending', ?3, 0, ?4, ?4 WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ?2 AND status = 'queued')",
     ).bind(newId(), jobId, now, now),
   ]);
+  if (!(writes[0]?.meta.changes ?? 0)) throw invalidState('来源已移入回收站或生命周期已变化，请刷新后重试');
   await tryDispatchJob(env, jobId);
   return jobId;
 }
 
 const PARSE_JOB_KINDS = new Set(['parse_source', 'ocr_pages', 'requirement_extract', 'web_fetch']);
 
+async function assertDispatchActive(env: Env, jobId: string): Promise<void> {
+  const job = await getJob(env, jobId);
+  if (!['queued','running'].includes(job.status)) throw invalidState('任务已停止');
+  if (typeof (JSON.parse(job.input_json) as Record<string, unknown>).sourceVersionId === 'string') await assertSourceJobActive(env, jobId);
+}
+
 /** 尝试创建确定性实例（实例 ID = jobId；解析类走 PARSE_WORKFLOW，AI 类走 AGENT_WORKFLOW） */
 export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatched' | 'deferred' | 'engine'> {
+  try { await assertDispatchActive(env, jobId); } catch { return 'deferred'; }
   const claim = await env.DB.prepare(
-    "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ?2 WHERE id = ?1 AND status IN ('queued', 'waiting_input')",
+    `UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ?2 WHERE id = ?1 AND status = 'queued'
+      AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,
   )
     .bind(jobId, nowIso())
     .run();
@@ -82,6 +98,7 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
   try {
     const job = await getJob(env, jobId);
     const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
+    await assertDispatchActive(env, jobId);
     await workflow.create({ id: jobId, params: { jobId } });
     await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
       .bind(jobId, nowIso())
@@ -131,7 +148,8 @@ export async function failJob(env: Env, jobId: string, error: { code: string; me
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
   const transition = await env.DB.prepare(
-    "UPDATE jobs SET status = 'succeeded', result_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')",
+    `UPDATE jobs SET status = 'succeeded', result_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')
+      AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,
   )
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
@@ -143,7 +161,8 @@ export async function succeedJob(env: Env, jobId: string, result: unknown): Prom
 
 export async function waitJobInput(env: Env, jobId: string, result: unknown): Promise<void> {
   await env.DB.prepare(
-    "UPDATE jobs SET status = 'waiting_input', result_json = ?2, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')",
+    `UPDATE jobs SET status = 'waiting_input', result_json = ?2, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')
+      AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,
   )
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
@@ -162,6 +181,7 @@ export async function assertNotTerminal(env: Env, jobId: string): Promise<JobRow
 export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
+  try { await assertDispatchActive(env, jobId); } catch { return; }
   const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
   let state: InstanceStatus;
   try {

@@ -46,3 +46,6 @@ CREATE TABLE ai_tool_calls (
 );
 
 ALTER TABLE usage_reservations ADD COLUMN max_calls INTEGER NOT NULL DEFAULT 2;
+
+CREATE INDEX idx_creation_draft_files_draft ON creation_draft_files(draft_id,removed,created_at,id);
+CREATE INDEX idx_ai_tool_calls_job ON ai_tool_calls(project_id,job_id,created_at,id);

@@ -1,9 +1,11 @@
 import { SourceFullText } from './SourceFullText';
 import { SourceProcessingCard } from './SourceProcessingCard';
+import { ProjectFileLibrary } from './ProjectFileLibrary';
+import { useSourceLifecycle, type LifecycleChange } from './source-lifecycle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FilePlus2, FileText, Globe2, LoaderCircle, ScanText, Send, Type } from 'lucide-react';
+import { FilePlus2, FileText, Globe2, LoaderCircle, ScanText, Send, Trash2, Type } from 'lucide-react';
 import { ApiError, api, projectPath } from '../api/client';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -163,6 +165,8 @@ export function SourceRecord({
   onRetryJob,
   onScan,
   onJobUpdate,
+  onRemove,
+  lifecycleBusy = false,
 }: {
   source: SourceItem;
   version?: SourceVersion;
@@ -178,6 +182,8 @@ export function SourceRecord({
   onRetryJob: (tracked: TrackedSourceJob) => void;
   onScan: (tracked: TrackedSourceJob) => void;
   onJobUpdate: (jobId: string, status: Job['status']) => void;
+  onRemove?: (source: SourceItem) => void;
+  lifecycleBusy?: boolean;
 }) {
   const isBusy = parsingSourceId === source.sourceId;
   const serverJob = version?.processingJob;
@@ -205,6 +211,7 @@ export function SourceRecord({
         <button className="button button-quiet button-small" type="button" disabled={!source.currentVersionId || !capability?.features.aiEnabled || isBusy || Boolean(activeJob)} onClick={() => source.currentVersionId && onParse(source, source.currentVersionId)}>
           {isBusy ? <><LoaderCircle className="spin" size={14} /> 正在发起</> : activeJob ? '已有任务处理中' : !capability?.features.aiEnabled ? 'AI 未启用' : waitingForImages ? '重新读取文本层并提取要求' : version?.status === 'ready' ? '重新解析' : '开始解析'}
         </button>
+        {source.kind !== 'file' && !source.fileId && source.canDelete && onRemove && <button className="button button-danger button-small" type="button" disabled={lifecycleBusy} aria-label={`移入回收站：${source.title}`} onClick={() => onRemove(source)}><Trash2 size={14} />移入回收站</button>}
       </div>
     </div>
     {waitingForImages && <p className="muted">若此 PDF 本来有文本层，可重新读取服务器保留的原文件，无需重复上传；文本完整后会继续使用当前任务模型配置提取要求，可能产生 AI 用量。</p>}
@@ -256,15 +263,47 @@ export function SourcesPage() {
   const retryIntentKeys = useRef(new Map<string, string>());
   const fileInitIntentKeys = useRef(new WeakMap<File, string>());
   const pageImagesIntentKeys = useRef(new Map<string, PendingPageImagesSubmission>());
+  const currentProjectId = useRef(projectId); currentProjectId.current = projectId;
+  const unavailableSourceIds = useRef(new Set<string>());
+  const unavailableFileIds = useRef(new Set<string>());
+  const sourceLifecycleEpochs = useRef(new Map<string, number>());
 
   const capabilityQuery = useQuery({ queryKey: ['capabilities'], queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') });
   const capability = capabilityQuery.data;
   const sourceQuery = useQuery({
     queryKey: ['sources', projectId],
-    queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', capability!.limits.listMaxPageSize, signal),
+    queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', capability!.limits.listMaxPageSize, signal, { deleted: false }),
     enabled: Boolean(capability),
   });
   const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
+  const handleLifecycleChanged = useCallback((change: LifecycleChange) => {
+    if (change.projectId !== currentProjectId.current) return;
+    const affected = new Set(change.sourceIds);
+    for (const id of affected) {
+      sourceLifecycleEpochs.current.set(id, (sourceLifecycleEpochs.current.get(id) ?? 0) + 1);
+      if (change.restored) unavailableSourceIds.current.delete(id);
+      else unavailableSourceIds.current.add(id);
+    }
+    if (change.fileId) {
+      if (change.restored) unavailableFileIds.current.delete(change.fileId);
+      else unavailableFileIds.current.add(change.fileId);
+      setPendingUpload(current => current?.fileId === change.fileId ? null : current);
+    }
+    setTrackedJobs(items => {
+      for (const item of items) if (affected.has(item.sourceId)) {
+        retryIntentKeys.current.delete(item.jobId);
+        pageImagesIntentKeys.current.delete(item.jobId);
+      }
+      const remaining = items.filter(item => !affected.has(item.sourceId) && (!change.fileId || item.fileId !== change.fileId));
+      writeTrackedSourceJobs(change.projectId, remaining);
+      return remaining;
+    });
+    for (const key of parseIntentKeys.current.keys()) if (affected.has(key.split(':')[0])) parseIntentKeys.current.delete(key);
+    setParsingSourceId(current => current && affected.has(current) ? null : current);
+    setScanProgressSourceId(current => current && affected.has(current) ? null : current);
+  }, []);
+  const sourceResources = sources.filter(source => source.kind !== 'file' && !source.fileId).map(source => ({ kind: 'source' as const, id: source.sourceId, name: source.title, lifecycleVersion: source.lifecycleVersion, canDelete: source.canDelete, deletedAt: source.deletedAt }));
+  const sourceLifecycle = useSourceLifecycle(projectId, 'active-sources', sourceResources, handleLifecycleChanged);
   const versionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
     queryKey: ['sourceVersion', projectId, source.sourceId, source.currentVersionId],
     queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.currentVersionId!)}`)),
@@ -299,6 +338,9 @@ export function SourcesPage() {
     parseIntentKeys.current.clear();
     retryIntentKeys.current.clear();
     pageImagesIntentKeys.current.clear();
+    unavailableSourceIds.current.clear();
+    unavailableFileIds.current.clear();
+    sourceLifecycleEpochs.current.clear();
   }, [projectId, trackedJobsProjectId]);
 
   useEffect(() => {
@@ -330,7 +372,9 @@ export function SourcesPage() {
     setTrackedJobs((items) => [item, ...items.filter((existing) => existing.jobId !== item.jobId)]);
   }, []);
 
-  const startParse = useCallback(async (source: SourceItem, sourceVersionId: string): Promise<boolean> => {
+  const startParse = useCallback(async (source: Pick<SourceItem, 'sourceId' | 'title'>, sourceVersionId: string): Promise<boolean> => {
+    if (unavailableSourceIds.current.has(source.sourceId)) return false;
+    const lifecycleEpoch = sourceLifecycleEpochs.current.get(source.sourceId) ?? 0;
     const intentId = `${source.sourceId}:${sourceVersionId}`;
     const intentKey = parseIntentKeys.current.get(intentId) ?? createIntentKey();
     parseIntentKeys.current.set(intentId, intentKey);
@@ -339,6 +383,7 @@ export function SourcesPage() {
     setParsingSourceId(source.sourceId);
     try {
       const result = await api.post<'SourceParseResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/parse`), { sourceVersionId }, { idempotencyKey: intentKey });
+      if (currentProjectId.current !== projectId || unavailableSourceIds.current.has(source.sourceId) || (sourceLifecycleEpochs.current.get(source.sourceId) ?? 0) !== lifecycleEpoch) return false;
       parseIntentKeys.current.delete(intentId);
       trackJob({ jobId: result.jobId, sourceId: source.sourceId, sourceVersionId, sourceTitle: source.title, fileId: sourceFileId(projectId, sourceVersionId), status: result.status === 'queued' ? 'queued' : undefined });
       setSuccessMessage('解析任务已提交。页面可见时每 2–10 秒查询一次，切换到其他标签页时会暂停。');
@@ -353,32 +398,41 @@ export function SourcesPage() {
   }, [projectId, queryClient, trackJob]);
 
   const retryJob = useCallback(async (tracked: TrackedSourceJob) => {
+    if (unavailableSourceIds.current.has(tracked.sourceId)) return;
+    const lifecycleEpoch = sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0;
     setActionError(null);
     try {
       const intentKey = retryIntentKeys.current.get(tracked.jobId) ?? createIntentKey();
       retryIntentKeys.current.set(tracked.jobId, intentKey);
       const result = await api.post<'JobRetryResponse'>(`/api/v1/jobs/${encodeURIComponent(tracked.jobId)}/retry`, undefined, { idempotencyKey: intentKey });
+      if (currentProjectId.current !== projectId || unavailableSourceIds.current.has(tracked.sourceId) || (sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0) !== lifecycleEpoch) return;
       retryIntentKeys.current.delete(tracked.jobId);
       setTrackedJobs((items) => [{ ...tracked, jobId: result.jobId, status: 'queued' }, ...items.filter((item) => item.jobId !== tracked.jobId)]);
     } catch (error) {
       setActionError(error);
     }
-  }, []);
+  }, [projectId]);
 
   const scanPages = useCallback(async (tracked: TrackedSourceJob) => {
-    if (!capability) return;
+    if (!capability || unavailableSourceIds.current.has(tracked.sourceId)) return;
+    const lifecycleEpoch = sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0;
+    const ensureAvailable = () => {
+      if (currentProjectId.current !== projectId || unavailableSourceIds.current.has(tracked.sourceId) || (sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0) !== lifecycleEpoch) throw new Error('资料状态已变化或已切换项目，页面处理已停止。');
+    };
     setActionError(null);
     setScanJobId(tracked.jobId);
     setScanProgressSourceId(tracked.sourceId);
     setScanProgress('读取服务器待渲染页码…');
     try {
       const version = await api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/versions/${encodeURIComponent(tracked.sourceVersionId)}`));
+      ensureAvailable();
       const fileId = version.fileId ?? tracked.fileId ?? sourceFileId(projectId, tracked.sourceVersionId);
       if (!fileId) throw new Error('此来源版本未关联原 PDF 文件，无法生成扫描页。');
       rememberSourceFile(projectId, tracked.sourceVersionId, fileId);
       let pending = pageImagesIntentKeys.current.get(tracked.jobId);
       if (!pending) {
         const response = await api.get<'RenderRequestsResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/render-requests`), { sourceVersionId: tracked.sourceVersionId });
+        ensureAvailable();
         const pageNumbers = response.items.map((item) => item.pageNumber);
         if (pageNumbers.length === 0) {
           await queryClient.invalidateQueries({ queryKey: ['sourceVersion', projectId, tracked.sourceId, tracked.sourceVersionId] });
@@ -387,6 +441,7 @@ export function SourcesPage() {
         }
         setScanProgress(`正在读取来源 PDF（${pageNumbers.length} 页待处理）…`);
         const bytes = await downloadSourcePdf(projectId, fileId);
+        ensureAvailable();
         const { renderPdfPages } = await import('./source-pdf-render');
         const images = await renderPdfPages(bytes, pageNumbers, {
           pageImageMaxEdge: capability.limits.pageImageMaxEdge,
@@ -395,6 +450,7 @@ export function SourcesPage() {
         }, (pageNumber) => setScanProgress(`已渲染第 ${pageNumber} 页，正在上传…`));
         const uploadedImages: Array<{ pageNumber: number; fileId: string }> = [];
         for (const image of images) {
+          ensureAvailable();
           setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
           const imageFileId = await uploadProjectFile(projectId, image.file);
           uploadedImages.push({ pageNumber: image.pageNumber, fileId: imageFileId });
@@ -407,7 +463,9 @@ export function SourcesPage() {
       } else {
         setScanProgress('沿用上次提交的同一批页面图片和请求编号，确认服务端处理状态…');
       }
+      ensureAvailable();
       const accepted = await api.post<'PageImagesResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/page-images`), pending.body, { idempotencyKey: pending.idempotencyKey });
+      ensureAvailable();
       pageImagesIntentKeys.current.delete(tracked.jobId);
       if (accepted.jobId) {
         replaceTracked(tracked.jobId, { jobId: accepted.jobId, status: 'queued' });
@@ -456,7 +514,11 @@ export function SourcesPage() {
             fileInitIntentKey = createIntentKey();
             fileInitIntentKeys.current.set(file, fileInitIntentKey);
           }
-          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey);
+          fileId = await uploadProjectFile(projectId, file, fileInitIntentKey, () => { void queryClient.invalidateQueries({ queryKey: ['files', projectId] }); });
+          if (unavailableFileIds.current.has(fileId)) {
+            fileInitIntentKeys.current.delete(file);
+            throw new Error('该文件已移入回收站，未继续登记来源。可恢复后手动处理，或重新上传。');
+          }
           setPendingUpload({ fileId, file });
         }
         body = { kind, fileId };
@@ -477,7 +539,7 @@ export function SourcesPage() {
       await queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
       setSubmitStage('启动解析任务…');
       const parseStarted = capability.features.aiEnabled
-        ? await startParse({ sourceId: source.sourceId, kind: source.kind, title: source.title, currentVersionId: source.currentVersionId, createdAt: source.createdAt }, source.sourceVersionId)
+        ? await startParse({ sourceId: source.sourceId, title: source.title }, source.sourceVersionId)
         : false;
       setText('');
       setUrl('');
@@ -491,6 +553,7 @@ export function SourcesPage() {
     } finally {
       setSubmitting(false);
       setSubmitStage('');
+      void queryClient.invalidateQueries({ queryKey: ['files', projectId] });
     }
   };
 
@@ -531,13 +594,16 @@ export function SourcesPage() {
       </form>
     </SectionCard>
 
-    {targetSourceVersionId && !sourceQuery.isLoading && !sources.some((source) => source.currentVersionId === targetSourceVersionId) ? <div className="callout warning-callout">引用对应的来源版本不在当前来源列表中，或它不是当前版本。引用原句仍保留在要求条目中。</div> : null}
+    <ProjectFileLibrary key={projectId} projectId={projectId} pageSize={capability.limits.listMaxPageSize} onChanged={handleLifecycleChanged} />
+    {targetSourceVersionId && !sourceQuery.isLoading && !sources.some((source) => source.currentVersionId === targetSourceVersionId) ? <div className="callout warning-callout">引用对应的来源版本不在当前来源列表中，可能已移入回收站，或它不是当前版本。引用原句仍保留在要求条目中。</div> : null}
     <SectionCard title="已导入来源" detail="解析状态和逐页 OCR 状态由后端返回。扫描页图片由 PDF.js 在浏览器本地渲染后上传。">
+      {sourceLifecycle.error ? <ErrorNotice error={sourceLifecycle.error} /> : null}
+      {sourceLifecycle.message && <div className="notice notice-success" role="status"><div className="notice-copy"><strong>{sourceLifecycle.message}</strong></div></div>}
       {sourceQuery.isLoading ? <Spinner label="正在读取真实来源记录" /> : sourceQuery.error ? <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} /> : sources.length === 0 ? <EmptyState title="还没有来源记录" detail="导入一份通知或资料后，解析任务和人工确认的要求会在这里关联显示。" /> : <div className="sources-record-list">
         {sources.map((source) => {
           const version = versionsBySourceId.get(source.sourceId);
           const target = Boolean(targetSourceVersionId && source.currentVersionId === targetSourceVersionId);
-          return <SourceRecord key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} />;
+          return <SourceRecord key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} lifecycleBusy={sourceLifecycle.busy} onRemove={item => { const resource = sourceResources.find(resource => resource.id === item.sourceId); if (resource) void sourceLifecycle.changeLifecycle(resource, false); }} />;
         })}
       </div>}
       {versionQueries.some((query) => query.error) && <div className="stack">{versionQueries.map((query, index) => query.error ? <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} /> : null)}</div>}

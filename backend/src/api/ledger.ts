@@ -1,10 +1,11 @@
+import { fileReferenceAvailability, sourceCitationAvailability, sourceReferenceAvailability } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { notFound, validationFailed } from '../core/errors';
+import { invalidState, notFound, validationFailed } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { recordEvent } from '../services/events';
 import { projectParams } from './projects';
@@ -144,6 +145,8 @@ const resourceSchema = z.object({
   title: z.string(),
   url: z.string().nullable(),
   fileId: z.string().uuid().nullable(),
+  availability: z.literal('unavailable').optional(),
+  deletedAt: z.string().nullable().optional(),
   declaredBy: z.string().uuid(),
   createdAt: z.string(),
 });
@@ -190,6 +193,8 @@ const exportRequirementSchema = z.object({
     fragmentId: z.string().uuid(),
     pageNumber: z.number().int().nullable(),
     quote: z.string(),
+    availability: z.literal('unavailable').optional(),
+    deletedAt: z.string().nullable().optional(),
   })),
   fieldState: z.enum(['ai_suggestion', 'edited', 'confirmed']),
 });
@@ -203,10 +208,12 @@ const exportBundleResponse = apiEnvelope(z.object({
     status: z.string(),
   }),
   generatedAt: z.string(),
-  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int(), attachments: z.array(z.object({ fileId: z.string(), name: z.string() })) })),
+  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int(), attachments: z.array(z.object({ fileId: z.string(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() })) })),
   requirementSets: z.array(z.object({
     requirementSetId: z.string().uuid(),
     sourceVersionId: z.string().uuid().nullable(),
+    sourceAvailability: z.literal('unavailable').optional(),
+    sourceDeletedAt: z.string().nullable().optional(),
     status: z.enum(['draft', 'confirmed']),
     revision: z.number().int(),
     confirmedAt: z.string().nullable(),
@@ -380,13 +387,16 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const user = c.get('user')!;
     if (body.kind === 'url' && !body.url) throw validationFailed('url 类资源必须提供 url');
+    const file = body.fileId ? await c.env.DB.prepare("SELECT lifecycle_version FROM files WHERE id=?1 AND project_id=?2 AND status='available' AND deleted_at IS NULL").bind(body.fileId, member.projectId).first<{ lifecycle_version: number }>() : null;
+    if (body.fileId && !file) throw notFound('资源文件不存在或不可用');
     const id = newId();
     const now = nowIso();
-    await c.env.DB.prepare(
-      'INSERT INTO resource_references (id, project_id, kind, title, url, file_id, meta_json, declared_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)',
+    const inserted = await c.env.DB.prepare(
+      `INSERT INTO resource_references (id, project_id, kind, title, url, file_id, meta_json, declared_by, created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE ?6 IS NULL OR EXISTS(SELECT 1 FROM files WHERE id=?6 AND project_id=?2 AND status='available' AND deleted_at IS NULL AND lifecycle_version=?10)`,
     )
-      .bind(id, member.projectId, body.kind, body.title, body.url ?? null, body.fileId ?? null, JSON.stringify(body.meta), user.id, now)
+      .bind(id, member.projectId, body.kind, body.title, body.url ?? null, body.fileId ?? null, JSON.stringify(body.meta), user.id, now, file?.lifecycle_version ?? null)
       .run();
+    if (!inserted.meta.changes) throw invalidState('资源文件生命周期已变化，请重新选择');
     return c.json(apiData(c, { resourceId: id, kind: body.kind, title: body.title, url: body.url ?? null, fileId: body.fileId ?? null, declaredBy: user.id, createdAt: now }), 201);
   });
 
@@ -396,7 +406,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       .all<{ id: string; kind: string; title: string; url: string | null; file_id: string | null; declared_by: string; created_at: string }>();
     return c.json(
       apiData(c, {
-        items: rows.results.map((r) => ({ resourceId: r.id, kind: r.kind as 'url' | 'file' | 'model' | 'other', title: r.title, url: r.url, fileId: r.file_id, declaredBy: r.declared_by, createdAt: r.created_at })),
+        items: await Promise.all(rows.results.map(async (r) => ({ resourceId: r.id, kind: r.kind as 'url' | 'file' | 'model' | 'other', title: r.title, url: r.url, fileId: r.file_id, declaredBy: r.declared_by, createdAt: r.created_at, ...(r.file_id ? await fileReferenceAvailability(c.env, c.get('member')!.projectId, r.file_id) : {}) }))),
       }),
       200,
     );
@@ -480,26 +490,28 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       apiData(c, {
         project,
         generatedAt: nowIso(),
-        materials: materials.results.map(({ attachments_json, ...material }) => ({ ...material, attachments: JSON.parse(attachments_json) as Array<{ fileId: string; name: string }> })),
-        requirementSets: requirementSets.results.map((set) => ({
-          requirementSetId: set.id,
-          sourceVersionId: set.source_version_id,
-          status: set.status,
-          revision: set.revision,
-          confirmedAt: set.confirmed_at,
-          requirements: (requirementsBySet.get(set.id) ?? []).map((requirement) => ({
-            requirementId: requirement.id,
-            seq: requirement.seq,
-            category: requirement.category as 'deadline' | 'deliverable' | 'format' | 'scoring' | 'team' | 'other',
-            title: requirement.title,
-            detail: requirement.detail,
-            dueDate: requirement.due_date,
-            duePrecision: requirement.due_precision as 'date' | 'datetime' | 'unknown',
-            citations: JSON.parse(requirement.citations_json) as Array<{
-              sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string;
-            }>,
-            fieldState: requirement.field_state as 'ai_suggestion' | 'edited' | 'confirmed',
-          })),
+        materials: await Promise.all(materials.results.map(async ({ attachments_json, ...material }) => ({ ...material, attachments: await Promise.all((JSON.parse(attachments_json) as Array<{ fileId: string; name: string }>).map(async attachment => ({ ...attachment, ...await fileReferenceAvailability(c.env, projectId, attachment.fileId) }))) }))),
+        requirementSets: await Promise.all(requirementSets.results.map(async (set) => {
+          const availability = set.source_version_id ? await sourceReferenceAvailability(c.env, projectId, set.source_version_id) : undefined;
+          return {
+            requirementSetId: set.id,
+            sourceVersionId: set.source_version_id,
+            ...(availability ? { sourceAvailability: availability.availability, sourceDeletedAt: availability.deletedAt } : {}),
+            status: set.status,
+            revision: set.revision,
+            confirmedAt: set.confirmed_at,
+            requirements: await Promise.all((requirementsBySet.get(set.id) ?? []).map(async (requirement) => ({
+              requirementId: requirement.id,
+              seq: requirement.seq,
+              category: requirement.category as 'deadline' | 'deliverable' | 'format' | 'scoring' | 'team' | 'other',
+              title: requirement.title,
+              detail: requirement.detail,
+              dueDate: requirement.due_date,
+              duePrecision: requirement.due_precision as 'date' | 'datetime' | 'unknown',
+              citations: await Promise.all((JSON.parse(requirement.citations_json) as Array<{ sourceVersionId?: string; fragmentId: string; pageNumber: number | null; quote: string }>).map(async citation => ({ ...citation, ...await sourceCitationAvailability(c.env, projectId, citation) }))),
+              fieldState: requirement.field_state as 'ai_suggestion' | 'edited' | 'confirmed',
+            }))),
+          };
         })),
         rubricVersions: rubricVersions.results.map((rubric) => ({
           rubricId: rubric.id,

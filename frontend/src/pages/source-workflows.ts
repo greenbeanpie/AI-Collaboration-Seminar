@@ -1,4 +1,4 @@
-import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
+import { ApiError, api, apiUrl, projectPath, request, type RequestOptions } from '../api/client';
 import type { DataOf, SchemaName } from '../api/types';
 
 export type TrackedSourceJob = {
@@ -28,6 +28,7 @@ export async function listAllProjectItems<Name extends SchemaName>(
   tail: string,
   pageSize: number,
   signal?: AbortSignal,
+  query: RequestOptions['query'] = {},
 ): Promise<ItemsOf<Name>> {
   if (!Number.isInteger(pageSize) || pageSize < 1) {
     throw paginationError('INVALID_PAGINATION_LIMIT', '服务端返回了无效的列表分页上限。');
@@ -38,7 +39,7 @@ export async function listAllProjectItems<Name extends SchemaName>(
   let cursor: string | null = null;
 
   for (let pageCount = 0; pageCount < maxPageCount; pageCount += 1) {
-    const page = await api.get<Name>(projectPath(projectId, tail), { limit: pageSize, cursor }, signal);
+    const page = await api.get<Name>(projectPath(projectId, tail), { ...query, limit: pageSize, cursor }, signal);
     if (!page || typeof page !== 'object') {
       throw paginationError('INVALID_PAGINATION', '服务端列表响应无法识别，已停止加载。');
     }
@@ -128,11 +129,13 @@ export async function uploadProjectFile(
   projectId: string,
   file: File,
   initIntentKey: string = createIntentKey(),
+  onInitialized?: (fileId: string) => void,
 ): Promise<string> {
   const init = await api.post<'FileInitResponse'>(projectPath(projectId, '/files'), {
     fileName: file.name,
     contentType: contentTypeFor(file),
   }, { idempotencyKey: initIntentKey });
+  onInitialized?.(init.fileId);
   await request<'FileStoredResponse'>(init.upload.url, {
     method: 'PUT',
     rawBody: file,

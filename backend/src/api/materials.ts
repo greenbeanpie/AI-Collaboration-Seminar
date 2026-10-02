@@ -1,3 +1,4 @@
+import { fileReferenceAvailability } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -13,7 +14,7 @@ const DOC_MAX_BYTES = 200 * 1024;
 const materialParams = projectParams.extend({ materialId: z.string().uuid() });
 const versionParams = materialParams.extend({ versionId: z.string().uuid() });
 
-const attachmentSchema = z.object({ fileId: z.string().uuid(), name: z.string() });
+const attachmentSchema = z.object({ fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
 const materialSchema = z.object({
   materialId: z.string().uuid(),
   title: z.string(),
@@ -144,13 +145,22 @@ interface VersionRow {
   created_at: string;
 }
 
-function toVersion(r: VersionRow) {
+type Attachment = { fileId: string; name: string; availability?: 'unavailable'; deletedAt?: string | null };
+
+async function attachmentReferences(env: AppEnv['Bindings'], projectId: string, json: string): Promise<Attachment[]> {
+  const attachments = JSON.parse(json ?? '[]') as Array<{ fileId: string; name: string }>;
+  return Promise.all(attachments.map(async attachment => {
+    return { ...attachment, ...await fileReferenceAvailability(env, projectId, attachment.fileId) };
+  }));
+}
+
+async function toVersion(env: AppEnv['Bindings'], projectId: string, r: VersionRow) {
   return {
     versionId: r.id,
     revision: r.revision,
     doc: JSON.parse(r.doc_json) as Record<string, unknown>,
     markdown: r.markdown,
-    attachments: JSON.parse(r.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
+    attachments: await attachmentReferences(env, projectId, r.attachments_json),
     origin: r.origin,
     aiRunId: r.ai_run_id,
     authorId: r.author_id,
@@ -191,7 +201,7 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow) {
           revision: current.revision,
           doc: JSON.parse(current.doc_json) as Record<string, unknown>,
           markdown: current.markdown,
-          attachments: JSON.parse(current.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
+          attachments: await attachmentReferences(env, material.project_id, current.attachments_json),
           origin: current.origin,
           authorId: current.author_id,
           createdAt: current.created_at,
@@ -281,12 +291,14 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const markdown = body.markdown ?? docToMarkdown(body.doc);
     const current = material.current_version_id ? await loadVersion(c.env, material.current_version_id, member.projectId) : null;
     let attachments = JSON.parse(current?.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>;
+    const attachmentSnapshots: Array<{ fileId: string; lifecycleVersion: number }> = [];
     if (body.attachmentIds) {
       attachments = [];
       for (const fileId of new Set(body.attachmentIds)) {
-        const file = await c.env.DB.prepare("SELECT original_name FROM files WHERE id = ?1 AND project_id = ?2 AND status = 'available'").bind(fileId, member.projectId).first<{ original_name: string }>();
+        const file = await c.env.DB.prepare("SELECT original_name,lifecycle_version FROM files WHERE id = ?1 AND project_id = ?2 AND status = 'available' AND deleted_at IS NULL").bind(fileId, member.projectId).first<{ original_name: string; lifecycle_version: number }>();
         if (!file) throw notFound('附件不存在或不可用');
         attachments.push({ fileId, name: file.original_name });
+        attachmentSnapshots.push({ fileId, lifecycleVersion: file.lifecycle_version });
       }
     }
 
@@ -301,10 +313,12 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const result = await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at, attachments_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'manual', ?7, ?8, ?9)`,
-      ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now, JSON.stringify(attachments)),
+         SELECT ?1,?2,?3,?4,?5,?6,'manual',?7,?8,?9
+         WHERE EXISTS(SELECT 1 FROM materials WHERE id=?2 AND project_id=?3 AND revision=?11)
+           AND NOT EXISTS(SELECT 1 FROM json_each(?10) captured WHERE NOT EXISTS(SELECT 1 FROM files f WHERE f.id=json_extract(captured.value,'$.fileId') AND f.project_id=?3 AND f.status='available' AND f.deleted_at IS NULL AND f.lifecycle_version=json_extract(captured.value,'$.lifecycleVersion')))`,
+      ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now, JSON.stringify(attachments), JSON.stringify(attachmentSnapshots), body.expectedRevision),
       c.env.DB.prepare(
-        'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4',
+        'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4 AND EXISTS(SELECT 1 FROM material_versions WHERE id=?2 AND material_id=?1)',
       ).bind(materialId, versionId, now, body.expectedRevision),
       c.env.DB.prepare(`INSERT INTO events (id, project_id, actor_type, actor_id, type, entity_type, entity_id, dedup_key, payload_json, occurred_at)
         SELECT ?1, ?2, 'user', ?3, 'material.saved', 'material', ?4, ?5, ?6, ?7
@@ -318,7 +332,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       throw versionConflict(material.revision);
     }
     const version = await loadVersion(c.env, versionId, member.projectId);
-    return c.json(apiData(c, toVersion(version)), 201);
+    return c.json(apiData(c, await toVersion(c.env, member.projectId, version)), 201);
   });
 
   app.openapi(listVersionsRoute, async (c) => {
@@ -342,16 +356,16 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {
-        items: pageRows.map((r) => ({
+        items: await Promise.all(pageRows.map(async (r) => ({
           versionId: r.id,
           revision: r.revision,
           markdown: r.markdown,
-          attachments: JSON.parse(r.attachments_json ?? '[]') as Array<{ fileId: string; name: string }>,
+          attachments: await attachmentReferences(c.env, c.get('member')!.projectId, r.attachments_json),
           origin: r.origin,
           aiRunId: r.ai_run_id,
           authorId: r.author_id,
           createdAt: r.created_at,
-        })),
+        }))),
         nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
@@ -360,6 +374,6 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(getVersionRoute, async (c) => {
     const version = await loadVersion(c.env, c.req.valid('param').versionId, c.get('member')!.projectId, c.req.valid('param').materialId);
-    return c.json(apiData(c, toVersion(version)), 200);
+    return c.json(apiData(c, await toVersion(c.env, c.get('member')!.projectId, version)), 200);
   });
 }

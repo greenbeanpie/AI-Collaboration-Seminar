@@ -1,5 +1,6 @@
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
+import { assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { gatewayChat } from '../ai/gateway';
@@ -26,6 +27,7 @@ export interface AgentRunJobInput {
   roleTemplate: string | null;
   materialVersionIds: string[];
   sourceVersionIds: string[];
+  sourceSnapshots?: SourceInputSnapshot[];
   /** guide 模式下本轮 assistant 回合的序号 */
   turnSequence: number | null;
 }
@@ -187,7 +189,7 @@ export async function aiJsonCall<S extends z.ZodType>(
 async function validateInputs(
   env: Env,
   projectId: string,
-  input: { taskId: string | null; materialVersionIds: string[]; sourceVersionIds: string[] },
+  input: { taskId: string | null; materialVersionIds: string[]; sourceVersionIds: string[]; sourceSnapshots?: SourceInputSnapshot[] },
 ): Promise<void> {
   if (input.taskId) {
     const row = await env.DB.prepare('SELECT id FROM tasks WHERE id = ?1 AND project_id = ?2')
@@ -203,12 +205,7 @@ async function validateInputs(
       .first();
     if (!row) throw new AppError('NOT_FOUND', `材料版本 ${versionId} 不存在或不属于本项目`, 404, false);
   }
-  for (const versionId of input.sourceVersionIds) {
-    const row = await env.DB.prepare('SELECT id FROM source_versions WHERE id = ?1 AND project_id = ?2')
-      .bind(versionId, projectId)
-      .first();
-    if (!row) throw new AppError('NOT_FOUND', `来源版本 ${versionId} 不存在或不属于本项目`, 404, false);
-  }
+  await assertSourceInputs(env, projectId, input.sourceVersionIds, input.sourceSnapshots);
 }
 
 const MATERIAL_CHARS = 8000;
@@ -224,9 +221,9 @@ async function buildContext(
 
   for (const versionId of input.materialVersionIds) {
     const row = await env.DB.prepare(
-      `SELECT v.markdown, m.title FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1`,
+      `SELECT v.markdown, m.title FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2`,
     )
-      .bind(versionId)
+      .bind(versionId, input.projectId)
       .first<{ markdown: string; title: string }>();
     if (row) {
       const md = row.markdown.slice(0, MATERIAL_CHARS);
@@ -237,9 +234,9 @@ async function buildContext(
 
   for (const versionId of input.sourceVersionIds) {
     const fragments = await env.DB.prepare(
-      'SELECT page_number, kind, content FROM source_fragments WHERE source_version_id = ?1 ORDER BY seq LIMIT 200',
+      `SELECT fragment.page_number, fragment.kind, fragment.content FROM source_fragments fragment JOIN source_versions v ON v.id=fragment.source_version_id JOIN sources s ON s.id=v.source_id WHERE fragment.source_version_id=?1 AND fragment.project_id=?2 AND s.project_id=?2 AND s.deleted_at IS NULL AND s.lifecycle_version=?3 AND (v.origin!='file' OR EXISTS(SELECT 1 FROM files f WHERE f.id=v.file_id AND f.project_id=?2 AND f.status='available' AND f.deleted_at IS NULL)) ORDER BY fragment.seq LIMIT 200`,
     )
-      .bind(versionId)
+      .bind(versionId, input.projectId, input.sourceSnapshots!.find(source => source.sourceVersionId === versionId)!.sourceLifecycleVersion)
       .all<{ page_number: number | null; kind: string; content: string }>();
     if (fragments.results.length > 0) {
       const listing = fragments.results.map((f) => `[页${f.page_number ?? '-'} ${f.kind}] ${f.content}`).join('\n');
@@ -249,8 +246,8 @@ async function buildContext(
 
   let taskText = '';
   if (input.taskId) {
-    const task = await env.DB.prepare('SELECT title, detail, status FROM tasks WHERE id = ?1')
-      .bind(input.taskId)
+    const task = await env.DB.prepare('SELECT title, detail, status FROM tasks WHERE id = ?1 AND project_id = ?2')
+      .bind(input.taskId, input.projectId)
       .first<{ title: string; detail: string; status: string }>();
     if (task) taskText = `任务：${task.title}（状态：${task.status}）\n${task.detail}`;
   }
@@ -365,6 +362,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         promptVersion: PROMPT_VERSION,
         messages,
         schema: doOutputSchema,
+        beforeCall: () => validateInputs(env, input.projectId, input),
       });
       outputPayload = { title: data.title, markdown: data.markdown, doc: markdownToDoc(data.markdown),toolTrace,citations };
     } else if (input.capability === 'guide') {
@@ -381,6 +379,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         promptVersion: PROMPT_VERSION,
         messages,
         schema: guideOutputSchema,
+        beforeCall: () => validateInputs(env, input.projectId, input),
       });
       outputPayload = data.type === 'question' ? { question: data.content,toolTrace,citations } : { markdown: data.content, doc: markdownToDoc(data.content),toolTrace,citations };
     } else {
@@ -397,6 +396,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         promptVersion: PROMPT_VERSION,
         messages,
         schema: reviewOutputSchema,
+        beforeCall: () => validateInputs(env, input.projectId, input),
       });
       // 引文核验：quote 必须逐字（归一化空白）出现在本次输入的材料中
       const haystack = normalize(context.materialsMarkdown);
@@ -408,16 +408,20 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
       outputPayload = { issues: data.issues,toolTrace,citations };
     }
 
+    await validateInputs(env, input.projectId, input);
     await assertToolAccess(env,tools);
     const turnKind = input.capability === 'do' ? 'draft' : input.capability === 'guide' ? (outputPayload['question'] !== undefined ? 'question' : 'draft') : 'review_result';
     const sequence = input.turnSequence ?? 1;
     const now = nowIso();
     const statements = [
       env.DB.prepare(
-        "UPDATE agent_runs SET status = 'succeeded', output_json = ?2 WHERE id = ?1",
-      ).bind(input.runId, JSON.stringify(outputPayload)),
+        `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running'
+          AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND project_id=?3 AND status IN ('queued','running'))
+          AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?3 AND p.status='active' AND m.user_id=?5)
+          AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
+      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId, requester),
       env.DB.prepare(
-        "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, run_id, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, 'assistant', ?5, ?6, ?7, ?8)",
+        "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, run_id, payload_json, created_at) SELECT ?1,?2,?3,?4,'assistant',?5,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM agent_runs WHERE id=?6 AND status='succeeded')",
       ).bind(
         crypto.randomUUID(),
         run.session_id,
@@ -434,7 +438,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         env.DB.prepare('UPDATE agent_sessions SET updated_at = ?2 WHERE id = ?1').bind(run.session_id, now),
       );
     }
-    await env.DB.batch(statements);
+    const result = await env.DB.batch(statements);
+    if (!result[0]?.meta.changes) throw new AppError('INVALID_STATE', '来源已移入回收站或生命周期已变化，请重新发起', 409, false);
     await settleReservation(env, jobId, 'settled');
     await recordEvent(env, {
       projectId: input.projectId,

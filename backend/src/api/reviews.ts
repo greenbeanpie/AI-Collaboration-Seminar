@@ -1,3 +1,4 @@
+import { snapshotRequirementSources } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -120,6 +121,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
         .bind(body.requirementSetId, member.projectId)
         .first();
       if (!set) throw notFound('要求集不存在或不属于本项目');
+      const sourceSnapshots = await snapshotRequirementSources(c.env, member.projectId, body.requirementSetId);
       for (const versionId of body.materialVersionIds) {
         const row = await c.env.DB.prepare(
           'SELECT v.id FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2',
@@ -142,7 +144,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
             jobId,
             projectId: member.projectId,
             kind: 'review_run',
-            input: { reviewId, projectId: member.projectId, configVersionId },
+            input: { reviewId, projectId: member.projectId, configVersionId, sourceSnapshots },
             createdBy: user.id,
           });
         } catch (error) {

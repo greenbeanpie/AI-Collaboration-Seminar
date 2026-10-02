@@ -3,6 +3,7 @@ import type { AppEnv } from '../env';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
+import { sourceLifecycleGuard } from '../services/source-lifecycle';
 import { notFound } from '../core/errors';
 import { documentSummarySchema, enqueueSourceSummary } from '../services/source-summary';
 import { withIdempotency } from '../services/idempotency';
@@ -26,7 +27,7 @@ export function registerSourceProcessingRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/sources/:sourceId/versions/:sourceVersionId/processing/*', requireUser, requireProjectMember());
   app.use('/api/v1/projects/:projectId/sources/:sourceId/versions/:sourceVersionId/processing', requireUser, requireProjectMember());
   const lookup = async (db: D1Database, projectId: string, sourceId: string, versionId: string) => {
-    const version = await db.prepare('SELECT status, char_count, parse_error FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3').bind(versionId, sourceId, projectId).first<{ status: string; char_count: number | null; parse_error: string | null }>();
+    const version = await db.prepare(`SELECT status, char_count, parse_error FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3 AND ${sourceLifecycleGuard('source_versions.id','NULL')}`).bind(versionId, sourceId, projectId).first<{ status: string; char_count: number | null; parse_error: string | null }>();
     if (!version) throw notFound('来源版本不存在');
     return version;
   };

@@ -1,17 +1,18 @@
-# P2 WIP checkpoint
+# P2 integrated release candidate
 
-This branch is a recoverable implementation checkpoint, not a release approval.
+Publication remains coordinated by the parent task. No main push, production migration, deployment, live model request or saved credential/configuration change was performed by this worktree.
 
-- Branch: `codex/p2-project-wizard-tools`, based on `01f47cdd084576c64515aa037471ec416b103c3a`.
-- Scope: private creation drafts and a five-step wizard; username invitations with recipient acceptance; bounded project file tools and provider-native internet search; DeepSeek Anthropic-compatible preset.
-- Formal projects, tasks, files and invitations are created only by the final draft commit transaction. The same draft ID restores the same result after a retry.
-- Model search is limited to a user-approved public query. Tests use fixtures only; no actual provider search, saved credentials or live configuration was changed. DeepSeek native search request parameters remain experimental and have not been tested against the live service.
-- Recoverable checkpoint `3d84643fa9621248443b7ea40a545e3cad467307` was pushed to the same authorized repository branch after reconnection.
-- Confirmed after reconnection: full backend 54 files / 521 tests passed; full frontend 59 files / 315 tests passed; backend/frontend typecheck, frontend lint and production frontend build passed. Runtime diagnostics from Workers disposal appeared, but the test process completed with exit code 0. Frontend fixes guard absent search-capability data and hide the search control while project AI is disabled.
-- Browser layout QA is pending; all provider-native search tests use fixtures, with no live provider billing requests.
-- Current migrations are `0022_creation_drafts_tools.sql` and `0023_username_invitations.sql`. The separately owned recycle-bin work also uses migration 0022, so migration numbering must be coordinated before integration.
-- Shared integration point: `backend/src/services/files.ts`. New project file tools currently select only files with `status='available'`; this is insufficient for the incoming soft-delete contract and must be integrated before release. Filter `files.deleted_at`, load active source versions with `source-lifecycle` helpers, freeze file/source lifecycle versions for tool results, and recheck them before every subsequent provider request so remove/restore cannot reuse old reads. Draft-to-project imports should use the new lifecycle defaults and preserve the immutable staged file ID. No helper is guessed or duplicated before receiving the recycle-bin commit.
-- Other modified AI files: `ai/calls.ts`, `ai/gateway.ts`, `services/agent.ts`, `services/budget.ts`, `services/collaboration-ai.ts`, APIs `agents.ts`, `collaboration.ts`, `jobs.ts`, and `app.ts`. OpenAPI files are generated from these changes.
-- Do not import the abandoned cloud draft or title patch `9119314`. Do not merge main or deploy this checkpoint; the parent coordinates serial publication.
+- Integrated branch: `codex/p2-project-wizard-tools-integrated`, rebased onto published recycle-bin commit `db56a225e0a327ddc8ff2efda9400595b86195b3`.
+- Original recoverable WIP remains unchanged on `codex/p2-project-wizard-tools` at `87cc3ad9334ca16b329c5eefc86ebc574436c6c8`; no force push was used.
+- Scope: private five-step creation drafts; files staged without a formal project; username invitations accepted/rejected on the homepage; bounded file tools; provider-native internet search; DeepSeek Anthropic-compatible preset.
+- Final creation uses a D1 transaction guarded by draft ID/revision and replays the same encrypted result. Confirmed task decomposition is reused without another model call. Cancellation and file removal retain recoverable data.
+- Migrations are now `0023_creation_drafts_tools.sql` and `0024_username_invitations.sql`, following the published `0022_file_recycle.sql`. No production migration was executed here.
+- Lifecycle integration uses shared `loadActiveSourceVersion` and `sourceLifecycleGuard`. File tools exclude deleted files/sources, freeze at most160 dynamic file/source snapshots in job input, and verify current permissions, job state and lifecycle before each model request and on return. Delete/restore cannot revive old snapshots. Deletion cancels affected tool jobs, including metadata-only files without a source; incurred/unknown costs remain auditable.
+- Shared atomic guards protect assistant result persistence and collaboration proposal creation/adoption, including dynamically read files. Existing selected-source and permission guards were retained. New draft imports preserve immutable staged file IDs and receive lifecycle defaults1.
+- Combined validation: backend57 files /561 tests passed with `--maxWorkers=2`; frontend61 files /327 tests passed; backend/frontend typecheck, frontend lint, frontend production build, generated OpenAPI/type contracts, Service Binding verification and production static preflight passed. Existing Workers RPC disposal diagnostics appeared but the full test process exited0.
+- The local HTTP integration script requires an explicitly running loopback stack and local test-account setup; it was not completed in this worktree. Browser layout QA is also pending. Neither is claimed as passed.
+- Wizard and username-invitation flows have final automated regression coverage, including no early project/invitation, commit replay/rollback, recipient isolation and concurrent capacity. DeepSeek preset and native-search protocol behavior have fixture regression coverage; exact live DeepSeek search parameters, real supplier support/billing and live citation formats remain unverified and are labelled in the UI/docs.
+- Native search accepts only this run's user-approved public query and uses the configured supplier. No new search supplier/key/service is added. Unsupported configurations return unavailable; no text-only claim is accepted as evidence of search. Native additional costs remain unknown and finite-budget projects cannot use search.
+- Do not import the abandoned cloud draft, blocked title patch `9119314` or P1. The integrated branch does not contain that title patch.
 
-Local dependency symlinks are intentionally excluded from commits. Source code and test fixtures are all in this branch.
+Local dependency symlinks are excluded from commits. The original WIP is independently recoverable from its remote branch.

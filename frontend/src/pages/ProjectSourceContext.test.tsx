@@ -11,7 +11,7 @@ const response = (data: unknown) => Response.json({ data, requestId: 'fixture' }
 type Source = DataOf<'SourceListResponse'>['items'][number];
 type Version = DataOf<'SourceVersionResponse'>;
 function sources(projectId: string, count = 6): Source[] {
-  return Array.from({ length: count }, (_, index) => ({ sourceId: `${projectId}-s${index}`, currentVersionId: `${projectId}-v${index}`, title: `${projectId}资料${index}`, kind: 'file', createdAt: '2026-10-01T00:00:00Z' }));
+  return Array.from({ length: count }, (_, index) => ({ sourceId: `${projectId}-s${index}`, currentVersionId: `${projectId}-v${index}`, title: `${projectId}资料${index}`, kind: 'file', createdAt: '2026-10-01T00:00:00Z', lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: `${projectId}-f${index}` }));
 }
 function version(source: Source, ready = false): Version {
   return { sourceVersionId: source.currentVersionId!, sourceId: source.sourceId, revision: 1, origin: 'file', fileId: `${source.sourceId}-file`, status: ready ? 'ready' : 'pending', parseError: null, pageCount: 1, charCount: ready ? 100 : null,
@@ -55,6 +55,18 @@ beforeEach(() => { sessionStorage.clear(); vi.stubGlobal('crypto', webcrypto); O
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 describe('grounded project source selection', () => {
+  it('removes recycled versions from the project AI selection without starting new processing', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const items = sources('p', 2);
+    const { client } = setup({ items });
+    await waitFor(() => expect(selectedIds()).toEqual(['p-v0', 'p-v1']));
+    await act(async () => { client.setQueryData(['project-assistant-sources', 'p'], [items[1]]); });
+    await waitFor(() => expect(selectedIds()).toEqual(['p-v1']));
+    expect(screen.queryByRole('checkbox', { name: '使用来源：p资料0' })).not.toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('version-readiness').textContent ?? '{}')['p-v0']).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('automatically selects at most five immutable source versions but never parses or spends on render', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch); const items = [...sources('p'), { ...sources('p', 1)[0], sourceId: 'no-version', currentVersionId: null, title: '尚无版本' }];
     setup({ items });

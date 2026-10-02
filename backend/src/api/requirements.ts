@@ -1,3 +1,4 @@
+import { sourceCitationAvailability, sourceReferenceAvailability } from '../services/source-inputs';
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -17,6 +18,8 @@ const citationSchema = z.object({
   fragmentId: z.string().uuid(),
   pageNumber: z.number().int().nullable(),
   quote: z.string(),
+  availability: z.literal('unavailable').optional(),
+  deletedAt: z.string().nullable().optional(),
 });
 
 const requirementSchema = z.object({
@@ -35,6 +38,8 @@ const requirementResponse = apiEnvelope(requirementSchema, 'RequirementResponse'
 const setSchema = z.object({
   requirementSetId: z.string().uuid(),
   sourceVersionId: z.string().uuid().nullable(),
+  sourceAvailability: z.literal('unavailable').optional(),
+  sourceDeletedAt: z.string().nullable().optional(),
   status: z.enum(['draft', 'confirmed']),
   revision: z.number().int(),
   confirmedAt: z.string().nullable(),
@@ -192,7 +197,9 @@ interface RubricRow {
   created_at: string;
 }
 
-function toRequirement(r: RequirementRow) {
+async function toRequirement(env: AppEnv['Bindings'], projectId: string, r: RequirementRow) {
+  const citations = JSON.parse(r.citations_json) as Array<{ sourceVersionId?: string; fragmentId?: string; [key: string]: unknown }>;
+  const references = await Promise.all(citations.map(async citation => ({ ...citation, ...await sourceCitationAvailability(env, projectId, citation) })));
   return {
     requirementId: r.id,
     seq: r.seq,
@@ -201,7 +208,7 @@ function toRequirement(r: RequirementRow) {
     detail: r.detail,
     dueDate: r.due_date,
     duePrecision: r.due_precision as 'date' | 'datetime' | 'unknown',
-    citations: JSON.parse(r.citations_json) as unknown[],
+    citations: references,
     fieldState: r.field_state as 'ai_suggestion' | 'edited' | 'confirmed',
   };
 }
@@ -227,13 +234,15 @@ async function loadSet(env: AppEnv['Bindings'], setId: string, projectId: string
   const reqs = await env.DB.prepare('SELECT * FROM requirements WHERE requirement_set_id = ?1 ORDER BY seq')
     .bind(setId)
     .all<RequirementRow>();
+  const sourceAvailability = set.source_version_id ? await sourceReferenceAvailability(env, projectId, set.source_version_id) : undefined;
   return {
     requirementSetId: set.id,
     sourceVersionId: set.source_version_id,
+    ...(sourceAvailability ? { sourceAvailability: sourceAvailability.availability, sourceDeletedAt: sourceAvailability.deletedAt } : {}),
     status: set.status,
     revision: set.revision,
     confirmedAt: set.confirmed_at,
-    requirements: reqs.results.map(toRequirement),
+    requirements: await Promise.all(reqs.results.map(row => toRequirement(env, projectId, row))),
   };
 }
 
@@ -321,7 +330,7 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
     ]);
     const updated = await c.env.DB.prepare('SELECT * FROM requirements WHERE id = ?1').bind(requirementId).first<RequirementRow>();
     if (!updated) throw notFound('要求条目不存在');
-    return c.json(apiData(c, toRequirement(updated)), 200);
+    return c.json(apiData(c, await toRequirement(c.env, c.get('member')!.projectId, updated)), 200);
   });
 
   app.openapi(listRubricsRoute, async (c) => {

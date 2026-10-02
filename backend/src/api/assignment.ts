@@ -1,3 +1,5 @@
+import { snapshotRequirementSources, type SourceInputSnapshot } from '../services/source-inputs';
+import { sourceLifecycleGuard } from '../services/source-lifecycle';
 import { profileStamp } from '../services/personal-profiles';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -107,13 +109,14 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
       requirementSetId = set.id;
     } else {
       const set = await c.env.DB.prepare(
-        "SELECT id FROM requirement_sets WHERE project_id = ?1 AND status = 'confirmed' ORDER BY confirmed_at DESC, id DESC LIMIT 1",
+        `SELECT id FROM requirement_sets WHERE project_id=?1 AND status='confirmed' AND (source_version_id IS NULL OR ${sourceLifecycleGuard('source_version_id', 'NULL')}) ORDER BY confirmed_at DESC,id DESC LIMIT 1`,
       )
         .bind(member.projectId)
         .first<{ id: string }>();
       requirementSetId = set?.id ?? null;
     }
 
+    const sourceSnapshots: SourceInputSnapshot[] = requirementSetId ? await snapshotRequirementSources(c.env, member.projectId, requirementSetId) : [];
     const requirements = requirementSetId
       ? await c.env.DB.prepare(
           'SELECT title, detail FROM requirements WHERE project_id = ?1 AND requirement_set_id = ?2 ORDER BY seq, id',
@@ -142,6 +145,7 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
           requestedBy: user.id,
           requirementSetId,
           requirements: requirements.results,
+          sourceSnapshots,
           tasks: taskRows.map((task) => ({
             taskId: task.id,
             title: task.title,

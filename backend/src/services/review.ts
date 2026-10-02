@@ -1,3 +1,4 @@
+import { assertRequirementSources, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
@@ -14,6 +15,7 @@ export interface ReviewJobInput {
   configVersionId?: string;
   reviewId: string;
   projectId: string;
+  sourceSnapshots?: SourceInputSnapshot[];
 }
 
 interface ReviewRow {
@@ -70,8 +72,9 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
     if (!rubric) throw new AppError('NOT_FOUND', '评分标准不存在', 404, false);
     const weights = JSON.parse(rubric.weights_json) as Array<{ key: string; label: string; weight: number }>;
 
-    const requirements = await env.DB.prepare('SELECT title, detail FROM requirements WHERE requirement_set_id = ?1 ORDER BY seq')
-      .bind(review.requirement_set_id)
+    await assertRequirementSources(env, input.projectId, review.requirement_set_id, input.sourceSnapshots);
+    const requirements = await env.DB.prepare('SELECT title, detail FROM requirements WHERE requirement_set_id = ?1 AND project_id = ?2 ORDER BY seq')
+      .bind(review.requirement_set_id, input.projectId)
       .all<{ title: string; detail: string }>();
 
     const versionIds = JSON.parse(review.material_version_ids_json) as string[];
@@ -112,6 +115,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       promptVersion: PROMPT_VERSION,
       messages,
       schema: reportSchema,
+      beforeCall: () => assertRequirementSources(env, input.projectId, review.requirement_set_id, input.sourceSnapshots),
     });
 
     // 分项必须覆盖全部评分维度（防漏项与伪造维度）
@@ -124,13 +128,15 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       throw new AppError('AI_OUTPUT_INVALID', '总体评价为空', 502, false);
     }
 
+    await assertRequirementSources(env, input.projectId, review.requirement_set_id, input.sourceSnapshots);
     const now = nowIso();
-    await env.DB.batch([
-      env.DB.prepare("UPDATE reviews SET status = 'succeeded', report_json = ?2 WHERE id = ?1").bind(
+    const updated = await env.DB.batch([
+      env.DB.prepare(`UPDATE reviews SET status='succeeded',report_json=?2 WHERE id=?1 AND project_id=?3 AND status IN ('pending','running') AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`).bind(
         review.id,
-        JSON.stringify({ ...data, rubricVersion: rubric.version, materialVersionIds: versionIds }),
+        JSON.stringify({ ...data, rubricVersion: rubric.version, materialVersionIds: versionIds }), input.projectId, jobId,
       ),
     ]);
+    if (!updated[0]?.meta.changes) throw new AppError('INVALID_STATE', '引用的来源已变化，预审未发布', 409, false);
     await settleReservation(env, jobId, 'settled');
     await recordEvent(env, {
       projectId: input.projectId,

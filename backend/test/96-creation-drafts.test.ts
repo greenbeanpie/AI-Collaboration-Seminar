@@ -63,6 +63,8 @@ describe('private creation drafts', () => {
       expectedRevision: 4, confirmed: true
     }));
     expect(created.invitations).toHaveLength(2);
+    expect(await env.DB.prepare('SELECT lifecycle_version,deleted_at FROM files WHERE id=?1').bind(fileId).first()).toEqual({lifecycle_version:1,deleted_at:null});
+    expect(await env.DB.prepare('SELECT lifecycle_version,deleted_at FROM sources WHERE project_id=?1').bind(created.projectId).first()).toEqual({lifecycle_version:1,deleted_at:null});
     const replay = await data(await req(owner.token, `/${draft.id}/commit`, {
       expectedRevision: 4, confirmed: true
     }));

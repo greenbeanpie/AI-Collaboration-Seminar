@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { aiJsonCall } from './agent';
 import { extractPdfText, hasExtractableText } from './pdf-text';
 import { maybeEnqueueSourceSummary, runSourceSummary, setSourceStage } from './source-summary';
+import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
 
 const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-page-v1';
@@ -21,6 +22,7 @@ export interface ParseJobInput {
   configVersionId?: string;
   sourceId: string;
   sourceVersionId: string;
+  sourceLifecycleVersion?: number;
   phase: 'extract' | 'ocr';
 }
 
@@ -37,6 +39,7 @@ interface SourceVersionRow {
   page_count: number | null;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   parse_error: string | null;
+  lifecycleVersion: number;
 }
 
 interface FragmentRow {
@@ -84,6 +87,7 @@ async function insertFragments(
   env: Env,
   version: SourceVersionRow,
   pages: Array<{ pageNumber: number | null; text: string; kind: FragmentRow['kind'] }>,
+  jobId?: string,
 ): Promise<number> {
   const inserts = [];
   let seq = 1;
@@ -91,7 +95,7 @@ async function insertFragments(
     for (const chunk of chunkPage(page.text)) {
       inserts.push(
         env.DB.prepare(
-          "INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at) SELECT ?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(seq), 0) + 1 FROM source_fragments WHERE source_version_id = ?2), ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM source_fragments WHERE source_version_id = ?2 AND page_number IS ?4 AND kind = ?6 AND content = ?7)",
+          `INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at) SELECT ?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(seq), 0) + 1 FROM source_fragments WHERE source_version_id = ?2), ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM source_fragments WHERE source_version_id = ?2 AND page_number IS ?4 AND kind = ?6 AND content = ?7) AND ${processingGuard("?2", "?9", "?10")}`,
         ).bind(
           crypto.randomUUID(),
           version.id,
@@ -101,6 +105,8 @@ async function insertFragments(
           page.kind,
           chunk,
           nowIso(),
+          version.lifecycleVersion,
+          jobId ?? null,
         ),
       );
     }
@@ -109,22 +115,33 @@ async function insertFragments(
   return inserts.length;
 }
 
-async function loadVersion(env: Env, sourceVersionId: string): Promise<SourceVersionRow> {
+function processingGuard(versionIdSql: string, lifecycleSql: string, jobIdSql: string): string {
+  return `${sourceLifecycleGuard(versionIdSql, lifecycleSql)} AND (${jobIdSql} IS NULL OR EXISTS (SELECT 1 FROM jobs processing_j WHERE processing_j.id = ${jobIdSql} AND processing_j.status IN ('queued','running')))`;
+}
+
+async function assertProcessingActive(env: Env, version: Pick<SourceVersionRow, 'id' | 'lifecycleVersion'>, jobId?: string): Promise<void> {
+  await loadActiveSourceVersion(env, version.id, version.lifecycleVersion);
+  if (jobId) await assertSourceJobActive(env, jobId);
+}
+
+async function loadVersion(env: Env, sourceVersionId: string, expectedLifecycleVersion?: number, jobId?: string): Promise<SourceVersionRow> {
+  const lifecycle = await loadActiveSourceVersion(env, sourceVersionId, expectedLifecycleVersion);
+  if (jobId) await assertSourceJobActive(env, jobId);
   const row = await env.DB.prepare(
     'SELECT id, source_id, project_id, revision, origin, file_id, url, text_r2_key, char_count, page_count, status, parse_error FROM source_versions WHERE id = ?1',
   )
     .bind(sourceVersionId)
     .first<SourceVersionRow>();
   if (!row) throw new AppError('NOT_FOUND', '来源版本不存在', 404, false);
-  return row;
+  return { ...row, lifecycleVersion: lifecycle.lifecycleVersion };
 }
 
 /** 步骤一：文本层提取与片段化（PDF 按页；paste/web 单页）。返回仍需页面图的页数 */
-export async function extractSourceVersionText(env: Env, sourceVersionId: string): Promise<{ needsImages: number }> {
-  const version = await loadVersion(env, sourceVersionId);
+export async function extractSourceVersionText(env: Env, sourceVersionId: string, expectedLifecycleVersion?: number, jobId?: string): Promise<{ needsImages: number }> {
+  const version = await loadVersion(env, sourceVersionId, expectedLifecycleVersion, jobId);
   if (version.status === 'ready') return { needsImages: 0 };
-  await setSourceStage(env, version.id, 'text', 'processing');
-  await env.DB.prepare("UPDATE source_versions SET status = 'processing' WHERE id = ?1").bind(version.id).run();
+  await setSourceStage(env, version.id, 'text', 'processing', null, version.lifecycleVersion, jobId);
+  await env.DB.prepare(`UPDATE source_versions SET status = 'processing' WHERE id = ?1 AND ${processingGuard('?1', '?2', '?3')}`).bind(version.id, version.lifecycleVersion, jobId ?? null).run();
 
   let perPage: Array<{ pageNumber: number; text: string }> = [];
   let pageCount = 0;
@@ -153,10 +170,11 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
       throw new AppError('SOURCE_PARSE_FAILED', `不支持的来源类型 ${file.ext}`, 422, false);
     }
   } else if (version.origin === 'web' && version.url) {
+    await assertProcessingActive(env, version, jobId);
     const page = await fetchWebPage({ DB: env.DB }, version.url);
     pageCount = 1;
     perPage = [{ pageNumber: 1, text: page.text }];
-    await env.DB.prepare('UPDATE sources SET title = ?2 WHERE id = ?1').bind(version.source_id, page.title).run();
+    await env.DB.prepare(`UPDATE sources SET title = ?2 WHERE id = ?1 AND ${processingGuard('?3', '?4', '?5')}`).bind(version.source_id, page.title, version.id, version.lifecycleVersion, jobId ?? null).run();
   } else if (version.origin === 'paste' && version.text_r2_key) {
     const obj = await env.FILES.get(version.text_r2_key);
     if (!obj) throw new AppError('SOURCE_PARSE_FAILED', '粘贴内容缺失', 422, false);
@@ -175,7 +193,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
     pageRows.push(
       env.DB.prepare(
         `INSERT INTO source_pages (id, source_version_id, project_id, page_number, text_status, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE ${processingGuard("?2", "?7", "?8")}
          ON CONFLICT (source_version_id, page_number) DO UPDATE SET
            text_status = excluded.text_status, updated_at = excluded.updated_at`,
       ).bind(
@@ -185,11 +203,14 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
         p.pageNumber,
         hasText ? 'extracted' : 'none',
         nowIso(),
+        version.lifecycleVersion,
+        jobId ?? null,
       ),
     );
   }
   const allText = perPage.map((p) => p.text).join('\n\n');
-  const textKey = `sources/${version.id}/text.txt`;
+  const textKey = `sources/${version.id}/lifecycle-${version.lifecycleVersion}/text.txt`;
+  await assertProcessingActive(env, version, jobId);
   await env.FILES.put(textKey, allText);
   if (pageRows.length > 0) await env.DB.batch(pageRows);
 
@@ -201,14 +222,16 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
       text: p.text,
       kind: (version.origin === 'web' ? 'web' : version.origin === 'paste' ? 'paste' : 'text') as FragmentRow['kind'],
     })),
+    jobId,
   );
 
   await env.DB.prepare(
-    'UPDATE source_versions SET text_r2_key = ?2, char_count = ?3, page_count = ?4 WHERE id = ?1',
+    `UPDATE source_versions SET text_r2_key = ?2, char_count = ?3, page_count = ?4 WHERE id = ?1 AND ${processingGuard('?1', '?5', '?6')}`,
   )
-    .bind(version.id, textKey, allText.length, pageCount)
+    .bind(version.id, textKey, allText.length, pageCount, version.lifecycleVersion, jobId ?? null)
     .run();
 
+  await assertProcessingActive(env, version, jobId);
   return { needsImages };
 }
 
@@ -218,8 +241,8 @@ const ocrOutputSchema = z.object({
 });
 
 /** 步骤二：对已上传页面图执行视觉 OCR（低成本视觉模型，结果标记待人工复核） */
-export async function ocrPendingPages(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string): Promise<{ ocred: number; failed: number; stillMissing: number }> {
-  const version = await loadVersion(env, sourceVersionId);
+export async function ocrPendingPages(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string, expectedLifecycleVersion?: number): Promise<{ ocred: number; failed: number; stillMissing: number }> {
+  const version = await loadVersion(env, sourceVersionId, expectedLifecycleVersion, jobId);
   const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
   if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
@@ -243,7 +266,8 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   let ocred = 0;
   let failed = 0;
   for (const page of pages.results) {
-    const file = await env.DB.prepare('SELECT r2_key, mime_detected FROM files WHERE id = ?1')
+    await assertProcessingActive(env, version, jobId);
+    const file = await env.DB.prepare("SELECT r2_key, mime_detected FROM files WHERE id = ?1 AND deleted_at IS NULL AND status = 'available'")
       .bind(page.image_file_id)
       .first<{ r2_key: string; mime_detected: string | null }>();
     if (!file) {
@@ -273,7 +297,8 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
         config: vision,
         sessionId: sourceVersionId,
         jsonMode: true,
-        beforeFetch: async () => { await markAiCallStarted(env, jobId); attempted = true; },
+        beforeFetch: async () => { await assertProcessingActive(env, version, jobId); await markAiCallStarted(env, jobId); await assertProcessingActive(env, version, jobId); },
+        onDispatch: () => { attempted = true; },
         messages: [
           {
             role: 'user',
@@ -288,13 +313,6 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       const parsed = ocrOutputSchema.parse(JSON.parse(out.content));
       // 空文本不得当作识别成功：否则会跳过失败页并在后续误报「无可分析内容」（A06）
       if (!parsed.text.trim()) throw new AppError('AI_OUTPUT_INVALID', '视觉模型未识别出文字', 422, false);
-      await env.FILES.put(`sources/${version.id}/ocr-page-${page.page_number}.txt`, parsed.text);
-      await insertFragments(env, version, [{ pageNumber: page.page_number, text: parsed.text, kind: 'ocr' }]);
-      await env.DB.prepare(
-        "UPDATE source_pages SET ocr_status = 'ok', ocr_method = 'vision', ocr_confidence = ?2, needs_review = 1, updated_at = ?3 WHERE id = ?1",
-      )
-        .bind(page.id, parsed.confidence, nowIso())
-        .run();
       recording = true;
       await recordAiCall(env, {
         projectId: version.project_id,
@@ -310,6 +328,13 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
         latencyMs: out.latencyMs,
         status: 'ok',
       });
+      await assertProcessingActive(env, version, jobId);
+      await env.FILES.put(`sources/${version.id}/lifecycle-${version.lifecycleVersion}/ocr-page-${page.page_number}.txt`, parsed.text);
+      await insertFragments(env, version, [{ pageNumber: page.page_number, text: parsed.text, kind: 'ocr' }], jobId);
+      await env.DB.prepare(
+        `UPDATE source_pages SET ocr_status = 'ok', ocr_method = 'vision', ocr_confidence = ?2, needs_review = 1, updated_at = ?3 WHERE id = ?1 AND ${processingGuard('?4', '?5', '?6')}`,
+      ).bind(page.id, parsed.confidence, nowIso(), version.id, version.lifecycleVersion, jobId ?? null).run();
+      await assertProcessingActive(env, version, jobId);
       ok = true;
     } catch (err) {
       if (!attempted) throw err;
@@ -330,10 +355,11 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       });
     }
     if (!ok) {
+      await assertProcessingActive(env, version, jobId);
       await env.DB.prepare(
-        "UPDATE source_pages SET ocr_status = 'failed', needs_review = 1, updated_at = ?2 WHERE id = ?1",
+        `UPDATE source_pages SET ocr_status = 'failed', needs_review = 1, updated_at = ?2 WHERE id = ?1 AND ${processingGuard('?3', '?4', '?5')}`,
       )
-        .bind(page.id, nowIso())
+        .bind(page.id, nowIso(), version.id, version.lifecycleVersion, jobId ?? null)
         .run();
       failed++;
     } else {
@@ -346,6 +372,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   )
     .bind(version.id)
     .first<{ n: number }>();
+  await assertProcessingActive(env, version, jobId);
   return { ocred, failed, stillMissing: missing?.n ?? 0 };
 }
 
@@ -410,8 +437,8 @@ async function validateCitations(
 }
 
 /** 步骤三：文本模型提取要求草稿（结构化输出 + 一次修复重试 + 引用校验） */
-export async function extractRequirements(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string): Promise<{ requirementSetId: string; count: number }> {
-  const version = await loadVersion(env, sourceVersionId);
+export async function extractRequirements(env: Env, sourceVersionId: string, configVersionId?: string, jobId?: string, expectedLifecycleVersion?: number): Promise<{ requirementSetId: string; count: number }> {
+  const version = await loadVersion(env, sourceVersionId, expectedLifecycleVersion, jobId);
   const config = await loadAiConfig(env.DB, configVersionId);
   if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
   if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
@@ -457,7 +484,10 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
     promptVersion: AI_PROMPT_VERSION,
     messages,
     schema: requirementOutputSchema,
+    beforeCall: () => assertProcessingActive(env, version, jobId),
   });
+
+  await assertProcessingActive(env, version, jobId);
 
   await validateCitations(env, version.id, parsed.requirements as ModelRequirement[]);
 
@@ -466,15 +496,15 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
   const now = nowIso();
   const inserts = [
     env.DB.prepare(
-      "INSERT INTO requirement_sets (id, project_id, source_version_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, 'draft', 1, ?4, ?4)",
-    ).bind(setId, version.project_id, version.id, now),
+      `INSERT INTO requirement_sets (id, project_id, source_version_id, status, revision, created_at, updated_at) SELECT ?1, ?2, ?3, 'draft', 1, ?4, ?4 WHERE ${processingGuard("?3", "?5", "?6")}`,
+    ).bind(setId, version.project_id, version.id, now, version.lifecycleVersion, jobId ?? null),
   ];
   let seq = 1;
   for (const req of parsed.requirements as ModelRequirement[]) {
     inserts.push(
       env.DB.prepare(
         `INSERT INTO requirements (id, requirement_set_id, project_id, seq, category, title, detail, due_date, due_precision, citations_json, field_state, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'ai_suggestion', ?11)`,
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'ai_suggestion', ?11 WHERE EXISTS (SELECT 1 FROM requirement_sets WHERE id = ?2) AND ${processingGuard('?12', '?13', '?14')}`,
       ).bind(
         crypto.randomUUID(),
         setId,
@@ -487,12 +517,16 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
         req.duePrecision,
         JSON.stringify(req.citations),
         now,
+        version.id,
+        version.lifecycleVersion,
+        jobId ?? null,
       ),
     );
   }
-  inserts.push(env.DB.prepare("UPDATE source_versions SET status = 'ready', parse_error = NULL WHERE id = ?1").bind(version.id));
+  inserts.push(env.DB.prepare(`UPDATE source_versions SET status = 'ready', parse_error = NULL WHERE id = ?1 AND ${processingGuard("?1", "?2", "?3")}`).bind(version.id, version.lifecycleVersion, jobId ?? null));
   inserts.push(...notificationStatements(env, { key: `requirements_ready:${jobId ?? setId}`, kind: 'requirements_ready', scope: 'project', resourceId: version.project_id, now, url: `/app/projects/${version.project_id}/requirements`, record: { table: 'requirement_sets', id: setId } }));
   await env.DB.batch(inserts);
+  await assertProcessingActive(env, version, jobId);
   return { requirementSetId: setId, count: parsed.requirements.length };
 }
 
@@ -525,64 +559,72 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
   if ((JSON.parse(job.input_json) as { operation?: string }).operation === 'source.summary') return runSourceSummary(env, jobId);
   const input = JSON.parse(job.input_json) as ParseJobInput;
+  const expectedLifecycleVersion = input.sourceLifecycleVersion ?? 1;
+  try {
+    await loadActiveSourceVersion(env, input.sourceVersionId, expectedLifecycleVersion);
+    await assertSourceJobActive(env, jobId);
+  } catch (err) {
+    await failJob(env, jobId, { code: 'INVALID_STATE', message: err instanceof Error ? err.message : String(err) });
+    return { status: (await getJob(env, jobId)).status };
+  }
 
   if (input.phase === 'extract') {
     try {
-      const { needsImages } = await extractSourceVersionText(env, input.sourceVersionId);
+      const { needsImages } = await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
       if (needsImages > 0) {
-        await setSourceStage(env, input.sourceVersionId, 'text', 'waiting_input');
+        await setSourceStage(env, input.sourceVersionId, 'text', 'waiting_input', null, expectedLifecycleVersion, jobId);
         await waitJobInput(env, jobId, { needsImages, message: '存在扫描页，请上传页面图片' });
-        return { status: 'waiting_input' };
+        return { status: (await getJob(env, jobId)).status };
       }
-      await setSourceStage(env, input.sourceVersionId, 'text', 'ready');
-      await maybeEnqueueSourceSummary(env, input.sourceVersionId);
-      await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing');
+      await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+      await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+      await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
-        extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
+        extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
       );
+      await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready', null, expectedLifecycleVersion, jobId);
       await succeedJob(env, jobId, result);
-      await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready');
-      return { status: 'succeeded' };
+      return { status: (await getJob(env, jobId)).status };
     } catch (err) {
-      await handleJobError(env, jobId, input.sourceVersionId, err);
-      return { status: 'failed' };
+      await handleJobError(env, jobId, input.sourceVersionId, err, expectedLifecycleVersion);
+      return { status: (await getJob(env, jobId)).status };
     }
   }
 
   // phase === 'ocr'
   try {
     const { stillMissing } = await withAiSlot(env, jobId, job.project_id, 'ocr_pages', () =>
-      ocrPendingPages(env, input.sourceVersionId, input.configVersionId, jobId),
+      ocrPendingPages(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
     );
     if (stillMissing > 0) {
       await waitJobInput(env, jobId, { stillMissing, message: '仍有页面未上传图片' });
-      return { status: 'waiting_input' };
+      return { status: (await getJob(env, jobId)).status };
     }
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
-    await setSourceStage(env, input.sourceVersionId, 'text', 'ready');
-    await maybeEnqueueSourceSummary(env, input.sourceVersionId);
-    await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing');
+    await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+    await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+    await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
-      extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId),
+      extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
     );
+    await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready', null, expectedLifecycleVersion, jobId);
     await succeedJob(env, jobId, result);
-    await setSourceStage(env, input.sourceVersionId, 'requirements', 'ready');
-    return { status: 'succeeded' };
+    return { status: (await getJob(env, jobId)).status };
   } catch (err) {
-    await handleJobError(env, jobId, input.sourceVersionId, err);
-    return { status: 'failed' };
+    await handleJobError(env, jobId, input.sourceVersionId, err, expectedLifecycleVersion);
+    return { status: (await getJob(env, jobId)).status };
   }
 }
 
-async function handleJobError(env: Env, jobId: string, sourceVersionId: string, err: unknown): Promise<void> {
+async function handleJobError(env: Env, jobId: string, sourceVersionId: string, err: unknown, expectedLifecycleVersion: number): Promise<void> {
   const code = err instanceof AppError ? err.code : 'INTERNAL';
   const message = err instanceof Error ? err.message : String(err);
   const details = err instanceof AppError ? err.details : undefined;
   const processing = await env.DB.prepare('SELECT text_status FROM source_processing WHERE source_version_id = ?1').bind(sourceVersionId).first<{ text_status: string }>();
-  await setSourceStage(env, sourceVersionId, processing?.text_status === 'ready' ? 'requirements' : 'text', 'failed', message.slice(0,500));
-  await env.DB.prepare("UPDATE source_versions SET status = 'failed', parse_error = ?2 WHERE id = ?1")
-    .bind(sourceVersionId, message.slice(0, 500))
+  try { await setSourceStage(env, sourceVersionId, processing?.text_status === 'ready' ? 'requirements' : 'text', 'failed', message.slice(0,500), expectedLifecycleVersion, jobId); } catch { /* Cancellation preserves the restored source state. */ }
+  await env.DB.prepare(`UPDATE source_versions SET status = 'failed', parse_error = ?2 WHERE id = ?1 AND ${processingGuard('?1', '?3', '?4')}`)
+    .bind(sourceVersionId, message.slice(0, 500), expectedLifecycleVersion, jobId)
     .run();
   await failJob(env, jobId, { code, message, details });
 }

@@ -9,6 +9,8 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { nextCursor, parsePaging } from '../core/pagination';
+import { loadActiveSourceVersion, sourceLifecycleGuard } from '../services/source-lifecycle';
+import { changeSourceLifecycle } from '../services/file-lifecycle';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';
@@ -34,6 +36,7 @@ const sourceSchema = z.object({
   title: z.string(),
   currentVersionId: z.string().uuid().nullable(),
   createdAt: z.string(),
+  lifecycleVersion:z.number().int(),canDelete:z.boolean(),deletedAt:z.string().nullable(),fileId:z.string().uuid().nullable(),
 });
 const createResponse = apiEnvelope(
   sourceSchema.extend({ sourceVersionId: z.string().uuid() }),
@@ -119,7 +122,7 @@ const listRoute = createRoute({
   path: '/api/v1/projects/{projectId}/sources',
   tags: ['sources'],
   summary: '来源列表（游标分页）',
-  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  request: { params: projectParams, query: z.object({ deleted:z.enum(['true','false']).optional(),cursor: z.string().optional(), limit: z.string().optional() }) },
   responses: { 200: { content: { 'application/json': { schema: listResponse } }, description: '列表' } },
 });
 
@@ -172,6 +175,7 @@ interface SourceRow {
   title: string;
   current_version_id: string | null;
   created_at: string;
+  created_by:string;deleted_at:string|null;lifecycle_version:number;file_id:string|null;
 }
 
 interface VersionRow {
@@ -195,6 +199,7 @@ interface PageRow {
 }
 
 async function projectSourceVersion(env: AppEnv['Bindings'], projectId: string, sourceId: string, versionId: string): Promise<VersionRow> {
+  await loadActiveSourceVersion(env,versionId);
   const version = await env.DB.prepare(
     'SELECT id, source_id, revision, origin, file_id, status, parse_error, page_count, char_count FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3',
   ).bind(versionId, sourceId, projectId).first<VersionRow>();
@@ -202,9 +207,26 @@ async function projectSourceVersion(env: AppEnv['Bindings'], projectId: string, 
   return version;
 }
 
+const sourceLifecycleBody=z.object({expectedLifecycleVersion:z.number().int().positive()}).strict();
+const sourceLifecycleResponse=apiEnvelope(z.object({sourceId:z.string().uuid(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int()}),'SourceLifecycleResponse');
+const deleteSourceRoute=createRoute({method:'delete',path:'/api/v1/projects/{projectId}/sources/{sourceId}',tags:['sources'],summary:'粘贴或网页来源移入回收站，保留历史引用',
+  request:{params:sourceParams,body:{required:true,content:{'application/json':{schema:sourceLifecycleBody}}}},responses:{200:{description:'已移入回收站',content:{'application/json':{schema:sourceLifecycleResponse}}}}});
+const restoreSourceRoute=createRoute({method:'post',path:'/api/v1/projects/{projectId}/sources/{sourceId}/restore',tags:['sources'],summary:'恢复粘贴或网页来源，不自动启动 AI',
+  request:{params:sourceParams,body:{required:true,content:{'application/json':{schema:sourceLifecycleBody}}}},responses:{200:{description:'已恢复',content:{'application/json':{schema:sourceLifecycleResponse}}}}});
+
 export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
   // * 通配覆盖 /sources 下所有深度（含 parse / page-images / versions 等）
+  app.use('/api/v1/projects/:projectId/sources', requireUser, requireProjectMember());
   app.use('/api/v1/projects/:projectId/sources/*', requireUser, requireProjectMember());
+
+  app.openapi(deleteSourceRoute,async c=>{
+    c.header('Cache-Control','no-store');const p=c.req.valid('param');
+    return c.json(apiData(c,await changeSourceLifecycle(c.env,{...p,actorId:c.get('user')!.id,expectedLifecycleVersion:c.req.valid('json').expectedLifecycleVersion,restore:false})),200);
+  });
+  app.openapi(restoreSourceRoute,async c=>{
+    c.header('Cache-Control','no-store');const p=c.req.valid('param');
+    return c.json(apiData(c,await changeSourceLifecycle(c.env,{...p,actorId:c.get('user')!.id,expectedLifecycleVersion:c.req.valid('json').expectedLifecycleVersion,restore:true})),200);
+  });
 
   app.openapi(sourceCreateRoute, async (c) => {
     const body = c.req.valid('json');
@@ -217,13 +239,15 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       body.title ??
       (body.kind === 'file' ? '通知文件' : body.kind === 'web' ? (new URL(body.url!).hostname) : '粘贴文本');
 
+    let fileLifecycleVersion:number|null=null;
     if (body.kind === 'file') {
       const file = await c.env.DB.prepare(
-        "SELECT id, project_id, status, ext FROM files WHERE id = ?1",
+        "SELECT id, project_id, status, ext, deleted_at, lifecycle_version FROM files WHERE id = ?1",
       )
         .bind(body.fileId!)
-        .first<{ id: string; project_id: string; status: string; ext: string }>();
-      if (!file || file.project_id !== member.projectId) throw notFound('文件不存在');
+        .first<{ id: string; project_id: string; status: string; ext: string;deleted_at:string|null;lifecycle_version:number }>();
+      if (!file || file.project_id !== member.projectId || file.deleted_at) throw notFound('文件不存在或已移入回收站');
+      fileLifecycleVersion=file.lifecycle_version;
       if (file.status !== 'available') throw invalidState('文件尚未上传或不可用');
       if (!['.pdf', '.txt', '.md'].includes(file.ext)) throw validationFailed('来源文件仅支持 PDF/TXT/Markdown');
     }
@@ -237,11 +261,11 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
 
     const inserts = [
       c.env.DB.prepare(
-        'INSERT INTO sources (id, project_id, kind, title, current_version_id, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)',
-      ).bind(sourceId, member.projectId, body.kind, title, versionId, user.id, now),
+        `INSERT INTO sources (id, project_id, kind, title, current_version_id, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 WHERE ?3!='file' OR EXISTS(SELECT 1 FROM files WHERE id=?8 AND project_id=?2 AND status='available' AND deleted_at IS NULL AND lifecycle_version=?9)`,
+      ).bind(sourceId, member.projectId, body.kind, title, versionId, user.id, now,body.fileId??null,fileLifecycleVersion),
       c.env.DB.prepare(
         `INSERT INTO source_versions (id, source_id, project_id, revision, origin, file_id, url, text_r2_key, status, created_at)
-         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, 'pending', ?8)`,
+         SELECT ?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, 'pending', ?8 WHERE EXISTS(SELECT 1 FROM sources WHERE id=?2)`,
       ).bind(
         versionId,
         sourceId,
@@ -262,7 +286,8 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       );
     }
     inserts.push(...notificationStatements(c.env, { key: `source_added:${sourceId}`, kind: 'source_added', scope: 'project', resourceId: member.projectId, actorId: user.id, now, url: `/app/projects/${member.projectId}/sources`, record: { table: 'sources', id: sourceId } }));
-    await c.env.DB.batch(inserts);
+    const created=await c.env.DB.batch(inserts);
+    if(!created[0]?.meta.changes) throw invalidState('原文件生命周期已变化，来源未创建');
     if (body.kind === 'paste' && body.text) {
       await c.env.FILES.put(`sources/${versionId}/paste.txt`, body.text);
       await c.env.DB.prepare('UPDATE source_versions SET char_count = ?2 WHERE id = ?1')
@@ -276,7 +301,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         kind: body.kind,
         title,
         currentVersionId: versionId,
-        createdAt: now,
+        createdAt: now,lifecycleVersion:1,canDelete:true,deletedAt:null,fileId:body.fileId??null,
       }),
       201,
     );
@@ -284,14 +309,16 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(listRoute, async (c) => {
     const member = c.get('member')!;
-    const { limit, cursor } = parsePaging(c.req.valid('query'));
+    c.header('Cache-Control','no-store');
+    const query=c.req.valid('query');const { limit, cursor } = parsePaging(query);
     const rows = await c.env.DB.prepare(
-      `SELECT id, project_id, kind, title, current_version_id, created_at FROM sources
-       WHERE project_id = ?1
+      `SELECT id, project_id, kind, title, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
+        (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
+       WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
        ORDER BY created_at DESC, id DESC LIMIT ?4`,
     )
-      .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1)
+      .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1,query.deleted==='true'?1:0)
       .all<SourceRow>();
     const hasMore = rows.results.length > limit;
     const items = rows.results.slice(0, limit).map((r) => ({
@@ -299,7 +326,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       kind: r.kind,
       title: r.title,
       currentVersionId: r.current_version_id,
-      createdAt: r.created_at,
+      createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.role==='owner'||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
     }));
     const lastItem = items.at(-1);
     return c.json(
@@ -361,7 +388,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const source = await c.env.DB.prepare(
-      'SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2',
+      'SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL',
     )
       .bind(sourceId, member.projectId)
       .first<{ id: string; current_version_id: string | null }>();
@@ -369,6 +396,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const versionId = body.sourceVersionId ?? source.current_version_id;
     if (!versionId) throw invalidState('来源没有可解析的版本');
     await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
+    const lifecycle=await loadActiveSourceVersion(c.env,versionId);
     await requireEnabledAiConfig(c.env.DB);
     const result = await withIdempotency(c.env, {
       key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
@@ -386,7 +414,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       const jobId = await createJobAndDispatch(c.env, {
         projectId: member.projectId,
         kind: 'parse_source',
-        input: { sourceId, sourceVersionId: versionId, phase: 'extract' },
+        input: { sourceId, sourceVersionId: versionId, sourceLifecycleVersion:lifecycle.lifecycleVersion, phase: 'extract' },
         createdBy: c.get('user')!.id,
       });
       return { status: 202 as const, body: { jobId, status: 'queued' } };
@@ -397,7 +425,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(renderRequestsRoute, async (c) => {
     const { sourceId } = c.req.valid('param');
     const sourceVersionId = c.req.valid('query').sourceVersionId;
-    const source = await c.env.DB.prepare('SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2')
+    const source = await c.env.DB.prepare('SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL')
       .bind(sourceId, c.get('member')!.projectId)
       .first<{ id: string; current_version_id: string | null }>();
     if (!source) throw notFound('来源不存在');
@@ -416,13 +444,14 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const { sourceId } = c.req.valid('param');
     const body = c.req.valid('json');
     const member = c.get('member')!;
-    const source = await c.env.DB.prepare('SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2')
+    const source = await c.env.DB.prepare('SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL')
       .bind(sourceId, member.projectId)
       .first<{ id: string; current_version_id: string | null }>();
     if (!source) throw notFound('来源不存在');
     const versionId = body.sourceVersionId || source.current_version_id;
     if (!versionId) throw invalidState('来源没有版本');
     await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
+    const lifecycle=await loadActiveSourceVersion(c.env,versionId);
 
     const result = await withIdempotency(c.env, {
       key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
@@ -440,10 +469,10 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!page) throw validationFailed(`页码 ${img.pageNumber} 不存在（尚未解析或超出页数）`);
         if (page.text_status === 'extracted') throw validationFailed(`页码 ${img.pageNumber} 已有文本层，无需图片`);
         if (page.image_status !== 'none' && page.ocr_status !== 'failed') throw invalidState(`页码 ${img.pageNumber} 的图片已上传`);
-        const file = await c.env.DB.prepare("SELECT id, project_id, status, ext FROM files WHERE id = ?1")
+        const file = await c.env.DB.prepare("SELECT id, project_id, status, ext, deleted_at, lifecycle_version FROM files WHERE id = ?1")
           .bind(img.fileId)
-          .first<{ id: string; project_id: string; status: string; ext: string }>();
-        if (!file || file.project_id !== member.projectId) throw notFound(`页码 ${img.pageNumber} 的图片文件不存在`);
+          .first<{ id: string; project_id: string; status: string; ext: string;deleted_at:string|null;lifecycle_version:number }>();
+        if (!file || file.project_id !== member.projectId || file.deleted_at) throw notFound(`页码 ${img.pageNumber} 的图片文件不存在`);
         if (file.status !== 'available') throw invalidState(`页码 ${img.pageNumber} 的图片文件不可用`);
         if (!['.png', '.jpg', '.jpeg', '.webp'].includes(file.ext)) throw validationFailed('页面图片仅支持 PNG/JPEG/WEBP');
       }
@@ -455,13 +484,14 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
           image_file_id = (SELECT json_extract(value, '$.fileId') FROM json_each(?2)
             WHERE json_extract(value, '$.pageNumber') = source_pages.page_number),
           image_status = 'uploaded', ocr_status = 'pending', updated_at = ?3
-        WHERE source_version_id = ?1
+        WHERE source_version_id = ?1 AND ${sourceLifecycleGuard('?1','?4')}
+          AND NOT EXISTS(SELECT 1 FROM json_each(?2) supplied LEFT JOIN files f ON f.id=json_extract(supplied.value,'$.fileId') WHERE f.id IS NULL OR f.project_id!=?5 OR f.deleted_at IS NOT NULL OR f.status!='available')
           AND page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))
           AND (SELECT COUNT(*) FROM source_pages eligible
             WHERE eligible.source_version_id = ?1 AND (eligible.image_status = 'none' OR eligible.ocr_status = 'failed')
               AND eligible.text_status != 'extracted'
               AND eligible.page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))) = json_array_length(?2)
-      `).bind(versionId, JSON.stringify(body.images), nowIso()).run();
+      `).bind(versionId, JSON.stringify(body.images), nowIso(),lifecycle.lifecycleVersion,member.projectId).run();
       const accepted = updated.meta.changes;
       if (accepted !== body.images.length) throw invalidState('页面状态已发生变化，请刷新后重新提交');
 
@@ -476,7 +506,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         jobId = await createJobAndDispatch(c.env, {
           projectId: member.projectId,
           kind: 'ocr_pages',
-          input: { sourceId, sourceVersionId: versionId, phase: 'ocr' },
+          input: { sourceId, sourceVersionId: versionId, sourceLifecycleVersion:lifecycle.lifecycleVersion, phase: 'ocr' },
           createdBy: c.get('user')!.id,
         });
       }

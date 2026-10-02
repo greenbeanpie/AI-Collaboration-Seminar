@@ -1,3 +1,4 @@
+import { assertRequirementSources, assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
 import { assertProfileStamp, recommendationDispatch, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -18,6 +19,7 @@ export interface AssignmentSuggestionInput {
   requestedBy: string;
   requirementSetId: string | null;
   requirements: Array<{ title: string; detail: string }>;
+  sourceSnapshots?: SourceInputSnapshot[];
   tasks: Array<{
     taskId: string;
     title: string;
@@ -52,8 +54,14 @@ async function assertCurrentMember(env: Env, projectId: string, userId: string):
   if (!row) throw new AppError('PERMISSION_DENIED', '请求者已不属于该项目', 403, false);
 }
 
+async function assertAssignmentSources(env: Env, input: AssignmentSuggestionInput): Promise<void> {
+  if (input.requirementSetId) await assertRequirementSources(env, input.projectId, input.requirementSetId, input.sourceSnapshots);
+  else await assertSourceInputs(env, input.projectId, input.sourceSnapshots?.map(source => source.sourceVersionId) ?? [], input.sourceSnapshots);
+}
+
 export async function generateAssignmentSuggestions(env: Env, jobId: string, input: AssignmentSuggestionInput, config: LoadedAiConfig, beforeCall?: () => Promise<void>) {
   await beforeCall?.();
+  await assertAssignmentSources(env, input);
   await assertCurrentMember(env, input.projectId, input.requestedBy);
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const currentIds = (JSON.parse(input.profileStamp!) as Array<{ user_id: string }>).map(m => m.user_id).sort();
@@ -88,9 +96,10 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
         if (!current?.enabled || current.id !== config.id) throw new AppError('INVALID_STATE', 'AI 设置已变化', 409, false);
         await assertCurrentMember(env, input.projectId, input.requestedBy);
         await assertProfileStamp(env, input.projectId, input.profileStamp);
+        await assertAssignmentSources(env, input);
       },
       prepareMessages: async () => {
-        const context = await recommendationDispatch(env,input.projectId,input.requestedBy,input.profileStamp,config.id);
+        const context = await recommendationDispatch(env,input.projectId,input.requestedBy,input.profileStamp,config.id,input.sourceSnapshots);
         return [
           {role:'system' as const,content:ASSIGNMENT_SYSTEM_PROMPT},
           {role:'user' as const,content:JSON.stringify({...modelInput,...context})},
@@ -114,6 +123,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
       throw new AppError('AI_OUTPUT_INVALID', '分工建议未覆盖全部任务', 502, false);
     }
 
+  await assertAssignmentSources(env, input);
   await assertCurrentMember(env, input.projectId, input.requestedBy);
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const current = await loadAiConfig(env.DB);
@@ -169,6 +179,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
       dedupKey: jobId,
       payload: { assignmentCount: result.assignments.length, requirementSetId: input.requirementSetId },
     });
+    await assertAssignmentSources(env, input);
     await finishRecommendationJob(env, jobId, result);
   } catch (error) {
 

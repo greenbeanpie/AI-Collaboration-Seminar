@@ -1,3 +1,4 @@
+import { sourceReferenceAvailability } from '../services/source-inputs';
 import { readProjectSourceContext } from '../services/collaboration-context';
 import { calculateRubricWeightedTotal, projectSourceCitationSchema, rubricScoringSchema } from '../services/collaboration-ai';
 import { profileStamp } from '../services/personal-profiles';
@@ -22,7 +23,8 @@ const revision = z.number().int().positive();
 const mode = z.enum(['manual', 'automatic']);
 const taskInput = z.object({ title: z.string().min(1).max(200), detail: z.string().max(4000).default(''), criteria: z.string().min(1).max(4000), effortHours: z.number().min(.25).max(200).default(1), parentTaskId: z.string().uuid().nullable().default(null) });
 const settingsSchema = z.object({ aiCollaborationEnabled: z.boolean(), assignmentMode: mode, evaluationMode: mode, revision });
-const taskSchema = z.object({ taskId: z.string().uuid(), title: z.string(), detail: z.string(), status: z.enum(['todo', 'doing', 'blocked', 'done']), assigneeId: z.string().uuid().nullable(), revision, lifecycleState: z.enum(['open', 'in_progress', 'submitted', 'accepted', 'improve', 'rework']), criteria: z.string(), citations: z.array(projectSourceCitationSchema).optional(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(), createdAt: z.string(), updatedAt: z.string() });
+const citationReferenceSchema = projectSourceCitationSchema.extend({ availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
+const taskSchema = z.object({ taskId: z.string().uuid(), title: z.string(), detail: z.string(), status: z.enum(['todo', 'doing', 'blocked', 'done']), assigneeId: z.string().uuid().nullable(), revision, lifecycleState: z.enum(['open', 'in_progress', 'submitted', 'accepted', 'improve', 'rework']), criteria: z.string(), citations: z.array(citationReferenceSchema).optional(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(), createdAt: z.string(), updatedAt: z.string() });
 const decisionSchema = z.enum(['accept', 'improve', 'rework']);
 const reportSchema = z.object({ decision: decisionSchema, feedback: z.string(), evidence: z.array(z.object({ materialVersionId: z.string().uuid(), quote: z.string() })), limitations: z.array(z.string()), coverage: z.enum(['complete', 'needs_human']), manualReviewReason: z.string().optional(), rubricScoring: rubricScoringSchema.optional() });
 const submissionSchema = z.object({ submissionId: z.string().uuid(), taskId: z.string().uuid(), round: z.number(), submittedBy: z.string().uuid(), body: z.string(), materialVersionIds: z.array(z.string().uuid()), materialVersions: z.array(z.object({ versionId: z.string().uuid(), materialId: z.string().uuid(), title: z.string(), revision: z.number() })).optional(), criteria: z.string(), status: z.enum(['pending', 'evaluated', 'accept', 'improve', 'rework']), aiDecision: decisionSchema.nullable(), aiFeedback: z.string().nullable(), aiReport: reportSchema.nullable(), humanScoreOverride: z.object({ kind: z.literal('assistive'), rubricVersionId: z.string().uuid(), rubricVersion: revision, scores: z.array(z.object({ key: z.string(), score: z.number() })), weightedTotal: z.number(), reason: z.string(), decidedBy: z.string().uuid(), decidedAt: z.string() }).nullable().optional(), decision: decisionSchema.nullable(), feedback: z.string().nullable(), evaluationJobId: z.string().uuid().nullable(), evaluationAttempts: z.number(), evaluationError: z.string().optional(), revision, createdAt: z.string(), updatedAt: z.string() });
@@ -65,6 +67,11 @@ async function task(c: Context<AppEnv>) {
         throw notFound('协作任务不存在');
     return r;
 }
+async function taskWithReferences(c: Context<AppEnv>, row: CollaborationTask) {
+    const output = toCollaborationTask(row);
+    output.citations = await Promise.all((output.citations as Array<{ sourceVersionId: string }>).map(async citation => ({ ...citation, ...await sourceReferenceAvailability(c.env, row.project_id, citation.sourceVersionId) })));
+    return output;
+}
 export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     app.use('/api/v1/projects/:projectId/collaboration/*', requireUser, requireProjectMember());
     route(app, 'get', '/settings', undefined, async (c) => c.json(apiData(c, await settings(c))));
@@ -87,7 +94,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<CollaborationTask>();
         const page = rows.results.slice(0, paging.limit);
         const last = page.at(-1);
-        return c.json(apiData(c, { items: page.map(toCollaborationTask), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
+        return c.json(apiData(c, { items: await Promise.all(page.map(row => taskWithReferences(c, row))), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
     });
     route(app, 'post', '/tasks', taskInput, async (c) => {
         const { projectId, userId } = ids(c);
@@ -99,7 +106,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!result[0]!.meta.changes)
             throw validationFailed('父任务无效或权限已变化');
         const row = await c.env.DB.prepare('SELECT * FROM tasks WHERE id=?1').bind(id).first<CollaborationTask>();
-        return c.json(apiData(c, toCollaborationTask(row!)), 201);
+        return c.json(apiData(c, await taskWithReferences(c, row!)), 201);
     }, 201);
     route(app, 'patch', '/tasks/{taskId}', z.object({ expectedRevision: revision, title: z.string().min(1).max(200).optional(), detail: z.string().max(4000).optional(), criteria: z.string().min(1).max(4000).optional(), effortHours: z.number().min(.25).max(200).optional() }).strict(), async (c) => {
         const { projectId, userId } = ids(c);
@@ -108,7 +115,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         const results = await c.env.DB.batch([c.env.DB.prepare(`UPDATE tasks SET title=COALESCE(?4,title),detail=COALESCE(?5,detail),criteria=COALESCE(?6,criteria),effort_hours=COALESCE(?7,effort_hours),revision=revision+1,updated_at=?8 WHERE id=?1 AND project_id=?2 AND revision=?3 AND lifecycle_state IN ('open','in_progress','improve','rework') AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?9 AND role='owner')`).bind(c.req.param('taskId'), projectId, b.expectedRevision, b.title ?? null, b.detail ?? null, b.criteria ?? null, b.effortHours ?? null, nowIso(), userId), audit(c.env, projectId, userId, 'collaboration.task_edited', c.req.param('taskId')!, b, true)]);
         if (!results[0]!.meta.changes)
             throw invalidState('任务已提交、已验收或版本已变化');
-        return c.json(apiData(c, toCollaborationTask(await task(c))));
+        return c.json(apiData(c, await taskWithReferences(c, await task(c))));
     });
     for (const action of ['claim', 'assign'] as const)
         route(app, 'post', '/tasks/{taskId}/' + action, action === 'claim' ? z.object({ expectedRevision: revision }) : z.object({ expectedRevision: revision, assigneeId: z.string().uuid(), reason: z.string().min(1).max(2000) }), async (c) => {
@@ -121,7 +128,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE tasks SET assignee_id=?3,current_submission_id=NULL,status='doing',lifecycle_state='in_progress',revision=revision+1,updated_at=?4 WHERE id=?1 AND project_id=?2 AND revision=?5 AND ${condition} AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6 AND (?7=0 OR role='owner'))`).bind(c.req.param('taskId'), projectId, assignee, nowIso(), b.expectedRevision, userId, action === 'assign' ? 1 : 0), audit(c.env, projectId, userId, 'collaboration.' + action, c.req.param('taskId')!, b, true)]);
             if (!result[0]!.meta.changes)
                 throw invalidState('任务已被领取、成员或版本已变化');
-            return c.json(apiData(c, toCollaborationTask(await task(c))));
+            return c.json(apiData(c, await taskWithReferences(c, await task(c))));
         });
     route(app, 'get', '/tasks/{taskId}/submissions', undefined, async (c) => { await task(c); const rows = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE task_id=?1 AND project_id=?2 ORDER BY round DESC').bind(c.req.param('taskId'), ids(c).projectId).all<Submission>(); const items = await Promise.all(rows.results.map(async (row) => { const versions = await c.env.DB.prepare('SELECT v.id AS versionId,m.id AS materialId,m.title,v.revision FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE m.project_id=?1 AND v.id IN(SELECT value FROM json_each(?2))').bind(ids(c).projectId, row.material_versions_json).all(); return { ...toSubmission(row), materialVersions: versions.results }; })); return c.json(apiData(c, { items })); });
     route(app, 'post', '/tasks/{taskId}/submissions', z.object({ expectedRevision: revision, body: z.string().min(1).max(30000), materialVersionIds: z.array(z.string().uuid()).max(10).default([]) }), async (c) => {
