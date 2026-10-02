@@ -9,6 +9,9 @@ import { invalidState, notFound, validationFailed } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { recordEvent } from '../services/events';
 import { projectParams } from './projects';
+import { goalSchema, standardSchema, assessmentSchema } from './project-simplification';
+import { projectGoal, standardView, type StandardRow } from '../services/project-simplification';
+import { assessmentView, type AssessmentRow } from '../services/assessments';
 
 const decisionParams = projectParams.extend({ decisionId: z.string().uuid() });
 const contributionParams = projectParams.extend({ contributionId: z.string().uuid() });
@@ -208,7 +211,18 @@ const exportBundleResponse = apiEnvelope(z.object({
     status: z.string(),
   }),
   generatedAt: z.string(),
-  materials: z.array(z.object({ title: z.string(), markdown: z.string(), revision: z.number().int(), attachments: z.array(z.object({ fileId: z.string(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() })) })),
+  mainGoal: goalSchema,
+  standardsVersions: z.array(standardSchema),
+  assessments: z.array(assessmentSchema),
+  legacyReviews: z.array(z.object({ reviewId: z.string(), requirementSetId: z.string(), rubricVersionId: z.string(), materialVersionIds: z.array(z.string()), status: z.string(), report: z.unknown().nullable(), createdAt: z.string() })),
+  taskDependencies: z.array(z.object({ taskId: z.string(), dependsOnTaskId: z.string() })),
+  taskLinks: z.array(z.object({ linkId: z.string(), taskId: z.string(), kind: z.string(), targetId: z.string(), createdAt: z.string() })),
+  taskSubmissions: z.array(z.object({ submissionId: z.string(), taskId: z.string(), round: z.number().int(), submittedBy: z.string(), body: z.string(), criteria: z.string(), status: z.string(), materialVersionIds: z.array(z.string()), aiReport: z.unknown().nullable(), humanScoreOverride: z.unknown().nullable(), decision: z.string().nullable(), feedback: z.string().nullable(), createdAt: z.string() })),
+  sources: z.array(z.object({ sourceId: z.string(), title: z.string(), purpose: z.string(), currentVersionId: z.string().nullable(), deletedAt: z.string().nullable() })),
+  sourceVersions: z.array(z.object({ sourceVersionId: z.string(), sourceId: z.string(), revision: z.number().int(), origin: z.string(), fileId: z.string().nullable(), status: z.string(), createdAt: z.string(), fragments: z.array(z.object({ fragmentId: z.string(), pageNumber: z.number().int().nullable(), seq: z.number().int(), content: z.string() })) })),
+  materialVersions: z.array(z.object({ versionId: z.string(), materialId: z.string(), revision: z.number().int(), markdown: z.string(), createdAt: z.string(), attachments: z.array(z.object({ fileId: z.string(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() })) })),
+  rehearsalTurns: z.array(z.object({ rehearsalId: z.string(), sequence: z.number().int(), kind: z.string(), content: z.unknown(), createdAt: z.string() })),
+  materials: z.array(z.object({ materialId: z.string(), versionId: z.string(), purpose: z.string(), title: z.string(), markdown: z.string(), revision: z.number().int(), attachments: z.array(z.object({ fileId: z.string(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() })) })),
   requirementSets: z.array(z.object({
     requirementSetId: z.string().uuid(),
     sourceVersionId: z.string().uuid().nullable(),
@@ -229,7 +243,7 @@ const exportBundleResponse = apiEnvelope(z.object({
     confirmedAt: z.string().nullable(),
     createdAt: z.string(),
   })),
-  tasks: z.array(z.object({ title: z.string(), status: z.string(), assignee_id: z.string().nullable(), due_date: z.string().nullable() })),
+  tasks: z.array(z.object({ taskId: z.string(), title: z.string(), detail: z.string(), criteria: z.string(), effortHours: z.number(), revision: z.number().int(), lifecycleState: z.string().nullable(), parentTaskId: z.string().nullable(), currentSubmissionId: z.string().nullable(), dependsOnTaskIds: z.array(z.string()), citations: z.array(exportRequirementSchema.shape.citations.element), status: z.string(), assignee_id: z.string().nullable(), due_date: z.string().nullable() })),
   decisions: z.array(z.object({ title: z.string(), detail: z.string(), decided_at: z.string() })),
   contributions: z.array(z.object({ user_id: z.string().uuid(), kind: z.string(), description: z.string(), correction_of: z.string().uuid().nullable() })),
   resources: z.array(z.object({ kind: z.string(), title: z.string(), url: z.string().nullable() })),
@@ -422,10 +436,10 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!project) throw notFound('项目不存在');
 
     const materials = await c.env.DB.prepare(
-      `SELECT m.title, v.markdown, v.attachments_json, v.revision FROM materials m JOIN material_versions v ON v.id = m.current_version_id WHERE m.project_id = ?1 ORDER BY m.created_at`,
+      `SELECT m.id AS materialId, v.id AS versionId, m.purpose, m.title, v.markdown, v.attachments_json, v.revision FROM materials m JOIN material_versions v ON v.id = m.current_version_id WHERE m.project_id = ?1 ORDER BY m.created_at`,
     )
       .bind(projectId)
-      .all<{ title: string; markdown: string; revision: number; attachments_json: string }>();
+      .all<{ materialId: string; versionId: string; purpose: string; title: string; markdown: string; revision: number; attachments_json: string }>();
 
     const requirementSets = await c.env.DB.prepare(
       'SELECT id, source_version_id, status, revision, confirmed_at FROM requirement_sets WHERE project_id = ?1 ORDER BY created_at, id',
@@ -456,9 +470,33 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
         status: 'draft' | 'confirmed'; confirmed_at: string | null; created_at: string;
       }>();
 
-    const tasks = await c.env.DB.prepare('SELECT title, status, assignee_id, due_date FROM tasks WHERE project_id = ?1 ORDER BY created_at')
+    const tasks = await c.env.DB.prepare('SELECT id, title, detail, criteria, effort_hours, revision, lifecycle_state, parent_task_id, current_submission_id, source_citations_json, status, assignee_id, due_date FROM tasks WHERE project_id = ?1 ORDER BY created_at,id')
       .bind(projectId)
-      .all<{ title: string; status: string; assignee_id: string | null; due_date: string | null }>();
+      .all<{ id: string; title: string; detail: string; criteria: string; effort_hours: number; revision: number; lifecycle_state: string | null; parent_task_id: string | null; current_submission_id: string | null; source_citations_json: string; status: string; assignee_id: string | null; due_date: string | null }>();
+
+    const [mainGoal, standardRows, assessmentRows, dependencyRows, submissionRows, sourceRows, sourceVersionRows, materialVersionRows, legacyReviews, legacyRehearsals] = await Promise.all([
+      projectGoal(c.env, projectId),
+      c.env.DB.prepare('SELECT * FROM standards_versions WHERE project_id=?1 ORDER BY version').bind(projectId).all<StandardRow>(),
+      c.env.DB.prepare('SELECT * FROM assessments WHERE project_id=?1 ORDER BY created_at,id').bind(projectId).all<AssessmentRow>(),
+      c.env.DB.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies WHERE project_id=?1 ORDER BY task_id,depends_on_task_id').bind(projectId).all<{ task_id: string; depends_on_task_id: string }>(),
+      c.env.DB.prepare('SELECT id,task_id,round,submitted_by,body,criteria,status,material_versions_json,ai_report_json,human_score_override_json,decision,feedback,created_at FROM task_submissions WHERE project_id=?1 ORDER BY task_id,round').bind(projectId).all<{ id: string; task_id: string; round: number; submitted_by: string; body: string; criteria: string; status: string; material_versions_json: string; ai_report_json: string | null; human_score_override_json: string | null; decision: string | null; feedback: string | null; created_at: string }>(),
+      c.env.DB.prepare('SELECT id,title,purpose,current_version_id,deleted_at FROM sources WHERE project_id=?1 ORDER BY created_at,id').bind(projectId).all<{ id: string; title: string; purpose: string; current_version_id: string | null; deleted_at: string | null }>(),
+      c.env.DB.prepare(`SELECT v.id,v.source_id,v.revision,v.origin,v.file_id,v.status,v.created_at,
+        (SELECT json_group_array(json_object('fragmentId',f.id,'pageNumber',f.page_number,'seq',f.seq,'content',f.content)) FROM source_fragments f WHERE f.source_version_id=v.id AND f.project_id=?1) fragments_json
+        FROM source_versions v WHERE v.project_id=?1 ORDER BY v.source_id,v.revision`).bind(projectId).all<{ id: string; source_id: string; revision: number; origin: string; file_id: string | null; status: string; created_at: string; fragments_json: string }>(),
+      c.env.DB.prepare('SELECT id,material_id,revision,markdown,attachments_json,created_at FROM material_versions WHERE project_id=?1 ORDER BY material_id,revision').bind(projectId).all<{ id: string; material_id: string; revision: number; markdown: string; attachments_json: string; created_at: string }>(),
+      c.env.DB.prepare('SELECT id,requirement_set_id,rubric_version_id,status,material_version_ids_json,report_json,created_at FROM reviews WHERE project_id=?1 AND NOT EXISTS(SELECT 1 FROM assessments a WHERE a.entity_id=reviews.id) ORDER BY created_at,id').bind(projectId).all<{ id: string; requirement_set_id: string; rubric_version_id: string; status: string; material_version_ids_json: string; report_json: string | null; created_at: string }>(),
+      c.env.DB.prepare(`SELECT r.id,r.status,r.material_version_ids_json,r.created_at,
+        (SELECT content_json FROM rehearsal_turns t WHERE t.rehearsal_id=r.id AND t.kind='summary' ORDER BY sequence DESC LIMIT 1) report_json
+        FROM rehearsals r WHERE r.project_id=?1 AND NOT EXISTS(SELECT 1 FROM assessments a WHERE a.entity_id=r.id) ORDER BY r.created_at,r.id`).bind(projectId).all<{ id: string; status: string; material_version_ids_json: string; report_json: string | null; created_at: string }>(),
+    ]);
+    const taskDependencies = dependencyRows.results.map(row => ({ taskId: row.task_id, dependsOnTaskId: row.depends_on_task_id }));
+    const taskLinks = await c.env.DB.prepare('SELECT id,task_id,kind,target_id,created_at FROM task_links WHERE project_id=?1 ORDER BY task_id,created_at,id').bind(projectId).all<{ id: string; task_id: string; kind: string; target_id: string; created_at: string }>();
+    const rehearsalTurns = await c.env.DB.prepare('SELECT rehearsal_id,sequence,kind,content_json,created_at FROM rehearsal_turns WHERE project_id=?1 ORDER BY rehearsal_id,sequence').bind(projectId).all<{ rehearsal_id: string; sequence: number; kind: string; content_json: string; created_at: string }>();
+    const historicalAssessments = [
+      ...legacyReviews.results.map(row => ({ assessmentId: row.id, kind: 'material_review' as const, status: row.status, goalRevision: null, goal: null, standardsVersionId: null, standardsVersion: null, materialVersionIds: JSON.parse(row.material_version_ids_json) as string[], rehearsalId: null, jobId: null, jobError: null, report: row.report_json ? JSON.parse(row.report_json) as unknown : null, createdAt: row.created_at, historical: true as const })),
+      ...legacyRehearsals.results.map(row => ({ assessmentId: row.id, kind: 'rehearsal' as const, status: row.status, goalRevision: null, goal: null, standardsVersionId: null, standardsVersion: null, materialVersionIds: JSON.parse(row.material_version_ids_json) as string[], rehearsalId: row.id, jobId: null, jobError: null, report: row.report_json ? JSON.parse(row.report_json) as unknown : null, createdAt: row.created_at, historical: true as const })),
+    ];
 
     const decisions = await c.env.DB.prepare('SELECT title, detail, decided_at FROM decisions WHERE project_id = ?1 ORDER BY decided_at')
       .bind(projectId)
@@ -490,6 +528,17 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
       apiData(c, {
         project,
         generatedAt: nowIso(),
+        mainGoal,
+        standardsVersions: await Promise.all(standardRows.results.map(row => standardView(c.env, row))),
+        assessments: [...await Promise.all(assessmentRows.results.map(row => assessmentView(c.env, row))), ...historicalAssessments],
+        legacyReviews: legacyReviews.results.map(row => ({ reviewId: row.id, requirementSetId: row.requirement_set_id, rubricVersionId: row.rubric_version_id, materialVersionIds: JSON.parse(row.material_version_ids_json) as string[], status: row.status, report: row.report_json ? JSON.parse(row.report_json) as unknown : null, createdAt: row.created_at })),
+        taskDependencies,
+        taskLinks: taskLinks.results.map(row => ({ linkId: row.id, taskId: row.task_id, kind: row.kind, targetId: row.target_id, createdAt: row.created_at })),
+        taskSubmissions: submissionRows.results.map(row => ({ submissionId: row.id, taskId: row.task_id, round: row.round, submittedBy: row.submitted_by, body: row.body, criteria: row.criteria, status: row.status, materialVersionIds: JSON.parse(row.material_versions_json) as string[], aiReport: row.ai_report_json ? JSON.parse(row.ai_report_json) as unknown : null, humanScoreOverride: row.human_score_override_json ? JSON.parse(row.human_score_override_json) as unknown : null, decision: row.decision, feedback: row.feedback, createdAt: row.created_at })),
+        sources: sourceRows.results.map(row => ({ sourceId: row.id, title: row.title, purpose: row.purpose, currentVersionId: row.current_version_id, deletedAt: row.deleted_at })),
+        sourceVersions: sourceVersionRows.results.map(row => ({ sourceVersionId: row.id, sourceId: row.source_id, revision: row.revision, origin: row.origin, fileId: row.file_id, status: row.status, createdAt: row.created_at, fragments: (JSON.parse(row.fragments_json) as Array<{ fragmentId: string; pageNumber: number | null; seq: number; content: string }>).sort((a, b) => a.seq - b.seq) })),
+        materialVersions: await Promise.all(materialVersionRows.results.map(async row => ({ versionId: row.id, materialId: row.material_id, revision: row.revision, markdown: row.markdown, createdAt: row.created_at, attachments: await Promise.all((JSON.parse(row.attachments_json) as Array<{ fileId: string; name: string }>).map(async attachment => ({ ...attachment, ...await fileReferenceAvailability(c.env, projectId, attachment.fileId) }))) }))),
+        rehearsalTurns: rehearsalTurns.results.map(row => ({ rehearsalId: row.rehearsal_id, sequence: row.sequence, kind: row.kind, content: JSON.parse(row.content_json) as unknown, createdAt: row.created_at })),
         materials: await Promise.all(materials.results.map(async ({ attachments_json, ...material }) => ({ ...material, attachments: await Promise.all((JSON.parse(attachments_json) as Array<{ fileId: string; name: string }>).map(async attachment => ({ ...attachment, ...await fileReferenceAvailability(c.env, projectId, attachment.fileId) }))) }))),
         requirementSets: await Promise.all(requirementSets.results.map(async (set) => {
           const availability = set.source_version_id ? await sourceReferenceAvailability(c.env, projectId, set.source_version_id) : undefined;
@@ -523,7 +572,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
           confirmedAt: rubric.confirmed_at,
           createdAt: rubric.created_at,
         })),
-        tasks: tasks.results,
+        tasks: await Promise.all(tasks.results.map(async row => ({ taskId: row.id, title: row.title, detail: row.detail, criteria: row.criteria, effortHours: row.effort_hours, revision: row.revision, lifecycleState: row.lifecycle_state, parentTaskId: row.parent_task_id, currentSubmissionId: row.current_submission_id, dependsOnTaskIds: taskDependencies.filter(edge => edge.taskId === row.id).map(edge => edge.dependsOnTaskId), citations: await Promise.all((JSON.parse(row.source_citations_json || '[]') as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>).map(async citation => ({ ...citation, ...await sourceCitationAvailability(c.env, projectId, citation) }))), status: row.status, assignee_id: row.assignee_id, due_date: row.due_date }))),
         decisions: decisions.results,
         contributions: contributions.results,
         resources: resources.results,

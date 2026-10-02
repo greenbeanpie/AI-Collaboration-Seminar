@@ -231,11 +231,11 @@ export function SourceRecord({
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
     {version && <SourceFullText sourceId={source.sourceId} sourceVersionId={version.sourceVersionId} />}
     {version && <SourceProcessingCard projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} aiEnabled={Boolean(capability?.features.aiEnabled)} active={Boolean(activeJob)} />}
-    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“要求与评分”页面查看。引用展示原句与页码，可展开下方全文片段核对原文件。</p>}
+    {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“评分”的项目标准查看。引用展示原句与页码，可展开下方全文片段核对原文件。</p>}
   </article>;
 }
 
-export function SourcesPage() {
+export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = false }: { embedded?: boolean; selectedSourceId?: string; intakeOnly?: boolean }) {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -278,6 +278,7 @@ export function SourcesPage() {
   const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
   const handleLifecycleChanged = useCallback((change: LifecycleChange) => {
     if (change.projectId !== currentProjectId.current) return;
+    void queryClient.invalidateQueries({ queryKey: ['resource-library', change.projectId] });
     const affected = new Set(change.sourceIds);
     for (const id of affected) {
       sourceLifecycleEpochs.current.set(id, (sourceLifecycleEpochs.current.get(id) ?? 0) + 1);
@@ -301,12 +302,12 @@ export function SourcesPage() {
     for (const key of parseIntentKeys.current.keys()) if (affected.has(key.split(':')[0])) parseIntentKeys.current.delete(key);
     setParsingSourceId(current => current && affected.has(current) ? null : current);
     setScanProgressSourceId(current => current && affected.has(current) ? null : current);
-  }, []);
+  }, [queryClient]);
   const sourceResources = sources.filter(source => source.kind !== 'file' && !source.fileId).map(source => ({ kind: 'source' as const, id: source.sourceId, name: source.title, lifecycleVersion: source.lifecycleVersion, canDelete: source.canDelete, deletedAt: source.deletedAt }));
   const sourceLifecycle = useSourceLifecycle(projectId, 'active-sources', sourceResources, handleLifecycleChanged);
   const versionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
-    queryKey: ['sourceVersion', projectId, source.sourceId, source.currentVersionId],
-    queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.currentVersionId!)}`)),
+    queryKey: ['sourceVersion', projectId, source.sourceId, source.sourceId === selectedSourceId && targetSourceVersionId ? targetSourceVersionId : source.currentVersionId],
+    queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.sourceId === selectedSourceId && targetSourceVersionId ? targetSourceVersionId : source.currentVersionId!)}`)),
     enabled: Boolean(source.currentVersionId),
   })) });
   const versionsBySourceId = useMemo(() => {
@@ -537,6 +538,7 @@ export function SourcesPage() {
       if (file) fileInitIntentKeys.current.delete(file);
       if (fileId) rememberSourceFile(projectId, source.sourceVersionId, fileId);
       await queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
+      await queryClient.invalidateQueries({ queryKey: ['resource-library', projectId] });
       setSubmitStage('启动解析任务…');
       const parseStarted = capability.features.aiEnabled
         ? await startParse({ sourceId: source.sourceId, title: source.title }, source.sourceVersionId)
@@ -564,11 +566,11 @@ export function SourcesPage() {
   const canSubmit = !submitting && (kind !== 'web' || capability.features.webFetch);
 
   return <div className="page-stack sources-page">
-    <PageHeading eyebrow="项目资料" title="通知来源" detail="导入可核对的通知原文。解析任务会生成待确认要求；所有记录和状态来自项目服务。" />
+    {!embedded && <PageHeading eyebrow="项目资料" title="通知来源" detail="导入可核对的通知原文。解析任务会生成待确认要求；所有记录和状态来自项目服务。" />}
 
     {!capability.features.aiEnabled ? <div className="callout warning-callout">服务能力报告 AI 未启用。仍可保存来源，但解析和要求提取不可用；不会展示演示结果。</div> : null}
 
-    <SectionCard title="导入来源" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 文件。文件上传会先初始化记录，再上传二进制内容。">
+    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 文件。">
       <form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
         <div className="sources-intake-tabs" role="group" aria-label="来源类型">
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'paste'} onClick={() => setKind('paste')}><Type size={15} /> 粘贴文本</button>
@@ -592,22 +594,22 @@ export function SourcesPage() {
         {successMessage && <div className="notice notice-success" role="status"><FilePlus2 size={17} /><div className="notice-copy"><strong>{successMessage}</strong></div></div>}
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && !file)}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">按服务端单页上限分批读取完整来源列表。</span></div>
       </form>
-    </SectionCard>
+    </SectionCard>}
 
-    <ProjectFileLibrary key={projectId} projectId={projectId} pageSize={capability.limits.listMaxPageSize} onChanged={handleLifecycleChanged} />
+    {!embedded && <ProjectFileLibrary key={projectId} projectId={projectId} pageSize={capability.limits.listMaxPageSize} onChanged={handleLifecycleChanged} />}
     {targetSourceVersionId && !sourceQuery.isLoading && !sources.some((source) => source.currentVersionId === targetSourceVersionId) ? <div className="callout warning-callout">引用对应的来源版本不在当前来源列表中，可能已移入回收站，或它不是当前版本。引用原句仍保留在要求条目中。</div> : null}
-    <SectionCard title="已导入来源" detail="解析状态和逐页 OCR 状态由后端返回。扫描页图片由 PDF.js 在浏览器本地渲染后上传。">
+    {!intakeOnly && <SectionCard title={embedded ? '资料原文与处理状态' : '已导入来源'} detail="解析状态和逐页 OCR 状态由后端返回。">
       {sourceLifecycle.error ? <ErrorNotice error={sourceLifecycle.error} /> : null}
       {sourceLifecycle.message && <div className="notice notice-success" role="status"><div className="notice-copy"><strong>{sourceLifecycle.message}</strong></div></div>}
       {sourceQuery.isLoading ? <Spinner label="正在读取真实来源记录" /> : sourceQuery.error ? <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} /> : sources.length === 0 ? <EmptyState title="还没有来源记录" detail="导入一份通知或资料后，解析任务和人工确认的要求会在这里关联显示。" /> : <div className="sources-record-list">
-        {sources.map((source) => {
+        {sources.filter(source => !selectedSourceId || source.sourceId === selectedSourceId).map((source) => {
           const version = versionsBySourceId.get(source.sourceId);
-          const target = Boolean(targetSourceVersionId && source.currentVersionId === targetSourceVersionId);
+          const target = Boolean(targetSourceVersionId && (source.currentVersionId === targetSourceVersionId || source.sourceId === selectedSourceId));
           return <SourceRecord key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} lifecycleBusy={sourceLifecycle.busy} onRemove={item => { const resource = sourceResources.find(resource => resource.id === item.sourceId); if (resource) void sourceLifecycle.changeLifecycle(resource, false); }} />;
         })}
       </div>}
       {versionQueries.some((query) => query.error) && <div className="stack">{versionQueries.map((query, index) => query.error ? <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} /> : null)}</div>}
-    </SectionCard>
+    </SectionCard>}
   </div>;
 }
 

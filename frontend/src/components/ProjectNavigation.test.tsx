@@ -34,31 +34,32 @@ it('keeps exactly five main destinations in the content area, outside global acc
   expect(navigation.nextElementSibling).toHaveClass('content-wrap');
   expect(navigation.closest('header')).toBeNull();
   expect(within(screen.getByRole('banner', { name: '工作区顶栏' })).queryByRole('navigation', { name: '项目功能' })).not.toBeInTheDocument();
-  expect(within(navigation).getAllByRole('link').map(link => link.textContent)).toEqual(['概览', '要求与任务', '资料', '团队', '检查与演练']);
+  expect(within(navigation).getAllByRole('link').map(link => link.textContent)).toEqual(['概览', '任务', '资料', '评分', '团队']);
   expect(within(navigation).queryByRole('link', { name: /AI/ })).toBeNull();
   expect(within(navigation).getAllByRole('option')).toHaveLength(5);
 });
 it('mobile switching and browser Back retain group state without changing existing deep links', async () => {
   const router = setup();
   const select = screen.getByRole('combobox', { name: '切换项目功能' });
-  const groups = [['overview', ''], ['work', '/work'], ['data', '/data'], ['team', '/team'], ['checks', '/reviews']];
+  const groups = [['overview', ''], ['work', '/tasks'], ['data', '/data'], ['team', '/team'], ['assessment', '/assessment']];
   for (const [id, suffix] of groups) {
     fireEvent.change(select, { target: { value: id } });
     expect(router.state.location.pathname).toBe(`/app/projects/fixture${suffix}`);
     expect(select).toHaveValue(id);
   }
   await act(() => router.navigate(-1)); expect(select).toHaveValue('team');
-  await act(() => router.navigate(1)); expect(select).toHaveValue('checks');
-  const routes = [['sources', 'data', '导入资料'], ['materials/document-id', 'data', '成果材料'], ['ai', 'data', '成果材料'], ['requirements', 'work', '要求与评分'], ['tasks', 'work', '任务看板'], ['team', 'team', '团队成员'], ['settings', 'team', '团队设置'], ['export', 'team', '导出'], ['reviews', 'checks', '成果检查'], ['rehearsals', 'checks', '答辩演练'], ['ledger', 'overview', '活动历史']];
+  await act(() => router.navigate(1)); expect(select).toHaveValue('assessment');
+  const routes = [['sources', 'data', '项目资料'], ['materials/document-id', 'data', '项目资料'], ['ai', 'data', '项目资料'], ['requirements', 'assessment', '标准与评分'], ['tasks', 'work', '任务工作区'], ['team', 'team', '团队成员'], ['settings', 'team', '团队设置'], ['export', 'team', '导出'], ['reviews', 'assessment', '标准与评分'], ['rehearsals', 'assessment', '标准与评分'], ['ledger', 'overview', '活动历史']];
   for (const [path, group, section] of routes) {
     await act(() => router.navigate(`/app/projects/fixture/${path}?saved=1#evidence`));
     expect(select).toHaveValue(group);
     const navigation = screen.getAllByRole('navigation').find(nav => nav.getAttribute('aria-label')?.endsWith('分区'))!;
-    expect(within(navigation).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
+    if (['data', 'work', 'assessment'].includes(group)) expect(navigation).toBeUndefined();
+    else expect(within(navigation).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
     expect(router.state.location.search + router.state.location.hash).toBe('?saved=1#evidence');
   }
 });
-it('keeps draft cancellation effective for both main navigation and section links', async () => {
+it('keeps draft cancellation effective for both main navigation and resource aliases', async () => {
   const router = setup('/app/projects/fixture/materials');
   fireEvent.change(screen.getByLabelText('Fixture draft'), { target: { value: 'Keep this draft' } });
   const select = screen.getByRole('combobox', { name: '切换项目功能' });
@@ -67,7 +68,7 @@ it('keeps draft cancellation effective for both main navigation and section link
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(select).toHaveValue('data'); expect(screen.getByLabelText('Fixture draft')).toHaveValue('Keep this draft');
-  fireEvent.click(within(screen.getByRole('navigation', { name: '资料分区' })).getByRole('link', { name: '导入资料' }));
+  await act(() => router.navigate('/app/projects/fixture/data?sourceVersionId=v1'));
   dialog = await screen.findByRole('dialog');
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

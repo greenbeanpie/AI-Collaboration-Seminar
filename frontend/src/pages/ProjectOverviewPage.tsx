@@ -1,23 +1,27 @@
 import { useSession } from '../auth';
 import { PendingTaskPreview } from '../components/PendingTaskPreview';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarCheck2, FileText, ListTodo, UsersRound } from 'lucide-react';
 import { listAllItems, projectPath } from '../api/client';
+import { projectRequest, resourceLibrary, type ProjectGoal, type StandardVersion } from '../api/simplification';
 import { presentEvent } from './event-presentation';
 import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, EmptyState, SectionCard, Spinner, StatusPill } from '../components/ui';
 
 const modules = [
-  { key: 'tasks', title: '任务看板', path: 'tasks', icon: ListTodo },
+  { key: 'tasks', title: '子任务', path: 'tasks', icon: ListTodo },
   { key: 'members', title: '团队成员', path: 'team', icon: UsersRound },
-  { key: 'materials', title: '成果材料', path: 'materials', icon: FileText },
-  { key: 'sources', title: '导入资料', path: 'sources', icon: CalendarCheck2 },
+  { key: 'library', title: '资料', path: 'data', icon: FileText },
+  { key: 'standards', title: '评分', path: 'assessment', icon: CalendarCheck2 },
 ] as const;
 
 export function ProjectOverviewPage() {
   const session = useSession();
   const { projectId, project } = useProject();
+  const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
+  const library = useQuery({ queryKey: ['resource-library', projectId], queryFn: ({ signal }) => resourceLibrary(projectId, signal) });
+  const standards = useQuery({ queryKey: ['standards', projectId], queryFn: () => projectRequest<{ items: StandardVersion[] }>(projectId, '/standards') });
   const queries = useQueries({ queries: [
     { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members'), { limit: 100 }) },
@@ -38,6 +42,7 @@ export function ProjectOverviewPage() {
 
   return <div className="page-stack project-overview-page">
     <div className="overview-welcome"><div><span className="eyebrow">项目进度</span><h1>一起把下一步做好</h1><p>此处汇总项目服务中已保存的任务、成员、材料与要求状态。</p></div><Link to={`/app/projects/${projectId}/tasks`} className="button button-primary">查看任务 <ArrowRight size={16} /></Link></div>
+    <SectionCard title="项目主目标" detail="主目标独立于子任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖子任务</Link></>}</SectionCard>
     {errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
     <div className="metric-grid overview-metrics">
       <div className="metric-card"><span>任务完成</span><strong>{tasks.data ? `${done}/${taskItems.length}` : '—'}</strong><small>按服务端任务状态计算</small></div>
@@ -48,8 +53,7 @@ export function ProjectOverviewPage() {
     <div className="two-column overview-columns">
       <SectionCard title="协作模块" detail="直接进入需要处理的项目内容。">
         <div className="module-links">{modules.map(({ key, title, path, icon: Icon }) => {
-          const query = ({ tasks, members, materials, sources } as const)[key];
-          const count = query.data?.length;
+          const count = key === 'tasks' ? tasks.data?.length : key === 'members' ? members.data?.length : key === 'library' ? library.data?.length : standards.data?.items.length;
           return <Link className="module-link" key={key} to={`/app/projects/${projectId}/${path}`}><span className="module-icon"><Icon size={18} /></span><span className="module-link-main"><strong>{title}</strong><small>{count === undefined ? '服务数据暂不可用' : `${count} 项记录`}</small></span><ArrowRight size={16} /></Link>;
         })}</div>
       </SectionCard>
@@ -57,8 +61,8 @@ export function ProjectOverviewPage() {
         <div className="card-list">
           {!tasks.error && <PendingTaskPreview tasks={taskItems} userId={session.data?.id} projectId={projectId} />}
           {missingDeadline && <Link className="list-row attention-row" to={`/app/projects/${projectId}/settings`}><span className="attention-mark">!</span><span className="list-row-main"><strong>截止日期尚未确认</strong><p>项目设置中可记录官方通知中的日期精度。</p></span><ArrowRight size={15} /></Link>}
-          {sources.data?.length === 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/sources`}><span className="attention-mark">+</span><span className="list-row-main"><strong>导入通知或项目资料</strong><p>粘贴原文、填写公开网址或上传文件后再提取要求。</p></span><ArrowRight size={15} /></Link>}
-          {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/requirements`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求集等待人工确认</strong><p>系统提取内容保持草稿状态，负责人确认后才成为正式要求。</p></span><ArrowRight size={15} /></Link>}
+          {sources.data?.length === 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/data?mode=import`}><span className="attention-mark">+</span><span className="list-row-main"><strong>导入通知或项目资料</strong><p>粘贴原文、填写公开网址或上传文件后再提取要求。</p></span><ArrowRight size={15} /></Link>}
+          {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/assessment?section=standards`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求等待纳入统一标准</strong><p>在同一编辑器复核要求与评分维度，确认后固定标准版本。</p></span><ArrowRight size={15} /></Link>}
           {checklistDataReady && !missingDeadline && Boolean(sources.data?.length) && !draftSets && !hasOpenTasks && <EmptyState title="暂无待处理事项" detail="系统没有从当前项目记录中发现待处理内容。" />}
         </div>
       </SectionCard>

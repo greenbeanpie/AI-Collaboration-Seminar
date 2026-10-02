@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { projectBackgroundStatements } from '../services/resources';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
@@ -171,6 +172,10 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
         c.env.DB.prepare(
           "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'owner', ?4)",
         ).bind(newId(), projectId, user.id, now),
+        c.env.DB.prepare(
+          'INSERT OR IGNORE INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT id,name,description,created_at,updated_at FROM projects WHERE id=?1',
+        ).bind(projectId),
+        ...projectBackgroundStatements(c.env, projectId, body.description, user.id, now),
       ]);
       const row = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?1').bind(projectId).first<ProjectRow>();
       if (!row) throw notFound('项目创建失败');

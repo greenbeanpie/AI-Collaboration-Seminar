@@ -8,8 +8,8 @@ assert(['localhost', '127.0.0.1'].includes(base.hostname), 'Only loopback verifi
 const origin = base.origin;
 const runId = randomUUID();
 let checks = 0;
-async function call(account, path, { method = 'GET', body, status = 200, code } = {}) {
-  const headers = { Origin: origin, 'X-Request-Id': randomUUID(), 'CF-Connecting-IP': `198.51.100.${1 + Math.floor(Math.random() * 250)}` };
+async function call(account, path, { method = 'GET', body, status = 200, code, headers: additionalHeaders = {} } = {}) {
+  const headers = { Origin: origin, 'X-Request-Id': randomUUID(), 'CF-Connecting-IP': `198.51.100.${1 + Math.floor(Math.random() * 250)}`, ...additionalHeaders };
   // 写请求统一携带幂等键（冻结写请求强制要求，见 A08）
   if (method !== 'GET') headers['Idempotency-Key'] = randomUUID();
   if (account?.cookie) headers.Cookie = account.cookie;
@@ -51,19 +51,31 @@ async function login(role) {
 const owner = await login('owner');
 const member = await login('member');
 const outsider = await login('outsider');
-const project = await call(owner, '/projects', { method: 'POST', body: { name: `联调验证 ${runId}`, deadlineDate: '2026-10-08', deadlinePrecision: 'date' }, status: 201 });
+const project = await call(owner, '/projects', { method: 'POST', body: { name: `联调验证 ${runId}`, description: '本地联调项目背景，不进入生产。', deadlineDate: '2026-10-08', deadlinePrecision: 'date' }, status: 201 });
 const p = `/projects/${project.id}`;
 assert.equal(project.myRole, 'owner');
 await call(outsider, p, { status: 403, code: 'PERMISSION_DENIED' });
 const invite = await call(owner, `${p}/invitations`, { method: 'POST', body: { maxUses: 1 }, status: 201 });
 await call(member, '/invitations/accept', { method: 'POST', body: { code: invite.code } });
 assert.equal((await call(member, p)).myRole, 'member');
-await call(member, `${p}/members/me`, { method: 'PATCH', body: { skills: ['写作', '测试'], hoursPerWeek: 4 } });
-const task = await call(owner, `${p}/tasks`, { method: 'POST', body: { title: '真实协作任务', assigneeId: member.user.id }, status: 201 });
-const activeTask = await call(member, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, status: 'doing' } });
-await call(owner, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, status: 'done' }, status: 409, code: 'VERSION_CONFLICT' });
-await call(owner, `${p}/tasks/apply-assignment`, { method: 'POST', body: { taskId: task.taskId, assigneeId: owner.user.id, expectedRevision: task.revision }, status: 409, code: 'VERSION_CONFLICT' });
-const assigned = await call(owner, `${p}/tasks/apply-assignment`, { method: 'POST', body: { taskId: task.taskId, assigneeId: owner.user.id, expectedRevision: activeTask.revision } });
+await call(member, `${p}/members/me`, { method: 'PATCH', body: { skills: ['写作', '测试'], hoursPerWeek: 4 }, status: 410, code: 'INVALID_STATE' });
+const profile = await call(member, '/auth/personal-profile');
+await call(member, '/auth/personal-profile', { method: 'PUT', headers: { 'X-Account-Settings': '1' }, body: { ...profile, expectedRevision: profile.revision, searchable: false, aiUseAllowed: false, major: '本地验证专业', specialties: '写作与测试', weeklyAvailableHours: 4, visibility: { bio: false, major: false, specialties: false, preferredRoles: false }, revision: undefined } });
+assert.equal((await call(member, '/auth/personal-profile')).weeklyAvailableHours, 4);
+const members = await call(owner, `${p}/members`);
+assert(members.items.every(item => !('major' in item) && !('skills' in item) && !('hoursPerWeek' in item)), 'Project member API must not expose personal fields');
+assert.equal((await call(member, '/auth/personal-profile/import-candidates')).items.length, 0);
+const initialGoal = await call(owner, `${p}/goal`);
+await call(member, `${p}/goal`, { method: 'PATCH', body: { expectedRevision: initialGoal.revision, title: 'Unauthorized' }, status: 403 });
+const mainGoal = await call(owner, `${p}/goal`, { method: 'PATCH', body: { expectedRevision: initialGoal.revision, title: '完成本地真实接口验收' } });
+assert.equal(mainGoal.title, '完成本地真实接口验收');
+const task = await call(owner, `${p}/tasks`, { method: 'POST', body: { title: '真实协作任务', criteria: '提交可复核的固定版本成果', assigneeId: member.user.id }, status: 201 });
+assert.equal(task.lifecycleState, 'in_progress');
+const activeTask = await call(owner, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, detail: '负责人补充交付说明' } });
+await call(owner, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: task.revision, detail: '旧版本不能覆盖新说明' }, status: 409, code: 'VERSION_CONFLICT' });
+await call(owner, `${p}/tasks/${task.taskId}`, { method: 'PATCH', body: { expectedRevision: activeTask.revision, status: 'done' }, status: 409, code: 'INVALID_STATE' });
+await call(owner, `${p}/collaboration/tasks/${task.taskId}/assign`, { method: 'POST', body: { assigneeId: owner.user.id, expectedRevision: task.revision, reason: '核对版本冲突' }, status: 409, code: 'INVALID_STATE' });
+const assigned = await call(owner, `${p}/collaboration/tasks/${task.taskId}/assign`, { method: 'POST', body: { assigneeId: owner.user.id, expectedRevision: activeTask.revision, reason: '负责人接手联调验证' } });
 assert.equal(assigned.assigneeId, owner.user.id);
 assert.equal(assigned.status, 'doing', 'AI assignment adoption cannot complete a task');
 await call(member, `${p}/comments`, { method: 'POST', body: { targetType: 'task', targetId: task.taskId, body: '真实评论' }, status: 201 });
@@ -103,6 +115,46 @@ assert.equal(clearedRubric.notes, null, 'Rubric notes can be explicitly cleared'
 await call(member, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST', status: 403, code: 'PERMISSION_DENIED' });
 const confirmedRubric = await call(owner, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST' });
 assert.equal(confirmedRubric.status, 'confirmed');
+const standards = await call(owner, `${p}/standards`, { method: 'POST', body: { title: '统一验收标准', requirements: [{ title: '可复核成果', detail: '提供已保存成果及真实验证记录', category: 'deliverable', dimensionKey: 'quality' }, { title: '提交日期', detail: '核对日期', category: 'deadline', dueDate: '2026-10-08', duePrecision: 'date' }], weights: [{ key: 'quality', label: '材料质量', weight: 100 }] }, status: 201 });
+await call(member, `${p}/standards/${standards.standardsVersionId}/confirm`, { method: 'POST', body: { expectedRevision: standards.revision }, status: 403 });
+const publishedStandard = await call(owner, `${p}/standards/${standards.standardsVersionId}/confirm`, { method: 'POST', body: { expectedRevision: standards.revision } });
+assert.equal(publishedStandard.status, 'confirmed');
+assert.equal(publishedStandard.requirements.length, 2);
+const library = await call(owner, `${p}/resource-library`);
+const background = library.items.find(item => item.purpose === 'background');
+assert(background && background.resourceType === 'material' && background.currentVersionId, 'Project background must be a saved version');
+const librarySource = library.items.find(item => item.resourceId === source.sourceId);
+assert.equal(librarySource.purpose, 'reference');
+const tagged = await call(owner, `${p}/resource-library/source/${source.sourceId}`, { method: 'PATCH', body: { expectedRevision: librarySource.revision, purpose: 'background' } });
+assert.equal(tagged.currentVersionId, librarySource.currentVersionId, 'Purpose changes must preserve immutable source versions');
+await call(owner, `${p}/resource-library/source/${source.sourceId}`, { method: 'PATCH', body: { expectedRevision: librarySource.revision, purpose: 'output' }, status: 409, code: 'VERSION_CONFLICT' });
+const predecessor = await call(owner, `${p}/collaboration/tasks`, { method: 'POST', body: { title: '前置收集', detail: '保留未完成状态', criteria: '收集资料', effortHours: 1 }, status: 201 });
+const successor = await call(owner, `${p}/collaboration/tasks`, { method: 'POST', body: { title: '提前提交验证', detail: '依赖仅提示', criteria: '保存材料', effortHours: 1 }, status: 201 });
+const graphGoal = await call(owner, `${p}/goal`);
+const dependency = await call(owner, `${p}/tasks/${successor.taskId}/dependencies`, { method: 'PUT', body: { expectedGraphRevision: graphGoal.graphRevision, dependsOnTaskIds: [predecessor.taskId] } });
+assert.deepEqual(dependency.unfinishedDependencyIds, [predecessor.taskId]);
+await call(owner, `${p}/tasks/${predecessor.taskId}/dependencies`, { method: 'PUT', body: { expectedGraphRevision: dependency.graphRevision, dependsOnTaskIds: [successor.taskId] }, status: 400, code: 'VALIDATION_FAILED' });
+const claimedSuccessor = await call(owner, `${p}/collaboration/tasks/${successor.taskId}/claim`, { method: 'POST', body: { expectedRevision: successor.revision } });
+const submission = await call(owner, `${p}/collaboration/tasks/${successor.taskId}/submissions`, { method: 'POST', body: { expectedRevision: claimedSuccessor.revision, body: '前置仍未完成，允许提前提交。', materialVersionIds: [version.versionId] }, status: 201 });
+await call(owner, `${p}/collaboration/submissions/${submission.submissionId}/decide`, { method: 'POST', body: { expectedRevision: submission.revision, decision: 'accept', feedback: '已核对固定版本，提前完成允许验收。' } });
+assert.equal((await call(owner, `${p}/tasks/${predecessor.taskId}`)).status, 'todo');
+assert.equal((await call(owner, `${p}/tasks/${successor.taskId}`)).status, 'done');
+assert(Array.isArray((await call(owner, `${p}/assessments`)).items));
+if (!capabilities.features.aiEnabled) {
+  const attempt = await call(owner, `${p}/assessments`, { method: 'POST', body: { kind: 'material_review', standardsVersionId: publishedStandard.standardsVersionId, materialVersionIds: [version.versionId] }, status: 202 });
+  let record;
+  for (let retry = 0; retry < 40; retry++) {
+    record = await call(owner, `${p}/assessments/${attempt.assessmentId}`);
+    if (record.status === 'failed' && record.jobError) break;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert.equal(record.status, 'failed', 'Disabled AI must leave an explicit failed assessment');
+  assert.equal(record.report, null, 'Disabled AI must never produce simulated scores');
+  assert(record.jobError, 'Failed assessments must expose failure and the job link');
+  const failedJob = await call(owner, `/jobs/${attempt.jobId}`);
+  assert.equal(failedJob.status, 'failed');
+  assert(failedJob.error?.message, 'Failed job details must retain the actual error');
+}
 await call(owner, `${p}/decisions`, { method: 'POST', body: { title: '验证真实服务', detail: '本地 API 数据，不进入生产。' }, status: 201 });
 const contribution = await call(member, `${p}/contributions`, { method: 'POST', body: { description: '完成联调验证' }, status: 201 });
 await call(member, `${p}/contributions/${contribution.contributionId}/corrections`, { method: 'POST', body: { description: '补充材料协作验证' }, status: 201 });
@@ -110,6 +162,12 @@ await call(owner, `${p}/resources`, { method: 'POST', body: { kind: 'other', tit
 const exported = await call(owner, `${p}/export-bundle`);
 assert(Array.isArray(exported.requirementSets));
 assert.equal(exported.rubricVersions.find(item => item.rubricId === rubric.rubricId)?.status, 'confirmed');
+assert.equal(exported.mainGoal.title, mainGoal.title);
+assert(exported.taskDependencies.some(edge => edge.taskId === successor.taskId && edge.dependsOnTaskId === predecessor.taskId));
+assert(exported.taskSubmissions.some(item => item.submissionId === submission.submissionId));
+assert(exported.standardsVersions.some(item => item.standardsVersionId === standards.standardsVersionId));
+assert(exported.materialVersions.some(item => item.versionId === version.versionId));
+assert(!JSON.stringify(exported).includes('本地验证专业'), 'Global profile values must not appear in project export');
 // Unconfigured AI is explicitly unavailable, never replaced by demo success.
 if (!capabilities.features.aiEnabled) {
   const pending = await call(owner, `${p}/agent-sessions`, { method: 'POST', body: { mode: 'do', instruction: '验证不可用状态' }, status: 202 });

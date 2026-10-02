@@ -14,6 +14,9 @@ function showOverview(sources: unknown[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   for (const key of ['tasks', 'members', 'materials', 'requirementSets', 'events']) client.setQueryData([key, 'overview-project'], []);
   client.setQueryData(['sources', 'overview-project'], sources);
+  client.setQueryData(['project-goal', 'overview-project'], { title: '真实主目标', detail: '' });
+  client.setQueryData(['resource-library', 'overview-project'], []);
+  client.setQueryData(['standards', 'overview-project'], { items: [] });
   return render(<QueryClientProvider client={client}><MemoryRouter><ProjectOverviewPage /></MemoryRouter></QueryClientProvider>);
 }
 

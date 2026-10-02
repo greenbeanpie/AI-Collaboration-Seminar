@@ -14,7 +14,7 @@ afterEach(cleanup);
 function record(status: 'queued' | 'running' | 'waiting_input' | null, serverStatus?: 'running' | 'waiting_input') {
   const onParse = vi.fn();
   render(<MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SourceRecord
-    source={{ sourceId: 's', currentVersionId: 'v', kind: 'file', title: '文本 PDF', createdAt: new Date().toISOString(), lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: 'f' }}
+    source={{ purpose: 'reference', revision: 1, sourceId: 's', currentVersionId: 'v', kind: 'file', title: '文本 PDF', createdAt: new Date().toISOString(), lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: 'f' }}
     version={{ sourceVersionId: 'v', sourceId: 's', revision: 1, origin: 'file', fileId: 'f', status: 'processing', parseError: null, pageCount: 4, charCount: 242, pages: serverStatus === 'waiting_input' ? [{pageNumber:4,textStatus:'none',imageStatus:'none',ocrStatus:'none',needsReview:false}] : [], processingJob:serverStatus ? {jobId:'server',status:serverStatus,phase:'extract'} : null }}
     projectId="p" highlighted={false} highlightedPageNumber={null}
     jobs={status ? [{ jobId: 'j', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文本 PDF', fileId: 'f', status }] : []}
@@ -31,7 +31,7 @@ describe('source text-layer retry', () => {
     expect(onParse).not.toHaveBeenCalled();
     expect(screen.getByText(/无需重复上传.*可能产生 AI 用量/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重新读取文本层并提取要求' }));
-    expect(onParse).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 's' }), 'v');
+    expect(onParse).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'reference', revision: 1, sourceId: 's' }), 'v');
   });
   it.each(['queued', 'running'] as const)('keeps the parse action disabled while a task is %s', (status) => {
     record(status);

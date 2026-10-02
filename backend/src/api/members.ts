@@ -3,7 +3,7 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
-import { invalidState, notFound } from '../core/errors';
+import { AppError, invalidState, notFound } from '../core/errors';
 import { projectParams } from './projects';
 
 const memberSchema = z.object({
@@ -13,9 +13,6 @@ const memberSchema = z.object({
   isAdmin: z.boolean(),
   displayName: z.string(),
   role: z.enum(['owner', 'member']),
-  major: z.string(),
-  skills: z.array(z.string()),
-  hoursPerWeek: z.number().nullable(),
   joinedAt: z.string(),
 });
 const memberListResponse = apiEnvelope(z.object({ items: z.array(memberSchema) }), 'MemberListResponse');
@@ -23,17 +20,11 @@ const memberResponse = apiEnvelope(memberSchema, 'MemberResponse');
 const memberRemoveResponse = apiEnvelope(z.object({ removed: z.boolean() }), 'MemberRemoveResponse');
 const memberLeaveResponse = apiEnvelope(z.object({ left: z.boolean() }), 'MemberLeaveResponse');
 
-const patchMeBody = z.object({
-  major: z.string().max(120).optional(),
-  skills: z.array(z.string().min(1).max(30)).max(10).optional(),
-  hoursPerWeek: z.number().min(0).max(168).nullable().optional(),
-});
-
 const memberListRoute = createRoute({
   method: 'get',
   path: '/api/v1/projects/{projectId}/members',
   tags: ['members'],
-  summary: '成员列表（含技能与投入时间，供分工建议）',
+  summary: '成员身份、项目角色与加入信息',
   request: { params: projectParams },
   responses: { 200: { content: { 'application/json': { schema: memberListResponse } }, description: '成员列表' } },
 });
@@ -51,10 +42,11 @@ const memberPatchMeRoute = createRoute({
   method: 'patch',
   path: '/api/v1/projects/{projectId}/members/me',
   tags: ['members'],
-  summary: '维护我的技能与投入时间（供分工建议）',
-  request: { params: projectParams, body: { content: { 'application/json': { schema: patchMeBody } }, required: true } },
+  summary: '已停用：个人资料改由全局个人资料维护',
+  deprecated: true,
+  request: { params: projectParams },
   responses: {
-    200: { content: { 'application/json': { schema: memberResponse } }, description: '已更新' },
+    410: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '项目资料维护已停用，请前往全局个人资料' },
     403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '非成员' },
   },
 });
@@ -91,9 +83,6 @@ interface MemberRow {
   is_admin: number;
   display_name: string;
   role: 'owner' | 'member';
-  major: string;
-  skills_json: string;
-  hours_per_week: number | null;
   joined_at: string;
 }
 
@@ -105,14 +94,11 @@ function toMember(row: MemberRow) {
     isAdmin: row.is_admin === 1,
     displayName: row.display_name,
     role: row.role,
-    major: row.major,
-    skills: JSON.parse(row.skills_json) as string[],
-    hoursPerWeek: row.hours_per_week,
     joinedAt: row.joined_at,
   };
 }
 
-const memberSelect = `SELECT pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.major, pm.skills_json, pm.hours_per_week, pm.joined_at
+const memberSelect = `SELECT pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.joined_at
   FROM project_members pm JOIN users u ON u.id = pm.user_id LEFT JOIN auth_accounts a ON a.user_id = u.id`;
 
 export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
@@ -148,28 +134,8 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(memberPatchMeRoute, async (c) => {
-    const body = c.req.valid('json');
-    const member = c.get('member')!;
-    await c.env.DB.prepare(
-      `UPDATE project_members
-       SET major = COALESCE(?6, major), skills_json = COALESCE(?3, skills_json),
-           hours_per_week = CASE WHEN ?4 = 1 THEN ?5 ELSE hours_per_week END
-       WHERE project_id = ?1 AND user_id = ?2`,
-    )
-      .bind(
-        member.projectId,
-        member.userId,
-        body.skills === undefined ? null : JSON.stringify(body.skills),
-        body.hoursPerWeek === undefined ? 0 : 1,
-        body.hoursPerWeek ?? null,
-        body.major ?? null,
-      )
-      .run();
-    const row = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id = ?1 AND pm.user_id = ?2`)
-      .bind(member.projectId, c.get('user')!.id)
-      .first<MemberRow>();
-    if (!row) throw notFound('成员不存在');
-    return c.json(apiData(c, toMember(row)), 200);
+    c.header('Cache-Control', 'no-store');
+    throw new AppError('INVALID_STATE', '个人资料已移至全局个人资料，请前往个人资料修改', 410, false, { profilePath: '/app/profile' });
   });
 
   // 注意：leave（静态 /me）必须先于 remove（:userId 模式）注册——

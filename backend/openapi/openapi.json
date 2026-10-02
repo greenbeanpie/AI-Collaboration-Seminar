@@ -609,6 +609,14 @@
                 ],
                 "additionalProperties": false
               },
+              "weeklyAvailableHours": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 168
+              },
               "revision": {
                 "type": "integer",
                 "minimum": 0
@@ -622,7 +630,88 @@
               "specialties",
               "preferredRoles",
               "visibility",
+              "weeklyAvailableHours",
               "revision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "PersonalProfileImportCandidatesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "candidateId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sourceProjectId": {
+                      "type": "string"
+                    },
+                    "sourceProjectName": {
+                      "type": "string"
+                    },
+                    "major": {
+                      "type": "string"
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "weeklyAvailableHours": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "importedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "candidateId",
+                    "sourceProjectId",
+                    "sourceProjectName",
+                    "major",
+                    "skills",
+                    "weeklyAvailableHours",
+                    "importedAt",
+                    "createdAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -765,6 +854,24 @@
                     "maxLength": 2000,
                     "default": ""
                   },
+                  "goal": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 12000
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "detail"
+                    ]
+                  },
                   "deadlineDate": {
                     "type": "string",
                     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
@@ -816,11 +923,44 @@
                   "null"
                 ],
                 "properties": {
+                  "goal": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 12000
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "detail"
+                    ]
+                  },
                   "tasks": {
                     "type": "array",
                     "items": {
                       "type": "object",
                       "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "dependsOn": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
                         "title": {
                           "type": "string",
                           "minLength": 1,
@@ -1062,6 +1202,24 @@
                           "maxLength": 2000,
                           "default": ""
                         },
+                        "goal": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "detail": {
+                              "type": "string",
+                              "maxLength": 12000
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "detail"
+                          ]
+                        },
                         "deadlineDate": {
                           "type": "string",
                           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
@@ -1113,11 +1271,44 @@
                         "null"
                       ],
                       "properties": {
+                        "goal": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "detail": {
+                              "type": "string",
+                              "maxLength": 12000
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "detail"
+                          ]
+                        },
                         "tasks": {
                           "type": "array",
                           "items": {
                             "type": "object",
                             "properties": {
+                              "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "dependsOn": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "maxItems": 20,
+                                "default": []
+                              },
                               "title": {
                                 "type": "string",
                                 "minLength": 1,
@@ -1579,6 +1770,1594 @@
           "requestId"
         ]
       },
+      "ProjectGoalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "graphRevision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "projectId",
+              "title",
+              "detail",
+              "revision",
+              "graphRevision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskDependenciesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "dependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "unfinishedDependencyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "graphRevision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "taskId",
+              "dependsOnTaskIds",
+              "unfinishedDependencyIds",
+              "graphRevision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "StandardsListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "standardsVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "confirmed"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "requirementSetIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "rubricVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "mappings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "dimensionKey": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requirementId",
+                          "dimensionKey"
+                        ]
+                      }
+                    },
+                    "requirements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "requirementSetId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "dueDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "duePrecision": {
+                            "type": "string"
+                          },
+                          "citations": {
+                            "type": "array",
+                            "items": {}
+                          }
+                        },
+                        "required": [
+                          "requirementId",
+                          "requirementSetId",
+                          "title",
+                          "detail",
+                          "category",
+                          "dueDate",
+                          "duePrecision",
+                          "citations"
+                        ]
+                      }
+                    },
+                    "rubric": {
+                      "type": "object",
+                      "properties": {
+                        "rubricVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "weights": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              },
+                              "weight": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "label",
+                              "weight"
+                            ]
+                          },
+                          "maxItems": 10
+                        },
+                        "notes": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "rubricVersionId",
+                        "version",
+                        "weights",
+                        "notes"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "standardsVersionId",
+                    "projectId",
+                    "version",
+                    "title",
+                    "status",
+                    "revision",
+                    "requirementSetIds",
+                    "rubricVersionId",
+                    "mappings",
+                    "requirements",
+                    "rubric",
+                    "confirmedAt",
+                    "createdAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "StandardsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "standardsVersionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "title": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "confirmed"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "requirementSetIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "rubricVersionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mappings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirementId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "dimensionKey": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requirementId",
+                    "dimensionKey"
+                  ]
+                }
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirementId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "requirementSetId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "category": {
+                      "type": "string"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string"
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "required": [
+                    "requirementId",
+                    "requirementSetId",
+                    "title",
+                    "detail",
+                    "category",
+                    "dueDate",
+                    "duePrecision",
+                    "citations"
+                  ]
+                }
+              },
+              "rubric": {
+                "type": "object",
+                "properties": {
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "weights": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "weight": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "weight"
+                      ]
+                    },
+                    "maxItems": 10
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "rubricVersionId",
+                  "version",
+                  "weights",
+                  "notes"
+                ]
+              },
+              "confirmedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "standardsVersionId",
+              "projectId",
+              "version",
+              "title",
+              "status",
+              "revision",
+              "requirementSetIds",
+              "rubricVersionId",
+              "mappings",
+              "requirements",
+              "rubric",
+              "confirmedAt",
+              "createdAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AssessmentListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assessmentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "material_review",
+                            "rehearsal"
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "goalRevision": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "goal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "projectId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "graphRevision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "title",
+                            "detail",
+                            "revision",
+                            "graphRevision"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "materialVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "rehearsalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "historical": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "report": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "assistive"
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "scored",
+                                "unscorable"
+                              ]
+                            },
+                            "standardsVersionId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "standardsVersion": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "scores": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "score": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ],
+                                    "minimum": 0,
+                                    "maximum": 100
+                                  },
+                                  "confidence": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  },
+                                  "comment": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "material"
+                                              ]
+                                            },
+                                            "materialVersionId": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "materialVersionId",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "answer"
+                                              ]
+                                            },
+                                            "turnSequence": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "turnSequence",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 20
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "score",
+                                  "confidence",
+                                  "comment",
+                                  "evidence",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 10
+                            },
+                            "weightedTotal": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "summary": {
+                              "type": "string"
+                            },
+                            "limitations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "requirementChecks": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "requirementId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "met",
+                                      "unmet",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "comment": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "material"
+                                              ]
+                                            },
+                                            "materialVersionId": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "materialVersionId",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "answer"
+                                              ]
+                                            },
+                                            "turnSequence": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "turnSequence",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 20
+                                  }
+                                },
+                                "required": [
+                                  "requirementId",
+                                  "status",
+                                  "comment",
+                                  "evidence"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "status",
+                            "standardsVersionId",
+                            "standardsVersion",
+                            "scores",
+                            "weightedTotal",
+                            "summary",
+                            "limitations",
+                            "requirementChecks"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "assessmentId",
+                        "kind",
+                        "status",
+                        "goalRevision",
+                        "goal",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "materialVersionIds",
+                        "rehearsalId",
+                        "jobId",
+                        "jobError",
+                        "createdAt",
+                        "historical",
+                        "report"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assessmentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "material_review",
+                            "rehearsal"
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "goalRevision": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "goal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "projectId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "graphRevision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "title",
+                            "detail",
+                            "revision",
+                            "graphRevision"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "materialVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "rehearsalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "historical": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "report": {}
+                      },
+                      "required": [
+                        "assessmentId",
+                        "kind",
+                        "status",
+                        "goalRevision",
+                        "goal",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "materialVersionIds",
+                        "rehearsalId",
+                        "jobId",
+                        "jobError",
+                        "createdAt",
+                        "historical"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AssessmentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "assessmentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "material_review",
+                      "rehearsal"
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "goalRevision": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  },
+                  "goal": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "graphRevision": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "title",
+                      "detail",
+                      "revision",
+                      "graphRevision"
+                    ]
+                  },
+                  "standardsVersionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "standardsVersion": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "rehearsalId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "jobId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "jobError": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "historical": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  },
+                  "report": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "assistive"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "scored",
+                          "unscorable"
+                        ]
+                      },
+                      "standardsVersionId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "standardsVersion": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "scores": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string"
+                            },
+                            "score": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            "comment": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "evidence": {
+                              "type": "array",
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "material"
+                                        ]
+                                      },
+                                      "materialVersionId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "materialVersionId",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "answer"
+                                        ]
+                                      },
+                                      "turnSequence": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "turnSequence",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "maxItems": 20
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "score",
+                            "confidence",
+                            "comment",
+                            "evidence",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 10
+                      },
+                      "weightedTotal": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "limitations": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "requirementChecks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "requirementId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "met",
+                                "unmet",
+                                "unknown"
+                              ]
+                            },
+                            "comment": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "evidence": {
+                              "type": "array",
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "material"
+                                        ]
+                                      },
+                                      "materialVersionId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "materialVersionId",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "answer"
+                                        ]
+                                      },
+                                      "turnSequence": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "turnSequence",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "maxItems": 20
+                            }
+                          },
+                          "required": [
+                            "requirementId",
+                            "status",
+                            "comment",
+                            "evidence"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "status",
+                      "standardsVersionId",
+                      "standardsVersion",
+                      "scores",
+                      "weightedTotal",
+                      "summary",
+                      "limitations",
+                      "requirementChecks"
+                    ]
+                  }
+                },
+                "required": [
+                  "assessmentId",
+                  "kind",
+                  "status",
+                  "goalRevision",
+                  "goal",
+                  "standardsVersionId",
+                  "standardsVersion",
+                  "materialVersionIds",
+                  "rehearsalId",
+                  "jobId",
+                  "jobError",
+                  "createdAt",
+                  "historical",
+                  "report"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "assessmentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "material_review",
+                      "rehearsal"
+                    ]
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "goalRevision": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  },
+                  "goal": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "graphRevision": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "title",
+                      "detail",
+                      "revision",
+                      "graphRevision"
+                    ]
+                  },
+                  "standardsVersionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "standardsVersion": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "rehearsalId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "jobId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "jobError": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "historical": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "report": {}
+                },
+                "required": [
+                  "assessmentId",
+                  "kind",
+                  "status",
+                  "goalRevision",
+                  "goal",
+                  "standardsVersionId",
+                  "standardsVersion",
+                  "materialVersionIds",
+                  "rehearsalId",
+                  "jobId",
+                  "jobError",
+                  "createdAt",
+                  "historical"
+                ]
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AssessmentCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "assessmentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "rehearsalId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "assessmentId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "MemberListResponse": {
         "type": "object",
         "properties": {
@@ -1619,21 +3398,6 @@
                         "member"
                       ]
                     },
-                    "major": {
-                      "type": "string"
-                    },
-                    "skills": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "hoursPerWeek": {
-                      "type": [
-                        "number",
-                        "null"
-                      ]
-                    },
                     "joinedAt": {
                       "type": "string"
                     }
@@ -1645,9 +3409,6 @@
                     "isAdmin",
                     "displayName",
                     "role",
-                    "major",
-                    "skills",
-                    "hoursPerWeek",
                     "joinedAt"
                   ]
                 }
@@ -1702,21 +3463,6 @@
                   "member"
                 ]
               },
-              "major": {
-                "type": "string"
-              },
-              "skills": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "hoursPerWeek": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
               "joinedAt": {
                 "type": "string"
               }
@@ -1728,9 +3474,6 @@
               "isAdmin",
               "displayName",
               "role",
-              "major",
-              "skills",
-              "hoursPerWeek",
               "joinedAt"
             ]
           },
@@ -2164,6 +3907,18 @@
               "title": {
                 "type": "string"
               },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "reference",
+                  "output"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
               "currentVersionId": {
                 "type": [
                   "string",
@@ -2202,6 +3957,8 @@
               "sourceId",
               "kind",
               "title",
+              "purpose",
+              "revision",
               "currentVersionId",
               "createdAt",
               "lifecycleVersion",
@@ -2247,6 +4004,18 @@
                     "title": {
                       "type": "string"
                     },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "background",
+                        "reference",
+                        "output"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
                     "currentVersionId": {
                       "type": [
                         "string",
@@ -2281,6 +4050,8 @@
                     "sourceId",
                     "kind",
                     "title",
+                    "purpose",
+                    "revision",
                     "currentVersionId",
                     "createdAt",
                     "lifecycleVersion",
@@ -3580,6 +5351,44 @@
                   "null"
                 ]
               },
+              "criteria": {
+                "type": "string"
+              },
+              "effortHours": {
+                "type": "number"
+              },
+              "parentTaskId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "currentSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "citations": {
+                "type": "array",
+                "items": {}
+              },
+              "dependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "unfinishedDependencyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
               "title": {
                 "type": "string"
               },
@@ -3636,6 +5445,13 @@
             "required": [
               "taskId",
               "lifecycleState",
+              "criteria",
+              "effortHours",
+              "parentTaskId",
+              "currentSubmissionId",
+              "citations",
+              "dependsOnTaskIds",
+              "unfinishedDependencyIds",
               "title",
               "detail",
               "assigneeId",
@@ -3678,6 +5494,44 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
                     },
                     "title": {
                       "type": "string"
@@ -3735,6 +5589,13 @@
                   "required": [
                     "taskId",
                     "lifecycleState",
+                    "criteria",
+                    "effortHours",
+                    "parentTaskId",
+                    "currentSubmissionId",
+                    "citations",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds",
                     "title",
                     "detail",
                     "assigneeId",
@@ -4065,6 +5926,20 @@
                       ],
                       "format": "uuid"
                     },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -4084,6 +5959,8 @@
                     "effortHours",
                     "parentTaskId",
                     "currentSubmissionId",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -4224,6 +6101,20 @@
                 ],
                 "format": "uuid"
               },
+              "dependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "unfinishedDependencyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
               "createdAt": {
                 "type": "string"
               },
@@ -4243,6 +6134,8 @@
               "effortHours",
               "parentTaskId",
               "currentSubmissionId",
+              "dependsOnTaskIds",
+              "unfinishedDependencyIds",
               "createdAt",
               "updatedAt"
             ]
@@ -5197,6 +7090,21 @@
                     "payload": {
                       "type": "object",
                       "properties": {
+                        "goal": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "detail"
+                          ]
+                        },
                         "brief": {
                           "type": "string"
                         },
@@ -5238,8 +7146,16 @@
                                   "string",
                                   "null"
                                 ],
-                                "format": "uuid",
-                                "default": null
+                                "format": "uuid"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "dependsOn": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               },
                               "citations": {
                                 "type": "array",
@@ -5455,6 +7371,19 @@
             "properties": {
               "applied": {
                 "type": "boolean"
+              },
+              "followupJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "followupError": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -5536,6 +7465,14 @@
               },
               "kind": {
                 "type": "string"
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "reference",
+                  "output"
+                ]
               },
               "revision": {
                 "type": "integer"
@@ -5628,6 +7565,7 @@
               "materialId",
               "title",
               "kind",
+              "purpose",
               "revision",
               "currentVersion",
               "createdAt",
@@ -5665,6 +7603,14 @@
                     "kind": {
                       "type": "string"
                     },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "background",
+                        "reference",
+                        "output"
+                      ]
+                    },
                     "revision": {
                       "type": "integer"
                     },
@@ -5686,6 +7632,7 @@
                     "materialId",
                     "title",
                     "kind",
+                    "purpose",
                     "revision",
                     "createdAt",
                     "updatedAt",
@@ -5906,6 +7853,210 @@
             "required": [
               "items",
               "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceLibraryListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "resourceType": {
+                      "type": "string",
+                      "enum": [
+                        "source",
+                        "material"
+                      ]
+                    },
+                    "resourceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "background",
+                        "reference",
+                        "output"
+                      ]
+                    },
+                    "currentVersionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lifecycleVersion": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "fileId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "canManage": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "resourceType",
+                    "resourceId",
+                    "title",
+                    "purpose",
+                    "currentVersionId",
+                    "revision",
+                    "createdAt",
+                    "updatedAt",
+                    "deletedAt",
+                    "lifecycleVersion",
+                    "fileId",
+                    "canManage"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceLibraryItemResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "resourceType": {
+                "type": "string",
+                "enum": [
+                  "source",
+                  "material"
+                ]
+              },
+              "resourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "reference",
+                  "output"
+                ]
+              },
+              "currentVersionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lifecycleVersion": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "fileId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "canManage": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "resourceType",
+              "resourceId",
+              "title",
+              "purpose",
+              "currentVersionId",
+              "revision",
+              "createdAt",
+              "updatedAt",
+              "deletedAt",
+              "lifecycleVersion",
+              "fileId",
+              "canManage"
             ]
           },
           "requestId": {
@@ -7284,11 +9435,1094 @@
               "generatedAt": {
                 "type": "string"
               },
+              "mainGoal": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "graphRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "title",
+                  "detail",
+                  "revision",
+                  "graphRevision"
+                ]
+              },
+              "standardsVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "standardsVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "confirmed"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "requirementSetIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "rubricVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "mappings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "dimensionKey": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requirementId",
+                          "dimensionKey"
+                        ]
+                      }
+                    },
+                    "requirements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requirementId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "requirementSetId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "dueDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "duePrecision": {
+                            "type": "string"
+                          },
+                          "citations": {
+                            "type": "array",
+                            "items": {}
+                          }
+                        },
+                        "required": [
+                          "requirementId",
+                          "requirementSetId",
+                          "title",
+                          "detail",
+                          "category",
+                          "dueDate",
+                          "duePrecision",
+                          "citations"
+                        ]
+                      }
+                    },
+                    "rubric": {
+                      "type": "object",
+                      "properties": {
+                        "rubricVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "weights": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 60
+                              },
+                              "weight": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "label",
+                              "weight"
+                            ]
+                          },
+                          "maxItems": 10
+                        },
+                        "notes": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "rubricVersionId",
+                        "version",
+                        "weights",
+                        "notes"
+                      ]
+                    },
+                    "confirmedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "standardsVersionId",
+                    "projectId",
+                    "version",
+                    "title",
+                    "status",
+                    "revision",
+                    "requirementSetIds",
+                    "rubricVersionId",
+                    "mappings",
+                    "requirements",
+                    "rubric",
+                    "confirmedAt",
+                    "createdAt"
+                  ]
+                }
+              },
+              "assessments": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assessmentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "material_review",
+                            "rehearsal"
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "goalRevision": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "goal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "projectId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "graphRevision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "title",
+                            "detail",
+                            "revision",
+                            "graphRevision"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "materialVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "rehearsalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "historical": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "report": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "assistive"
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "scored",
+                                "unscorable"
+                              ]
+                            },
+                            "standardsVersionId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "standardsVersion": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "scores": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "score": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ],
+                                    "minimum": 0,
+                                    "maximum": 100
+                                  },
+                                  "confidence": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  },
+                                  "comment": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "material"
+                                              ]
+                                            },
+                                            "materialVersionId": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "materialVersionId",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "answer"
+                                              ]
+                                            },
+                                            "turnSequence": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "turnSequence",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 20
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "score",
+                                  "confidence",
+                                  "comment",
+                                  "evidence",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 10
+                            },
+                            "weightedTotal": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "summary": {
+                              "type": "string"
+                            },
+                            "limitations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "requirementChecks": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "requirementId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "met",
+                                      "unmet",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "comment": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 2000
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "material"
+                                              ]
+                                            },
+                                            "materialVersionId": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "materialVersionId",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "enum": [
+                                                "answer"
+                                              ]
+                                            },
+                                            "turnSequence": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "quote": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 2000
+                                            }
+                                          },
+                                          "required": [
+                                            "type",
+                                            "turnSequence",
+                                            "quote"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 20
+                                  }
+                                },
+                                "required": [
+                                  "requirementId",
+                                  "status",
+                                  "comment",
+                                  "evidence"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "status",
+                            "standardsVersionId",
+                            "standardsVersion",
+                            "scores",
+                            "weightedTotal",
+                            "summary",
+                            "limitations",
+                            "requirementChecks"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "assessmentId",
+                        "kind",
+                        "status",
+                        "goalRevision",
+                        "goal",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "materialVersionIds",
+                        "rehearsalId",
+                        "jobId",
+                        "jobError",
+                        "createdAt",
+                        "historical",
+                        "report"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assessmentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "material_review",
+                            "rehearsal"
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "goalRevision": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "goal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "projectId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "graphRevision": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "title",
+                            "detail",
+                            "revision",
+                            "graphRevision"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "materialVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "rehearsalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "jobError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "historical": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "report": {}
+                      },
+                      "required": [
+                        "assessmentId",
+                        "kind",
+                        "status",
+                        "goalRevision",
+                        "goal",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "materialVersionIds",
+                        "rehearsalId",
+                        "jobId",
+                        "jobError",
+                        "createdAt",
+                        "historical"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "legacyReviews": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "reviewId": {
+                      "type": "string"
+                    },
+                    "requirementSetId": {
+                      "type": "string"
+                    },
+                    "rubricVersionId": {
+                      "type": "string"
+                    },
+                    "materialVersionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "report": {},
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "reviewId",
+                    "requirementSetId",
+                    "rubricVersionId",
+                    "materialVersionIds",
+                    "status",
+                    "createdAt"
+                  ]
+                }
+              },
+              "taskDependencies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "dependsOnTaskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "dependsOnTaskId"
+                  ]
+                }
+              },
+              "taskLinks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "linkId": {
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linkId",
+                    "taskId",
+                    "kind",
+                    "targetId",
+                    "createdAt"
+                  ]
+                }
+              },
+              "taskSubmissions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "submissionId": {
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "type": "string"
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "submittedBy": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "type": "string"
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "materialVersionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "aiReport": {},
+                    "humanScoreOverride": {},
+                    "decision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "feedback": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "submissionId",
+                    "taskId",
+                    "round",
+                    "submittedBy",
+                    "body",
+                    "criteria",
+                    "status",
+                    "materialVersionIds",
+                    "decision",
+                    "feedback",
+                    "createdAt"
+                  ]
+                }
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "currentVersionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "title",
+                    "purpose",
+                    "currentVersionId",
+                    "deletedAt"
+                  ]
+                }
+              },
+              "sourceVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceVersionId": {
+                      "type": "string"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "origin": {
+                      "type": "string"
+                    },
+                    "fileId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "fragments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fragmentId": {
+                            "type": "string"
+                          },
+                          "pageNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "content": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fragmentId",
+                          "pageNumber",
+                          "seq",
+                          "content"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "sourceVersionId",
+                    "sourceId",
+                    "revision",
+                    "origin",
+                    "fileId",
+                    "status",
+                    "createdAt",
+                    "fragments"
+                  ]
+                }
+              },
+              "materialVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "versionId": {
+                      "type": "string"
+                    },
+                    "materialId": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "markdown": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "attachments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fileId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "fileId",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "versionId",
+                    "materialId",
+                    "revision",
+                    "markdown",
+                    "createdAt",
+                    "attachments"
+                  ]
+                }
+              },
+              "rehearsalTurns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "rehearsalId": {
+                      "type": "string"
+                    },
+                    "sequence": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "content": {},
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rehearsalId",
+                    "sequence",
+                    "kind",
+                    "createdAt"
+                  ]
+                }
+              },
               "materials": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
+                    "materialId": {
+                      "type": "string"
+                    },
+                    "versionId": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -7330,6 +10564,9 @@
                     }
                   },
                   "required": [
+                    "materialId",
+                    "versionId",
+                    "purpose",
                     "title",
                     "markdown",
                     "revision",
@@ -7581,8 +10818,90 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "taskId": {
+                      "type": "string"
+                    },
                     "title": {
                       "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "lifecycleState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sourceVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "fragmentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "pageNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "quote": {
+                            "type": "string"
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "deletedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "sourceVersionId",
+                          "fragmentId",
+                          "pageNumber",
+                          "quote"
+                        ]
+                      }
                     },
                     "status": {
                       "type": "string"
@@ -7601,7 +10920,17 @@
                     }
                   },
                   "required": [
+                    "taskId",
                     "title",
+                    "detail",
+                    "criteria",
+                    "effortHours",
+                    "revision",
+                    "lifecycleState",
+                    "parentTaskId",
+                    "currentSubmissionId",
+                    "dependsOnTaskIds",
+                    "citations",
                     "status",
                     "assignee_id",
                     "due_date"
@@ -7735,6 +11064,17 @@
             "required": [
               "project",
               "generatedAt",
+              "mainGoal",
+              "standardsVersions",
+              "assessments",
+              "legacyReviews",
+              "taskDependencies",
+              "taskLinks",
+              "taskSubmissions",
+              "sources",
+              "sourceVersions",
+              "materialVersions",
+              "rehearsalTurns",
               "materials",
               "requirementSets",
               "rubricVersions",
@@ -9660,6 +13000,45 @@
                     ],
                     "additionalProperties": false
                   },
+                  "weeklyAvailableHours": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 168
+                  },
+                  "legacyImports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "candidateId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "major",
+                              "specialties",
+                              "weeklyAvailableHours"
+                            ]
+                          },
+                          "minItems": 1,
+                          "maxItems": 3
+                        }
+                      },
+                      "required": [
+                        "candidateId",
+                        "fields"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20
+                  },
                   "expectedRevision": {
                     "type": "integer",
                     "minimum": 0
@@ -9687,6 +13066,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PersonalProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/personal-profile/import-candidates": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Only the account owner can read preserved legacy profile candidates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalProfileImportCandidatesResponse"
                 }
               }
             }
@@ -9790,6 +13206,24 @@
                     "type": "string",
                     "maxLength": 2000,
                     "default": ""
+                  },
+                  "goal": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 12000
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "detail"
+                    ]
                   },
                   "deadlineDate": {
                     "type": "string",
@@ -9937,6 +13371,24 @@
                         "type": "string",
                         "maxLength": 2000,
                         "default": ""
+                      },
+                      "goal": {
+                        "type": "object",
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "detail": {
+                            "type": "string",
+                            "maxLength": 12000
+                          }
+                        },
+                        "required": [
+                          "title",
+                          "detail"
+                        ]
                       },
                       "deadlineDate": {
                         "type": "string",
@@ -10220,11 +13672,44 @@
                       "manual"
                     ]
                   },
+                  "goal": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 12000
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "detail"
+                    ]
+                  },
                   "tasks": {
                     "type": "array",
                     "items": {
                       "type": "object",
                       "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "dependsOn": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
                         "title": {
                           "type": "string",
                           "minLength": 1,
@@ -10639,12 +14124,870 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/goal": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGoalResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 12000
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGoalResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/dependencies": {
+      "put": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedGraphRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "dependsOnTaskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "expectedGraphRevision",
+                  "dependsOnTaskIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDependenciesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/standards": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardsListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "requirements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "detail": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "default": ""
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "deadline",
+                            "deliverable",
+                            "format",
+                            "scoring",
+                            "team",
+                            "other"
+                          ],
+                          "default": "deliverable"
+                        },
+                        "dimensionKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "dueDate": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                            },
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "duePrecision": {
+                          "type": "string",
+                          "enum": [
+                            "date",
+                            "datetime",
+                            "unknown"
+                          ]
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sourceVersionId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "fragmentId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "pageNumber": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "quote": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              }
+                            },
+                            "required": [
+                              "sourceVersionId",
+                              "fragmentId",
+                              "pageNumber",
+                              "quote"
+                            ]
+                          },
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "title"
+                      ]
+                    },
+                    "maxItems": 100
+                  },
+                  "weights": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "weight": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "weight"
+                      ]
+                    },
+                    "maxItems": 10
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "requirementSetIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 50
+                  },
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "requirementId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "dimensionKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        }
+                      },
+                      "required": [
+                        "requirementId",
+                        "dimensionKey"
+                      ]
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/standards/{standardsVersionId}": {
+      "patch": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "standardsVersionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "requirements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "detail": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "default": ""
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "deadline",
+                            "deliverable",
+                            "format",
+                            "scoring",
+                            "team",
+                            "other"
+                          ],
+                          "default": "deliverable"
+                        },
+                        "dimensionKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "dueDate": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                            },
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "duePrecision": {
+                          "type": "string",
+                          "enum": [
+                            "date",
+                            "datetime",
+                            "unknown"
+                          ]
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sourceVersionId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "fragmentId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "pageNumber": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "quote": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              }
+                            },
+                            "required": [
+                              "sourceVersionId",
+                              "fragmentId",
+                              "pageNumber",
+                              "quote"
+                            ]
+                          },
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "title"
+                      ]
+                    },
+                    "maxItems": 100
+                  },
+                  "weights": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "weight": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "weight"
+                      ]
+                    },
+                    "maxItems": 10
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "requirementSetIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 50
+                  },
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "requirementId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "dimensionKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        }
+                      },
+                      "required": [
+                        "requirementId",
+                        "dimensionKey"
+                      ]
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/standards/{standardsVersionId}/confirm": {
+      "post": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "standardsVersionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/assessments": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "material_review",
+                      "rehearsal"
+                    ]
+                  },
+                  "standardsVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  },
+                  "goalRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "kind",
+                  "standardsVersionId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/assessments/{assessmentId}": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assessmentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/members": {
       "get": {
         "tags": [
           "members"
         ],
-        "summary": "成员列表（含技能与投入时间，供分工建议）",
+        "summary": "成员身份、项目角色与加入信息",
         "parameters": [
           {
             "schema": {
@@ -10708,7 +15051,8 @@
         "tags": [
           "members"
         ],
-        "summary": "维护我的技能与投入时间（供分工建议）",
+        "summary": "已停用：个人资料改由全局个人资料维护",
+        "deprecated": true,
         "parameters": [
           {
             "schema": {
@@ -10722,52 +15066,19 @@
             "in": "path"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "major": {
-                    "type": "string",
-                    "maxLength": 120
-                  },
-                  "skills": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 30
-                    },
-                    "maxItems": 10
-                  },
-                  "hoursPerWeek": {
-                    "type": [
-                      "number",
-                      "null"
-                    ],
-                    "minimum": 0,
-                    "maximum": 168
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
-          "200": {
-            "description": "已更新",
+          "403": {
+            "description": "非成员",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemberResponse"
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }
           },
-          "403": {
-            "description": "非成员",
+          "410": {
+            "description": "项目资料维护已停用，请前往全局个人资料",
             "content": {
               "application/json": {
                 "schema": {
@@ -11482,6 +15793,15 @@
                   "url": {
                     "type": "string",
                     "maxLength": 2048
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "background",
+                      "reference",
+                      "output"
+                    ],
+                    "default": "reference"
                   }
                 },
                 "required": [
@@ -12683,6 +17003,30 @@
                     ],
                     "format": "uuid",
                     "default": null
+                  },
+                  "criteria": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "default": ""
+                  },
+                  "effortHours": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 200,
+                    "default": 1
+                  },
+                  "dependsOnTaskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 1000,
+                    "default": []
+                  },
+                  "expectedGraphRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
                   }
                 },
                 "required": [
@@ -12811,9 +17155,9 @@
       },
       "patch": {
         "tags": [
-          "tasks"
+          "collaboration"
         ],
-        "summary": "更新任务（expectedRevision 乐观锁；AI 不允许直接改任务状态）",
+        "summary": "协作流程 /tasks/{taskId}",
         "parameters": [
           {
             "schema": {
@@ -12845,7 +17189,7 @@
                 "properties": {
                   "expectedRevision": {
                     "type": "integer",
-                    "minimum": 1
+                    "exclusiveMinimum": 0
                   },
                   "title": {
                     "type": "string",
@@ -12856,69 +17200,32 @@
                     "type": "string",
                     "maxLength": 4000
                   },
-                  "assigneeId": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "format": "uuid"
-                  },
-                  "dueDate": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-                  },
-                  "duePrecision": {
+                  "criteria": {
                     "type": "string",
-                    "enum": [
-                      "date",
-                      "datetime",
-                      "unknown"
-                    ]
+                    "minLength": 1,
+                    "maxLength": 4000
                   },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "todo",
-                      "doing",
-                      "blocked",
-                      "done"
-                    ]
-                  },
-                  "requirementId": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "format": "uuid"
+                  "effortHours": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 200
                   }
                 },
                 "required": [
                   "expectedRevision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "已更新",
+            "description": "成功",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "版本冲突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiFailure"
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
                 }
               }
             }
@@ -13526,6 +17833,67 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/claim": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/claim",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assign": {
       "post": {
         "tags": [
@@ -13598,7 +17966,195 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/assign": {
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/assign",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "assigneeId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "assigneeId",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/submissions": {
       "get": {
         "tags": [
           "collaboration"
@@ -14051,6 +18607,14 @@
                     },
                     "minItems": 1,
                     "maxItems": 5
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10
                   }
                 },
                 "required": [
@@ -14329,6 +18893,14 @@
                     "minLength": 1,
                     "maxLength": 40,
                     "default": "document"
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "background",
+                      "reference",
+                      "output"
+                    ]
                   }
                 },
                 "required": [
@@ -14629,6 +19201,225 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MaterialVersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resource-library": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "统一项目资料列表，保留来源和成果版本身份",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "reference",
+                "output"
+              ]
+            },
+            "required": false,
+            "name": "purpose",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            },
+            "required": false,
+            "name": "deleted",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "统一资料列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceLibraryListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resource-library/{resourceType}/{resourceId}": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "source",
+                "material"
+              ]
+            },
+            "required": true,
+            "name": "resourceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "resourceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "资料身份与用途",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceLibraryItemResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "修改资料用途，不修改来源原文或成果正文版本",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "source",
+                "material"
+              ]
+            },
+            "required": true,
+            "name": "resourceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "resourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "background",
+                      "reference",
+                      "output"
+                    ]
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "purpose",
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "资料用途已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceLibraryItemResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "资料已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }

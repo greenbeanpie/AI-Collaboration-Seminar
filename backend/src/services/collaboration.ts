@@ -3,6 +3,7 @@ import { projectSourceContextGuard } from './collaboration-context';
 import { profileSnapshotGuard } from './personal-profiles';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
+import { projectGoal, graphSnapshot, validateTaskGraph } from './project-simplification';
 export interface CollaborationTask {
     id: string;
     project_id: string;
@@ -20,7 +21,7 @@ export interface CollaborationTask {
     created_at: string;
     updated_at: string;
 }
-export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state, criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
+export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state??(r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'), criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
 export interface Submission {
     id: string;
     project_id: string;
@@ -71,8 +72,10 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
         throw notFound();
     const payload = JSON.parse(p.payload_json) as {
         brief?: string;
+        goal?:{title:string;detail:string};
         tasks?: Array<{
             title: string;
+            key?:string;dependsOn?:string[];
             detail: string;
             criteria: string;
             effortHours: number;
@@ -90,27 +93,33 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     const nonce = newId();
     const taskIds: string[] = [];
     const batch: D1PreparedStatement[] = [];
-    const validProfiles = p.kind === 'assign' ? `AND ${profileSnapshotGuard("(SELECT json_extract(input_json,'$.profileStamp') FROM jobs WHERE id=collaboration_proposals.job_id)",'?2')} AND NOT EXISTS(SELECT 1 FROM jobs j,json_each(j.input_json,'$.members') snapshot WHERE j.id=collaboration_proposals.job_id AND NOT EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=?2 AND pm.user_id=json_extract(snapshot.value,'$.userId') AND pm.major=json_extract(snapshot.value,'$.major') AND pm.skills_json=json_extract(snapshot.value,'$.skills') AND pm.hours_per_week IS json_extract(snapshot.value,'$.hoursPerWeek') AND COALESCE((SELECT SUM(effort_hours) FROM tasks WHERE project_id=?2 AND assignee_id=pm.user_id AND status!='done'),0)=json_extract(snapshot.value,'$.loadHours')))` : '';
-    const validUpdates = p.kind === 'decompose' ? `AND NOT EXISTS(SELECT 1 FROM json_each(payload_json,'$.updates') u WHERE NOT EXISTS(SELECT 1 FROM tasks t WHERE t.project_id=?2 AND t.id=json_extract(u.value,'$.taskId') AND t.revision=json_extract(u.value,'$.expectedRevision') AND t.lifecycle_state IN ('open','in_progress','improve','rework')))` : '';
-    const validAssignments = p.kind === 'assign' ? `AND NOT EXISTS (SELECT 1 FROM json_each(payload_json,'$.assignments') a WHERE json_extract(a.value,'$.assigneeId') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tasks t JOIN project_members m ON m.project_id=t.project_id AND m.user_id=json_extract(a.value,'$.assigneeId') WHERE t.project_id=?2 AND t.id=json_extract(a.value,'$.taskId') AND t.revision=json_extract(a.value,'$.expectedRevision') AND t.assignee_id IS NULL AND t.lifecycle_state='open'))` : '';
-    batch.push(env.DB.prepare(`UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?4 AND role='owner') AND EXISTS(SELECT 1 FROM projects WHERE id=?2 AND collaboration_revision=collaboration_proposals.settings_revision AND (?6=0 OR (ai_collaboration_enabled=1 AND status='active' AND assignment_mode='automatic'))) AND (?6=0 OR EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?7 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))) ${validAssignments} ${validProfiles} ${validUpdates} AND ${projectSourceContextGuard("(SELECT input_json FROM jobs WHERE id=collaboration_proposals.job_id)", '?2')} AND (?6=0 OR EXISTS(SELECT 1 FROM jobs WHERE id=collaboration_proposals.job_id AND status IN ('queued','running')))`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso()));
+    const validProfiles = p.kind === 'assign' ? `AND ${profileSnapshotGuard("(SELECT json_extract(input_json,'$.profileStamp') FROM jobs WHERE id=collaboration_proposals.job_id)",'?2')} AND NOT EXISTS(SELECT 1 FROM jobs j,json_each(j.input_json,'$.members') snapshot WHERE j.id=collaboration_proposals.job_id AND NOT EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=?2 AND pm.user_id=json_extract(snapshot.value,'$.userId') AND COALESCE((SELECT SUM(effort_hours) FROM tasks WHERE project_id=?2 AND assignee_id=pm.user_id AND status!='done'),0)=json_extract(snapshot.value,'$.loadHours')))` : '';
+    const goal=await projectGoal(env,projectId);
+    const validGoal=p.kind==='decompose'?`AND EXISTS(SELECT 1 FROM project_goals g JOIN jobs j ON j.id=collaboration_proposals.job_id WHERE g.project_id=?2 AND g.revision=COALESCE(json_extract(j.input_json,'$.goalRevision'),g.revision) AND g.graph_revision=COALESCE(json_extract(j.input_json,'$.graphRevision'),g.graph_revision))`:'';
+    const validUpdates = p.kind === 'decompose' ? `AND NOT EXISTS(SELECT 1 FROM json_each(payload_json,'$.updates') u WHERE NOT EXISTS(SELECT 1 FROM tasks t WHERE t.project_id=?2 AND t.id=json_extract(u.value,'$.taskId') AND t.revision=json_extract(u.value,'$.expectedRevision') AND (t.lifecycle_state IN ('open','in_progress','improve','rework') OR (t.lifecycle_state IS NULL AND t.status!='done'))))` : '';
+    const validAssignments = p.kind === 'assign' ? `AND NOT EXISTS (SELECT 1 FROM json_each(payload_json,'$.assignments') a WHERE json_extract(a.value,'$.assigneeId') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tasks t JOIN project_members m ON m.project_id=t.project_id AND m.user_id=json_extract(a.value,'$.assigneeId') WHERE t.project_id=?2 AND t.id=json_extract(a.value,'$.taskId') AND t.revision=json_extract(a.value,'$.expectedRevision') AND t.assignee_id IS NULL AND (t.lifecycle_state='open' OR (t.lifecycle_state IS NULL AND t.status!='done'))))` : '';
+    batch.push(env.DB.prepare(`UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?4 AND role='owner') AND EXISTS(SELECT 1 FROM projects WHERE id=?2 AND collaboration_revision=collaboration_proposals.settings_revision AND (?6=0 OR (ai_collaboration_enabled=1 AND status='active' AND assignment_mode='automatic'))) AND (?6=0 OR EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?7 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))) ${validAssignments} ${validProfiles} ${validUpdates} ${validGoal} AND ${projectSourceContextGuard("(SELECT input_json FROM jobs WHERE id=collaboration_proposals.job_id)", '?2')} AND (?6=0 OR EXISTS(SELECT 1 FROM jobs WHERE id=collaboration_proposals.job_id AND status IN ('queued','running')))`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso()));
     const gate = `EXISTS(SELECT 1 FROM collaboration_proposals WHERE id=?1 AND status='applied' AND mutation_token=?2)`;
     if (p.kind === 'decompose') {
         if ((!payload.tasks?.length && !payload.updates?.length) || (payload.tasks?.length ?? 0) + (payload.updates?.length ?? 0) > 20)
             throw validationFailed('拆解结果无效');
-        const parentId = proposalId;
-        if (payload.tasks?.length) batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open','全部子任务验收通过后，人工核对整体交付要求',1 WHERE ${gate}`).bind(proposalId, nonce, parentId, projectId, '需求总目标', payload.brief || '拆解任务', actorId, nowIso()));
-        for (const t of payload.tasks ?? []) {
+        const graph=await graphSnapshot(env,projectId),taskKeys=new Map<string,string>();
+        for(let i=0;i<(payload.tasks??[]).length;i++){const key=payload.tasks![i]!.key??`t${i+1}`;if(taskKeys.has(key))throw validationFailed('拆解任务标识不可重复');taskKeys.set(key,newId());}
+        const newEdges=(payload.tasks??[]).flatMap((t,i)=>(t.dependsOn??[]).map(key=>({taskId:taskKeys.get(t.key??`t${i+1}`)!,dependsOnTaskId:taskKeys.get(key)??key})));
+        validateTaskGraph([...graph.taskIds,...taskKeys.values()],[...graph.edges,...newEdges]);
+        batch.push(env.DB.prepare(`UPDATE project_goals SET title=?3,detail=?4,revision=revision+?5,graph_revision=graph_revision+1,updated_at=?6 WHERE project_id=?7 AND ${gate}`).bind(proposalId,nonce,payload.goal?.title??goal.title,payload.goal?.detail??goal.detail,payload.goal?1:0,nowIso(),projectId));
+        for (const [i,t] of (payload.tasks ?? []).entries()) {
             if (!t.title || !t.criteria || !Number.isFinite(t.effortHours) || t.effortHours < 0.25 || t.effortHours > 200)
                 throw validationFailed('任务内容无效');
-            const taskId = newId();
+            const taskId = taskKeys.get(t.key??`t${i+1}`)!;
             taskIds.push(taskId);
-            batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,parent_task_id,source_citations_json) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open',?9,?10,?11,?12 WHERE ${gate}`).bind(proposalId, nonce, taskId, projectId, t.title, t.detail || '', actorId, nowIso(), t.criteria, t.effortHours, parentId, JSON.stringify(t.citations ?? [])));
+            batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,plan_proposal_id,source_citations_json) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open',?9,?10,?11,?12 WHERE ${gate}`).bind(proposalId, nonce, taskId, projectId, t.title, t.detail || '', actorId, nowIso(), t.criteria, t.effortHours, proposalId, JSON.stringify(t.citations ?? [])));
         }
+        for(const edge of newEdges)batch.push(env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?3,?4,?5,?6 WHERE ${gate}`).bind(proposalId,nonce,projectId,edge.taskId,edge.dependsOnTaskId,nowIso()));
         if (new Set(payload.updates?.map(t => t.taskId)).size !== (payload.updates?.length ?? 0)) throw validationFailed('重复的任务调整');
         for (const update of payload.updates ?? []) {
             if (!update.title || !update.criteria || update.title.length > 200 || update.detail.length > 4000 || update.criteria.length > 4000 || !Number.isFinite(update.effortHours) || update.effortHours < 0.25 || update.effortHours > 200) throw validationFailed('任务调整内容无效');
-            batch.push(env.DB.prepare(`UPDATE tasks SET title=?3,detail=?4,criteria=?5,effort_hours=?6,source_citations_json=?11,revision=revision+1,updated_at=?7 WHERE id=?8 AND project_id=?9 AND revision=?10 AND lifecycle_state IN ('open','in_progress','improve','rework') AND ${gate}`).bind(proposalId, nonce, update.title, update.detail, update.criteria, update.effortHours, nowIso(), update.taskId, projectId, update.expectedRevision, JSON.stringify(update.citations ?? [])));
+            batch.push(env.DB.prepare(`UPDATE tasks SET title=?3,detail=?4,criteria=?5,effort_hours=?6,source_citations_json=?11,revision=revision+1,updated_at=?7 WHERE id=?8 AND project_id=?9 AND revision=?10 AND (lifecycle_state IN ('open','in_progress','improve','rework') OR (lifecycle_state IS NULL AND status!='done')) AND ${gate}`).bind(proposalId, nonce, update.title, update.detail, update.criteria, update.effortHours, nowIso(), update.taskId, projectId, update.expectedRevision, JSON.stringify(update.citations ?? [])));
         }
     }
     else {

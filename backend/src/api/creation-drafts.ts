@@ -7,7 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
-import { creationPayload, creationTask, getDraft, draftView, assertTeamSize, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { creationPayload, creationGoal, creationTask, getDraft, draftView, assertTeamSize, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
 const base = '/api/v1/creation-drafts';
 const params = z.object({
   draftId: z.string().uuid()
@@ -18,7 +18,7 @@ const fileSchema = z.object({
 });
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
-    tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
+    goal:creationGoal.optional(),tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
   }).nullable(), previewRevision: revision.nullable(), previewState: z.string(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
 });
 const response = apiEnvelope(schema, 'CreationDraftResponse');
@@ -233,7 +233,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/preview', tags: ['creation'], request: {
       params, body: json(z.object({
-        expectedRevision: revision, mode: z.enum(['ai', 'manual']), tasks: z.array(creationTask).max(20).default([]), regenerate: z.boolean().default(false)
+        expectedRevision: revision, mode: z.enum(['ai', 'manual']),goal:creationGoal.optional(),tasks: z.array(creationTask).max(20).default([]), regenerate: z.boolean().default(false)
       }).strict())
     }, responses: {
       200: {
@@ -250,8 +250,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       mode: 'ai' | 'manual';
       tasks: z.infer<typeof creationTask>[];
       regenerate: boolean;
+      goal?:z.infer<typeof creationGoal>;
     };
-    return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate)), 200);
+    return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate,b.goal)), 200);
   });
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/commit', tags: ['creation'], request: {

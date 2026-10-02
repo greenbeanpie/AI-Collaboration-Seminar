@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "projectId": "94b5d10e-eca3-4fa2-8bb2-475a56fd76da",
+  "createdAt": "2026-10-02T08:30:52.636Z",
+  "checks": [
+    "password login",
+    "manual goal/dependency wizard",
+    "five project sections",
+    "versioned background",
+    "combined standards publish",
+    "old links",
+    "global weekly availability",
+    "mobile overflow",
+    "export graph/history"
+  ],
+  "browserErrors": []
+}

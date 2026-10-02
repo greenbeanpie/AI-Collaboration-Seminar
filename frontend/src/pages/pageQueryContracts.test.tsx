@@ -12,6 +12,12 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); sessio
 
 function cachedProject() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+  client.setQueryData(['project-goal', 'project-1'], { title: '主目标', revision: 1, graphRevision: 1 });
+  client.setQueryData(['collaboration-tasks', 'project-1'], { items: [] });
+  client.setQueryData(['collaboration-settings', 'project-1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual' });
+  client.setQueryData(['collaboration-proposals', 'project-1'], { items: [] });
+  client.setQueryData(['member-me', 'project-1'], { userId: 'member-1' });
+  client.setQueryData(['project-assistant-sources', 'project-1'], []);
   client.setQueryData(['members', 'project-1'], [{ userId: 'member-1', displayName: '真实成员甲', skills: [], hoursPerWeek: null, role: 'owner' }]);
   client.setQueryData(['requirementSets', 'project-1'], []);
   client.setQueryData(['materials', 'project-1'], []);
@@ -26,7 +32,7 @@ describe('project pages share consistent list cache shapes', () => {
   it('task editing reads the member array already loaded by team/overview pages', () => {
     const client = cachedProject();
     render(<QueryClientProvider client={client}><MemoryRouter><TasksPage /></MemoryRouter></QueryClientProvider>);
-    fireEvent.click(screen.getByRole('button', { name: /新建任务/ }));
+    fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
     expect(screen.getByRole('option', { name: '真实成员甲' })).toBeInTheDocument();
   });
 

@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "base": "https://greenbp-team-office.hddhp.workers.dev",
+  "checkedAt": "2026-10-02T08:44:01.009Z",
+  "checks": 8,
+  "asset": "/assets/index-Cr9b2VsT.js",
+  "authenticatedCheck": "not verified: stored production credentials returned401; no existing matching browser session",
+  "databasePreservation": "verified counts, candidate copy, goal initialization and foreign keys",
+  "backendVersion": "379d046a-49b4-4d3e-b515-07eb1da7f356",
+  "frontendVersion": "31279947-45c1-4ba9-b691-8b5128bbdc9b"
+}

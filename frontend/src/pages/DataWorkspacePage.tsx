@@ -1,22 +1,60 @@
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { listAllItems, projectPath } from '../api/client';
+import { Suspense, useState } from 'react';
+import { resilientLazy } from '../resilient-lazy';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { Plus, Search, Upload } from 'lucide-react';
+import { api, projectPath } from '../api/client';
+import { projectRequest, resourceLibrary, resourcePurposeLabels, type ResourceEntry, type ResourcePurpose } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
-import { EmptyState, ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
+import { EmptyState, ErrorNotice, Field, PageHeading, Spinner, StatusPill } from '../components/ui';
+import { SourcesPage } from './SourcesPage';
+import { ProjectFileLibrary } from './ProjectFileLibrary';
+import { useCapabilities } from '../auth';
 import './ProjectWorkspace.css';
+const MaterialEditor = resilientLazy(() => import('./MaterialsPage').then(module => ({ default: module.MaterialsPage })));
 
 export function DataWorkspacePage() {
   const { projectId } = useProject();
-  const root = `/app/projects/${encodeURIComponent(projectId)}`;
-  const sources = useQuery({ queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) });
-  const materials = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }, { requireNextCursor: true }) });
-  return <div className="project-workspace-sections">
-    <SectionCard title="导入资料" detail="通知、原文、网页与附件。保留证据来源，提取要求前可先检查内容。" action={<Link className="button button-primary button-small" to={`${root}/sources`}>导入或管理资料</Link>}>
-      {sources.isLoading ? <Spinner label="正在读取导入资料" /> : sources.error ? <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} /> : sources.data?.length ? <><p className="project-workspace-count">共 {sources.data.length} 份导入资料</p><ul className="project-workspace-list">{sources.data.slice(0, 5).map(source => <li key={source.sourceId}><Link to={`${root}/sources${source.currentVersionId ? `?sourceVersionId=${encodeURIComponent(source.currentVersionId)}` : ''}#source-${encodeURIComponent(source.sourceId)}`}>{source.title}</Link><StatusPill>{source.currentVersionId ? '已有原文版本' : '待补充原文'}</StatusPill></li>)}</ul>{sources.data.length > 5 && <p className="muted">此处显示前 5 份，进入资料管理查看全部。</p>}</> : <EmptyState title="还没有导入资料" detail="先导入项目通知或参考文件，再核对原文与要求。" />}
-    </SectionCard>
-    <SectionCard title="成果材料" detail="保存团队成果，复核 AI 草稿并查看各版内容。" action={<Link className="button button-primary button-small" to={`${root}/materials`}>打开成果编辑器</Link>}>
-      {materials.isLoading ? <Spinner label="正在读取成果材料" /> : materials.error ? <ErrorNotice error={materials.error} onRetry={() => void materials.refetch()} /> : materials.data?.length ? <><p className="project-workspace-count">共 {materials.data.length} 份成果材料</p><ul className="project-workspace-list">{materials.data.slice(0, 5).map(material => <li key={material.materialId}><span>{material.title}</span><StatusPill tone={material.currentVersionId ? 'good' : 'neutral'}>{material.currentVersionId ? '已有保存版本' : '尚无保存版本'}</StatusPill></li>)}</ul>{materials.data.length > 5 && <p className="muted">此处显示前 5 份，进入成果编辑器查看全部。</p>}</> : <EmptyState title="还没有成果材料" detail="创建成果文档，或使用 AI 协助生成待复核草稿。" />}
-      <div className="form-actions"><Link className="button button-quiet button-small" to={`${root}/ai`}>AI 协助成果</Link></div>
-    </SectionCard>
+  const client = useQueryClient();
+  const capabilities = useCapabilities();
+  const [params, setParams] = useSearchParams();
+  const { hash } = useLocation();
+  const [search, setSearch] = useState('');
+  const [purpose, setPurpose] = useState<ResourcePurpose | 'all'>('all');
+  const [title, setTitle] = useState('');
+  const [newPurpose, setNewPurpose] = useState<ResourcePurpose>('output');
+  const library = useQuery({ queryKey: ['resource-library', projectId], queryFn: ({ signal }) => resourceLibrary(projectId, signal) });
+  const resources = library.data ?? [];
+  const mode = params.get('mode');
+  const requestedType = params.get('resourceType');
+  const sourceHash = hash.startsWith('#source-page-') ? hash.slice(13).replace(/-\d+$/, '') : hash.startsWith('#source-') ? hash.slice(8) : null;
+  const requestedId = params.get('resourceId') ?? params.get('materialId') ?? params.get('material') ?? sourceHash;
+  const sourceVersionId = params.get('sourceVersionId');
+  const selected = requestedId ? resources.find(resource => resource.resourceId === requestedId && (!requestedType || resource.resourceType === requestedType)) : sourceVersionId ? resources.find(resource => resource.currentVersionId === sourceVersionId) : resources.find(resource => !requestedType || resource.resourceType === requestedType);
+  const visible = resources.filter(resource => (purpose === 'all' || resource.purpose === purpose) && resource.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const choose = (resource: ResourceEntry) => setParams({ resourceType: resource.resourceType, resourceId: resource.resourceId });
+  const refresh = async () => { await client.invalidateQueries({ queryKey: ['resource-library', projectId] }); };
+  const create = useMutation({ mutationFn: () => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: newPurpose === 'background' ? 'background' : 'document', purpose: newPurpose }), onSuccess: async material => { setTitle(''); setParams({ resourceType: 'material', resourceId: material.materialId }); await Promise.all([refresh(), client.invalidateQueries({ queryKey: ['materials', projectId] })]); } });
+  const updatePurpose = useMutation({ mutationFn: ({ resource, purpose }: { resource: ResourceEntry; purpose: ResourcePurpose }) => projectRequest<ResourceEntry>(projectId, `/resource-library/${resource.resourceType}/${encodeURIComponent(resource.resourceId)}`, { method: 'PATCH', body: { purpose, expectedRevision: resource.revision } }), onSuccess: refresh, onError: refresh });
+  return <div className="page-stack resource-workspace">
+    <PageHeading title="项目资料" detail="统一管理背景、参考资料与成果；导入原文和可编辑文档保留各自的固定版本。" action={<div className="form-actions"><button className="button button-quiet" onClick={() => setParams({ mode: 'import' })}><Upload size={16} />导入资料</button><button className="button button-primary" onClick={() => setParams({ mode: 'new' })}><Plus size={16} />新建文档</button></div>} />
+    {library.error && <ErrorNotice error={library.error} onRetry={() => void library.refetch()} />}
+    <div className="resource-workspace-layout">
+      <aside className="card resource-list-panel" aria-label="项目资料列表">
+        <Field label="搜索资料"><div className="resource-search"><Search size={16} /><input className="input" value={search} onChange={event => setSearch(event.target.value)} placeholder="按标题搜索" /></div></Field>
+        <Field label="资料用途"><select className="input" value={purpose} onChange={event => setPurpose(event.target.value as ResourcePurpose | 'all')}><option value="all">全部资料</option>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+        {library.isLoading && <Spinner label="读取资料列表" />}
+        {visible.map(resource => <button key={`${resource.resourceType}:${resource.resourceId}`} className={`resource-list-entry ${!mode && selected?.resourceId === resource.resourceId && selected.resourceType === resource.resourceType ? 'active' : ''}`} onClick={() => choose(resource)}><strong>{resource.title}</strong><span><StatusPill>{resourcePurposeLabels[resource.purpose]}</StatusPill><small>{resource.resourceType === 'source' ? '导入原文' : '可编辑文档'} · {resource.currentVersionId ? `r${resource.revision}` : '待处理'}</small></span></button>)}
+        {!library.isLoading && !library.error && !visible.length && <p className="muted">{search || purpose !== 'all' ? '没有匹配的资料。' : '尚无资料，请导入或新建文档。'}</p>}
+        <button className="button button-quiet button-small" onClick={() => setParams({ mode: 'files' })}>附件与回收站</button>
+      </aside>
+      <section className="resource-detail-panel" aria-label="资料详情工作区">
+        {mode === 'import' ? <SourcesPage embedded intakeOnly /> : mode === 'files' ? capabilities.data ? <ProjectFileLibrary projectId={projectId} pageSize={capabilities.data.limits.listMaxPageSize} onChanged={() => void refresh()} /> : <Spinner label="读取附件能力" /> : mode === 'new' ? <form className="card form-card stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}><h2>新建文档</h2><Field label="文档标题"><input className="input" maxLength={200} required value={title} onChange={event => setTitle(event.target.value)} /></Field><Field label="文档用途"><select className="input" value={newPurpose} onChange={event => setNewPurpose(event.target.value as ResourcePurpose)}>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>{create.error && <ErrorNotice error={create.error} />}<button className="button button-primary" disabled={create.isPending || !title.trim()}>创建文档</button></form> : selected ? <>
+          <header className="resource-detail-heading"><div><h2>{selected.title}</h2><StatusPill>{resourcePurposeLabels[selected.purpose]}</StatusPill></div>{selected.canManage && <Field label="修改资料用途"><select className="input" value={selected.purpose} disabled={updatePurpose.isPending} onChange={event => updatePurpose.mutate({ resource: selected, purpose: event.target.value as ResourcePurpose })}>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}</header>
+          {updatePurpose.error && <ErrorNotice error={updatePurpose.error} />}
+          {selected.resourceType === 'material' ? <Suspense fallback={<Spinner label="打开文档编辑器" />}><MaterialEditor key={selected.resourceId} embedded materialId={selected.resourceId} versionId={params.get('versionId') ?? params.get('materialVersionId')} initialAiOpen={params.get('ai') === '1'} /></Suspense> : <SourcesPage key={selected.resourceId} embedded selectedSourceId={selected.resourceId} />}
+        </> : !library.isLoading && !library.error ? <EmptyState title={requestedId || sourceVersionId ? '对应资料暂不可用' : '选择一份资料'} detail={requestedId || sourceVersionId ? '请检查资料是否在回收站；固定版本的历史引用仍会保留。' : '在左侧选择背景、参考资料或成果，查看原文或编辑文档。'} /> : null}
+      </section>
+    </div>
   </div>;
 }

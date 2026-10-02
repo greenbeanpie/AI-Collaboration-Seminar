@@ -43,13 +43,9 @@ describe('分工建议与人工应用', () => {
       "INSERT INTO project_members (id, project_id, user_id, role, skills_json, hours_per_week, joined_at) VALUES (?1, ?2, ?3, 'member', ?4, ?5, ?6)",
     ).bind(crypto.randomUUID(), projectId, teammate.userId, JSON.stringify(['前端开发']), 8, new Date().toISOString()).run();
 
-    const createTask = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks`, {
-      method: 'POST',
-      headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ title: '搭建原型', detail: '完成前端原型' }),
-    });
-    expect(createTask.status).toBe(201);
-    const initialTask = (await createTask.json() as { data: { taskId: string; revision: number; status: string; assigneeId: string | null } }).data;
+    // This compatibility route applies only to genuinely pre-existing legacy rows.
+    const initialTask={taskId:crypto.randomUUID(),revision:1,status:'todo',assigneeId:null};
+    await env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at) VALUES(?1,?2,'搭建原型','完成前端原型','todo',1,?3,?4,?4)").bind(initialTask.taskId,projectId,owner.userId,new Date().toISOString()).run();
 
     const markDoing = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/tasks/${initialTask.taskId}`, {
       method: 'PATCH',

@@ -7,17 +7,17 @@ const groups: Array<{ id: string; label: string; detail: string; sections: Secti
   { id: 'overview', label: '概览', detail: '查看项目进度与活动历史。', sections: [
     { path: '', label: '项目概览' }, { path: 'ledger', label: '活动历史' },
   ] },
-  { id: 'work', label: '要求与任务', detail: '先核对要求与评分，再拆解、分配和跟进任务。', sections: [
-    { path: 'work', label: '任务看板', aliases: ['tasks'] }, { path: 'requirements', label: '要求与评分' },
+  { id: 'work', label: '任务', detail: '围绕一个主目标安排子任务，前置依赖帮助团队确定推进顺序。', sections: [
+    { path: 'tasks', label: '任务工作区', aliases: ['work'] },
   ] },
-  { id: 'data', label: '资料', detail: '导入资料保留通知、原文和附件；成果材料用于编辑文档、草稿与版本。', sections: [
-    { path: 'data', label: '资料总览' }, { path: 'sources', label: '导入资料' }, { path: 'materials', label: '成果材料', aliases: ['ai'] },
+  { id: 'data', label: '资料', detail: '在同一工作区管理背景、参考资料和成果，保留原文与版本。', sections: [
+    { path: 'data', label: '项目资料', aliases: ['sources', 'materials', 'ai'] },
   ] },
-  { id: 'team', label: '团队', detail: '管理成员、团队设置与项目导出。', sections: [
+  { id: 'assessment', label: '评分', detail: '统一维护项目标准，通过材料检查或答辩演练评价主目标。', sections: [
+    { path: 'assessment', label: '标准与评分', aliases: ['requirements', 'reviews', 'rehearsals'] },
+  ] },
+  { id: 'team', label: '团队', detail: '管理成员、角色、邀请和任务负荷。', sections: [
     { path: 'team', label: '团队成员' }, { path: 'settings', label: '团队设置', ownerOnly: true }, { path: 'export', label: '导出' },
-  ] },
-  { id: 'checks', label: '检查与演练', detail: '检查成果是否符合要求，再准备答辩与演练。', sections: [
-    { path: 'reviews', label: '成果检查' }, { path: 'rehearsals', label: '答辩演练' },
   ] },
 ];
 
@@ -48,9 +48,11 @@ export function ProjectNavigation({ projectId }: { projectId: string }) {
 
 export function ProjectSectionLayout({ projectId, canManage, children }: { projectId: string; canManage: boolean; children: ReactNode }) {
   const { current, destination, sectionMatches } = useProjectNavigation(projectId);
+  const visibleSections = current.sections.filter(section => !section.ownerOnly || canManage);
+  if (visibleSections.length === 1) return <>{children}</>;
   return <div className="project-section-layout">
     <div className="project-section-heading"><h2>{current.label}</h2><p>{current.detail}</p></div>
-    <nav className="project-section-links" aria-label={`${current.label}分区`}>{current.sections.filter(section => !section.ownerOnly || canManage).map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</nav>
+    <nav className="project-section-links" aria-label={`${current.label}分区`}>{visibleSections.map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</nav>
     {children}
   </div>;
 }

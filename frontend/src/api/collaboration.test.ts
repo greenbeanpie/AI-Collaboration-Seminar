@@ -14,7 +14,7 @@ it.each(['tasks', 'proposals'] as const)('loads every collaboration %s page with
   const result = await collaborationApi[kind]('p1');
   expect(result.items).toEqual(rows);
   expect(fetchMock.mock.calls.length).toBe(Math.ceil(count / 37));
-  expect(fetchMock.mock.calls.every(([url]) => url.includes(`/collaboration/${kind}?`))).toBe(true);
+  expect(fetchMock.mock.calls.every(([url]) => url.includes(kind === 'tasks' ? '/projects/p1/tasks?' : '/collaboration/proposals?'))).toBe(true);
 });
 it('rejects a truncated collaboration list without a cursor contract', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: { items: [] }, requestId: 'paging' }), { headers: { 'Content-Type': 'application/json' } })));

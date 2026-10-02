@@ -96,6 +96,7 @@ interface RehearsalRow {
   status: string;
   created_at: string;
   finished_at: string | null;
+  finish_job_id:string|null;
 }
 
 interface TurnRow {
@@ -215,16 +216,17 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const user = c.get('user')!;
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, member.projectId);
-    if (rehearsal.status !== 'active') throw invalidState('演练已结束');
+    if (rehearsal.status !== 'active'||rehearsal.finish_job_id) throw invalidState('演练已结束或正在生成评分');
     if ((await loadTurns(c.env, rehearsal.id)).length === 0) throw invalidState('第一问尚未生成，请稍后');
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
       const turnId = newId();
-      await c.env.DB.prepare(
-        "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6)",
+      const saved=await c.env.DB.prepare(
+        "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'answer', ?5, ?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL)",
       )
         .bind(turnId, rehearsal.id, member.projectId, rehearsal.id, JSON.stringify({ content: body.content }), nowIso())
         .run();
+      if(!saved.meta.changes)throw invalidState('演练已开始结束评分，回答未追加');
 
       try {
         await createJobAndDispatch(c.env, {
@@ -234,6 +236,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
           input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'followup', configVersionId },
           createdBy: user.id,
         });
+        await c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND status!='succeeded'").bind(rehearsal.id,jobId).run();
       } catch (error) {
         if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?1').bind(jobId).first()) await c.env.DB.prepare('DELETE FROM rehearsal_turns WHERE id = ?1').bind(turnId).run();
         throw error;
@@ -248,15 +251,18 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
     const user = c.get('user')!;
     const rehearsal = await loadRehearsal(c.env, c.req.valid('param').rehearsalId, member.projectId);
     if (rehearsal.status !== 'active') throw invalidState('演练已结束');
+    if(rehearsal.finish_job_id)return c.json(apiData(c,{jobId:rehearsal.finish_job_id}),202);
 
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn' }, async (jobId, configVersionId) => {
-      await createJobAndDispatch(c.env, {
+      const frozen=await c.env.DB.prepare(`UPDATE rehearsals SET finish_job_id=?3,finish_snapshot_json=(SELECT json_group_array(json_object('sequence',sequence,'kind',kind,'content_json',content_json)) FROM (SELECT sequence,kind,content_json FROM rehearsal_turns WHERE rehearsal_id=?1 ORDER BY sequence)) WHERE id=?1 AND project_id=?2 AND status='active' AND finish_job_id IS NULL`).bind(rehearsal.id,member.projectId,jobId).run();
+      if(!frozen.meta.changes)throw invalidState('演练已经在生成评分');
+      try{await createJobAndDispatch(c.env, {
         jobId,
         projectId: member.projectId,
         kind: 'rehearsal_turn',
         input: { rehearsalId: rehearsal.id, projectId: member.projectId, phase: 'summary', configVersionId },
         createdBy: user.id,
-      });
+      });await c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND status!='succeeded'").bind(rehearsal.id,jobId).run();}catch(error){if(!await c.env.DB.prepare('SELECT id FROM jobs WHERE id=?1').bind(jobId).first())await c.env.DB.prepare('UPDATE rehearsals SET finish_job_id=NULL,finish_snapshot_json=NULL WHERE id=?1 AND finish_job_id=?2').bind(rehearsal.id,jobId).run();throw error;}
       return { jobId };
     });
     return c.json(apiData(c, result), 202);

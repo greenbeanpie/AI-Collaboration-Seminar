@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
 import { api, projectPath, listAllItems } from '../api/client';
 import { useCapabilities } from '../auth';
@@ -13,9 +14,11 @@ type PendingRehearsalJob = { jobId: string; entityId: string; action: 'create' |
 const recentIdsKey = (projectId: string) => `ai-office:recent-rehearsals:${projectId}`;
 const pendingJobKey = (projectId: string) => `ai-office:pending-rehearsal-job:${projectId}`;
 
-export function RehearsalsPage() {
+export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: { rehearsalId?: string; embedded?: boolean }) {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
+  const linkedId = requestedId ?? params.get('rehearsalId') ?? params.get('rehearsal') ?? '';
   const capabilities = useCapabilities();
   const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
   const memberQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
@@ -29,8 +32,8 @@ export function RehearsalsPage() {
   const [initializedMaterialSelection, setInitializedMaterialSelection] = useState(false);
   const historyQuery = useQuery({ queryKey: ['rehearsals', projectId], queryFn: () => listAllItems<'RehearsalListResponse'>(projectPath(projectId, '/rehearsals')) });
   const [localRecentIds, setRecentIds] = useState(() => readRecentIds(recentIdsKey(projectId)));
-  const recentIds = Array.from(new Set([...(historyQuery.data ?? []).map(r => r.rehearsalId), ...localRecentIds]));
-  const [selectedRehearsalId, setSelectedRehearsalId] = useState(() => readRecentIds(recentIdsKey(projectId))[0] ?? '');
+  const recentIds = Array.from(new Set([...(linkedId ? [linkedId] : []), ...(historyQuery.data ?? []).map(r => r.rehearsalId), ...localRecentIds]));
+  const [selectedRehearsalId, setSelectedRehearsalId] = useState(() => linkedId || readRecentIds(recentIdsKey(projectId))[0] || '');
   const [pendingRehearsalJob, setPendingRehearsalJob] = useState<PendingRehearsalJob | null>(() => readPendingJob<PendingRehearsalJob>(pendingJobKey(projectId)));
   const [answerText, setAnswerText] = useState('');
   const [createError, setCreateError] = useState<unknown>(null);
@@ -57,6 +60,7 @@ export function RehearsalsPage() {
   const answerJobFailed = pendingRehearsalJob?.entityId === selectedRehearsalId && pendingRehearsalJob.action === 'answer' && job.job?.status === 'failed';
   const latestTurn = rehearsal?.turns.at(-1);
   const canAnswer = rehearsal?.status === 'active' && !hasPendingJob && !isFinishPending && !answerJobFailed && (latestTurn?.kind === 'question' || latestTurn?.kind === 'followup');
+  useEffect(() => { if (linkedId) setSelectedRehearsalId(linkedId); }, [linkedId]);
 
   useEffect(() => {
     if (memberId || members.length === 0) return;
@@ -76,7 +80,7 @@ export function RehearsalsPage() {
       setPendingRehearsalJob((current) => current?.jobId === pendingRehearsalJob.jobId ? null : current);
     };
     if (job.job.status === 'succeeded') {
-      void queryClient.invalidateQueries({ queryKey: ['rehearsal', projectId, pendingRehearsalJob.entityId] }).then(clear, clear);
+      void Promise.all([queryClient.invalidateQueries({ queryKey: ['rehearsal', projectId, pendingRehearsalJob.entityId] }), queryClient.invalidateQueries({ queryKey: ['assessments', projectId] }), queryClient.invalidateQueries({ queryKey: ['assessment', projectId] })]).then(clear, clear);
     } else clear();
   }, [job.job, job.isSettled, pendingRehearsalJob, projectId, queryClient]);
 
@@ -176,12 +180,12 @@ export function RehearsalsPage() {
   const createDisabled = !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || hasPendingJob || (scope === 'member' && !memberId);
 
   return <div className="page-stack ai-workflow-layout">
-    <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />
+    {!embedded && <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />}
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会发起演练。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 不会创建模拟问题、追问或总结；已有真实演练可继续查看。</div>}
 
-    <div className="ai-workflow-grid">
-      <SectionCard title="开始一场新演练" detail="选择演练范围和要纳入上下文的当前材料版本。">
+    <div className={embedded ? 'page-stack' : 'ai-workflow-grid'}>
+      {!embedded && <SectionCard title="开始一场新演练" detail="选择演练范围和要纳入上下文的当前材料版本。">
         {materialQuery.isLoading || memberQuery.isLoading ? <Spinner label="正在读取项目成员和材料" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleCreate(event)}>
           <Field label="演练范围">
             <select className="ai-workflow-select" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>
@@ -212,18 +216,18 @@ export function RehearsalsPage() {
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
           <div className="ai-workflow-actions ai-workflow-field-wide"><button className="button button-primary" type="submit" disabled={createDisabled}><Play size={15} />{creating ? '正在创建演练' : hasPendingJob ? '当前演练任务处理中' : '开始真实答辩演练'}</button>{scope === 'member' && !memberId && <span className="muted">请选择项目成员</span>}</div>
         </form>}
-      </SectionCard>
+      </SectionCard>}
 
-      <SectionCard title="最近的真实演练" detail="历史由后端保存，可跨设备查看；选择记录读取完整问答。">
+      <SectionCard title={embedded ? '答辩问答与反馈' : '最近的真实演练'} detail="问答由后端保存，结束后冻结本轮证据。">
         {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}
         {recentIds.length > 0 ? <div className="stack">
-          <div className="ai-workflow-session-picker">
+          {!embedded && <div className="ai-workflow-session-picker">
             <select className="ai-workflow-select" aria-label="选择最近的答辩演练" value={selectedRehearsalId} onChange={(event) => setSelectedRehearsalId(event.target.value)}>
               <option value="">选择历史演练</option>{recentIds.map((id) => <option key={id} value={id}>演练 {id.slice(0, 8)} · {id}</option>)}
             </select>
             <button className="button button-quiet button-small" onClick={() => void rehearsalQuery.refetch()} disabled={!selectedRehearsalId || rehearsalQuery.isFetching}><RefreshCw size={14} />重新读取</button>
             <button className="button button-quiet button-small" onClick={removeRecent} disabled={!selectedRehearsalId}>从本机最近列表移除</button>
-          </div>
+          </div>}
           {rehearsalQuery.isLoading ? <Spinner label="正在恢复答辩演练" /> : rehearsalQuery.error ? <ErrorNotice error={rehearsalQuery.error} onRetry={() => void rehearsalQuery.refetch()} /> : rehearsal ? <>
             <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
             {pendingRehearsalJob && <JobPanel jobId={pendingRehearsalJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={pendingRehearsalJob.action} onRetry={() => void handleRetryJob()} />}

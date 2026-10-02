@@ -5,7 +5,7 @@ import { useBlocker } from 'react-router-dom';
 import { useSession } from '../auth';
 import { SettingsDirtyContext } from './settings-dirty';
 
-export function SettingsEditGuard({ children }: { children: ReactNode }) {
+export function SettingsEditGuard({ children, message = '设置有尚未保存的编辑。确定放弃这些编辑并离开吗？' }: { children: ReactNode; message?: string }) {
   const session = useSession();
   const edits = useRef(new Set<string>());
   const [dirty, setDirty] = useState(false);
@@ -18,11 +18,11 @@ export function SettingsEditGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     const controller = new AbortController();
-    void confirmPage('设置有尚未保存的编辑。确定放弃这些编辑并离开吗？', { signal: controller.signal, cancelOnBack: false }).then(confirmed => {
+    void confirmPage(message, { signal: controller.signal, cancelOnBack: false }).then(confirmed => {
       if (!controller.signal.aborted) { if (confirmed) blocker.proceed(); else blocker.reset(); }
     });
     return () => controller.abort();
-  }, [blocker]);
+  }, [blocker, message]);
   useEffect(() => {
     if (!dirty) return;
     let confirmedUpdate = false;
