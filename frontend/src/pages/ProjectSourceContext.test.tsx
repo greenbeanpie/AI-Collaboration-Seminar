@@ -11,7 +11,7 @@ const response = (data: unknown) => Response.json({ data, requestId: 'fixture' }
 type Source = DataOf<'SourceListResponse'>['items'][number];
 type Version = DataOf<'SourceVersionResponse'>;
 function sources(projectId: string, count = 6): Source[] {
-  return Array.from({ length: count }, (_, index) => ({ sourceId: `${projectId}-s${index}`, currentVersionId: `${projectId}-v${index}`, title: `${projectId}资料${index}`, kind: 'file', createdAt: '2026-10-01T00:00:00Z', lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: `${projectId}-f${index}` }));
+  return Array.from({ length: count }, (_, index) => ({ purpose: 'reference', revision: 1, sourceId: `${projectId}-s${index}`, currentVersionId: `${projectId}-v${index}`, title: `${projectId}资料${index}`, kind: 'file', createdAt: '2026-10-01T00:00:00Z', lifecycleVersion: 1, canDelete: true, deletedAt: null, fileId: `${projectId}-f${index}` }));
 }
 function version(source: Source, ready = false): Version {
   return { sourceVersionId: source.currentVersionId!, sourceId: source.sourceId, revision: 1, origin: 'file', fileId: `${source.sourceId}-file`, status: ready ? 'ready' : 'pending', parseError: null, pageCount: 1, charCount: ready ? 100 : null,

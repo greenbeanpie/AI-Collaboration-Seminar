@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import type { Task } from '../api/types';
 import { latestPendingTasks } from './pending-tasks';
 function task(id: string, createdAt: string, assigneeId: string | null = null, status: Task['status'] = 'todo'): Task {
-  return { taskId: id, lifecycleState: null, title: id, detail: '', createdAt, updatedAt: createdAt, assigneeId, status, dueDate: null, duePrecision: 'unknown', requirementId: null, revision: 1 };
+  return { taskId: id, lifecycleState: null, criteria: '', effortHours: 0, parentTaskId: null, currentSubmissionId: null, citations: [], dependsOnTaskIds: [], unfinishedDependencyIds: [], title: id, detail: '', createdAt, updatedAt: createdAt, assigneeId, status, dueDate: null, duePrecision: 'unknown', requirementId: null, revision: 1 };
 }
 it('handles empty and one task without adding fabricated records', () => {
   expect(latestPendingTasks([], 'me')).toEqual([]);

@@ -71,7 +71,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const activePending = Boolean(pending && !job.isSettled);
   const assessment = selected.data;
   useEffect(() => {
-    if (!assessment?.jobId || !['pending', 'running'].includes(assessment.status) || pending || (job.job?.jobId === assessment.jobId && job.job.status === 'succeeded')) return;
+    if (!assessment?.jobId || !['pending', 'running', 'failed'].includes(assessment.status) || pending || (job.job?.jobId === assessment.jobId && job.job.status === 'succeeded')) return;
     const next = { jobId: assessment.jobId, entityId: assessment.assessmentId, action: 'create' }; setPending(next); writePendingJob(pendingKey(projectId), next);
     if (assessment.rehearsalId) writePendingJob(`ai-office:pending-rehearsal-job:${projectId}`, { ...next, entityId: assessment.rehearsalId });
   }, [assessment, pending, projectId, job.job]);
@@ -86,7 +86,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
           {!confirmed.length && <p className="notice notice-warn">先在“项目标准”中保存并确认标准，再开始评分。</p>}
           <FixedMaterialVersions projectId={projectId} selected={materialVersions} onChange={setMaterialVersions} disabled={create.isPending || activePending} />
           {create.error && <ErrorNotice error={create.error} />}
-          <button className="button button-primary" disabled={!aiEnabled || !goal.data?.title.trim() || !selectedStandardId || materialVersions.length === 0 || create.isPending || activePending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
+          <button className="button button-primary" disabled={!aiEnabled || !goal.data?.title.trim() || !selectedStandardId || (kind === 'material_review' && materialVersions.length === 0) || create.isPending || activePending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
         </form>}
       </SectionCard>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">

@@ -48,9 +48,11 @@ export function ProjectNavigation({ projectId }: { projectId: string }) {
 
 export function ProjectSectionLayout({ projectId, canManage, children }: { projectId: string; canManage: boolean; children: ReactNode }) {
   const { current, destination, sectionMatches } = useProjectNavigation(projectId);
+  const visibleSections = current.sections.filter(section => !section.ownerOnly || canManage);
+  if (visibleSections.length === 1) return <>{children}</>;
   return <div className="project-section-layout">
     <div className="project-section-heading"><h2>{current.label}</h2><p>{current.detail}</p></div>
-    <nav className="project-section-links" aria-label={`${current.label}分区`}>{current.sections.filter(section => !section.ownerOnly || canManage).map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</nav>
+    <nav className="project-section-links" aria-label={`${current.label}分区`}>{visibleSections.map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</nav>
     {children}
   </div>;
 }

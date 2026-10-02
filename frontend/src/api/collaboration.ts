@@ -5,7 +5,7 @@ import { projectRequest } from './simplification';
 
 export type CollaborationSettingsData = DataOf<'CollaborationSettingsResponse'>;
 export type CollaborationMode = CollaborationSettingsData['assignmentMode'];
-export type CollaborationTask = DataOf<'CollaborationTaskResponse'> & { dependsOnTaskIds?: string[]; unfinishedDependencyIds?: string[]; status?: 'todo' | 'doing' | 'blocked' | 'done' };
+export type CollaborationTask = DataOf<'CollaborationTaskResponse'> & Pick<DataOf<'TaskResponse'>, 'dependsOnTaskIds' | 'unfinishedDependencyIds' | 'status'>;
 export type LifecycleState = CollaborationTask['lifecycleState'];
 export type TaskSubmission = DataOf<'CollaborationSubmissionResponse'>;
 export type SubmissionDecision = NonNullable<TaskSubmission['decision']>;
