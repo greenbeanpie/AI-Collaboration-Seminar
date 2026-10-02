@@ -112,13 +112,13 @@ export async function aiJsonCall<S extends z.ZodType>(
     const stableSessionId=params.sessionId??params.jobId??params.runId??crypto.randomUUID();
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
     try { return {data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
-    catch {
+    catch (validationError) {
       if(params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
       // Correct only the final output. Before each repair dispatch the original
       // consent/config/member checks and final sensitive-context read run again.
       const repairTail:Array<{role:'assistant'|'user';content:string}>=[
         {role:'assistant',content:out.content.slice(0,8000)},
-        {role:'user',content:'最终JSON未通过业务结构校验。请仅修正格式和业务字段，保持原调查结论，不调用工具；参考资料只能使用已实际读取ID：'+JSON.stringify(out.references.map(r=>r.id))},
+        {role:'user',content:'最终JSON未通过业务结构校验。字段错误：'+JSON.stringify(validationError instanceof z.ZodError ? validationError.issues.map(issue=>({path:issue.path,code:issue.code,message:issue.message})) : [{message:'最终内容必须是合法JSON对象'}])+'。请仅修正这些字段的格式，保持原调查结论，不调用工具；参考资料只能使用已实际读取ID：'+JSON.stringify(out.references.map(r=>r.id))},
       ];
       const repairSchema=z.unknown().transform(raw=>{
         const text=JSON.stringify(raw);

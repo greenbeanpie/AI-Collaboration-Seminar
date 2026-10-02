@@ -14,6 +14,17 @@ import { z } from 'zod';
 afterEach(()=>vi.unstubAllGlobals());
 async function fixture(){const owner=await seedUser(),projectId=await seedProject(owner.userId);return {owner,projectId};}
 describe('autonomous project investigation',()=>{
+  it('repairs a wrong limitations type using the exact schema failure without rerunning discovery',async()=>{
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;let round=0;
+    const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+      if(round++===0)return Response.json({choices:[{message:{content:'{"title":"保持结论","limitations":"仅有结构稿"}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
+      const body=JSON.parse(String(init?.body));
+      expect(JSON.stringify(body.messages)).toContain('limitations');expect(JSON.stringify(body.messages)).toContain('invalid_type');expect(body.tools).toBeUndefined();
+      return Response.json({choices:[{message:{content:'{"title":"保持结论","limitations":["仅有结构稿"]}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
+    });vi.stubGlobal('fetch',fetch);
+    const out=await aiJsonCall(env,{projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'review',configVersionId:config.id,model:config.config.review.model,modelConfig:config.config.review,promptVersion:'typed-repair',messages:[{role:'user',content:'核验结构稿'}],schema:z.object({title:z.string(),limitations:z.array(z.string())}).strict()});
+    expect(out.data).toEqual({title:'保持结论',limitations:['仅有结构稿']});expect(fetch).toHaveBeenCalledTimes(2);expect(out.repaired).toBe(true);
+  });
   it('keeps business schemas strict while separating validated transport references and redacting private assistant prose',async()=>{
     expect(z.object({title:z.string()}).strict().parse(businessJson('```json\n{"title":"方案","referenceIds":[],"decisionReferences":[]}\n```'))).toEqual({title:'方案'});
     expect(()=>z.object({title:z.string()}).strict().parse(businessJson('{"title":"方案","unexpected":"must reject"}'))).toThrow();
