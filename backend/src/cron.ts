@@ -1,3 +1,4 @@
+import { recoverExecutionSlices } from './services/ai-execution-slices';
 import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
 import { nowIso } from './core/db';
@@ -21,6 +22,7 @@ export async function handleScheduled(env: Env): Promise<void> {
     try { await reconcileWorkflowJob(env, job.id); } catch (error) { console.error('[cron] Workflow 状态核对失败', job.id, error); }
   }
   // Requeue missing instances before selecting the due outbox, so recovery dispatches in this run.
+  await recoverExecutionSlices(env);
   await recoverJobs(env, nowIso());
   await releaseStaleReservations(env, now);
   try {

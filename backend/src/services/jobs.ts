@@ -1,3 +1,4 @@
+import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
 import { settleReservation } from './budget';
@@ -99,7 +100,12 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
     const job = await getJob(env, jobId);
     const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
     await assertDispatchActive(env, jobId);
-    await workflow.create({ id: jobId, params: { jobId } });
+    if(PARSE_JOB_KINDS.has(job.kind)) await workflow.create({ id: jobId, params: { jobId } });
+    else {
+      await ensureInitialExecutionSlice(env,jobId);
+      const slice=await activeExecutionSlice(env,jobId);
+      if(!slice || !await dispatchExecutionSlice(env,slice)) return 'engine';
+    }
     await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
       .bind(jobId, nowIso())
       .run();
@@ -114,6 +120,9 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
         .run();
       return 'dispatched';
     }
+    // A persisted relay must stay running: its pending slice is the recovery outbox.
+    const current=await getJob(env,jobId);
+    if(!PARSE_JOB_KINDS.has(current.kind) && await activeExecutionSlice(env,jobId)) return 'engine';
     // 引擎不可用（如本地/测试无 Workflow 运行时）：交由恢复器或同步执行兜底
     console.warn(`[jobs] workflow dispatch failed for ${jobId}: ${message}`);
     await env.DB.prepare("UPDATE jobs SET status = 'queued', updated_at = ?2 WHERE id = ?1 AND status = 'running'")
@@ -133,11 +142,11 @@ export async function getJob(env: Env, jobId: string): Promise<JobRow> {
   return row;
 }
 
-export async function failJob(env: Env, jobId: string, error: { code: string; message: string; details?: unknown }, expectedUpdatedAt?: string): Promise<boolean> {
+export async function failJob(env: Env, jobId: string, error: { code: string; message: string; details?: unknown }, expectedUpdatedAt?: string, expectedInstanceId?: string): Promise<boolean> {
   const transition = await env.DB.prepare(
-    "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued', 'waiting_input') AND (?4 IS NULL OR updated_at = ?4)",
+    "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued', 'waiting_input') AND (?4 IS NULL OR updated_at = ?4) AND (?5 IS NULL OR ?5 = (SELECT instance_id FROM ai_execution_slices WHERE job_id=?1 ORDER BY slice DESC LIMIT 1))",
   )
-    .bind(jobId, JSON.stringify(error), nowIso(), expectedUpdatedAt ?? null)
+    .bind(jobId, JSON.stringify(error), nowIso(), expectedUpdatedAt ?? null, expectedInstanceId ?? null)
     .run();
   if ((transition.meta?.changes ?? 0) === 0) return false;
   await env.DB.prepare("UPDATE job_outbox SET status = 'failed', last_error = ?2, updated_at = ?3 WHERE job_id = ?1")
@@ -183,9 +192,12 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   try { await assertDispatchActive(env, jobId); } catch { return; }
   const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
+  const active = PARSE_JOB_KINDS.has(job.kind) ? null : await activeExecutionSlice(env,jobId);
+  if(active?.status==='pending') { await dispatchExecutionSlice(env,active); return; }
+  const instanceId=active?.instance_id ?? jobId;
   let state: InstanceStatus;
   try {
-    const instance = await workflow.get(jobId);
+    const instance = await workflow.get(instanceId);
     state = await instance.status();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -197,9 +209,14 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
       `SELECT EXISTS (SELECT 1 FROM ai_calls WHERE job_id = ?1)
          OR EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?1 AND attempts_started > 0) AS started`,
     ).bind(jobId).first<{ started: number }>();
-    if (started?.started) {
-      const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 实例缺失且模型调用已开始，请核对费用后重试新任务' }, job.updated_at);
+    if ((!active && started?.started) || active?.status === 'running' || active?.status === 'complete') {
+      const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 实例缺失且模型调用已开始，请核对费用后重试新任务' }, job.updated_at, active?.instance_id);
       if (failed) await settleReservation(env, jobId, 'released');
+      return;
+    }
+    if(active){
+      await env.DB.prepare("UPDATE ai_execution_slices SET status='pending',updated_at=?3 WHERE job_id=?1 AND slice=?2 AND status='dispatched' AND NOT EXISTS(SELECT 1 FROM ai_execution_slices newer WHERE newer.job_id=?1 AND newer.slice>?2)").bind(jobId,active.slice,nowIso()).run();
+      await dispatchExecutionSlice(env,{...active,status:'pending'});
       return;
     }
     const recoveredAt = nowIso();
@@ -217,7 +234,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
     return;
   }
   if (['errored', 'terminated', 'complete'].includes(state.status)) {
-    const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 已结束但业务任务未提交结果，请重试新任务', details: { workflowStatus: state.status } }, job.updated_at);
+    const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 已结束但业务任务未提交结果，请重试新任务', details: { workflowStatus: state.status } }, job.updated_at, active?.instance_id);
     if (failed) await settleReservation(env, jobId, 'released');
   } else {
     // Refresh checked live instances so they do not starve older recovery candidates.
