@@ -44,7 +44,7 @@ export async function dispatchProjectProgression(env:Env):Promise<void>{
   // Existing review is deliberate: a new explicit redo stales it before reaching here.
   const pending=await env.DB.prepare("SELECT updated_at FROM collaboration_proposals WHERE project_id=?1 AND status='pending' ORDER BY updated_at DESC LIMIT 1").bind(project.id).first<{updated_at:string}>();
   if(pending){if(event.occurred_at<=pending.updated_at)continue;await env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2 WHERE project_id=?1 AND status='pending' AND updated_at<?3").bind(project.id,nowIso(),event.occurred_at).run();}
-  if(await env.DB.prepare("SELECT 1 FROM jobs WHERE project_id=?1 AND status IN ('queued','running','waiting_input') AND (json_extract(input_json,'$.operation') LIKE 'collaboration.%' OR kind IN ('parse_source','ocr_pages','web_fetch'))").bind(project.id).first())continue;
+  if(await env.DB.prepare("SELECT 1 FROM jobs WHERE project_id=?1 AND ((status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.operation') LIKE 'collaboration.%') OR (status IN ('queued','running') AND kind IN ('parse_source','ocr_pages','web_fetch')))").bind(project.id).first())continue;
   const member=await env.DB.prepare("SELECT user_id FROM project_members WHERE project_id=?1 AND role='owner' ORDER BY user_id LIMIT 1").bind(project.id).first<{user_id:string}>();if(!member)continue;
   const jobId=newId(),now=nowIso();
   await env.DB.prepare('INSERT INTO project_progression(project_id,updated_at) VALUES(?1,?2) ON CONFLICT(project_id) DO NOTHING').bind(project.id,now).run();
