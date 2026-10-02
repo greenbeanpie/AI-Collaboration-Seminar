@@ -163,7 +163,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
     }>();
     let proposalId = existing?.id;
     if (!proposalId) {
-        const feedback=await projectFeedbackPreview(env,input.projectId);input.adminFeedbackStamp=await projectFeedbackStamp(env,input.projectId);
+        const feedback=await projectFeedbackPreview(env,input.projectId);
         let payload: unknown;
         let references:unknown[]=[];let decisionReferences:unknown[]=[];
         if (kind === 'decompose') {
@@ -392,7 +392,6 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
             throw invalidState('材料版本不存在或不属于项目');
         materials.push({ versionId, markdown: row.markdown, attachments: JSON.parse(row.attachments_json) as unknown[] });
     }
-    input.adminFeedbackStamp=await projectFeedbackStamp(env,input.projectId);
     let report: TaskEvaluation;
     let references:unknown[]=[];let decisionReferences:unknown[]=[];
     let savedScoring: z.infer<typeof rubricScoringSchema> | undefined;
@@ -471,6 +470,17 @@ export async function runCollaborationAiJob(env: Env, jobId: string): Promise<vo
         const input = JSON.parse(job.input_json) as CollaborationAiInput;
         if (job.project_id !== input.projectId || job.kind !== 'agent_run' || !['collaboration.decompose', 'collaboration.assign', 'collaboration.evaluate'].includes(input.operation))
             throw invalidState('协作 AI 任务输入不匹配');
+        if (input.adminFeedbackStamp === undefined) {
+            const stamp = await projectFeedbackStamp(env, input.projectId);
+            const changed = await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.adminFeedbackStamp',?3) WHERE id=?1 AND input_json=?2 AND status IN ('queued','running')")
+                .bind(jobId, job.input_json, stamp).run();
+            if (changed.meta.changes) input.adminFeedbackStamp = stamp;
+            else {
+                const latest = JSON.parse((await getJob(env, jobId)).input_json) as CollaborationAiInput;
+                if (latest.adminFeedbackStamp === undefined) throw invalidState('作业读取基线未能保存，请重新发起');
+                input.adminFeedbackStamp = latest.adminFeedbackStamp;
+            }
+        }
         await assertSnapshot(env, input, input.operation !== 'collaboration.evaluate');
         const config = await currentConfig(env, input);
         if (input.operation === 'collaboration.evaluate')

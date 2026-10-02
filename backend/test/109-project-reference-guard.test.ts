@@ -24,6 +24,13 @@ async function proposal(f:Fixture,refs:ProjectReference[]){const id=newId(),jobI
 function race(before:()=>Promise<unknown>):Env{const db=new Proxy(env.DB,{get(target,key){if(key==='batch')return async(statements:D1PreparedStatement[])=>{await before();return target.batch(statements);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});return {...env,DB:db};}
 async function untouched(f:Fixture,p:string){expect((await env.DB.prepare('SELECT COUNT(*) count FROM tasks WHERE project_id=?1').bind(f.projectId).first<{count:number}>())!.count).toBe(0);expect((await env.DB.prepare('SELECT status FROM collaboration_proposals WHERE id=?1').bind(p).first<{status:string}>())!.status).toBe('pending');}
 describe('atomic autonomous proposal references',()=>{
+ it('uses the same resource-type prefix for source and material read identifiers',()=>{
+  const versionId=newId(),fragmentId=newId(),resourceId=newId();
+  const sourceRef=referencesFromRead({resourceType:'source',resourceId,versionId,revision:1,offset:0,fragments:[{fragmentId,pageNumber:3,quote:'尾页修订'}]})[0]!;
+  const materialRef=referencesFromRead({resourceType:'material',resourceId,versionId,revision:1,offset:0,text:'结构稿'})[0]!;
+  expect(sourceRef.id).toBe(`source:${versionId}:${fragmentId}:0`);expect(materialRef.id).toBe(`material:${versionId}:0`);
+  expect(extractDecisionReferences(JSON.stringify({decisionReferences:[{decisionPath:'summary',referenceIds:[sourceRef.id]}]}),[sourceRef])).toHaveLength(1);
+ });
  it('retains different quotes and marks decision-only references against all reads',()=>{
    const ref:ProjectReference={id:'read-1',resourceType:'material',resourceId:'m',versionId:'v',quote:'原文一',usage:'read'};
    const refs=uniqueReadReferences([ref,{...ref},{...ref,quote:'原文二'},{...ref,id:'read-2'}]);

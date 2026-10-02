@@ -55,7 +55,7 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
     ...(typeof output.revision==='number'?{revision:output.revision}:{}),
     ...(typeof output.title==='string'?{title:output.title}:{}),usage:'read' as const};
   if(Array.isArray(output.fragments)) return output.fragments.map((f: Record<string,unknown>)=>({...base,
-    id:`${base.versionId}:${String(f.fragmentId)}:${String(output.offset??0)}`,
+    id:`${base.resourceType}:${base.versionId}:${String(f.fragmentId)}:${String(output.offset??0)}`,
     fragmentId:String(f.fragmentId),pageNumber:f.pageNumber as number|null,quote:String(f.quote)}));
   const text=typeof output.text==='string'?output.text:typeof output.body==='string'?output.body:undefined;
   return text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${String(output.offset??0)}`,quote:text}] : [];
