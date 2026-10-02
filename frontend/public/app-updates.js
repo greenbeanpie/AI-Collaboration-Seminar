@@ -165,6 +165,7 @@ export function mountUpdates() {
     button{font:inherit;color:inherit;background:transparent;border:1px solid #a0a0a060;border-radius:8px;padding:6px 10px;min-height:32px;cursor:pointer}button:focus-visible{outline:2px solid #3978c6;outline-offset:2px}button:disabled{cursor:wait;opacity:.65}
     .panel{position:absolute;right:12px;top:100%;width:min(420px,calc(100vw - 24px));max-height:65vh;overflow:auto;background:var(--surface,var(--bg,rgb(var(--surface-rgb,255 255 255))));color:var(--ink,var(--fg,#243447));border:1px solid #a0a0a060;border-radius:12px;padding:12px;box-shadow:0 10px 25px #0002}
     [hidden]{display:none!important}.entry{padding:10px 0;border-bottom:1px solid #a0a0a030;overflow-wrap:anywhere}.meta{font-size:11px;opacity:.85;color:var(--notice-accent,inherit)}.panel-head{display:flex;justify-content:space-between;align-items:center}
+    .panel-actions{margin-top:8px}.panel-actions button{min-height:44px}#read-all-status{margin:6px 0;font-size:12px;overflow-wrap:anywhere}
     [data-kind=info]{--notice-accent:#245eb5;--notice-accent:light-dark(#245eb5,#96c0ff);--notice-bg:light-dark(#eef5ff,#192c48)}
     [data-kind=success]{--notice-accent:#1b7453;--notice-accent:light-dark(#1b7453,#8bddb9);--notice-bg:light-dark(#edf8f2,#18382d)}
     [data-kind=warning]{--notice-accent:#8b5805;--notice-accent:light-dark(#8b5805,#f4ca78);--notice-bg:light-dark(#fff6e4,#3c301b)}
@@ -177,7 +178,7 @@ export function mountUpdates() {
     @media(max-width:600px){.toast-shelf{right:max(12px,env(safe-area-inset-right,0px))}.toast{border-radius:16px}}
     @media(prefers-reduced-motion:reduce){.toast,.toast.leaving{animation:none}}
     @media(max-width:500px){.bar{padding:6px 10px}}@media print{:host{display:none}}
-  </style><div class="bar"><button id="update" class="control" type="button" aria-label="检查更新" title="检查更新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg><span class="update-status" aria-hidden="true"></span><span id="update-label" class="sr-only">检查更新</span></button><button id="bell" class="control" type="button" title="通知中心" aria-label="通知中心" aria-expanded="false" aria-controls="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="badge" class="count" aria-hidden="true"></span></button></div><div id="toast" class="toast-shelf" hidden></div><div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div><section id="history" class="panel" hidden aria-label="通知中心"><div class="panel-head"><strong>通知中心</strong><button id="close" type="button">关闭</button></div><div id="entries"></div></section>`;
+  </style><div class="bar"><button id="update" class="control" type="button" aria-label="检查更新" title="检查更新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg><span class="update-status" aria-hidden="true"></span><span id="update-label" class="sr-only">检查更新</span></button><button id="bell" class="control" type="button" title="通知中心" aria-label="通知中心" aria-expanded="false" aria-controls="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="badge" class="count" aria-hidden="true"></span></button></div><div id="toast" class="toast-shelf" hidden></div><div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div><section id="history" class="panel" hidden aria-label="通知中心"><div class="panel-head"><strong>通知中心</strong><button id="close" type="button">关闭</button></div><div class="panel-actions"><button id="read-all" type="button" disabled>全部标为已读</button></div><p id="read-all-status" role="status" aria-live="polite" hidden></p><div id="entries"></div></section>`;
   const find = id => root.getElementById(id);
   function layoutControls() {
     const inline = host.classList.contains('inline');
@@ -201,7 +202,7 @@ export function mountUpdates() {
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(layoutControls).observe(host);
   attachControls();
   const history = new NotificationHistory();
-  let inboxUrl = '/app/settings/notifications', inboxUnread = 0;
+  let inboxUrl = '/app/settings/notifications', inboxUnread = 0,inboxUserId=null,readAllBusy=false,readAllMessage='';
   let open = false, sequence = 0;
   const visible = new Map(), pending = [];
   const narrow = window.matchMedia?.('(max-width: 600px)');
@@ -234,6 +235,10 @@ export function mountUpdates() {
     return button;
   };
   function render() {
+    find('read-all').disabled=readAllBusy||!inboxUserId||!inboxUnread;
+    find('read-all').textContent=readAllBusy?'正在标记…':'全部标为已读';
+    find('read-all-status').textContent=readAllMessage;
+    find('read-all-status').hidden=!readAllMessage;
     const unread = inboxUnread + history.items.filter(item => !item.remoteId && item.unread).length;
     find('badge').textContent = unread ? unread > 99 ? '99+' : String(unread) : '';
     find('bell').title = find('bell').ariaLabel = unread ? `通知中心，${unread} 条未读` : '通知中心';
@@ -359,6 +364,16 @@ export function mountUpdates() {
     history.items.forEach(item => { if (!item.remoteId) item.unread = false; }); render(); find('history').hidden = false; find('bell').setAttribute('aria-expanded', 'true'); find('close').focus();
   };
   find('close').onclick = () => closePanel();
+  find('read-all').onclick=()=>{
+    if(readAllBusy||!inboxUserId||!inboxUnread)return;
+    readAllBusy=true;readAllMessage='';render();
+    window.dispatchEvent(new CustomEvent('app-notification-read-all',{detail:{userId:inboxUserId}}));
+  };
+  window.addEventListener('app-notification-read-all-status',event=>{
+    const detail=event.detail;
+    if(!detail||detail.userId!==inboxUserId)return;
+    readAllBusy=detail.busy===true;readAllMessage=typeof detail.message==='string'?detail.message:'';render();
+  });
   root.addEventListener('keydown', event => { if (event.key === 'Escape' && open) { event.stopPropagation(); closePanel(); } });
   document.addEventListener('pointerdown', event => { if (open && !event.composedPath().includes(host)) closePanel(); });
   window.addEventListener('popstate', () => { if (open) closePanel(true, false); });
@@ -376,7 +391,7 @@ export function mountUpdates() {
   window.addEventListener('online', () => notify('network', '网络已恢复，可以检查更新。', 'success'));
   window.addEventListener('app-notification-scope', event => {
     if (history.scope === event.detail) return;
-    history.reset(event.detail); inboxUnread = 0; clearToasts(); closePanel(false);
+    history.reset(event.detail); inboxUnread = 0;inboxUserId=null;readAllBusy=false;readAllMessage='';clearToasts(); closePanel(false);
     // System update readiness is not account content; expose the current action after a scope switch.
     if (['ready', 'refresh', 'downloading', 'applying'].includes(controller.state)) history.add('update', details[controller.state], 'info', 'update');
     window.dispatchEvent(new Event('app-install-status-request'));
@@ -385,6 +400,9 @@ export function mountUpdates() {
   window.addEventListener('app-notification-inbox', event => {
     const detail = event.detail;
     if (!detail || !Array.isArray(detail.items)) return;
+    const account=typeof detail.userId==='string'?detail.userId:null;
+    if(account!==inboxUserId){readAllBusy=false;readAllMessage='';}
+    inboxUserId=account;
     inboxUrl = typeof detail.url === 'string' ? detail.url : inboxUrl;
     inboxUnread = Number.isSafeInteger(detail.unreadCount) ? detail.unreadCount : detail.items.filter(item => !item.readAt && !item.dismissedAt).length;
     const remote = detail.items.filter(item => typeof item.id === 'string').map(item => ({ id: `server:${item.id}`, remoteId: item.id, text: `${item.title} ${item.body}`, kind: 'info', action: '', url: item.url, time: Date.parse(item.createdAt), unread: !item.readAt && !item.dismissedAt, dismissedAt: item.dismissedAt }));

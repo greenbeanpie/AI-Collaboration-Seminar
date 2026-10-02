@@ -15,9 +15,11 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
   const [message, setMessage] = useState('');
   const lock = useRef(false);
   const loadedEarlier = useRef(false);
+  const historyGeneration=useRef({value:0});
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    const historyVersion=historyGeneration.current;
     const abort = new AbortController();
     let snapshotGeneration=0,loading=false,again=false;
     const applyPage=(page:NotificationPage)=>{
@@ -25,8 +27,9 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
       if(!loadedEarlier.current || !page.nextCursor)setCursor(page.nextCursor);
     };
     const receiveSnapshot=(event:Event)=>{
-      const detail=(event as CustomEvent<NotificationPage & {userId:string}>).detail;
+      const detail=(event as CustomEvent<NotificationPage & {userId:string;resetHistory?:boolean}>).detail;
       if(!active || detail?.userId!==userId || !Array.isArray(detail.items))return;
+      if(detail.resetHistory){loadedEarlier.current=false;historyVersion.value++;}
       snapshotGeneration++;applyPage(detail);
     };
     const load = async () => {
@@ -57,7 +60,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
     window.addEventListener('app-notification-inbox',receiveSnapshot);
     window.addEventListener('app-notification-refresh',refresh);
     void load();
-    return () => { active = false; abort.abort(); window.removeEventListener('app-notification-inbox',receiveSnapshot);window.removeEventListener('app-notification-refresh',refresh); };
+    return () => { active = false;historyVersion.value++;abort.abort();window.removeEventListener('app-notification-inbox',receiveSnapshot);window.removeEventListener('app-notification-refresh',refresh); };
   }, [userId, enabled]);
 
   async function run(action: () => Promise<void>) {
@@ -113,7 +116,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
     {message && <p role="status" className="notification-feedback">{message}</p>}
     <section className="delivery-card"><h2>通知历史</h2>{!items.length && <p>暂无通知。</p>}
       {items.map(item => <article className="delivery-entry" key={item.id}><div><strong>{item.title}</strong><small>{new Date(item.createdAt).toLocaleString('zh-CN')} · {item.dismissedAt ? '已收起' : item.readAt ? '已读' : '未读'}</small></div><p>{item.body}</p><div className="notification-buttons"><button type="button" onClick={() => navigate(safeNotificationUrl(item.url, './'))}>查看相关内容</button>{!item.readAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'read')}>标记已读</button>}{!item.dismissedAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'dismiss')}>收起提醒</button>}</div></article>)}
-      {cursor && <button type="button" disabled={busy} onClick={() => void run(async () => { loadedEarlier.current=true; const page = await notificationRequest<NotificationPage>(`/notifications?limit=50&cursor=${encodeURIComponent(cursor)}`); setItems(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))]); setCursor(page.nextCursor); })}>加载更早通知</button>}
+      {cursor && <button type="button" disabled={busy} onClick={() => void run(async () => { const generation=historyGeneration.current.value;loadedEarlier.current=true;const page=await notificationRequest<NotificationPage>(`/notifications?limit=50&cursor=${encodeURIComponent(cursor)}`);if(generation!==historyGeneration.current.value)return;setItems(previous=>[...previous,...page.items.filter(item=>!previous.some(old=>old.id===item.id))]);setCursor(page.nextCursor); })}>加载更早通知</button>}
     </section>
   </div>;
 }

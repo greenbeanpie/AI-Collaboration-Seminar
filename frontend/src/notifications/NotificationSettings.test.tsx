@@ -58,3 +58,24 @@ it('refreshes history on a same-route full-history request without needing a rem
  request.mockImplementation(async <T,>(path:string)=>path.includes('/push/status')?{configured:false,publicKey:''} as T:path.includes('/settings')?{inAppEnabled:true,pushEnabled:true} as T:{items:[testNotice],nextCursor:null,unreadCount:1} as T);
  act(()=>window.dispatchEvent(new CustomEvent('app-notification-refresh',{detail:{userId:'account'}})));expect(await screen.findByText('通知推送测试')).toBeInTheDocument();
 });
+it('discards stale cached older pages after a bulk-read refresh so reloading them uses server receipts',async()=>{
+ setup();await waitFor(()=>expect(screen.getByRole('checkbox',{name:/网页顶部提醒/})).toBeEnabled());
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[testNotice],nextCursor:'older',unreadCount:75}})));
+ const older={...testNotice,id:'031cab18-6eec-4738-a7bb-52f246e3b492',title:'更早未读通知',createdAt:'2026-01-01T00:00:00.000Z'};
+ request.mockImplementation(async<T,>(path:string)=>path.includes('/push/status')?{configured:false,publicKey:''} as T:path.includes('/settings')?{inAppEnabled:true,pushEnabled:true} as T:{items:[older],nextCursor:null,unreadCount:75} as T);
+ fireEvent.click(screen.getByRole('button',{name:'加载更早通知'}));await screen.findByText('更早未读通知');
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[{...testNotice,readAt:'2026-10-02T00:00:00.000Z'}],nextCursor:'older',unreadCount:0,resetHistory:true}})));
+ expect(screen.queryByText('更早未读通知')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'加载更早通知'})).toBeEnabled();expect(screen.queryByRole('button',{name:'标记已读'})).not.toBeInTheDocument();
+ request.mockImplementation(async<T,>()=>({items:[{...older,readAt:'2026-10-02T00:00:00.000Z'}],nextCursor:null,unreadCount:0}) as T);
+ fireEvent.click(screen.getByRole('button',{name:'加载更早通知'}));await screen.findByText('更早未读通知');expect(screen.queryByRole('button',{name:'标记已读'})).not.toBeInTheDocument();
+});
+it('does not restore an older unread page that arrives after a bulk reset',async()=>{
+ setup();await waitFor(()=>expect(screen.getByRole('checkbox',{name:/网页顶部提醒/})).toBeEnabled());
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[testNotice],nextCursor:'older',unreadCount:75}})));
+ let finish!:(page:unknown)=>void;
+ request.mockImplementation(async<T,>()=>await new Promise<T>(resolve=>{finish=page=>resolve(page as T);}));
+ fireEvent.click(screen.getByRole('button',{name:'加载更早通知'}));
+ act(()=>window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[{...testNotice,readAt:'2026-10-02T00:00:00.000Z'}],nextCursor:'older',unreadCount:0,resetHistory:true}})));
+ await act(async()=>finish({items:[{...testNotice,id:'031cab18-6eec-4738-a7bb-52f246e3b492',title:'旧请求的未读通知'}],nextCursor:null,unreadCount:75}));
+ expect(screen.queryByText('旧请求的未读通知')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'标记已读'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'加载更早通知'})).toBeEnabled();
+});

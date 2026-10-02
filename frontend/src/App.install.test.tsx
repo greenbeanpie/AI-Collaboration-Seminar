@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider, useNavigate } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -30,7 +30,7 @@ it('captures install eligibility before login but renders the prompt only on the
   expect(screen.queryByRole('button', { name: '安装到桌面' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '进入我的项目' }));
   await screen.findByRole('heading', { name: '我的项目' });
-  expect(notifications).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(notifications).toHaveBeenCalledTimes(1));
   expect(notifications.mock.calls[0][0].detail).toMatchObject({ id: 'install', action: 'install' });
   expect(prompt).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '打开其他页面' }));

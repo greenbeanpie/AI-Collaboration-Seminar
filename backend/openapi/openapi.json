@@ -16852,6 +16852,36 @@
           "requestId"
         ]
       },
+      "NotificationReadAllResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "updatedCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unreadCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "updatedCount",
+              "unreadCount"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "NotificationPushStatusResponse": {
         "type": "object",
         "properties": {
@@ -28193,6 +28223,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "标记当前账户全部可见且未收起的未读通知，覆盖所有分页",
+        "responses": {
+          "200": {
+            "description": "NotificationReadAllResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationReadAllResponse"
                 }
               }
             }

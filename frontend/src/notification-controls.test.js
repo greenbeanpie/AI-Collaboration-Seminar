@@ -95,3 +95,18 @@ it('waits out an old exit timer before showing a new state with the same ID and 
  notify('same','新状态','warning');expect(cards(t.root)).toHaveLength(1);vi.advanceTimersByTime(180);expect(cards(t.root)).toHaveLength(1);expect(cards(t.root)[0]).toHaveTextContent('新状态');vi.advanceTimersByTime(1000);expect(t.root.getElementById('toast')).not.toHaveAttribute('hidden');
  window.dispatchEvent(new CustomEvent('app-notification-scope',{detail:'another-account'}));notify('fresh','新账户通知');vi.advanceTimersByTime(7000);expect(cards(t.root)).toHaveLength(0);expect(t.root.getElementById('entries')).not.toHaveTextContent('新状态');
 });
+it('bulk read waits for server refresh, disables repeated clicks and keeps failures visible without clearing the badge',async()=>{
+ const t=await setup(),item={id:'831cab18-6eec-4738-a7bb-52f246e3b492',title:'通知',body:'摘要',createdAt:new Date().toISOString(),readAt:null,dismissedAt:null,url:'/app'};
+ window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[item],unreadCount:75}}));t.root.getElementById('bell').click();
+ const button=t.root.getElementById('read-all'),send=vi.fn();window.addEventListener('app-notification-read-all',send);
+ button.click();button.click();expect(send).toHaveBeenCalledOnce();expect(send.mock.calls[0][0].detail).toEqual({userId:'account'});expect(button).toBeDisabled();expect(button).toHaveTextContent('正在标记');expect(t.root.getElementById('badge')).toHaveTextContent('75');
+ window.dispatchEvent(new CustomEvent('app-notification-read-all-status',{detail:{userId:'account',busy:false,message:'保存失败，请重试。'}}));expect(button).toBeEnabled();expect(t.root.getElementById('read-all-status')).toHaveTextContent('保存失败');expect(t.root.getElementById('badge')).toHaveTextContent('75');
+ button.click();window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'account',items:[{...item,readAt:new Date().toISOString()}],unreadCount:0}}));window.dispatchEvent(new CustomEvent('app-notification-read-all-status',{detail:{userId:'account',busy:false,message:'全部通知已标为已读。'}}));
+ expect(t.root.getElementById('badge').textContent).toBe('');expect(button).toBeDisabled();expect(button).toHaveTextContent('全部标为已读');expect(t.root.getElementById('entries').textContent).not.toContain('标记已读');
+});
+it('clears bulk-action progress on an account switch and ignores old account completion',async()=>{
+ const t=await setup(),item={id:'831cab18-6eec-4738-a7bb-52f246e3b492',title:'通知',body:'摘要',createdAt:new Date().toISOString(),readAt:null,dismissedAt:null,url:'/app'};
+ window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'previous',items:[item],unreadCount:5}}));t.root.getElementById('read-all').click();expect(t.root.getElementById('read-all')).toBeDisabled();
+ window.dispatchEvent(new CustomEvent('app-notification-scope',{detail:'new-scope'}));window.dispatchEvent(new CustomEvent('app-notification-inbox',{detail:{userId:'current',items:[item],unreadCount:3}}));
+ window.dispatchEvent(new CustomEvent('app-notification-read-all-status',{detail:{userId:'previous',busy:false,message:'旧账户已完成'}}));expect(t.root.getElementById('badge')).toHaveTextContent('3');expect(t.root.getElementById('read-all')).toBeEnabled();expect(t.root.getElementById('read-all-status')).not.toHaveTextContent('旧账户');
+});

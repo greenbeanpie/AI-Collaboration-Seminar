@@ -25,6 +25,7 @@ const subscribe = createRoute({ method: 'post', path: `${root}/push/subscription
 const lookup = createRoute({ method: 'post', path: `${root}/push/lookup`, tags: ['notifications'], request: { body: { required: true, content: { 'application/json': { schema: z.object({ endpoint: endpointSchema }).strict() } } } }, responses: { 200: ok(z.object({ id: z.string().uuid().nullable() }), 'NotificationSubscriptionLookupResponse') } });
 const unsubscribe = createRoute({ method: 'delete', path: `${root}/push/subscriptions/{id}`, tags: ['notifications'], request: { params }, responses: { 200: ok(z.object({ id: z.string().uuid() }), 'NotificationSubscriptionResponse') } });
 const read = createRoute({ method: 'post', path: `${root}/{id}/read`, tags: ['notifications'], request: { params }, responses: { 200: ok(itemSchema, 'NotificationResponse') } });
+const readAll = createRoute({ method:'post',path:`${root}/read-all`,tags:['notifications'],summary:'标记当前账户全部可见且未收起的未读通知，覆盖所有分页',responses:{200:ok(z.object({updatedCount:z.number().int().nonnegative(),unreadCount:z.number().int().nonnegative()}),'NotificationReadAllResponse')} });
 const dismiss = createRoute({ method: 'post', path: `${root}/{id}/dismiss`, tags: ['notifications'], request: { params }, responses: { 200: ok(itemSchema, 'NotificationResponse') } });
 const selected = 'SELECT e.id,e.kind,e.title,e.body,e.url,e.created_at AS createdAt,n.read_at AS readAt,n.dismissed_at AS dismissedAt FROM notification_events e JOIN notification_inbox n ON n.event_id=e.id';
 type Item = z.infer<typeof itemSchema>;
@@ -51,6 +52,15 @@ export function registerNotificationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(getSettings, async c => {
     const row = await c.env.DB.prepare('SELECT in_app_enabled,push_enabled FROM notification_settings WHERE user_id=?1').bind(c.get('user')!.id).first<{ in_app_enabled:number;push_enabled:number }>();
     return c.json(apiData(c,{inAppEnabled:row?.in_app_enabled!==0,pushEnabled:row?.push_enabled!==0}),200);
+  });
+  app.openapi(readAll,async c=>{
+    const userId=c.get('user')!.id;
+    const result=await c.env.DB.batch<{n:number}>([
+      c.env.DB.prepare(`UPDATE notification_inbox SET read_at=?2 WHERE user_id=?1 AND read_at IS NULL AND dismissed_at IS NULL
+        AND EXISTS(SELECT 1 FROM notification_events e WHERE e.id=notification_inbox.event_id AND ${notificationVisibleSql('?1')})`).bind(userId,nowIso()),
+      c.env.DB.prepare(`SELECT COUNT(*) AS n FROM notification_events e JOIN notification_inbox n ON n.event_id=e.id WHERE n.user_id=?1 AND n.read_at IS NULL AND n.dismissed_at IS NULL AND ${notificationVisibleSql('?1')}`).bind(userId),
+    ]);
+    return c.json(apiData(c,{updatedCount:result[0]?.meta.changes??0,unreadCount:result[1]?.results[0]?.n??0}),200);
   });
   app.openapi(putSettings, async c => {
     const input=c.req.valid('json'); const id=c.get('user')!.id; const now=nowIso();
