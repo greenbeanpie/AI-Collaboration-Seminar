@@ -4,6 +4,8 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
+import { resourcePurposeSchema } from './resources';
+import type { ResourcePurpose } from '../services/resources';
 import { newId, nowIso } from '../core/db';
 import { notFound, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
@@ -19,6 +21,7 @@ const materialSchema = z.object({
   materialId: z.string().uuid(),
   title: z.string(),
   kind: z.string(),
+  purpose: resourcePurposeSchema,
   revision: z.number().int(),
   currentVersion: z
     .object({
@@ -55,6 +58,7 @@ const versionListResponse = apiEnvelope(z.object({ items: z.array(versionSchema.
 const createBody = z.object({
   title: z.string().min(1).max(200),
   kind: z.string().min(1).max(40).default('document'),
+  purpose: resourcePurposeSchema.optional(),
 });
 
 const saveBody = z.object({
@@ -126,6 +130,7 @@ interface MaterialRow {
   project_id: string;
   title: string;
   kind: string;
+  purpose: ResourcePurpose;
   current_version_id: string | null;
   revision: number;
   created_at: string;
@@ -194,6 +199,7 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow) {
     materialId: material.id,
     title: material.title,
     kind: material.kind,
+    purpose: material.purpose,
     revision: material.revision,
     currentVersion: current
       ? {
@@ -229,8 +235,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     ]) } : { type: 'doc', content: [] };
     await c.env.DB.batch([
       c.env.DB.prepare(
-        'INSERT INTO materials (id, project_id, title, kind, current_version_id, revision, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?7)',
-      ).bind(materialId, member.projectId, body.title, body.kind, versionId, user.id, now),
+        'INSERT INTO materials (id, project_id, title, kind, current_version_id, revision, created_by, created_at, updated_at, purpose) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?7, ?8)',
+      ).bind(materialId, member.projectId, body.title, body.kind, versionId, user.id, now, body.purpose ?? (body.kind === 'background' ? 'background' : 'output')),
       c.env.DB.prepare(
         `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at)
          VALUES (?1, ?2, ?3, 1, ?4, ?5, 'manual', ?6, ?7)`,
@@ -264,6 +270,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
           materialId: r.id,
           title: r.title,
           kind: r.kind,
+          purpose: r.purpose,
           revision: r.revision,
           currentVersionId: r.current_version_id,
           createdAt: r.created_at,

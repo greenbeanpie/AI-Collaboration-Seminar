@@ -14,6 +14,8 @@ import { changeSourceLifecycle } from '../services/file-lifecycle';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';
+import { resourcePurposeSchema } from './resources';
+import type { ResourcePurpose } from '../services/resources';
 
 const sourceParams = projectParams.extend({ sourceId: z.string().uuid() });
 const versionParams = sourceParams.extend({ sourceVersionId: z.string().uuid() });
@@ -25,6 +27,7 @@ const createBody = z
     fileId: z.string().uuid().optional(),
     text: z.string().min(1).max(100_000).optional(),
     url: z.string().max(2048).optional(),
+    purpose: resourcePurposeSchema.default('reference'),
   })
   .refine((v) => v.kind !== 'file' || !!v.fileId, { message: 'file 来源必须提供 fileId' })
   .refine((v) => v.kind !== 'paste' || !!v.text, { message: 'paste 来源必须提供 text' })
@@ -34,6 +37,8 @@ const sourceSchema = z.object({
   sourceId: z.string().uuid(),
   kind: z.enum(['file', 'paste', 'web']),
   title: z.string(),
+  purpose: resourcePurposeSchema,
+  revision: z.number().int().positive(),
   currentVersionId: z.string().uuid().nullable(),
   createdAt: z.string(),
   lifecycleVersion:z.number().int(),canDelete:z.boolean(),deletedAt:z.string().nullable(),fileId:z.string().uuid().nullable(),
@@ -173,6 +178,8 @@ interface SourceRow {
   project_id: string;
   kind: 'file' | 'paste' | 'web';
   title: string;
+  purpose: ResourcePurpose;
+  resource_revision: number;
   current_version_id: string | null;
   created_at: string;
   created_by:string;deleted_at:string|null;lifecycle_version:number;file_id:string|null;
@@ -261,8 +268,8 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
 
     const inserts = [
       c.env.DB.prepare(
-        `INSERT INTO sources (id, project_id, kind, title, current_version_id, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 WHERE ?3!='file' OR EXISTS(SELECT 1 FROM files WHERE id=?8 AND project_id=?2 AND status='available' AND deleted_at IS NULL AND lifecycle_version=?9)`,
-      ).bind(sourceId, member.projectId, body.kind, title, versionId, user.id, now,body.fileId??null,fileLifecycleVersion),
+        `INSERT INTO sources (id, project_id, kind, title, current_version_id, created_by, created_at, updated_at, purpose) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?10 WHERE ?3!='file' OR EXISTS(SELECT 1 FROM files WHERE id=?8 AND project_id=?2 AND status='available' AND deleted_at IS NULL AND lifecycle_version=?9)`,
+      ).bind(sourceId, member.projectId, body.kind, title, versionId, user.id, now,body.fileId??null,fileLifecycleVersion,body.purpose),
       c.env.DB.prepare(
         `INSERT INTO source_versions (id, source_id, project_id, revision, origin, file_id, url, text_r2_key, status, created_at)
          SELECT ?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, 'pending', ?8 WHERE EXISTS(SELECT 1 FROM sources WHERE id=?2)`,
@@ -300,6 +307,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         sourceVersionId: versionId,
         kind: body.kind,
         title,
+        purpose: body.purpose, revision: 1,
         currentVersionId: versionId,
         createdAt: now,lifecycleVersion:1,canDelete:true,deletedAt:null,fileId:body.fileId??null,
       }),
@@ -312,7 +320,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     c.header('Cache-Control','no-store');
     const query=c.req.valid('query');const { limit, cursor } = parsePaging(query);
     const rows = await c.env.DB.prepare(
-      `SELECT id, project_id, kind, title, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
+      `SELECT id, project_id, kind, title, purpose, resource_revision, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
         (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
        WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
@@ -325,6 +333,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       sourceId: r.id,
       kind: r.kind,
       title: r.title,
+      purpose: r.purpose, revision: r.resource_revision + r.lifecycle_version - 1,
       currentVersionId: r.current_version_id,
       createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.role==='owner'||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
     }));
