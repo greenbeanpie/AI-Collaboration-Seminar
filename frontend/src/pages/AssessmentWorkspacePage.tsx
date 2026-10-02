@@ -5,7 +5,7 @@ import { Play, RefreshCw } from 'lucide-react';
 import { projectRequest, type Assessment, type AssessmentReport, type AssessmentEvidence, type ProjectGoal, type StandardVersion } from '../api/simplification';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
-import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
+import { EmptyState, ErrorNotice, Field, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { clearPendingJob, completeIntent, idempotencyKeyForIntent, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 import { StandardsEditor } from './StandardsEditor';
 import { FixedMaterialVersions } from './FixedMaterialVersions';
@@ -27,7 +27,6 @@ export function AssessmentWorkspacePage() {
   const section = params.get('section') ?? 'standards';
   const chooseSection = (value: string) => { const next = new URLSearchParams(params); next.set('section', value); setParams(next); };
   return <div className="page-stack assessment-workspace">
-    <PageHeading title="评分" detail="统一项目标准，以材料检查或答辩演练评价主目标。每轮独立保存分项、证据与反馈，不自动汇总多轮成绩。" />
     <nav className="assessment-sections" aria-label="评分形式">{[['standards', '项目标准'], ['checks', '材料检查'], ['rehearsals', '答辩演练']].map(([key, label]) => <button className={`button ${section === key ? 'button-primary' : 'button-quiet'}`} key={key} onClick={() => chooseSection(key)} aria-current={section === key ? 'page' : undefined}>{label}</button>)}</nav>
     {section === 'standards' ? <StandardsEditor /> : <AssessmentRunner key={`${projectId}:${section}`} kind={section === 'rehearsals' ? 'rehearsal' : 'material_review'} />}
   </div>;

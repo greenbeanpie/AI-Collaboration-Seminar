@@ -172,8 +172,13 @@ export function MaterialDocumentView({ doc, className = '' }: { doc: unknown; cl
 }
 
 export function CommentsPanel({ projectId, targetType, targetId }: { projectId: string; targetType: CommentTarget; targetId: string }) {
+  return <CommentsPanelContent key={`${projectId}:${targetType}:${targetId}`} projectId={projectId} targetType={targetType} targetId={targetId} />;
+}
+
+function CommentsPanelContent({ projectId, targetType, targetId }: { projectId: string; targetType: CommentTarget; targetId: string }) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');
+  const [page, setPage] = useState(0);
   const queryKey = ['comments', projectId, targetType, targetId] as const;
   const commentsQuery = useQuery({
     queryKey,
@@ -184,30 +189,38 @@ export function CommentsPanel({ projectId, targetType, targetId }: { projectId: 
   });
   const createComment = useMutation({
     mutationFn: (commentBody: string) => api.post<'CommentResponse'>(projectPath(projectId, '/comments'), { targetType, targetId, body: commentBody.trim() }),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       setBody('');
       await queryClient.invalidateQueries({ queryKey });
+      const comments = queryClient.getQueryData<CommentEntry[]>(queryKey) ?? [];
+      const index = comments.findIndex(comment => comment.commentId === created.commentId);
+      if (index >= 0) setPage(Math.floor(index / 5));
     },
   });
 
+  const pageCount = Math.max(1, Math.ceil((commentsQuery.data?.length ?? 0) / 5));
+  const currentPage = Math.min(page, pageCount - 1);
   return (
-    <section className="tm-comments" aria-label="评论">
-      <div className="tm-section-title"><div><MessageCircle size={16} /><h3>讨论</h3></div><span>{commentsQuery.data?.length ?? '—'}</span></div>
+    <details className="tm-comments" aria-label="评论">
+      <summary className="tm-section-title tm-disclosure-heading"><span><MessageCircle size={16} />讨论</span><span>{commentsQuery.data?.length ?? '—'}</span></summary>
+      <div className="tm-disclosure-content">
       {commentsQuery.isLoading && <Spinner label="正在读取评论" />}
       {commentsQuery.error && <ErrorNotice error={commentsQuery.error} onRetry={() => void commentsQuery.refetch()} />}
       {commentsQuery.data?.length === 0 && <EmptyState title="还没有评论" detail="围绕任务或材料记录讨论，评论将保存在当前项目中。" />}
-      {!!commentsQuery.data?.length && <ol className="tm-comment-list">{commentsQuery.data.map((comment) => (
+      {!!commentsQuery.data?.length && <ol className="tm-comment-list">{commentsQuery.data.slice(currentPage * 5, (currentPage + 1) * 5).map((comment) => (
         <li key={comment.commentId} className="tm-comment">
           <div className="tm-comment-meta"><strong>{comment.authorName}</strong><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time></div>
           <p>{comment.body}</p>
         </li>
       ))}</ol>}
+      {!!commentsQuery.data?.length && <nav className="tm-list-pagination" aria-label="讨论分页"><button type="button" className="button button-quiet button-small" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {pageCount}</span><button type="button" className="button button-quiet button-small" disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}>下一页</button></nav>}
       <form className="tm-comment-form" onSubmit={(event) => { event.preventDefault(); if (body.trim()) createComment.mutate(body); }}>
         <label className="tm-sr-only" htmlFor={`comment-${targetType}-${targetId}`}>发表评论</label>
         <textarea id={`comment-${targetType}-${targetId}`} value={body} onChange={(event) => setBody(event.target.value)} maxLength={4000} rows={3} placeholder="写下评论…" />
         <button className="button button-primary button-small" type="submit" disabled={!body.trim() || createComment.isPending}><Send size={14} />{createComment.isPending ? '发送中' : '发送'}</button>
       </form>
       {createComment.error && <ErrorNotice error={createComment.error} />}
-    </section>
+      </div>
+    </details>
   );
 }

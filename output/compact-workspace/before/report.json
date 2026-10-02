@@ -1,0 +1,18 @@
+{
+  "source": "Real React app + loopback fixtures + Chromium",
+  "baseline": true,
+  "checks": [
+    {
+      "width": 1440,
+      "cardHeight": 185.78125,
+      "result": "PASS"
+    },
+    {
+      "width": 390,
+      "cardHeight": 218.03125,
+      "result": "PASS"
+    }
+  ],
+  "errors": [],
+  "result": "PASS"
+}

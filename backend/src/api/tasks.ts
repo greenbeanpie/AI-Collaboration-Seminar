@@ -1,3 +1,4 @@
+import { readTaskSummary, taskSummarySchema } from '../services/task-summary';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -30,7 +31,7 @@ const taskSchema = z.object({
   revision: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),
-});
+}).extend(taskSummarySchema.partial().shape);
 const taskResponse = apiEnvelope(taskSchema, 'TaskResponse');
 const taskListResponse = apiEnvelope(z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'TaskListResponse');
 
@@ -192,7 +193,7 @@ function toTask(r: TaskRow) {
     updatedAt: r.updated_at,
   };
 }
-async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {...toTask(r),...await taskDependencies(env,r.project_id,r.id)};}
+async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {...toTask(r),...await taskDependencies(env,r.project_id,r.id),...await readTaskSummary(env,r)};}
 
 const commentSelect = `SELECT c.id, c.target_type, c.target_id, c.author_id, u.display_name AS author_name, c.body, c.created_at
   FROM comments c JOIN users u ON u.id = c.author_id`;

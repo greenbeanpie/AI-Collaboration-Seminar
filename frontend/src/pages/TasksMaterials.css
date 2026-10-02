@@ -197,3 +197,19 @@
   .tm-material-main { display: block !important; }
   @page { margin: 18mm; }
 }
+
+/* Compact material disclosures and aligned attachment controls. */
+.tm-material-attachments { padding: 16px 18px; gap: 12px; }
+.tm-material-attachments h3, .tm-material-attachments p, .tm-material-attachments ul { margin-top: 0; margin-bottom: 0; }
+.tm-material-attachments ul { padding-left: 20px; }
+.tm-attachment-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tm-attachment-upload input { min-width: 0; max-width: 100%; }
+.tm-disclosure-heading { cursor: pointer; margin: 0; font-size: 14px; font-weight: 600; }
+.tm-disclosure-heading::marker { color: var(--tm-muted); }
+.tm-disclosure-heading > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
+.tm-disclosure-content { display: grid; gap: 13px; padding-top: 14px; min-width: 0; }
+.tm-list-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.tm-history-card:not([open]) .tm-history-head { margin-bottom: 0; }
+
+.tm-disclosure-heading::after { content: '▸'; color: var(--tm-muted); }
+details[open] > .tm-disclosure-heading::after { content: '▾'; }

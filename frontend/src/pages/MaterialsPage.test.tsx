@@ -8,13 +8,13 @@ vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: '
 vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'account-1' } }) }));
 afterEach(async () => { await act(async()=>{cancelPageDialog();}); cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
-function renderMaterial() {
+function renderMaterial(props: Parameters<typeof MaterialsPage>[0] = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(['materials', 'project-1'], [{ materialId: 'material-1', title: '正式材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }]);
   client.setQueryData(['material', 'project-1', 'material-1'], { materialId: 'material-1', title: '正式材料', revision: 1, currentVersion: { revision: 1, createdAt: '2026-09-30T00:00:00Z', doc: { type: 'doc', content: [{ type: 'paragraph' }] } } });
   client.setQueryData(['materialVersions', 'project-1', 'material-1'], []);
   client.setQueryData(['comments', 'project-1', 'material', 'material-1'], []);
-  render(<QueryClientProvider client={client}><MaterialsPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MaterialsPage {...props} /></QueryClientProvider>);
   return client;
 }
 
@@ -69,4 +69,35 @@ it('a link decision does not modify a different document received while the prom
  act(()=>{client.setQueryData(['material','project-1','material-1'],{materialId:'material-1',title:'正式材料',revision:2,currentVersion:{revision:2,createdAt:'2026-10-01T00:00:00Z',doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'已更新正文'}]}]}}});});
  await waitFor(()=>expect(screen.getByLabelText('材料正文编辑器')).toHaveTextContent('已更新正文'));
  fireEvent.change(within(dialog).getByRole('textbox'),{target:{value:'https://example.test'}});await act(async()=>{fireEvent.click(within(dialog).getByRole('button',{name:'确定'}));});expect(await screen.findByText('材料内容已变化，请重新选择文字后设置链接。')).toBeInTheDocument();expect(screen.getByLabelText('材料正文编辑器').querySelector('a')).toBeNull();
+});
+
+it('version history is collapsed by default, paginates five at a time, and resets for a different material', async () => {
+  const client = renderMaterial();
+  act(() => client.setQueryData(['materialVersions', 'project-1', 'material-1'], Array.from({ length: 11 }, (_, index) => ({ versionId: `v${index}`, revision: 11 - index, origin: 'manual', createdAt: '2026-10-02T00:00:00Z' }))));
+  const summary = screen.getByText('版本历史');
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(summary);
+  await waitFor(() => expect(screen.getAllByText(/^版本 r/)).toHaveLength(5));
+  const pager = screen.getByRole('navigation', { name: '版本历史分页' });
+  expect(within(pager).getByRole('button', { name: '上一页' })).toBeDisabled();
+  fireEvent.click(within(pager).getByRole('button', { name: '下一页' }));
+  expect(within(pager).getByText('2 / 3')).toBeVisible();
+  fireEvent.click(within(pager).getByRole('button', { name: '下一页' }));
+  expect(screen.getAllByText(/^版本 r/)).toHaveLength(1);
+  expect(within(pager).getByRole('button', { name: '下一页' })).toBeDisabled();
+  act(() => {
+    client.setQueryData(['materials', 'project-1'], [{ materialId: 'material-1', title: '正式材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }, { materialId: 'material-2', title: '另一材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }]);
+    client.setQueryData(['materialVersions', 'project-1', 'material-2'], []);
+  });
+  fireEvent.click(await screen.findByRole('button', { name: /另一材料/ }));
+  await waitFor(() => expect(screen.getByText('版本历史').closest('details')).not.toHaveAttribute('open'));
+});
+it('a requested historical version opens history on the page containing that version', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ requestId: 'test', data: { revision: 1, createdAt: '2026-10-02T00:00:00Z', doc: { type: 'doc', content: [{ type: 'paragraph' }] } } }), { headers: { 'Content-Type': 'application/json' } })));
+  const client = renderMaterial({ materialId: 'material-1', versionId: 'v6' });
+  act(() => client.setQueryData(['materialVersions', 'project-1', 'material-1'], Array.from({ length: 11 }, (_, index) => ({ versionId: `v${index}`, revision: 11 - index, origin: 'manual', createdAt: '2026-10-02T00:00:00Z' }))));
+  expect(screen.getByText('版本历史').closest('details')).toHaveAttribute('open');
+  const pager = await screen.findByRole('navigation', { name: '版本历史分页' });
+  expect(within(pager).getByText('2 / 3')).toBeVisible();
+  expect(screen.getByText('版本 r5')).toBeVisible();
 });

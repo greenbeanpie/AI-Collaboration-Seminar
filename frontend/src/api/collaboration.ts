@@ -5,6 +5,7 @@ import { projectRequest } from './simplification';
 
 export type CollaborationSettingsData = DataOf<'CollaborationSettingsResponse'> & { planningMode?: 'manual' | 'automatic'; progressionMode?: 'manual' | 'automatic' };
 export type CollaborationMode = CollaborationSettingsData['assignmentMode'];
+export type TaskSummary = DataOf<'CollaborationTaskSummaryResponse'>;
 export type CollaborationTask = DataOf<'CollaborationTaskResponse'> & Pick<DataOf<'TaskResponse'>, 'dependsOnTaskIds' | 'unfinishedDependencyIds' | 'status'>;
 export type LifecycleState = CollaborationTask['lifecycleState'];
 export type TaskSubmission = DataOf<'CollaborationSubmissionResponse'>;
@@ -24,6 +25,7 @@ export const collaborationApi = {
   settings: (id: string) => get<'CollaborationSettingsResponse'>(id, '/settings') as Promise<CollaborationSettingsData>,
   saveSettings: async (id: string, body: Partial<Omit<CollaborationSettingsData, 'revision'>> & { expectedRevision: number }) => api.patch<'CollaborationSettingsResponse'>(path(id, '/settings'), body) as Promise<CollaborationSettingsData>,
   tasks: async (id: string) => ({ items: await listAllItems<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { limit: 100 }, { requireNextCursor: true }) as CollaborationTask[] }),
+  summary: (id: string, taskId: string, retry = false) => projectRequest<TaskSummary>(id, `/collaboration/tasks/${encodeURIComponent(taskId)}/summary`, { method: 'POST', body: retry ? { retry: true } : {} }),
   createTask: (id: string, body: { title: string; detail: string; criteria: string; effortHours: number; dependsOnTaskIds: string[]; expectedGraphRevision: number; dueDate?: string | null; assigneeId?: string | null }) => taskPost<CollaborationTask>(id, '/tasks', body),
   updateTask: (id: string, task: CollaborationTask, fields: { title: string; detail: string; criteria: string; effortHours: number }) => projectRequest<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}`, { method: 'PATCH', body: { expectedRevision: task.revision, ...fields } }),
   claim: (id: string, task: CollaborationTask) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/claim`, { expectedRevision: task.revision }),
