@@ -13,6 +13,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { useCapabilities, useSession } from './auth';
 import { AppShell } from './components/AppShell';
 import { ProjectShell } from './components/ProjectShell';
+import { ProjectRouteRedirect } from './components/ProjectRouteRedirect';
 import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState } from './pwa-install';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -30,14 +31,9 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) =
 const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectPage })));
 const AcceptInvitationPage = lazy(() => import('./pages/AcceptInvitationPage').then((module) => ({ default: module.AcceptInvitationPage })));
 const ProjectOverviewPage = lazy(() => import('./pages/ProjectOverviewPage').then((module) => ({ default: module.ProjectOverviewPage })));
-const SourcesPage = lazy(() => import('./pages/SourcesPage').then((module) => ({ default: module.SourcesPage })));
 const DataWorkspacePage = lazy(() => import('./pages/DataWorkspacePage').then((module) => ({ default: module.DataWorkspacePage })));
-const RequirementsPage = lazy(() => import('./pages/RequirementsPage').then((module) => ({ default: module.RequirementsPage })));
 const TasksPage = lazy(() => import('./pages/TasksPage').then((module) => ({ default: module.TasksPage })));
-const WorkWorkspacePage = lazy(() => import('./pages/WorkWorkspacePage').then((module) => ({ default: module.WorkWorkspacePage })));
-const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((module) => ({ default: module.MaterialsPage })));
-const ReviewsPage = lazy(() => import('./pages/ReviewsPage').then((module) => ({ default: module.ReviewsPage })));
-const RehearsalsPage = lazy(() => import('./pages/RehearsalsPage').then((module) => ({ default: module.RehearsalsPage })));
+const AssessmentWorkspacePage = lazy(() => import('./pages/AssessmentWorkspacePage').then((module) => ({ default: module.AssessmentWorkspacePage })));
 const TeamWorkspacePage = lazy(() => import('./pages/TeamWorkspacePage').then((module) => ({ default: module.TeamWorkspacePage })));
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ default: module.LedgerPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));
@@ -136,16 +132,22 @@ export default function App() {
         <Route path="/app/join" element={<AcceptInvitationPage />} />
         <Route path="/app/projects/:projectId" element={<ProjectShell />}>
           <Route index element={<ProjectOverviewPage />} />
-          <Route path="sources" element={<SourcesPage />} />
-          <Route path="data" element={<DataWorkspacePage />} />
-          <Route path="requirements" element={<RequirementsPage />} />
+          <Route path="sources" element={<ProjectRouteRedirect destination="data" defaults={{ mode: 'import', resourceType: 'source' }} />} />
+          <Route path="sources/:sourceId" element={<ProjectRouteRedirect destination="data" />} />
+          <Route path="data" element={<SettingsEditGuard message="资料有未保存的编辑。确定保留本机草稿并离开吗？"><DataWorkspacePage /></SettingsEditGuard>} />
+          <Route path="requirements" element={<ProjectRouteRedirect destination="assessment" defaults={{ section: 'standards' }} />} />
           <Route path="team" element={<TeamWorkspacePage />} />
           <Route path="tasks" element={<TasksPage />} />
-          <Route path="work" element={<WorkWorkspacePage />} />
-          <Route path="ai" element={<MaterialsPage initialAiOpen />} />
-          <Route path="materials" element={<MaterialsPage />} />
-          <Route path="reviews" element={<ReviewsPage />} />
-          <Route path="rehearsals" element={<RehearsalsPage />} />
+          <Route path="tasks/:taskId" element={<ProjectRouteRedirect destination="tasks" />} />
+          <Route path="work" element={<ProjectRouteRedirect destination="tasks" />} />
+          <Route path="ai" element={<ProjectRouteRedirect destination="data" defaults={{ resourceType: 'material', ai: '1' }} />} />
+          <Route path="materials" element={<ProjectRouteRedirect destination="data" defaults={{ resourceType: 'material' }} />} />
+          <Route path="materials/:materialId" element={<ProjectRouteRedirect destination="data" />} />
+          <Route path="assessment" element={<SettingsEditGuard message="项目标准有未保存的编辑。确定放弃这些编辑并离开吗？"><AssessmentWorkspacePage /></SettingsEditGuard>} />
+          <Route path="reviews" element={<ProjectRouteRedirect destination="assessment" defaults={{ section: 'checks' }} />} />
+          <Route path="reviews/:reviewId" element={<ProjectRouteRedirect destination="assessment" defaults={{ section: 'checks' }} />} />
+          <Route path="rehearsals" element={<ProjectRouteRedirect destination="assessment" defaults={{ section: 'rehearsals' }} />} />
+          <Route path="rehearsals/:rehearsalId" element={<ProjectRouteRedirect destination="assessment" defaults={{ section: 'rehearsals' }} />} />
           <Route path="ledger" element={<LedgerPage />} />
           <Route path="settings" element={<ProjectSettingsPage />} />
           <Route path="export" element={<ExportPage />} />

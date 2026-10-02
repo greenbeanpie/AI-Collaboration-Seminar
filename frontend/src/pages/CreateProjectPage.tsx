@@ -9,7 +9,7 @@ import { Field, ErrorNotice, PageHeading, Spinner } from '../components/ui';
 import { DateInput } from '../components/DateInput';
 import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
-import { emptyWizardPayload, wizardSteps, canConfirmDraft, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask } from './project-wizard';
+import { emptyWizardPayload, wizardSteps, canConfirmDraft, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
 import './ProjectWizard.css';
 type LocalFile = {
   id: string;
@@ -51,6 +51,7 @@ function CreationWizard({ userId }: {
   };
   const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
+  const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
   const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
   const list = useQuery({
     queryKey: ['creation-drafts', userId], queryFn: () => api.get<'CreationDraftListResponse'>('/api/v1/creation-drafts'), retry: false
@@ -79,6 +80,7 @@ function CreationWizard({ userId }: {
     }
     setDraft(next);
     setPayload(next.payload);
+    setManualGoal(current => current.title.trim() ? current : next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
     setConfirmed(false);
     remember(next.id);
   };
@@ -88,13 +90,14 @@ function CreationWizard({ userId }: {
     }
     setLoaded(true);
     if (saved?.id) {
-      void api.get<'CreationDraftResponse'>(draftPath(saved.id)).then(next => {
+      void api.get<'CreationDraftResponse'>(draftPath(saved.id)).then((next: WizardDraft) => {
         if (!mounted.current) {
           return;
         }
         setDraft(next);
         setPayload(next.payload);
         setManual(next.preview?.tasks ?? []);
+        setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
         setLocals(items => items.filter(f => !next.files.some(done => done.id === f.id)));
       }).catch(setError);
     }
@@ -219,18 +222,20 @@ function CreationWizard({ userId }: {
   };
   const preview = (mode: 'ai' | 'manual', regenerate = false) => run(async () => {
     const current = await ensure();
-    const next = await api.post<'CreationDraftResponse'>(draftPath(current.id, '/preview'), {
-      expectedRevision: current.revision, mode, tasks: mode === 'manual' ? manual : [], regenerate
+    const next: WizardDraft = await api.post<'CreationDraftResponse'>(draftPath(current.id, '/preview'), {
+      expectedRevision: current.revision, mode, tasks: mode === 'manual' ? manual : [], ...(mode === 'manual' ? { goal: manualGoal.title.trim() ? manualGoal : { title: payload.name, detail: payload.brief || payload.description } } : {}), regenerate
     });
     accept(next);
     setManual(next.preview?.tasks ?? []);
+    setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
   });
   const openDraft = (id: string) => run(async () => {
-    const next = await api.get<'CreationDraftResponse'>(draftPath(id));
+    const next: WizardDraft = await api.get<'CreationDraftResponse'>(draftPath(id));
     accept(next);
     setLocals([]);
     remember(id, []);
     setManual(next.preview?.tasks ?? []);
+    setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
     setStep(0);
     setResult(null);
   });
@@ -259,7 +264,7 @@ function CreationWizard({ userId }: {
       expectedRevision: draft.revision, confirmed: true
     })))}>恢复创建结果与邀请</button></section> : <>
  <h2>{wizardSteps[step]}</h2>
- {step === 0 && <><Field label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field label="项目说明"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field label="截止日期" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
+ {step === 0 && <><Field label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field label="主目标（可选）" hint="可直接给出团队大目标；留空时，AI 会根据说明与资料概括，并在预览中等待复核。"><input className="input" maxLength={200} value={payload.goal?.title ?? ''} disabled={busy} onChange={e => { const title = e.target.value; setField('goal', title.trim() ? { title, detail: payload.goal?.detail ?? '' } : undefined); setManualGoal({ title, detail: payload.goal?.detail ?? '' }); }}/></Field><Field label="项目说明"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field label="截止日期" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
           const date = e.target.value;
           setPayload(p => {
             const next = {
@@ -290,9 +295,9 @@ function CreationWizard({ userId }: {
       remember(draft?.id, remaining);
     }}>移除待上传</button></div>)}</>}
  {step === 2 && <><Field label="组员总人数（含负责人）"><input type="number" className="input" min={1} max={100} value={payload.teamSize} disabled={busy} onChange={e => setField('teamSize', Number(e.target.value))}/></Field><Field label="邀请对象的完整登录用户名（每行一个，可留空）" hint="只按完整用户名精确匹配，不按昵称查找。正式创建后对方在首页接受或拒绝；邀请不提前占名额。"><textarea className="input textarea" rows={4} disabled={busy} value={payload.inviteUsernames.join('\n')} onChange={e => setField('inviteUsernames', e.target.value.split('\n'))} onBlur={() => setField('inviteUsernames', payload.inviteUsernames.map(n => n.trim()).filter(Boolean))}/></Field><p>正式创建成功后才发送邀请；组员接受后加入普通成员并获得项目权限。</p></>}
- {step === 3 && <><Field label="拆分要求" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
-        title: '', detail: '', criteria: '', effortHours: 1, citations: []
-      }])}>添加手动任务</button></div><p>手动预览不调用模型；可确认暂不创建任务。重新生成 AI 预览可能再次产生用量。</p>{manual.map((task, index) => <fieldset key={index} className="wizard-task"><legend>任务 {index + 1}</legend><Field label="标题"><input className="input" value={task.title} maxLength={200} disabled={busy} onChange={e => {
+ {step === 3 && <><Field label="主目标预览" hint="大目标独立保存，不计入下面的子任务数量或工时。编辑后需保存当前预览。"><input className="input" maxLength={200} value={manualGoal.title} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, title: e.target.value }); setConfirmed(false); }}/></Field><Field label="目标说明预览"><textarea className="input" rows={3} maxLength={4000} value={manualGoal.detail} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, detail: e.target.value }); setConfirmed(false); }}/></Field><Field label="拆分要求" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
+        key: crypto.randomUUID(), dependsOn: [], title: '', detail: '', criteria: '', effortHours: 1, citations: []
+      }])}>添加手动任务</button></div><p>手动预览不调用模型；可确认暂不创建任务。重新生成 AI 预览可能再次产生用量。</p>{manual.map((task, index) => <fieldset key={task.key ?? index} className="wizard-task"><legend>子任务 {index + 1}</legend><Field label="标题"><input className="input" value={task.title} maxLength={200} disabled={busy} onChange={e => {
       setManual(items => items.map((t, i) => i === index ? {
         ...t, title: e.target.value
       } : t));
@@ -303,8 +308,8 @@ function CreationWizard({ userId }: {
       ...t, criteria: e.target.value
     } : t))}/></Field><Field label="预计工时"><input className="input" type="number" min={.25} max={200} step={.25} disabled={busy} value={task.effortHours} onChange={e => setManual(items => items.map((t, i) => i === index ? {
       ...t, effortHours: Number(e.target.value)
-    } : t))}/></Field>{task.citations.map((cite, i) => <p key={i}>依据：{draft?.files.find(f => f.id === cite.fileId)?.name ?? '项目文件'} 第{cite.pageNumber}页 · “{cite.quote}”</p>)}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => setManual(items => items.filter((_, i) => i !== index))}>移除任务</button></fieldset>)}<button type="button" className="button button-quiet" disabled={busy || manual.some(t => !t.title.trim() || !t.criteria.trim())} onClick={() => void preview('manual', true)}>{manual.length ? '保存当前任务预览' : '确认暂不创建任务'}</button>{draft?.previewError && <p className="notice notice-warn">{draft.previewError}</p>}{draft?.preview && !previewCurrent && <p className="notice notice-warn">配置已变化，请重新保存预览。</p>}{previewCurrent && <p role="status">预览已保存：{draft.preview?.tasks.length} 个任务。进入下一步不会再次调用模型。</p>}</>}
- {step === 4 && <><dl className="wizard-summary"><dt>项目</dt><dd>{payload.name}</dd><dt>说明</dt><dd>{payload.description || '未填写'}</dd><dt>截止日期</dt><dd>{payload.deadlineDate ?? '未明确'}</dd><dt>文件</dt><dd>{draft?.files.map(f => f.name).join('、') || '无'}</dd><dt>人数与邀请</dt><dd>{payload.teamSize} 人（含负责人），{payload.inviteLabels.length + payload.inviteUsernames.length} 个邀请</dd><dt>AI 协作</dt><dd>{payload.aiCollaborationEnabled ? '开启' : '关闭'}</dd></dl>{draft?.preview?.tasks.map((task, index) => <article key={index} className="wizard-task"><strong>{task.title}</strong><p>{task.detail}</p><p>验收：{task.criteria} · {task.effortHours} 小时</p></article>)}<label className="field"><span><input type="checkbox" disabled={busy || !previewCurrent} checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/> 我已复核项目、文件、人数、邀请与任务配置</span></label><button type="button" className="button button-primary" disabled={busy || !confirmed || !previewCurrent || locals.length > 0} onClick={() => void run(async () => {
+    } : t))}/></Field><fieldset><legend>前置子任务</legend>{manual.filter((predecessor, predecessorIndex) => predecessorIndex !== index && predecessor.key).map(predecessor => <label className="collab-version" key={predecessor.key}><input type="checkbox" disabled={busy} checked={task.dependsOn?.includes(predecessor.key!) ?? false} onChange={e => { const checked = e.target.checked; setManual(items => items.map((item, current) => current === index ? { ...item, dependsOn: checked ? [...(item.dependsOn ?? []), predecessor.key!] : (item.dependsOn ?? []).filter(key => key !== predecessor.key) } : item)); setConfirmed(false); }}/>{predecessor.title || '未命名子任务'}</label>)}<p className="form-note">依赖只作顺序提示；创建后仍可提前执行和提交。</p></fieldset>{task.citations.map((cite, i) => <p key={i}>依据：{draft?.files.find(f => f.id === cite.fileId)?.name ?? '项目文件'} 第{cite.pageNumber}页 · “{cite.quote}”</p>)}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => setManual(items => items.filter((_, i) => i !== index).map(item => ({ ...item, dependsOn: (item.dependsOn ?? []).filter(key => key !== task.key) })))}>移除任务</button></fieldset>)}<button type="button" className="button button-quiet" disabled={busy || manual.some(t => !t.title.trim() || !t.criteria.trim())} onClick={() => void preview('manual', true)}>{manual.length ? '保存当前任务预览' : '确认暂不创建任务'}</button>{draft?.previewError && <p className="notice notice-warn">{draft.previewError}</p>}{draft?.preview && !previewCurrent && <p className="notice notice-warn">配置已变化，请重新保存预览。</p>}{previewCurrent && <p role="status">预览已保存：{draft.preview?.tasks.length} 个任务。进入下一步不会再次调用模型。</p>}</>}
+ {step === 4 && <><dl className="wizard-summary"><dt>项目</dt><dd>{payload.name}</dd><dt>主目标</dt><dd>{manualGoal.title || payload.goal?.title || payload.name}</dd><dt>目标说明</dt><dd>{manualGoal.detail || '未填写'}</dd><dt>说明</dt><dd>{payload.description || '未填写'}</dd><dt>截止日期</dt><dd>{payload.deadlineDate ?? '未明确'}</dd><dt>文件</dt><dd>{draft?.files.map(f => f.name).join('、') || '无'}</dd><dt>人数与邀请</dt><dd>{payload.teamSize} 人（含负责人），{payload.inviteLabels.length + payload.inviteUsernames.length} 个邀请</dd><dt>AI 协作</dt><dd>{payload.aiCollaborationEnabled ? '开启' : '关闭'}</dd></dl>{draft?.preview?.tasks.map((task, index) => <article key={index} className="wizard-task"><strong>{task.title}</strong><p>{task.detail}</p><p>验收：{task.criteria} · {task.effortHours} 小时</p></article>)}<label className="field"><span><input type="checkbox" disabled={busy || !previewCurrent} checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/> 我已复核项目、文件、人数、邀请与任务配置</span></label><button type="button" className="button button-primary" disabled={busy || !confirmed || !previewCurrent || locals.length > 0} onClick={() => void run(async () => {
           if (!draft) {
             return;
           }
@@ -320,7 +325,7 @@ function CreationWizard({ userId }: {
  <div className="form-actions">{step > 0 && <button type="button" className="button button-quiet" disabled={busy} onClick={() => {
       setStep(s => s - 1);
       setConfirmed(false);
-    }}>上一步</button>}{step < 3 && <button type="submit" className="button button-primary" disabled={busy || !payload.name.trim()}>下一步</button>}{step === 3 && <button type="button" className="button button-primary" disabled={busy || !previewCurrent || !sameTasks(manual, draft?.preview?.tasks ?? [])} onClick={() => {
+    }}>上一步</button>}{step < 3 && <button type="submit" className="button button-primary" disabled={busy || !payload.name.trim()}>下一步</button>}{step === 3 && <button type="button" className="button button-primary" disabled={busy || !previewCurrent || !sameTasks(manual, draft?.preview?.tasks ?? []) || Boolean(draft?.preview?.goal && JSON.stringify(manualGoal) !== JSON.stringify(draft.preview.goal))} onClick={() => {
       setStep(4);
       setConfirmed(false);
     }}>进入创建预览</button>}<button type="button" className="button button-quiet" disabled={busy} onClick={() => void run(async () => {

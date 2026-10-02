@@ -8,11 +8,12 @@ import { useSession } from '../auth';
 import { ErrorNotice, PageHeading, Spinner } from '../components/ui';
 import { ProfileMarkdown } from '../components/ProfileMarkdown';
 import { useSettingsDirty } from './settings-dirty';
+import { accountRequest, type PersonalProfile, type ProfileImportCandidate, type ImportField } from '../api/simplification';
 import './PersonalProfiles.css';
 
-type Profile = DataOf<'PersonalProfileResponse'>;
+type Profile = PersonalProfile;
 type PublicProfile = NonNullable<DataOf<'PublicProfileResponse'>['profile']>;
-const names = { bio: '自我介绍', major: '专业', specialties: '特长', preferredRoles: '倾向项目职位' } as const;
+const names = { bio: '自我介绍', major: '专业', specialties: '技能与特长', preferredRoles: '倾向项目职位' } as const;
 const limits = { bio: 4000, major: 160, specialties: 800, preferredRoles: 400 };
 function ProfileView({ profile }: { profile: PublicProfile }) {
   return <article className="section-card profile-card"><h2>{profile.displayName}</h2><p>@{profile.username}</p>
@@ -29,8 +30,13 @@ export function PersonalProfilePage() {
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [candidates, setCandidates] = useState<ProfileImportCandidate[] | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<unknown>(null);
+  const [importSelections, setImportSelections] = useState<Record<string, ImportField[]>>({});
+  const [imports, setImports] = useState<Array<{ candidateId: string; fields: ImportField[] }>>([]);
   const lock = useRef(false);
-  const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
+  const dirty = JSON.stringify(saved) !== JSON.stringify(draft) || imports.length > 0;
   useSettingsDirty(dirty);
 
   useEffect(() => {
@@ -49,9 +55,10 @@ export function PersonalProfilePage() {
     try {
       const { revision, ...values } = draft;
       const profile = await request<'PersonalProfileResponse'>('/auth/personal-profile', {
-        method: 'PUT', body: { ...values, expectedRevision: revision }, headers: { 'X-Account-Settings': '1' },
+        method: 'PUT', body: { ...values, expectedRevision: revision, ...(imports.length ? { legacyImports: imports } : {}) }, headers: { 'X-Account-Settings': '1' },
       });
       setSaved(profile); setDraft(profile); setEditing(false); setNotice('资料与隐私设置已保存');
+      setImports([]); setCandidates(null); setImportSelections({});
     } catch (error) { setError(error); }
     finally { lock.current = false; setBusy(false); }
   }
@@ -64,6 +71,7 @@ export function PersonalProfilePage() {
       setBusy(true); setError(null);
       const profile = await api.get<'PersonalProfileResponse'>('/auth/personal-profile');
       setSaved(profile); setDraft(profile); setEditing(false); setNotice('');
+      setImports([]); setCandidates(null); setImportSelections({});
     } catch (error) { setError(error); }
     finally { lock.current = false; setBusy(false); setLoading(false); }
   }
@@ -71,7 +79,38 @@ export function PersonalProfilePage() {
   async function cancelEditing() {
     if (lock.current) return;
     if (dirty && !await dialogs.confirm('有尚未保存的资料编辑。确定放弃这些编辑吗？')) return;
-    setDraft(saved); setEditing(false); setError(null); setNotice('');
+    setDraft(saved); setEditing(false); setError(null); setNotice(''); setImports([]); setImportSelections({});
+  }
+
+  async function loadImports() {
+    setImportBusy(true); setImportError(null);
+    try {
+      const items: ProfileImportCandidate[] = []; const seen = new Set<string>(); let cursor: string | null = null;
+      do {
+        const page: { items: ProfileImportCandidate[]; nextCursor: string | null } = await accountRequest('/auth/personal-profile/import-candidates', { query: { cursor, limit: 100 } });
+        items.push(...page.items); cursor = page.nextCursor;
+        if (cursor && seen.has(cursor)) throw new Error('导入候选分页异常，请重新读取。');
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      setCandidates(items);
+    } catch (reason) { setImportError(reason); }
+    finally { setImportBusy(false); }
+  }
+  async function importCandidate(candidate: ProfileImportCandidate) {
+    const fields = importSelections[candidate.candidateId] ?? [];
+    if (!draft || !fields.length) return;
+    if (!await dialogs.confirm(`将“${candidate.sourceProjectName}”中所选字段复制到当前草稿？当前字段会被替换，其他草稿编辑保留；保存后才会生效。`)) return;
+    const privacyFields = fields.filter((field): field is 'major' | 'specialties' => field === 'major' || field === 'specialties');
+    setDraft(current => current ? {
+      ...current,
+      ...(fields.includes('major') ? { major: candidate.major } : {}),
+      ...(fields.includes('specialties') ? { specialties: candidate.skills.join('、') } : {}),
+      ...(fields.includes('weeklyAvailableHours') ? { weeklyAvailableHours: candidate.weeklyAvailableHours } : {}),
+      visibility: { ...current.visibility, ...Object.fromEntries(privacyFields.map(field => [field, false])) },
+      ...(privacyFields.length ? { aiUseAllowed: false } : {}),
+    } : current);
+    setImports(current => [...current.filter(item => item.candidateId !== candidate.candidateId), { candidateId: candidate.candidateId, fields }]);
+    setNotice('已复制到草稿。导入的专业和技能暂不公开，AI 授权已关闭；保存后可重新确认。');
   }
 
   function viewProfile(profile: Profile, publicOnly = false): PublicProfile {
@@ -96,6 +135,7 @@ export function PersonalProfilePage() {
         <p><strong>AI 任务推荐</strong><span>{saved.aiUseAllowed ? '已授权项目配置的 AI 提供商使用资料进行任务推荐' : '未授权，个人资料不会用于模型请求'}</span></p>
       </section>
       <section aria-label="我的个人主页"><ProfileView profile={viewProfile(saved)}/></section>
+      <section className="section-card"><h3>每周总可用时间</h3><p>{saved.weeklyAvailableHours == null ? '尚未填写' : `${saved.weeklyAvailableHours} 小时`}</p><p className="muted">仅本人可见，不公开，也不发送给 AI。</p></section>
       <p className="muted">以上是仅供你查看的完整资料。其他已登录用户只能看到你勾选公开的字段，且需允许搜索。</p>
     </>}
     {draft && editing && <div className="profile-edit-layout">
@@ -108,11 +148,13 @@ export function PersonalProfilePage() {
               return <section key={key} className="profile-field">
                 <label className="field" htmlFor={`profile-${key}`}><span className="field-label">{label}{key === 'bio' ? '（Markdown）' : ''}</span></label>
                 <textarea className="input textarea" id={`profile-${key}`} rows={key === 'bio' ? 12 : 2} maxLength={limits[key]} value={draft[key]} onChange={event => setDraft({ ...draft, [key]: event.target.value })}/>
-                <label className="profile-toggle"><input type="checkbox" checked={draft.visibility[key]} onChange={event => setDraft({ ...draft, visibility: { ...draft.visibility, [key]: event.target.checked } })}/>公开{label}</label>
+                <label className="profile-toggle"><input type="checkbox" disabled={imports.some(item => item.fields.includes(key as ImportField))} checked={draft.visibility[key]} onChange={event => setDraft({ ...draft, visibility: { ...draft.visibility, [key]: event.target.checked } })}/>公开{label}</label>
               </section>;
             })}
             <p className="muted">Markdown 支持标题、列表、粗体、行内代码和 HTTPS 链接；不执行 HTML，不加载图片。</p>
+            <section className="profile-field"><label className="field" htmlFor="profile-weekly-hours"><span className="field-label">每周总可用时间（小时）</span></label><input className="input" id="profile-weekly-hours" type="number" min="0" max="168" step="0.5" value={draft.weeklyAvailableHours ?? ''} onChange={event => setDraft({ ...draft, weeklyAvailableHours: event.target.value === '' ? null : Number(event.target.value) })} /><p className="muted">可留空。仅本人可见，不公开，也不发送给 AI。</p></section>
           </section>
+          <section className="section-card profile-imports"><h2>旧项目资料导入</h2><p>候选仅本人可见。逐字段选择复制，保留其他草稿内容；全局资料不会自动被覆盖。</p><button className="button button-quiet" type="button" disabled={importBusy} onClick={() => void loadImports()}>{importBusy ? '读取中…' : '读取导入候选'}</button>{importError !== null && <ErrorNotice error={importError} />}{candidates?.length === 0 && <p>没有待导入的旧项目资料。</p>}{candidates?.filter(candidate => !candidate.importedAt).map(candidate => <article key={candidate.candidateId} className="wizard-task"><h3>{candidate.sourceProjectName}</h3>{(['major', 'specialties', 'weeklyAvailableHours'] as const).map(field => { const value = field === 'major' ? candidate.major : field === 'specialties' ? candidate.skills.join('、') : candidate.weeklyAvailableHours == null ? '未填写' : `${candidate.weeklyAvailableHours} 小时`; return <label className="profile-toggle" key={field}><input type="checkbox" checked={(importSelections[candidate.candidateId] ?? []).includes(field)} onChange={event => setImportSelections(current => ({ ...current, [candidate.candidateId]: event.target.checked ? [...(current[candidate.candidateId] ?? []), field] : (current[candidate.candidateId] ?? []).filter(value => value !== field) }))} />{field === 'weeklyAvailableHours' ? '每周总可用时间' : names[field]}：{value || '未填写'}</label>; })}<button className="button button-quiet" type="button" disabled={!importSelections[candidate.candidateId]?.length} onClick={() => void importCandidate(candidate)}>复制所选字段到草稿</button></article>)}</section>
           <section className="section-card profile-privacy-controls">
             <h2>搜索与隐私</h2>
             <p>用户名：@{session.data?.username ?? '此旧账号尚无用户名，暂不可搜索'}</p>
@@ -122,9 +164,9 @@ export function PersonalProfilePage() {
           </section>
           <section className="section-card profile-ai-consent" aria-labelledby="profile-ai-consent-title">
             <h2 id="profile-ai-consent-title">AI 任务偏好推荐</h2>
-            <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。</p>
+            <p id="profile-ai-consent-description">仅在你勾选并保存后，你在本页填写的自我介绍、专业、技能与特长和倾向职位（包括隐藏字段）才会发送给你所在项目配置的 AI 提供商，用于该项目的任务偏好推荐。项目内有权限的其他成员也可发起推荐；此授权适用于你加入的项目。隐藏字段不会直接展示给组员，推荐理由不会引用资料，不用于成绩、人格或雇佣评价。每周总可用时间始终不会发送给 AI。</p>
             <p>默认关闭。取消勾选并保存可撤回授权。每次发送前会重新读取并校验授权；已开始发送的请求无法收回，授权变化后会丢弃其推荐结果。项目成员资料中的旧专业、技能和每周时间不会自动送给模型。</p>
-            <label className="profile-toggle"><input type="checkbox" aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={event => setDraft({ ...draft, aiUseAllowed: event.target.checked })}/>我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
+            <label className="profile-toggle"><input type="checkbox" disabled={imports.some(item => item.fields.some(field => field === 'major' || field === 'specialties'))} aria-describedby="profile-ai-consent-description" checked={draft.aiUseAllowed} onChange={event => setDraft({ ...draft, aiUseAllowed: event.target.checked })}/>我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐</label>
           </section>
           <div className="profile-editor-actions">
             <button className="button button-primary" type="submit" disabled={!dirty}>{busy ? '保存中…' : '保存资料与隐私'}</button>

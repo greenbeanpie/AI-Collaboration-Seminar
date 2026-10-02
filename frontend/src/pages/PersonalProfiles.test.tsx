@@ -86,3 +86,32 @@ it('the independent profile route preserves edits when Back is canceled and supp
  await act(() => router.navigate(1)); await screen.findByRole('button', { name: '编辑资料' });
  expect(screen.queryByRole('textbox')).toBeNull(); expect(screen.queryByText('Keep my draft')).toBeNull();
 });
+
+it('imports selected legacy fields into a preserved draft and requires renewed disclosure and AI consent', async () => {
+ const savedProfile = { ...profile, revision: 5, bio: 'Existing bio', major: 'Existing major', specialties: 'Existing skill', weeklyAvailableHours: 4, aiUseAllowed: true, visibility: { ...profile.visibility, major: true, specialties: true } };
+ const writes: Record<string, unknown>[] = [];
+ vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
+  if (String(url).includes('/import-candidates')) return response({ items: [{ candidateId: 'candidate', sourceProjectId: 'old-project', sourceProjectName: '历史项目', major: '旧专业', skills: ['旧技能'], weeklyAvailableHours: 7, importedAt: null, createdAt: '2026-10-01' }], nextCursor: null });
+  if (init?.method === 'PUT') { const body = JSON.parse(String(init.body)) as Record<string, unknown>; writes.push(body); return response({ ...savedProfile, ...body, revision: 6 }); }
+  return response(savedProfile);
+ }));
+ setup(); fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }));
+ fireEvent.change(screen.getByLabelText('自我介绍（Markdown）'), { target: { value: 'Keep drafted bio' } });
+ fireEvent.click(screen.getByRole('button', { name: '读取导入候选' }));
+ fireEvent.click(await screen.findByLabelText('专业：旧专业'));
+ fireEvent.click(screen.getByLabelText('技能与特长：旧技能'));
+ fireEvent.click(screen.getByLabelText('每周总可用时间：7 小时'));
+ fireEvent.click(screen.getByRole('button', { name: '复制所选字段到草稿' })); await answer('确定');
+ expect(screen.getByLabelText('专业')).toHaveValue('旧专业');
+ expect(screen.getByLabelText('技能与特长')).toHaveValue('旧技能');
+ expect(screen.getByLabelText('每周总可用时间（小时）')).toHaveValue(7);
+ expect(screen.getByLabelText('自我介绍（Markdown）')).toHaveValue('Keep drafted bio');
+ expect(screen.getByLabelText('公开专业')).not.toBeChecked(); expect(screen.getByLabelText('公开专业')).toBeDisabled();
+ const consent = screen.getByLabelText('我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐'); expect(consent).not.toBeChecked(); expect(consent).toBeDisabled();
+ fireEvent.click(screen.getByRole('button', { name: '保存资料与隐私' }));
+ await screen.findByText('资料与隐私设置已保存');
+ expect(writes[0]).toMatchObject({ expectedRevision: 5, bio: 'Keep drafted bio', major: '旧专业', specialties: '旧技能', weeklyAvailableHours: 7, aiUseAllowed: false, visibility: { major: false, specialties: false }, legacyImports: [{ candidateId: 'candidate', fields: ['major', 'specialties', 'weeklyAvailableHours'] }] });
+ fireEvent.click(screen.getByRole('button', { name: '编辑资料' }));
+ expect(screen.getByLabelText('我同意将上述个人资料交给项目配置的 AI 提供商用于任务推荐')).not.toBeDisabled();
+ expect(within(screen.getByRole('region', { name: '公开展示预览' })).queryByText('7 小时')).toBeNull();
+});
