@@ -8,14 +8,14 @@ vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: '
 vi.mock('./TeamPage', () => ({ TeamPage: () => <h2>真实团队成员列表</h2> }));
 vi.mock('./TasksPage', () => ({ TasksPage: () => <h2>统一主目标与依赖子任务</h2> }));
 afterEach(() => { cleanup(); state.role = 'owner'; });
-it('keeps team membership, permitted settings and exports together', () => {
-  const view = render(<MemoryRouter><TeamWorkspacePage /></MemoryRouter>);
-  expect(screen.getByRole('heading', { name: '团队设置' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: '导出' })).toBeInTheDocument();
+it.each(['owner', 'member'])('keeps team membership without redundant shortcut cards for %s', (role) => {
+  state.role = role;
+  render(<MemoryRouter><TeamWorkspacePage /></MemoryRouter>);
   expect(screen.getByRole('heading', { name: '真实团队成员列表' })).toBeInTheDocument();
-  state.role = 'member'; view.rerender(<MemoryRouter><TeamWorkspacePage /></MemoryRouter>);
+  expect(screen.queryByRole('heading', { name: '团队设置' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: '导出' })).toBeNull();
   expect(screen.queryByRole('link', { name: '打开团队设置' })).toBeNull();
-  expect(screen.getByRole('link', { name: '打开项目导出' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: '打开项目导出' })).toBeNull();
 });
 it('the old work entry reuses the unified tasks workspace without another requirements summary', () => {
   render(<MemoryRouter><WorkWorkspacePage /></MemoryRouter>);
