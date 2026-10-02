@@ -46,11 +46,23 @@ export function ProjectNavigation({ projectId }: { projectId: string }) {
   </nav>;
 }
 
-export function ProjectSectionLayout({ projectId, canManage, children }: { projectId: string; canManage: boolean; children: ReactNode }) {
+export function ProjectSectionNavigation({ projectId, canManage }: { projectId: string; canManage: boolean }) {
+  const navigate = useNavigate();
   const { current, destination, sectionMatches } = useProjectNavigation(projectId);
+  const sections = current.sections.filter(section => !section.ownerOnly || canManage);
+  const selected = sections.find(sectionMatches)?.path ?? sections[0]!.path;
+  return <nav className="project-content-navigation project-section-navigation" aria-label={`${current.label}分区`}>
+    <div className="project-content-links project-section-links">{sections.map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-tab project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</div>
+    <select className="input project-content-select" aria-label={`切换${current.label}分区`} value={selected} onChange={event => navigate(destination(event.target.value))}>
+      {sections.map(section => <option key={section.path} value={section.path}>{section.label}</option>)}
+    </select>
+  </nav>;
+}
+
+export function ProjectSectionLayout({ projectId, children }: { projectId: string; children: ReactNode }) {
+  const { current } = useProjectNavigation(projectId);
   return <div className="project-section-layout">
     <div className="project-section-heading"><h2>{current.label}</h2><p>{current.detail}</p></div>
-    <nav className="project-section-links" aria-label={`${current.label}分区`}>{current.sections.filter(section => !section.ownerOnly || canManage).map(section => <Link key={section.path} to={destination(section.path)} aria-current={sectionMatches(section) ? 'page' : undefined} className={`project-section-link ${sectionMatches(section) ? 'active' : ''}`}>{section.label}</Link>)}</nav>
     {children}
   </div>;
 }

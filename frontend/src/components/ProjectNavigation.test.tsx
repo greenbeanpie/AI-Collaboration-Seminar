@@ -31,7 +31,9 @@ it('keeps exactly five main destinations in the content area, outside global acc
   const navigation = screen.getByRole('navigation', { name: '项目功能' });
   expect(screen.getAllByRole('navigation', { name: '项目功能' })).toHaveLength(1);
   expect(navigation.previousElementSibling).toHaveClass('project-banner');
-  expect(navigation.nextElementSibling).toHaveClass('content-wrap');
+  const sections = screen.getByRole('navigation', { name: '团队分区' });
+  expect(navigation.nextElementSibling).toBe(sections);
+  expect(sections.nextElementSibling).toHaveClass('content-wrap');
   expect(navigation.closest('header')).toBeNull();
   expect(within(screen.getByRole('banner', { name: '工作区顶栏' })).queryByRole('navigation', { name: '项目功能' })).not.toBeInTheDocument();
   expect(within(navigation).getAllByRole('link').map(link => link.textContent)).toEqual(['概览', '要求与任务', '资料', '团队', '检查与演练']);
@@ -55,8 +57,11 @@ it('mobile switching and browser Back retain group state without changing existi
     expect(select).toHaveValue(group);
     const navigation = screen.getAllByRole('navigation').find(nav => nav.getAttribute('aria-label')?.endsWith('分区'))!;
     expect(within(navigation).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
+    expect(within(navigation).getByRole('combobox')).toHaveDisplayValue(section);
     expect(router.state.location.search + router.state.location.hash).toBe('?saved=1#evidence');
   }
+  fireEvent.change(screen.getByRole('combobox', { name: '切换概览分区' }), { target: { value: '' } });
+  expect(router.state.location.pathname).toBe('/app/projects/fixture');
 });
 it('keeps draft cancellation effective for both main navigation and section links', async () => {
   const router = setup('/app/projects/fixture/materials');
@@ -72,6 +77,12 @@ it('keeps draft cancellation effective for both main navigation and section link
   fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(router.state.location.pathname).toBe('/app/projects/fixture/materials');
+  expect(screen.getByLabelText('Fixture draft')).toHaveValue('Keep this draft');
+  fireEvent.change(screen.getByRole('combobox', { name: '切换资料分区' }), { target: { value: 'sources' } });
+  dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByRole('combobox', { name: '切换资料分区' })).toHaveValue('materials');
   expect(screen.getByLabelText('Fixture draft')).toHaveValue('Keep this draft');
 });
 it('hides owner-only team setting entry while retaining permitted member/export destinations', () => {
