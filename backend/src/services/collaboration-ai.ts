@@ -176,7 +176,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
                     { role: 'user', content: JSON.stringify({ request: input.brief, scope: input.tasks, sourceContext: input.sourceSnapshots,materials:input.materialSnapshots,adminFeedback:feedback }) },
                 ], schema: input.progression ? z.object({tasks:adjustmentSchema.shape.tasks,updates:adjustmentSchema.shape.updates}).strict() : input.sourceSnapshots?.length ? groundedAdjustmentSchema : adjustmentSchema });
                 const {data}=answer;references=('references' in answer?answer.references:[]) as unknown[];
-                if(input.progression&&!data.tasks.length&&!data.updates.length){await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{noChange:true,references,causeEventId:input.causeEventId});return;}
+                if(input.progression&&!data.tasks.length&&!data.updates.length){await assertSnapshot(env,input,true);await settleReservation(env,jobId,'settled');let followupJobId:string|null=null;const followupSettings=await env.DB.prepare('SELECT assignment_mode FROM projects WHERE id=?1').bind(input.projectId).first<{assignment_mode:string}>();if(followupSettings?.assignment_mode==='automatic')followupJobId=await enqueueDecompositionAssignment(env,jobId,input,config,true);await succeedJob(env,jobId,{noChange:true,references,causeEventId:input.causeEventId,followupJobId});return;}
                 if (new Set(data.updates.map(t => t.taskId)).size !== data.updates.length || data.updates.some(t => !input.tasks!.some(snapshot => snapshot.taskId === t.taskId))) throw new AppError('AI_OUTPUT_INVALID', '调整超出指定任务范围或包含重复任务', 502, false);
                 payload = { ...data, updates: data.updates.map(t => ({ ...t, expectedRevision: input.tasks!.find(snapshot => snapshot.taskId === t.taskId)!.revision })), brief: input.brief };
             } else {
@@ -249,7 +249,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
     let followupError: string | null = null;
     if (kind === 'decompose' && autoApplied && settings?.assignment_mode==='automatic') {
         try {
-            followupJobId = await enqueueDecompositionAssignment(env, proposalId, input, config);
+            followupJobId = await enqueueDecompositionAssignment(env, proposalId, input, config,!!input.progression);
         }
         catch (error) {
             followupError = error instanceof Error ? error.message : String(error);
@@ -260,9 +260,10 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
     else await succeedJob(env, jobId, result);
 }
 /** Exactly one separately-budgeted assignment continuation. Child tasks never decompose again. */
-async function enqueueDecompositionAssignment(env: Env, proposalId: string, input: CollaborationAiInput, config: LoadedAiConfig): Promise<string | null> {
+async function enqueueDecompositionAssignment(env: Env, proposalId: string, input: CollaborationAiInput, config: LoadedAiConfig, allOpenTasks=false): Promise<string | null> {
+    const followupId=allOpenTasks?proposalId.slice(0,-1)+(parseInt(proposalId.slice(-1),16)^1).toString(16):proposalId;
     // The proposal UUID is also a deterministic follow-up job UUID in a different table.
-    const existing = await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(proposalId).first<{
+    const existing = await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(followupId).first<{
         input_json: string;
     }>();
     if (existing) {
@@ -272,13 +273,13 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
         };
         if (prior.operation !== 'collaboration.assign' || prior.parentProposalId !== proposalId)
             throw invalidState('后续任务标识冲突');
-        return proposalId;
+        return followupId;
     }
     await currentConfig(env, input);
     const allowed = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.assignment_mode='automatic' AND p.collaboration_revision=?2 AND m.user_id=?3 AND m.role='owner'`).bind(input.projectId, input.settingsRevision, input.requestedBy).first();
     if (!allowed)
         throw invalidState('自动分工设置已变化；已创建的子任务保留，可手动认领');
-    const tasks = await env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (plan_proposal_id=?2 OR parent_task_id=?2) AND lifecycle_state='open' AND assignee_id IS NULL ORDER BY created_at,id`).bind(input.projectId, proposalId).all<{
+    const tasks = await env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (?3=1 OR plan_proposal_id=?2 OR parent_task_id=?2) AND lifecycle_state='open' AND assignee_id IS NULL ORDER BY created_at,id`).bind(input.projectId, proposalId,allOpenTasks?1:0).all<{
         id: string;
         title: string;
         detail: string;
@@ -292,9 +293,9 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
         user_id: string;
         load_hours: number;
     }>();
-    await reserveAiSlot(env, { projectId: input.projectId, jobId: proposalId, purpose: 'assignment_suggest', configVersionId: config.id,maxCalls:24 });
+    await reserveAiSlot(env, { projectId: input.projectId, jobId: followupId, purpose: 'assignment_suggest', configVersionId: config.id,maxCalls:24 });
     try {
-        await createJobAndDispatch(env, { projectId: input.projectId, kind: 'agent_run', jobId: proposalId, createdBy: input.requestedBy, input: {
+        await createJobAndDispatch(env, { projectId: input.projectId, kind: 'agent_run', jobId: followupId, createdBy: input.requestedBy, input: {
                 sourceSnapshots: input.sourceSnapshots, sourceVersionIds: input.sourceVersionIds, profileStamp: await profileStamp(env, input.projectId), operation: 'collaboration.assign', parentProposalId: proposalId, projectId: input.projectId, requestedBy: input.requestedBy, settingsRevision: input.settingsRevision, configVersionId: config.id,
                 tasks: tasks.results.map(t => ({ taskId: t.id, title: t.title, detail: t.detail, criteria: t.criteria, effortHours: t.effort_hours, revision: t.revision })),
                 members: members.results.map(m => ({ userId: m.user_id, loadHours: m.load_hours })),
@@ -302,11 +303,11 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
     }
     catch (error) {
         // Preserve any persisted job/outbox for the existing recovery path; release only absent work.
-        if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(proposalId).first())
-            await settleReservation(env, proposalId, 'released');
+        if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(followupId).first())
+            await settleReservation(env, followupId, 'released');
         throw error;
     }
-    return proposalId;
+    return followupId;
 }
 /** Explicit goal/graph confirmation precedes optional bounded automatic assignment. */
 export async function continueConfirmedPlan(env:Env,projectId:string,proposalId:string,actorId:string):Promise<{followupJobId:string|null;followupError:string|null}>{
