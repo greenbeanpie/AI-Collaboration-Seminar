@@ -5,7 +5,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { notFound } from '../core/errors';
+import { notFound,invalidState } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { withReservedAiJob } from '../services/budget';
@@ -24,12 +24,15 @@ const reportSchema = z.object({
   scores: z.array(
     z.object({
       key: z.string(),
-      score: z.number(),
+      score: z.number().nullable(),
       comment: z.string(),
       suggestions: z.array(z.string()),
     }),
   ),
-  overall: z.object({ score: z.number(), summary: z.string() }),
+  overall: z.object({ score: z.number().nullable(), summary: z.string() }),
+  status:z.enum(['scored','unscorable']).optional(),
+  limitations:z.array(z.string()).optional(),
+  references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),
   rubricVersion: z.number().int().optional(),
   materialVersionIds: z.array(z.string().uuid()).optional(),
 });
@@ -55,6 +58,7 @@ const reviewCreateRoute = createRoute({
   responses: {
     202: { content: { 'application/json': { schema: apiEnvelope(z.object({ reviewId: z.string().uuid(), jobId: z.string().uuid() }), 'ReviewCreateResponse') } }, description: '已排队' },
     404: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '输入不属于本项目' },
+    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '评分标准尚未确认' },
   },
 });
 
@@ -113,10 +117,11 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
       rawBody: JSON.stringify(body),
       required: true,
     }, async () => {
-      const rubric = await c.env.DB.prepare('SELECT id FROM rubric_versions WHERE id = ?1 AND project_id = ?2')
+      const rubric = await c.env.DB.prepare('SELECT id,status FROM rubric_versions WHERE id = ?1 AND project_id = ?2')
         .bind(body.rubricVersionId, member.projectId)
-        .first();
+        .first<{id:string;status:string}>();
       if (!rubric) throw notFound('评分标准不存在或不属于本项目');
+      if(rubric.status!=='confirmed')throw invalidState('评分标准尚未确认，请先确认标准');
       const set = await c.env.DB.prepare('SELECT id FROM requirement_sets WHERE id = ?1 AND project_id = ?2')
         .bind(body.requirementSetId, member.projectId)
         .first();

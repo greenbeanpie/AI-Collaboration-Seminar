@@ -10,6 +10,18 @@ import { markdownToDoc } from '../src/services/tiptap';
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+function compatibleGatewayMock(){
+  const fallback=mockGatewayFetch();
+  return vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const body=JSON.parse(String(init?.body)) as {messages?:Array<{role:string;content:string}>};
+    const system=String(body.messages?.[0]?.content??'');
+    if(!system.includes('预审评估助手'))return fallback(input,init);
+    const supplied=JSON.parse(body.messages?.[1]?.content??'{}') as {materials:Array<{materialVersionId:string;markdown:string}>};
+    const evidence=supplied.materials.map(m=>({materialVersionId:m.materialVersionId,quote:m.markdown}));
+    const keys=[...system.matchAll(/- (\w+)（/g)].map(match=>match[1]);
+    return Response.json({choices:[{message:{content:JSON.stringify({scores:keys.map(key=>({key,score:80,confidence:.9,evidence,comment:'有固定正文证据',suggestions:[]})),overall:{score:1,summary:'非官方辅助结果'}})}}],usage:{prompt_tokens:30,completion_tokens:20}});
+  });
+}
 
 await configureGoFixture();
 
@@ -68,6 +80,8 @@ async function setup(): Promise<Setup> {
     }),
   });
   const rubricVersionId = ((await rubric.json()) as { data: { rubricId: string } }).data.rubricId;
+  const confirmed=await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rubrics/${rubricVersionId}/confirm`,{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({})});
+  expect(confirmed.status).toBe(200);
 
   // 通过解析产生要求集（mock AI）
   const src = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/sources`, {
@@ -92,7 +106,7 @@ async function setup(): Promise<Setup> {
 
 describe('预审', () => {
   it('发起 → 运行 → 报告覆盖全部评分维度', async () => {
-    vi.stubGlobal('fetch', mockGatewayFetch());
+    vi.stubGlobal('fetch', compatibleGatewayMock());
     const { owner, pid, materialVersionId, rubricVersionId, requirementSetId } = await setup();
     const cookie = authCookie(owner.token);
 
@@ -131,7 +145,7 @@ describe('预审', () => {
 
 describe('答辩演练', () => {
   it('第一问 → 逐题回答 → 追问 → 总结收尾', async () => {
-    vi.stubGlobal('fetch', mockGatewayFetch());
+    vi.stubGlobal('fetch', compatibleGatewayMock());
     const { owner, pid, materialVersionId } = await setup();
     const cookie = authCookie(owner.token);
 

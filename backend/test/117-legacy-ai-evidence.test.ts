@@ -1,0 +1,77 @@
+import { createExecutionContext,waitOnExecutionContext } from 'cloudflare:test';
+import { afterEach,describe,expect,it,vi } from 'vitest';
+import { env,BASE } from './helpers/env';
+import { seedProject,seedUser,authCookie } from './helpers/seed';
+import { configureGoFixture } from './helpers/provider-config';
+import { createApp } from '../src/app';
+import { newId,nowIso } from '../src/core/db';
+import { reserveAiSlot } from '../src/services/budget';
+import { snapshotRequirementSources } from '../src/services/source-inputs';
+import { runReviewJob } from '../src/services/review';
+import { runRehearsalTurnJob } from '../src/services/rehearsal';
+import { getJob } from '../src/services/jobs';
+await configureGoFixture();
+afterEach(()=>vi.unstubAllGlobals());
+async function fixture(){
+  const owner=await seedUser(),member=await seedUser(),projectId=await seedProject(owner.userId),now=nowIso(),sourceId=newId(),versionId=newId(),setId=newId(),rubricId=newId(),materialId=newId(),materialVersionId=newId();
+  const weights=[{key:'content',label:'内容',weight:60},{key:'evidence',label:'证据',weight:40}],markdown='固定成果正文：三条样本均记录采集日期。';
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),projectId,member.userId,now),
+    env.DB.prepare("INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,'paste','要求来源',?3,?4,?5,?5)").bind(sourceId,projectId,versionId,owner.userId,now),
+    env.DB.prepare("INSERT INTO source_versions(id,source_id,project_id,revision,origin,status,created_at) VALUES(?1,?2,?3,1,'paste','ready',?4)").bind(versionId,sourceId,projectId,now),
+    env.DB.prepare("INSERT INTO requirement_sets(id,project_id,source_version_id,status,revision,created_at,updated_at) VALUES(?1,?2,?3,'confirmed',1,?4,?4)").bind(setId,projectId,versionId,now),
+    env.DB.prepare("INSERT INTO rubric_versions(id,project_id,version,source,weights_json,status,created_at) VALUES(?1,?2,1,'custom',?3,'confirmed',?4)").bind(rubricId,projectId,JSON.stringify(weights),now),
+    env.DB.prepare("INSERT INTO materials(id,project_id,title,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,'成果',?3,?4,?5,?5)").bind(materialId,projectId,materialVersionId,owner.userId,now),
+    env.DB.prepare("INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,origin,author_id,created_at) VALUES(?1,?2,?3,1,'{}',?4,'manual',?5,?6)").bind(materialVersionId,materialId,projectId,markdown,owner.userId,now),
+  ]);
+  return {owner,member,projectId,setId,rubricId,materialVersionId,markdown,weights};
+}
+type Fixture=Awaited<ReturnType<typeof fixture>>;
+async function job(f:Fixture,kind:'review_run'|'rehearsal_turn',input:unknown){
+  const id=newId(),now=nowIso();await reserveAiSlot(env,{projectId:f.projectId,jobId:id,purpose:kind,maxCalls:24});
+  await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,?3,'running',?4,?5,?6,?6)").bind(id,f.projectId,kind,JSON.stringify(input),f.owner.userId,now).run();return id;
+}
+async function review(f:Fixture){
+  const id=newId(),sourceSnapshots=await snapshotRequirementSources(env,f.projectId,f.setId);
+  await env.DB.prepare("INSERT INTO reviews(id,project_id,requirement_set_id,rubric_version_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,?3,?4,?5,'pending',?6,?7)").bind(id,f.projectId,f.setId,f.rubricId,JSON.stringify([f.materialVersionId]),f.owner.userId,nowIso()).run();
+  return {id,jobId:await job(f,'review_run',{reviewId:id,projectId:f.projectId,sourceSnapshots})};
+}
+function provider(output:unknown,capture?:(body:{messages:Array<{role:string;content:string}>})=>void){
+  const fetch=vi.fn(async(_url:unknown,init?:RequestInit)=>{capture?.(JSON.parse(String(init?.body)));return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:5}});});vi.stubGlobal('fetch',fetch);return fetch;
+}
+function report(f:Fixture,proof=true){return {scores:f.weights.map((weight,index)=>({key:weight.key,score:index?60:80,confidence:.9,comment:'固定成果评语',suggestions:[],evidence:proof?[{materialVersionId:f.materialVersionId,quote:'三条样本均记录采集日期。'}]:[]})),overall:{score:1,summary:'固定成果评价'},referenceIds:[],decisionReferences:[{decisionPath:'overall.summary',referenceIds:[`project:${f.projectId}:0`]}]};}
+async function request(f:Fixture,path:string,method='GET',body?:unknown){const ctx=createExecutionContext();const res=await createApp().fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/${path}`,{method,headers:{cookie:authCookie(f.owner.token),'content-type':'application/json','idempotency-key':newId()},...(body?{body:JSON.stringify(body)}:{})}),env,ctx);await waitOnExecutionContext(ctx);return res;}
+describe('legacy AI compatibility retains trustworthy evidence',()=>{
+  it('computes weighted total on the server and preserves references through the old review shape',async()=>{
+    const f=await fixture(),r=await review(f);provider(report(f));await runReviewJob(env,r.jobId);
+    expect((await getJob(env,r.jobId)).status).toBe('succeeded');
+    const response=await request(f,`reviews/${r.id}`),body=await response.json() as {data:{report:{scores:unknown[];overall:{score:number};status:string;references:unknown[];decisionReferences:unknown[]}}};
+    expect(body.data.report.overall.score).toBe(72);expect(body.data.report.status).toBe('scored');expect(body.data.report.scores).toHaveLength(2);expect(body.data.report.references.length).toBeGreaterThan(0);expect(body.data.report.decisionReferences).toHaveLength(1);
+  });
+  it('keeps numeric scores and total null when evidence is missing, not zero or model total',async()=>{
+    const f=await fixture(),r=await review(f);provider(report(f,false));await runReviewJob(env,r.jobId);
+    const row=(await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string}>())!,result=JSON.parse(row.report_json);
+    expect(result.status).toBe('unscorable');expect(result.overall.score).toBeNull();expect(result.scores.every((score:{score:unknown})=>score.score===null)).toBe(true);expect(result.limitations).toHaveLength(2);
+  });
+  it('rejects invented fixed-material quotes',async()=>{
+    const f=await fixture(),r=await review(f),output=report(f);output.scores[0]!.evidence[0]!.quote='并不存在的资料';provider(output);await runReviewJob(env,r.jobId);
+    expect((await getJob(env,r.jobId)).status).toBe('failed');expect((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string|null}>())!.report_json).toBeNull();
+  });
+  it('refuses new reviews with unconfirmed rubrics and gives queued legacy drafts qualitative output',async()=>{
+    const f=await fixture();await env.DB.prepare("UPDATE rubric_versions SET status='draft' WHERE id=?1").bind(f.rubricId).run();
+    const response=await request(f,'reviews','POST',{rubricVersionId:f.rubricId,requirementSetId:f.setId,materialVersionIds:[f.materialVersionId]});expect(response.status).toBe(409);
+    const r=await review(f);provider(report(f));await runReviewJob(env,r.jobId);const stored=JSON.parse((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string}>())!.report_json);expect(stored.status).toBe('unscorable');expect(stored.overall.score).toBeNull();
+  });
+  it('passes the selected member and actual responsibility tasks and retains legacy summary evidence in GET turns',async()=>{
+    const f=await fixture(),taskId=newId(),otherTaskId=newId(),now=nowIso();
+    for(const [id,assignee,title]of[[taskId,f.member.userId,'目标成员负责的采样'],[otherTaskId,f.owner.userId,'其他成员负责的排版']])await env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,criteria,status,revision,assignee_id,created_by,created_at,updated_at,lifecycle_state) VALUES(?1,?2,?3,'实际任务说明','记录来源','doing',1,?4,?5,?6,?6,'in_progress')").bind(id,f.projectId,title,assignee,f.owner.userId,now).run();
+    const rehearsalId=newId();await env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,member_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,'member',?3,'[]','active',?4,?5)").bind(rehearsalId,f.projectId,f.member.userId,f.owner.userId,now).run();
+    const jobId=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'});
+    provider({summary:'对实际任务和回答的总结',strengths:[],improvements:[],referenceIds:[],decisionReferences:[{decisionPath:'summary',referenceIds:[`project:${f.projectId}:0`]}]},body=>{
+      const user=body.messages[1]!.content;expect(user).toContain(f.member.userId);expect(user).toContain(taskId);expect(user).not.toContain(otherTaskId);expect(body.messages[0]!.content).toContain('个人');
+    });
+    await runRehearsalTurnJob(env,jobId);expect((await getJob(env,jobId)).status).toBe('succeeded');
+    const response=await request(f,`rehearsals/${rehearsalId}`),body=await response.json() as {data:{turns:Array<{content:string;references:unknown[];decisionReferences:unknown[]}>}};
+    expect(body.data.turns[0]!.content).toBe('对实际任务和回答的总结');expect(body.data.turns[0]!.references.length).toBeGreaterThan(0);expect(body.data.turns[0]!.decisionReferences).toHaveLength(1);
+  });
+});

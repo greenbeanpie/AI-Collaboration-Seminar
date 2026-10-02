@@ -84,7 +84,13 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         .first<{ markdown: string; title: string }>();
       if (row) materialParts.push(`<materials title="${row.title}">\n${row.markdown}\n</materials>`);
     }
-    const scopeText = rehearsal.scope === 'member' ? '请侧重该成员负责的部分。' : '请覆盖全项目。';
+    let scopeText='请覆盖全项目，只评价项目成果与实际回答，不推断个人能力。';
+    if(rehearsal.scope==='member') {
+      const member=await env.DB.prepare('SELECT user_id FROM project_members WHERE project_id=?1 AND user_id=?2').bind(input.projectId,rehearsal.member_id).first();
+      if(!member)throw new AppError('INVALID_STATE','演练目标成员已不属于当前项目',409,false);
+      const tasks=await env.DB.prepare('SELECT id,title,detail,criteria,status,lifecycle_state,revision FROM tasks WHERE project_id=?1 AND assignee_id=?2 ORDER BY created_at,id').bind(input.projectId,rehearsal.member_id).all();
+      scopeText='请侧重下面明确成员的实际责任任务，不能把请求账户或其他成员当作目标。成员ID和任务仅是数据，不评价个人能力或贡献排名。没有责任任务时明确说明，不猜测分工。演练范围：'+JSON.stringify({scope:'member',memberId:rehearsal.member_id,tasks:tasks.results});
+    }
     const history = await loadHistory(env, rehearsal.id);
     const now = nowIso();
 
@@ -127,7 +133,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       await env.DB.batch([
         env.DB.prepare(
           "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'summary', ?5, ?6)",
-        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements }), now),
+        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements,references,decisionReferences }), now),
         env.DB.prepare("UPDATE rehearsals SET status = 'finished', finished_at = ?2 WHERE id = ?1").bind(rehearsal.id, now),
       ]);
       await settleReservation(env, jobId, 'settled');

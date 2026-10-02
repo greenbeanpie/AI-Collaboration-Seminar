@@ -23,6 +23,8 @@ const turnSchema = z.object({
   kind: z.enum(['question', 'answer', 'followup', 'summary']),
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  references:z.array(z.unknown()).optional(),
+  decisionReferences:z.array(z.unknown()).optional(),
   createdAt: z.string(),
 });
 
@@ -114,14 +116,18 @@ function toRehearsal(r: RehearsalRow, turns: TurnRow[]) {
     status: r.status as 'active' | 'finished',
     createdAt: r.created_at,
     finishedAt: r.finished_at,
-    turns: turns.map((t) => ({
+    turns: turns.map((t) => {
+      const payload=JSON.parse(t.content_json) as {content?:string;references?:unknown[];decisionReferences?:unknown[];scoring?:{references?:unknown[];decisionReferences?:unknown[]}};
+      const references=payload.references??payload.scoring?.references,decisionReferences=payload.decisionReferences??payload.scoring?.decisionReferences;
+      return ({
       sequence: t.sequence,
       // 表中无 role 列：answer 为答辩人发言，其余为评委侧
       role: (t.kind === 'answer' ? 'user' : 'assistant') as 'user' | 'assistant',
       kind: t.kind as 'question' | 'answer' | 'followup' | 'summary',
-      content: (JSON.parse(t.content_json) as { content?: string }).content ?? '',
+      content: payload.content ?? '',
+      ...(references?{references}:{}),...(decisionReferences?{decisionReferences}:{}),
       createdAt: t.created_at,
-    })),
+    });}),
   };
 }
 
