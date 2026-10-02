@@ -110,3 +110,14 @@
 - frontend/vite.config.ts
 - scripts/verify-collaboration.mjs
 - scripts/verify-integration.mjs
+
+## 已执行生产发布
+
+- main 已快进合并并推送，应用代码版本 e619433（后续记录提交仅更新验收脚本及本文）。
+- 后端 Worker 版本：eb89001e-e69a-42bc-8e41-9e1a363aab57。
+- 前端 Worker 版本：45f24ad7-615d-4bf1-8663-35dd4154a53d。
+- 已执行生产迁移 0034–0038；0033 未执行，旧台账表保留。
+- 迁移前后 8 类记录数完全相同：users=5、projects=6、files=2、tasks=12、rehearsals=1、contributions=0、decisions=0、resource_references=0；基线回填未发送 task_ready 通知。
+- https://team.greenbp.dpdns.org 与 workers.dev 的 health 均为 200；生产 D1/R2 依赖检查均为 ok。
+- 线上入口 index-DhgHQZXi.js 的 SHA-256 与已验证本地构建一致；线上登录页面浏览器无 page error。
+- 既有普通验收账户实际生产登录返回 201。保存的生产管理员密码返回 401，未重置真实账号；生产双账号权限/任务验收未完成。新增 scripts/verify-collaboration-production.mjs 用于提供有效的已有生产凭据后复核，并通过 --cleanup 归档临时验收项目、撤销测试会话。
