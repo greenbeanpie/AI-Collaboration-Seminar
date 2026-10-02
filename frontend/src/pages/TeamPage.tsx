@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Plus, UserMinus } from 'lucide-react';
 import { api, listAllItems, projectPath } from '../api/client';
@@ -41,7 +40,6 @@ export function TeamPage() {
       {remove.error && <ErrorNotice error={remove.error} />}
       {!owner && <div className="form-actions"><ConfirmButton disabled={leave.isPending} onClick={() => leave.mutate()}>退出项目</ConfirmButton>{leave.error && <ErrorNotice error={leave.error} />}</div>}
     </SectionCard>
-    <div className="callout"><p>专业、技能与特长、偏好及每周可用时间统一在全局个人资料中维护。</p><Link className="button button-quiet" to="/app/profile">打开我的个人资料</Link><Link className="button button-quiet" to={`/app/projects/${encodeURIComponent(projectId)}/tasks`}>打开任务工作区</Link></div>
     {capabilities.data?.competitionTemplate.teamSizeLimit && <p className="form-note">当前赛道建议人数上限 {capabilities.data.competitionTemplate.teamSizeLimit} 人。</p>}
     {owner && <SectionCard title="邀请新成员" detail="邀请码只在创建时显示一次，请复制后发送给受邀者。">
       {createdCode ? <div className="invite-code-box"><div><strong>一次性显示的邀请码</strong><code>{createdCode}</code><small>离开此页后不能再次读取原码。</small></div><button className="button button-primary" onClick={() => void copyCode()}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? '已复制' : '复制邀请码'}</button><button className="button button-quiet" onClick={() => { setCreatedCode(null); setCopied(false); }}>创建另一个邀请</button></div> : <form className="invite-form" onSubmit={event => { event.preventDefault(); invite.mutate(); }}>
