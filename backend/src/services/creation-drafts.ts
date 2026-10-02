@@ -195,6 +195,14 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     throw invalidState('预览请求仍在运行或结果待核对；刷新草稿，主动重新生成可能再次计费');
   }
   const payload = creationPayload.parse(JSON.parse(row.payload_json));
+  if (mode === 'manual' && row.preview_json && row.preview_state === 'ready' && row.preview_revision === revision && !regenerate) {
+    const previous = JSON.parse(row.preview_json);
+    const goal = requestedGoal ?? payload.goal ?? { title: payload.name, detail: payload.brief || payload.description };
+    const normalizedTasks = tasks.map((task, index) => ({ ...creationTask.parse(task), key: task.key ?? `t${index + 1}` }));
+    if (previous.mode === 'manual' && JSON.stringify(previous.goal) === JSON.stringify(goal) && JSON.stringify(previous.tasks) === JSON.stringify(normalizedTasks)) {
+      return draftView(env, row);
+    }
+  }
   await assertTeamSize(env, payload);
   const config = mode === 'ai' ? await requireEnabledAiConfig(env.DB) : null;
   if (mode === 'ai' && !payload.aiCollaborationEnabled) {
