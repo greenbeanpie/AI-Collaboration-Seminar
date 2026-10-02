@@ -10,6 +10,15 @@ export async function projectFeedback(env:Env,projectId:string):Promise<unknown[
  const rows=await env.DB.prepare('SELECT target_type,target_id,feedback,created_at FROM project_admin_feedback WHERE project_id=?1 ORDER BY created_at,id').bind(projectId).all();
  return rows.results;
 }
+/** Feedback rows are immutable; this stamp detects insertion/removal without loading all text. */
+export async function projectFeedbackStamp(env:Env,projectId:string):Promise<string>{
+ const row=await env.DB.prepare('SELECT COUNT(*) count,MAX(created_at) latest_at,MAX(id) latest_id FROM project_admin_feedback WHERE project_id=?1').bind(projectId).first();
+ return JSON.stringify(row);
+}
+export async function projectFeedbackPreview(env:Env,projectId:string):Promise<unknown[]>{
+ const rows=await env.DB.prepare('SELECT id,target_type,target_id,substr(feedback,1,1000) feedback,length(feedback) total_chars,created_at FROM project_admin_feedback WHERE project_id=?1 ORDER BY created_at DESC,id DESC LIMIT 5').bind(projectId).all();
+ return rows.results;
+}
 interface Cursor {observed_event_at:string;observed_event_id:string;pending_job_id:string|null;pending_event_at:string|null;pending_event_id:string|null;updated_at:string}
 /** Durable debounced user-event cursor. AI writes never recursively initiate progression. */
 export async function dispatchProjectProgression(env:Env):Promise<void>{
