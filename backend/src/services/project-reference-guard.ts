@@ -1,5 +1,22 @@
 import { sourceLifecycleGuard } from './source-lifecycle';
 
+/** Shared canonical read documents. Fixed identifiers only; callers supply trusted SQL expressions. */
+export function projectPlanDocumentSql(record='record'):string {
+ return `json_object('id',${record}.id,'kind',${record}.kind,'status',${record}.status,'revision',${record}.revision,
+ 'effectiveProposal',json(${record}.payload_json),'createdAt',${record}.created_at,'updatedAt',${record}.updated_at,
+ 'revisionHistory',json((SELECT json_group_array(json_object('id',history.id,'revision',history.revision,'status',history.status,
+ 'proposal',json(history.payload_json),'reason',history.reason,'actorId',history.actor_id,'createdAt',history.created_at))
+ FROM (SELECT * FROM collaboration_proposal_revisions WHERE proposal_id=${record}.id AND project_id=${record}.project_id ORDER BY revision,id) history)))`;
+}
+export function assessmentDocumentSql(record='record'):string {
+ return `json_object('id',${record}.id,'kind',${record}.kind,'status',${record}.status,'revision',${record}.revision,'origin',${record}.origin,
+ 'goalRevision',${record}.goal_revision,'standardsVersionId',${record}.standards_version_id,'fixedInputs',json(${record}.inputs_json),
+ 'effectiveReport',json(${record}.report_json),'originalAiReport',json(COALESCE(${record}.ai_report_json,CASE WHEN ${record}.origin='ai' THEN ${record}.report_json END)),'createdAt',${record}.created_at,
+ 'correctionHistory',json((SELECT json_group_array(json_object('id',history.id,'revision',history.revision,'reason',history.reason,
+ 'previousReport',json(history.previous_report_json),'effectiveReport',json(history.report_json),'actorId',history.actor_id,'createdAt',history.created_at))
+ FROM (SELECT * FROM assessment_corrections WHERE assessment_id=${record}.id AND project_id=${record}.project_id ORDER BY revision,id) history)))`;
+}
+
 /** Fixed table/column allowlist; reference payloads never supply SQL identifiers. */
 const snapshots:Record<string,{table:string;columns:string[];revision?:boolean}>={
  task:{table:'tasks',revision:true,columns:['id','title','detail','criteria','assignee_id','due_date','status','lifecycle_state','revision','effort_hours','current_submission_id']},
@@ -18,6 +35,8 @@ export function projectReferenceGuard(referencesSql:string,projectSql:string):st
  const source=`(${type}='source' AND EXISTS(SELECT 1 FROM source_fragments fragment JOIN source_versions version ON version.id=fragment.source_version_id JOIN sources source ON source.id=version.source_id WHERE fragment.id=${field('fragmentId')} AND fragment.project_id=${projectSql} AND version.id=${version} AND version.project_id=${projectSql} AND source.id=${id} AND source.project_id=${projectSql} AND source.lifecycle_version=${revision} AND (${field('pageNumber')} IS NULL OR fragment.page_number IS ${field('pageNumber')}) AND ${sourceLifecycleGuard('version.id',revision)} AND ${quoteIncludes('fragment.content')}))`;
  const material=`(${type}='material' AND EXISTS(SELECT 1 FROM material_versions version JOIN materials material ON material.id=version.material_id WHERE version.id=${version} AND version.project_id=${projectSql} AND material.id=${id} AND material.project_id=${projectSql} AND (${revision} IS NULL OR version.revision=${revision}) AND ${quoteIncludes('version.markdown')}))`;
  const submission=`(${type}='submission' AND EXISTS(SELECT 1 FROM task_submissions record WHERE record.id=${id} AND record.project_id=${projectSql} AND record.revision=${revision} AND ${quoteIncludes('record.body')}))`;
+ const proposal=`(${type}='proposal' AND EXISTS(SELECT 1 FROM collaboration_proposals record WHERE record.id=${id} AND record.project_id=${projectSql} AND record.revision=${revision} AND ${quoteIncludes(projectPlanDocumentSql())}))`;
+ const assessment=`(${type}='assessment' AND EXISTS(SELECT 1 FROM assessments record WHERE record.id=${id} AND record.project_id=${projectSql} AND record.revision=${revision} AND ${quoteIncludes(assessmentDocumentSql())}))`;
  const records=Object.entries(snapshots).map(([resource,spec])=>{
   const rowJson=`json_object(${spec.columns.map(column=>`'${column}',record.${column}`).join(',')})`;
   const fields=`NOT EXISTS(SELECT 1 FROM json_each(${quote}) captured WHERE captured.key IN (${spec.columns.map(column=>`'${column}'`).join(',')}) AND captured.value IS NOT json_extract(${rowJson},'$.'||captured.key))`;
@@ -25,5 +44,5 @@ export function projectReferenceGuard(referencesSql:string,projectSql:string):st
   return `(${type}='${resource}' AND EXISTS(SELECT 1 FROM ${spec.table} record WHERE record.id=${id} AND record.project_id=${projectSql} ${spec.revision?`AND (${revision} IS NULL OR record.revision=${revision})`:''} AND (${quote} IS NULL OR (json_valid(${quote}) AND ${fields} ${taskEdges}))))`;
  });
  const project=`(${type}='project' AND ${id}=${projectSql} AND EXISTS(SELECT 1 FROM projects record WHERE record.id=${projectSql} AND (${revision} IS NULL OR record.revision=${revision}) AND (${quote} IS NULL OR (json_valid(${quote}) AND (json_type(${quote},'$.project.revision') IS NULL OR record.revision=json_extract(${quote},'$.project.revision')) AND (json_type(${quote},'$.goal.revision') IS NULL OR EXISTS(SELECT 1 FROM project_goals goal WHERE goal.project_id=${projectSql} AND goal.revision=json_extract(${quote},'$.goal.revision') AND goal.graph_revision=json_extract(${quote},'$.goal.graph_revision')))))))`;
- return `(${referencesSql} IS NULL OR (json_type(${referencesSql})='array' AND NOT EXISTS(SELECT 1 FROM json_each(${referencesSql}) reference WHERE NOT (${`CASE ${type} ${[['source',source],['material',material],['submission',submission],['project',project],...Object.keys(snapshots).map((key,index)=>[key,records[index]!])].map(([key,expression])=>`WHEN '${key}' THEN ${expression}`).join(' ')} ELSE 0 END`}))))`;
+ return `(${referencesSql} IS NULL OR (json_type(${referencesSql})='array' AND NOT EXISTS(SELECT 1 FROM json_each(${referencesSql}) reference WHERE NOT (${`CASE ${type} ${[['source',source],['material',material],['submission',submission],['proposal',proposal],['assessment',assessment],['project',project],...Object.keys(snapshots).map((key,index)=>[key,records[index]!])].map(([key,expression])=>`WHEN '${key}' THEN ${expression}`).join(' ')} ELSE 0 END`}))))`;
 }

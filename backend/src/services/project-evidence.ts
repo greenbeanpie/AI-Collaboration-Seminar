@@ -1,6 +1,7 @@
 import type { Env } from '../env';
 import { invalidState } from '../core/errors';
 import { sourceLifecycleGuard } from './source-lifecycle';
+import { projectPlanDocumentSql,assessmentDocumentSql } from './project-reference-guard';
 
 export interface ProjectReference {
   id: string;
@@ -32,6 +33,7 @@ export function extractDecisionReferences(content:string,reads:ProjectReference[
   });
 }
 export function referencesFromRead(output: Record<string,unknown>): ProjectReference[] {
+  if(output.directoryOnly===true)return [];
   if(typeof output.resourceType==='string' && Array.isArray(output.items) && !['source','material'].includes(output.resourceType)) {
     return output.items.flatMap((item:Record<string,unknown>)=> typeof item.id==='string' ? [{id:`${output.resourceType}:${item.id}:${String(item.revision??0)}`,resourceType:String(output.resourceType),resourceId:item.id,
       ...(typeof item.revision==='number'?{revision:item.revision}:{}),title:typeof item.title==='string'?item.title:undefined,quote:JSON.stringify(item),usage:'read' as const}] : []);
@@ -55,6 +57,7 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
     if(!ref||typeof ref.resourceId!=='string'||typeof ref.resourceType!=='string'||(ref.quote!==undefined&&typeof ref.quote!=='string')||(ref.revision!==undefined&&(!Number.isInteger(ref.revision)||ref.revision<1)))throw invalidState('引用格式无效');
     if(ref.resourceType==='source'&&(typeof ref.versionId!=='string'||typeof ref.fragmentId!=='string'||typeof ref.revision!=='number'))throw invalidState('来源引用版本信息不完整');
     if(ref.resourceType==='material'&&typeof ref.versionId!=='string')throw invalidState('材料引用版本信息不完整');
+    if(['proposal','assessment'].includes(ref.resourceType)&&typeof ref.revision!=='number')throw invalidState('方案或评价引用版本信息不完整');
     if(ref.resourceType==='source') {
       const row=await env.DB.prepare(`SELECT f.content FROM source_fragments f JOIN source_versions v ON v.id=f.source_version_id JOIN sources s ON s.id=v.source_id
         WHERE f.id=?1 AND f.project_id=?2 AND v.id=?3 AND v.project_id=?2 AND s.id=?4 AND s.project_id=?2 AND s.lifecycle_version=?5 AND ${sourceLifecycleGuard('v.id','?5')}`).bind(ref.fragmentId,projectId,ref.versionId,ref.resourceId,ref.revision).first<{content:string}>();
@@ -65,6 +68,11 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
     } else if(ref.resourceType==='submission') {
       const row=await env.DB.prepare('SELECT body,revision FROM task_submissions WHERE id=?1 AND project_id=?2').bind(ref.resourceId,projectId).first<{body:string;revision:number}>();
       if(!row || row.revision!==ref.revision || (ref.quote&&!row.body.includes(ref.quote))) throw invalidState('已读取提交已变化');
+    } else if(ref.resourceType==='proposal'||ref.resourceType==='assessment') {
+      const table=ref.resourceType==='proposal'?'collaboration_proposals':'assessments';
+      const document=ref.resourceType==='proposal'?projectPlanDocumentSql():assessmentDocumentSql();
+      const row=await env.DB.prepare(`SELECT record.revision,${document} body FROM ${table} record WHERE record.id=?1 AND record.project_id=?2`).bind(ref.resourceId,projectId).first<{revision:number;body:string}>();
+      if(!row||row.revision!==ref.revision||(ref.quote!==undefined&&!row.body.includes(ref.quote)))throw invalidState('已读取方案或有效评价已变化，引用不符');
     } else {
       const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',decision:'decisions',comment:'comments',event:'events',project:'projects',admin_feedback:'project_admin_feedback'} as Record<string,string>)[ref.resourceType];
       if(!table) throw invalidState('未知引用类型');

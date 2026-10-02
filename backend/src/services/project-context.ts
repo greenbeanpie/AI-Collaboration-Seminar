@@ -2,9 +2,14 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { notFound, invalidState } from '../core/errors';
 import { sourceLifecycleGuard } from './source-lifecycle';
+import { projectPlanDocumentSql,assessmentDocumentSql } from './project-reference-guard';
 
 export const discoveryDefinitions = [
   ['get_project_overview', '读取项目背景、目标和任务状态统计'],
+  ['list_project_plans', '分页列出待审、人工修订、已应用、过期方案目录；目录不代表已读方案正文'],
+  ['read_project_plan', '按 id 读取方案正文和人工修订原因；offset 为字符偏移，每次6000字符，需继续翻页直到完整'],
+  ['list_assessments', '分页列出项目评分与演练评价目录；含有效结果来源与固定标准，目录不代表已读报告'],
+  ['read_assessment', '按 id 分页读取当前生效报告、独立原AI报告、人工修订理由及固定目标/标准/材料；offset 为字符偏移'],
   ['list_project_resources', '分页列出全部项目来源与材料；query 可按标题过滤'],
   ['search_project_information', '按 query 在项目资料正文、任务与决策中检索定位；返回摘要，原文需继续读取'],
   ['list_resource_versions', '按 id 与 resourceType 分页列出资料历史版本'],
@@ -26,6 +31,27 @@ const page = (rows: unknown[], offset: number) => ({ untrustedData: true, items:
 /** Caller enforces membership before and after each read. Queries never accept project identity from the model. */
 export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown): Promise<Record<string,unknown>> {
   const a = discoveryArgs.parse(input);
+  if(name==='list_project_plans') {
+    const rows=await env.DB.prepare(`SELECT id,kind,status,revision,created_at,updated_at,
+      (SELECT reason FROM collaboration_proposal_revisions history WHERE history.proposal_id=record.id AND history.project_id=record.project_id ORDER BY revision DESC LIMIT 1) latestReason
+      FROM collaboration_proposals record WHERE project_id=?1 AND (?3='' OR instr(lower(kind||status),lower(?3))>0) ORDER BY updated_at DESC,id LIMIT 21 OFFSET ?2`).bind(projectId,a.offset,a.query??'').all();
+    return {...page(rows.results,a.offset),directoryOnly:true};
+  }
+  if(name==='list_assessments') {
+    const rows=await env.DB.prepare(`SELECT id,kind,status,revision,origin,goal_revision,standards_version_id,created_at FROM assessments
+      WHERE project_id=?1 AND (?3='' OR instr(lower(kind||status||origin),lower(?3))>0) ORDER BY created_at DESC,id LIMIT 21 OFFSET ?2`).bind(projectId,a.offset,a.query??'').all();
+    return {...page(rows.results,a.offset),directoryOnly:true};
+  }
+  if(name==='read_project_plan'||name==='read_assessment') {
+    if(!a.id)throw invalidState('读取方案或评价需要 id');
+    const table=name==='read_project_plan'?'collaboration_proposals':'assessments';
+    const body=name==='read_project_plan'?projectPlanDocumentSql():assessmentDocumentSql();
+    const row=await env.DB.prepare(`SELECT record.id,record.revision,record.kind,record.status,substr(${body},?3+1,6000) text,length(${body}) total
+      FROM ${table} record WHERE record.id=?1 AND record.project_id=?2`).bind(a.id,projectId,a.offset).first<{id:string;revision:number;kind:string;status:string;text:string;total:number}>();
+    if(!row)throw notFound('方案或评价不存在或不属于本项目');
+    return {untrustedData:true,...row,resourceType:name==='read_project_plan'?'proposal':'assessment',resourceId:row.id,
+      title:row.kind,offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null};
+  }
   if(name==='list_resource_versions') {
     if(!a.id||!a.resourceType)throw invalidState('需要资料 id 与 resourceType');
     const rows=a.resourceType==='source' ? await env.DB.prepare(`SELECT v.id versionId,v.revision,v.origin,v.status,v.created_at FROM source_versions v WHERE v.project_id=?1 AND v.source_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')} ORDER BY v.revision DESC LIMIT 21 OFFSET ?3`).bind(projectId,a.id,a.offset).all()
