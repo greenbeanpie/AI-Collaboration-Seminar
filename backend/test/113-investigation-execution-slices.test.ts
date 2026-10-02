@@ -6,7 +6,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { newId, nowIso } from '../src/core/db';
 import { reserveAiSlot } from '../src/services/budget';
 import { projectToolConversation } from '../src/services/project-ai-tools';
-import { InvestigationContinuation } from '../src/services/project-investigation';
+import { InvestigationContinuation, loadInvestigation } from '../src/services/project-investigation';
 afterEach(() => vi.unstubAllGlobals());
 
 async function fixture() {
@@ -22,6 +22,28 @@ async function fixture() {
   } };
 }
 describe('durable autonomous investigation execution slices', () => {
+  it('persists three provider retries across instances without replaying successful responses', async () => {
+    const f=await fixture();
+    const fetch=vi.fn(async()=>fetch.mock.calls.length<=3 ? new Response('',{status:503}) : Response.json({choices:[{finish_reason:'stop',message:{content:'{"summary":"恢复成功","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}}));
+    vi.stubGlobal('fetch',fetch);
+    const due:number[]=[];
+    for(let attempt=1;attempt<=3;attempt++) {
+      await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);
+      const saved=await loadInvestigation(env,f.jobId+'-'+f.params.promptVersion);
+      expect(saved?.pendingDispatch).toBe(false);
+      expect(saved?.providerRetry?.attempt).toBe(attempt);
+      due.push(saved!.providerRetry!.nextAttemptAt);
+      expect(fetch).toHaveBeenCalledTimes(attempt);
+    }
+    const result=await projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params);
+    expect(result.content).toContain('恢复成功');expect(fetch).toHaveBeenCalledTimes(4);
+    await projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(due[1]! - due[0]!).toBeGreaterThanOrEqual(5000);
+    expect(due[2]! - due[1]!).toBeGreaterThanOrEqual(15000);
+    expect((await env.DB.prepare('SELECT attempts_started FROM usage_reservations WHERE job_id=?1').bind(f.jobId).first<{attempts_started:number}>())?.attempts_started).toBe(4);
+    expect((await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls WHERE job_id=?1').bind(f.jobId).first<{n:number}>())?.n).toBe(4);
+  }, 40_000);
   it('continues 14 tool reads across separate invocations without replaying paid responses or completed tools', async () => {
     const f = await fixture();
     const fetch = vi.fn(async () => Response.json({ choices: [{ finish_reason: fetch.mock.calls.length === 1 ? 'tool_calls' : 'stop', message: fetch.mock.calls.length === 1 ? {

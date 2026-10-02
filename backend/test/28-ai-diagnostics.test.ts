@@ -91,7 +91,7 @@ it('failed probes are diagnosed without recording model responses, prompts, keys
   const report = await readAiDiagnostics(env);
   expect(report.items.filter(entry => entry.requestId === requestId).find(entry => entry.phase === 'probe_result')).toMatchObject({ status: 'failed', errorCode: 'PROBE_FAILED', purpose: 'textEconomy' });
   expect(JSON.stringify(report)).not.toMatch(/private-provider|prompt|apiKey|authorization|ciphertext|你好/);
-});
+}, 60_000);
 
 it('diagnostics storage failures cannot replace either a successful save or its real CAS error', async () => {
   const response = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers });

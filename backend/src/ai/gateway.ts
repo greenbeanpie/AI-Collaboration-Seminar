@@ -6,6 +6,7 @@ import { providerOptionErrors } from '../../../shared/ai-providers';
 import { buildProviderRequest, normalizeProviderResponse } from './transport';
 import { classifyFetchFailure, recordAiDiagnostic, safeDiagnosticTarget } from './diagnostics';
 import type { Env } from '../env';
+import { LIMITS } from '../core/limits';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -17,6 +18,9 @@ export interface ChatMessage {
 }
 
 export interface GatewayCallInput {
+  /** Durable recovery state when a Workflow continues in another instance. */
+  providerRetry?: ProviderRetryState;
+  onProviderRetry?: (state: ProviderRetryState) => Promise<void>;
   toolMode?: ToolMode;
   config: AiModelConfig;
   messages: ChatMessage[];
@@ -34,6 +38,8 @@ export interface GatewayCallInput {
   /** HTTP request ID for probes; background calls use their opaque session ID. */
   diagnosticRequestId?: string;
 }
+
+export interface ProviderRetryState { attempt: number; deadline: number; nextAttemptAt: number }
 
 export interface GatewayCallOutput {
   toolOutput?: ToolOutput;
@@ -88,13 +94,48 @@ export function isAllowedModelEndpoint(raw: string, envName?: string): boolean {
  * POST https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1/chat/completions
  * Header: Authorization Bearer + cf-aig-gateway-id。不使用已弃用的 /compat 入口。
  *
- * 每次调用只尝试一次；是否额外重试由上层统一决定（LIMITS.aiCallExtraRetries）。
+ * 明确的临时 HTTP 错误最多额外重试三次；不重放受理状态未知的请求。
  * fetchImpl 参数供测试注入 mock。
  */
 export async function gatewayChat(
   endpoint: GatewayEndpoint,
   input: GatewayCallInput,
   fetchImpl: typeof fetch = fetch,
+  wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+): Promise<GatewayCallOutput> {
+  const started = Date.now();
+  let recoveryDeadline = input.providerRetry?.deadline;
+  if (input.providerRetry && input.providerRetry.nextAttemptAt > Date.now()) await wait(input.providerRetry.nextAttemptAt - Date.now());
+  for (let attempt = input.providerRetry?.attempt ?? 0; ; attempt++) {
+    try {
+      const remaining = recoveryDeadline === undefined ? input.config.timeoutMs : Math.min(input.config.timeoutMs, recoveryDeadline - Date.now());
+      if (remaining <= 0) throw new AppError('AI_UNAVAILABLE', '模型服务在一分钟恢复窗口内未恢复', 503, false);
+      const output = await gatewayChatAttempt(endpoint, {
+        ...input, config: { ...input.config, timeoutMs: remaining },
+      }, fetchImpl, recoveryDeadline);
+      return { ...output, latencyMs: Date.now() - started };
+    } catch (error) {
+      // Only a received HTTP response proves this is a provider rejection.
+      // Network/timeouts, parser errors and budget/permission guards are never replayed.
+      const status = error instanceof AppError ? error.details?.status : undefined;
+      if (!(error instanceof AppError) || error.code !== 'AI_UNAVAILABLE' || !error.retryable ||
+          ![429, 500, 502, 503, 504].includes(status as number) || attempt >= LIMITS.aiCallExtraRetries) throw error;
+      recoveryDeadline ??= Date.now() + 60_000;
+      const delay = [1000, 5000, 15000][attempt]!;
+      if (Date.now() + delay >= recoveryDeadline) throw error;
+      await input.onProviderRetry?.({ attempt: attempt + 1, deadline: recoveryDeadline, nextAttemptAt: Date.now() + delay });
+      await wait(delay);
+      // The next attempt repeats beforeFetch and prepareMessages, including budget,
+      // config, permissions and freshly authorized sensitive context.
+    }
+  }
+}
+
+async function gatewayChatAttempt(
+  endpoint: GatewayEndpoint,
+  input: GatewayCallInput,
+  fetchImpl: typeof fetch,
+  recoveryDeadline?: number,
 ): Promise<GatewayCallOutput> {
   if (!input.config.supportsVision && input.messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'))) {
     throw new AppError('AI_UNAVAILABLE', '当前模型不支持图像；不会回落到其他端点', 503, false);
@@ -139,7 +180,9 @@ export async function gatewayChat(
     headers['cf-aig-collect-log'] = 'false';
   }
 
-  const timeoutSignal = AbortSignal.timeout(input.config.timeoutMs);
+  const liveTimeout = recoveryDeadline === undefined ? input.config.timeoutMs : Math.min(input.config.timeoutMs, recoveryDeadline - Date.now());
+  if (liveTimeout <= 0) throw new AppError('AI_UNAVAILABLE', '模型服务在一分钟恢复窗口内未恢复', 503, false);
+  const timeoutSignal = AbortSignal.timeout(liveTimeout);
   try {
     input.onDispatch?.();
     res = await fetchImpl(url, {
@@ -179,7 +222,7 @@ export async function gatewayChat(
   }
 
   if (!res.ok) {
-
+    await res.body?.cancel();
     const retryable = res.status === 429 || res.status >= 500;
     throw new AppError('AI_UNAVAILABLE', `模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
       status: res.status,

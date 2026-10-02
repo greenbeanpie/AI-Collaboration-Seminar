@@ -90,7 +90,7 @@ describe('independent bounded task summaries',()=>{
     const f=await fixture(),a=await f.start();vi.stubGlobal('fetch',vi.fn(async()=>new Response('provider unavailable',{status:503})));
     await runTaskSummaryJob(env,a.summaryJobId!);expect((await f.read()).summaryStatus).toBe('failed');
     const reservation=await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(a.summaryJobId).first<{status:string}>();expect(reservation!.status).not.toBe('reserved');
-  });
+  }, 60_000);
   it('recovers abandoned cache claims only on explicit retry',async()=>{
     const f=await fixture(),missing=await f.read(),jobId=crypto.randomUUID();
     await env.DB.prepare("INSERT INTO task_summaries(project_id,task_id,source_hash,status,job_id,updated_at) VALUES(?1,?2,?3,'queued',?4,?5)").bind(f.projectId,f.taskId,missing.summarySourceHash,jobId,new Date(Date.now()-600_000).toISOString()).run();

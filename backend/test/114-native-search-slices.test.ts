@@ -11,7 +11,7 @@ import { InvestigationContinuation,loadInvestigation,saveInvestigation } from '.
 afterEach(()=>vi.unstubAllGlobals());
 const query='公开校园节能案例',citation={url:'https://example.com/evidence',title:'公开来源'};
 const calls=[{id:'search-1',name:'web_search',input:{query}},...Array.from({length:4},(_,i)=>({id:`read-${i}`,name:'list_project_resources',input:{offset:i*20}})),{id:'search-2',name:'web_search',input:{query}}];
-async function fixture(privateContext=true){
+async function fixture(privateContext=true,rejectFirstSearch=false){
   const owner=await seedUser(),projectId=await seedProject(owner.userId),jobId=newId(),loaded=(await loadAiConfig(env.DB))!;
   const model={...loaded.config.review,provider:'openai-compatible',providerPreset:'deepseek-anthropic' as const,apiProtocol:'messages' as const,model:'deepseek-v4-pro',apiUrl:'https://api.deepseek.com/anthropic/v1/messages',apiKeyEncrypted:await seal('fixture-search-key',env.AUTH_SECRET),supportsJson:false};
   delete model.goHeaders;delete model.goUsageAcknowledged;
@@ -26,6 +26,7 @@ async function fixture(privateContext=true){
     const usage={input_tokens:20,output_tokens:10};
     if(body.tools?.some(tool=>tool.type?.startsWith('web_search_'))){
       searchCalls++;
+      if(rejectFirstSearch && searchCalls===1)return new Response('',{status:503});
       return Response.json({stop_reason:'end_turn',content:[{type:'server_tool_use',id:'native-1',name:'web_search',input:{query}},{type:'web_search_tool_result',tool_use_id:'native-1',content:[{type:'web_search_result',...citation}]},{type:'text',text:'可核对的公开搜索结果'}],usage:{...usage,server_tool_use:{web_search_requests:1}}});
     }
     modelCalls++;
@@ -39,6 +40,16 @@ async function complete(f:Awaited<ReturnType<typeof fixture>>){
   throw new Error('fixture did not finish');
 }
 describe('native search survives investigation slices',()=>{
+  it('resumes an explicitly rejected native request without replaying the main model response',async()=>{
+    const f=await fixture(true,true);
+    await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);
+    await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);
+    const saved=(await loadInvestigation(env,f.id))!;
+    expect(saved).toMatchObject({pendingDispatch:false,searchUsed:false,providerRetry:{attempt:1}});
+    expect(saved.pendingOutput?.toolOutput?.toolCalls).toHaveLength(6);
+    const result=await complete(f);
+    expect(result.citations).toEqual([citation]);expect(f.counts()).toEqual({modelCalls:2,searchCalls:2});
+  });
   it('retains the main tool response, finishes remaining reads, searches once and returns saved links',async()=>{
     const f=await fixture();
     await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);

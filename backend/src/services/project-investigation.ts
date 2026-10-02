@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import type { ToolExchange,WebCitation } from '../ai/tool-transport';
-import type { GatewayCallOutput } from '../ai/gateway';
+import type { GatewayCallOutput, ProviderRetryState } from '../ai/gateway';
 import type { ProjectReference } from './project-evidence';
 import { nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -21,6 +21,7 @@ export interface InvestigationCheckpoint {
   pendingSearchOutput?: GatewayCallOutput;
   citations?: WebCitation[];
   searchUsed?: boolean;
+  providerRetry?: ProviderRetryState;
 }
 interface EncryptedCheckpoint {
   format:'encrypted-investigation-v1';step:number;phase:'complete'|'read';chunks:string[];

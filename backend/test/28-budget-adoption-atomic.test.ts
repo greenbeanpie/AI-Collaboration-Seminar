@@ -74,9 +74,9 @@ describe('A03 admission, call accounting and bounded inputs', () => {
     const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' });
     vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); }));
-    await expect(aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_OUTPUT_INVALID' });
+    await expect(aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
     await settleReservation(env, jobId, 'released');
-    expect(await reservation(jobId)).toMatchObject({ status: 'pending_reconcile', settled_cost: null, attempts_started: 2 });
+    expect(await reservation(jobId)).toMatchObject({ status: 'pending_reconcile', settled_cost: null, attempts_started: 1 });
     const lost = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId: lost, purpose: 'agent_run' });
     await markAiCallStarted(env, lost); // simulate crash before recording response

@@ -22,7 +22,7 @@ export const LIMITS = {
   webFetchMaxBytes: 5 * 1024 * 1024,
   webFetchTimeoutMs: 15_000,
   /** Gateway 每请求一次尝试之外，应用层允许的额外重试次数 */
-  aiCallExtraRetries: 1,
+  aiCallExtraRetries: 3,
   /** 隔离文件回收时限（小时） */
   quarantineGcHours: 48,
   /** 孤儿 R2 对象宽限期（天）：比这更晚的对象不参与清理，避免误删刚写入的数据 */

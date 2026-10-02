@@ -35,7 +35,7 @@ it('ordinary save succeeds after a failed connection probe without invoking a mo
   const enable = await request('PUT', '', { ...newest.config, expectedVersion: newest.version, enabled: true });
   expect(enable.status).toBe(409);
   expect(network).not.toHaveBeenCalled();
-});
+}, 60_000);
 
 it('saving an unchanged enabled config preserves enabled without probes; changing it saves safely disabled', async () => {
   await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1 WHERE version = (SELECT MAX(version) FROM ai_config_versions)').run();

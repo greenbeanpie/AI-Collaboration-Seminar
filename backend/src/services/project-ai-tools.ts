@@ -303,16 +303,26 @@ export async function projectToolConversation(env: Env, params: {
   let pendingOutput=restored?.pendingOutput;
   let pendingSearchOutput=restored?.pendingSearchOutput;
   let pendingResults:ToolExchange['results']=restored?.pendingResults??[];
+  let providerRetry=restored?.providerRetry;
   let toolsInSlice=0;
   const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges,references,trace,compacted,
-    pendingDispatch,content,pendingOutput,pendingResults,pendingSearchOutput,citations,searchUsed},params.privateContext);};
+    pendingDispatch,content,pendingOutput,pendingResults,pendingSearchOutput,citations,searchUsed,providerRetry},params.privateContext);};
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {
     if(pendingSearchOutput && toolMode.nativeSearch){await guard();return pendingSearchOutput;}
     if(pendingOutput && toolMode.definitions.length){await guard();return pendingOutput;}
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode, beforeFetch: async () => {
+        config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode,
+        providerRetry, onProviderRetry: investigationId ? async state => {
+          providerRetry=state;
+          if(toolMode.nativeSearch) searchUsed=false;
+          // A received rejection is safe to retry. Save it as NOT in-flight,
+          // and reset the Workers request allowance by using another instance.
+          await checkpoint(false);
+          throw new InvestigationContinuation('模型临时拒绝已保存，将按退避间隔在独立实例重试');
+        } : undefined,
+        beforeFetch: async () => {
           await guard();
           await checkpoint(true);
           await markAiCallStarted(env, context.jobId, true);
@@ -342,6 +352,7 @@ export async function projectToolConversation(env: Env, params: {
     }
     if(toolMode.definitions.length) pendingOutput=out;
     if(toolMode.nativeSearch) pendingSearchOutput=out;
+    providerRetry=undefined;
     await checkpoint(false);
     return out!;
   };
@@ -461,7 +472,7 @@ export async function projectToolConversation(env: Env, params: {
         }
       }
       catch (e) {
-        if (e instanceof ToolLifecycleChanged || (e instanceof AppError && e.code === 'PERMISSION_DENIED')) {
+        if (e instanceof InvestigationContinuation || e instanceof ToolLifecycleChanged || (e instanceof AppError && ['PERMISSION_DENIED','AI_UNAVAILABLE','QUOTA_EXCEEDED'].includes(e.code))) {
           throw e;
         }
         status = 'failed';

@@ -71,7 +71,7 @@ describe('independent source summaries', () => {
     const state = (await (await SELF.fetch(f.path,{headers:{cookie:f.cookie}})).json() as {data:{textStatus:string;requirementsStatus:string;summaryStatus:string;summary:null;summaryError:string}}).data;
     expect(state.textStatus).toBe('ready'); expect(state.requirementsStatus).toBe('ready'); expect(state.summaryStatus).toBe('failed'); expect(state.summary).toBeNull(); expect(state.summaryError).toBeTruthy();
     expect(await env.FILES.get(`sources/${f.sourceVersionId}/paste.txt`)).not.toBeNull();
-  });
+  }, 60_000);
 
   it('prevents duplicate workers from issuing a second paid request', async () => {
     const f = await fixture(); const jobId = await summaryJob(f); let resolve!: (r: Response) => void;

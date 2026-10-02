@@ -186,7 +186,7 @@ describe('AI 能力探测', () => {
     expect(report.data.passed).toBe(false);
     expect(report.data.checks[0]?.passed).toBe(false);
     expect(report.data.checks[0]?.detail).toContain('500');
-  });
+  }, 60_000);
 
   it('探测失败不产生通过证据，启用仍被拒绝', async () => {
     const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
