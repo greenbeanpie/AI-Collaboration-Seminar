@@ -2,6 +2,8 @@ import { assertToolAccess, projectToolConversation, type ProjectToolContext } fr
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
+import { buildGuideHistory, assertGuideHistoryAccess } from './guide-history';
+import { projectReferenceGuard } from './project-reference-guard';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { gatewayChat } from '../ai/gateway';
@@ -34,7 +36,7 @@ export interface AgentRunJobInput {
   turnSequence: number | null;
 }
 
-const PROMPT_VERSION = 'agent-v1';
+const PROMPT_VERSION = 'agent-v2-guide-history';
 
 const doOutputSchema = z.object({
   title: z.string().min(1).max(200),
@@ -291,28 +293,6 @@ async function buildContext(
   return { materialsText: parts.join('\n\n'), sourcesText: '', taskText, materialsMarkdown: markdowns.join('\n\n') };
 }
 
-async function buildGuideHistory(env: Env, sessionId: string | null): Promise<string> {
-  if (!sessionId) return '';
-  const turns = await env.DB.prepare(
-    'SELECT role, kind, payload_json FROM agent_turns WHERE session_id = ?1 ORDER BY sequence',
-  )
-    .bind(sessionId)
-    .all<{ role: string; kind: string; payload_json: string }>();
-  return turns.results
-    .map((t) => {
-      const payload = JSON.parse(t.payload_json) as Record<string, unknown>;
-      const text = typeof payload['answer'] === 'string'
-        ? payload['answer']
-        : typeof payload['question'] === 'string'
-          ? payload['question']
-          : typeof payload['markdown'] === 'string'
-            ? payload['markdown']
-            : '';
-      return `${t.role === 'user' ? '参与者' : '助手'}: ${String(text).slice(0, 2000)}`;
-    })
-    .join('\n');
-}
-
 /** 执行一次 AI 补位运行（do / guide / review_only） */
 export async function runAgentJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
@@ -332,11 +312,11 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
 
     const requester = input.requestedBy ?? (await env.DB.prepare('SELECT created_by FROM agent_sessions WHERE id=?1 AND project_id=?2').bind(run.session_id,input.projectId).first<{created_by:string}>())?.created_by;
     if(!requester) throw new AppError('PERMISSION_DENIED','无法确认本轮请求账户',403,false);
-    const tools:ProjectToolContext={projectId:input.projectId,userId:requester,jobId,allowSearch:input.allowSearch,searchQuery:input.searchQuery};
+    const tools:ProjectToolContext={projectId:input.projectId,userId:requester,jobId,allowSearch:input.allowSearch,searchQuery:input.searchQuery,...(input.capability==='guide'&&run.session_id?{guideSessionId:run.session_id}:{})};
     await assertToolAccess(env,tools);
     await validateInputs(env, input.projectId, input);
     const context = await buildContext(env, input);
-    const history = input.capability === 'guide' ? await buildGuideHistory(env, run.session_id) : '';
+    const history = input.capability === 'guide' ? await buildGuideHistory(env, tools) : '';
 
     const roleLine = input.roleTemplate ? `你的角色模板：${input.roleTemplate}。` : '';
     const instruction = input.instruction ? `参与者补充要求：${input.instruction}` : '';
@@ -361,6 +341,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
           role: 'system',
           content: [
             '你是「带做」模式助手：通过逐步提问引导参与者自己完成成果。',
+            '历史目录不是回答正文；先读取与当前问题相关的参与者回答，按 nextOffset 继续读取完整长回答，不能忽略末尾信息。',
             SOURCE_DATA_RULE,
             '严格只输出 JSON：{"type": "question" | "draft", "content": "..."}。',
             '尚未收集足够信息时 type=question（content 为下一个问题）；信息足够时 type=draft（content 为阶段草稿 Markdown）。',
@@ -404,6 +385,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     } else if (input.capability === 'guide') {
       const { data,toolTrace,citations,references,decisionReferences } = await aiJsonCall(env, {
         projectTools: tools,
+        privateContext: true,
         projectId: input.projectId,
         jobId,
         runId: input.runId,
@@ -446,6 +428,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
 
     await validateInputs(env, input.projectId, input);
     await assertToolAccess(env,tools);
+    if(tools.guideSessionId) await assertGuideHistoryAccess(env,tools);
     const turnKind = input.capability === 'do' ? 'draft' : input.capability === 'guide' ? (outputPayload['question'] !== undefined ? 'question' : 'draft') : 'review_result';
     const sequence = input.turnSequence ?? 1;
     const now = nowIso();
@@ -454,8 +437,10 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running'
           AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND project_id=?3 AND status IN ('queued','running'))
           AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?3 AND p.status='active' AND m.user_id=?5)
-          AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
-      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId, requester),
+          AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}
+          AND ${projectReferenceGuard("json_extract(?2,'$.references')", '?3')}
+          AND (?6 IS NULL OR EXISTS(SELECT 1 FROM agent_sessions session WHERE session.id=?6 AND session.project_id=?3 AND session.created_by=?5 AND session.capability='guide' AND session.status='active'))`,
+      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId, requester, tools.guideSessionId ?? null),
       env.DB.prepare(
         "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, run_id, payload_json, created_at) SELECT ?1,?2,?3,?4,'assistant',?5,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM agent_runs WHERE id=?6 AND status='succeeded')",
       ).bind(
