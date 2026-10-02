@@ -9,6 +9,9 @@ import { executeFileTool, projectToolConversation } from '../src/services/projec
 import { applyToolMode, nativeSearchCapability, normalizeToolResponse } from '../src/ai/tool-transport';
 import { projectToolDefinitions } from '../src/services/project-ai-tools';
 import { presetEndpoint, protocolForConfig } from '../../shared/ai-providers';
+import { changeFileLifecycle } from '../src/services/file-lifecycle';
+import { sourceInputsGuard } from '../src/services/source-inputs';
+import { projectSourceContextGuard } from '../src/services/collaboration-context';
 afterEach(() => vi.unstubAllGlobals());
 async function fixture() {
   await configureGoFixture();
@@ -115,6 +118,137 @@ describe('server-authorized project tools', () => {
         }], promptVersion: 'fixture'
     })).rejects.toThrow('权限已变化');
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+describe('recycle lifecycle integration for dynamic file tools', () => {
+  async function running(f: Awaited<ReturnType<typeof fixture>>) {
+    const jobId = newId();
+    await reserveAiSlot(env, {
+      projectId: f.p, jobId, purpose: 'agent_run', maxCalls: 5
+    });
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running','{}',?3,?3)").bind(jobId, f.p, nowIso()).run();
+    return jobId;
+  }
+  it('omits recycled files from lists and blocks text/saved summary; restoration exposes the same file with a new lifecycle', async () => {
+    const f = await fixture(), context = {
+      projectId: f.p, userId: f.owner.userId
+    };
+    await env.DB.prepare("INSERT INTO source_processing(source_version_id,project_id,text_status,summary_status,summary_json,updated_at) VALUES(?1,?2,'ready','ready','{\"overview\":\"保存的总结\"}',?3)").bind(f.v, f.p, nowIso()).run();
+    expect(JSON.stringify(await executeFileTool(env, context, 'read_project_file', {
+      fileId: f.f, mode: 'summary', offset: 0
+    }))).toContain('保存的总结');
+    await changeFileLifecycle(env, {
+      projectId: f.p, fileId: f.f, actorId: f.owner.userId, expectedLifecycleVersion: 1, restore: false
+    });
+    expect(JSON.stringify(await executeFileTool(env, context, 'list_project_files', {
+      offset: 0
+    }))).not.toContain(f.f);
+    for (const mode of ['text', 'summary'])
+      await expect(executeFileTool(env, context, 'read_project_file', {
+        fileId: f.f, mode, offset: 0
+      })).rejects.toThrow('文件不存在或不可用');
+    await changeFileLifecycle(env, {
+      projectId: f.p, fileId: f.f, actorId: f.owner.userId, expectedLifecycleVersion: 2, restore: true
+    });
+    const read = await executeFileTool(env, context, 'read_project_file', {
+      fileId: f.f, mode: 'text', offset: 0
+    });
+    expect(read).toMatchObject({
+      fileId: f.f, fileLifecycleVersion: 3, sourceLifecycleVersion: 3, status: 'ready'
+    });
+    await env.DB.prepare("UPDATE sources SET deleted_at=?2,lifecycle_version=lifecycle_version+1 WHERE current_version_id=?1").bind(f.v, nowIso()).run();
+    const unavailable = await executeFileTool(env, context, 'read_project_file', {
+      fileId: f.f, mode: 'text', offset: 0
+    });
+    expect(unavailable).toMatchObject({
+      status: 'unavailable'
+    });
+    expect(unavailable).not.toHaveProperty('fragments');
+  });
+  it('freezes dynamic reads in the job, cancels an in-flight result after delete/restore, and rejects both assistant writes and proposal adoption', async () => {
+    const f = await fixture(), cfg = (await loadAiConfig(env.DB))!, jobId = await running(f);
+    let round = 0;
+    const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      assertGoRequest(url, init);
+      if (round++ === 0) {
+        return Response.json({
+          choices: [{
+              finish_reason: 'tool_calls', message: {
+                tool_calls: [{
+                    id: 'read', type: 'function', function: {
+                      name: 'read_project_file', arguments: JSON.stringify({
+                        fileId: f.f, mode: 'text', offset: 0
+                      })
+                    }
+                  }]
+              }
+            }], usage: {
+            prompt_tokens: 10, completion_tokens: 5
+          }
+        });
+      }
+      const body = JSON.parse(String(init?.body));
+      expect(JSON.stringify(body.messages)).toContain('正文依据');
+      const stored = await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(jobId).first<{
+        input_json: string;
+      }>();
+      expect(JSON.parse(stored!.input_json).toolFileSnapshots).toEqual([{
+          fileId: f.f, fileLifecycleVersion: 1, sourceId: expect.any(String), sourceVersionId: f.v, sourceLifecycleVersion: 1
+        }]);
+      await changeFileLifecycle(env, {
+        projectId: f.p, fileId: f.f, actorId: f.owner.userId, expectedLifecycleVersion: 1, restore: false
+      });
+      await changeFileLifecycle(env, {
+        projectId: f.p, fileId: f.f, actorId: f.owner.userId, expectedLifecycleVersion: 2, restore: true
+      });
+      return Response.json({
+        choices: [{
+            finish_reason: 'stop', message: {
+              content: '{\"title\":\"过期结果\"}'
+            }
+          }], usage: {
+          prompt_tokens: 20, completion_tokens: 10
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(projectToolConversation(env, {
+      context: {
+        projectId: f.p, userId: f.owner.userId, jobId
+      }, config: cfg.config.textEconomy, configVersionId: cfg.id, messages: [{
+          role: 'user', content: '读取资料'
+        }], promptVersion: 'fixture'
+    })).rejects.toThrow('生命周期已变化');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const job = await env.DB.prepare('SELECT status,input_json FROM jobs WHERE id=?1').bind(jobId).first<{
+      status: string;
+      input_json: string;
+    }>();
+    expect(job!.status).toBe('cancelled');
+    for (const guard of [sourceInputsGuard, projectSourceContextGuard])
+      expect(await env.DB.prepare(`SELECT 1 WHERE ${guard('?1', '?2')}`).bind(job!.input_json, f.p).first()).toBeNull();
+    expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(jobId).first<{
+      status: string;
+    }>())?.status).toBe('pending_reconcile');
+  });
+  it('cancels jobs that listed a file with no source, preserving original bytes and metadata', async () => {
+    const f = await fixture(), jobId = await running(f);
+    await env.DB.prepare('UPDATE source_versions SET file_id=NULL WHERE id=?1').bind(f.v).run();
+    await env.DB.prepare('UPDATE jobs SET input_json=?2 WHERE id=?1').bind(jobId, JSON.stringify({
+      toolFileSnapshots: [{
+          fileId: f.f, fileLifecycleVersion: 1
+        }]
+    })).run();
+    const changed = await changeFileLifecycle(env, {
+      projectId: f.p, fileId: f.f, actorId: f.owner.userId, expectedLifecycleVersion: 1, restore: false
+    });
+    expect(changed.affectedSourceIds).toEqual([]);
+    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first<{
+      status: string;
+    }>())?.status).toBe('cancelled');
+    expect((await env.DB.prepare('SELECT status FROM files WHERE id=?1').bind(f.f).first<{
+      status: string;
+    }>())?.status).toBe('available');
   });
 });
 describe('authorized native search (fixtures only)', () => {

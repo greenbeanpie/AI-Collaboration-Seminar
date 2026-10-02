@@ -415,8 +415,11 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     const now = nowIso();
     const statements = [
       env.DB.prepare(
-        `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running' AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
-      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId),
+        `UPDATE agent_runs SET status='succeeded',output_json=?2 WHERE id=?1 AND project_id=?3 AND status='running'
+          AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND project_id=?3 AND status IN ('queued','running'))
+          AND EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?3 AND p.status='active' AND m.user_id=?5)
+          AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`,
+      ).bind(input.runId, JSON.stringify(outputPayload), input.projectId, jobId, requester),
       env.DB.prepare(
         "INSERT INTO agent_turns (id, session_id, project_id, sequence, role, kind, run_id, payload_json, created_at) SELECT ?1,?2,?3,?4,'assistant',?5,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM agent_runs WHERE id=?6 AND status='succeeded')",
       ).bind(

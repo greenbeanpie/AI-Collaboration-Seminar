@@ -7,6 +7,8 @@ import { gatewayChat, type ChatMessage } from '../ai/gateway';
 import { nativeSearchCapability, type ToolDefinition, type ToolExchange, type WebCitation } from '../ai/tool-transport';
 import { recordAiCall } from '../ai/calls';
 import { markAiCallStarted } from './budget';
+import { loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
+import { sourceInputsGuard, toolFileInputsGuard, type ToolFileInputSnapshot } from './source-inputs';
 export interface ProjectToolContext {
   projectId: string;
   userId: string;
@@ -39,12 +41,31 @@ export const projectToolDefinitions: ToolDefinition[] = [
     }
   },
 ];
-export async function assertToolAccess(env: Env, context: ProjectToolContext) {
-  const found = await env.DB.prepare(`SELECT p.ai_budget_usd FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND m.user_id=?2 AND p.status='active' AND (?3=0 OR m.role='owner')`).bind(context.projectId, context.userId, context.ownerOnly ? 1 : 0).first<{
+class ToolLifecycleChanged extends AppError {
+  constructor() {
+    super('INVALID_STATE', '本轮文件或来源生命周期已变化，工具调用已停止；请重新发起', 409, false);
+  }
+}
+export async function assertToolAccess(env: Env, context: ProjectToolContext, captured: ToolFileInputSnapshot[] = []) {
+  const found = await env.DB.prepare(`SELECT p.ai_budget_usd,
+  ${toolFileInputsGuard('?4', 'p.id')} captured_active,
+  (?5 IS NULL OR EXISTS(SELECT 1 FROM jobs j WHERE j.id=?5 AND j.project_id=p.id
+   AND j.status IN ('queued','running') AND ${sourceInputsGuard('j.input_json', 'p.id')})) job_active
+  FROM projects p JOIN project_members m ON m.project_id=p.id
+  WHERE p.id=?1 AND m.user_id=?2 AND p.status='active' AND (?3=0 OR m.role='owner')`)
+    .bind(context.projectId, context.userId, context.ownerOnly ? 1 : 0, JSON.stringify({
+    toolFileSnapshots: captured
+  }), context.jobId ?? null)
+    .first<{
     ai_budget_usd: number | null;
+    captured_active: number;
+    job_active: number;
   }>();
   if (!found) {
     throw permissionDenied('项目或当前用户权限已变化，工具调用已停止');
+  }
+  if (!found.captured_active || !found.job_active) {
+    throw new ToolLifecycleChanged();
   }
   return found;
 }
@@ -54,47 +75,88 @@ const listArgs = z.object({
 const readArgs = z.object({
   fileId: z.string().uuid(), mode: z.enum(['text', 'summary']), offset: z.number().int().min(0).max(1000000)
 }).strict();
+interface ToolFileRow {
+  id: string;
+  original_name: string;
+  size_bytes: number;
+  file_lifecycle_version: number;
+  version_id: string | null;
+  source_id: string | null;
+  source_lifecycle_version: number | null;
+  text_status: string | null;
+  summary_status: string | null;
+  summary_json?: string | null;
+}
+const activeFileSourceJoin = `LEFT JOIN source_versions v ON v.file_id=f.id AND v.project_id=f.project_id
+ AND v.id=(SELECT latest.id FROM source_versions latest WHERE latest.file_id=f.id
+  AND latest.project_id=f.project_id AND ${sourceLifecycleGuard('latest.id', 'NULL')}
+  ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)
+ LEFT JOIN sources s ON s.id=v.source_id AND s.project_id=f.project_id
+ LEFT JOIN source_processing p ON p.source_version_id=v.id AND p.project_id=f.project_id`;
+function fileSnapshot(file: ToolFileRow): ToolFileInputSnapshot {
+  return {
+    fileId: file.id, fileLifecycleVersion: file.file_lifecycle_version,
+    ...(file.version_id && file.source_id && file.source_lifecycle_version ? {
+      sourceId: file.source_id, sourceVersionId: file.version_id, sourceLifecycleVersion: file.source_lifecycle_version
+    } : {})
+  };
+}
 export async function executeFileTool(env: Env, context: ProjectToolContext, name: string, input: unknown): Promise<unknown> {
   await assertToolAccess(env, context);
   if (name === 'list_project_files') {
-    const a = listArgs.parse(input), rows = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,v.id source_version_id,p.text_status,p.summary_status FROM files f LEFT JOIN source_versions v ON v.file_id=f.id AND v.id=(SELECT id FROM source_versions WHERE file_id=f.id AND project_id=?1 ORDER BY created_at DESC,id DESC LIMIT 1) LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE f.project_id=?1 AND f.status='available' ORDER BY f.created_at,f.id LIMIT 21 OFFSET ?2`).bind(context.projectId, a.offset).all();
-    await assertToolAccess(env, context);
+    const a = listArgs.parse(input), rows = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
+   f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.text_status,p.summary_status
+   FROM files f ${activeFileSourceJoin} WHERE f.project_id=?1 AND f.status='available' AND f.deleted_at IS NULL
+   ORDER BY f.created_at,f.id LIMIT 21 OFFSET ?2`).bind(context.projectId, a.offset).all<ToolFileRow>();
+    const visible = rows.results.slice(0, 20);
+    await assertToolAccess(env, context, visible.map(fileSnapshot));
     return {
-      untrustedData: true, items: rows.results.slice(0, 20), nextOffset: rows.results.length > 20 ? a.offset + 20 : null
+      untrustedData: true, items: visible.map(f => ({
+        id: f.id, original_name: f.original_name, size_bytes: f.size_bytes,
+        text_status: f.text_status, summary_status: f.summary_status, ...fileSnapshot(f)
+      })), nextOffset: rows.results.length > 20 ? a.offset + 20 : null
     };
   }
   if (name !== 'read_project_file') {
     throw invalidState('未授权的工具名称');
   }
-  const a = readArgs.parse(input), file = await env.DB.prepare(`SELECT f.id,f.original_name,v.id version_id,p.summary_status,p.summary_json,p.text_status FROM files f LEFT JOIN source_versions v ON v.file_id=f.id AND v.project_id=f.project_id AND v.id=(SELECT id FROM source_versions WHERE file_id=f.id AND project_id=?2 ORDER BY created_at DESC,id DESC LIMIT 1) LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE f.id=?1 AND f.project_id=?2 AND f.status='available'`).bind(a.fileId, context.projectId).first<{
-    id: string;
-    original_name: string;
-    version_id: string | null;
-    summary_status: string | null;
-    summary_json: string | null;
-    text_status: string | null;
-  }>();
+  const a = readArgs.parse(input), file = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
+  f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.summary_status,p.summary_json,p.text_status
+  FROM files f ${activeFileSourceJoin} WHERE f.id=?1 AND f.project_id=?2 AND f.status='available' AND f.deleted_at IS NULL`)
+    .bind(a.fileId, context.projectId).first<ToolFileRow>();
   if (!file) {
     throw notFound('文件不存在或不可用');
   }
+  const captured = fileSnapshot(file);
   if (!file.version_id) {
-    await assertToolAccess(env, context);
+    await assertToolAccess(env, context, [captured]);
     return {
-      untrustedData: true, fileId: file.id, status: 'unavailable', reason: '文件尚未建立来源或提取正文'
+      untrustedData: true, ...captured, status: 'unavailable', reason: '文件尚无可用来源；可能尚未提取正文或关联来源已回收'
     };
+  }
+  const source = await loadActiveSourceVersion(env, file.version_id, captured.sourceLifecycleVersion);
+  if (source.projectId !== context.projectId || source.sourceId !== captured.sourceId) {
+    throw notFound('文件来源不存在或不可用');
   }
   if (a.mode === 'summary') {
     const summary = file.summary_status === 'ready' && file.summary_json ? file.summary_json : null;
-    await assertToolAccess(env, context);
+    await assertToolAccess(env, context, [captured]);
     return {
-      untrustedData: true, fileId: file.id, sourceVersionId: file.version_id, status: summary ? 'ready' : 'unavailable', ...(summary ? {
+      untrustedData: true, ...captured, status: summary ? 'ready' : 'unavailable', ...(summary ? {
         text: summary.slice(a.offset, a.offset + 6000), nextOffset: summary.length > a.offset + 6000 ? a.offset + 6000 : null
       } : {
         reason: '暂无已保存总结；本工具不自动收费生成总结'
       })
     };
   }
-  const fragments = await env.DB.prepare(`SELECT id,page_number,substr(content,MAX(1,?3-start+1),6000) content,start,total FROM (SELECT id,page_number,content,COALESCE(SUM(length(content)) OVER(ORDER BY seq ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start,SUM(length(content)) OVER() total FROM source_fragments WHERE source_version_id=?1 AND project_id=?2) WHERE start+length(content)>?3 AND start<?3+6000 ORDER BY start LIMIT 40`).bind(file.version_id, context.projectId, a.offset).all<{
+  const fragments = await env.DB.prepare(`SELECT id,page_number,substr(content,MAX(1,?3-start+1),6000) content,start,total FROM
+  (SELECT id,page_number,content,COALESCE(SUM(length(content)) OVER(ORDER BY seq,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start,
+   SUM(length(content)) OVER() total FROM source_fragments WHERE source_version_id=?1 AND project_id=?2
+   AND ${sourceLifecycleGuard('source_version_id', '?4')}
+   AND EXISTS(SELECT 1 FROM files WHERE id=?5 AND project_id=?2 AND status='available' AND deleted_at IS NULL AND lifecycle_version=?6))
+  WHERE start+length(content)>?3 AND start<?3+6000 ORDER BY start LIMIT 40`)
+    .bind(file.version_id, context.projectId, a.offset, captured.sourceLifecycleVersion, a.fileId, captured.fileLifecycleVersion)
+    .all<{
     id: string;
     page_number: number | null;
     content: string;
@@ -103,17 +165,34 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
   }>();
   let remain = 6000;
   const parts = fragments.results.map(f => {
-    const chars = Array.from(f.content).slice(0, remain), content = chars.join('');
+    const chars = Array.from(f.content).slice(0, remain);
     remain -= chars.length;
     return {
-      fragmentId: f.id, pageNumber: f.page_number, quote: content
+      fragmentId: f.id, pageNumber: f.page_number, quote: chars.join('')
     };
   }).filter(f => f.quote);
-  await assertToolAccess(env, context);
+  await assertToolAccess(env, context, [captured]);
   const total = fragments.results[0]?.total ?? 0;
   return {
-    untrustedData: true, fileId: file.id, sourceVersionId: file.version_id, status: parts.length ? 'ready' : 'unavailable', coverage: file.text_status === 'ready' ? 'complete' : 'partial', fragments: parts, nextOffset: total > a.offset + 6000 ? a.offset + 6000 : null
+    untrustedData: true, ...captured, status: parts.length ? 'ready' : 'unavailable', coverage: file.text_status === 'ready' ? 'complete' : 'partial', fragments: parts, nextOffset: total > a.offset + 6000 ? a.offset + 6000 : null
   };
+}
+const capturedFileSchema = z.object({
+  fileId: z.string().uuid(), fileLifecycleVersion: z.number().int().min(1),
+  sourceId: z.string().uuid().optional(), sourceVersionId: z.string().uuid().optional(), sourceLifecycleVersion: z.number().int().min(1).optional()
+}).strict()
+  .refine(s => [s.sourceId, s.sourceVersionId, s.sourceLifecycleVersion].filter(v => v !== undefined).length % 3 === 0);
+function outputFileSnapshots(output: unknown): ToolFileInputSnapshot[] {
+  const o = output as Record<string, unknown>, items = Array.isArray(o.items) ? o.items : [o];
+  return items.filter(item => item && typeof item === 'object' && typeof (item as Record<string, unknown>).fileId === 'string').map(item => {
+    const f = item as Record<string, unknown>;
+    return capturedFileSchema.parse({
+      fileId: f.fileId, fileLifecycleVersion: f.fileLifecycleVersion,
+      ...(f.sourceVersionId ? {
+        sourceId: f.sourceId, sourceVersionId: f.sourceVersionId, sourceLifecycleVersion: f.sourceLifecycleVersion
+      } : {})
+    });
+  });
 }
 export async function projectToolConversation(env: Env, params: {
   context: ProjectToolContext;
@@ -138,6 +217,51 @@ export async function projectToolConversation(env: Env, params: {
     fileId?: string;
   }> = [], citations: WebCitation[] = [];
   let usedTools = 0, searchUsed = false;
+  const captured = new Map<string, ToolFileInputSnapshot>();
+  const rememberFiles = (files: ToolFileInputSnapshot[]) => {
+    for (const f of files)
+      captured.set(`${f.fileId}:${f.sourceVersionId ?? ''}`, f);
+    if (captured.size > 160) {
+      throw invalidState('本轮工具资料范围超过160个快照上限');
+    }
+  };
+  if (context.jobId) {
+    const job = await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1 AND project_id=?2').bind(context.jobId, context.projectId).first<{
+      input_json: string;
+    }>();
+    if (!job) {
+      throw new ToolLifecycleChanged();
+    }
+    const input = JSON.parse(job.input_json) as {
+      toolFileSnapshots?: unknown;
+    };
+    if (input.toolFileSnapshots) {
+      rememberFiles(z.array(capturedFileSchema).max(160).parse(input.toolFileSnapshots));
+    }
+  }
+  const retainFiles = async (output: unknown) => {
+    rememberFiles(outputFileSnapshots(output));
+    await assertToolAccess(env, context, [...captured.values()]);
+    if (!context.jobId) {
+      return;
+    }
+    const job = await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1 AND project_id=?2').bind(context.jobId, context.projectId).first<{
+      input_json: string;
+    }>();
+    if (!job) {
+      throw new ToolLifecycleChanged();
+    }
+    const next = JSON.stringify({
+      ...JSON.parse(job.input_json), toolFileSnapshots: [...captured.values()]
+    });
+    const changed = await env.DB.prepare(`UPDATE jobs SET input_json=?3 WHERE id=?1 AND project_id=?2 AND status IN ('queued','running')
+   AND input_json=?4 AND ${sourceInputsGuard('?3', '?2')}
+   AND EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?2 AND m.user_id=?5 AND p.status='active' AND (?6=0 OR m.role='owner'))`)
+      .bind(context.jobId, context.projectId, next, job.input_json, context.userId, context.ownerOnly ? 1 : 0).run();
+    if (!changed.meta.changes) {
+      throw new ToolLifecycleChanged();
+    }
+  };
   const endpoint = {
     accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: env.AUTH_SECRET, envName: env.ENV_NAME, diagnostics: env
   };
@@ -147,7 +271,7 @@ export async function projectToolConversation(env: Env, params: {
     if (!current?.enabled || current.id !== params.configVersionId) {
       throw invalidState('模型配置已变化，请重新发起');
     }
-    await assertToolAccess(env, context);
+    await assertToolAccess(env, context, [...captured.values()]);
   };
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
@@ -255,10 +379,11 @@ export async function projectToolConversation(env: Env, params: {
         else {
           safeArgs = invocation.name === 'list_project_files' ? listArgs.parse(invocation.args) : readArgs.parse(invocation.args);
           output = await executeFileTool(env, context, invocation.name, safeArgs);
+          await retainFiles(output);
         }
       }
       catch (e) {
-        if (e instanceof AppError && e.code === 'PERMISSION_DENIED') {
+        if (e instanceof ToolLifecycleChanged || (e instanceof AppError && e.code === 'PERMISSION_DENIED')) {
           throw e;
         }
         status = 'failed';
@@ -269,7 +394,7 @@ export async function projectToolConversation(env: Env, params: {
       // Audit retains bounded metadata/provenance, never raw file bodies, queries, secrets or object keys.
       const metadata = output as Record<string, unknown>;
       await env.DB.prepare('INSERT INTO ai_tool_calls(id,project_id,job_id,requested_by,name,args_json,result_json,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)').bind(newId(), context.projectId, context.jobId ?? null, context.userId, invocation.name.slice(0, 80), JSON.stringify(safeArgs), JSON.stringify({
-        status: metadata.status, error: metadata.error, fileId: metadata.fileId, sourceVersionId: metadata.sourceVersionId, nextOffset: metadata.nextOffset, citations: metadata.citations, fragmentIds: Array.isArray(metadata.fragments) ? metadata.fragments.map(f => (f as Record<string, unknown>).fragmentId) : undefined
+        status: metadata.status, error: metadata.error, fileId: metadata.fileId, sourceVersionId: metadata.sourceVersionId, fileLifecycleVersion: metadata.fileLifecycleVersion, sourceLifecycleVersion: metadata.sourceLifecycleVersion, nextOffset: metadata.nextOffset, citations: metadata.citations, fragmentIds: Array.isArray(metadata.fragments) ? metadata.fragments.map(f => (f as Record<string, unknown>).fragmentId) : undefined
       }), status, nowIso()).run();
       trace.push({
         name: invocation.name, status, ...(typeof metadata.fileId === 'string' ? {

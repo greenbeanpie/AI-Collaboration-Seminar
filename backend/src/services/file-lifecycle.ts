@@ -27,7 +27,8 @@ function cancelSourceJobs(env: Env, sourceIdsSql: string, binds: unknown[], now:
   return [
     env.DB.prepare(`UPDATE jobs SET status='cancelled',error_json=json_object('code','INVALID_STATE','message','来源已移入回收站'),finished_at=${at},updated_at=${at}
       WHERE status IN ('queued','running','waiting_input') AND (json_extract(input_json,'$.sourceVersionId') IN (${versionIds})
-        OR EXISTS(SELECT 1 FROM json_each(input_json,'$.sourceSnapshots') captured WHERE json_extract(captured.value,'$.sourceId') IN (${sourceIdsSql})))`)
+        OR EXISTS(SELECT 1 FROM json_each(input_json,'$.sourceSnapshots') captured WHERE json_extract(captured.value,'$.sourceId') IN (${sourceIdsSql}))
+        OR EXISTS(SELECT 1 FROM json_each(input_json,'$.toolFileSnapshots') captured WHERE json_extract(captured.value,'$.sourceId') IN (${sourceIdsSql})))`)
       .bind(...binds,now),
     env.DB.prepare(`UPDATE job_outbox SET status='failed',last_error='SOURCE_RECYCLED',lease_until=NULL,updated_at=?
       WHERE job_id IN (SELECT id FROM jobs WHERE status='cancelled' AND updated_at=? AND error_json LIKE '%来源已移入回收站%')`).bind(now,now),
@@ -71,6 +72,9 @@ export async function changeFileLifecycle(env: Env, params: {projectId:string;fi
     batch.push(env.DB.prepare(`UPDATE sources SET deleted_at=?5,deleted_by=?4,deleted_via_file_id=?1,lifecycle_version=lifecycle_version+1,lifecycle_change_id=?6,updated_at=?5
       WHERE id IN (${referencedSources}) AND project_id=?2 AND deleted_at IS NULL AND ${fileGuard}`).bind(...fileBinds));
     const touched=`SELECT id FROM sources WHERE project_id=?2 AND deleted_via_file_id=?1 AND deleted_at=?5 AND ${fileGuard}`;
+    batch.push(env.DB.prepare(`UPDATE jobs SET status='cancelled',error_json=json_object('code','INVALID_STATE','message','来源已移入回收站'),finished_at=?5,updated_at=?5
+      WHERE project_id=?2 AND status IN ('queued','running','waiting_input') AND ${fileGuard}
+      AND EXISTS(SELECT 1 FROM json_each(input_json,'$.toolFileSnapshots') captured WHERE json_extract(captured.value,'$.fileId')=?1)`).bind(...fileBinds));
     batch.push(...cancelSourceJobs(env,touched,fileBinds,now));
   }
   const result=await env.DB.batch(batch);
