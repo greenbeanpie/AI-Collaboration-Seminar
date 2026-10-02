@@ -14,6 +14,7 @@ export const discoveryDefinitions = [
   ['read_submission', '读取固定成果提交、材料版本及评价反馈'],
   ['read_project_standards', '分页读取已确认要求、统一标准和评分规则'],
   ['list_project_decisions', '分页读取项目决策和管理员反馈'],
+  ['read_admin_feedback', '分页读取管理员明确修正和重新反馈；后续判断须采用最新反馈'],
   ['read_project_history', '分页读取项目事件与协作评论'],
   ['read_member_workload', '分页读取成员项目角色与任务负载，不披露个人资料'],
 ] as const;
@@ -45,7 +46,9 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const project = await env.DB.prepare('SELECT id,name,description,revision,competition_deadline_date FROM projects WHERE id=?1').bind(projectId).first();
     const goal = await env.DB.prepare('SELECT title,detail,revision,graph_revision FROM project_goals WHERE project_id=?1').bind(projectId).first();
     const tasks = await env.DB.prepare('SELECT status,lifecycle_state,COUNT(*) count FROM tasks WHERE project_id=?1 GROUP BY status,lifecycle_state').bind(projectId).all();
-    return {untrustedData:true,project,goal,tasks:tasks.results,resourceType:'project',resourceId:projectId,text:JSON.stringify({project,goal,tasks:tasks.results})};
+    const feedbackExists=await env.DB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_admin_feedback'").first();
+    const feedback=feedbackExists?(await env.DB.prepare('SELECT id,target_type,target_id,substr(feedback,1,1000) feedback,created_at FROM project_admin_feedback WHERE project_id=?1 ORDER BY created_at DESC,id DESC LIMIT 5').bind(projectId).all()).results:[];
+    return {untrustedData:true,project,goal,tasks:tasks.results,adminFeedback:feedback,feedbackMayBeIncomplete:feedback.length===5,resourceType:'project',resourceId:projectId,text:JSON.stringify({project,goal,tasks:tasks.results})};
   }
   if (name === 'list_project_resources') {
     const rows = await env.DB.prepare(`SELECT * FROM (
@@ -102,6 +105,12 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     return {untrustedData:true,standards:{...page(standards.results,a.offset),resourceType:'standard'},requirements:{...page(requirements.results,a.offset),resourceType:'requirement'},rubrics:{...page(rubrics.results,a.offset),resourceType:'rubric'}};
   }
   if(name==='list_project_decisions') return {...page((await env.DB.prepare('SELECT id,title,detail,decided_at,related_json FROM decisions WHERE project_id=?1 ORDER BY decided_at DESC,id LIMIT 21 OFFSET ?2').bind(projectId,a.offset).all()).results,a.offset),resourceType:'decision'};
+  if(name==='read_admin_feedback') {
+    const exists=await env.DB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_admin_feedback'").first();
+    if(!exists)return {...page([],a.offset),resourceType:'admin_feedback'};
+    const rows=await env.DB.prepare('SELECT id,target_type,target_id,feedback,request_ai_redo,created_at FROM project_admin_feedback WHERE project_id=?1 AND (?3 IS NULL OR id=?3) ORDER BY created_at DESC,id DESC LIMIT 21 OFFSET ?2').bind(projectId,a.offset,a.id??null).all();
+    return {...page(rows.results,a.offset),resourceType:'admin_feedback'};
+  }
   if(name==='read_project_history') {
     const events=await env.DB.prepare('SELECT id,type,entity_type,entity_id,payload_json,occurred_at FROM events WHERE project_id=?1 ORDER BY occurred_at DESC,id LIMIT 21 OFFSET ?2').bind(projectId,a.offset).all();
     const comments=await env.DB.prepare('SELECT id,target_type,target_id,body,created_at FROM comments WHERE project_id=?1 ORDER BY created_at DESC,id LIMIT 21 OFFSET ?2').bind(projectId,a.offset).all();

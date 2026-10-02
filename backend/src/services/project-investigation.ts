@@ -10,6 +10,15 @@ export interface InvestigationCheckpoint {
   compacted?: string; pendingDispatch?: boolean; content?: string;
   pendingOutput?: GatewayCallOutput;
 }
+/** Keep protocol IDs/tool calls for restart, never assistant prose containing private preferences. */
+export function redactPrivateExchanges(exchanges:ToolExchange[]):ToolExchange[] {
+  const scrub=(value:unknown):unknown=>{
+    if(Array.isArray(value))return value.filter(item=>!item||typeof item!=='object'||!['text','output_text','message'].includes(String((item as Record<string,unknown>).type))).map(scrub);
+    if(!value||typeof value!=='object')return value;
+    return Object.fromEntries(Object.entries(value).filter(([key])=>!['content','text'].includes(key)).map(([key,v])=>[key,scrub(v)]));
+  };
+  return exchanges.map(e=>({...e,assistant:scrub(e.assistant)}));
+}
 export async function loadInvestigation(env: Env, id: string): Promise<InvestigationCheckpoint | null> {
   const stored=await env.FILES.get(`ai/investigations/${id}.json`);
   if(!stored) return null;

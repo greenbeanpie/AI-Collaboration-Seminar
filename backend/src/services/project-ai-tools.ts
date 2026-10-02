@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { discoveryDefinitions, discoveryArgs, executeDiscoveryTool } from './project-context';
 import { referencesFromRead, validateReadReferences, decisionReferences, extractDecisionReferences, type ProjectReference, type DecisionReference } from './project-evidence';
-import { loadInvestigation, saveInvestigation, compactExchanges } from './project-investigation';
+import { loadInvestigation, saveInvestigation, compactExchanges, redactPrivateExchanges } from './project-investigation';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { AppError, invalidState, notFound, permissionDenied } from '../core/errors';
@@ -289,7 +289,7 @@ export async function projectToolConversation(env: Env, params: {
   };
   let currentStep=restored?.step??0;
   let pendingOutput=restored?.pendingOutput;
-  const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges,references,trace,compacted,
+  const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges:params.privateContext?redactPrivateExchanges(exchanges):exchanges,references,trace,compacted,
     pendingDispatch:pendingDispatch || (!!params.privateContext && !!pendingOutput),
     content:params.privateContext?undefined:content,pendingOutput:params.privateContext?undefined:pendingOutput});};
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {

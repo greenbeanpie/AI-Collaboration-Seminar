@@ -8,9 +8,22 @@ import { projectToolConversation } from '../src/services/project-ai-tools';
 import { configureGoFixture } from './helpers/provider-config';
 import { loadAiConfig } from '../src/ai/config';
 import { reserveAiSlot } from '../src/services/budget';
+import { aiJsonCall,businessJson } from '../src/services/agent';
+import { redactPrivateExchanges } from '../src/services/project-investigation';
+import { z } from 'zod';
 afterEach(()=>vi.unstubAllGlobals());
 async function fixture(){const owner=await seedUser(),projectId=await seedProject(owner.userId);return {owner,projectId};}
 describe('autonomous project investigation',()=>{
+  it('keeps business schemas strict while separating validated transport references and redacting private assistant prose',async()=>{
+    expect(z.object({title:z.string()}).strict().parse(businessJson('```json\n{"title":"方案","referenceIds":[],"decisionReferences":[]}\n```'))).toEqual({title:'方案'});
+    expect(()=>z.object({title:z.string()}).strict().parse(businessJson('{"title":"方案","unexpected":"must reject"}'))).toThrow();
+    const redacted=redactPrivateExchanges([{assistant:{role:'assistant',content:'private biography',tool_calls:[{id:'t',function:{name:'list_tasks',arguments:'{}'}}]},results:[]}]);
+    expect(JSON.stringify(redacted)).not.toContain('private biography');expect(JSON.stringify(redacted)).toContain('list_tasks');
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;
+    const fetch=vi.fn(async()=>Response.json({choices:[{finish_reason:'stop',message:{content:'{"title":"建议","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}}));vi.stubGlobal('fetch',fetch);
+    const out=await aiJsonCall(env,{runId:newId(),projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'strict-fixture',messages:[{role:'user',content:'请给建议'}],schema:z.object({title:z.string()}).strict()});
+    expect(out.data).toEqual({title:'建议'});expect(out.references?.length).toBeGreaterThan(0);expect(out.decisionReferences).toEqual([]);
+  });
   it('discovers paste sources and material beyond first page and validates read version evidence',async()=>{
     const {owner,projectId}=await fixture(),now=nowIso(),versionId=newId(),materialId=newId();
     await env.DB.batch([

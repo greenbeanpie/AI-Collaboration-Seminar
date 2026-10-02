@@ -16,8 +16,13 @@ export interface ProjectReference {
   usage: 'read' | 'decision';
 }
 export interface DecisionReference { decisionPath: string; referenceIds: string[] }
+function referenceEnvelope(content:string):{referenceIds?:unknown;decisionReferences?:unknown} {
+  const start=content.indexOf('{'),end=content.lastIndexOf('}');
+  if(start<0||end<=start)return {};
+  try{return JSON.parse(content.slice(start,end+1));}catch{return {};}
+}
 export function extractDecisionReferences(content:string,reads:ProjectReference[]):DecisionReference[] {
-  let parsed:{decisionReferences?:unknown};try{parsed=JSON.parse(content);}catch{return [];}
+  const parsed=referenceEnvelope(content);
   if(parsed.decisionReferences===undefined)return [];
   if(!Array.isArray(parsed.decisionReferences))throw invalidState('决策依据格式无效');
   return parsed.decisionReferences.map((entry:unknown)=>{
@@ -57,7 +62,7 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
       const row=await env.DB.prepare('SELECT body,revision FROM task_submissions WHERE id=?1 AND project_id=?2').bind(ref.resourceId,projectId).first<{body:string;revision:number}>();
       if(!row || row.revision!==ref.revision || (ref.quote&&!row.body.includes(ref.quote))) throw invalidState('已读取提交已变化');
     } else {
-      const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',decision:'decisions',comment:'comments',event:'events',project:'projects'} as Record<string,string>)[ref.resourceType];
+      const table=({task:'tasks',standard:'standards_versions',requirement:'requirements',rubric:'rubric_versions',decision:'decisions',comment:'comments',event:'events',project:'projects',admin_feedback:'project_admin_feedback'} as Record<string,string>)[ref.resourceType];
       if(!table) throw invalidState('未知引用类型');
       const row=await env.DB.prepare(`SELECT * FROM ${table} WHERE id=?1 ${ref.resourceType==='project'?'':'AND project_id=?2'}`).bind(...(ref.resourceType==='project'?[ref.resourceId]:[ref.resourceId,projectId])).first<Record<string,unknown>>();
       if(!row || (ref.revision!==undefined&&row.revision!==ref.revision)) throw invalidState('已读取项目信息已变化');
@@ -69,8 +74,7 @@ export async function validateReadReferences(env: Env, projectId: string, refs: 
   }
 }
 export function decisionReferences(content: string, reads: ProjectReference[]): ProjectReference[] {
-  let parsed: {referenceIds?: unknown};
-  try {parsed=JSON.parse(content);} catch {return reads;}
+  const parsed=referenceEnvelope(content);
   if(!Array.isArray(parsed.referenceIds)) return reads;
   const ids=new Set(parsed.referenceIds);
   if([...ids].some(id=>typeof id!=='string'||!reads.some(r=>r.id===id))) throw invalidState('决策引用了未读取的参考资料');
