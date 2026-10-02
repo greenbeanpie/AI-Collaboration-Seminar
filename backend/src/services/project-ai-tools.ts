@@ -233,8 +233,8 @@ export async function projectToolConversation(env: Env, params: {
     name: string;
     status: string;
     fileId?: string;
-  }> = restored?.trace??[], citations: WebCitation[] = [];
-  let usedTools = 0, searchUsed = false;
+  }> = restored?.trace??[], citations: WebCitation[] = restored?.citations??[];
+  let usedTools = 0, searchUsed = restored?.searchUsed??trace.some(item=>item.name==='web_search'&&item.status==='ok');
   const captured = new Map<string, ToolFileInputSnapshot>();
   const rememberFiles = (files: ToolFileInputSnapshot[]) => {
     for (const f of files)
@@ -291,11 +291,13 @@ export async function projectToolConversation(env: Env, params: {
   };
   let currentStep=restored?.step??0;
   let pendingOutput=restored?.pendingOutput;
+  let pendingSearchOutput=restored?.pendingSearchOutput;
   let pendingResults:ToolExchange['results']=restored?.pendingResults??[];
   let toolsInSlice=0;
   const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges,references,trace,compacted,
-    pendingDispatch,content,pendingOutput,pendingResults},params.privateContext);};
+    pendingDispatch,content,pendingOutput,pendingResults,pendingSearchOutput,citations,searchUsed},params.privateContext);};
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {
+    if(pendingSearchOutput && toolMode.nativeSearch){await guard();return pendingSearchOutput;}
     if(pendingOutput && toolMode.definitions.length){await guard();return pendingOutput;}
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
     try {
@@ -329,6 +331,7 @@ export async function projectToolConversation(env: Env, params: {
       throw error;
     }
     if(toolMode.definitions.length) pendingOutput=out;
+    if(toolMode.nativeSearch) pendingSearchOutput=out;
     await checkpoint(false);
     return out!;
   };
@@ -402,7 +405,7 @@ export async function projectToolConversation(env: Env, params: {
           safeArgs = {
             queryChars: a.query.length
           };
-          if (!context.allowSearch || !context.searchQuery || a.query !== context.searchQuery.trim() || searchUsed || !nativeSearchCapability(config).supported) {
+          if (!context.allowSearch || !context.searchQuery || a.query !== context.searchQuery.trim() || (searchUsed&&!pendingSearchOutput) || !nativeSearchCapability(config).supported) {
             throw invalidState('互联网搜索未获本次授权或已达到一次上限');
           }
           const project = await assertToolAccess(env, context);
@@ -462,6 +465,7 @@ export async function projectToolConversation(env: Env, params: {
       results.push({
         call: invocation, output
       });
+      if(invocation.name==='web_search')pendingSearchOutput=undefined;
       pendingResults=results;
       await checkpoint();
       toolsInSlice++;

@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import type { ToolExchange } from '../ai/tool-transport';
+import type { ToolExchange,WebCitation } from '../ai/tool-transport';
 import type { GatewayCallOutput } from '../ai/gateway';
 import type { ProjectReference } from './project-evidence';
 import { nowIso } from '../core/db';
@@ -18,6 +18,9 @@ export interface InvestigationCheckpoint {
   compacted?: string; pendingDispatch?: boolean; content?: string;
   pendingOutput?: GatewayCallOutput;
   pendingResults?: ToolExchange['results'];
+  pendingSearchOutput?: GatewayCallOutput;
+  citations?: WebCitation[];
+  searchUsed?: boolean;
 }
 interface EncryptedCheckpoint {
   format:'encrypted-investigation-v1';step:number;phase:'complete'|'read';chunks:string[];
