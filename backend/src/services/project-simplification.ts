@@ -1,3 +1,4 @@
+import { readinessStatements } from './task-readiness';
 import { projectPermissionSql } from './project-permissions';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -48,6 +49,7 @@ export async function replaceTaskDependencies(env:Env,projectId:string,actorId:s
   const token=newId(),now=nowIso(),guard='EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?2)';
   const batch=[env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})`).bind(projectId,expectedGraphRevision,token,actorId),env.DB.prepare(`DELETE FROM task_dependencies WHERE project_id=?1 AND task_id=?3 AND ${guard}`).bind(projectId,token,taskId)];
   for(const dependency of dependsOnTaskIds)batch.push(env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?3,?4,?5 WHERE ${guard}`).bind(projectId,token,taskId,dependency,now));
+  batch.push(...readinessStatements(env,projectId));
   const results=await env.DB.batch(batch);if(!results[0]?.meta.changes)throw versionConflict((await projectGoal(env,projectId)).graphRevision);
   return {taskId,...await taskDependencies(env,projectId,taskId),graphRevision:expectedGraphRevision+1};
 }

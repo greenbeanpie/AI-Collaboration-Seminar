@@ -1,3 +1,4 @@
+import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -365,6 +366,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     batch.push(stmt(`INSERT INTO project_username_invitations(id,project_id,recipient_id,username,invited_by,expires_at,created_at) SELECT ?4,?5,?6,?7,?2,?8,?9 WHERE ${guard}`, invitationId, project, recipient.userId, recipient.username, new Date(Date.now() + 7 * 86400000).toISOString(), now), ...invitationNotificationStatements(env, invitationId, userId, now));
   }
   batch.push(stmt(`UPDATE ai_calls SET project_id=?4 WHERE draft_id=?1 AND ${guard}`, project));
+  batch.push(...readinessStatements(env,project,[...taskIds.values()]));
   const result = await env.DB.batch(batch);
   if (!result[0]?.meta.changes) {
     const latest = await getDraft(env, id, userId);

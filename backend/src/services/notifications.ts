@@ -2,8 +2,9 @@ import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { isPushConfigured, sendWebPush } from './web-push';
 
-export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status' | 'task_inquiry';
+export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status' | 'task_inquiry' | 'task_ready';
 const content: Record<NotificationKind, [string, string]> = {
+  task_ready: ['领取的任务可以开始了','你领取的任务的所有前置任务均已完成，请进入任务查看。'],
   task_inquiry: ['任务质询有新消息', '与你有关的任务质询有新消息，请进入任务查看。'],
   project_invitation: ['你有新的项目邀请','负责人邀请你加入项目，请到首页查看并接受或拒绝。'],
   source_added: ['项目新增要求来源', '你参与的项目新增了要求来源，请进入项目查看。'],

@@ -1,3 +1,4 @@
+import { readinessStatements } from './task-readiness';
 import { projectPermissionSql, requireProjectPermission } from './project-permissions';
 import type { Env } from '../env';
 import { projectReferenceGuard } from './project-reference-guard';
@@ -146,6 +147,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
             batch.push(env.DB.prepare(`UPDATE tasks SET assignee_id=?3,current_submission_id=CASE WHEN lifecycle_state='accepted' THEN current_submission_id ELSE NULL END,lifecycle_state=CASE WHEN lifecycle_state='accepted' THEN lifecycle_state WHEN ?3 IS NULL THEN 'open' ELSE 'in_progress' END,status=CASE WHEN lifecycle_state='accepted' THEN status WHEN ?3 IS NULL THEN 'todo' ELSE 'doing' END,revision=revision+1,updated_at=?4 WHERE id=?5 AND project_id=?6 AND revision=?7 AND assignee_id IS NOT ?3 AND ${gate}`).bind(proposalId, nonce, a.assigneeId, nowIso(), a.taskId, projectId, a.expectedRevision));
     }
     batch.push(env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?3,?4,?5,?6,'collaboration.proposal_applied','collaboration',?1,?2,?7,?8 WHERE ${gate}`).bind(proposalId, nonce, newId(), projectId, automatic ? 'ai' : 'user', automatic ? `project-ai:${projectId}` : actorId, JSON.stringify(payload), nowIso()));
+    batch.push(...readinessStatements(env,projectId,taskIds));
     const results = await env.DB.batch(batch);
     if (!results[0]!.meta.changes)
         throw invalidState('建议已失效、成员或任务已变化，请重新生成');

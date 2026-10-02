@@ -1,3 +1,4 @@
+import { readinessStatements } from '../services/task-readiness';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { readTaskSummary, taskSummarySchema } from '../services/task-summary';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -227,7 +228,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
          SELECT 1 FROM requirements r WHERE r.id = ?8 AND r.project_id = ?2
        )) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?2 AND graph_token=?13)`,
     )
-      .bind(id, member.projectId, body.title, body.detail, body.assigneeId, body.dueDate, body.duePrecision, body.requirementId, c.get('user')!.id, now,body.criteria,body.effortHours,token),...body.dependsOnTaskIds.map(dependency=>c.env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM tasks WHERE id=?2 AND project_id=?1) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?5)`).bind(member.projectId,id,dependency,now,token))]);
+      .bind(id, member.projectId, body.title, body.detail, body.assigneeId, body.dueDate, body.duePrecision, body.requirementId, c.get('user')!.id, now,body.criteria,body.effortHours,token),...body.dependsOnTaskIds.map(dependency=>c.env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM tasks WHERE id=?2 AND project_id=?1) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?5)`).bind(member.projectId,id,dependency,now,token)),...readinessStatements(c.env,member.projectId,[id])]);
     if(!createdResults[0]?.meta.changes)throw versionConflict((await projectGoal(c.env,member.projectId)).graphRevision);
     const created=createdResults[1]!;
     if ((created.meta?.changes ?? 0) === 0) {
