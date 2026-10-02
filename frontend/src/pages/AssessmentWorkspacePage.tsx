@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Play, RefreshCw } from 'lucide-react';
 import { projectRequest, type Assessment, type AssessmentReport, type AssessmentEvidence, type ProjectGoal, type StandardVersion } from '../api/simplification';
+import { projectPermission } from '../project-permissions';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -34,6 +35,7 @@ export function AssessmentWorkspacePage() {
 }
 function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const { projectId, project } = useProject();
+  const canInitiate=projectPermission(project,'scoreInitiate');
   const client = useQueryClient();
   const capabilities = useCapabilities();
   const [params, setParams] = useSearchParams();
@@ -52,6 +54,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const selectedStandardId = standardId || confirmed[0]?.standardsVersionId || '';
   const select = (id: string) => { const next = new URLSearchParams(params); next.set('assessmentId', id); next.delete('reviewId'); next.delete('rehearsalId'); setParams(next); };
   const create = useMutation({ mutationFn: async () => {
+    if(!canInitiate)throw new Error('没有发起评分的项目权限');
     const body = { kind, standardsVersionId: selectedStandardId, materialVersionIds: [...materialVersions].sort(), goalRevision: goal.data?.revision };
     const namespace = `assessment-create:${projectId}:${kind}`;
     const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
@@ -81,13 +84,13 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     <div className="assessment-layout">
       <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起材料检查评分'} detail="固定主目标与标准；所选版本为评价对象，未选择时 AI 自动发现成果并查阅相关参考资料。">
         {[goal, standards].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
-        {goal.isLoading || standards.isLoading ? <Spinner label="读取目标与评分标准" /> : <form className="stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}>
+        {goal.isLoading || standards.isLoading ? <Spinner label="读取目标与评分标准" /> : <form className="stack" onSubmit={event => { event.preventDefault(); if(canInitiate)create.mutate(); }}>
           <div className="callout"><strong>本轮主目标：{goal.data?.title || '尚未填写'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${encodeURIComponent(projectId)}/tasks`}>编辑主目标</Link></div>
           <Field label="已确认项目标准"><select className="input" value={selectedStandardId} onChange={event => setStandardId(event.target.value)}><option value="">选择标准固定版本</option>{confirmed.map(version => <option key={version.standardsVersionId} value={version.standardsVersionId}>{version.title} · v{version.version}</option>)}</select></Field>
           {!confirmed.length && <p className="notice notice-warn">先在“项目标准”中保存并确认标准，再开始评分。</p>}
           <FixedMaterialVersions projectId={projectId} selected={materialVersions} onChange={setMaterialVersions} disabled={create.isPending} />
           {create.error && <ErrorNotice error={create.error} />}
-          <button className="button button-primary" disabled={!aiEnabled || !goal.data?.title.trim() || !selectedStandardId || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
+          <button className="button button-primary" disabled={!canInitiate || !aiEnabled || !goal.data?.title.trim() || !selectedStandardId || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
         </form>}
       </SectionCard>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">
@@ -96,7 +99,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
         {!history.isLoading && !history.error && !rows.length && <EmptyState title="尚无此形式的评分记录" detail="完成一轮检查或演练后，反馈会独立保存。" />}
       </SectionCard>
     </div>
-    {project.myRole === 'owner' && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={confirmed.find(item => item.standardsVersionId === (assessment?.standardsVersionId ?? selectedStandardId))} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
+    {canInitiate && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={confirmed.find(item => item.standardsVersionId === (assessment?.standardsVersionId ?? selectedStandardId))} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
     {pending && <div className="notice"><strong>本轮评分任务：{job.job ? jobStatusLabel(job.job.status) : '正在读取'}</strong>{job.job?.status === 'failed' && <><p>评分未完成，服务端失败状态与已有证据已保留。</p><button className="button button-quiet" disabled={retry.isPending || !aiEnabled || (assessment?.kind==='rehearsal' && !assessment.canOperate)} onClick={() => retry.mutate()}>重试本轮任务</button></>}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
     {selectedId && <SectionCard title="本轮评分与证据" detail="总分由服务端按已确认权重计算；证据不足时显示反馈与无法评分的原因。" action={<button className="button button-quiet button-small" onClick={() => void selected.refetch()}><RefreshCw size={14} />刷新结果</button>}>
       {selected.isLoading && <Spinner label="读取本轮评分" />}{selected.error && <ErrorNotice error={selected.error} onRetry={() => void selected.refetch()} />}

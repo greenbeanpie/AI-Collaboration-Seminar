@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
 import { api, projectPath, listAllItems } from '../api/client';
+import { projectPermission } from '../project-permissions';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -15,7 +16,8 @@ const recentIdsKey = (projectId: string) => `ai-office:recent-rehearsals:${proje
 const pendingJobKey = (projectId: string) => `ai-office:pending-rehearsal-job:${projectId}`;
 
 export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: { rehearsalId?: string; embedded?: boolean }) {
-  const { projectId } = useProject();
+  const { projectId, project } = useProject();
+  const canInitiate=projectPermission(project,'scoreInitiate');
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
   const linkedId = requestedId ?? params.get('rehearsalId') ?? params.get('rehearsal') ?? '';
@@ -96,7 +98,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    if (!aiEnabled || creating || (scope === 'member' && !memberId)) return;
+    if (!canInitiate || !aiEnabled || creating || (scope === 'member' && !memberId)) return;
     setCreating(true);
     setCreateError(null);
     const body = { scope, memberId: scope === 'member' ? memberId : null, materialVersionIds: [...selectedMaterialVersionIds].sort() };
@@ -182,7 +184,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     setSelectedRehearsalId(next[0] ?? '');
   };
 
-  const createDisabled = !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || (scope === 'member' && !memberId);
+  const createDisabled = !canInitiate || !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || (scope === 'member' && !memberId);
 
   return <div className="page-stack ai-workflow-layout">
     {!embedded && <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />}
