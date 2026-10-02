@@ -2,6 +2,9 @@
 .project-content-navigation .project-tab { min-width: 0; white-space: normal; overflow-wrap: anywhere; text-align: center; }
 .project-section-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; max-width: 100%; }
 .project-section-layout > * { min-width: 0; max-width: 100%; }
+.project-content-wrap { padding-top: 12px; }
+.project-content-wrap .project-section-layout > .page-stack { padding-top: 0; }
+.project-content-wrap .project-resource-toolbar { justify-content: flex-end; margin: 0; }
 @media (max-width: 790px) {
   .project-content-navigation .project-content-select { width: 100%; min-width: 0; max-width: 100%; }
   .project-section-navigation { padding-top: 10px; }

@@ -6,7 +6,7 @@ import { Plus, Search, Upload } from 'lucide-react';
 import { api, projectPath } from '../api/client';
 import { projectRequest, resourceLibrary, resourcePurposeLabels, type ResourceEntry, type ResourcePurpose } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
-import { EmptyState, ErrorNotice, Field, PageHeading, Spinner, StatusPill } from '../components/ui';
+import { EmptyState, ErrorNotice, Field, Spinner, StatusPill } from '../components/ui';
 import { SourcesPage } from './SourcesPage';
 import { ProjectFileLibrary } from './ProjectFileLibrary';
 import { useCapabilities } from '../auth';
@@ -37,7 +37,7 @@ export function DataWorkspacePage() {
   const create = useMutation({ mutationFn: () => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: newPurpose === 'background' ? 'background' : 'document', purpose: newPurpose }), onSuccess: async material => { setTitle(''); setParams({ resourceType: 'material', resourceId: material.materialId }); await Promise.all([refresh(), client.invalidateQueries({ queryKey: ['materials', projectId] })]); } });
   const updatePurpose = useMutation({ mutationFn: ({ resource, purpose }: { resource: ResourceEntry; purpose: ResourcePurpose }) => projectRequest<ResourceEntry>(projectId, `/resource-library/${resource.resourceType}/${encodeURIComponent(resource.resourceId)}`, { method: 'PATCH', body: { purpose, expectedRevision: resource.revision } }), onSuccess: refresh, onError: refresh });
   return <div className="page-stack resource-workspace">
-    <PageHeading title="项目资料" detail="统一管理背景、参考资料与成果；导入原文和可编辑文档保留各自的固定版本。" action={<div className="form-actions"><button className="button button-quiet" onClick={() => setParams({ mode: 'import' })}><Upload size={16} />导入资料</button><button className="button button-primary" onClick={() => setParams({ mode: 'new' })}><Plus size={16} />新建文档</button></div>} />
+    <div className="form-actions project-resource-toolbar" aria-label="资料操作"><button className="button button-quiet" onClick={() => setParams({ mode: 'import' })}><Upload size={16} />导入资料</button><button className="button button-primary" onClick={() => setParams({ mode: 'new' })}><Plus size={16} />新建文档</button></div>
     {library.error && <ErrorNotice error={library.error} onRetry={() => void library.refetch()} />}
     <div className="resource-workspace-layout">
       <aside className="card resource-list-panel" aria-label="项目资料列表">
