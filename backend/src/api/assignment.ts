@@ -52,9 +52,7 @@ interface TaskRow {
 
 interface MemberRow {
   user_id: string;
-  display_name: string;
-  skills_json: string;
-  hours_per_week: number | null;
+  load_hours: number;
 }
 
 export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
@@ -125,8 +123,8 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
           .all<{ title: string; detail: string }>()
       : { results: [] as Array<{ title: string; detail: string }> };
     const members = await c.env.DB.prepare(
-      `SELECT pm.user_id, u.display_name, pm.skills_json, pm.hours_per_week
-       FROM project_members pm JOIN users u ON u.id = pm.user_id
+      `SELECT pm.user_id,COALESCE((SELECT SUM(t.effort_hours) FROM tasks t WHERE t.project_id=pm.project_id AND t.assignee_id=pm.user_id AND t.status!='done'),0) load_hours
+       FROM project_members pm
        WHERE pm.project_id = ?1 ORDER BY pm.joined_at, pm.user_id`,
     )
       .bind(member.projectId)
@@ -158,9 +156,7 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
           })),
           members: members.results.map((projectMember) => ({
             userId: projectMember.user_id,
-            displayName: projectMember.display_name,
-            skills: JSON.parse(projectMember.skills_json) as string[],
-            hoursPerWeek: projectMember.hours_per_week,
+            loadHours: projectMember.load_hours,
           })),
         },
       });

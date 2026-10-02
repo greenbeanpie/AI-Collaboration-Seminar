@@ -147,7 +147,7 @@ describe('项目生命周期', () => {
 });
 
 describe('成员与权限矩阵', () => {
-  it('成员与负责人维护自己的资料，互不覆盖且不影响其他项目', async () => {
+  it('旧项目资料维护对成员和负责人返回410，保留身份且不回显旧值', async () => {
     const owner = await seedUser();
     const member = await seedUser();
     const pid = await seedProject(owner.userId);
@@ -170,9 +170,8 @@ describe('成员与权限矩阵', () => {
         headers: { cookie: authCookie(token), 'content-type': 'application/json' },
         body: JSON.stringify({ skills, hoursPerWeek }),
       });
-      expect(response.status).toBe(200);
-      expect(((await response.json()) as { data: { skills: string[]; hoursPerWeek: number } }).data)
-        .toMatchObject({ skills, hoursPerWeek });
+      expect(response.status).toBe(410);
+      expect(await response.json()).toMatchObject({ error: { code: 'INVALID_STATE', retryable: false, details: { profilePath: '/app/profile' } } });
     }
 
     async function storedProfile(projectId: string, userId: string) {
@@ -189,10 +188,19 @@ describe('成员与权限矩阵', () => {
 
     await patchProfile(owner.token, ['统筹'], 8);
     expect(await storedProfile(pid, member.userId))
-      .toEqual({ skills_json: JSON.stringify(['材料编辑', '演讲']), hours_per_week: 3 });
+      .toEqual({ skills_json: JSON.stringify(['设计']), hours_per_week: 5 });
+    for (const tail of ['/members', '/members/me']) {
+      const response = await SELF.fetch(`${BASE}/api/v1/projects/${pid}${tail}`, { headers: { cookie: authCookie(owner.token) } });
+      expect(response.status).toBe(200);
+      const json = await response.json() as { data: { items?: Array<Record<string, unknown>> } & Record<string, unknown> };
+      for (const record of json.data.items ?? [json.data]) {
+        expect(record).not.toHaveProperty('major'); expect(record).not.toHaveProperty('skills'); expect(record).not.toHaveProperty('hoursPerWeek');
+      }
+      expect(JSON.stringify(json)).not.toContain('项目管理');
+    }
   });
 
-  it('投入时间省略时保留，显式 null 清空，零值与空技能列表可保存', async () => {
+  it('旧项目资料PATCH包括空值与零均不写入；全局资料是唯一维护入口', async () => {
     const member = await seedUser();
     const pid = await seedProject(member.userId);
     await env.DB.prepare(
@@ -205,18 +213,17 @@ describe('成员与权限矩阵', () => {
         headers: { cookie: authCookie(member.token), 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-      expect(response.status).toBe(200);
-      return ((await response.json()) as { data: { skills: string[]; hoursPerWeek: number | null } }).data;
+      expect(response.status).toBe(410);
     }
 
-    expect(await patch({ skills: ['前端'] })).toMatchObject({ skills: ['前端'], hoursPerWeek: 6 });
-    expect(await patch({ hoursPerWeek: null })).toMatchObject({ skills: ['前端'], hoursPerWeek: null });
-    expect(await patch({ hoursPerWeek: 0 })).toMatchObject({ skills: ['前端'], hoursPerWeek: 0 });
-    expect(await patch({ skills: [] })).toMatchObject({ skills: [], hoursPerWeek: 0 });
-    expect(await patch({})).toMatchObject({ skills: [], hoursPerWeek: 0 });
+    await patch({ skills: ['前端'] });
+    await patch({ hoursPerWeek: null });
+    await patch({ hoursPerWeek: 0 });
+    await patch({ skills: [] });
+    await patch({});
     expect(await env.DB.prepare(
       'SELECT skills_json, hours_per_week FROM project_members WHERE project_id = ?1 AND user_id = ?2',
-    ).bind(pid, member.userId).first()).toEqual({ skills_json: '[]', hours_per_week: 0 });
+    ).bind(pid, member.userId).first()).toEqual({ skills_json: '["文档"]', hours_per_week: 6 });
   });
 
   it('非成员与匿名用户不能修改成员资料', async () => {
@@ -236,7 +243,7 @@ describe('成员与权限矩阵', () => {
     ).bind(pid, owner.userId).first()).toEqual({ skills_json: '[]', hours_per_week: null });
   });
 
-  it('owner 更新成员信息、移除成员后立即失去访问权', async () => {
+  it('成员读取自身身份、移除成员后立即失去访问权', async () => {
     const owner = await seedUser();
     const member = await seedUser();
     const pid = await seedProject(owner.userId);
@@ -254,16 +261,15 @@ describe('成员与权限矩阵', () => {
     const listBody = (await list.json()) as { data: { items: { role: string; userId: string }[] } };
     expect(listBody.data.items).toHaveLength(2);
 
-    // 成员维护技能与投入时间
+    // 旧维护入口退役；项目身份依然可读。
     const patchMe = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/members/me`, {
       method: 'PATCH',
       headers: { cookie: authCookie(member.token), 'content-type': 'application/json' },
       body: JSON.stringify({ skills: ['前端', '文档'], hoursPerWeek: 6 }),
     });
-    expect(patchMe.status).toBe(200);
-    const meBody = (await patchMe.json()) as { data: { skills: string[]; hoursPerWeek: number } };
-    expect(meBody.data.skills).toEqual(['前端', '文档']);
-    expect(meBody.data.hoursPerWeek).toBe(6);
+    expect(patchMe.status).toBe(410);
+    const me = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/members/me`, { headers: { cookie: authCookie(member.token) } });
+    expect((await me.json() as { data: { userId: string; role: string } }).data).toMatchObject({ userId: member.userId, role: 'member' });
 
     // 成员不能 PATCH 项目（非 owner）
     const memberPatchProject = await SELF.fetch(`${BASE}/api/v1/projects/${pid}`, {

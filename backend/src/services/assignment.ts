@@ -34,9 +34,10 @@ export interface AssignmentSuggestionInput {
   }>;
   members: Array<{
     userId: string;
-    displayName: string;
-    skills: string[];
-    hoursPerWeek: number | null;
+    /** Legacy snapshots only. Never written to new jobs or dispatched to AI. */
+    displayName?: string;
+    skills?: string[];
+    hoursPerWeek?: number | null;
     major?: string;
     loadHours?: number;
   }>;
