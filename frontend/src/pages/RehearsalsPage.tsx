@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
+import { ReferencePicker } from './ReferencePicker';
 import { api, projectPath, listAllItems } from '../api/client';
 import { projectPermission } from '../project-permissions';
 import { useCapabilities } from '../auth';
@@ -24,14 +25,14 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const capabilities = useCapabilities();
   const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
   const memberQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
-  const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
+
   const members = useMemo(() => memberQuery.data ?? [], [memberQuery.data]);
-  const currentMaterialVersions = useMemo(() => materials.flatMap((material) => material.currentVersionId ? [{ versionId: material.currentVersionId, title: material.title, revision: material.revision, materialId: material.materialId }] : []), [materials]);
+
 
   const [scope, setScope] = useState<'all' | 'member'>('all');
   const [memberId, setMemberId] = useState('');
   const [selectedMaterialVersionIds, setSelectedMaterialVersionIds] = useState<string[]>([]);
-  const [initializedMaterialSelection, setInitializedMaterialSelection] = useState(false);
+  const [selectedSourceVersionIds, setSelectedSourceVersionIds] = useState<string[]>([]);
   const historyQuery = useQuery({ queryKey: ['rehearsals', projectId], queryFn: () => listAllItems<'RehearsalListResponse'>(projectPath(projectId, '/rehearsals')) });
   const [localRecentIds, setRecentIds] = useState(() => readRecentIds(recentIdsKey(projectId)));
   const recentIds = Array.from(new Set([...(linkedId ? [linkedId] : []), ...(historyQuery.data ?? []).map(r => r.rehearsalId), ...localRecentIds]));
@@ -73,12 +74,6 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     setMemberId(members[0]?.userId ?? '');
   }, [memberId, members]);
   useEffect(() => {
-    if (materialQuery.data && !initializedMaterialSelection) {
-      setSelectedMaterialVersionIds(currentMaterialVersions.slice(0, 10).map((version) => version.versionId));
-      setInitializedMaterialSelection(true);
-    }
-  }, [currentMaterialVersions, initializedMaterialSelection, materialQuery.data]);
-  useEffect(() => {
     if (!job.job || !job.isSettled || !pendingRehearsalJob || job.job.jobId !== pendingRehearsalJob.jobId) return;
     if (job.job.status === 'failed' || job.job.status === 'waiting_input') return;
     const clear = () => {
@@ -101,7 +96,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     if (!canInitiate || !aiEnabled || creating || (scope === 'member' && !memberId)) return;
     setCreating(true);
     setCreateError(null);
-    const body = { scope, memberId: scope === 'member' ? memberId : null, materialVersionIds: [...selectedMaterialVersionIds].sort() };
+    const body = { scope, memberId: scope === 'member' ? memberId : null, materialVersionIds: [...selectedMaterialVersionIds].sort(), sourceVersionIds: [...selectedSourceVersionIds].sort() };
     const namespace = `rehearsal-create:${projectId}`;
     try {
       const key = await idempotencyKeyForIntent(namespace, body);
@@ -206,19 +201,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
               {members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName} · {member.role === 'owner' ? '负责人' : '成员'}</option>)}
             </select>
           </Field>}
-          <div className="ai-workflow-field ai-workflow-field-wide">
-            <div className="field-label">材料版本 <small>最多选择 10 个当前版本；不选材料也可按项目范围练习。</small></div>
-            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
-            <div className="ai-workflow-choice-list">
-              {currentMaterialVersions.length === 0 ? <EmptyState title="没有当前材料版本" detail="可以先创建演练，但问题会缺少材料上下文。" /> : currentMaterialVersions.map((version) => {
-                const selected = selectedMaterialVersionIds.includes(version.versionId);
-                return <label className="ai-workflow-choice" key={version.versionId}>
-                  <input type="checkbox" checked={selected} disabled={!selected && selectedMaterialVersionIds.length >= 10} onChange={() => setSelectedMaterialVersionIds((current) => selected ? current.filter((id) => id !== version.versionId) : [...current, version.versionId])} />
-                  <span className="ai-workflow-choice-copy"><strong>{version.title} · 当前 v{version.revision}</strong><small>材料版本 ID {version.versionId}</small></span>
-                </label>;
-              })}
-            </div>
-          </div>
+          <ReferencePicker projectId={projectId} sourceVersionIds={selectedSourceVersionIds} materialVersionIds={selectedMaterialVersionIds} onChange={selection => { setSelectedSourceVersionIds(selection.sourceVersionIds); setSelectedMaterialVersionIds(selection.materialVersionIds); }} disabled={creating} />
           {memberQuery.error && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={memberQuery.error} onRetry={() => void memberQuery.refetch()} /></div>}
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
           <div className="ai-workflow-actions ai-workflow-field-wide"><button className="button button-primary" type="submit" disabled={createDisabled}><Play size={15} />{creating ? '正在创建演练' : hasPendingJob ? '当前演练任务处理中' : '开始真实答辩演练'}</button>{scope === 'member' && !memberId && <span className="muted">请选择项目成员</span>}</div>

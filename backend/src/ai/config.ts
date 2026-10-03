@@ -30,6 +30,7 @@ export const aiModelConfigSchema = z.object({
 });
 
 export const aiConfigSchema = z.object({
+  searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
   unified: aiModelConfigSchema.optional(),
   textEconomy: aiModelConfigSchema,

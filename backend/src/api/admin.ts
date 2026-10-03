@@ -44,6 +44,7 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/, 'API key 不能包含控制字符').optional(), clearKey: z.boolean().optional() });
 const configShape = z.object({
+  searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
   unified: editableModel.optional(),
   expectedVersion: z.number().int().nonnegative().optional(),
@@ -211,6 +212,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         enabled: loaded.enabled,
         config: {
           routingMode: loaded.config.routingMode ?? 'advanced',
+          searchEnabled: loaded.config.searchEnabled === true,
           ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified'] as const).flatMap(purpose => {
             const entry = loaded.config[purpose];
             if (!entry) return [];
@@ -232,7 +234,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
     const { notes } = body;
     // Legacy saves must preserve inactive drafts and must not silently switch the active route.
-    const parsed = aiConfigSchema.safeParse({ ...body, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified });
+    const parsed = aiConfigSchema.safeParse({ ...body, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
     for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified'] as const) {

@@ -261,6 +261,7 @@ describe('recycle lifecycle integration for dynamic file tools', () => {
 describe('authorized native search (fixtures only)', () => {
   async function setup() {
     const f = await fixture(), cfg = (await loadAiConfig(env.DB))!;
+    cfg.config.searchEnabled=true;
     Object.assign(cfg.config.textEconomy, {
       providerPreset: 'deepseek-anthropic', apiProtocol: 'messages', apiUrl: presetEndpoint('deepseek-anthropic', 'deepseek-v4-pro'), model: 'deepseek-v4-pro', supportsJson: false, reasoningEffort: undefined, temperature: undefined, topP: undefined
     });

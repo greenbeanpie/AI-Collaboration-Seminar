@@ -7,6 +7,7 @@ import { ArrowRight } from 'lucide-react';
 import { listAllItems, projectPath } from '../api/client';
 import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
+import './ProjectWorkspace.css';
 import { ErrorNotice, EmptyState, SectionCard, Spinner } from '../components/ui';
 
 export function ProjectOverviewPage() {
@@ -15,12 +16,10 @@ export function ProjectOverviewPage() {
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   const queries = useQueries({ queries: [
     { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
-    { queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members'), { limit: 100 }) },
-    { queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) },
   ] });
-  const [tasks, members, materials, sources, requirementSets] = queries;
+  const [tasks, sources, requirementSets] = queries;
   const taskItems = tasks.data ?? [];
   const done = taskItems.filter((task) => task.status === 'done').length;
   const draftSets = requirementSets.data?.filter((set) => set.status !== 'confirmed').length;
@@ -32,13 +31,10 @@ export function ProjectOverviewPage() {
 
   return <div className="page-stack project-overview-page">
     <div className="overview-welcome"><div><span className="eyebrow">项目进度</span><h1>一起把下一步做好</h1><p>此处汇总项目服务中已保存的任务、成员、材料与要求状态。</p></div><Link to={`/app/projects/${projectId}/tasks`} className="button button-primary">查看任务 <ArrowRight size={16} /></Link></div>
-    <SectionCard title="项目主目标" detail="主目标独立于子任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖子任务</Link></>}</SectionCard>
-    {errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
+    <div className="project-overview-columns"><div><SectionCard title="项目主目标" detail="主目标独立于子任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖子任务</Link></>}</SectionCard>
+    </div><div className="stack">{errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
     <div className="metric-grid overview-metrics">
       <TaskCompletionMetric variant="overview" completed={done} total={taskItems.length} available={tasks.data !== undefined && !tasks.error} unavailableMessage={tasks.error ? '任务统计暂不可用' : '正在读取任务进度'} />
-      <div className="metric-card"><span>团队成员</span><strong>{members.data?.length ?? '—'}</strong><small>当前项目成员</small></div>
-      <div className="metric-card"><span>待确认要求</span><strong>{draftSets ?? '—'}</strong><small>已解析要求集中的草稿</small></div>
-      <div className="metric-card"><span>材料版本</span><strong>{materials.data?.filter((item) => item.currentVersionId).length ?? '—'}</strong><small>已有正式版本的材料</small></div>
     </div>
     <SectionCard title="待处理事项" detail="最新两项未完成任务，优先显示由你负责的任务。">
       <div className="card-list">
@@ -48,6 +44,6 @@ export function ProjectOverviewPage() {
         {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/assessment?section=standards`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求等待纳入统一标准</strong><p>在同一编辑器复核要求与评分维度，确认后固定标准版本。</p></span><ArrowRight size={15} /></Link>}
         {checklistDataReady && !missingDeadline && Boolean(sources.data?.length) && !draftSets && !hasOpenTasks && <EmptyState title="暂无待处理事项" detail="系统没有从当前项目记录中发现待处理内容。" />}
       </div>
-    </SectionCard>
+    </SectionCard></div></div>
   </div>;
 }

@@ -51,8 +51,8 @@ export function registerAiToolRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json(apiData(c, {
       fileTools: Boolean(cfg?.enabled), search: project?.ai_budget_usd != null ? {
         supported: false, reason: '有限金额预算无法保证供应商搜索附加费用上界；当前项目搜索不可用'
-      } : cfg?.enabled ? nativeSearchCapability(cfg.config.textEconomy) : {
-        supported: false, reason: '系统 AI 未启用'
+      } : cfg?.enabled && cfg.config.searchEnabled === true ? nativeSearchCapability(cfg.config.textEconomy) : {
+        supported: false, reason: cfg?.enabled ? '管理员尚未启用互联网搜索' : '系统 AI 未启用'
       }, searchCost: 'unknown' as const
     }), 200);
   });

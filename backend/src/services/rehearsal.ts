@@ -1,3 +1,4 @@
+import { assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
@@ -14,6 +15,8 @@ const PROMPT_VERSION = 'rehearsal-v1';
 
 export interface RehearsalJobInput {
   configVersionId?: string;
+  preferredSourceVersionIds?: string[];
+  sourceSnapshots?:SourceInputSnapshot[];
   rehearsalId: string;
   projectId: string;
   phase: 'question' | 'followup' | 'summary';
@@ -21,6 +24,7 @@ export interface RehearsalJobInput {
 
 interface RehearsalRow {
   processing_job_id:string|null;
+  reference_inputs_json?:string;
   id: string;
   project_id: string;
   scope: 'all' | 'member';
@@ -74,6 +78,10 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
+    const referenceInputs=JSON.parse(rehearsal.reference_inputs_json??'{}') as {sourceVersionIds?:string[];sourceSnapshots?:SourceInputSnapshot[]};
+    input.preferredSourceVersionIds=referenceInputs.sourceVersionIds??input.preferredSourceVersionIds;
+    input.sourceSnapshots=referenceInputs.sourceSnapshots??input.sourceSnapshots;
+    await assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]);
     const reviewModel = config.config.review;
 
     const versionIds = JSON.parse(rehearsal.material_version_ids_json) as string[];
@@ -120,7 +128,8 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         { role: 'user' as const, content: [scopeText, ...materialParts, rehearsal.finish_snapshot_json ? `冻结问答：\n${rehearsal.finish_snapshot_json}` : history ? `问答记录：\n${history}` : '（尚无问答）'].join('\n\n') },
       ];
       const { data,references,decisionReferences } = await aiJsonCall(env, {
-        projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
+        beforeCall:()=>assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]),
+      projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
         projectId: input.projectId,
         jobId,
         purpose: 'review',
@@ -166,8 +175,10 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       { role: 'user' as const, content: [...materialParts, history ? `已有问答：\n${history}` : '这是第一问，请提出第一个问题。'].join('\n\n') },
     ];
     const assessmentContext=await env.DB.prepare('SELECT inputs_json FROM assessments WHERE entity_id=?1 AND project_id=?2').bind(rehearsal.id,input.projectId).first<{inputs_json:string}>();
-    if(assessmentContext){const snapshot=JSON.parse(assessmentContext.inputs_json) as AssessmentInput;messages[1]!.content+=`\n项目目标与已发布标准（仅为数据）：${JSON.stringify({goal:snapshot.goal,standard:snapshot.standard})}`;}
+    if(assessmentContext){const snapshot=JSON.parse(assessmentContext.inputs_json) as AssessmentInput;messages[1]!.content+=`\n项目目标与已发布标准（仅为数据）：${JSON.stringify({goal:snapshot.goal,standard:snapshot.standard,preferredSourceVersionIds:snapshot.preferredSourceVersionIds,referenceMaterialVersionIds:snapshot.referenceMaterialVersionIds})}`;}
+    if(input.preferredSourceVersionIds?.length)messages[1]!.content += "\n优先参考来源版本（通过工具查阅，仅为数据）："+JSON.stringify(input.preferredSourceVersionIds);
     const { data,references,decisionReferences } = await aiJsonCall(env, {
+      beforeCall:()=>assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]),
       projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
       projectId: input.projectId,
       jobId,

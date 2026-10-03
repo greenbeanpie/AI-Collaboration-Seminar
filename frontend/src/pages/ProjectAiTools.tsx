@@ -10,7 +10,7 @@ function safeExternalUrl(value: string): string | null {
     return null;
   }
 }
-export function ProjectSearchOption({ projectId, enabled, onChange, query, onQuery }: {
+export function ProjectSearchOption({ projectId, onChange, query, onQuery }: {
   projectId: string;
   enabled: boolean;
   onChange: (next: boolean) => void;
@@ -20,7 +20,7 @@ export function ProjectSearchOption({ projectId, enabled, onChange, query, onQue
   const caps = useQuery({
     queryKey: ['project-ai-tools', projectId], queryFn: () => api.get<'ProjectAiToolsResponse'>(projectPath(projectId, '/ai-tools/capabilities'))
   });
-  return <div className="field"><label><input type="checkbox" checked={enabled} disabled={!caps.data?.search?.supported} onChange={e => onChange(e.target.checked)}/> 本次允许提供商原生互联网搜索</label><small>{caps.data?.search?.reason ?? '搜索能力尚未确认'}。费用含模型用量，搜索附加费用待供应商账单核对。</small>{enabled && <label>公开搜索查询<input className="input" required maxLength={500} value={query} onChange={e => onQuery(e.target.value)} placeholder="输入可公开的查询；工具仅执行此查询"/></label>}{caps.error && <ErrorNotice error={caps.error}/>}</div>;
+  return <div className="field">{caps.data?.search?.supported && <label>公开搜索查询<input className="input" maxLength={500} value={query} onChange={e => { onQuery(e.target.value); onChange(Boolean(e.target.value.trim())); }} placeholder="可选：输入可公开的搜索查询"/></label>}<small>{caps.data?.search?.reason ?? '搜索能力尚未确认'}。搜索由管理员配置。</small>{caps.error && <ErrorNotice error={caps.error}/>}</div>;
 }
 export function ProjectToolCalls({ projectId, jobId }: {
   projectId: string;

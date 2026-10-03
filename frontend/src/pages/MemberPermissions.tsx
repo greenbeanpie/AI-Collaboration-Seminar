@@ -5,7 +5,7 @@ import type { Member } from '../api/types';
 import { administratorPermissions, ordinaryPermissions, type ProjectPermissions } from '../project-permissions';
 import { ErrorNotice } from '../components/ui';
 
-const labels: Record<keyof ProjectPermissions,string> = { teamManage:'团队管理',taskManage:'任务管理',resourceManage:'资料管理',scoreInitiate:'评分与答辩发起' };
+const labels: Record<keyof ProjectPermissions,string> = { teamManage:'团队管理',taskManage:'任务管理',resourceManage:'资料管理',scoreInitiate:'评分与答辩发起',scoreCorrect:'历史评分修正' };
 export function MemberPermissions({ projectId, member }: { projectId:string; member:Member }) {
   const client = useQueryClient();
   const [draft,setDraft] = useState<ProjectPermissions>(member.permissions ?? ordinaryPermissions);

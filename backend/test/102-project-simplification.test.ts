@@ -7,6 +7,7 @@ import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { newId, nowIso } from '../src/core/db';
 import type { Env } from '../src/env';
 import { projectGoal, replaceTaskDependencies, taskDependencies, saveStandard, confirmStandard, confirmedStandard } from '../src/services/project-simplification';
+import { createManualAssessment } from '../src/services/assessment-corrections';
 import { runMaterialAssessmentJob } from '../src/services/assessments';
 import { runRehearsalTurnJob } from '../src/services/rehearsal';
 import { runCollaborationAiJob } from '../src/services/collaboration-ai';
@@ -24,14 +25,14 @@ async function material(f:Awaited<ReturnType<typeof fixture>>,markdown='案例�
 function model(output:unknown,inspect?:(body:any)=>void){return vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{assertGoRequest(url,init);inspect?.(JSON.parse(String(init?.body)));return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:20}}),{headers:{'content-type':'application/json'}});});}
 
 describe('one goal and informative subtask dependencies',()=>{
-  it('lets owners independently score with AI disabled, revise partial dimensions and reject stale corrections',async()=>{
+  it('rejects independent scoring creation and lets owners correct existing historical manual records with AI disabled',async()=>{
     const f=await fixture(),s=await standard(f);
     await env.DB.prepare('UPDATE ai_config_versions SET enabled=0').run();
     const createdResponse=await f.request('/assessments/manual',{standardsVersionId:s.standardsVersionId,scores:[{key:'quality',score:80},{key:'coverage',score:40}],reason:'人工核对'});
-    expect(createdResponse.status).toBe(201);
-    const created=await json(createdResponse);
+    expect(createdResponse.status).toBe(404);
+    const created=await createManualAssessment(env,f.projectId,f.user.userId,{standardsVersionId:s.standardsVersionId,scores:[{key:'quality',score:80},{key:'coverage',score:40}],reason:'历史人工核对'});
     expect(created).toMatchObject({origin:'manual',revision:1,report:{weightedTotal:70}});
-    expect(created.report.scores.every((score:any)=>score.confidence===null&&score.origin==='human')).toBe(true);
+    expect(created.report!.scores.every((score:any)=>score.confidence===null&&score.origin==='human')).toBe(true);
     const correction=await f.request(`/assessments/${created.assessmentId}/scores`,{expectedRevision:1,scores:[{key:'coverage',score:80}],reason:'补充核查覆盖情况'},'PATCH');
     expect(correction.status).toBe(200);
     expect(await json(correction)).toMatchObject({origin:'manual',revision:2,report:{weightedTotal:80}});
@@ -39,6 +40,14 @@ describe('one goal and informative subtask dependencies',()=>{
     const outsider=await seedUser();
     expect((await f.request(`/assessments/${created.assessmentId}/scores`,{expectedRevision:2,scores:[{key:'quality',score:0}],reason:'无权限'},'PATCH',outsider.token)).status).toBe(403);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessment_corrections WHERE assessment_id=?1').bind(created.assessmentId).first<{n:number}>())!.n).toBe(2);
+    const member=await seedUser();
+    await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),f.projectId,member.userId,nowIso()).run();
+    const correctionBody={expectedRevision:2,scores:[{key:'quality',score:90}],reason:'授权复评'};
+    expect((await f.request(`/assessments/${created.assessmentId}/scores`,correctionBody,'PATCH',member.token)).status).toBe(403);
+    await env.DB.prepare('UPDATE project_members SET permissions_json=?3 WHERE project_id=?1 AND user_id=?2').bind(f.projectId,member.userId,JSON.stringify({scoreCorrect:true})).run();
+    expect((await f.request(`/assessments/${created.assessmentId}/scores`,correctionBody,'PATCH',member.token)).status).toBe(200);
+    await env.DB.prepare('UPDATE project_members SET permissions_json=?3 WHERE project_id=?1 AND user_id=?2').bind(f.projectId,member.userId,JSON.stringify({scoreCorrect:false})).run();
+    expect((await f.request(`/assessments/${created.assessmentId}/scores`,{...correctionBody,expectedRevision:3},'PATCH',member.token)).status).toBe(403);
     await configureGoFixture();
   });
   it('normalizes legacy display without modifying IDs, status, revisions or inventing submissions',async()=>{const f=await fixture(),id=await task(f,'历史完成',true,'done');const goal=await json(await f.request('/goal'));expect(goal.title).toBe('测试项目');const list=await json(await f.request('/tasks'));expect(list.items[0]).toMatchObject({taskId:id,status:'done',lifecycleState:'accepted',revision:7,unfinishedDependencyIds:[]});expect(await env.DB.prepare('SELECT lifecycle_state,status,revision FROM tasks WHERE id=?1').bind(id).first()).toEqual({lifecycle_state:null,status:'done',revision:7});expect((await env.DB.prepare('SELECT COUNT(*) n FROM task_submissions').first<{n:number}>())!.n).toBe(0);});
@@ -109,6 +118,16 @@ describe('independent goal assessments with complete evidence',()=>{
       expect(parsed.report).toEqual(report);expect(assessmentSchema.safeParse({...dto,historical:false}).success).toBe(false);
     }
     const list=await json(await f.request('/assessments'));expect(list.items).toHaveLength(2);expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessments WHERE project_id=?1').bind(f.projectId).first<{n:number}>())!.n).toBe(0);
+  });
+  it('treats selected background as priority reference and freezes real output versions independently',async()=>{
+    const f=await fixture(),s=await standard(f),output=await material(f,'真实成果正文'),background=await material(f,'仅供参考的背景');
+    await env.DB.prepare("UPDATE materials SET purpose='output',current_version_id=?2 WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)").bind(output,output).run();
+    await env.DB.prepare("UPDATE materials SET purpose='background',current_version_id=?2 WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)").bind(background,background).run();
+    const created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[background]}));
+    const row=await env.DB.prepare('SELECT inputs_json FROM assessments WHERE id=?1').bind(created.assessmentId).first<{inputs_json:string}>();
+    const inputs=JSON.parse(row!.inputs_json);expect(inputs.materialVersionIds).toEqual([output]);expect(inputs.referenceMaterialVersionIds).toEqual([background]);
+    await env.DB.prepare('UPDATE materials SET current_version_id=NULL WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)').bind(output).run();
+    const saved=await json(await f.request(`/assessments/${created.assessmentId}`));expect(saved.materialVersionIds).toEqual([output]);
   });
   it('computes weighted total on server, freezes goal and standard, sends full body beyond old 8000 limit',async()=>{const f=await fixture(),s=await standard(f),text='正文'.repeat(4500)+'案例有明确结果。',versionId=await material(f,text),goal=await projectGoal(env,f.projectId),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId],goalRevision:goal.revision}));const evidence=[{type:'material',materialVersionId:versionId,quote:'案例有明确结果。'}];const fetch=model({scores:[{key:'coverage',score:40,confidence:.9,comment:'范围',evidence},{key:'quality',score:80,confidence:.9,comment:'质量',evidence}],summary:'完整检查',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'met',comment:'有案例',evidence}]},body=>expect(JSON.stringify(body)).toContain(text));vi.stubGlobal('fetch',fetch);await f.request('/goal',{expectedRevision:goal.revision,title:'新目标'},'PATCH');await runMaterialAssessmentJob(offline,created.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report.weightedTotal).toBe(70);expect(result.goal.title).toBe(goal.title);expect(result.goalRevision).toBe(goal.revision);expect(result.jobId).toBe(created.jobId);expect(fetch).toHaveBeenCalledOnce();});
   it('rejects forged citations and missing rubric dimensions',async()=>{const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));vi.stubGlobal('fetch',model({scores:[{key:'quality',score:80,confidence:.9,comment:'虚构',evidence:[{type:'material',materialVersionId:versionId,quote:'不存在的句子'}]}],summary:'检查',limitations:[],requirementChecks:[]}));await runMaterialAssessmentJob(offline,created.jobId);expect((await getJob(env,created.jobId)).status).toBe('failed');expect((await json(await f.request(`/assessments/${created.assessmentId}`))).report).toBeNull();});

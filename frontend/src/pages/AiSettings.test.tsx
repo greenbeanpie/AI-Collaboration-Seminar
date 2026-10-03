@@ -499,3 +499,21 @@ it('explains the required Messages cap and rejects an off switch without saving 
   expect(await screen.findByRole('alert')).toHaveTextContent('Messages 协议必填 max_tokens');
   expect(mock).toHaveBeenCalledOnce();
 });
+
+it('editing an OpenCode preset URL converts to custom and preserves explicit key, model and inferred protocol', async () => {
+  const requests: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
+    requests.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ data: { version: 1, enabled: false } }));
+  }));
+  await setup();
+  fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-zen' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'explicit-draft-key' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API URL/), { target: { value: 'https://proxy.example/v1/chat/completions' } });
+  expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('custom');
+  expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('explicit-draft-key');
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'custom', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions', apiProtocol: 'chat-completions' } });
+});

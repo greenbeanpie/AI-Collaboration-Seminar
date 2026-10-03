@@ -2,11 +2,11 @@ import { z } from '@hono/zod-openapi';
 import type { Env } from '../env';
 import { permissionDenied } from '../core/errors';
 
-export const permissionSchema = z.object({ teamManage: z.boolean(), taskManage: z.boolean(), resourceManage: z.boolean(), scoreInitiate: z.boolean() }).strict();
+export const permissionSchema = z.object({ teamManage: z.boolean(), taskManage: z.boolean(), resourceManage: z.boolean(), scoreInitiate: z.boolean(), scoreCorrect: z.boolean().default(false) }).strict();
 export type ProjectPermissions = z.infer<typeof permissionSchema>;
 export type PermissionKey = keyof ProjectPermissions;
-export const memberPermissions: ProjectPermissions = { teamManage: false, taskManage: false, resourceManage: false, scoreInitiate: true };
-export const managerPermissions: ProjectPermissions = { teamManage: true, taskManage: true, resourceManage: true, scoreInitiate: true };
+export const memberPermissions: ProjectPermissions = { teamManage: false, taskManage: false, resourceManage: false, scoreInitiate: true, scoreCorrect: false };
+export const managerPermissions: ProjectPermissions = { teamManage: true, taskManage: true, resourceManage: true, scoreInitiate: true, scoreCorrect: true };
 export function effectivePermissions(role: string, admin: boolean, stored: string | null): ProjectPermissions {
   if (role === 'owner' || admin) return { ...managerPermissions };
   let parsed: unknown;

@@ -15,7 +15,7 @@ async function fixture(privateContext=true,rejectFirstSearch=false){
   const owner=await seedUser(),projectId=await seedProject(owner.userId),jobId=newId(),loaded=(await loadAiConfig(env.DB))!;
   const model={...loaded.config.review,provider:'openai-compatible',providerPreset:'deepseek-anthropic' as const,apiProtocol:'messages' as const,model:'deepseek-v4-pro',apiUrl:'https://api.deepseek.com/anthropic/v1/messages',apiKeyEncrypted:await seal('fixture-search-key',env.AUTH_SECRET),supportsJson:false};
   delete model.goHeaders;delete model.goUsageAcknowledged;
-  await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(loaded.id,JSON.stringify({routingMode:'advanced',textEconomy:model,visionEconomy:model,review:model})).run();
+  await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(loaded.id,JSON.stringify({searchEnabled:true,routingMode:'advanced',textEconomy:model,visionEconomy:model,review:model})).run();
   expect(nativeSearchCapability(model).supported).toBe(true);
   await reserveAiSlot(env,{projectId,jobId,purpose:'review_run',maxCalls:24});
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'review_run','running','{}',?3,?3)").bind(jobId,projectId,nowIso()).run();
@@ -40,6 +40,12 @@ async function complete(f:Awaited<ReturnType<typeof fixture>>){
   throw new Error('fixture did not finish');
 }
 describe('native search survives investigation slices',()=>{
+  it('blocks forged search requests when administrator disables search',async()=>{
+    const f=await fixture();const loaded=(await loadAiConfig(env.DB))!;
+    await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(loaded.id,JSON.stringify({...loaded.config,searchEnabled:false})).run();
+    const result=await complete(f);expect(f.counts().searchCalls).toBe(0);expect(result.citations).toEqual([]);
+    expect(result.trace.filter(item=>item.name==='web_search').every(item=>item.status==='failed')).toBe(true);
+  });
   it('resumes an explicitly rejected native request without replaying the main model response',async()=>{
     const f=await fixture(true,true);
     await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);

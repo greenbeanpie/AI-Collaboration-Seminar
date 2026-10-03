@@ -1,3 +1,4 @@
+import { snapshotSourceInputs } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -17,6 +18,7 @@ const createBody = z.object({
   scope: z.enum(['all', 'member']),
   memberId: z.string().uuid().nullish(),
   materialVersionIds: z.array(z.string().uuid()).max(10).default([]),
+  sourceVersionIds: z.array(z.string().uuid()).max(5).default([]),
 });
 
 const turnSchema = z.object({
@@ -183,12 +185,15 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
       if (!memberRow) throw notFound('成员不存在或不属于本项目');
     }
 
+    const sourceSnapshots=await snapshotSourceInputs(c.env,member.projectId,body.sourceVersionIds);
+    const automatic=await c.env.DB.prepare("SELECT current_version_id FROM materials WHERE project_id=?1 AND purpose='output' AND current_version_id IS NOT NULL ORDER BY updated_at DESC,id").bind(member.projectId).all<{current_version_id:string}>();
+    const materialVersions=[...new Set([...body.materialVersionIds,...automatic.results.map(m=>m.current_version_id)])];
     const result = await withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'rehearsal_turn',maxCalls:24 }, async (jobId, configVersionId) => {
       const rehearsalId = newId();
       const inserted=await c.env.DB.prepare(
-        `INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at, processing_job_id) SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
+        `INSERT INTO rehearsals (id, project_id, scope, member_id, material_version_ids_json, status, created_by, created_at, processing_job_id, reference_inputs_json) SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8, ?9 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
       )
-        .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(body.materialVersionIds), user.id, nowIso(), jobId)
+        .bind(rehearsalId, member.projectId, body.scope, body.memberId ?? null, JSON.stringify(materialVersions), user.id, nowIso(), jobId, JSON.stringify({sourceVersionIds:body.sourceVersionIds,sourceSnapshots}))
         .run();
       if(!inserted.meta.changes)throw permissionDenied('评分发起权限已变化');
 
@@ -197,7 +202,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
           jobId,
           projectId: member.projectId,
           kind: 'rehearsal_turn',
-          input: { rehearsalId, projectId: member.projectId, phase: 'question', configVersionId },
+          input: { rehearsalId, projectId: member.projectId, phase: 'question', configVersionId, preferredSourceVersionIds:body.sourceVersionIds, sourceSnapshots },
           createdBy: user.id,
         });
       } catch (error) {

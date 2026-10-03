@@ -10,7 +10,7 @@ import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { clearPendingJob, completeIntent, idempotencyKeyForIntent, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 import { StandardsEditor } from './StandardsEditor';
-import { FixedMaterialVersions } from './FixedMaterialVersions';
+import { ReferencePicker } from './ReferencePicker';
 import { RehearsalsPage } from './RehearsalsPage';
 import './ProjectWorkspace.css';
 import { ManualAssessmentEditor } from './ManualAssessmentEditor';
@@ -45,6 +45,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const history = useQuery({ queryKey: ['assessments', projectId], queryFn: ({ signal }) => assessmentHistory(projectId, signal) });
   const [standardId, setStandardId] = useState('');
   const [materialVersions, setMaterialVersions] = useState<string[]>([]);
+  const [sourceVersions, setSourceVersions] = useState<string[]>([]);
   const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId)));
   const job = useVisibleJobPoller(pending?.jobId ?? null);
   const rows = (history.data ?? []).filter(item => item.kind === kind);
@@ -55,7 +56,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const select = (id: string) => { const next = new URLSearchParams(params); next.set('assessmentId', id); next.delete('reviewId'); next.delete('rehearsalId'); setParams(next); };
   const create = useMutation({ mutationFn: async () => {
     if(!canInitiate)throw new Error('没有发起评分的项目权限');
-    const body = { kind, standardsVersionId: selectedStandardId, materialVersionIds: [...materialVersions].sort(), goalRevision: goal.data?.revision };
+    const body = { kind, standardsVersionId: selectedStandardId, materialVersionIds: [...materialVersions].sort(), sourceVersionIds: [...sourceVersions].sort(), goalRevision: goal.data?.revision };
     const namespace = `assessment-create:${projectId}:${kind}`;
     const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
     const result = await projectRequest<{ assessmentId: string; jobId: string; rehearsalId?: string }>(projectId, '/assessments', { method: 'POST', body, idempotencyKey }); completeIntent(namespace); return result;
@@ -88,7 +89,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
           <div className="callout"><strong>本轮主目标：{goal.data?.title || '尚未填写'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${encodeURIComponent(projectId)}/tasks`}>编辑主目标</Link></div>
           <Field label="已确认项目标准"><select className="input" value={selectedStandardId} onChange={event => setStandardId(event.target.value)}><option value="">选择标准固定版本</option>{confirmed.map(version => <option key={version.standardsVersionId} value={version.standardsVersionId}>{version.title} · v{version.version}</option>)}</select></Field>
           {!confirmed.length && <p className="notice notice-warn">先在“项目标准”中保存并确认标准，再开始评分。</p>}
-          <FixedMaterialVersions projectId={projectId} selected={materialVersions} onChange={setMaterialVersions} disabled={create.isPending} />
+          <ReferencePicker projectId={projectId} sourceVersionIds={sourceVersions} materialVersionIds={materialVersions} onChange={selection => { setSourceVersions(selection.sourceVersionIds); setMaterialVersions(selection.materialVersionIds); }} disabled={create.isPending} />
           {create.error && <ErrorNotice error={create.error} />}
           <button className="button button-primary" disabled={!canInitiate || !aiEnabled || !goal.data?.title.trim() || !selectedStandardId || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
         </form>}
@@ -97,9 +98,10 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
         {history.isLoading && <Spinner label="读取评分历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
         <div className="assessment-history">{rows.map(row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{row.status}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>)}</div>
         {!history.isLoading && !history.error && !rows.length && <EmptyState title="尚无此形式的评分记录" detail="完成一轮检查或演练后，反馈会独立保存。" />}
+    {(assessment && !assessment.historical && projectPermission(project,'scoreCorrect') && ['succeeded','failed'].includes(assessment.status)) && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={confirmed.find(item => item.standardsVersionId === (assessment?.standardsVersionId ?? selectedStandardId))} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
       </SectionCard>
     </div>
-    {(assessment ? project.myRole === 'owner' && (assessment.kind !== 'rehearsal' || assessment.canOperate === true) : canInitiate) && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={confirmed.find(item => item.standardsVersionId === (assessment?.standardsVersionId ?? selectedStandardId))} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
+
     {pending && <div className="notice"><strong>本轮评分任务：{job.job ? jobStatusLabel(job.job.status) : '正在读取'}</strong>{job.job?.status === 'failed' && <><p>评分未完成，服务端失败状态与已有证据已保留。</p><button className="button button-quiet" disabled={retry.isPending || !aiEnabled || (assessment?.kind==='rehearsal' && !assessment.canOperate)} onClick={() => retry.mutate()}>重试本轮任务</button></>}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
     {selectedId && <SectionCard title="本轮评分与证据" detail="总分由服务端按已确认权重计算；证据不足时显示反馈与无法评分的原因。" action={<button className="button button-quiet button-small" onClick={() => void selected.refetch()}><RefreshCw size={14} />刷新结果</button>}>
       {selected.isLoading && <Spinner label="读取本轮评分" />}{selected.error && <ErrorNotice error={selected.error} onRetry={() => void selected.refetch()} />}
