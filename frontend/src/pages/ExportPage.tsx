@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Download, FileJson2, FileText, RefreshCw } from 'lucide-react';
+import { Download, FileJson2, RefreshCw } from 'lucide-react';
 import { api, projectPath } from '../api/client';
 import { useProject } from '../components/ProjectShell';
 import { ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -103,7 +103,7 @@ export function ExportPage() {
 
   return <div className="page-stack export-page">
     <PageHeading eyebrow="成果整理" title="导出成果说明" detail="从当前项目服务端数据生成 JSON 汇总和 Markdown 整理稿。刷新可重新读取最新版本。" action={<StatusPill tone={bundle ? 'good' : 'neutral'}>{bundle ? '已读取服务端汇总' : '等待服务端数据'}</StatusPill>} />
-    <div className="notice notice-warn"><FileText size={17} /><div className="notice-copy"><strong>导出内容不是官方申报材料</strong><small>请按赛事平台要求核对格式、签字、承诺书和最终提交状态；预审与 AI 建议不替代官方评审。</small></div></div>
+
     {query.isLoading && <Spinner label="正在从后端整理项目记录" />}
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {bundle && <>

@@ -219,7 +219,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
     : capabilities.error
       ? <div className="ai-workflow-note is-error"><strong>无法确认后端 AI 能力。</strong> 为避免产生模拟结果，本页暂不开放生成操作。<ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /></div>
       : aiEnabled
-        ? <div className="ai-workflow-note">后端真实 AI 已启用。新内容会先保存为草稿，需人工复核后才能采纳。</div>
+        ? null
         : <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 生成和答辩辅导已停用；此处不会展示或生成模拟 AI 内容。已有真实会话仍可查看。</div>;
 
   const materialErrors = materialVersionQueries.filter((query) => query.error);
@@ -393,7 +393,7 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
   };
 
   return <div className="ai-workflow-draft">
-    <div className="ai-workflow-note">AI 草稿。请检查事实、引用与缺失占位符，并自行修改后再采纳。</div>
+
     <div className="ai-workflow-meta"><StatusPill tone={runStatus === 'adopted' ? 'good' : 'blue'}>{runStatus === 'adopted' ? '已采纳' : '待人工复核'}</StatusPill><span>运行 ID {runId}</span>{typeof payload.title === 'string' && <strong>{payload.title}</strong>}</div>
     <Field label="草稿 Markdown" hint="编辑这里的内容会按段落、标题、列表和引用转换为 Tiptap 文档。">
       <textarea className="input textarea" maxLength={200000} value={markdown} onChange={(event) => { setMarkdown(event.target.value); setEdited(true); }} disabled={Boolean(adopted)} />

@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import { Spinner } from '../components/ui';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useSession } from '../auth';
 import { SettingsEditGuard } from './SettingsEditGuard';
@@ -14,6 +16,6 @@ export function SettingsLayout() {
   return <div className="settings-layout">
     <h1>设置</h1>
     <nav className="settings-tabs" aria-label="设置分类">{tabs.map(([path, label]) => <NavLink key={path} to={`/app/settings/${path}`}>{label}</NavLink>)}</nav>
-    <SettingsEditGuard><div key={location.pathname} className="settings-content"><Outlet /></div></SettingsEditGuard>
+    <SettingsEditGuard><div key={location.pathname} className="settings-content"><Suspense fallback={<Spinner label="正在打开设置内容" />}><Outlet /></Suspense></div></SettingsEditGuard>
   </div>;
 }

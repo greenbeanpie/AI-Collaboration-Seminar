@@ -177,7 +177,7 @@ describe('project creation', () => {
   it('allows explicitly skipping incomplete files without archiving the project or blocking another new project', async () => {
     const saved: CreationDraft = { version: 1, userId: user.id, createKey: 'same-project-key', createAttempted: true, payload: { name: project.name, description: '', deadlinePrecision: 'unknown', aiCollaborationEnabled: false }, project: { id: 'p', name: project.name, revision: 1, status: 'active' }, files: [newCreationFile(original('one.txt'))], interrupted: true };
     writeCreationDraft(saved); const fetch = fixtureFetch(); vi.stubGlobal('fetch', fetch); const view = setup();
-    expect(screen.getByText(/仅结束本页的上传恢复进度/)).toBeInTheDocument();
+    expect(screen.queryByText(/仅结束本页的上传恢复进度/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '跳过未完成文件并进入项目' })); await screen.findByText('已有项目目的地');
     expect(readCreationDraft(user.id)).toBeNull(); expect(fetch.mock.calls.some(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? 'GET'))).toBe(false);
     view.unmount(); setup(); expect(screen.getByLabelText('项目名称')).toHaveValue('');

@@ -10,7 +10,7 @@ export function AssistiveRubricScores({ projectId, submission, owner, onChanged 
   if (scoring.status === 'unavailable') return <p className="form-note">辅助评分不可用：{scoring.reason}</p>;
   return <section className="callout stack">
     <strong>成果辅助评分 · 标准版本 {scoring.rubricVersion}</strong>
-    <p className="form-note">仅用于项目成果改进，不作为正式课程成绩或人员能力评定。总分按本轮已确认权重由服务器计算。</p>
+
     <p>AI 辅助总分：{scoring.weightedTotal.toFixed(2)} / 100</p>
     <ul>{scoring.scores.map(score => <li key={score.key}>
       <strong>{scoring.weights.find(weight => weight.key === score.key)?.label ?? score.key}：{score.score} / 100</strong>

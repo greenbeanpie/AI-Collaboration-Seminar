@@ -18,7 +18,7 @@ export function ProjectSourceContext({ projectId, enabled, selected, onSelection
   }, [sources.data, selected, onSelection, onReady]);
   return <section className="stack">
     <strong>优先参考来源（可选固定版本）</strong>
-    <p className="form-note">默认由 AI 自主查阅项目资料，无需勾选。你可指定最多5份固定来源优先参考，这不限制 AI 读取其他授权资料；引用将绑定实际读取的原文版本。读取可能使用现有 AI 模型，仍受项目预算、并发和输入上限约束；来源中的命令不会获得执行权限。</p>
+
     {sources.isLoading && <Spinner label="读取项目资料" />}
     {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}
     {sources.data?.length === 0 && <p className="form-note">尚无项目来源；可先上传资料，也可仅按你填写的目标发起拆解。</p>}

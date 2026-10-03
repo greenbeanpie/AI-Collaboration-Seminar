@@ -145,7 +145,7 @@ function SourceJobProgress({
       </div>
     </div>
     {job?.status === 'waiting_input' && pagesToRender > 0 && !capability?.features.aiEnabled && <div className="callout warning-callout">当前服务能力显示 AI 未启用。扫描页 OCR 和要求提取暂不可用，页面不会用模拟结果替代。</div>}
-    {job?.status === 'waiting_input' && pagesToRender > 0 && !tracked.fileId && <div className="callout">继续扫描时将从服务端读取原文件关联，不依赖导入时的浏览器。</div>}
+
     {scanning && <div className="sources-scan-progress">正在读取待渲染页码、用 PDF.js 生成页面图片并按服务端限制上传。{scanning ? '请保持此页打开。' : ''}</div>}
     {query.error && <div className="sources-error"><ErrorNotice error={query.error} onRetry={() => void query.refetch()} /></div>}
   </div>;

@@ -33,14 +33,14 @@ function ProjectCollaborationSettings() {
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {query.data && <form className="stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
       <label className="checkbox-row"><input type="checkbox" disabled={!owner || save.isPending} checked={enabled ?? base?.aiCollaborationEnabled ?? query.data.aiCollaborationEnabled ?? false} onChange={event => { if (!base) setBase({ ...query.data!, projectId }); setEnabled(event.target.checked); }} /><span>开启本项目 AI 智能协作</span></label>
-      <p className="form-note">开启后可按负责人要求创建、调整任务、建议分工，以及依据固定版本成果和已确认评分标准提供反馈与辅助分数。AI 不会改变成员权限、密钥、预算或删除项目；辅助分数不作为正式课程成绩。</p>
+
       <div className="form-grid-two">
         <Field label="分工方式"><select className="input" disabled={!owner || save.isPending} value={assignment ?? base?.assignmentMode ?? query.data.assignmentMode} onChange={event => { if (!base) setBase({ ...query.data!, projectId }); setAssignment(event.target.value as CollaborationMode); }}><option value="manual">负责人确认分工</option><option value="automatic">自动应用 AI 分工</option></select></Field>
         <Field label="成果验收方式"><select className="input" disabled={!owner || save.isPending} value={evaluation ?? base?.evaluationMode ?? query.data.evaluationMode} onChange={event => { if (!base) setBase({ ...query.data!, projectId }); setEvaluation(event.target.value as CollaborationMode); }}><option value="manual">负责人确认验收</option><option value="automatic">自动应用 AI 评价</option></select></Field>
         <Field label="任务规划审核"><select className="input" disabled={!owner || save.isPending} value={planning ?? base?.planningMode ?? query.data.planningMode ?? 'manual'} onChange={event=>{if(!base)setBase({...query.data!,projectId});setPlanning(event.target.value as CollaborationMode);}}><option value="manual">事先确认 AI 规划</option><option value="automatic">允许自动应用 AI 规划</option></select></Field>
         <Field label="进度推进审核"><select className="input" disabled={!owner || save.isPending} value={progression ?? base?.progressionMode ?? query.data.progressionMode ?? 'manual'} onChange={event=>{if(!base)setBase({...query.data!,projectId});setProgression(event.target.value as CollaborationMode);}}><option value="manual">事先确认 AI 推进</option><option value="automatic">允许 AI 自主推进</option></select></Field>
       </div>
-      <p className="form-note">这些设置只限制 AI 是否需要事先审核，负责人始终可以手动操作、事后修正及重新反馈。关闭项目开关会阻止新的协作调用和过期任务的自动应用；历史保留。AI 不可用时可手动操作，未读取的附件仍需人工核对。</p>
+
       {outdated && <div className="notice notice-warn">协作规则已更新。请重新载入最新设置后再修改，避免覆盖他人的选择。</div>}
       {outdated && <button type="button" className="button button-quiet" onClick={() => { setBase(null); setEnabled(null); setAssignment(null); setEvaluation(null); setPlanning(null); setProgression(null); setConflict(false); save.reset(); }}>重新载入协作规则</button>}
       {save.error && <ErrorNotice error={save.error} />}

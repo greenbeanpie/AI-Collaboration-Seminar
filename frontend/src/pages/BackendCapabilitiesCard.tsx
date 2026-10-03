@@ -21,7 +21,7 @@ export function BackendCapabilitiesCard() {
         <div className="capability-row"><span>项目人数</span><strong>{capabilities.data.competitionTemplate.teamSizeLimit == null ? '不设上限' : `${capabilities.data.competitionTemplate.teamSizeLimit} 人`}</strong></div>
       </div> : !capabilities.error && <div className="callout">正在读取后端能力……</div>}
       {capabilities.data?.features.emailMode === 'echo' && capabilities.data.environment === 'local' && <div className="notice notice-warn"><AlertTriangle size={16} /><div className="notice-copy"><strong>本地邮箱回显模式</strong><small>仅本地联调会返回开发验证码；部署环境必须使用真实邮件服务。</small></div></div>}
-      <div className="form-note"><AlertTriangle size={16} />官方申报书、签字承诺及正式提交仍以比赛平台为准；本工具中的预审与评分建议不是官方评审结果。</div>
+
     </SectionCard>
   );
 }

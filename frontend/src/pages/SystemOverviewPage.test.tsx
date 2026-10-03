@@ -25,7 +25,7 @@ it('preserves backend limits and service statuses', () => {
   render(<SystemOverviewPage />);
   for (const label of ['环境', 'API 版本', 'AI 服务', '网页抓取', '邮箱验证码模式', '文件大小上限', 'PDF 页数上限', '扫描页长边', '单页图片上限', 'AI 并发上限', '项目人数']) expect(screen.getByText(label)).toBeInTheDocument();
   for (const value of ['production', 'v1', '已启用', '可用', 'resend', '10 MiB', '30 页', '2000 px', '2.0 MiB', '2 项 / 项目']) expect(screen.getByText(value)).toBeInTheDocument();
-  expect(screen.getByText(/官方申报书/)).toBeInTheDocument();
+  expect(screen.queryByText(/官方申报书/)).not.toBeInTheDocument();
 });
 it('shows local echo warning only for local echo capability', () => {
   state.environment = 'local'; state.emailMode = 'echo'; render(<SystemOverviewPage />);

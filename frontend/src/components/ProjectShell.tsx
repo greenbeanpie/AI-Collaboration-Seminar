@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, Suspense } from 'react';
 import { ProjectNavigation, ProjectSectionLayout, ProjectSectionNavigation } from './ProjectNavigation';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -25,6 +25,6 @@ export function ProjectShell() {
     <div className="project-banner"><div className="project-breadcrumb"><NavLink to="/app">我的项目</NavLink><span>/</span><span>{project.name}</span></div><div className="project-name-row"><div><h1>{project.name}</h1><p>{project.description || '项目空间与协作进度'}</p></div><StatusPill tone={project.status === 'active' ? 'good' : 'neutral'}>{project.status === 'active' ? '进行中' : '已归档'}</StatusPill></div></div>
     <ProjectNavigation projectId={projectId} />
     <ProjectSectionNavigation projectId={projectId} canManage={project.myRole === 'owner'} />
-    <div className="content-wrap project-content-wrap"><ProjectSectionLayout projectId={projectId}><Outlet /></ProjectSectionLayout></div>
+    <div className="content-wrap project-content-wrap"><ProjectSectionLayout projectId={projectId}><Suspense fallback={<Spinner label="正在打开项目内容" />}><Outlet /></Suspense></ProjectSectionLayout></div>
   </ProjectContext.Provider>;
 }

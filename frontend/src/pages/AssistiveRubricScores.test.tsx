@@ -18,7 +18,7 @@ it('renders assistive scores, frozen weights, confidence and evidence without ca
   const { fetch } = setup(false);
   expect(screen.getByText('AI 辅助总分：76.00 / 100')).toBeInTheDocument();
   expect(screen.getByText(/置信度 85%/)).toBeInTheDocument();
-  expect(screen.getByText(/不作为正式课程成绩/)).toBeInTheDocument();
+  expect(screen.queryByText(/不作为正式课程成绩/)).not.toBeInTheDocument();
   expect(screen.queryByText('负责人复核或调整辅助分数')).not.toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });

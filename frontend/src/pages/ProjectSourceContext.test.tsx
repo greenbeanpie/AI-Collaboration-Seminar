@@ -78,7 +78,7 @@ describe('grounded project source selection', () => {
     expect(screen.getByRole('checkbox', { name: '使用来源：尚无版本' })).toBeDisabled();
     expect(screen.getAllByText('等待正文处理')).toHaveLength(7);
     expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeDisabled();
-    expect(screen.getByText(/读取可能使用现有 AI 模型/)).toHaveTextContent('受项目预算');
+    expect(screen.queryByText(/读取可能使用现有 AI 模型/)).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: '查看原文件、缺页处理与文件总结' })).toHaveAttribute('href', '/app/projects/p/sources');
   });

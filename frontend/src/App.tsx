@@ -45,13 +45,13 @@ const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ d
 const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ default: module.HelpPage })));
 
 function RouteLoading() {
-  return <main className="center-screen"><Spinner label="正在打开工作区" /></main>;
+  return <div className="content-wrap"><Spinner label="正在打开工作区" /></div>;
 }
 
 function Landing() {
   const session = useSession();
   const capabilities = useCapabilities();
-  if (session.isLoading) return <main className="center-screen"><Spinner label="正在恢复登录状态" /></main>;
+  if (session.isLoading) return <div className="content-wrap"><Spinner label="正在恢复登录状态" /></div>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
   if (session.data) return <Navigate to="/app" replace />;
   return <LoginPage capabilities={capabilities.data} capabilityError={capabilities.error} onRetryCapabilities={capabilities.refetch} />;
@@ -75,10 +75,10 @@ function ProtectedApp() {
     window.addEventListener('auth-expired', expired);
     return () => window.removeEventListener('auth-expired', expired);
   }, [navigate, queryClient]);
-  if (session.isLoading) return <main className="center-screen"><Spinner label="正在检查账户" /></main>;
+  if (session.isLoading) return <div className="content-wrap"><Spinner label="正在检查账户" /></div>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
   if (!session.data) return <Navigate to="/login" replace />;
-  return <AppShell user={session.data}><NotificationRuntime key={session.data.id} userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Outlet /></AppShell>;
+  return <AppShell user={session.data}><NotificationRuntime key={session.data.id} userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Suspense fallback={<RouteLoading />}><Outlet /></Suspense></AppShell>;
 }
 
 function AccountNotifications() {

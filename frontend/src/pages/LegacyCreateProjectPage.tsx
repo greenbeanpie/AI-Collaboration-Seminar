@@ -2,7 +2,7 @@ import { DateInput } from '../components/DateInput';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useBlocker, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarDays } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { ApiError, api, projectPath } from '../api/client';
 import { useCapabilities, useSession } from '../auth';
 import { ErrorNotice, Field, PageHeading, Spinner } from '../components/ui';
@@ -204,7 +204,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
       <Field label="项目名称"><input className="input" required maxLength={100} disabled={frozen || pending} value={name} onChange={event => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
       <Field label="项目说明" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
       <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
-      <div className="form-note"><CalendarDays size={16} />未确认日期时会保留为空；有日期时按“精确到日期”保存，不会自动补上时间。</div>
+
       <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>默认关闭。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
       {aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="form-note">{capabilities.data ? '系统 AI 当前未启用。项目开关可保存，但模型不可用时不会执行 AI 协作。' : '正在确认系统 AI 能力；开关不代表模型已可用。'}</div>}
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
@@ -237,8 +237,8 @@ function ProjectCreationForm({ userId }: { userId: string }) {
         {projectId && !finished && files.some(file => !file.sourceId) && <button type="button" className="button button-quiet" disabled={pending} onClick={() => void enterProject(true)}>跳过未完成文件并进入项目</button>}
         {projectId && <button type="button" className="button button-danger" disabled={pending || archiveConflict || projectQuery.data?.myRole !== 'owner' || projectQuery.data?.status !== 'active'} onClick={() => void archive()}>归档此项目草稿</button>}
       </div>
-      {projectId && <div className="form-note">“归档此项目草稿”会将整个已创建项目设为已归档，可在项目设置中恢复；不会永久删除项目或原文件。</div>}
-      {projectId && !finished && files.some(file => !file.sourceId) && <div className="form-note">“跳过未完成文件”仅结束本页的上传恢复进度。已创建项目、已保存原文件与来源会保留；之后可在来源页面核对或补充文件。</div>}
+
+
     </form>
   </div>;
 }

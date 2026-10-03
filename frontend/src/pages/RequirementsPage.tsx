@@ -87,7 +87,7 @@ function RequirementEditor({
       <Field label="截止日期" hint="此页面只编辑日期；若原文明确具体时刻，请保留在要求说明中。"><DateInput className="input" type="date" value={draft.dueDate} onChange={(event) => { const dueDate = event.target.value; setDraft({ ...draft, dueDate, dueDateChanged: true, duePrecision: dueDate ? 'date' : 'unknown' }); }} /></Field>
     </div>
     <Field label="时间精度" hint="当前页面只记录日期，不提供时刻编辑。"><div className="form-note">{precisionLabels[draft.duePrecision]}{draft.duePrecision === 'datetime' && !draft.dueDateChanged ? ' · 服务端原值会在日期未改动时保留' : ''}</div></Field>
-    <div className="callout">若原文未给出日期，请保留为空；若确知具体时刻，可写入要求说明。不要推测补全。</div>
+
     {error ? <ErrorNotice error={error} /> : null}
     <div className="form-actions"><button className="button button-primary button-small" type="submit" disabled={busy}><Save size={14} /> {busy ? '正在保存' : '保存修改'}</button><button className="button button-quiet button-small" type="button" onClick={onCancel} disabled={busy}>取消</button></div>
   </form>;
@@ -387,7 +387,7 @@ export function RequirementsPage() {
                 {setDetail.status === 'draft' && owner && <ConfirmButton className="button button-primary button-small" disabled={confirmingSet} onClick={() => void confirmSet(setDetail.requirementSetId)}><Check size={14} /> {confirmingSet ? '正在确认' : '负责人确认要求'}</ConfirmButton>}
               </div>
               {setDetail.status === 'draft' && !owner && <div className="callout warning-callout">只有项目负责人可以确认要求集。你仍可编辑草稿中的要求条目。</div>}
-              {setDetail.status === 'draft' && owner && <div className="callout">确认前请核对截止日期精度、提交物、团队限制和每条引用。若官方文本未明确，不要补充推测值。</div>}
+
               {setActionError ? <ErrorNotice error={setActionError} /> : null}
               {activeSet?.sourceVersionId && <p className="requirements-item-meta">{activeSet.sourceAvailability === 'unavailable' ? <span>原始来源不可用{activeSet.sourceDeletedAt ? '（已移入回收站，可恢复）' : ''}。要求与历史引文仍保留。</span> : <Link className="button-link" to={`/app/projects/${projectId}/sources?sourceVersionId=${encodeURIComponent(activeSet.sourceVersionId)}`}>查看原始来源 <ExternalLink size={12} /></Link>}</p>}
             </div>
