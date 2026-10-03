@@ -16,3 +16,12 @@ export async function assertEffectiveStandard(env:Env,projectId:string,id?:strin
   if(id!==undefined&&standard.standardsVersionId!==id)throw invalidState('项目标准已更新，请使用当前生效标准');
   return standard;
 }
+
+/** Freeze absence as well as a version so a newly saved standard invalidates an old operation. */
+export function effectiveStandardCaptureGuardSql(projectSql:string,idSql:string):string {
+  return `((${idSql} IS NULL AND NOT EXISTS(SELECT 1 FROM standards_versions WHERE project_id=${projectSql})) OR ${effectiveStandardGuardSql(projectSql,idSql)})`;
+}
+export async function assertEffectiveStandardCapture(env:Env,projectId:string,id:string|null):Promise<void>{
+  const current=(await env.DB.prepare('SELECT id FROM standards_versions WHERE project_id=?1 ORDER BY version DESC LIMIT 1').bind(projectId).first<{id:string}>())?.id??null;
+  if(current!==id)throw invalidState('项目标准已更新，请重新发起');
+}

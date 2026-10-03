@@ -1,3 +1,4 @@
+import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
@@ -109,11 +110,12 @@ export async function aiJsonCall<S extends z.ZodType>(
     beforeCall?: () => Promise<void>;
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
-): Promise<{ data: z.infer<S>; repaired: boolean; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
+): Promise<{ data: z.infer<S>; repaired: boolean; effectiveStandardsVersionId?:string|null; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
   if (params.projectTools) {
     const stableSessionId=params.sessionId??params.jobId??params.runId??crypto.randomUUID();
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
-    try { return {data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
+    await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
+    try { return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
     catch (validationError) {
       if(params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
       // Correct only the final output. Before each repair dispatch the original
@@ -131,6 +133,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       const repaired=await aiJsonCall(env,{...params,projectTools:undefined,sessionId:stableSessionId,maxAttempts:1,
         promptVersion:params.promptVersion+'-final-repair',messages:[...params.messages,...repairTail],schema:repairSchema,
         beforeCall:async()=>{
+          await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
           await params.beforeCall?.();
           const current=await loadAiConfig(env.DB);
           if(!current?.enabled||current.id!==params.configVersionId)throw new AppError('INVALID_STATE','模型配置已变化，请重新发起',409,false);
@@ -139,7 +142,8 @@ export async function aiJsonCall<S extends z.ZodType>(
         },
         prepareMessages:params.prepareMessages?async()=>[...await params.prepareMessages!(),...repairTail]:undefined,
       });
-      return {data:repaired.data.data,repaired:true,toolTrace:out.trace,citations:out.citations,references:repaired.data.references,decisionReferences:repaired.data.decisionReferences};
+      await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
+      return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:repaired.data.data,repaired:true,toolTrace:out.trace,citations:out.citations,references:repaired.data.references,decisionReferences:repaired.data.decisionReferences};
     }
   }
   const endpoint = {
