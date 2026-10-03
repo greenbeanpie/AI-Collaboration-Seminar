@@ -1,5 +1,6 @@
 import { useSession } from '../auth';
 import { PendingTaskPreview } from '../components/PendingTaskPreview';
+import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
@@ -34,7 +35,7 @@ export function ProjectOverviewPage() {
     <SectionCard title="项目主目标" detail="主目标独立于子任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖子任务</Link></>}</SectionCard>
     {errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
     <div className="metric-grid overview-metrics">
-      <div className="metric-card"><span>任务完成</span><strong>{tasks.data ? `${done}/${taskItems.length}` : '—'}</strong><small>按服务端任务状态计算</small></div>
+      <TaskCompletionMetric variant="overview" completed={done} total={taskItems.length} available={tasks.data !== undefined && !tasks.error} unavailableMessage={tasks.error ? '任务统计暂不可用' : '正在读取任务进度'} />
       <div className="metric-card"><span>团队成员</span><strong>{members.data?.length ?? '—'}</strong><small>当前项目成员</small></div>
       <div className="metric-card"><span>待确认要求</span><strong>{draftSets ?? '—'}</strong><small>已解析要求集中的草稿</small></div>
       <div className="metric-card"><span>材料版本</span><strong>{materials.data?.filter((item) => item.currentVersionId).length ?? '—'}</strong><small>已有正式版本的材料</small></div>

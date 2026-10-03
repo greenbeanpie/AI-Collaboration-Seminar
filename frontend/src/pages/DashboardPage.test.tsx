@@ -7,15 +7,16 @@ import type { Task } from '../api/types';
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn(() => new Promise(() => {})) }));
 afterEach(cleanup);
 const task = (taskId: string, status: Task['status'] = 'doing', changes: Partial<Task> = {}) => ({taskId,title:taskId,status,dueDate:null,duePrecision:'unknown',lifecycleState:status === 'done' ? 'accepted' : 'in_progress',assigneeId:'member',dependsOnTaskIds:[],unfinishedDependencyIds:[],revision:1,...changes}) as Task;
-function setup(options: { loading?: boolean; archive?: boolean; membersLoading?: boolean; memberError?: boolean; pendingTasks?: Task[] } = {}) {
+function setup(options: { loading?: boolean; archive?: boolean; membersLoading?: boolean; memberError?: boolean; pendingTasks?: Task[]; taskError?: boolean; empty?: boolean } = {}) {
   const client = new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
-  client.setQueryData(['projects'], [
+  client.setQueryData(['projects'], options.empty ? [] : [
     {id:'pending',name:'待确认项目',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
     {id:'doing',name:'进行中的项目甲',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'member'},
     {id:'done',name:'已完成项目甲',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
     {id:'archive',name:'已归档项目甲',status:'archived',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
   ]);
   if(!options.loading) client.setQueryData(['tasks','pending'], options.pendingTasks ?? [task('待确认任务','todo')]);
+  if (options.taskError) client.getQueryCache().find({ queryKey: ['tasks', 'pending'] })!.setState({ status: 'error', error: new Error('任务读取失败') });
   for (const id of ['pending', 'doing', 'done']) if (!(options.membersLoading && id === 'pending')) client.setQueryData(['members', id], [{ userId: 'member' }]);
   if (options.memberError) client.getQueryCache().find({ queryKey: ['members', 'pending'] })!.setState({ status: 'error', error: new Error('成员读取失败') });
   client.setQueryData(['tasks','doing'],[task('正在做的任务','doing')]);
@@ -24,6 +25,22 @@ function setup(options: { loading?: boolean; archive?: boolean; membersLoading?:
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[options.archive?'/app?archive=1':'/app']}><DashboardPage /></MemoryRouter></QueryClientProvider>);
 }
 describe('dashboard interactions',()=>{
+ it('shows completion progress using all non-archived tasks, not only actionable tasks',()=>{
+  const { container } = setup({pendingTasks:[task('完成的前置','done'),...Array.from({length:22},(_,i)=>task(`待分配${i}`,'todo',{assigneeId:null}))]});
+  expect(screen.getByRole('progressbar',{name:'任务完成率'})).toHaveAttribute('aria-valuenow','8');
+  expect(screen.getByText('2 / 25 项任务已完成')).toBeInTheDocument();
+  expect(container.querySelector('.task-completion-card')).toHaveAttribute('data-completion-tone','red');
+ });
+ it.each([{loading:true},{taskError:true}])('does not color or fill an unavailable completion metric: %j',options=>{
+  const { container } = setup(options);
+  expect(screen.queryByRole('progressbar',{name:'任务完成率'})).not.toBeInTheDocument();
+  expect(container.querySelector('.task-completion-card')).not.toHaveAttribute('data-completion-tone');
+ });
+ it('does not claim completion when there are no projects or tasks',()=>{
+  setup({empty:true});
+  expect(screen.getByRole('progressbar',{name:'任务完成率'})).toHaveAttribute('aria-valuenow','0');
+  expect(screen.getByText('0 / 0 项任务已完成')).toBeInTheDocument();
+ });
  it('keeps one invitation entry in the upper metrics and removes the lower inbox disclosure',()=>{
   const { container } = setup();
   const invitationLink = screen.getByRole('link',{name:/项目邀请.*输入邀请码，或处理收到的邀请/});

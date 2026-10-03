@@ -1,0 +1,54 @@
+.task-completion-card[data-completion-tone="red"] {
+  --completion-fill: #c53b50;
+  --completion-background: #fff4f5;
+  --completion-border: #ecc6cc;
+  --completion-track: #f4d9de;
+}
+.task-completion-card[data-completion-tone="yellow"] {
+  --completion-fill: #a37a00;
+  --completion-background: #fffbee;
+  --completion-border: #e5d6a4;
+  --completion-track: #efe4bd;
+}
+.task-completion-card[data-completion-tone="green"] {
+  --completion-fill: #218059;
+  --completion-background: #effaf4;
+  --completion-border: #bddfcf;
+  --completion-track: #d4eadf;
+}
+:root[data-theme="dark"] .task-completion-card[data-completion-tone="red"] {
+  --completion-fill: #ff8798;
+  --completion-background: #33252d;
+  --completion-border: #71404c;
+  --completion-track: #5b3541;
+}
+:root[data-theme="dark"] .task-completion-card[data-completion-tone="yellow"] {
+  --completion-fill: #efc34e;
+  --completion-background: #302b1f;
+  --completion-border: #69582b;
+  --completion-track: #534622;
+}
+:root[data-theme="dark"] .task-completion-card[data-completion-tone="green"] {
+  --completion-fill: #70d5aa;
+  --completion-background: #20322c;
+  --completion-border: #365f4d;
+  --completion-track: #2e5142;
+}
+.metric-card.task-completion-card,
+.dashboard-metric.task-completion-card {
+  min-width: 0;
+  background: var(--completion-background, var(--paper));
+  border-color: var(--completion-border, var(--line));
+}
+.dashboard-metric.task-completion-card { grid-template-rows: 22px 1fr auto auto; row-gap: 7px; }
+.task-completion-progress { min-width: 0; width: 100%; }
+.metric-card .task-completion-progress { margin: 3px 0 4px; }
+.task-completion-caption { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.task-completion-caption strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.task-completion-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--completion-track); }
+.task-completion-track > span { display: block; height: 100%; border-radius: inherit; background: var(--completion-fill); }
+.task-completion-card > small { line-height: 1.6; }
+@media (forced-colors: active) {
+  .task-completion-track { outline: 1px solid CanvasText; }
+  .task-completion-track > span { background: Highlight; forced-color-adjust: none; }
+}

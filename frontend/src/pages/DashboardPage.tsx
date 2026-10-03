@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowUpRight, CalendarDays, CheckCheck, CircleCheck, Clock3, FolderKanban, LayoutGrid, List, Plus, UsersRound } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, CheckCheck, Clock3, FolderKanban, LayoutGrid, List, Plus, UsersRound } from 'lucide-react';
 import { listAllItems } from '../api/client';
 import type { ProjectSummary, Task } from '../api/types';
 import { ErrorNotice, EmptyState, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
+import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
 import { deadlineBarStyle, deadlineSummary, pendingProjectGroups, projectDisplayStatus, remainingDays, uniqueProjectTasks, type ProjectDisplayStatus } from './dashboard-summary';
 import './DashboardPage.css';
 
@@ -65,7 +66,6 @@ export function DashboardPage() {
   const pendingProjects = pendingProjectGroups(current);
   const pending = pendingProjects.flatMap(entry => entry.actionable);
   const completed = allTasks.filter(task => task.status === 'done').length;
-  const rate = allTasks.length ? Math.round(completed / allTasks.length * 100) : 0;
   const visible = current.filter(entry => filter === 'all' || (filter === 'active' ? entry.status === 'active' || entry.status === 'pending' : entry.status === 'done'));
   const summary = deadlineSummary(pending);
   const firstTaskError = current.find(entry => entry.error)?.error;
@@ -80,7 +80,7 @@ export function DashboardPage() {
     <div className="dashboard-metrics">
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>
       <DeadlineMetric tasks={pending} available={actionableAvailable} />
-      <div className="dashboard-metric"><span className="dashboard-metric-label"><CircleCheck size={16} />任务完成率</span><strong className="dashboard-metric-value">{available ? rate : '—'}<small>%</small></strong><span className="dashboard-metric-foot">{available ? `${completed} / ${allTasks.length} 项任务已完成` : firstTaskError ? '任务统计暂不可用' : '正在读取任务进度'}</span></div>
+      <TaskCompletionMetric variant="dashboard" completed={completed} total={allTasks.length} available={available} unavailableMessage={projectsQuery.error || firstTaskError ? '任务统计暂不可用' : '正在读取任务进度'} />
       <Link className="dashboard-metric dashboard-join" to="/app/join"><span className="dashboard-metric-label">加入现有团队</span><strong>项目邀请</strong><span>输入邀请码，或处理收到的邀请</span><span className="dashboard-join-link">查看并接受邀请 <ArrowUpRight size={14} /></span></Link>
     </div>
     {attentionError && <ErrorNotice error={attentionError} onRetry={() => { [...taskQueries, ...memberQueries].forEach(query => { if (query.error) void query.refetch(); }); }} />}
