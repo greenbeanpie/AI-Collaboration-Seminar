@@ -77,10 +77,13 @@ export async function handleScheduled(env: Env): Promise<void> {
 /** 恢复器：抢占到期租约 → 重建 Workflow 实例（实例已存在则核对状态，不重复创建） */
 export async function recoverJobs(env: Env, now: string): Promise<void> {
   try {
+    // A received question proves initial execution reached a durable pause, even
+    // when Workflow.create lost its response. Only the answer may resume it.
     const due = await env.DB
       .prepare(
         `SELECT o.job_id, o.attempts, j.updated_at FROM job_outbox o JOIN jobs j ON j.id = o.job_id
          WHERE o.status = 'pending' AND o.available_at <= ?1 AND j.status IN ('queued', 'waiting_input')
+           AND NOT EXISTS (SELECT 1 FROM ai_clarifications q WHERE q.job_id = j.id AND q.status = 'pending')
            AND (o.lease_until IS NULL OR o.lease_until <= ?1)
          ORDER BY o.available_at LIMIT 10`,
       )
@@ -95,7 +98,8 @@ export async function recoverJobs(env: Env, now: string): Promise<void> {
       const claim = await env.DB.prepare(
         `UPDATE job_outbox SET lease_until = ?2, attempts = attempts + 1, updated_at = ?3
           WHERE job_id = ?1 AND status = 'pending' AND (lease_until IS NULL OR lease_until <= ?3)
-            AND EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_outbox.job_id AND jobs.status IN ('queued', 'waiting_input') AND jobs.updated_at = ?4)`,
+            AND EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_outbox.job_id AND jobs.status IN ('queued', 'waiting_input') AND jobs.updated_at = ?4)
+            AND NOT EXISTS (SELECT 1 FROM ai_clarifications q WHERE q.job_id = job_outbox.job_id AND q.status = 'pending')`,
       )
         .bind(row.job_id, new Date(new Date(now).getTime() + 5 * 60_000).toISOString(), now, row.updated_at)
         .run();

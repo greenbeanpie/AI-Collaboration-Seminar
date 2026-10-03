@@ -55,7 +55,7 @@ export function DashboardPage() {
     queryKey: ['tasks', project.id], queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/tasks`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000,
   })) });
   const memberQueries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000, enabled: project.status !== 'archived',
+    queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`), staleTime: 10_000, enabled: project.status !== 'archived',
   })) });
   const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data ? uniqueProjectTasks(taskQueries[index].data) : undefined, members: memberQueries[index]?.data, error: taskQueries[index]?.error, memberError: memberQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
   const current = entries.filter(entry => entry.status !== 'archived');

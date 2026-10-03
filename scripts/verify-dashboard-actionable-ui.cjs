@@ -34,7 +34,7 @@ function serve() {
     else if (p === '/api/v1/capabilities') data = { environment: 'local', apiVersion: 'v1', features: { aiEnabled: false, webFetch: false, emailMode: 'disabled' }, limits: { maxFileBytes: 10485760, maxPdfPages: 30, pageImageMaxEdge: 2000, pageImageMaxBytes: 2097152, concurrentAiTasksPerProject: 2, listDefaultPageSize: 20, listMaxPageSize: 100 }, competitionTemplate: { teamSizeLimit: null } };
     else if (p === '/api/v1/projects') data = { items: projects, nextCursor: null };
     else if (projectId && p.endsWith('/tasks')) data = { items: tasks[projectId] || [], nextCursor: null };
-    else if (projectId && p.endsWith('/members')) data = { items: [{ userId: 'member', displayName: '测试成员', role: 'owner' }, { userId: 'other-member', displayName: '其他当前成员', role: 'member' }], nextCursor: null };
+    else if (projectId && p.endsWith('/members')) data = { items: [{ userId: 'member', displayName: '测试成员', role: 'owner' }, { userId: 'other-member', displayName: '其他当前成员', role: 'member' }] };
     else if (projectId && p.endsWith('/members/me')) data = { userId: 'member', displayName: '测试成员', role: 'owner' };
     else if (projectId && p.endsWith('/goal')) data = { title: '固定测试目标', detail: '', revision: 1, graphRevision: 1 };
     else if (projectId && p.endsWith('/collaboration/settings')) data = { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', planningMode: 'manual', progressionMode: 'manual', revision: 1 };
