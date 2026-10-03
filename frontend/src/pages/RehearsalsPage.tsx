@@ -187,7 +187,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 不会创建模拟问题、追问或总结；已有真实演练可继续查看。</div>}
 
     <div className={embedded ? 'page-stack' : 'ai-workflow-grid'}>
-      {!embedded && <SectionCard title="开始一场新演练" detail="选择演练范围和要纳入上下文的当前材料版本。">
+      {!embedded && <SectionCard title="开始一场新演练" detail="选择演练范围和优先参考文件；本轮实际成果与真实问答会保留为固定依据。">
         {materialQuery.isLoading || memberQuery.isLoading ? <Spinner label="正在读取项目成员和材料" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleCreate(event)}>
           <Field label="演练范围">
             <select className="ai-workflow-select" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>

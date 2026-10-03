@@ -15,7 +15,9 @@ import { RehearsalsPage } from './RehearsalsPage';
 import './ProjectWorkspace.css';
 import { ManualAssessmentEditor } from './ManualAssessmentEditor';
 
-type PendingAssessment = { jobId: string; entityId: string; action: string };
+type PendingAssessment = { jobId: string; entityId: string; action: string; kind?: Assessment['kind']; previousJobId?: string };
+const selectionParameters = ['assessmentId', 'reviewId', 'rehearsalId', 'review', 'rehearsal'] as const;
+const activeAssessmentStatuses = ['pending', 'running', 'active', 'finishing', 'failed'];
 const pendingKey = (id: string) => `ai-office:pending-assessment-job:${id}`;
 function isScoringReport(report: Assessment['report']): report is AssessmentReport { return Boolean(report && (report.status === 'scored' || report.status === 'unscorable') && Array.isArray(report.scores)); }
 async function assessmentHistory(projectId: string, signal?: AbortSignal) {
@@ -27,7 +29,7 @@ export function AssessmentWorkspacePage() {
   const { projectId } = useProject();
   const [params, setParams] = useSearchParams();
   const section = params.get('section') ?? 'standards';
-  const chooseSection = (value: string) => { const next = new URLSearchParams(params); next.set('section', value); setParams(next); };
+  const chooseSection = (value: string) => { const next = new URLSearchParams(params); next.set('section', value); for (const key of selectionParameters) next.delete(key); next.delete('referencePicker'); setParams(next); };
   return <div className="page-stack assessment-workspace">
     <nav className="assessment-sections" aria-label="评分形式">{[['standards', '项目标准'], ['checks', '材料检查'], ['rehearsals', '答辩演练']].map(([key, label]) => <button className={`button ${section === key ? 'button-primary' : 'button-quiet'}`} key={key} onClick={() => chooseSection(key)} aria-current={section === key ? 'page' : undefined}>{label}</button>)}</nav>
     {section === 'standards' ? <StandardsEditor /> : <AssessmentRunner key={`${projectId}:${section}`} kind={section === 'rehearsals' ? 'rehearsal' : 'material_review'} />}
@@ -47,13 +49,28 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const [materialVersions, setMaterialVersions] = useState<string[]>([]);
   const [sourceVersions, setSourceVersions] = useState<string[]>([]);
   const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId)));
-  const job = useVisibleJobPoller(pending?.jobId ?? null);
   const rows = (history.data ?? []).filter(item => item.kind === kind);
-  const selectedId = linkedId ?? rows[0]?.assessmentId ?? '';
+  const linkedRecord = (history.data ?? []).find(item => item.assessmentId === linkedId || item.rehearsalId === linkedId);
+  const newlyCreatedId = pending?.kind === kind && pending.action === 'create' && pending.entityId === linkedId ? pending.entityId : '';
+  const selectedId = linkedRecord?.kind === kind ? linkedRecord.assessmentId : newlyCreatedId || rows[0]?.assessmentId || '';
   const selected = useQuery({ queryKey: ['assessment', projectId, selectedId], queryFn: () => projectRequest<Assessment>(projectId, `/assessments/${encodeURIComponent(selectedId)}`), enabled: Boolean(selectedId), refetchInterval: query => query.state.data && !query.state.data.historical && ['pending', 'running', 'active', 'finishing'].includes(query.state.data.status) ? 4000 : false, refetchIntervalInBackground: false });
   const confirmed = standards.data?.items.filter(version => version.status === 'confirmed') ?? [];
   const selectedStandardId = standardId || confirmed[0]?.standardsVersionId || '';
-  const select = (id: string) => { const next = new URLSearchParams(params); next.set('assessmentId', id); next.delete('reviewId'); next.delete('rehearsalId'); setParams(next); };
+  const select = (id: string) => { const next = new URLSearchParams(params); for (const key of selectionParameters) next.delete(key); next.set('assessmentId', id); setParams(next); };
+  useEffect(() => {
+    if (history.isLoading || !linkedId || linkedId === selectedId) return;
+    const next = new URLSearchParams(params); for (const key of selectionParameters) next.delete(key);
+    if (selectedId) next.set('assessmentId', selectedId);
+    setParams(next, { replace: true });
+  }, [history.isLoading, linkedId, selectedId, params, setParams]);
+  const assessment = selected.data?.kind === kind && selected.data.assessmentId === selectedId ? selected.data : undefined;
+  const recordActive = Boolean(assessment && !assessment.historical && activeAssessmentStatuses.includes(assessment.status));
+  const matchingPending = recordActive && pending?.entityId === assessment?.assessmentId && (!pending?.kind || pending.kind === kind) && (pending?.jobId === assessment?.jobId || pending?.previousJobId === assessment?.jobId) ? pending : null;
+  const activePending = recordActive && assessment ? matchingPending ?? (assessment.jobId ? { entityId: assessment.assessmentId, jobId: assessment.jobId, action: 'create', kind } : null) : null;
+  const activeJobId = activePending?.jobId ?? null;
+  const activeEntityId = activePending?.entityId ?? null;
+  const job = useVisibleJobPoller(activeJobId);
+  const canRetry = Boolean(activePending && assessment?.assessmentId === activeEntityId && job.job?.jobId === activeJobId && job.job.status === 'failed' && (assessment.kind !== 'rehearsal' || assessment.canOperate === true));
   const create = useMutation({ mutationFn: async () => {
     if(!canInitiate)throw new Error('没有发起评分的项目权限');
     const body = { kind, standardsVersionId: selectedStandardId, materialVersionIds: [...materialVersions].sort(), sourceVersionIds: [...sourceVersions].sort(), goalRevision: goal.data?.revision };
@@ -61,29 +78,32 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
     const result = await projectRequest<{ assessmentId: string; jobId: string; rehearsalId?: string }>(projectId, '/assessments', { method: 'POST', body, idempotencyKey }); completeIntent(namespace); return result;
   }, onSuccess: async result => {
-    const next = { entityId: result.assessmentId, jobId: result.jobId, action: 'create' }; writePendingJob(pendingKey(projectId), next); setPending(next);
+    const next = { entityId: result.assessmentId, jobId: result.jobId, action: 'create', kind }; writePendingJob(pendingKey(projectId), next); setPending(next);
     if (result.rehearsalId) writePendingJob(`ai-office:pending-rehearsal-job:${projectId}`, { entityId: result.rehearsalId, jobId: result.jobId, action: 'create' });
     select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] });
   } });
-  const retry = useMutation({ mutationFn: async () => { if (assessment?.kind==='rehearsal' && !assessment.canOperate) throw new Error('只有发起人可重试答辩'); if (!pending) throw new Error('没有待重试的评分任务。'); return retryBackendJob(projectId, pending.jobId); }, onSuccess: jobId => { if (pending) { const next = { ...pending, jobId }; writePendingJob(pendingKey(projectId), next); setPending(next); } } });
+  const retry = useMutation({ mutationFn: async () => {
+    if (!canRetry || !activePending || !assessment) throw new Error('当前评分记录没有可重试的失败作业。');
+    const target = { ...activePending, kind, action: 'retry', previousJobId: activePending.jobId };
+    const jobId = await retryBackendJob(projectId, target.jobId);
+    return { ...target, jobId };
+  }, onSuccess: next => {
+    writePendingJob(pendingKey(projectId), next); setPending(next);
+    void client.invalidateQueries({ queryKey: ['assessments', projectId] });
+    void client.invalidateQueries({ queryKey: ['assessment', projectId, next.entityId] });
+  } });
   useEffect(() => {
-    if (!pending || !job.isSettled || job.job?.status !== 'succeeded') return;
-    clearPendingJob(pendingKey(projectId), pending.jobId);
-    setPending(null);
-    void client.invalidateQueries({ queryKey: ['assessments', projectId] }); void client.invalidateQueries({ queryKey: ['assessment', projectId] });
-  }, [pending, job.isSettled, job.job?.status, client, projectId]);
+    if (!activeEntityId || !activeJobId || job.job?.jobId !== activeJobId || job.job.status !== 'succeeded') return;
+    clearPendingJob(pendingKey(projectId), activeJobId);
+    setPending(current => current?.entityId === activeEntityId && current.jobId === activeJobId ? null : current);
+    void client.invalidateQueries({ queryKey: ['assessments', projectId] });
+    void client.invalidateQueries({ queryKey: ['assessment', projectId, activeEntityId] });
+  }, [activeEntityId, activeJobId, job.job?.jobId, job.job?.status, client, projectId]);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
-
-  const assessment = selected.data;
-  useEffect(() => {
-    if (!assessment?.jobId || !['pending', 'running', 'failed'].includes(assessment.status) || pending || (job.job?.jobId === assessment.jobId && job.job.status === 'succeeded')) return;
-    const next = { jobId: assessment.jobId, entityId: assessment.assessmentId, action: 'create' }; setPending(next); writePendingJob(pendingKey(projectId), next);
-    if (assessment.rehearsalId) writePendingJob(`ai-office:pending-rehearsal-job:${projectId}`, { ...next, entityId: assessment.rehearsalId });
-  }, [assessment, pending, projectId, job.job]);
   return <div className="page-stack">
     {!aiEnabled && <p className="notice notice-warn">AI 当前不可用，可以继续维护标准、人工评分及修正历史结果。</p>}
     <div className="assessment-layout">
-      <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起材料检查评分'} detail="固定主目标与标准；所选版本为评价对象，未选择时 AI 自动发现成果并查阅相关参考资料。">
+      <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起材料检查评分'} detail="固定主目标与标准；所选文件优先参考，系统发现并冻结实际成果版本。答辩评分依据本轮真实回答。">
         {[goal, standards].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
         {goal.isLoading || standards.isLoading ? <Spinner label="读取目标与评分标准" /> : <form className="stack" onSubmit={event => { event.preventDefault(); if(canInitiate)create.mutate(); }}>
           <div className="callout"><strong>本轮主目标：{goal.data?.title || '尚未填写'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${encodeURIComponent(projectId)}/tasks`}>编辑主目标</Link></div>
@@ -102,11 +122,11 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </SectionCard>
     </div>
 
-    {pending && <div className="notice"><strong>本轮评分任务：{job.job ? jobStatusLabel(job.job.status) : '正在读取'}</strong>{job.job?.status === 'failed' && <><p>评分未完成，服务端失败状态与已有证据已保留。</p><button className="button button-quiet" disabled={retry.isPending || !aiEnabled || (assessment?.kind==='rehearsal' && !assessment.canOperate)} onClick={() => retry.mutate()}>重试本轮任务</button></>}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
+    {activePending && <div className="notice"><strong>本轮评分任务：{job.job ? jobStatusLabel(job.job.status) : '正在读取'}</strong>{canRetry && <><p>评分未完成，服务端失败状态与已有证据已保留。</p><button className="button button-quiet" disabled={retry.isPending || !aiEnabled || !canRetry} onClick={() => retry.mutate()}>重试本轮任务</button></>}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
     {selectedId && <SectionCard title="本轮评分与证据" detail="总分由服务端按已确认权重计算；证据不足时显示反馈与无法评分的原因。" action={<button className="button button-quiet button-small" onClick={() => void selected.refetch()}><RefreshCw size={14} />刷新结果</button>}>
       {selected.isLoading && <Spinner label="读取本轮评分" />}{selected.error && <ErrorNotice error={selected.error} onRetry={() => void selected.refetch()} />}
       {assessment && <><div className="callout">{assessment.historical ? <strong>历史反馈：本记录未绑定新版主目标与统一标准，不补造新版评分。</strong> : <><strong>{assessment.goal?.title}</strong><p>{assessment.goal?.detail}</p><small>目标 r{assessment.goalRevision} · 标准 v{assessment.standardsVersion} · 固定文档版本 {assessment.materialVersionIds.join('、')}</small></>}</div>
-        {assessment.jobError && <p className="notice notice-warn">{assessment.jobError}</p>}
+        {assessment.jobError && <p className="notice notice-warn">{assessment.status === 'succeeded' ? '本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。' : assessment.jobError}</p>}
         {assessment.rehearsalId && <RehearsalsPage key={assessment.rehearsalId} embedded rehearsalId={assessment.rehearsalId} />}
         {isScoringReport(assessment.report) ? <AssessmentReportView report={assessment.report} /> : assessment.report ? <div className="assessment-historical-feedback"><h3>历史文字反馈</h3><pre>{JSON.stringify(assessment.report, null, 2)}</pre></div> : <p className="muted">{assessment.historical ? '原有文字反馈保留在问答记录中。' : assessment.kind === 'rehearsal' ? '完成真实回答并结束本轮演练后，将依据冻结问答生成评分。' : '本轮评分尚未返回结果。'}</p>}
       </>}

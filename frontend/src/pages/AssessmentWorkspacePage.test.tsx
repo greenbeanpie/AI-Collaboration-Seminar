@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AssessmentReportView, AssessmentWorkspacePage } from './AssessmentWorkspacePage';
-import type { AssessmentReport } from '../api/simplification';
+import type { Assessment, AssessmentReport } from '../api/simplification';
 const authState = vi.hoisted(() => ({ enabled: false }));
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project: { myRole: 'owner' } }) }));
@@ -54,4 +54,122 @@ it('recovers a failed assessment job from server history and retries its real jo
   fireEvent.click(retry);
   await waitFor(() => expect(writes).toEqual(['/api/v1/jobs/j-failed/retry']));
   await waitFor(() => expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!).jobId).toBe('j-retry'));
+});
+
+const aliases = ['assessmentId', 'reviewId', 'rehearsalId', 'review', 'rehearsal'];
+function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.search}</output>; }
+function record(id: string, kind: Assessment['kind'], status = 'succeeded', extra: Partial<Assessment> = {}): Assessment {
+  return { assessmentId: id, kind, status, goal: { projectId:'p', title: id + '-goal', detail: '', revision:1, graphRevision:1 }, goalRevision:1, standardsVersionId:'s', standardsVersion:1, materialVersionIds:[], rehearsalId:kind === 'rehearsal' ? id + '-session' : null, report: { ...report, summary:id + '-summary' }, createdAt:'2026-10-03T00:00:00Z', historical:false, canOperate:true, ...extra };
+}
+function showRecords(records: Assessment[], entry: string) {
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+  client.setQueryData(['project-goal','p'],{title:'共同目标',revision:1});
+  client.setQueryData(['standards','p'],{items:[]});
+  client.setQueryData(['assessments','p'],records);
+  for (const item of records) client.setQueryData(['assessment','p',item.assessmentId],item);
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
+  return client;
+}
+it('clears every selection alias when switching kind and renders only the matching scoring form',async()=>{
+  const material=record('material','material_review'), rehearsal=record('rehearsal','rehearsal');
+  showRecords([material,rehearsal],'/assessment?section=checks&assessmentId=material&reviewId=old&rehearsalId=other&review=legacy&rehearsal=legacy-session');
+  expect(await screen.findByText('material-summary',{selector:'p'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'答辩演练'}));
+  expect(await screen.findByText('rehearsal-summary',{selector:'p'})).toBeInTheDocument();
+  expect(screen.queryByText('material-summary')).toBeNull();
+  const query=new URLSearchParams(screen.getByTestId('location').textContent!);
+  for (const key of aliases) expect(query.has(key)).toBe(false);
+});
+it.each(['assessmentId','reviewId','rehearsalId','review','rehearsal'])('rejects a wrong-kind %s deep link and falls back without displaying or fetching its detail',async alias=>{
+  const material=record('wrong','material_review'), rehearsal=record('right','rehearsal');
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  showRecords([material,rehearsal],`/assessment?section=rehearsals&${alias}=wrong`);
+  expect(await screen.findByText('right-summary',{selector:'p'})).toBeInTheDocument();
+  expect(screen.queryByText('wrong-summary')).toBeNull();
+  expect(screen.queryByText('wrong-goal')).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+  await waitFor(()=>expect(new URLSearchParams(screen.getByTestId('location').textContent!).get('assessmentId')).toBe('right'));
+});
+it('maps a valid rehearsal session deep link to the correct assessment record',async()=>{
+  showRecords([record('material','material_review'),record('right','rehearsal')],'/assessment?section=rehearsals&rehearsalId=right-session');
+  expect(await screen.findByText('right-summary',{selector:'p'})).toBeInTheDocument();
+  await waitFor(()=>expect(new URLSearchParams(screen.getByTestId('location').textContent!).get('assessmentId')).toBe('right'));
+});
+it('ignores a legacy failed pending job for another entity while viewing successful history',async()=>{
+  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'other',jobId:'other-failed',action:'create'}));
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  showRecords([record('saved','material_review')],'/assessment?section=checks&assessmentId=saved');
+  expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
+  expect(screen.queryByText(/本轮评分任务/)).toBeNull();
+  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('keeps a saved score authoritative when its original job failed and explains that failure as history',async()=>{
+  const saved=record('saved','material_review','succeeded',{jobId:'original-failed',jobError:'评分作业失败，请重试'});
+  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'saved',jobId:'original-failed',action:'create'}));
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  showRecords([saved],'/assessment?section=checks&assessmentId=saved');
+  expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
+  expect(screen.getByText('本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。')).toBeInTheDocument();
+  expect(screen.queryByText('评分未完成，服务端失败状态与已有证据已保留。')).toBeNull();
+  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('retries only the selected real failure even when another kind owns the old local pending job',async()=>{
+  authState.enabled=true;
+  const failed=record('failed','material_review','failed',{jobId:'current-failed',report:null});
+  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'other-rehearsal',jobId:'foreign-failed',action:'create'}));
+  const requests:string[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
+    const path=String(url);requests.push(path);
+    if(init?.method==='POST')return Response.json({data:{jobId:'current-retry'}});
+    if(path.includes('/jobs/'))return Response.json({data:{jobId:path.endsWith('current-retry')?'current-retry':'current-failed',status:path.endsWith('current-retry')?'running':'failed',attempts:1}});
+    if(path.includes('/assessments/failed'))return Response.json({data:failed});
+    return Response.json({data:{items:[failed],nextCursor:null}});
+  }));
+  showRecords([failed,record('other-rehearsal','rehearsal')],'/assessment?section=checks&assessmentId=failed');
+  fireEvent.click(await screen.findByRole('button',{name:'重试本轮任务'}));
+  await waitFor(()=>expect(requests).toContain('/api/v1/jobs/current-failed/retry'));
+  expect(requests.some(path=>path.includes('foreign-failed'))).toBe(false);
+  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'current-retry',kind:'material_review',previousJobId:'current-failed'}));
+});
+it('continues reading the selected running record after refresh without a local pending entry',async()=>{
+  const running=record('running','material_review','running',{jobId:'current-running',report:null});
+  const fetch=vi.fn(async()=>Response.json({data:{jobId:'current-running',status:'running',attempts:1}}));vi.stubGlobal('fetch',fetch);
+  showRecords([running],'/assessment?section=checks&assessmentId=running');
+  expect(await screen.findByText('本轮评分任务：处理中')).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith('/api/v1/jobs/current-running',expect.any(Object));
+  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+});
+
+it('shows no foreign detail or correction when a deep link has no record of the current kind',async()=>{
+  const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+  showRecords([record('foreign','material_review')],'/assessment?section=rehearsals&assessmentId=foreign');
+  expect(await screen.findByText('尚无此形式的评分记录')).toBeInTheDocument();
+  expect(screen.queryByText('foreign-goal')).toBeNull();
+  expect(screen.queryByRole('heading',{name:'修正本轮评分'})).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('keeps a retry response attached to its originating record after selection changes',async()=>{
+  authState.enabled=true;
+  const failed=record('failed','material_review','failed',{jobId:'failed-job',report:null}),saved=record('saved','material_review');
+  let releaseRetry: ((response: Response) => void) | undefined;
+  const retryResponse=new Promise<Response>(resolve=>{releaseRetry=resolve;});
+  const writes:string[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
+    const path=String(url);
+    if(init?.method==='POST'){writes.push(path);return retryResponse;}
+    if(path.includes('/jobs/'))return Response.json({data:{jobId:'failed-job',status:'failed',attempts:1}});
+    if(path.endsWith('/assessments/failed'))return Response.json({data:failed});
+    return Response.json({data:{items:[failed,saved],nextCursor:null}});
+  }));
+  showRecords([failed,saved],'/assessment?section=checks&assessmentId=failed');
+  fireEvent.click(await screen.findByRole('button',{name:'重试本轮任务'}));
+  await waitFor(()=>expect(writes).toEqual(['/api/v1/jobs/failed-job/retry']));
+  fireEvent.click(screen.getAllByRole('button',{name:/材料检查 ·/})[1]!);
+  expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
+  releaseRetry!(Response.json({data:{jobId:'retried-job'}}));
+  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
+  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(screen.queryByText(/本轮评分任务/)).toBeNull();
 });
