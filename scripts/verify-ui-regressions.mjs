@@ -107,8 +107,16 @@ try{
     await dialog.getByRole('button',{name:'选择优先参考文件'}).click();
     const picker=page.getByRole('dialog',{name:'选择优先参考文件'});
     await picker.waitFor();
-    await picker.getByRole('checkbox',{name:'本地参考通知'}).check();
+    const contrast=await picker.evaluate(node=>{
+      const channels=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+      const luminance=value=>channels(value).map(channel=>{const v=channel/255;return v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4;}).reduce((sum,v,index)=>sum+v*[0.2126,0.7152,0.0722][index],0);
+      const background=getComputedStyle(node).backgroundColor,foreground=getComputedStyle(node.querySelector('h2')).color;
+      const a=luminance(background),b=luminance(foreground);return {background,foreground,ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)};
+    });
     await screenshot('picker-page');
+    assert(contrast.ratio>=4.5,`reference picker text/background contrast is ${contrast.ratio.toFixed(2)}: ${JSON.stringify(contrast)}`);
+    result.checks.push({name:'reference-picker-light-theme-contrast',passed:true,...contrast});
+    await picker.getByRole('checkbox',{name:'本地参考通知'}).check();
     await picker.getByRole('button',{name:'完成选择并返回'}).click();
     assert.equal(await feedback.inputValue(),'新持续反馈，保留草稿');
     await screenshot('picker-return');
