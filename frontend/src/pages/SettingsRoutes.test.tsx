@@ -8,6 +8,7 @@ vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'fixture', ...state
 vi.mock('../components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
 vi.mock('./AccountSettingsPage', () => ({ AccountSettingsPage: ({ section }: { section: string }) => <p>Account section {section}</p> }));
 vi.mock('./AiSettings', () => ({ AiSettings: () => <p>Privileged AI content</p> }));
+vi.mock('./SystemOverviewPage', () => ({ SystemOverviewPage: () => <p>Privileged system overview</p> }));
 vi.mock('./AdminAccountsPage', () => ({ AdminAccountsPage: () => <p>Privileged accounts content</p> }));
 vi.mock('./PersonalProfiles', () => ({ PersonalProfilePage: () => <p>Private profile editor</p>, ProfileSearchPage: () => <p>Exact username search</p>, PublicProfilePage: () => <p>Published profile fields</p> }));
 function setup(path: string) { const router = createMemoryRouter([{ path: '*', element: <App /> }], { initialEntries: [path] }); render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>); return router; }
@@ -23,6 +24,7 @@ it('all account roles can reach privacy and people routes through authenticated 
  }
 });
 it('direct settings URLs do not render privileged pages for ordinary users', async () => {
+ setup('/app/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull(); cleanup();
  setup('/app/settings/accounts'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged accounts content')).toBeNull(); cleanup();
  setup('/app/settings/ai'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged AI content')).toBeNull();
 });
@@ -34,4 +36,11 @@ it('legacy account URL redirects to authorized management tab', async () => {
 });
 it('default settings URL resolves profile while security deep link is independent', async () => {
  const router = setup('/app/settings'); await screen.findByText('Account section profile'); expect(router.state.location.pathname).toBe('/app/settings/profile'); cleanup(); setup('/app/settings/security'); await screen.findByText('Account section security');
+});
+
+it.each(['admin', 'super_admin'])('system overview allows website %s accounts', async (role) => {
+ state.role = role; state.isAdmin = true; setup('/app/settings/system'); await screen.findByText('Privileged system overview');
+});
+it('project owners without website admin permission cannot access system overview', async () => {
+ state.role = 'owner'; state.isAdmin = false; setup('/app/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull();
 });

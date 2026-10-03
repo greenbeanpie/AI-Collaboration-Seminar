@@ -26,6 +26,7 @@ const PersonalProfilePage = lazy(() => import('./pages/PersonalProfiles').then(m
 const ProfileSearchPage = lazy(() => import('./pages/PersonalProfiles').then(module => ({ default: module.ProfileSearchPage })));
 const PublicProfilePage = lazy(() => import('./pages/PersonalProfiles').then(module => ({ default: module.PublicProfilePage })));
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
+const SystemOverviewPage = lazy(() => import('./pages/SystemOverviewPage').then(module => ({ default: module.SystemOverviewPage })));
 const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
@@ -87,7 +88,7 @@ function AccountNotifications() {
 function SystemAdminOnly({ superOnly = false }: { superOnly?: boolean }) {
   const session = useSession();
   if (superOnly && session.data?.role !== 'super_admin') return <div className="welcome-card"><h1>需要超级管理员权限</h1><p role="alert">系统配置仅限超级管理员。</p><Link to="/app">返回我的项目</Link></div>;
-  if (session.data?.isAdmin !== true) return <div className="welcome-card"><h1>需要系统管理员权限</h1><p role="alert">项目负责人不能管理系统账户或模型配置。</p><Link to="/app">返回我的项目</Link></div>;
+  if (session.data?.isAdmin !== true) return <div className="welcome-card"><h1>需要系统管理员权限</h1><p role="alert">项目负责人不能访问网站管理员设置。</p><Link to="/app">返回我的项目</Link></div>;
   return <Outlet />;
 }
 
@@ -125,6 +126,7 @@ export default function App() {
           <Route path="appearance" element={<ThemeSelector variant="field" />} />
           <Route element={<SystemAdminOnly />}>
             <Route path="accounts" element={<AdminAccountsPage />} />
+            <Route path="system" element={<SystemOverviewPage />} />
             <Route element={<SystemAdminOnly superOnly />}><Route path="ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>
           </Route>
           <Route path="*" element={<Navigate to="/app/settings/profile" replace />} />

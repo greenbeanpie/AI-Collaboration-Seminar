@@ -8,7 +8,7 @@ export function SettingsLayout() {
   const location = useLocation();
   const tabs = [['profile', '账户信息'], ['security', '账户安全'], ['appearance', '外观'], ['installation', '安装应用'], ['notifications', '推送与通知']];
   if (session.data?.isAdmin === true) {
-    tabs.push(['accounts', '账户管理']);
+    tabs.push(['accounts', '账户管理'], ['system', '系统概况']);
     if (session.data.role === 'super_admin') tabs.push(['ai', 'AI 配置']);
   }
   return <div className="settings-layout">

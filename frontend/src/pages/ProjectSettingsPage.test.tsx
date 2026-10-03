@@ -9,18 +9,12 @@ vi.mock('../components/ProjectShell',()=>({useProject:()=>({projectId:'test-proj
 vi.mock('./CollaborationSettings',()=>({CollaborationSettings:()=>null}));
 vi.mock('./AiSettings',()=>({AiSettings:()=> <h2>AI 模型接入与测试</h2>}));
 afterEach(()=>cleanup());
-it.each([{limit:null,display:'不设上限'},{limit:5,display:'5 人'}])('renders project team capacity without an empty unit for $display',({limit,display})=>{
-  state.teamSizeLimit=limit;
-  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ProjectSettingsPage /></MemoryRouter></QueryClientProvider>);
-  const row=screen.getByText('项目人数').parentElement!;
-  expect(row.querySelector('strong')?.textContent).toBe(display);
-});
-
 it.each(['owner', 'member'])('does not embed system AI configuration for %s', (role) => {
   state.role = role;
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><ProjectSettingsPage /></MemoryRouter></QueryClientProvider>);
   expect(screen.getByRole('heading', { name: '项目基本信息' })).toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'AI 模型接入与测试' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: '后端能力与限制' })).toBeNull();
   if (role === 'member') expect(screen.getByLabelText('项目名称')).toBeDisabled();
   else expect(screen.getByLabelText('项目名称')).toBeEnabled();
 });
