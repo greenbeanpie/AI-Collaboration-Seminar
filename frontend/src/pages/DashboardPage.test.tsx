@@ -3,10 +3,12 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from './DashboardPage';
+import type { Task } from '../api/types';
 vi.mock('./UsernameInvitations', () => ({ ReceivedInvitations: () => <div>邀请入口</div> }));
-vi.mock('../api/client', () => ({ listAllItems: vi.fn(() => new Promise(() => {})) }));
+vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn(() => new Promise(() => {})) }));
 afterEach(cleanup);
-function setup(options: { loading?: boolean; archive?: boolean } = {}) {
+const task = (taskId: string, status: Task['status'] = 'doing', changes: Partial<Task> = {}) => ({taskId,title:taskId,status,dueDate:null,duePrecision:'unknown',lifecycleState:status === 'done' ? 'accepted' : 'in_progress',assigneeId:'member',dependsOnTaskIds:[],unfinishedDependencyIds:[],revision:1,...changes}) as Task;
+function setup(options: { loading?: boolean; archive?: boolean; membersLoading?: boolean; memberError?: boolean; pendingTasks?: Task[] } = {}) {
   const client = new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
   client.setQueryData(['projects'], [
     {id:'pending',name:'待确认项目',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
@@ -14,8 +16,9 @@ function setup(options: { loading?: boolean; archive?: boolean } = {}) {
     {id:'done',name:'已完成项目甲',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
     {id:'archive',name:'已归档项目甲',status:'archived',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
   ]);
-  const task = (taskId: string, status: string) => ({taskId,title:taskId,status,dueDate:null,duePrecision:'unknown',lifecycleState:null});
-  if(!options.loading) client.setQueryData(['tasks','pending'],[task('待确认任务','todo')]);
+  if(!options.loading) client.setQueryData(['tasks','pending'], options.pendingTasks ?? [task('待确认任务','todo')]);
+  for (const id of ['pending', 'doing', 'done']) if (!(options.membersLoading && id === 'pending')) client.setQueryData(['members', id], [{ userId: 'member' }]);
+  if (options.memberError) client.getQueryCache().find({ queryKey: ['members', 'pending'] })!.setState({ status: 'error', error: new Error('成员读取失败') });
   client.setQueryData(['tasks','doing'],[task('正在做的任务','doing')]);
   client.setQueryData(['tasks','done'],[task('完成任务','done')]);
   client.setQueryData(['tasks','archive'],[task('归档任务甲','todo')]);
@@ -44,6 +47,42 @@ describe('dashboard interactions',()=>{
   expect(screen.getByText('今日截止 — 项')).toBeInTheDocument();
   expect(screen.queryByText('今日截止 0 项')).not.toBeInTheDocument();
   expect(screen.getByText('正在读取待响应事项…')).toBeInTheDocument();
+ });
+ it('groups by incomplete projects, shows actionable task counts and preserves project and task links',()=>{
+  setup({pendingTasks:[task('可完成任务'),task('可完成任务'),task('待分配任务','todo',{assigneeId:null}),task('已提交任务','doing',{lifecycleState:'submitted'}),task('受阻任务','blocked'),task('已完成任务','done')]});
+  const attention = screen.getByRole('complementary',{name:'待响应事项'});
+  expect(within(attention).getByText('2 项可完成')).toBeInTheDocument();
+  expect(within(attention).getAllByRole('region')).toHaveLength(2);
+  const group = within(attention).getByRole('region',{name:'待确认项目'});
+  expect(within(group).getByRole('link',{name:/待确认项目.*1 项可完成/})).toHaveAttribute('href','/app/projects/pending');
+  expect(within(group).getByRole('link',{name:/可完成任务.*截止待确认/})).toHaveAttribute('href','/app/projects/pending/tasks?task=%E5%8F%AF%E5%AE%8C%E6%88%90%E4%BB%BB%E5%8A%A1');
+  expect(within(group).getAllByRole('listitem')).toHaveLength(1);
+  for (const text of ['待分配任务','已提交任务','受阻任务','已完成任务','已完成项目甲','已归档项目甲']) expect(within(attention).queryByText(text)).not.toBeInTheDocument();
+  expect(document.querySelector('.dashboard-deadline .dashboard-metric-value')).toHaveTextContent('2项');
+ });
+ it('keeps a project entry with zero actionable tasks and a clear waiting hint',()=>{
+  setup({pendingTasks:[task('等待前置','doing',{dependsOnTaskIds:['未完成前置'],unfinishedDependencyIds:['未完成前置']}),task('未完成前置','todo',{assigneeId:null})]});
+  const group = within(screen.getByRole('complementary',{name:'待响应事项'})).getByRole('region',{name:'待确认项目'});
+  expect(within(group).getByRole('link',{name:/待确认项目.*0 项可完成/})).toBeInTheDocument();
+  expect(within(group).getByText('暂无可完成任务')).toBeInTheDocument();
+  expect(within(group).queryByRole('list')).not.toBeInTheDocument();
+ });
+ it('does not truncate currently actionable tasks to the old five-item list',()=>{
+  setup({pendingTasks:Array.from({length:7},(_,i)=>task(`可执行${i+1}`))});
+  const attention = screen.getByRole('complementary',{name:'待响应事项'});
+  expect(within(attention).getAllByRole('listitem')).toHaveLength(8);
+  expect(within(attention).getByText('8 项可完成')).toBeInTheDocument();
+ });
+ it('waits for current membership before showing actionable totals',()=>{
+  setup({membersLoading:true});
+  expect(screen.getByText('今日截止 — 项')).toBeInTheDocument();
+  expect(screen.getByText('正在读取待响应事项…')).toBeInTheDocument();
+ });
+ it('does not expose a cached actionable list when current membership fails to load',()=>{
+  setup({memberError:true});
+  expect(screen.getByText('今日截止 — 项')).toBeInTheDocument();
+  expect(screen.getByText('任务暂不可用，请重试。')).toBeInTheDocument();
+  expect(within(screen.getByRole('complementary',{name:'待响应事项'})).queryByRole('link')).not.toBeInTheDocument();
  });
  it('opens archived tasks in a separate accessible dialog and closes via Escape',()=>{
   setup({archive:true});

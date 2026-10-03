@@ -6,7 +6,7 @@ import { listAllItems } from '../api/client';
 import type { ProjectSummary, Task } from '../api/types';
 import { ErrorNotice, EmptyState, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
 import { ReceivedInvitations } from './UsernameInvitations';
-import { deadlineBarStyle, deadlineSummary, projectDisplayStatus, remainingDays, type ProjectDisplayStatus } from './dashboard-summary';
+import { deadlineBarStyle, deadlineSummary, pendingProjectGroups, projectDisplayStatus, remainingDays, uniqueProjectTasks, type ProjectDisplayStatus } from './dashboard-summary';
 import './DashboardPage.css';
 
 const statusLabels = { pending: '待响应', active: '进行中', done: '已完成', archived: '已归档', unknown: '进度待确认' };
@@ -54,17 +54,24 @@ export function DashboardPage() {
   const taskQueries = useQueries({ queries: projects.map(project => ({
     queryKey: ['tasks', project.id], queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/tasks`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000,
   })) });
-  const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data, error: taskQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
+  const memberQueries = useQueries({ queries: projects.map(project => ({
+    queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000, enabled: project.status !== 'archived',
+  })) });
+  const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data ? uniqueProjectTasks(taskQueries[index].data) : undefined, members: memberQueries[index]?.data, error: taskQueries[index]?.error, memberError: memberQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
   const current = entries.filter(entry => entry.status !== 'archived');
   const archived = entries.filter(entry => entry.status === 'archived');
   const available = !projectsQuery.error && current.every(entry => entry.tasks !== undefined && !entry.error);
   const allTasks = current.flatMap(entry => entry.tasks ?? []);
-  const pending = current.flatMap(entry => (entry.tasks ?? []).filter(task => task.status !== 'done').map(task => ({ task, project: entry.project }))).sort((a, b) => (remainingDays(a.task) ?? Infinity) - (remainingDays(b.task) ?? Infinity) || a.task.taskId.localeCompare(b.task.taskId));
+  const actionableAvailable = available && current.every(entry => entry.members !== undefined && !entry.memberError);
+  const pendingProjects = pendingProjectGroups(current);
+  const pending = pendingProjects.flatMap(entry => entry.actionable);
   const completed = allTasks.filter(task => task.status === 'done').length;
   const rate = allTasks.length ? Math.round(completed / allTasks.length * 100) : 0;
   const visible = current.filter(entry => filter === 'all' || (filter === 'active' ? entry.status === 'active' || entry.status === 'pending' : entry.status === 'done'));
-  const summary = deadlineSummary(pending.map(entry => entry.task));
+  const summary = deadlineSummary(pending);
   const firstTaskError = current.find(entry => entry.error)?.error;
+  const firstMemberError = current.find(entry => entry.memberError)?.memberError;
+  const attentionError = firstTaskError || firstMemberError;
   function closeArchive() { const next = new URLSearchParams(searchParams); next.delete('archive'); setSearchParams(next, { replace: true }); }
 
   if (projectsQuery.isLoading) return <div className="content-wrap"><Spinner label="正在加载项目" /></div>;
@@ -73,23 +80,26 @@ export function DashboardPage() {
     {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}
     <div className="dashboard-metrics">
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>
-      <DeadlineMetric tasks={pending.map(entry => entry.task)} available={available} />
+      <DeadlineMetric tasks={pending} available={actionableAvailable} />
       <div className="dashboard-metric"><span className="dashboard-metric-label"><CircleCheck size={16} />任务完成率</span><strong className="dashboard-metric-value">{available ? rate : '—'}<small>%</small></strong><span className="dashboard-metric-foot">{available ? `${completed} / ${allTasks.length} 项任务已完成` : firstTaskError ? '任务统计暂不可用' : '正在读取任务进度'}</span></div>
       <Link className="dashboard-metric dashboard-join" to="/app/join"><span className="dashboard-metric-label">加入现有团队</span><strong>有邀请代码？</strong><span>与伙伴一起推进下一个项目</span><span className="dashboard-join-link">输入邀请代码 <ArrowUpRight size={14} /></span></Link>
     </div>
-    {firstTaskError && <ErrorNotice error={firstTaskError} onRetry={() => { taskQueries.forEach(query => { if (query.error) void query.refetch(); }); }} />}
+    {attentionError && <ErrorNotice error={attentionError} onRetry={() => { [...taskQueries, ...memberQueries].forEach(query => { if (query.error) void query.refetch(); }); }} />}
     <div className="dashboard-columns">
       <section className="dashboard-projects" aria-label="项目区">
         <div className="dashboard-section-head"><h2>项目 <small>{visible.length} 个</small></h2><div className="dashboard-segment" aria-label="项目视图"><button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><LayoutGrid size={14} />网格</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}><List size={14} />列表</button></div><div className="dashboard-filters" aria-label="项目筛选">{(['all', 'active', 'done'] as const).map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? '全部' : value === 'active' ? '进行中' : '已完成'}</button>)}</div></div>
         <div className="dashboard-filter-note">进行中包含待响应 · 已完成表示项目内全部任务完成</div>
         {projectsQuery.error ? <div className="card"><EmptyState title="项目列表暂不可用" detail="请重试加载项目。" /></div> : visible.length === 0 ? <div className="card"><EmptyState title={current.length ? '暂无此类项目' : '还没有项目'} detail="创建项目，或使用邀请代码加入团队。" action={<Link className="button button-quiet" to="/app/projects/new"><Plus size={16} />新建项目</Link>} /></div> : <div className={`dashboard-project-collection dashboard-view-${view}`}>{visible.map(entry => <ProjectCard key={entry.project.id} {...entry} />)}</div>}
       </section>
-      <aside className="dashboard-attention card" aria-label="待响应事项"><div className="dashboard-section-head"><h2><Clock3 size={16} />待响应事项</h2><small>{available ? pending.length : '—'} 项</small></div><p className="dashboard-attention-intro">按截止日期，安排下一步。</p>
-        {!available ? <p className="dashboard-attention-empty">{projectsQuery.error || firstTaskError ? '任务暂不可用，请重试。' : '正在读取待响应事项…'}</p> : pending.length === 0 ? <EmptyState title="暂时没有待响应事项" detail="当前项目的任务均已完成。" /> : <div className="dashboard-attention-list">{pending.slice(0, 5).map(({ task, project }) => {
-          const days = remainingDays(task);
-          return <Link key={`${project.id}/${task.taskId}`} className="dashboard-task" to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span className={`dashboard-task-dot ${days !== null && days <= 0 ? 'urgent' : ''}`} /><span><strong>{task.title}</strong><small>{project.name} · {taskLabels[task.status]}</small><span className={`dashboard-task-due ${days !== null && days <= 0 ? 'urgent' : ''}`}>{days === null ? '截止待确认' : days < 0 ? `已逾期 ${-days} 日` : days === 0 ? '今日截止' : `截止还有 ${days} 日`}</span></span><ArrowUpRight size={14} /></Link>;
-        })}</div>}
-        {available && (summary.overdue > 0 || summary.undated > 0) && <p className="dashboard-attention-note">{summary.overdue} 项已逾期 · {summary.undated} 项截止待确认（未计入柱状图）</p>}
+      <aside className="dashboard-attention card" aria-label="待响应事项"><div className="dashboard-section-head"><h2><Clock3 size={16} />待响应事项</h2><small>{actionableAvailable ? pending.length : '—'} 项可完成</small></div><p className="dashboard-attention-intro">按项目查看已分配、前置任务已完成的未完成任务。</p>
+        {!actionableAvailable ? <p className="dashboard-attention-empty">{projectsQuery.error || attentionError ? '任务暂不可用，请重试。' : '正在读取待响应事项…'}</p> : pendingProjects.length === 0 ? <EmptyState title="暂时没有待响应事项" detail="当前项目没有未完成任务。" /> : <div className="dashboard-attention-list">{pendingProjects.map(({ project, actionable }) => <section className="dashboard-attention-project" key={project.id} aria-label={project.name}>
+          <Link className="dashboard-attention-project-link" to={`/app/projects/${encodeURIComponent(project.id)}`}><strong>{project.name}</strong><span>{actionable.length} 项可完成</span><ArrowUpRight size={14} /></Link>
+          {actionable.length === 0 ? <p className="dashboard-project-waiting">暂无可完成任务</p> : <ul className="dashboard-project-tasks">{actionable.map(task => {
+            const days = remainingDays(task);
+            return <li key={task.taskId}><Link className="dashboard-task" to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span className={`dashboard-task-dot ${days !== null && days <= 0 ? 'urgent' : ''}`} /><span><strong>{task.title}</strong><span className={`dashboard-task-due ${days !== null && days <= 0 ? 'urgent' : ''}`}>{days === null ? '截止待确认' : days < 0 ? `已逾期 ${-days} 日` : days === 0 ? '今日截止' : `截止还有 ${days} 日`}</span></span></Link></li>;
+          })}</ul>}
+        </section>)}</div>}
+        {actionableAvailable && (summary.overdue > 0 || summary.undated > 0) && <p className="dashboard-attention-note">{summary.overdue} 项已逾期 · {summary.undated} 项截止待确认（未计入柱状图）</p>}
       </aside>
     </div>
     <details className="dashboard-invitations"><summary><UsersRound size={16} />收到的项目邀请</summary><ReceivedInvitations /></details>

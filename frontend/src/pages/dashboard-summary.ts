@@ -1,4 +1,39 @@
-import type { ProjectSummary, Task } from '../api/types';
+import type { Member, ProjectSummary, Task } from '../api/types';
+
+/** A task is counted once per project; legacy parent tasks remain separate deliverables. */
+export function uniqueProjectTasks(tasks: readonly Task[]): Task[] {
+  const byId = new Map<string, Task>();
+  for (const task of tasks) {
+    const existing = byId.get(task.taskId);
+    if (!existing || task.revision > existing.revision) byId.set(task.taskId, task);
+  }
+  return [...byId.values()];
+}
+
+export function actionableProjectTasks(tasks: readonly Task[], members: readonly Pick<Member, 'userId'>[]): Task[] {
+  const unique = uniqueProjectTasks(tasks);
+  const byId = new Map(unique.map(task => [task.taskId, task]));
+  const memberIds = new Set(members.map(member => member.userId));
+  return unique.filter(task => {
+    if (!task.assigneeId || !memberIds.has(task.assigneeId) || !['todo', 'doing'].includes(task.status)) return false;
+    // Submitted tasks await review; unknown future states must not be presented as ready.
+    if (task.lifecycleState && !['open', 'in_progress', 'improve', 'rework'].includes(task.lifecycleState)) return false;
+    if (task.unfinishedDependencyIds?.length) return false;
+    // Old cache entries may lack dependency metadata. Do not guess that they have no prerequisites.
+    if (!task.dependsOnTaskIds) return task.unfinishedDependencyIds?.length === 0;
+    // Match the API's direct-dependency semantics, using only this project's authorized records.
+    return task.dependsOnTaskIds.every(id => byId.get(id)?.status === 'done');
+  });
+}
+
+export function pendingProjectGroups(entries: readonly { project: ProjectSummary; tasks?: readonly Task[]; members?: readonly Pick<Member, 'userId'>[] }[]) {
+  return entries.filter(entry => entry.project.status !== 'archived').flatMap(({ project, tasks, members }) => {
+    const unique = uniqueProjectTasks(tasks ?? []);
+    if (!unique.some(task => task.status !== 'done')) return [];
+    const actionable = actionableProjectTasks(unique, members ?? []).sort((a, b) => (remainingDays(a) ?? Infinity) - (remainingDays(b) ?? Infinity) || a.taskId.localeCompare(b.taskId));
+    return [{ project, actionable }];
+  }).sort((a, b) => (a.actionable[0] ? remainingDays(a.actionable[0]) ?? Infinity : Infinity) - (b.actionable[0] ? remainingDays(b.actionable[0]) ?? Infinity : Infinity) || a.project.name.localeCompare(b.project.name) || a.project.id.localeCompare(b.project.id));
+}
 
 export type ProjectDisplayStatus = 'pending' | 'active' | 'done' | 'archived' | 'unknown';
 export function projectDisplayStatus(project: ProjectSummary, tasks: readonly Task[] | undefined): ProjectDisplayStatus {

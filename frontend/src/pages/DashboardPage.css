@@ -59,7 +59,15 @@
 .dashboard-attention { padding: 18px; border-radius: 12px; box-shadow: none; }
 .dashboard-attention .dashboard-section-head > small { margin-left: auto; }
 .dashboard-attention-intro, .dashboard-attention-empty { color: var(--muted); margin: 4px 0 12px; font-size: 12px; }
-.dashboard-task { display: flex; align-items: start; gap: 9px; padding: 14px 0; border-top: 1px solid var(--line); }
+.dashboard-attention-project { min-width: 0; padding: 14px 0; border-top: 1px solid var(--line); }
+.dashboard-attention-project-link { display: flex; align-items: start; gap: 8px; }
+.dashboard-attention-project-link strong { flex: 1; min-width: 0; color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.dashboard-attention-project-link > span { flex: none; color: var(--pending-ink); font-size: 10px; white-space: nowrap; }
+.dashboard-attention-project-link > svg { flex: none; color: var(--muted); margin-top: 2px; }
+.dashboard-attention-project-link:hover strong { color: var(--blue); }
+.dashboard-project-tasks { display: grid; gap: 8px; list-style: none; margin: 10px 0 0; padding: 0; }
+.dashboard-project-waiting { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.dashboard-task { display: flex; align-items: start; gap: 9px; padding: 2px 0; }
 .dashboard-task > span:nth-child(2) { display: grid; flex: 1; min-width: 0; gap: 4px; }
 .dashboard-task strong { font-size: 12px; color: var(--ink); font-weight: 650; overflow-wrap: anywhere; }
 .dashboard-task small { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
