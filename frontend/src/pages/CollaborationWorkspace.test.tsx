@@ -31,6 +31,33 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('submits once and follows the server-created evaluation without any manual evaluation request', async () => {
+    identity.aiEnabled = true;
+    const { client, fetchMock } = setup();
+    act(() => client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: true, assignmentMode: 'manual', evaluationMode: 'automatic', revision: 7 }));
+    const evaluatedSubmission = { ...submission, evaluationJobId: 'evaluation-job', evaluationAttempts: 1 };
+    const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, options) => {
+      if (String(url).includes('/jobs/evaluation-job')) return Response.json({ data: { jobId: 'evaluation-job', status: 'running', attempts: 1 }, requestId: 'r' });
+      if (String(url).endsWith('/tasks/t1/submissions')) return Response.json({ data: options?.method === 'POST' ? evaluatedSubmission : { items: [evaluatedSubmission] }, requestId: 'r' });
+      if (String(url).includes('/tasks?')) return Response.json({ data: { items: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1', revision: 4 }], nextCursor: null }, requestId: 'r' });
+      return fallback(url, options);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '完整成果正文与固定版本' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await screen.findByText('AI 任务：处理中');
+    expect(fetchMock.mock.calls.filter(([url, options]) => String(url).endsWith('/tasks/t1/submissions') && options?.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/evaluate'))).toBe(false);
+    expect(screen.queryByRole('button', { name: '请求 AI 评价' })).toBeNull();
+  });
+  it('shows no manual evaluation controls with AI disabled or on a completed submission', () => {
+    setup({ tasks: [{ ...task, status: 'done', lifecycleState: 'accepted', currentSubmissionId: 's1' }], submissions: [{ ...submission, status: 'accept', decision: 'accept', evaluationAttempts: 1 }] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    expect(screen.queryByRole('button', { name: '请求 AI 评价' })).toBeNull();
+    expect(screen.queryByText(/本轮 AI 评价已达/)).toBeNull();
+    expect(screen.getByRole('button', { name: '确认验收决定' })).toBeInTheDocument();
+  });
   it('uses task terminology and keeps task settings free of retired hierarchy controls', () => {
     setup({ tasks: [task, { ...task, taskId: 't2', title: '整理依据', dependsOnTaskIds: ['t1'] }] });
     expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();

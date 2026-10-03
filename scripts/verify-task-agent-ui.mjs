@@ -32,6 +32,11 @@ try {
     let provisional = false;
     let humanReviewed = false;
     let showProposal = false;
+    let submissionMode = null;
+    let submittedRound = false;
+    let evaluationJobReads = 0;
+    let submissionCreates = 0;
+    const automaticSubmission = () => ({ ...submissions[0], submissionId: 'auto-submission', round: 3, status: 'pending', decision: null, revision: 1, feedback: null, evaluationJobId: submissionMode === 'enabled' ? 'evaluation-once' : null, evaluationAttempts: submissionMode === 'enabled' ? 1 : 0 });
     let releaseTaskChunk;
     const taskChunkGate = new Promise(resolveGate => { releaseTaskChunk = resolveGate; });
     await context.route('**/*', async route => {
@@ -43,16 +48,20 @@ try {
       if (method !== 'GET') writes.push({ p, method, body: route.request().postDataJSON() });
       let data = { items: [], nextCursor: null };
       if (p.endsWith('/auth/session')) data = { user: { id: userId, username: 'fixture', displayName: '测试成员', role: 'user', isAdmin: false } };
-      else if (p.endsWith('/capabilities')) data = { features: { aiEnabled: false }, limits: { maxFileBytes: 20000000 }, competitionTemplate: {} };
+      else if (p.endsWith('/capabilities')) data = { features: { aiEnabled: submissionMode === 'enabled' }, limits: { maxFileBytes: 20000000 }, competitionTemplate: {} };
       else if (p === `/api/v1/projects/${projectId}`) data = { projectId, name: '任务交接验证', description: '本地浏览器固定数据', status: 'active', myRole: 'owner', revision: 1 };
       else if (p.endsWith('/members/me')) data = { userId, displayName: '测试成员', role: 'owner' };
       else if (p.endsWith('/members')) data = { items: [{ userId, displayName: '测试成员', role: 'owner' }], nextCursor: null };
       else if (p.endsWith('/goal')) data = { title: '发布可用原型', detail: '交付三个页面', revision: 2, graphRevision: 1 };
-      else if (p.endsWith('/tasks')) data = { items: [provisional || humanReviewed ? { ...task, lifecycleState: 'accepted', status: 'done', currentSubmissionId: submissions[0].submissionId, pendingHumanReview: provisional } : task, upstream], nextCursor: null };
-      else if (p.endsWith('/collaboration/settings')) data = { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 };
+      else if (p.endsWith('/tasks')) data = { items: [submittedRound ? { ...task, lifecycleState: 'submitted', currentSubmissionId: 'auto-submission', revision: 2 } : provisional || humanReviewed ? { ...task, lifecycleState: 'accepted', status: 'done', currentSubmissionId: submissions[0].submissionId, pendingHumanReview: provisional } : task, upstream], nextCursor: null };
+      else if (p.endsWith('/collaboration/settings')) data = { aiCollaborationEnabled: submissionMode === 'enabled', assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 };
       else if (p.endsWith('/collaboration/feedback/current')) data = { version: 0, feedback: '' };
       else if (p.endsWith('/collaboration/proposals')) data = { items: showProposal ? [{ proposalId: 'proposal-1', kind: 'decompose', status: 'pending', revision: 1, createdAt: now, payload: { tasks: [{ key: 'report', title: '写报告并制作图表', detail: '整理研究结果与图表', criteria: '交付完整报告', effortHours: 6, dependsOn: [] }], updates: [] } }] : [], nextCursor: null };
-      else if (p.endsWith('/submissions')) data = { items: provisional || humanReviewed ? [{ ...submissions[0], status: 'accept', decision: 'accept', pendingHumanReview: provisional, revision: humanReviewed ? 2 : 1 }, submissions[1]] : submissions };
+      else if (p.endsWith('/jobs/evaluation-once')) { evaluationJobReads++; data = { jobId: 'evaluation-once', status: 'running', attempts: 1 }; }
+      else if (p.endsWith('/submissions')) {
+        if (method === 'POST') { submissionCreates++; submittedRound = true; data = automaticSubmission(); }
+        else data = { items: submittedRound ? [automaticSubmission(), ...submissions] : provisional || humanReviewed ? [{ ...submissions[0], status: 'accept', decision: 'accept', pendingHumanReview: provisional, revision: humanReviewed ? 2 : 1 }, submissions[1]] : submissions };
+      }
       else if (p.endsWith('/decide')) {
         const body = route.request().postDataJSON();
         assert.equal(body.decision, 'accept');
@@ -94,6 +103,7 @@ try {
     await inquiry.getByRole('button', { name: '关闭', exact: true }).click();
     await card.getByRole('button', { name: '查看与提交', exact: true }).click();
     await page.getByLabel('成果说明', { exact: true }).fill('未提交的工作草稿');
+    assert.equal(await page.getByRole('dialog').getByRole('button', { name: '请求 AI 评价', exact: true }).count(), 0);
     assert.equal(await page.getByRole('dialog').locator('[role=tablist], [role=tab], [role=tabpanel]').count(), 0);
     assert.equal(await page.getByRole('dialog').getByRole('heading', { name: '前置任务质询', exact: true }).count(), 0);
     assert.equal(await page.getByText('AI 自主调查相关项目资料', { exact: false }).count(), 0);
@@ -157,6 +167,7 @@ try {
     assert.equal(await page.locator('.collab-task').count(), 1);
     await pendingCard.getByRole('button', { name: '查看与提交', exact: true }).click();
     await page.getByRole('dialog').getByRole('heading', { name: '人工审核', exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog').getByRole('button', { name: '请求 AI 评价', exact: true }).count(), 0);
     await capture('pending-human-review');
     await page.getByLabel('第 2 轮验收理由', { exact: true }).fill('已人工核对附件与链接');
     await page.getByRole('button', { name: '确认人工审核', exact: true }).click();
@@ -173,6 +184,21 @@ try {
     await page.getByRole('button', { name: '应用选中条目', exact: true }).waitFor();
     await capture('proposal-edit-entry');
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    for (const mode of ['enabled', 'disabled']) {
+      provisional = false; humanReviewed = false; showProposal = false; submittedRound = false; submissionMode = mode; evaluationJobReads = 0; submissionCreates = 0;
+      await page.goto(origin + base + '/tasks');
+      await card.getByRole('button', { name: '查看与提交', exact: true }).click();
+      await page.getByLabel('成果说明', { exact: true }).fill(`本轮成果：${mode}`);
+      await page.getByRole('button', { name: '提交本轮成果', exact: true }).click();
+      await page.getByText('第 3 轮', { exact: true }).waitFor();
+      assert.equal(submissionCreates, 1);
+      assert.equal(await page.getByRole('dialog').getByRole('button', { name: '请求 AI 评价', exact: true }).count(), 0);
+      if (mode === 'enabled') { await page.getByText('AI 任务：处理中', { exact: true }).waitFor(); assert(evaluationJobReads >= 1); }
+      else assert.equal(evaluationJobReads, 0);
+      assert.equal(writes.filter(write => write.p.endsWith('/evaluate')).length, 0);
+      await capture(`automatic-evaluation-${mode}`);
+      await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    }
     report.checks.push({ width, passed: true, verified: 'task actions, independent dialogs, draft and history preservation, full prompt, clipboard and download, no writes during handoff, provisional completion and human review, proposal editing entry, no tabs, no overflow' });
     await context.close();
   }

@@ -296,7 +296,7 @@ reservation: reserved → settled / released / pending_reconcile
 | 采纳助手草稿 | `POST .../agent-runs/{runId}/adopt` | 独立采纳事务，不等同模型已生成 |
 | 任务拆解/调整 | `POST .../collaboration/decompose`；`api/collaboration.ts` | `agent_run` + `collaboration.decompose → runCollaborationAiJob` |
 | 分工建议 | `POST .../collaboration/assign` | `agent_run` + `collaboration.assign`；通用分工入口另使用 `assignment_suggest → runAssignmentSuggestionJob` |
-| 评价当前提交 | `POST .../collaboration/submissions/{submissionId}/evaluate` | `agent_run` + `collaboration.evaluate`，由 `enqueueEvaluation` 冻结轮次和标准 |
+| 提交后自动评价 | `POST .../tasks/{taskId}/submissions`（协作路径为同一处理器） | AI 启用时自动创建一次 `agent_run` + `collaboration.evaluate`，由 `enqueueEvaluation` 冻结轮次和标准；AI 禁用时不创建作业，不注册独立手动评价接口 |
 | 任务简介 | `POST .../collaboration/tasks/{taskId}/summary`，也注册 `/projects/{projectId}/tasks/...` 别名 | `agent_run` + `collaboration.summary → runTaskSummaryJob` |
 | 固定材料预审 | `POST .../reviews`；`api/reviews.ts` | `review_run → runReviewJob` |
 | 主目标材料检查/演练评分 | `POST .../assessments`；`api/project-simplification.ts` | 材料检查 `review_run` + `assessmentId`；演练 `rehearsal_turn` |
@@ -342,7 +342,7 @@ reservation: reserved → settled / released / pending_reconcile
 
 分工个人偏好采用 `profileStamp`：job 只保存成员 ID、成员记录 ID、个人资料 revision 和 `ai_use_allowed`，不保存个人简介正文。`recommendationDispatch` 在真实 fetch 前最后一次数据库读取中统一检查授权、成员范围、来源和最新配置，再提供当前允许用于 AI 的偏好与负载；调用方不能在这次读取与 fetch 之间加入异步 I/O。`finishRecommendationJob` 的发布 SQL 再检查 `profileSnapshotGuard`，防止授权撤回后仍发布旧推荐。
 
-提交评价使用固定 `task_submissions` 轮次、完整 `material_versions.markdown` 和可选已确认 `rubricSnapshot`。`evaluate` 要求 `current_submission_id/evaluation_job_id/task_revision/assignee_id/submitted_by` 一致，阶段性提纲按本任务 criteria 评价，不能要求尚未到达阶段的最终成果。此操作 `maxAttempts:1`，不自动修复评价结论。`assessEvidence` 检查逐字证据、附件/链接未读、coverage、limitations、低于 0.6 的评分置信度。任务为平级任务，主目标单独保存，依赖通过 `task_dependencies` 表达。原文证据不足时即使模型给 accept，自动验收仍被阻止；只有未读附件或引用造成证据限制、正文证据有效且其他校验通过时，可以先行接受，并在报告 `humanReview.status` 中保存 `pending`，对外返回 `pendingHumanReview`；负责人随后完成人工审核。先行接受仍使用 `accepted/done`，计入完成与依赖就绪；评分总分由 `calculateRubricWeightedTotal` 算，不采信模型总分。结果落 `ai_report_json` 后才可能由 `decideSubmission` 应用。已存在报告可复用，避免再次付费生成。
+每轮提交在系统与项目 AI 启用时只自动创建一个评价作业，禁用时不评价；同轮重复或失败作业不能通过手动评价或通用重试接口创建第二份评价。提交评价使用固定 `task_submissions` 轮次、完整 `material_versions.markdown` 和可选已确认 `rubricSnapshot`。`evaluate` 要求 `current_submission_id/evaluation_job_id/task_revision/assignee_id/submitted_by` 一致，阶段性提纲按本任务 criteria 评价，不能要求尚未到达阶段的最终成果。此操作 `maxAttempts:1`，不自动修复评价结论。`assessEvidence` 检查逐字证据、附件/链接未读、coverage、limitations、低于 0.6 的评分置信度。任务为平级任务，主目标单独保存，依赖通过 `task_dependencies` 表达。原文证据不足时即使模型给 accept，自动验收仍被阻止；只有未读附件或引用造成证据限制、正文证据有效且其他校验通过时，可以先行接受，并在报告 `humanReview.status` 中保存 `pending`，对外返回 `pendingHumanReview`；负责人随后完成人工审核。先行接受仍使用 `accepted/done`，计入完成与依赖就绪；评分总分由 `calculateRubricWeightedTotal` 算，不采信模型总分。结果落 `ai_report_json` 后才可能由 `decideSubmission` 应用。已存在报告可复用，避免再次付费生成。
 
 材料预审与主目标评分是两条路径。旧 `reviews` 冻结 `requirement_set_id/rubric_version_id/material_version_ids_json`；新 `assessments` 冻结 `goal_revision/standards_version_id/inputs_json`，`review_run` 携带 `assessmentId` 时 `runReviewJob` 转 `runMaterialAssessmentJob → scoreAssessment → publishAssessment/assessmentPublication`。每个数字评分都要固定成果引文；没有可靠证据或置信度不足则 score=null，不冒充 0 分。要求检查覆盖全部 requirement ID；没有证据的 met/unmet 改 unknown。材料检查不要求答辩回答，演练数字分必须含实际 answer 证据。空材料、无实际回答可返回 unscorable，无须收费模型请求。
 
