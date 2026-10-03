@@ -50,7 +50,7 @@ describe('persisted project clarification', () => {
     await openQuestion();
     first.unmount(); mount(); await openQuestion();
     fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '新的请求' } });
-    expect(screen.getByRole('button', { name: '生成拆解建议' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重新生成整套任务建议' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('补充回答'), { target: { value: '由项目负责人审核' } });
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     await openQuestion();

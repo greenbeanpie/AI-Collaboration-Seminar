@@ -116,6 +116,17 @@ try{
     await screenshot('picker-page');
     assert(contrast.ratio>=4.5,`reference picker text/background contrast is ${contrast.ratio.toFixed(2)}: ${JSON.stringify(contrast)}`);
     result.checks.push({name:'reference-picker-light-theme-contrast',passed:true,...contrast});
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('office-theme-select',{detail:'dark'})));
+    const dark=await picker.evaluate(node=>{
+      const channels=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+      const luminance=value=>channels(value).map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((a,v,i)=>a+v*[0.2126,0.7152,0.0722][i],0);
+      const style=getComputedStyle(node),fg=getComputedStyle(node.querySelector('h2')).color,bg=style.backgroundColor;
+      const a=luminance(fg),b=luminance(bg);return {background:bg,foreground:fg,ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)};
+    });
+    assert(dark.ratio>=4.5,`dark reference picker contrast is ${dark.ratio}`);
+    result.checks.push({name:'reference-picker-dark-theme-contrast',passed:true,...dark});
+    await screenshot('picker-dark');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('office-theme-select',{detail:'light'})));
     await picker.getByRole('checkbox',{name:'本地参考通知'}).check();
     await picker.getByRole('button',{name:'完成选择并返回'}).click();
     assert.equal(await feedback.inputValue(),'新持续反馈，保留草稿');

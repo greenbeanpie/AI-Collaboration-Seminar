@@ -1,5 +1,7 @@
 import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { publicErrorMessage } from './error-info';
+import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
+import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
 
 export class ApiError extends Error {
   readonly diagnosticMessage: string;
@@ -33,6 +35,9 @@ export type RequestOptions = {
   signal?: AbortSignal;
   idempotencyKey?: string;
   rawBody?: BodyInit;
+  /** Internal sync/revalidation path: never read a local snapshot or enqueue work. */
+  networkOnly?: boolean;
+  requireOfflinePersistence?: boolean;
 };
 
 function makeRequestId(): string {
@@ -50,6 +55,22 @@ export function apiUrl(path: string, query?: RequestOptions['query']): string {
 export async function request<Name extends SchemaName>(path: string, options: RequestOptions = {}): Promise<DataOf<Name>> {
   const method = options.method ?? 'GET';
   const requestId = makeRequestId();
+  const url = apiUrl(path, options.query);
+  const accountAtStart = offlineAccount()?.id;
+  const local = async (): Promise<DataOf<Name>> => {
+    const cached = cacheable(url) ? await readSnapshot(url) : undefined;
+    if (cached) return await offlineView(url, cached.data) as DataOf<Name>;
+    const list = cacheable(url) ? await readCachedList(url) : undefined;
+    if (list) return await offlineView(url, list) as DataOf<Name>;
+    const entity = await seedLocalEntity(url);
+    if (entity) return entity as DataOf<Name>;
+    throw new ApiError(0, { requestId, error: { code: 'OFFLINE_NOT_CACHED', message: '此内容尚未保存到本机，请联网打开后再离线使用。', retryable: false } });
+  };
+  if (!options.networkOnly && navigator.onLine === false) {
+    if (method === 'GET') return local();
+    try { return await queueOffline(url, method, options.body, options.idempotencyKey) as DataOf<Name>; }
+    catch (error) { throw new ApiError(0, { requestId, error: { code: 'OFFLINE_WRITE_FAILED', message: error instanceof Error ? error.message : '离线保存失败', retryable: false } }); }
+  }
   const headers = new Headers(options.headers);
   headers.set('X-Request-Id', requestId);
   const hasJsonBody = options.body !== undefined;
@@ -58,7 +79,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
 
   let response: Response;
   try {
-    response = await fetch(apiUrl(path, options.query), {
+    response = await fetch(url, {
       method,
       credentials: 'include',
       cache: /^(?:\/api\/v1)?\/(?:jobs(?:\/|$)|creation-drafts(?:\/|$)|projects\/[^/]+\/ai\/clarifications(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|admin\/accounts(?:\/|$)|auth(?:\/|$))/.test(path) ? 'no-store' : undefined,
@@ -68,6 +89,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    if (method === 'GET' && !options.networkOnly && offlineAccount()) return local();
     throw new ApiError(0, {
       error: { code: 'NETWORK_ERROR', message: '无法连接服务，请检查网络或后端是否启动。', retryable: true, stage:'network',action:'check_connection' },
       requestId,
@@ -84,7 +106,10 @@ export async function request<Name extends SchemaName>(path: string, options: Re
           error: { code: `HTTP_${response.status}`, message: '服务暂时无法处理该请求。', retryable: response.status >= 500 },
           requestId: returnedRequestId,
         } satisfies ApiFailure;
-    if (response.status === 401 && !path.endsWith('/auth/session')) window.dispatchEvent(new CustomEvent('auth-expired'));
+    if (response.status === 401) {
+      forgetAccount();
+      if (!path.endsWith('/auth/session')) window.dispatchEvent(new CustomEvent('auth-expired'));
+    }
     throw new ApiError(response.status, failure);
   }
   if (!payload || typeof payload !== 'object' || !('data' in payload)) {
@@ -93,7 +118,24 @@ export async function request<Name extends SchemaName>(path: string, options: Re
       requestId: returnedRequestId,
     });
   }
-  return (payload as ApiEnvelope<DataOf<Name>>).data;
+  const data = (payload as ApiEnvelope<DataOf<Name>>).data;
+  if (url === '/api/v1/auth/session') {
+    const user = (data as { user?: unknown }).user;
+    if (user && typeof user === 'object' && 'id' in user) {
+      try { rememberAccount(user as NonNullable<ReturnType<typeof offlineAccount>>); }
+      catch { window.dispatchEvent(new Event('offline-storage-failed')); }
+    }
+  }
+  const currentAccount = offlineAccount()?.id;
+  if (method === 'GET' && cacheable(url) && currentAccount && (url === '/api/v1/auth/session' || currentAccount === accountAtStart)) {
+    try { await writeSnapshot(url, data, currentAccount); }
+    catch (failure) { window.dispatchEvent(new Event('offline-storage-failed')); if (options.requireOfflinePersistence) throw failure; }
+    if (!options.networkOnly) {
+      try { return await offlineView(url, data) as DataOf<Name>; }
+      catch { window.dispatchEvent(new Event('offline-storage-failed')); }
+    }
+  }
+  return data;
 }
 
 export function isApiFailure(value: unknown): value is ApiFailure {

@@ -34,6 +34,7 @@ import { registerReviewRoutes } from './api/reviews';
 import { registerRehearsalRoutes } from './api/rehearsals';
 import { registerLedgerRoutes } from './api/ledger';
 import { requireAllowedOrigin } from './core/origin';
+import { registerOfflineSyncRoutes } from './api/offline-sync';
 
 export function createApp(): OpenAPIHono<AppEnv> {
   // 校验失败统一走 ApiFailure 契约（不再使用 zod-openapi 默认的 {success:false} 形状）
@@ -52,7 +53,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requestIdMiddleware);
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
-    if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:files|sources|resource-library|goal|standards|assessments|ai-tools|ai\/clarifications|username-invitations|collaboration\/proposals)(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:files|sources|resource-library|goal|standards|assessments|ai-tools|ai\/clarifications|username-invitations|invitation-requests|offline-sync|collaboration\/(?:proposals|feedback))(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -106,6 +107,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAiDiagnosticsRoutes(app);
   registerSupportTicketRoutes(app);
   registerNotificationRoutes(app);
+  registerOfflineSyncRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {
     openapi: '3.1.0',

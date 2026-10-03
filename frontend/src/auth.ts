@@ -5,6 +5,7 @@ import type { Capability, User } from './api/types';
 export function useSession() {
   return useQuery({
     queryKey: ['session'],
+    networkMode: 'always',
     queryFn: async () => {
       try {
         return (await api.get<'AuthSessionGetResponse'>('/api/v1/auth/session')).user as User;
@@ -21,6 +22,7 @@ export function useSession() {
 export function useCapabilities() {
   return useQuery({
     queryKey: ['capabilities'],
+    networkMode: 'always',
     queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') as Promise<Capability>,
     staleTime: 60_000,
     retry: 1,

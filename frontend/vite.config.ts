@@ -28,6 +28,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff,woff2}'],
         // A waiting update activates only after SKIP_WAITING, then takes control.
         skipWaiting: false,
         clientsClaim: true,

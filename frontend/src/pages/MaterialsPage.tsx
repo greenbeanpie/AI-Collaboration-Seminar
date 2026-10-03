@@ -292,10 +292,10 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
   };
 
   const saveMaterial = async (expectedRevision = baseRevisionRef.current, docOverride?: Record<string, unknown>) => {
-    if (!editor || !material || material.canEdit === false || material.materialId !== activeMaterialId || !activeMaterialId || !accountId || !online || saving) return;
+    if (!editor || !material || material.canEdit === false || material.materialId !== activeMaterialId || !activeMaterialId || !accountId || saving) return;
     const doc = docOverride ?? editor.getJSON() as Record<string, unknown>;
     const markdown = docToMarkdown(doc);
-    if (needsReconnectConfirmationRef.current) {
+    if (online && needsReconnectConfirmationRef.current) {
       if (!await dialogs.confirm('这份材料包含离线期间编辑的内容。确认后会将该本机草稿保存为新的服务端版本。')) return;
       if (accountIdRef.current !== accountId || activeMaterialIdRef.current !== activeMaterialId || editor.isDestroyed) return;
       needsReconnectConfirmationRef.current = false;
@@ -374,7 +374,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
       {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
       {createMaterial.error && <ErrorNotice error={createMaterial.error} />}
       {saveError ? <ErrorNotice error={saveError} onRetry={() => void materialQuery.refetch()} /> : null}
-      {!online && <div className="tm-inline-notice"><span className="tm-offline-indicator"><WifiOff size={14} />当前离线</span> 编辑内容仅在浏览器存储成功时会按账户、项目和材料保存在本机；恢复联网后需要你确认，页面不会自动提交。</div>}
+      {!online && <div className="tm-inline-notice"><span className="tm-offline-indicator"><WifiOff size={14} />当前离线</span> 编辑内容保存在本机草稿中；点击“保存到本机，联网同步”后进入同步队列。联网后无冲突自动保存，有冲突时保留两份内容供核对。</div>}
       {draftStorageWarning && !dirty && <div className="tm-inline-notice tm-inline-error" role="status"><AlertTriangle size={14} />服务端操作已完成，但浏览器无法确认旧本机草稿已清理。若刷新后再次提示恢复，请核对服务端版本再处理。</div>}
 
       <div className="tm-materials-layout">
@@ -422,7 +422,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                   <button type="button" className="button button-quiet button-small" onClick={openHistory}><History size={14} />版本历史</button>
                   <DropdownMenu label="导出文件"><button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
                   <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button></DropdownMenu>
-                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
+                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : !online ? '保存到本机，联网同步' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
               </>} />

@@ -8,7 +8,7 @@ const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId:
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
-const task = { dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
+const task = { startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -36,7 +36,7 @@ describe('collaboration lifecycle', () => {
     const toggle = screen.getByRole('button', { name: 'AI 拆解、调整与分工' });
     expect(toggle.nextElementSibling).toBe(screen.getByRole('button', { name: '新建子任务' }));
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('button', { name: '生成拆解建议' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重新生成整套任务建议' })).toBeNull();
     fireEvent.click(toggle);
     fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '保留拆解草稿' } });
     expect(screen.getByRole('dialog', { name: 'AI 拆解、调整与分工' })).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', {name:'AI 拆解、调整与分工'}));
     expect(screen.getByLabelText('持续项目反馈')).toHaveAttribute('readonly');
     expect(screen.queryByRole('button',{name:'保存反馈'})).toBeNull();
-    expect(screen.getByRole('button',{name:'生成拆解建议'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'重新生成整套任务建议'})).toBeDisabled();
     expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
   });
   it('opens history only through the submenu, pages one submission, and preserves drafts', () => {
@@ -174,7 +174,7 @@ describe('collaboration lifecycle', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
     fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '创建交付任务' } });
-    fireEvent.click(screen.getByRole('button', { name: '生成拆解建议' }));
+    fireEvent.click(screen.getByRole('button', { name: '按要求调整现有任务' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/jobs/j1'))).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     status = 'succeeded';
@@ -241,7 +241,7 @@ describe('collaboration lifecycle', () => {
   it('keeps manual creation available while AI is disabled', async () => {
     const { fetchMock } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
-    expect(screen.getByRole('button', { name: '生成拆解建议' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重新生成整套任务建议' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '校对文稿' } });
     fireEvent.change(screen.getByLabelText(/^验收标准/), { target: { value: '无错字并保留核对清单' } });
@@ -434,8 +434,17 @@ it('does not start AI when permanent feedback saving fails', async()=>{
  fetchMock.mockImplementation(async(url,options)=>String(url).endsWith('/collaboration/feedback/current') ? Response.json({error:{code:'VERSION_CONFLICT',message:'反馈已变化'},requestId:'r'},{status:409}) : fallback(url,options));
  fireEvent.click(screen.getByRole('button',{name:'AI 拆解、调整与分工'}));
  fireEvent.change(screen.getByLabelText('持续项目反馈'),{target:{value:'新的持续要求'}});
- fireEvent.click(screen.getByRole('button',{name:'生成拆解建议'}));
+ fireEvent.click(screen.getByRole('button',{name:'按要求调整现有任务'}));
  await waitFor(()=>expect(screen.getByRole('button',{name:'重新载入已保存反馈'})).toBeInTheDocument());
  expect(fetchMock.mock.calls.some(([path])=>String(path).endsWith('/collaboration/decompose'))).toBe(false);
  expect(screen.getByLabelText('持续项目反馈')).toHaveValue('新的持续要求');
+});
+
+it('does not regenerate a task that was started and returned to the open state', () => {
+ identity.aiEnabled=true;
+ const { client }=setup({tasks:[{...task,status:'todo',lifecycleState:'open',assigneeId:null,startedAt:'2026-10-03T01:00:00Z'}]});
+ act(()=>client.setQueryData(['collaboration-settings','p1'],{aiCollaborationEnabled:true,assignmentMode:'manual',evaluationMode:'manual',revision:7}));
+ fireEvent.click(screen.getByRole('button',{name:'AI 拆解、调整与分工'}));
+ expect(screen.getByRole('button',{name:'重新生成整套任务建议'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'按要求调整现有任务'})).toBeEnabled();
 });

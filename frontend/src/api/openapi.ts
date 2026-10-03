@@ -1850,6 +1850,8 @@ export interface paths {
                         standardsVersionId: string;
                         /** @default [] */
                         materialVersionIds?: string[];
+                        /** @default [] */
+                        sourceVersionIds?: string[];
                         goalRevision?: number;
                     };
                 };
@@ -1862,76 +1864,6 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["AssessmentCreateResponse"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/projects/{projectId}/assessments/manual": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 项目 ID */
-                    projectId: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        standardsVersionId: string;
-                        /** @default [] */
-                        materialVersionIds?: string[];
-                        goalRevision?: number;
-                        scores: {
-                            key: string;
-                            score: number | null;
-                            /** @default 人工评分 */
-                            comment?: string;
-                            /** @default [] */
-                            evidence?: ({
-                                /** @enum {string} */
-                                type: "material";
-                                /** Format: uuid */
-                                materialVersionId: string;
-                                quote: string;
-                            } | {
-                                /** @enum {string} */
-                                type: "answer";
-                                turnSequence: number;
-                                quote: string;
-                            })[];
-                        }[];
-                        /** @default 项目负责人独立人工评分 */
-                        summary?: string;
-                        reason: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description 成功 */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["AssessmentManualResponse"];
                     };
                 };
             };
@@ -2226,6 +2158,8 @@ export interface paths {
                             taskManage: boolean;
                             resourceManage: boolean;
                             scoreInitiate: boolean;
+                            /** @default false */
+                            scoreCorrect?: boolean;
                         };
                     };
                 };
@@ -2490,6 +2424,119 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/invitation-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 本人的申请或管理员审批队列 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationRequestListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        username: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 等待管理员批准 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationRequestResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/invitation-requests/{requestId}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** @enum {string} */
+                        action: "approve" | "reject";
+                    };
+                };
+            };
+            responses: {
+                /** @description 审批结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationRequestResponse"];
                     };
                 };
             };
@@ -4967,6 +5014,8 @@ export interface paths {
                     "application/json": {
                         expectedRevision: number;
                         payload: {
+                            /** @enum {string} */
+                            planningAction?: "regenerate" | "adjust";
                             references?: unknown[];
                             decisionReferences?: unknown[];
                             causeEventId?: string;
@@ -5132,6 +5181,114 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/feedback/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /feedback/current */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectFeedbackCurrentResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 协作流程 /feedback/current */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        feedback: string;
+                        expectedVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectFeedbackCurrentResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/feedback/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 协作流程 /feedback/history */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectFeedbackHistoryResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6452,6 +6609,8 @@ export interface paths {
                         memberId?: string | null;
                         /** @default [] */
                         materialVersionIds?: string[];
+                        /** @default [] */
+                        sourceVersionIds?: string[];
                     };
                 };
             };
@@ -7190,6 +7349,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        searchEnabled?: boolean;
                         /** @enum {string} */
                         routingMode?: "advanced" | "unified";
                         unified?: {
@@ -8227,6 +8387,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/offline-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 同步单个离线操作；沿用原接口权限、版本校验并保存幂等响应 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        method: "POST" | "PUT" | "PATCH";
+                        tail: string;
+                        body: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description 原操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfflineSyncResponse"];
+                    };
+                };
+                /** @description 无效操作 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 版本或幂等冲突 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8773,6 +9000,8 @@ export interface components {
                     taskManage: boolean;
                     resourceManage: boolean;
                     scoreInitiate: boolean;
+                    /** @default false */
+                    scoreCorrect: boolean;
                 };
                 canGrantPermissions?: boolean;
                 createdAt: string;
@@ -8806,6 +9035,8 @@ export interface components {
                         taskManage: boolean;
                         resourceManage: boolean;
                         scoreInitiate: boolean;
+                        /** @default false */
+                        scoreCorrect: boolean;
                     };
                     canGrantPermissions?: boolean;
                     createdAt: string;
@@ -9168,238 +9399,6 @@ export interface components {
                     report?: unknown;
                 })[];
                 nextCursor: string | null;
-            };
-            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
-            requestId: string;
-        };
-        AssessmentManualResponse: {
-            data: {
-                /** Format: uuid */
-                initiatorId?: string;
-                canOperate?: boolean;
-                /** Format: uuid */
-                assessmentId: string;
-                /** @enum {string} */
-                kind: "material_review" | "rehearsal";
-                status: string;
-                goalRevision: number | null;
-                goal: {
-                    /** Format: uuid */
-                    projectId: string;
-                    title: string;
-                    detail: string;
-                    revision: number;
-                    graphRevision: number;
-                } | null;
-                /** Format: uuid */
-                standardsVersionId: string | null;
-                standardsVersion: number | null;
-                materialVersionIds: string[];
-                /** Format: uuid */
-                rehearsalId: string | null;
-                /** Format: uuid */
-                jobId: string | null;
-                jobError: string | null;
-                createdAt: string;
-                revision?: number;
-                origin?: string;
-                aiReport?: {
-                    /** @enum {string} */
-                    kind: "assistive";
-                    /** @enum {string} */
-                    status: "scored" | "unscorable";
-                    /** Format: uuid */
-                    standardsVersionId: string;
-                    standardsVersion: number;
-                    scores: {
-                        key: string;
-                        score: number | null;
-                        confidence: number | null;
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                        label: string;
-                        /** @enum {string} */
-                        origin?: "human" | "ai";
-                    }[];
-                    weightedTotal: number | null;
-                    summary: string;
-                    limitations: string[];
-                    requirementChecks: {
-                        /** Format: uuid */
-                        requirementId: string;
-                        /** @enum {string} */
-                        status: "met" | "unmet" | "unknown";
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                    }[];
-                    references?: unknown[];
-                    decisionReferences?: unknown[];
-                } | null;
-                /** @enum {boolean} */
-                historical: false;
-                report: {
-                    /** @enum {string} */
-                    kind: "assistive";
-                    /** @enum {string} */
-                    status: "scored" | "unscorable";
-                    /** Format: uuid */
-                    standardsVersionId: string;
-                    standardsVersion: number;
-                    scores: {
-                        key: string;
-                        score: number | null;
-                        confidence: number | null;
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                        label: string;
-                        /** @enum {string} */
-                        origin?: "human" | "ai";
-                    }[];
-                    weightedTotal: number | null;
-                    summary: string;
-                    limitations: string[];
-                    requirementChecks: {
-                        /** Format: uuid */
-                        requirementId: string;
-                        /** @enum {string} */
-                        status: "met" | "unmet" | "unknown";
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                    }[];
-                    references?: unknown[];
-                    decisionReferences?: unknown[];
-                } | null;
-            } | {
-                /** Format: uuid */
-                initiatorId?: string;
-                canOperate?: boolean;
-                /** Format: uuid */
-                assessmentId: string;
-                /** @enum {string} */
-                kind: "material_review" | "rehearsal";
-                status: string;
-                goalRevision: number | null;
-                goal: {
-                    /** Format: uuid */
-                    projectId: string;
-                    title: string;
-                    detail: string;
-                    revision: number;
-                    graphRevision: number;
-                } | null;
-                /** Format: uuid */
-                standardsVersionId: string | null;
-                standardsVersion: number | null;
-                materialVersionIds: string[];
-                /** Format: uuid */
-                rehearsalId: string | null;
-                /** Format: uuid */
-                jobId: string | null;
-                jobError: string | null;
-                createdAt: string;
-                revision?: number;
-                origin?: string;
-                aiReport?: {
-                    /** @enum {string} */
-                    kind: "assistive";
-                    /** @enum {string} */
-                    status: "scored" | "unscorable";
-                    /** Format: uuid */
-                    standardsVersionId: string;
-                    standardsVersion: number;
-                    scores: {
-                        key: string;
-                        score: number | null;
-                        confidence: number | null;
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                        label: string;
-                        /** @enum {string} */
-                        origin?: "human" | "ai";
-                    }[];
-                    weightedTotal: number | null;
-                    summary: string;
-                    limitations: string[];
-                    requirementChecks: {
-                        /** Format: uuid */
-                        requirementId: string;
-                        /** @enum {string} */
-                        status: "met" | "unmet" | "unknown";
-                        comment: string;
-                        evidence: ({
-                            /** @enum {string} */
-                            type: "material";
-                            /** Format: uuid */
-                            materialVersionId: string;
-                            quote: string;
-                        } | {
-                            /** @enum {string} */
-                            type: "answer";
-                            turnSequence: number;
-                            quote: string;
-                        })[];
-                    }[];
-                    references?: unknown[];
-                    decisionReferences?: unknown[];
-                } | null;
-                /** @enum {boolean} */
-                historical: true;
-                report?: unknown;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -9897,6 +9896,8 @@ export interface components {
                         taskManage: boolean;
                         resourceManage: boolean;
                         scoreInitiate: boolean;
+                        /** @default false */
+                        scoreCorrect: boolean;
                     };
                     permissionsRevision: number;
                     canGrantPermissions: boolean;
@@ -9921,6 +9922,8 @@ export interface components {
                     taskManage: boolean;
                     resourceManage: boolean;
                     scoreInitiate: boolean;
+                    /** @default false */
+                    scoreCorrect: boolean;
                 };
                 permissionsRevision: number;
                 canGrantPermissions: boolean;
@@ -9983,6 +9986,34 @@ export interface components {
                 /** Format: uuid */
                 projectId: string;
                 projectName: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        InvitationRequestListResponse: {
+            data: {
+                items: {
+                    id: string;
+                    username: string;
+                    requestedBy: string;
+                    /** @enum {string} */
+                    status: "pending" | "approved" | "rejected";
+                    revision: number;
+                    createdAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        InvitationRequestResponse: {
+            data: {
+                id: string;
+                username: string;
+                requestedBy: string;
+                /** @enum {string} */
+                status: "pending" | "approved" | "rejected";
+                revision: number;
+                createdAt: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -10391,6 +10422,13 @@ export interface components {
                 status: "queued" | "running" | "waiting_input" | "succeeded" | "failed" | "cancelled";
                 result?: unknown;
                 error?: unknown;
+                feedbackSnapshot?: {
+                    versionId: string | null;
+                    version: number;
+                    feedback: string;
+                    actorId: string | null;
+                    createdAt: string | null;
+                };
                 attempts: number;
                 createdAt: string;
             };
@@ -10407,6 +10445,8 @@ export interface components {
         };
         TaskResponse: {
             data: {
+                startedAt?: string | null;
+                archivedAt?: string | null;
                 /** Format: uuid */
                 taskId: string;
                 lifecycleState: string | null;
@@ -10446,6 +10486,8 @@ export interface components {
         TaskListResponse: {
             data: {
                 items: {
+                    startedAt?: string | null;
+                    archivedAt?: string | null;
                     /** Format: uuid */
                     taskId: string;
                     lifecycleState: string | null;
@@ -10591,6 +10633,8 @@ export interface components {
         CollaborationTaskListResponse: {
             data: {
                 items: {
+                    startedAt?: string | null;
+                    archivedAt?: string | null;
                     /** Format: uuid */
                     taskId: string;
                     title: string;
@@ -10649,6 +10693,8 @@ export interface components {
         };
         CollaborationTaskResponse: {
             data: {
+                startedAt?: string | null;
+                archivedAt?: string | null;
                 /** Format: uuid */
                 taskId: string;
                 title: string;
@@ -10907,6 +10953,8 @@ export interface components {
                     /** @enum {string} */
                     kind: "decompose" | "assign";
                     payload: {
+                        /** @enum {string} */
+                        planningAction?: "regenerate" | "adjust";
                         references?: unknown[];
                         decisionReferences?: unknown[];
                         causeEventId?: string;
@@ -10993,6 +11041,8 @@ export interface components {
                 /** @enum {string} */
                 kind: "decompose" | "assign";
                 payload: {
+                    /** @enum {string} */
+                    planningAction?: "regenerate" | "adjust";
                     references?: unknown[];
                     decisionReferences?: unknown[];
                     causeEventId?: string;
@@ -11056,6 +11106,30 @@ export interface components {
                 status: "pending" | "applied" | "stale";
                 revision: number;
                 createdAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectFeedbackCurrentResponse: {
+            data: {
+                versionId: string | null;
+                version: number;
+                feedback: string;
+                actorId: string | null;
+                createdAt: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectFeedbackHistoryResponse: {
+            data: {
+                items: {
+                    versionId: string | null;
+                    version: number;
+                    feedback: string;
+                    actorId: string | null;
+                    createdAt: string | null;
+                }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -12464,6 +12538,11 @@ export interface components {
                 readAt: string | null;
                 dismissedAt: string | null;
             };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        OfflineSyncResponse: {
+            data?: unknown;
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };

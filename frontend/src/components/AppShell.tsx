@@ -13,6 +13,8 @@ import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
 import { ErrorNotice } from './ui';
 import { ThemeSelector } from './ThemeSelector';
+import { OfflineWorkspaceStatus } from '../offline/OfflineWorkspaceStatus';
+import { forgetAccount } from '../offline/store';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const logoutLock = useRef(false);
@@ -47,10 +49,14 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     try {
       if (!await requestSettingsLeave()) return;
       setBusy(true); setLogoutError(null);
+      if (navigator.onLine === false) {
+        forgetAccount(); queryClient.clear(); navigate('/login', { replace: true }); return;
+      }
       const subscriptionId = deviceSubscriptionId(user.id);
       await unsubscribeDevice(user.id,notificationRequest);
       await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{...(subscriptionId ? {'X-Push-Subscription-Id':subscriptionId} : {}),'X-Notification-Account':user.id}});
       clearAccountStorage(user.id);
+      forgetAccount();
       await queryClient.clear();
       navigate('/login', { replace: true });
     } catch (error) { window.dispatchEvent(new Event('settings-leave-failed')); setLogoutError(error); }
@@ -92,7 +98,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           </div>
         </div>
       </header>
-      <main className="main-shell">{children}</main>
+      <main className="main-shell">{(pathname === '/app' || pathname.startsWith('/app/projects/')) && <OfflineWorkspaceStatus key={user.id} accountId={user.id}/>} {children}</main>
     </div>
   </div>;
 }

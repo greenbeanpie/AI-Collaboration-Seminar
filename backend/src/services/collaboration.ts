@@ -114,7 +114,10 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     if(p.kind==='decompose'){
       if(automatic)throw invalidState('任务方案须由项目管理员明确批准');
       await requireProjectPermission(env,projectId,actorId,'grant');
-      if(payload.planningAction==='regenerate')await assertCanRegenerate(env,projectId);
+      if(payload.planningAction==='regenerate'){
+        if(!payload.tasks?.length || payload.updates?.length)throw validationFailed('整套重新生成需要新的任务清单，不能清空计划或同时修改即将归档的旧任务');
+        await assertCanRegenerate(env,projectId);
+      }
     }
     const nonce = newId();
     const taskIds: string[] = [];

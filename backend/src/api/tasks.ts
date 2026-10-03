@@ -19,6 +19,7 @@ const taskParams = projectParams.extend({ taskId: z.string().uuid() });
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const taskSchema = z.object({
+  startedAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
   taskId: z.string().uuid(),
   lifecycleState: z.string().nullable(),
   criteria: z.string(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(),
@@ -162,6 +163,7 @@ const commentListRoute = createRoute({
 });
 
 interface TaskRow {
+  started_at?: string | null; archived_at?: string | null;
   id: string;
   lifecycle_state: string | null;
   project_id: string;
@@ -180,6 +182,7 @@ interface TaskRow {
 
 function toTask(r: TaskRow) {
   return {
+    startedAt: r.started_at ?? null, archivedAt: r.archived_at ?? null,
     taskId: r.id,
     lifecycleState: r.lifecycle_state ?? (r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'),
     criteria:r.criteria,effortHours:r.effort_hours,parentTaskId:r.parent_task_id,currentSubmissionId:r.current_submission_id,citations:JSON.parse(r.source_citations_json||'[]'),

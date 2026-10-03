@@ -13,6 +13,7 @@ import './styles/readability.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      networkMode: 'always',
       staleTime: 8_000,
       retry: (failureCount, error) => {
         if (failureCount >= 1) return false;
@@ -20,7 +21,7 @@ const queryClient = new QueryClient({
       },
       refetchOnWindowFocus: true,
     },
-    mutations: { retry: false },
+    mutations: { retry: false, networkMode: 'always' },
   },
 });
 
