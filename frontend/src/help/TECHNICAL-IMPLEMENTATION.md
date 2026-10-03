@@ -1,10 +1,10 @@
 # 系统技术说明：实现结构与维护验证
 
-核对日期：2026-10-03。源码基线：`415b0e0` 加当前工作区未提交修改。本文按现行路由、服务、迁移和测试编写；后端未提交改动与线上版本的差异在文末单独列出。本次发布更新帮助文档与前端阅读能力，不发布那些后端变更。
+核对日期：2026-10-03。本文按现行路由、服务、迁移和测试编写；本次同步平级任务及待人工审核的实现说明。任务父子关系由增量迁移 `0043_remove_task_parent.sql` 移除。生产是否已应用迁移，应以发布验证记录和实际迁移状态为准；文末保留早期核对记录。
 
 本文详细说明功能修改入口、数据归属、AI 请求执行链路及失败恢复条件，为代码阅读、系统维护与实现核对提供依据。先读代码地图、数据库关系和 AI 链路；需要某张表的全部字段或 DDL 时，打开[数据库完整结构字典](/app/help?doc=database)。资料整理、AI 评价及分数均为协作辅助结果，正式评审与供应商实际账单需要单独核验。
 
-本次只读核对了生产数据库结构，不读取业务数据。文档不包含账户凭据、生产资源标识或模型密钥。代码路径相对仓库根目录，命令的环境与工作目录在对应章节标明。
+此前只读核对了生产数据库结构，不读取业务数据；该核对早于移除历史父任务字段的变更。文档不包含账户凭据、生产资源标识或模型密钥。代码路径相对仓库根目录，命令的环境与工作目录在对应章节标明。
 
 ## 1. 阅读顺序与代码地图
 
@@ -76,9 +76,9 @@
 
 `backend/migrations/*.sql` 是结构演进的事实源；`backend/src/services/*.ts` 和路由中的参数化 SQL 是运行时行为的事实源；生产 D1 的迁移记录与 `sqlite_master` 才是当前线上结构的事实源。不能凭文件名推断某个迁移已经应用，也不能把旧规划文档当成现行结构。
 
-本节结构核对基于空的 SQLite 内存数据库按完整文件名执行迁移，跳过演示数据 `0002_seed.sql` 与破坏性删除 `0033_remove_manual_ledger.sql`。得到 78 张应用表、1 个视图、5 个触发器；`PRAGMA integrity_check` 返回 `ok`，`PRAGMA foreign_key_check` 无结果。这是保留历史账本的兼容参考结构，**不是生产 schema 的证明，也不是生产迁移操作建议**。逐列字典包括字段类型、默认值、主键、外键、唯一索引、普通索引和完整 CHECK DDL；复现脚本输出每个 SQL 文件的 SHA-256，便于确认文档核对版本。
+本节结构核对基于空的 SQLite 内存数据库按完整文件名执行迁移，仅跳过演示数据 `0002_seed.sql`。当前参考包含 `0033_remove_manual_ledger.sql` 的账本退役与 `0043_remove_task_parent.sql` 的平级任务调整，得到 79 张应用表、1 个视图、7 个触发器。逐列字典包括字段类型、默认值、主键、外键、唯一索引、普通索引和完整 CHECK DDL。空库参考不能证明生产存量数据内容或运行时行为；生产应用情况以实际迁移记录为准。
 
-另以只读导出的生产 `sqlite_schema` 做离线比对，排除 Cloudflare `_cf_KV`、`d1_migrations` 与 SQLite 内部对象：78 张业务表共 723 列的类型、默认值、NULL/PK 信息与 FK 元数据一致；所有表、1 个视图、5 个触发器的规范化 DDL 一致；51 个显式索引一致，无额外业务对象。生产迁移记录包含 37 个完整文件名（含 seed、两个 0025，不含 0033）。此证据证明核对时结构一致，不涉及读取生产业务行，也不证明存量数据内容或运行时行为正确。
+历史核对记录（早于上述迁移更新）：当时以只读导出的生产 `sqlite_schema` 做离线比对，排除 Cloudflare `_cf_KV`、`d1_migrations` 与 SQLite 内部对象：78 张业务表共 723 列的类型、默认值、NULL/PK 信息与 FK 元数据一致；所有表、1 个视图、5 个触发器的规范化 DDL 一致；51 个显式索引一致，无额外业务对象。生产迁移记录包含 37 个完整文件名（含 seed、两个 0025，不含 0033）。此证据证明核对时结构一致，不涉及读取生产业务行，也不证明存量数据内容或运行时行为正确。
 
 ### D1、R2 与运行时分别保存什么
 
@@ -151,7 +151,7 @@ notification_events ── notification_inbox ── users
 
 | 表 | 关键字段与约束 | 实现要点 |
 | --- | --- | --- |
-| `tasks` | `id PK`；`project_id FK`；`title/detail`；`assignee_id FK users`；`status CHECK todo/doing/blocked/done`；`revision`；`requirement_id FK`；`lifecycle_state CHECK open/in_progress/submitted/accepted/improve/rework` 可 NULL；`criteria`、`effort_hours REAL CHECK >0 且 <=200`；`parent_task_id FK tasks`；`current_submission_id`、`plan_proposal_id`；`source_citations_json` | 双状态用于兼容旧任务与协作流程。`collaboration.ts` 的映射对 NULL lifecycle 有回退；任意新写入必须保持状态一致，不能仅改一列。 |
+| `tasks` | `id PK`；`project_id FK`；`title/detail`；`assignee_id FK users`；`status CHECK todo/doing/blocked/done`；`revision`；`requirement_id FK`；`lifecycle_state CHECK open/in_progress/submitted/accepted/improve/rework` 可 NULL；`criteria`、`effort_hours REAL CHECK >0 且 <=200`；`current_submission_id`、`plan_proposal_id`；`source_citations_json` | 双状态用于兼容旧任务与协作流程。`collaboration.ts` 的映射对 NULL lifecycle 有回退；任意新写入必须保持状态一致，不能仅改一列。 |
 | `task_dependencies` | 复合 PK `(task_id,depends_on_task_id)`；CHECK 非自身；两个 `(project_id,task_id)`/`(project_id,depends_on_task_id)` 复合 FK 引用 `tasks(project_id,id)` 并 CASCADE | 数据库阻止跨项目边及自环；环路仍由 `validateTaskGraph` 检查拓扑排序，不能只依赖 FK。 |
 | `task_submissions` | `id PK`；`project_id/task_id FK`；唯一 `(task_id,round)`；`submitted_by FK`、`body`、`material_versions_json`；`criteria`、`task_revision`；`status pending/evaluated/accept/improve/rework`；`ai_decision/ai_feedback/ai_report_json`；`decision/feedback/decided_by`；`human_score_override_json`；`evaluation_job_id/attempts`；`revision/mutation_token` | 提交保存标准、任务版本与材料版本 ID 快照。AI 原始意见与最终决策、人工辅助得分覆盖分别保存，不能为了改分覆盖 AI 原证据。 |
 | `collaboration_proposals` | `id PK`；`project_id FK`；`kind CHECK decompose/assign`；`job_id UNIQUE FK jobs`；`payload_json`；`settings_revision`；`status pending/applied/stale`；`revision/mutation_token` | 任务规划载荷可含 goal、tasks、updates、dependencies、references；分工含 assignments；实际结构以 collaboration-ai.ts 的 Zod schema 为准。应用建议前需核对每任务 expectedRevision。 |
@@ -338,11 +338,11 @@ reservation: reserved → settled / released / pending_reconcile
 
 拆解与调整在 `collaboration-ai.ts` 生成 `collaboration_proposals`。局部调整只能修改冻结 scope 的标题、说明、验收标准和工时，不能删除任务或修改权限。`assertSnapshot/currentConfig` 检查任务 revision、来源、成员、`settingsRevision`、`goalRevision/graphRevision` 等。`applyProposal` 位于 `collaboration.ts`，采纳时仍检查当前权限和版本；自动采纳同样走该函数。结果会区分 `autoApplied/applyError`，因此“生成成功”不保证“已经应用”。
 
-自动拆解后自动分工由 `enqueueDecompositionAssignment` 创建一个独立预算的 `collaboration.assign` 后续任务，带 `parentProposalId`，使用确定性 ID 避免重复；没有待分配任务则不创建。已创建的子任务不会因此重新递归拆解。`continueConfirmedPlan` 支持明确确认方案后继续分工。分工使用 `generateAssignmentSuggestions`；验证每个任务恰好覆盖一次，责任人只能为输入中的项目成员或 null。模型给出的自由理由不作为个人评价发布，服务器生成固定协作提醒。
+自动拆解后自动分工由 `enqueueDecompositionAssignment` 创建一个独立预算的 `collaboration.assign` 后续任务，带 `parentProposalId`，使用确定性 ID 避免重复；没有待分配任务则不创建。已创建的任务不会因此重新递归拆解。`continueConfirmedPlan` 支持明确确认方案后继续分工。分工使用 `generateAssignmentSuggestions`；验证每个任务恰好覆盖一次，责任人只能为输入中的项目成员或 null。模型给出的自由理由不作为个人评价发布，服务器生成固定协作提醒。
 
 分工个人偏好采用 `profileStamp`：job 只保存成员 ID、成员记录 ID、个人资料 revision 和 `ai_use_allowed`，不保存个人简介正文。`recommendationDispatch` 在真实 fetch 前最后一次数据库读取中统一检查授权、成员范围、来源和最新配置，再提供当前允许用于 AI 的偏好与负载；调用方不能在这次读取与 fetch 之间加入异步 I/O。`finishRecommendationJob` 的发布 SQL 再检查 `profileSnapshotGuard`，防止授权撤回后仍发布旧推荐。
 
-提交评价使用固定 `task_submissions` 轮次、完整 `material_versions.markdown` 和可选已确认 `rubricSnapshot`。`evaluate` 要求 `current_submission_id/evaluation_job_id/task_revision/assignee_id/submitted_by` 一致，阶段性提纲按本任务 criteria 评价，不能要求尚未到达阶段的最终成果。此操作 `maxAttempts:1`，不自动修复评价结论。`assessEvidence` 检查逐字证据、附件/链接未读、coverage、limitations、低于 0.6 的评分置信度及有子任务的整体交付。原文证据不足时即使模型给 accept，自动验收仍被阻止；评分总分由 `calculateRubricWeightedTotal` 算，不采信模型总分。结果落 `ai_report_json` 后才可能由 `decideSubmission` 应用。已存在报告可复用，避免再次付费生成。
+提交评价使用固定 `task_submissions` 轮次、完整 `material_versions.markdown` 和可选已确认 `rubricSnapshot`。`evaluate` 要求 `current_submission_id/evaluation_job_id/task_revision/assignee_id/submitted_by` 一致，阶段性提纲按本任务 criteria 评价，不能要求尚未到达阶段的最终成果。此操作 `maxAttempts:1`，不自动修复评价结论。`assessEvidence` 检查逐字证据、附件/链接未读、coverage、limitations、低于 0.6 的评分置信度。任务为平级任务，主目标单独保存，依赖通过 `task_dependencies` 表达。原文证据不足时即使模型给 accept，自动验收仍被阻止；只有未读附件或引用造成证据限制、正文证据有效且其他校验通过时，可以先行接受，并在报告 `humanReview.status` 中保存 `pending`，对外返回 `pendingHumanReview`；负责人随后完成人工审核。先行接受仍使用 `accepted/done`，计入完成与依赖就绪；评分总分由 `calculateRubricWeightedTotal` 算，不采信模型总分。结果落 `ai_report_json` 后才可能由 `decideSubmission` 应用。已存在报告可复用，避免再次付费生成。
 
 材料预审与主目标评分是两条路径。旧 `reviews` 冻结 `requirement_set_id/rubric_version_id/material_version_ids_json`；新 `assessments` 冻结 `goal_revision/standards_version_id/inputs_json`，`review_run` 携带 `assessmentId` 时 `runReviewJob` 转 `runMaterialAssessmentJob → scoreAssessment → publishAssessment/assessmentPublication`。每个数字评分都要固定成果引文；没有可靠证据或置信度不足则 score=null，不冒充 0 分。要求检查覆盖全部 requirement ID；没有证据的 met/unmet 改 unknown。材料检查不要求答辩回答，演练数字分必须含实际 answer 证据。空材料、无实际回答可返回 unscorable，无须收费模型请求。
 
@@ -485,7 +485,7 @@ if (!(Test-Path backend/.dev.vars)) {
 git check-ignore backend/.dev.vars
 ```
 
-复制后先在本机编辑 backend/.dev.vars，将 AUTH_SECRET、ADMIN_TOKEN 的示例值换为独立随机开发值；本地不调用模型时其余 provider 值可保持为空。下面初始化命令只适用于新的、空的本地模拟库；已有本地库先核对迁移和数据，不要盲目全量应用0033。全量新库重放包含0033，会与保留历史账本的生产参考结构相差三张表，不能用它直接推断生产迁移状态。
+复制后先在本机编辑 backend/.dev.vars，将 AUTH_SECRET、ADMIN_TOKEN 的示例值换为独立随机开发值；本地不调用模型时其余 provider 值可保持为空。下面初始化命令只适用于新的、空的本地模拟库；已有本地库先核对迁移和数据，不要盲目全量应用0033。全量新库重放包含0033，并移除旧人工账本表；不能用空库验证直接推断目标生产库的实际迁移状态。
 
 ```powershell
 Push-Location backend
@@ -542,7 +542,7 @@ npm run lint
 
 1. 先查看 Git 状态、当前迁移文件和部署配置，再以只读方式核对目标 D1 的 `d1_migrations`、`sqlite_master`、关键表 `PRAGMA table_info/foreign_key_list/index_list`。生产资源 ID、凭据和业务数据不应出现在公开帮助文档。
 2. 当前存在两个 `0025`：`0025_project_simplification.sql` 与 `0025_ticket_images.sql`。跟踪的是完整文件名；不能按数字前缀去重或认定二者互相替代。存在 0007 等编号缺口不代表数据库缺迁移，不得凭空补 SQL。
-3. `0033_remove_manual_ledger.sql` 清空 contributions.correction_of 后 DROP contributions、resource_references、decisions。兼容结构参考刻意跳过，旧数据可能仍在线上；重放新数据库与更新既有生产库是两种不同任务。未确认备份、实际迁移记录和历史数据保留要求前不能执行该文件。
+3. `0033_remove_manual_ledger.sql` 清空 contributions.correction_of 后 DROP contributions、resource_references、decisions。当前结构参考包含该迁移；重放新数据库与更新既有生产库是两种不同任务。未确认备份、实际迁移记录和历史数据保留要求前不能执行该文件。
 4. 0012 是新增 auth_accounts 并回填联系邮箱，不迁移 user ID；0013 包含一个历史指定身份的角色回填，仅适合了解历史，不能当通用新环境 bootstrap；0026 先保存旧成员档案导入候选再清项目域字段，不能拆开运行。0030 清除 team_size_limit，0036 根据历史回答和作业回填作者/处理持有者，0037 建立通知 baseline，都含数据迁移副作用。
 5. 本地参考重放必须有 SQLite JSON1、外键约束和迁移依赖；执行检查点为 integrity_check 与 foreign_key_check。通过空数据库检查只能证明结构可创建，不能验证存量数据转换；对真实迁移还需使用相关 preservation 测试和脱敏副本进行前后行数、ID、引用链及字段值核对。
 6. 写跨表业务改动前找对应 service 的 CAS 门禁与 batch 边界；写 JSON 字段前找 Zod schema、契约和 toView 映射；删除文件前读 lifecycle/GC；改变任务图前读 validateTaskGraph；改变 AI 执行前读 budget/jobs/execution-slices/investigation。只改前端模型或数据库字段，通常无法完成完整行为变更。
@@ -635,7 +635,6 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 | 评估 | `assessments`, `assessment_corrections`, `reviews` | 统一评估及修订历史、原有预审底层实体；绑定已发布标准与材料版本证据。 |
 | 答辩 | `rehearsals`, `rehearsal_turns` | 答辩范围/版本/处理作业、按序回合与回答作者。 |
 | 过程记录 | `events`, `comments` | events按(project,type,entity_type,entity_id,dedup_key)去重；comments按target_type/id定位，多态target不含FK。 |
-| 历史账本 | `decisions`, `contributions`, `resource_references` | 旧人工决策/贡献/资源引用表；仍保留历史数据，0033会删除，当前功能退役不等于数据可以直接删除。 |
 | 作业 | `jobs`, `job_outbox`, `ai_execution_slices`, `idempotency_records` | 业务任务、可靠派发、独立执行接力与HTTP请求去重；不能用一张表的状态替代全部执行证据。 |
 | AI配置 | `ai_config_versions`, `ai_probes`, `app_config` | 模型配置版本；probe复合PK(config_version_id,purpose)保存能力检查passed/report/tested_at；app_config按key保存应用级JSON与时间。 |
 | AI执行 | `ai_calls`, `usage_reservations`, `ai_investigations`, `ai_tool_calls`, `ai_diagnostics` | 调用证据、预算/并发预占、R2调查检查点索引、工具证据、有界无内容诊断。 |
