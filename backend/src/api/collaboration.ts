@@ -44,8 +44,8 @@ function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path:
     const [out, name] = path === '/feedback/current' ? [feedbackSnapshotSchema,'ProjectFeedbackCurrentResponse'] : path === '/feedback/history' ? [z.object({items:z.array(feedbackSnapshotSchema)}),'ProjectFeedbackHistoryResponse'] : path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
     const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals') ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
     const dispatch = (async (c: Context<AppEnv>) => {
-        if (method === 'post' && path === '/tasks') {
-            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: 'collaboration.createTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), body: await c.req.json() }) }, async () => {
+        if (method === 'post' && (path === '/tasks' || path === '/tasks/{taskId}/submissions')) {
+            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: path === '/tasks' ? 'collaboration.createTask' : 'collaboration.submitTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), ...(path === '/tasks' ? {} : { taskId: c.req.param('taskId') }), body: await c.req.json() }) }, async () => {
                 const response = await handler(c);
                 const json = await response.json() as {
                     data: unknown;
@@ -163,10 +163,13 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             throw invalidState('任务已变化、材料不属于本项目或已达20轮上限');
         let evaluationError: string | undefined;
         try {
-            await enqueueEvaluation(c.env, projectId, id, userId);
+            const config = await loadAiConfig(c.env.DB);
+            const projectSettings = await settings(c);
+            if (config?.enabled && projectSettings.aiCollaborationEnabled)
+                await enqueueEvaluation(c.env, projectId, id, userId);
         }
         catch (error) {
-            evaluationError = error instanceof Error ? error.message : 'AI评价暂不可用，可手动重试或请负责人验收';
+            evaluationError = error instanceof Error ? error.message : '本轮AI评价未能启动，请负责人验收';
         }
         const row = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(id).first<Submission>();
         return c.json(apiData(c, { ...toSubmission(row!), ...(evaluationError ? { evaluationError } : {}) }), 201);
@@ -228,14 +231,13 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
       if(b.requestAiRedo)await c.env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2 WHERE project_id=?1 AND status='pending'").bind(projectId,nowIso()).run();
       return c.json(apiData(c,{feedbackId:id,queued:false}));
     });
-    for (const operation of ['decompose', 'assign', 'evaluate'] as const) {
-        const path = operation === 'evaluate' ? '/submissions/{submissionId}/evaluate' : '/' + operation;
-        const schema = operation === 'decompose' ? z.object({ allowSearch:z.boolean().default(false),searchQuery:z.string().trim().min(1).max(500).optional(),brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).optional(),materialVersionIds:z.array(z.string().uuid()).max(10).optional() }).strict() : operation === 'assign' ? z.object({ taskIds: z.array(z.string().uuid()).min(1) }) : z.object({});
+    for (const operation of ['decompose', 'assign'] as const) {
+        const path = '/' + operation;
+        const schema = operation === 'decompose' ? z.object({ allowSearch:z.boolean().default(false),searchQuery:z.string().trim().min(1).max(500).optional(),brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).optional(),materialVersionIds:z.array(z.string().uuid()).max(10).optional() }).strict() : z.object({ taskIds: z.array(z.string().uuid()).min(1) });
         route(app, 'post', path, schema, async (c) => {
             const { projectId, userId } = ids(c);
             const b = schema.parse(await c.req.json()) as Record<string, unknown>;
-            if (operation !== 'evaluate')
-                await owner(c.env, projectId, userId);
+            await owner(c.env, projectId, userId);
             if(operation==='decompose'&&!b.taskIds)await assertCanRegenerate(c.env,projectId);
             const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId, operation: 'collaboration.' + operation, rawBody: JSON.stringify({ projectId, submissionId: c.req.param('submissionId'), ...b }) }, async () => {
                 const config = await loadAiConfig(c.env.DB);
@@ -271,8 +273,6 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                     input.profileStamp = await profileStamp(c.env, projectId);
                     input.members = members.results.map(m => ({ userId: m.user_id, loadHours: m.load_hours }));
                 }
-                if (operation === 'evaluate')
-                    return { status: 202 as const, body: { jobId: await enqueueEvaluation(c.env, projectId, c.req.param('submissionId')!, userId) } };
                 return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest',maxCalls:24 }, async (jobId, configVersionId) => {
                     try {
                         await createJobAndDispatch(c.env, { projectId, kind: 'agent_run', jobId, createdBy: userId, input: { ...input, configVersionId } });

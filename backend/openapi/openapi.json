@@ -25426,59 +25426,6 @@
         }
       }
     },
-    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/evaluate": {
-      "post": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /submissions/{submissionId}/evaluate",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "submissionId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationJobResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{projectId}/assignment-suggestions": {
       "post": {
         "tags": [
