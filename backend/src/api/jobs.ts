@@ -1,4 +1,4 @@
-import { assertEffectiveStandard } from '../services/effective-standard';
+import { effectiveStandard, assertEffectiveStandard, effectiveStandardGuardSql } from '../services/effective-standard';
 import type { FeedbackSnapshot } from '../services/project-feedback';
 import { currentJobClarification } from '../services/ai-clarifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -103,6 +103,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
       if(!rehearsal || rehearsal.created_by!==c.get('user')!.id)throw permissionDenied('只有本轮发起人可以重试答辩');
       if(rehearsal.status!=='active'||rehearsal.processing_job_id!==job.id)throw invalidState('答辩作业已变化，不能重试旧作业');
     }
+    let retryStandardId:string|null|undefined;
     if(job.project_id && (job.kind==='review_run'||job.kind==='rehearsal_turn')) {
       let standardId=typeof input.standardsVersionId==='string'?input.standardsVersionId:null;
       if(typeof input.assessmentId==='string'||job.kind==='rehearsal_turn') {
@@ -115,7 +116,15 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       if(!standardId)throw invalidState('请使用当前生效标准重新发起操作');
       await assertEffectiveStandard(c.env,job.project_id,standardId);
+      retryStandardId=standardId;
     }
+    if(job.project_id && job.kind==='assignment_suggest') {
+      const current=await effectiveStandard(c.env,job.project_id);
+      const captured=typeof input.standardsVersionId==='string'?input.standardsVersionId:null;
+      if((current?.standardsVersionId??null)!==captured)throw invalidState('项目标准已更新，请使用当前标准重新生成建议');
+      retryStandardId=captured;
+    }
+    const retryStandardGuard=retryStandardId===undefined?'?8 IS NULL':retryStandardId?effectiveStandardGuardSql('?2','?8'):'(?8 IS NULL AND NOT EXISTS(SELECT 1 FROM standards_versions WHERE project_id=?2))';
     const newJobId = newId();
     const now = nowIso();
     const reservedAiKind = new Set(['assignment_suggest', 'agent_run', 'review_run', 'rehearsal_turn']).has(job.kind);
@@ -125,14 +134,14 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     try {
       const written=await c.env.DB.batch([
         c.env.DB.prepare(
-          "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE ?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5))",
-        ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now, job.id),
+          `INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE (?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5))) AND ${retryStandardGuard}`,
+        ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now, job.id,retryStandardId??null),
         c.env.DB.prepare(
           "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) SELECT ?1, ?2, 'pending', ?3, 0, ?4, ?4 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2)",
         ).bind(newId(), newJobId, now, now),
         ...(job.kind==='rehearsal_turn'?[c.env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2,finish_job_id=CASE WHEN finish_job_id=?3 THEN ?2 ELSE finish_job_id END WHERE id=?1 AND processing_job_id=?3 AND EXISTS(SELECT 1 FROM jobs WHERE id=?2)').bind(input.rehearsalId,newJobId,job.id),c.env.DB.prepare("UPDATE assessments SET job_id=?2,status='active' WHERE entity_id=?1 AND job_id=?3 AND EXISTS(SELECT 1 FROM jobs WHERE id=?2)").bind(input.rehearsalId,newJobId,job.id)]:[]),
       ]);
-      if(!written[0]?.meta.changes)throw invalidState('答辩作业已变化，请刷新');
+      if(!written[0]?.meta.changes)throw invalidState('项目标准或作业已变化，请重新发起');
     } catch (error) {
       if (reservedAiKind) await settleReservation(c.env, newJobId, 'released');
       throw error;
