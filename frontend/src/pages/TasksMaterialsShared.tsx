@@ -171,11 +171,13 @@ export function MaterialDocumentView({ doc, className = '' }: { doc: unknown; cl
   return <div className={className}>{root.content.map((node, index) => <DocumentNode key={index} node={node} />)}</div>;
 }
 
-export function CommentsPanel({ projectId, targetType, targetId }: { projectId: string; targetType: CommentTarget; targetId: string }) {
-  return <CommentsPanelContent key={`${projectId}:${targetType}:${targetId}`} projectId={projectId} targetType={targetType} targetId={targetId} />;
+type CommentsPanelProps = { projectId: string; targetType: CommentTarget; targetId: string; presentation?: 'disclosure' | 'content' };
+
+export function CommentsPanel({ projectId, targetType, targetId, presentation = 'disclosure' }: CommentsPanelProps) {
+  return <CommentsPanelContent key={`${projectId}:${targetType}:${targetId}`} projectId={projectId} targetType={targetType} targetId={targetId} presentation={presentation} />;
 }
 
-function CommentsPanelContent({ projectId, targetType, targetId }: { projectId: string; targetType: CommentTarget; targetId: string }) {
+function CommentsPanelContent({ projectId, targetType, targetId, presentation }: CommentsPanelProps) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState('');
   const [page, setPage] = useState(0);
@@ -200,9 +202,10 @@ function CommentsPanelContent({ projectId, targetType, targetId }: { projectId: 
 
   const pageCount = Math.max(1, Math.ceil((commentsQuery.data?.length ?? 0) / 5));
   const currentPage = Math.min(page, pageCount - 1);
+  const Container = presentation === 'content' ? 'section' : 'details';
   return (
-    <details className="tm-comments" aria-label="评论">
-      <summary className="tm-section-title tm-disclosure-heading"><span><MessageCircle size={16} />讨论</span><span>{commentsQuery.data?.length ?? '—'}</span></summary>
+    <Container className="tm-comments" aria-label="评论">
+      {presentation !== 'content' && <summary className="tm-section-title tm-disclosure-heading"><span><MessageCircle size={16} />讨论</span><span>{commentsQuery.data?.length ?? '—'}</span></summary>}
       <div className="tm-disclosure-content">
       {commentsQuery.isLoading && <Spinner label="正在读取评论" />}
       {commentsQuery.error && <ErrorNotice error={commentsQuery.error} onRetry={() => void commentsQuery.refetch()} />}
@@ -221,6 +224,6 @@ function CommentsPanelContent({ projectId, targetType, targetId }: { projectId: 
       </form>
       {createComment.error && <ErrorNotice error={createComment.error} />}
       </div>
-    </details>
+    </Container>
   );
 }

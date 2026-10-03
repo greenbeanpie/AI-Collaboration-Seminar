@@ -71,35 +71,104 @@ it('a link decision does not modify a different document received while the prom
  fireEvent.change(within(dialog).getByRole('textbox'),{target:{value:'https://example.test'}});await act(async()=>{fireEvent.click(within(dialog).getByRole('button',{name:'确定'}));});expect(await screen.findByText('材料内容已变化，请重新选择文字后设置链接。')).toBeInTheDocument();expect(screen.getByLabelText('材料正文编辑器').querySelector('a')).toBeNull();
 });
 
-it('version history is collapsed by default, paginates five at a time, and resets for a different material', async () => {
-  const client = renderMaterial();
-  act(() => client.setQueryData(['materialVersions', 'project-1', 'material-1'], Array.from({ length: 11 }, (_, index) => ({ versionId: `v${index}`, revision: 11 - index, origin: 'manual', createdAt: '2026-10-02T00:00:00Z' }))));
-  const summary = screen.getByText('版本历史');
-  expect(summary.closest('details')).not.toHaveAttribute('open');
-  fireEvent.click(summary);
-  await waitFor(() => expect(screen.getAllByText(/^版本 r/)).toHaveLength(5));
-  const pager = screen.getByRole('navigation', { name: '版本历史分页' });
+function seedHistory(client: QueryClient, count = 11) {
+  const versions = Array.from({ length: count }, (_, index) => ({ versionId: `v${index}`, revision: count - index, origin: 'manual', createdAt: '2026-10-02T00:00:00Z', doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `快照正文 ${index}` }] }] }, attachments: [] }));
+  for (const version of versions) client.setQueryData(['materialVersion', 'project-1', 'material-1', version.versionId], version);
+  client.setQueryData(['materialVersions', 'project-1', 'material-1'], versions);
+  return versions;
+}
+
+it('opens history from the top toolbar and pages one immutable snapshot at a time', async () => {
+  const client = renderMaterial(); act(() => seedHistory(client));
+  await screen.findByLabelText('材料正文编辑器');
+  const button = screen.getByRole('button', { name: '版本历史' });
+  expect(button.closest('.tm-editor-actions')).not.toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(button);
+  const dialog = screen.getByRole('dialog', { name: '材料版本历史' });
+  await waitFor(() => expect(within(dialog).getByLabelText('选择材料版本')).toHaveValue('v0'));
+  expect(within(dialog).getByText('快照正文 0')).toBeVisible();
+  expect(dialog.querySelectorAll('.tm-document-preview')).toHaveLength(1);
+  const pager = within(dialog).getByRole('navigation', { name: '版本历史分页' });
   expect(within(pager).getByRole('button', { name: '上一页' })).toBeDisabled();
   fireEvent.click(within(pager).getByRole('button', { name: '下一页' }));
-  expect(within(pager).getByText('2 / 3')).toBeVisible();
-  fireEvent.click(within(pager).getByRole('button', { name: '下一页' }));
-  expect(screen.getAllByText(/^版本 r/)).toHaveLength(1);
+  expect(within(dialog).getByText('第 2 / 11 页')).toBeVisible();
+  expect(within(dialog).getByText('快照正文 1')).toBeVisible();
+  expect(within(dialog).queryByText('快照正文 0')).toBeNull();
+  fireEvent.change(within(dialog).getByLabelText('选择材料版本'), { target: { value: 'v10' } });
   expect(within(pager).getByRole('button', { name: '下一页' })).toBeDisabled();
-  act(() => {
-    client.setQueryData(['materials', 'project-1'], [{ materialId: 'material-1', title: '正式材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }, { materialId: 'material-2', title: '另一材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }]);
-    client.setQueryData(['materialVersions', 'project-1', 'material-2'], []);
-  });
-  fireEvent.click(await screen.findByRole('button', { name: /另一材料/ }));
-  await waitFor(() => expect(screen.getByText('版本历史').closest('details')).not.toHaveAttribute('open'));
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(button);
+  expect(screen.getByLabelText('选择材料版本')).toHaveValue('v10');
+  expect(screen.getByLabelText('材料正文编辑器')).not.toHaveTextContent('快照正文');
 });
-it('a requested historical version opens history on the page containing that version', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ requestId: 'test', data: { revision: 1, createdAt: '2026-10-02T00:00:00Z', doc: { type: 'doc', content: [{ type: 'paragraph' }] } } }), { headers: { 'Content-Type': 'application/json' } })));
+
+it('a requested historical version automatically opens the snapshot dialog on its own page', async () => {
   const client = renderMaterial({ materialId: 'material-1', versionId: 'v6' });
-  act(() => client.setQueryData(['materialVersions', 'project-1', 'material-1'], Array.from({ length: 11 }, (_, index) => ({ versionId: `v${index}`, revision: 11 - index, origin: 'manual', createdAt: '2026-10-02T00:00:00Z' }))));
-  expect(screen.getByText('版本历史').closest('details')).toHaveAttribute('open');
-  const pager = await screen.findByRole('navigation', { name: '版本历史分页' });
-  expect(within(pager).getByText('2 / 3')).toBeVisible();
-  expect(screen.getByText('版本 r5')).toBeVisible();
+  act(() => seedHistory(client));
+  const dialog = await screen.findByRole('dialog', { name: '材料版本历史' });
+  expect(within(dialog).getByLabelText('选择材料版本')).toHaveValue('v6');
+  expect(within(dialog).getByText('第 7 / 11 页')).toBeVisible();
+  expect(within(dialog).getByText('快照正文 6')).toBeVisible();
+});
+
+it('keeps the selected snapshot pinned when a newer version arrives', async () => {
+  const client = renderMaterial(); let versions: ReturnType<typeof seedHistory> = [];
+  act(() => { versions = seedHistory(client, 2); });
+  fireEvent.click(await screen.findByRole('button', { name: '版本历史' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  act(() => client.setQueryData(['materialVersions', 'project-1', 'material-1'], [{ ...versions[0], versionId: 'new-version', revision: 3 }, ...versions]));
+  await waitFor(() => expect(screen.getByText('第 3 / 3 页')).toBeVisible());
+  expect(screen.getByLabelText('选择材料版本')).toHaveValue('v1');
+});
+
+it('handles empty and single-version history with bounded pagination', async () => {
+  const client = renderMaterial();
+  fireEvent.click(await screen.findByRole('button', { name: '版本历史' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('保存正文后会生成新的不可变版本。');
+  expect(screen.queryByRole('navigation', { name: '版本历史分页' })).toBeNull();
+  act(() => seedHistory(client, 1));
+  await waitFor(() => expect(screen.getByLabelText('选择材料版本')).toHaveValue('v0'));
+  expect(screen.getByRole('button', { name: '上一页' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
+});
+
+it('opens discussion from the top, paginates five comments, and preserves unsent text when closed', async () => {
+  const client = renderMaterial();
+  act(() => client.setQueryData(['comments', 'project-1', 'material', 'material-1'], Array.from({ length: 11 }, (_, i) => ({ commentId: `c${i}`, authorName: '成员', body: `讨论条目 ${i}`, createdAt: '2026-10-02T00:00:00Z' }))));
+  const button = await screen.findByRole('button', { name: '讨论' });
+  expect(button.closest('.tm-editor-actions')).not.toBeNull(); fireEvent.click(button);
+  const dialog = screen.getByRole('dialog', { name: '材料讨论' });
+  expect(dialog.querySelector('details')).toBeNull();
+  expect(within(dialog).getAllByText(/^讨论条目/)).toHaveLength(5);
+  fireEvent.change(within(dialog).getByLabelText('发表评论'), { target: { value: '尚未发送的讨论' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }));
+  expect(within(dialog).getByText('讨论条目 5')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: '下一页' }));
+  expect(within(dialog).getAllByText(/^讨论条目/)).toHaveLength(1);
+  expect(within(dialog).getByRole('button', { name: '下一页' })).toBeDisabled();
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭' })); fireEvent.click(button);
+  expect(screen.getByLabelText('发表评论')).toHaveValue('尚未发送的讨论');
+  expect(screen.getByText('3 / 3')).toBeVisible();
+});
+
+it('closes the material overlay and resets its context when changing material', async () => {
+  const client = renderMaterial();
+  act(() => {
+    seedHistory(client, 2);
+    client.setQueryData(['materials', 'project-1'], [{ materialId: 'material-1', title: '正式材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }, { materialId: 'material-2', title: '另一材料', revision: 1, updatedAt: '2026-09-30T00:00:00Z' }]);
+    client.setQueryData(['material', 'project-1', 'material-2'], { materialId: 'material-2', title: '另一材料', revision: 1, currentVersion: null });
+    client.setQueryData(['materialVersions', 'project-1', 'material-2'], []);
+    client.setQueryData(['comments', 'project-1', 'material', 'material-2'], []);
+  });
+  fireEvent.click(await screen.findByRole('button', { name: '版本历史' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: /另一材料/ }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '版本历史' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('保存正文后会生成新的不可变版本。');
 });
 
 it('keeps the shared heading, AI assistance and export dropdown inside the editor card', async () => {

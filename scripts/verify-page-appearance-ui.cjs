@@ -60,7 +60,7 @@ function serve() {
 
 async function verify() {
   const { chromium } = require(process.env.UI_PLAYWRIGHT_PATH || 'playwright');
-  const output = path.join(root, 'output/page-appearance'); mkdirSync(output, { recursive: true });
+  const output = path.join(root, process.argv.includes('--material-overlays') ? 'output/material-overlays' : 'output/page-appearance'); mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.UI_CHROMIUM_PATH, headless: true });
   const report = { source: 'Real React app, isolated loopback fixtures, Chromium', checks: [], errors: [] };
   try {
@@ -126,6 +126,40 @@ async function verify() {
       await page.getByRole('button', { name: '打印 / PDF', exact: true }).click();
       await page.waitForFunction(() => window.__printCalls === 1);
       assert.equal(await page.locator('.tm-print-document').count(), 1);
+      await page.getByRole('button', { name: '讨论', exact: true }).click();
+      const discussion = page.getByRole('dialog', { name: '材料讨论' }); await discussion.waitFor();
+      assert.equal(await discussion.locator('.tm-comment').count(), 5);
+      await discussion.getByLabel('发表评论').fill('弹窗关闭后保留评论草稿');
+      await discussion.getByRole('button', { name: '下一页', exact: true }).click();
+      await discussion.getByText('讨论内容 6', { exact: true }).waitFor();
+      await shot('material-discussion');
+      await page.keyboard.press('Escape'); await discussion.waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '讨论', exact: true }).click();
+      await discussion.waitFor();
+      assert.equal(await discussion.getByLabel('发表评论').inputValue(), '弹窗关闭后保留评论草稿');
+      await discussion.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.getByRole('button', { name: '版本历史', exact: true }).click();
+      const materialHistory = page.getByRole('dialog', { name: '材料版本历史' }); await materialHistory.waitFor();
+      await materialHistory.getByText('材料版本 12 正文', { exact: true }).waitFor();
+      assert.equal(await materialHistory.locator('.tm-document-preview').count(), 1);
+      assert(await materialHistory.getByRole('button', { name: '上一页', exact: true }).isDisabled());
+      await materialHistory.getByRole('button', { name: '下一页', exact: true }).click();
+      await materialHistory.getByText('材料版本 11 正文', { exact: true }).waitFor();
+      await shot('material-history');
+      await materialHistory.getByLabel('选择材料版本').selectOption('v1');
+      await materialHistory.getByText('材料版本 1 正文', { exact: true }).waitFor();
+      assert(await materialHistory.getByRole('button', { name: '下一页', exact: true }).isDisabled());
+      await materialHistory.getByRole('button', { name: '关闭', exact: true }).click();
+      assert.equal(await page.locator('.tm-material-comments-card, .tm-history-card').count(), 0);
+      assert(await page.getByLabel('材料正文编辑器').textContent() === '材料版本 12 正文');
+      await page.goto(origin+'/app/projects/p/data?resourceType=material&resourceId=mat1&versionId=v6');
+      await materialHistory.waitFor();
+      await materialHistory.getByText('材料版本 6 正文', { exact: true }).waitFor();
+      assert.equal(await materialHistory.getByLabel('选择材料版本').inputValue(), 'v6');
+      await page.reload(); await materialHistory.waitFor();
+      await materialHistory.getByText('材料版本 6 正文', { exact: true }).waitFor();
+      await materialHistory.getByRole('button', { name: '关闭', exact: true }).click();
+      report.checks.push(`${width}px ${theme}: top discussion/history buttons, discussion pagination/draft/Escape, one-version snapshot pagination, last-page boundary, immutable editor, version deep-link and reload`);
       await page.goto(origin+'/app/projects/p/data?resourceType=source&resourceId=src1');
       await page.getByRole('heading', { name: '资料原文与处理状态' }).waitFor();
       const sourceCard = page.locator('.resource-source-card');
