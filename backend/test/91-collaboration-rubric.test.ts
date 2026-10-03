@@ -209,7 +209,7 @@ describe('bounded assistive rubric scores', () => {
         await runCollaborationAiJob(env, jobId);
         await expectFailedUntouched(f, jobId);
     });
-    it.each(['low_confidence', 'unread_attachment'])('%s scores never autoaccept', async kind => {
+    it.each(['low_confidence', 'unread_attachment'])('%s scores preserve review policy', async kind => {
         const f = await fixture(true, kind === 'unread_attachment' ? [{ fileId: id(), name: '证据.pdf' }] : []);
         await rubric(f);
         const jobId = await f.start();
@@ -219,8 +219,8 @@ describe('bounded assistive rubric scores', () => {
         await runCollaborationAiJob(env, jobId);
         const done = await getJob(env, jobId);
         expect(done.status).toBe('succeeded');
-        expect(JSON.parse(done.result_json!).autoApplied).toBe(false);
-        expect((await f.persisted()).report).toMatchObject({ coverage: 'needs_human', rubricScoring: { status: 'scored' } });
+        expect(JSON.parse(done.result_json!).autoApplied).toBe(kind === 'unread_attachment');
+        expect((await f.persisted()).report).toMatchObject({ coverage: 'needs_human', rubricScoring: { status: 'scored' }, ...(kind === 'unread_attachment' ? {humanReview:{status:'pending'}} : {}) });
     });
     it.each(['before', 'during'])('project switch off %s evaluation prevents results', async when => {
         const f = await fixture(true);

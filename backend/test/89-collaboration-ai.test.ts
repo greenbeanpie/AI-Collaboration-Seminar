@@ -1,12 +1,13 @@
 import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { env } from './helpers/env';
+import { SELF } from 'cloudflare:test';
+import { env, BASE } from './helpers/env';
 import type { Env } from '../src/env';
 import { assignmentOutputSchema } from '../src/services/assignment';
-import { seedProject, seedUser } from './helpers/seed';
+import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { reserveAiSlot } from '../src/services/budget';
 import { getJob } from '../src/services/jobs';
-import { applyProposal } from '../src/services/collaboration';
+import { applyProposal, decideSubmission, pendingTaskHumanReview, toSubmission, type Submission } from '../src/services/collaboration';
 import { continueConfirmedPlan, runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 afterEach(() => vi.unstubAllGlobals());
 await configureGoFixture();
@@ -72,25 +73,108 @@ describe('artifact-only evaluation safety', () => {
         expect(state?.lifecycle_state).toBe(mode === 'automatic' ? 'accepted' : 'submitted');
         expect(state?.status).toBe(mode === 'automatic' ? 'done' : 'doing');
     });
-    it('automatic mode never accepts unread attachments', async () => {
+    it('automatic mode provisionally completes unread attachments with an explicit review marker', async () => {
         const f = await fixture('automatic', [{ fileId: id(), name: '证据.pdf' }]);
         vi.stubGlobal('fetch', model(report(f.versionId)));
         await runCollaborationAiJob(env, f.jobId);
         const j = await getJob(env, f.jobId);
         expect(j.status).toBe('succeeded');
-        expect(JSON.parse(j.result_json!).autoApplied).toBe(false);
+        expect(JSON.parse(j.result_json!).autoApplied).toBe(true);
         expect(JSON.parse(j.result_json!).manualReviewReasons.join(' ')).toContain('附件');
         const persisted = await env.DB.prepare('SELECT ai_report_json FROM task_submissions WHERE id=?1').bind(f.submissionId).first<{
             ai_report_json: string;
         }>();
         expect(JSON.parse(persisted!.ai_report_json)).toMatchObject({ coverage: 'needs_human' });
         expect(JSON.parse(persisted!.ai_report_json).manualReviewReason).toContain('附件');
+        expect(JSON.parse(persisted!.ai_report_json).humanReview).toMatchObject({status:'pending',reasonCodes:['unread_attachments']});
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
         expect((await env.DB.prepare('SELECT status FROM tasks WHERE id=?1').bind(f.taskId).first<{
             status: string;
-        }>())?.status).toBe('doing');
+        }>())?.status).toBe('done');
+    });
+    it.each(['[proof](/proof)', '<img src="/proof.png">'])('unread reference %s is provisional and releases dependent tasks', async link => {
+        const f = await fixture('automatic', [], '成果包含三个验证案例。' + link);
+        const dependent = id();
+        await env.DB.prepare("INSERT INTO tasks(id,project_id,title,assignee_id,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria) VALUES(?1,?2,'后续任务',?3,'todo',1,?3,?4,?4,'open','输出报告')").bind(dependent,f.projectId,f.user.userId,stamp()).run();
+        await env.DB.prepare('INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) VALUES(?1,?2,?3,?4)').bind(f.projectId,dependent,f.taskId,stamp()).run();
+        vi.stubGlobal('fetch',model(report(f.versionId)));
+        await runCollaborationAiJob(env,f.jobId);
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
+        expect((await env.DB.prepare('SELECT ready FROM task_readiness_current WHERE task_id=?1').bind(dependent).first<{ready:number}>())?.ready).toBe(1);
+        const saved=await env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(f.submissionId).first<Submission>();
+        expect(toSubmission(saved!).pendingHumanReview).toBe(true);
+        expect(JSON.parse(saved!.ai_report_json!).humanReview.reasonCodes).toEqual(['unread_references']);
+    });
+    it.each(['accept','improve','rework'] as const)('manual %s resolves provisional review atomically', async decision => {
+        const f=await fixture('automatic',[{fileId:id()}]);
+        vi.stubGlobal('fetch',model(report(f.versionId)));
+        await runCollaborationAiJob(env,f.jobId);
+        const saved=await env.DB.prepare('SELECT revision FROM task_submissions WHERE id=?1').bind(f.submissionId).first<{revision:number}>();
+        await decideSubmission(env,f.projectId,f.submissionId,saved!.revision,decision,'人工核验完成',f.user.userId);
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
+        const submission=await env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(f.submissionId).first<Submission>();
+        expect(toSubmission(submission!).pendingHumanReview).toBe(false);
+        expect(JSON.parse(submission!.ai_report_json!).humanReview).toMatchObject({status:'resolved',decision,decidedBy:f.user.userId});
+        expect((await env.DB.prepare('SELECT status,lifecycle_state FROM tasks WHERE id=?1').bind(f.taskId).first())).toMatchObject({status:decision==='accept'?'done':'doing',lifecycle_state:decision==='accept'?'accepted':decision});
+    });
+    it.each([
+        {coverage:'needs_human',limitations:[]},
+        {coverage:'complete',limitations:['正文缺少第三个案例']},
+        {coverage:'complete',limitations:[],evidence:[]},
+    ])('external references do not bypass separate evidence blockers %j',async patch=>{
+        const f=await fixture('automatic',[{fileId:id()}]);
+        vi.stubGlobal('fetch',model({...report(f.versionId),...patch}));
+        await runCollaborationAiJob(env,f.jobId);
+        expect(JSON.parse((await getJob(env,f.jobId)).result_json!).autoApplied).toBe(false);
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
+    });
+    it('manual evaluation mode still requires an explicit decision for external references',async()=>{
+        const f=await fixture('manual',[{fileId:id()}]);
+        vi.stubGlobal('fetch',model(report(f.versionId)));
+        await runCollaborationAiJob(env,f.jobId);
+        expect(JSON.parse((await getJob(env,f.jobId)).result_json!).autoApplied).toBe(false);
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
+    });
+    it('a human decision during the model call wins over provisional acceptance',async()=>{
+        const f=await fixture('automatic',[{fileId:id()}]);
+        vi.stubGlobal('fetch',model(report(f.versionId),async()=>{
+            await decideSubmission(env,f.projectId,f.submissionId,1,'rework','人工要求返工',f.user.userId);
+        }));
+        await runCollaborationAiJob(env,f.jobId);
+        expect((await getJob(env,f.jobId)).status).toBe('failed');
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
+        expect((await env.DB.prepare('SELECT status,ai_report_json FROM task_submissions WHERE id=?1').bind(f.submissionId).first())).toMatchObject({status:'rework',ai_report_json:null});
+    });
+    it('API exposes pending review on task list/detail and submission history, then clears after human confirmation',async()=>{
+        const f=await fixture('automatic',[{fileId:id()}]);
+        vi.stubGlobal('fetch',model(report(f.versionId)));
+        await runCollaborationAiJob(env,f.jobId);
+        const request=async(path:string,method='GET',body?:unknown)=>{
+            const response=await SELF.fetch(`${BASE}/api/v1/projects/${f.projectId}${path}`,{method,headers:{cookie:authCookie(f.user.token),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+            expect(response.status).toBe(200);
+            return (await response.json() as {data:any}).data;
+        };
+        expect((await request(`/tasks/${f.taskId}`)).pendingHumanReview).toBe(true);
+        expect((await request('/tasks')).items[0].pendingHumanReview).toBe(true);
+        expect((await request('/collaboration/tasks')).items[0].pendingHumanReview).toBe(true);
+        const submission=(await request(`/collaboration/tasks/${f.taskId}/submissions`)).items[0];
+        expect(submission.pendingHumanReview).toBe(true);
+        expect(submission.aiReport.humanReview.status).toBe('pending');
+        await request(`/collaboration/submissions/${f.submissionId}/decide`,'POST',{expectedRevision:submission.revision,decision:'accept',feedback:'附件核验通过'});
+        expect((await request(`/tasks/${f.taskId}`)).pendingHumanReview).toBe(false);
+        expect((await request(`/collaboration/tasks/${f.taskId}/submissions`)).items[0].pendingHumanReview).toBe(false);
+    });
+    it('retry uses persisted original coverage and preserves provisional semantics without another model call',async()=>{
+        const f=await fixture('automatic',[{fileId:id()}]);
+        await env.DB.prepare("UPDATE task_submissions SET status='evaluated',revision=2,ai_report_json=?2 WHERE id=?1").bind(f.submissionId,JSON.stringify({...report(f.versionId),coverage:'needs_human',modelCoverage:'complete',manualReviewReason:'附件内容未读取，需要人工核对'})).run();
+        const fetchMock=model(report(f.versionId));
+        vi.stubGlobal('fetch',fetchMock);
+        await runCollaborationAiJob(env,f.jobId);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
     });
     it('a parent task cannot autoaccept while its child still needs work', async () => {
-        const f = await fixture('automatic');
+        const f = await fixture('automatic',[{fileId:id()}]);
         await env.DB.prepare("INSERT INTO tasks(id,project_id,title,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,parent_task_id) VALUES(?1,?2,'未完成子任务','todo',1,?3,?4,?4,'open','需要完成',?5)").bind(id(), f.projectId, f.user.userId, stamp(), f.taskId).run();
         vi.stubGlobal('fetch', model(report(f.versionId)));
         await runCollaborationAiJob(env, f.jobId);

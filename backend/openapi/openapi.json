@@ -8566,6 +8566,9 @@
                   "null"
                 ]
               },
+              "pendingHumanReview": {
+                "type": "boolean"
+              },
               "taskId": {
                 "type": "string",
                 "format": "uuid"
@@ -8742,6 +8745,9 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "pendingHumanReview": {
+                      "type": "boolean"
                     },
                     "taskId": {
                       "type": "string",
@@ -9311,6 +9317,9 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -9568,6 +9577,9 @@
           "data": {
             "type": "object",
             "properties": {
+              "pendingHumanReview": {
+                "type": "boolean"
+              },
               "startedAt": {
                 "type": [
                   "string",
@@ -9774,6 +9786,9 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
                     "submissionId": {
                       "type": "string",
                       "format": "uuid"
@@ -9864,6 +9879,61 @@
                         "null"
                       ],
                       "properties": {
+                        "modelCoverage": {
+                          "type": "string",
+                          "enum": [
+                            "complete",
+                            "needs_human"
+                          ]
+                        },
+                        "humanReview": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "resolved"
+                              ]
+                            },
+                            "reasonCodes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "unread_attachments",
+                                  "unread_references"
+                                ]
+                              }
+                            },
+                            "reasons": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "decision": {
+                              "type": "string",
+                              "enum": [
+                                "accept",
+                                "improve",
+                                "rework"
+                              ]
+                            },
+                            "decidedBy": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "decidedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "reasonCodes",
+                            "reasons"
+                          ]
+                        },
                         "references": {
                           "type": "array",
                           "items": {}
@@ -10239,6 +10309,9 @@
           "data": {
             "type": "object",
             "properties": {
+              "pendingHumanReview": {
+                "type": "boolean"
+              },
               "submissionId": {
                 "type": "string",
                 "format": "uuid"
@@ -10329,6 +10402,61 @@
                   "null"
                 ],
                 "properties": {
+                  "modelCoverage": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "needs_human"
+                    ]
+                  },
+                  "humanReview": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "resolved"
+                        ]
+                      },
+                      "reasonCodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "unread_attachments",
+                            "unread_references"
+                          ]
+                        }
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "decision": {
+                        "type": "string",
+                        "enum": [
+                          "accept",
+                          "improve",
+                          "rework"
+                        ]
+                      },
+                      "decidedBy": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "decidedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reasonCodes",
+                      "reasons"
+                    ]
+                  },
                   "references": {
                     "type": "array",
                     "items": {}

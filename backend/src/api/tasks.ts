@@ -12,7 +12,7 @@ import { parsePaging, nextCursor } from '../core/pagination';
 import { recordEvent } from '../services/events';
 import { projectParams } from './projects';
 import { projectGoal, taskDependencies, graphSnapshot, validateTaskGraph } from '../services/project-simplification';
-import { owner } from '../services/collaboration';
+import { owner, pendingTaskHumanReview } from '../services/collaboration';
 
 const taskParams = projectParams.extend({ taskId: z.string().uuid() });
 
@@ -20,6 +20,7 @@ const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const taskSchema = z.object({
   startedAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
+  pendingHumanReview: z.boolean().optional(),
   taskId: z.string().uuid(),
   lifecycleState: z.string().nullable(),
   criteria: z.string(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(),
@@ -198,7 +199,7 @@ function toTask(r: TaskRow) {
     updatedAt: r.updated_at,
   };
 }
-async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {...toTask(r),...await taskDependencies(env,r.project_id,r.id),...await readTaskSummary(env,r)};}
+async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {pendingHumanReview:await pendingTaskHumanReview(env,r.project_id,r.id),...toTask(r),...await taskDependencies(env,r.project_id,r.id),...await readTaskSummary(env,r)};}
 
 const commentSelect = `SELECT c.id, c.target_type, c.target_id, c.author_id, u.display_name AS author_name, c.body, c.created_at
   FROM comments c JOIN users u ON u.id = c.author_id`;

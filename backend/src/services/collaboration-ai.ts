@@ -117,7 +117,7 @@ export const taskEvaluationSchema = z.object({
     scores: z.array(assistiveScoreSchema).min(1).max(10).optional(),
 }).strict();
 export type TaskEvaluation = z.infer<typeof taskEvaluationSchema>;
-const persistedEvaluationSchema = taskEvaluationSchema.extend({references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(), manualReviewReason: z.string().optional(), rubricScoring: rubricScoringSchema.optional() });
+const persistedEvaluationSchema = taskEvaluationSchema.extend({references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(), manualReviewReason: z.string().optional(), modelCoverage: z.enum(['complete','needs_human']).optional(), humanReview: z.unknown().optional(), rubricScoring: rubricScoringSchema.optional() });
 interface ConfirmedRubricRow { id: string; version: number; weights_json: string; notes: string | null }
 /** Freeze the existing latest confirmed rubric; draft rubrics never authorize scores. */
 export async function snapshotEvaluationRubric(env: Env, projectId: string): Promise<EvaluationRubricSnapshot | null> {
@@ -331,7 +331,21 @@ interface EvaluationMaterial {
     markdown: string;
     attachments: unknown[];
 }
-export function assessEvidence(report: TaskEvaluation, materials: EvaluationMaterial[]): string[] {
+export function unreadMaterialReview(materials: EvaluationMaterial[]) {
+    const reasonCodes: Array<'unread_attachments' | 'unread_references'> = [];
+    const reasons: string[] = [];
+    if (materials.some(m => m.attachments.length > 0)) {
+        reasonCodes.push('unread_attachments');
+        reasons.push('附件内容未读取，需要人工核对');
+    }
+    if (materials.some(m => /(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:www\.|mailto:|data:|file:))|!?\[[^\]]*\]\s*(?:\(|\[)|^\s*\[[^\]]+\]:|<(?:img|iframe|video|audio|object|embed|source|a)\b/im.test(m.markdown)))
+        {
+            reasonCodes.push('unread_references');
+            reasons.push('材料包含链接或图片引用，引用内容未读取');
+        }
+    return { reasonCodes, reasons };
+}
+export function assessEvidence(report: TaskEvaluation, materials: EvaluationMaterial[], includeUnreadReferences = true): string[] {
     const byId = new Map(materials.map(m => [m.versionId, m]));
     for (const evidence of [...report.evidence, ...(report.scores ?? []).flatMap(score => score.evidence)]) {
         const material = byId.get(evidence.materialVersionId);
@@ -341,10 +355,7 @@ export function assessEvidence(report: TaskEvaluation, materials: EvaluationMate
     const reasons: string[] = [];
     if (!materials.length || materials.every(m => !m.markdown.trim()))
         reasons.push('没有可核对的材料正文');
-    if (materials.some(m => m.attachments.length > 0))
-        reasons.push('附件内容未读取，需要人工核对');
-    if (materials.some(m => /(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:www\.|mailto:|data:|file:))|!?\[[^\]]*\]\s*(?:\(|\[)|^\s*\[[^\]]+\]:|<(?:img|iframe|video|audio|object|embed|source|a)\b/im.test(m.markdown)))
-        reasons.push('材料包含链接或图片引用，引用内容未读取');
+    if (includeUnreadReferences) reasons.push(...unreadMaterialReview(materials).reasons);
     if (!report.evidence.length)
         reasons.push('评估没有提供材料原文证据');
     if (report.coverage !== 'complete')
@@ -407,7 +418,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     if (submission.ai_report_json) {
         const saved = persistedEvaluationSchema.parse(JSON.parse(submission.ai_report_json));
         savedScoring = saved.rubricScoring;references=saved.references??[];decisionReferences=saved.decisionReferences??[];
-        report = { decision: saved.decision, feedback: saved.feedback, evidence: saved.evidence, limitations: saved.limitations, coverage: saved.coverage, ...(savedScoring?.status === 'scored' ? { scores: savedScoring.scores } : {}) };
+        report = { decision: saved.decision, feedback: saved.feedback, evidence: saved.evidence, limitations: saved.limitations, coverage: saved.modelCoverage ?? saved.coverage, ...(savedScoring?.status === 'scored' ? { scores: savedScoring.scores } : {}) };
     }
     else {
         const model = config.config.review;
@@ -419,8 +430,8 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
             ? '另按提供的rubricSnapshot逐项给出非官方的成果辅助分数scores，必须且只能覆盖其weights中的全部key，每项score为0至100，confidence为0至1，comment为具体成果评语，evidence为至少一条材料版本ID和正文逐字引用。低置信度或证据不全需列出limitations且coverage=needs_human。不得给出总分、修改权重、官方课程成绩、人员评分或排名。scores格式为[{"key":"评分维度key","score":80,"confidence":0.8,"comment":"成果评语","evidence":[{"materialVersionId":"版本ID","quote":"正文逐字原文"}]}]。总分由服务器计算。'
             : '没有冻结的已确认评分标准，只提供成果反馈，不得输出scores或任何分数。';
         // Full immutable bodies only. gatewayChat rejects oversized input; never truncate evidence.
-        const answer = await aiJsonCall(env, { projectId: input.projectId,projectTools:{projectId:input.projectId,userId:input.requestedBy,jobId,ownerOnly:false}, jobId, purpose: 'review', configVersionId: config.id, model: model.model, modelConfig: model, promptVersion: 'collaboration-evaluate-v3-scope', maxAttempts:1, beforeCall: async () => { await assertSnapshot(env, input, false); await currentConfig(env, input); await assertEvaluationRubric(env, input); }, messages: [
-                { role: 'system', content: `${dataRule}\n仅按本次任务验收标准评价成果，不把项目整体要求或其他任务尚未完成当成本任务缺陷。若本任务只要求结构稿、提纲或占位设计，已核对这些内容即可以coverage=complete；不得要求该阶段尚不需要的真实样本、最终报告或PPT。limitations只列当前验收范围内阻碍核对的缺口；其他阶段未完成的提醒和不阻塞验收的优化建议写入feedback，不能仅因这些提醒把coverage改为needs_human。附件、外部链接、图片内容没有被读取，不得声称已验证。只对提供的完整材料正文引用原文证据；提交说明不能替代成果。证据不足/待外部核对时coverage=needs_human且列出limitations，不得凭空接受。decision为accept(满足标准)、improve(建议改进并再提交)、rework(需返工)。只输出JSON：{"decision":"accept|improve|rework","feedback":"针对成果的具体反馈","evidence":[{"materialVersionId":"版本ID","quote":"正文中逐字原文"}],"limitations":[],"coverage":"complete|needs_human"}。${scoringRule}` },
+        const answer = await aiJsonCall(env, { projectId: input.projectId,projectTools:{projectId:input.projectId,userId:input.requestedBy,jobId,ownerOnly:false}, jobId, purpose: 'review', configVersionId: config.id, model: model.model, modelConfig: model, promptVersion: 'collaboration-evaluate-v4-provisional', maxAttempts:1, beforeCall: async () => { await assertSnapshot(env, input, false); await currentConfig(env, input); await assertEvaluationRubric(env, input); }, messages: [
+                { role: 'system', content: `${dataRule}\n仅按本次任务验收标准评价成果，不把项目整体要求或其他任务尚未完成当成本任务缺陷。若本任务只要求结构稿、提纲或占位设计，已核对这些内容即可以coverage=complete；不得要求该阶段尚不需要的真实样本、最终报告或PPT。limitations只列当前验收范围内阻碍核对的缺口；其他阶段未完成的提醒和不阻塞验收的优化建议写入feedback，不能仅因这些提醒把coverage改为needs_human。附件、外部链接、图片内容没有被读取，不得声称已验证。只对提供的完整材料正文引用原文证据；提交说明不能替代成果。coverage仅表示提供的材料正文是否覆盖本任务标准。若正文已满足本任务标准，唯一尚未核对的是附件、外部链接或图片引用，可以decision=accept、coverage=complete，在feedback说明引用内容未读取，服务器会标记待人工审核；不要仅因引用内容未读取写入limitations。正文缺失、缺少标准所需证据或结论不确定时仍须coverage=needs_human且列出limitations，不得凭空接受。decision为accept(满足标准)、improve(建议改进并再提交)、rework(需返工)。只输出JSON：{"decision":"accept|improve|rework","feedback":"针对成果的具体反馈","evidence":[{"materialVersionId":"版本ID","quote":"正文中逐字原文"}],"limitations":[],"coverage":"complete|needs_human"}。${scoringRule}` },
                 { role: 'user', content: JSON.stringify({ adminFeedback:await projectFeedbackPreview(env,input.projectId),criteria: submission.criteria, submissionNote: submission.body, rubricSnapshot: rubric, materials: materials.map(m => ({ materialVersionId: m.versionId, markdown: m.markdown, unreadAttachmentCount: m.attachments.length })) }) },
             ], schema });
         report = answer.data;references=('references' in answer?answer.references:[]) as unknown[];decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
@@ -428,10 +439,12 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     const rubricScoring = buildAssistiveRubricScoring(report, rubric);
     if (savedScoring && JSON.stringify(savedScoring) !== JSON.stringify(rubricScoring)) throw invalidState('已保存辅助评分与冻结标准不匹配');
     const manualReasons = assessEvidence(report, materials);
+    const externalReview = unreadMaterialReview(materials);
+    const provisional = report.decision === 'accept' && externalReview.reasonCodes.length > 0 && assessEvidence(report, materials, false).length === 0;
     const child = await env.DB.prepare('SELECT 1 FROM tasks WHERE project_id=?1 AND parent_task_id=?2 LIMIT 1').bind(input.projectId, submission.task_id).first();
     if (child)
         manualReasons.push('含子任务的整体目标需要项目负责人核对全部子任务与整体交付后验收');
-    const persistedReport = { references,decisionReferences,decision: report.decision, feedback: report.feedback, evidence: report.evidence, limitations: report.limitations, rubricScoring, coverage: manualReasons.length ? 'needs_human' : report.coverage, ...(manualReasons.length ? { manualReviewReason: manualReasons.join('；') } : {}) };
+    const persistedReport = { references,decisionReferences,decision: report.decision, feedback: report.feedback, evidence: report.evidence, limitations: report.limitations, rubricScoring, modelCoverage: report.coverage, coverage: manualReasons.length ? 'needs_human' : report.coverage, ...(manualReasons.length ? { manualReviewReason: manualReasons.join('；') } : {}) };
     await currentConfig(env, input);
     const verifiedRubric = await assertEvaluationRubric(env, input);
     if (!submission.ai_report_json) {
@@ -457,18 +470,18 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     }>();
     let autoApplied = false;
     let applyError: string | null = null;
-    if (latest?.status === 'evaluated' && settings?.evaluation_mode === 'automatic' && settings.collaboration_revision === input.settingsRevision && !(report.decision === 'accept' && manualReasons.length)) {
+    if (latest?.status === 'evaluated' && settings?.evaluation_mode === 'automatic' && settings.collaboration_revision === input.settingsRevision && !(report.decision === 'accept' && manualReasons.length && !(provisional && !child))) {
         try {
             await currentConfig(env, input);
             const decisionRubric = await assertEvaluationRubric(env, input);
-            await decideSubmission(env, input.projectId, submission.id, latest.revision, report.decision, report.feedback, input.requestedBy, true, input.settingsRevision, config.id, input.rubricSnapshot === undefined ? undefined : decisionRubric);
+            await decideSubmission(env, input.projectId, submission.id, latest.revision, report.decision, report.feedback, input.requestedBy, true, input.settingsRevision, config.id, input.rubricSnapshot === undefined ? undefined : decisionRubric, provisional ? externalReview : undefined);
             autoApplied = true;
         }
         catch (error) {
             applyError = error instanceof Error ? error.message : String(error);
         }
     }
-    await succeedJob(env, jobId, { submissionId: submission.id, decision: report.decision, autoApplied, manualReviewReasons: manualReasons, applyError });
+    await succeedJob(env, jobId, { submissionId: submission.id, decision: report.decision, autoApplied, pendingHumanReview: autoApplied && provisional && !child, manualReviewReasons: manualReasons, applyError });
 }
 /** Existing jobs/outbox reservation machinery; one operation, at most one repair, no recursive work. */
 export async function runCollaborationAiJob(env: Env, jobId: string): Promise<void> {
