@@ -1,4 +1,3 @@
-import { DropdownMenu } from '../components/DropdownMenu';
 import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { TaskAgentHandoff } from './TaskAgentHandoff';
@@ -322,9 +321,8 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, chil
     </article>);
   return <div className="stack collab-detail">
     <div hidden={historyPage}>
-    <div className="collab-toolbar"><StatusPill>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span></div>
+    <div className="collab-toolbar"><StatusPill>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span>{view === 'submit' && <button className="button button-quiet" onClick={openHistory}>查看历史记录</button>}</div>
     {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；负责人可安排分工与验收。</p>}
-    <div className="collab-detail-nav"><DropdownMenu label="更多"><button className="button button-quiet" onClick={openHistory}>查看历史版本</button></DropdownMenu></div>
     <section aria-label="任务设置" hidden={view !== 'settings'} className="stack">
     <DependencyEditor projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} owner={owner} onChanged={onChanged} />
     <h3>任务介绍</h3><p className="collab-preserve">{task.detail || '暂无任务介绍'}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>

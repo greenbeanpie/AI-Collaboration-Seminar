@@ -91,8 +91,10 @@ try {
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     await card.getByRole('button', { name: '查看与提交', exact: true }).click();
     assert.equal(await page.locator('.collab-submit textarea').inputValue(), '未提交的工作草稿');
-    await page.getByRole('dialog').getByRole('button', { name: /更多/ }).click();
-    await page.getByRole('button', { name: '查看历史版本', exact: true }).click();
+    const historyButton = page.getByRole('dialog').getByRole('button', { name: '查看历史记录', exact: true });
+    assert.equal(await page.getByRole('dialog').getByRole('button', { name: /更多/ }).count(), 0);
+    assert((await historyButton.boundingBox()).y < (await page.locator('.collab-submit textarea').boundingBox()).y);
+    await historyButton.click();
     await page.getByText('第 2 轮历史成果', { exact: true }).waitFor();
     assert.equal(await page.getByRole('dialog').count(), 0);
     await page.getByRole('button', { name: '下一页', exact: true }).click();

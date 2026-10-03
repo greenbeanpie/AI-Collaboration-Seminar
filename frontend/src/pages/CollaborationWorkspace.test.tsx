@@ -97,7 +97,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByRole('button',{name:'重新生成整套任务建议'})).toBeDisabled();
     expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
   });
-  it('opens history only through the submenu, pages one submission, and preserves drafts', () => {
+  it('opens history directly from the submission toolbar, pages one submission, and preserves drafts', () => {
     setup({ tasks: [{ ...task, lifecycleState: 'improve', currentSubmissionId: 's3' }], submissions: [submission, { ...submission, submissionId: 's3', round: 3, body: '第三轮真实内容' }, { ...submission, submissionId: 's2', round: 2, body: '第二轮真实内容' }] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(screen.queryByRole('tablist')).toBeNull(); expect(screen.getByRole('region', { name: '查看与提交' })).toBeVisible();
@@ -105,9 +105,12 @@ describe('collaboration lifecycle', () => {
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '未提交草稿' } });
     fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
     expect(screen.queryByRole('button', { name: '提交本轮成果' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    expect(screen.queryByRole('button', { name: '查看历史记录' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    expect(screen.queryByRole('button', { name: /更多/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看历史记录' }).closest('.collab-toolbar')).not.toBeNull();
     expect(screen.queryByRole('region', { name: '提交与验收历史' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史记录' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('location')).toHaveTextContent('view=history');
     const historySection = screen.getByRole('region', { name: '提交与验收历史' });
@@ -144,8 +147,7 @@ describe('collaboration lifecycle', () => {
     setup({ submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '返回后保留' } });
-    fireEvent.click(screen.getByRole('button', {name:/更多/}));
-    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史记录' }));
     fireEvent.click(screen.getByRole('button', { name: '返回前页' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByLabelText('成果说明')).toHaveValue('返回后保留');
@@ -172,8 +174,7 @@ describe('collaboration lifecycle', () => {
     setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '待提交验收理由' } });
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史记录' }));
     expect(screen.queryByRole('button', { name: '确认验收决定' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
     expect(screen.getByLabelText('第 1 轮验收理由')).toHaveValue('待提交验收理由');
