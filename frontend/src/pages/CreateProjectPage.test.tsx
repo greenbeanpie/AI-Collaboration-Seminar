@@ -7,7 +7,8 @@ import { CreateProjectWizardPage as CreateProjectPage } from './CreateProjectPag
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), patch: vi.fn(), request: vi.fn()
 }));
-vi.mock('../api/client', () => ({
+vi.mock('../api/client', async () => ({
+  ...await vi.importActual<typeof import('../api/client')>('../api/client'),
   api: {
     get: mocks.get, post: mocks.post, patch: mocks.patch
   }, request: mocks.request
@@ -43,9 +44,7 @@ beforeEach(() => {
       name: '新项目', description: '', brief: '', teamSize: 1, inviteUsernames: [], inviteLabels: [], aiCollaborationEnabled: false
     }, preview: null, previewRevision: null, previewState: 'none', previewError: null, files: [], projectId: null, updatedAt: '2026-10-02'
   };
-  mocks.get.mockResolvedValue({
-    items: []
-  });
+  mocks.get.mockImplementation(async (path: string) => path.endsWith('/draft-1') ? draft : {items:[]});
   mocks.post.mockImplementation(async (path: string, body: any) => {
     if (path === '/api/v1/creation-drafts') {
       draft = {
@@ -92,6 +91,33 @@ async function next() {
   }));
   await waitFor(() => expect(screen.queryByText('正在保存或核对结果，请稍候…')).not.toBeInTheDocument());
 }
+async function reviewEmptyProject() {
+  mount();fireEvent.change(screen.getByLabelText('项目名称'),{target:{value:'单设备项目'}});
+  await next();await next();await next();
+  fireEvent.click(screen.getByRole('button',{name:'确认暂不创建任务'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'进入创建预览'})).not.toBeDisabled());
+  fireEvent.click(screen.getByRole('button',{name:'进入创建预览'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'我已复核项目、文件、人数、邀请与任务配置'}));
+}
+it('rechecks a same-device failed preview before commit and keeps local goal and files',async()=>{
+  await reviewEmptyProject();const goal=draft.preview.goal.title;
+  draft={...draft,previewState:'failed',files:[{id:'retained-file',name:'保留的资料.txt',sizeBytes:20,textReady:true}]};
+  fireEvent.click(screen.getByRole('button',{name:'确认并创建项目'}));
+  expect(await screen.findByText('任务预览失败，草稿和文件仍保留。请核对并重新保存当前任务预览。')).toBeInTheDocument();
+  expect(mocks.post.mock.calls.filter(([p])=>String(p).endsWith('/commit'))).toHaveLength(0);
+  expect(screen.getByLabelText(/^主目标预览/)).toHaveValue(goal);expect(draft.files[0].id).toBe('retained-file');
+  expect(screen.getByRole('button',{name:'进入创建预览'})).toBeDisabled();
+});
+it('requires reviewing a replaced preview even when its numeric revision is unchanged',async()=>{
+  await reviewEmptyProject();draft={...draft,previewAttemptId:'22222222-2222-4222-8222-222222222222',preview:{...draft.preview,goal:{title:'新预览主目标',detail:'更新'}}};
+  fireEvent.click(screen.getByRole('button',{name:'确认并创建项目'}));
+  await screen.findByText('服务端草稿的配置或任务预览已更新，请复核最新内容后重新确认创建。');
+  expect(screen.getByRole('checkbox',{name:'我已复核项目、文件、人数、邀请与任务配置'})).not.toBeChecked();
+  expect(mocks.post.mock.calls.filter(([p])=>String(p).endsWith('/commit'))).toHaveLength(0);
+  fireEvent.click(screen.getByRole('checkbox',{name:'我已复核项目、文件、人数、邀请与任务配置'}));
+  fireEvent.click(screen.getByRole('button',{name:'确认并创建项目'}));await screen.findByRole('heading',{name:'项目已创建'});
+  expect(mocks.post.mock.calls.find(([p])=>String(p).endsWith('/commit'))?.[1]).toMatchObject({expectedPreviewAttemptId:draft.previewAttemptId});
+});
 describe('project creation wizard', () => {
   it('previews one editable main goal and stable keyed sibling dependencies without a duplicate root task', async () => {
     mount(); fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '依赖项目' } });
@@ -205,4 +231,11 @@ it('requests background AI preview, locks edits and adopts the polled result', a
  finish({...draft,previewState:'ready',previewRevision:draft.revision,preview:{mode:'ai',goal:{title:'后台目标',detail:'调查后生成'},tasks:[]}});
  await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('后台目标'));
  expect(screen.getByRole('button',{name:'进入创建预览'})).not.toBeDisabled();
+ // The previous ready response remains in the polling cache at the same revision.
+ fireEvent.click(screen.getByRole('button',{name:'重新生成 AI 预览'}));
+ await screen.findByText(/AI 正在后台处理文件/);
+ expect(screen.getByLabelText(/^主目标预览/)).toBeDisabled();
+ expect(screen.getByRole('button',{name:'进入创建预览'})).toBeDisabled();
+ finish({...draft,previewState:'ready',previewRevision:draft.revision,preview:{mode:'ai',goal:{title:'第二次后台目标',detail:'新调查结果'},tasks:[]}});
+ await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('第二次后台目标'));
 });

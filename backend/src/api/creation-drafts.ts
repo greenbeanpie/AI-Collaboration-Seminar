@@ -22,7 +22,7 @@ const fileSchema = z.object({
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
     goal:creationGoal.optional(),tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
-  }).nullable(), previewRevision: revision.nullable(), previewState: z.string(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
+  }).nullable(), previewRevision: revision.nullable(), previewAttemptId: z.string().uuid().nullable().optional(), previewState: z.string(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
 });
 const response = apiEnvelope(schema, 'CreationDraftResponse');
 const commitResponse = apiEnvelope(z.object({
@@ -272,7 +272,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/commit', tags: ['creation'], request: {
       params, body: json(z.object({
-        expectedRevision: revision, confirmed: z.literal(true)
+        expectedRevision: revision, confirmed: z.literal(true), expectedPreviewAttemptId: z.string().uuid().optional()
       }).strict())
     }, responses: {
       201: {
@@ -285,8 +285,8 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     }
   }), async (c) => {
     const b = c.req.valid('json') as {
-      expectedRevision: number;
+      expectedRevision: number; expectedPreviewAttemptId?: string;
     };
-    return c.json(apiData(c, await commitDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision)), 201);
+    return c.json(apiData(c, await commitDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision,b.expectedPreviewAttemptId)), 201);
   });
 }

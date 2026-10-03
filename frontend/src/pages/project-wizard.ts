@@ -14,4 +14,13 @@ export function sameWizardPayload(a: WizardPayload, b: WizardPayload) {
 export function canConfirmDraft(draft: WizardDraft) {
   return draft.status === 'active' && draft.previewState === 'ready' && draft.previewRevision === draft.revision;
 }
+export function confirmationIssue(latest: WizardDraft, reviewed: WizardDraft): string | null {
+  if (latest.status === 'committed') return null;
+  if (latest.status === 'cancelled') return '草稿已取消，配置和文件仍保留。请恢复草稿后重新确认。';
+  if (latest.previewState === 'running') return '任务预览仍在生成，请等待完成后重新核对。';
+  if (latest.previewState === 'failed') return '任务预览失败，草稿和文件仍保留。请核对并重新保存当前任务预览。';
+  if (!canConfirmDraft(latest) || !latest.preview) return '尚未保存当前配置的任务预览。请保存任务预览后重新确认。';
+  if (latest.previewAttemptId !== reviewed.previewAttemptId || latest.revision !== reviewed.revision || !sameWizardPayload(latest.payload,reviewed.payload) || JSON.stringify(latest.preview) !== JSON.stringify(reviewed.preview)) return '服务端草稿的配置或任务预览已更新，请复核最新内容后重新确认创建。';
+  return null;
+}
 export const wizardStorageKey = (userId: string) => `ai-office:creation-wizard:${encodeURIComponent(userId)}`;

@@ -10,7 +10,7 @@ import { DateInput } from '../components/DateInput';
 import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
 import { isTemplatePayload } from '../api/project-templates';
-import { emptyWizardPayload, wizardSteps, canConfirmDraft, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
+import { emptyWizardPayload, wizardSteps, canConfirmDraft, confirmationIssue, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
 import './ProjectWizard.css';
 type LocalFile = {
   id: string;
@@ -55,10 +55,12 @@ function CreationWizard({ userId }: {
     }
   };
   const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [actionBusy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
+  const previewEpoch = useRef(0), latestDraft = useRef(draft);
+  latestDraft.current = draft;
   const previewRunning = draft?.previewState === 'running';
   const busy = actionBusy || previewRunning;
-  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: () => api.get<'CreationDraftResponse'>(draftPath(draft!.id)), enabled: Boolean(draft?.id && previewRunning), refetchInterval: query => query.state.data?.previewState === 'running' || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
-  useEffect(() => { const next = draftPoll.data; if (!next) return; setDraft(next); setPayload(next.payload); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description }); setConfirmed(false); } }, [draftPoll.data]);
+  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && previewRunning && !actionBusy), refetchInterval: query => query.state.data?.draft.previewState === 'running' || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || latestDraft.current.previewState !== 'running' || next.revision < latestDraft.current.revision) return; setDraft(next); setPayload(next.payload); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description }); setConfirmed(false); } }, [draftPoll.data]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
   const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
@@ -128,6 +130,7 @@ function CreationWizard({ userId }: {
       return;
     }
     lock.current = true;
+    previewEpoch.current++;
     setBusy(true);
     setError(null);
     try {
@@ -324,8 +327,18 @@ function CreationWizard({ userId }: {
           if (!draft) {
             return;
           }
-          const committed = await api.post<'CreationCommitResponse'>(draftPath(draft.id, '/commit'), {
-            expectedRevision: draft.revision, confirmed: true
+          const reviewed=draft;
+          const latest: WizardDraft = await api.get<'CreationDraftResponse'>(draftPath(reviewed.id));
+          const issue=confirmationIssue(latest,reviewed);
+          if (issue) {
+            accept(latest);
+            // Keep locally reviewed goal/tasks on a failed or unfinished preview.
+            if (canConfirmDraft(latest)) { setManual(latest.preview?.tasks ?? []); setManualGoal(latest.preview?.goal ?? latest.payload.goal ?? {title:latest.payload.name,detail:latest.payload.brief || latest.payload.description}); }
+            setStep(canConfirmDraft(latest) ? 4 : 3);
+            throw new Error(issue);
+          }
+          const committed = await api.post<'CreationCommitResponse'>(draftPath(reviewed.id, '/commit'), {
+            expectedRevision: latest.revision, confirmed: true, ...(latest.previewAttemptId ? {expectedPreviewAttemptId:latest.previewAttemptId} : {})
           });
           setResult(committed);
           remember(undefined, []);

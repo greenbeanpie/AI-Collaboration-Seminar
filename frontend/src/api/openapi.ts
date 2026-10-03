@@ -1160,6 +1160,8 @@ export interface paths {
                         expectedRevision: number;
                         /** @enum {boolean} */
                         confirmed: true;
+                        /** Format: uuid */
+                        expectedPreviewAttemptId?: string;
                     };
                 };
             };
@@ -8316,6 +8318,8 @@ export interface components {
                     configVersionId?: string;
                 } | null;
                 previewRevision: number | null;
+                /** Format: uuid */
+                previewAttemptId?: string | null;
                 previewState: string;
                 previewError: string | null;
                 files: {
@@ -8436,6 +8440,8 @@ export interface components {
                         configVersionId?: string;
                     } | null;
                     previewRevision: number | null;
+                    /** Format: uuid */
+                    previewAttemptId?: string | null;
                     previewState: string;
                     previewError: string | null;
                     files: {

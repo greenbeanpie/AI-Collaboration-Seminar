@@ -1265,6 +1265,13 @@
                 ],
                 "minimum": 1
               },
+              "previewAttemptId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
               "previewState": {
                 "type": "string"
               },
@@ -1789,6 +1796,13 @@
                         "null"
                       ],
                       "minimum": 1
+                    },
+                    "previewAttemptId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
                     },
                     "previewState": {
                       "type": "string"
@@ -19326,6 +19340,10 @@
                     "enum": [
                       true
                     ]
+                  },
+                  "expectedPreviewAttemptId": {
+                    "type": "string",
+                    "format": "uuid"
                   }
                 },
                 "required": [

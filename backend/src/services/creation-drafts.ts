@@ -75,7 +75,7 @@ export async function draftView(env: Env, row: DraftRow) {
       goal?:z.infer<typeof creationGoal>;
       mode: 'ai' | 'manual';
       configVersionId?: string;
-    } : null, previewRevision: row.preview_revision, previewState: row.preview_state, previewError: row.preview_error, files: (await draftFiles(env, row.id)).map(fileView), removedFiles: removed.results.map(fileView), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
+    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, previewState: row.preview_state, previewError: row.preview_error, files: (await draftFiles(env, row.id)).map(fileView), removedFiles: removed.results.map(fileView), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
   };
 }
 function editable(row: DraftRow, revision: number) {
@@ -233,7 +233,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
           config: model, messages, jsonMode: true, privateContext: true, sessionId: attempt, beforeFetch: async () => {
             const current = await getDraft(env, id, userId);
             const cfg = await loadAiConfig(env.DB);
-            if (current.status !== 'active' || current.revision !== revision || current.preview_attempt_id !== attempt || cfg?.id !== config.id || !cfg.enabled) {
+            if (current.status !== 'active' || current.revision !== revision || current.preview_attempt_id !== attempt || current.preview_state !== 'running' || cfg?.id !== config.id || !cfg.enabled) {
               throw invalidState('草稿或模型配置已变化');
             }
           }, onDispatch: () => {
@@ -281,18 +281,18 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     };
     // Template previews contain edited goal/tasks: version the complete content, not only payload fields.
     const nextRevision=payload.workspace?revision+1:revision;
-    const saved = await env.DB.prepare("UPDATE project_creation_drafts SET preview_json=?5,revision=?7,preview_revision=?7,preview_state='ready',updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_attempt_id=?4").bind(id, userId, revision, attempt, JSON.stringify(preview), nowIso(),nextRevision).run();
+    const saved = await env.DB.prepare("UPDATE project_creation_drafts SET preview_json=?5,revision=?7,preview_revision=?7,preview_state='ready',updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_attempt_id=?4 AND preview_state='running'").bind(id, userId, revision, attempt, JSON.stringify(preview), nowIso(),nextRevision).run();
     if (!saved.meta.changes) {
       throw invalidState('草稿已变化，预览未应用');
     }
     return draftView(env, await getDraft(env, id, userId));
   }
   catch (e) {
-    await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error=?3,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2").bind(id, attempt, dispatched ? '本次调用已发出，可能产生用量；结果未能确认。主动重新生成可能再次计费。' : e instanceof AppError ? e.message : '预览失败，请重试', nowIso()).run();
+    await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error=?3,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND revision=?5 AND preview_state='running' AND owner_id=?6").bind(id, attempt, dispatched ? '本次调用已发出，可能产生用量；结果未能确认。主动重新生成可能再次计费。' : e instanceof AppError ? e.message : '预览失败，请重试', nowIso(), revision, userId).run();
     throw e;
   }
 }
-export async function commitDraft(env: Env, id: string, userId: string, revision: number) {
+export async function commitDraft(env: Env, id: string, userId: string, revision: number, expectedPreviewAttemptId?: string) {
   const row = await getDraft(env, id, userId);
   if (row.status === 'committed' && row.result_encrypted) {
     return JSON.parse(await unseal(row.result_encrypted, env.AUTH_SECRET)) as {
@@ -305,9 +305,11 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     };
   }
   editable(row, revision);
-  if (row.preview_state !== 'ready' || row.preview_revision !== revision || !row.preview_json) {
-    throw invalidState('配置已变化或尚未完成任务预览，请重新预览后确认');
-  }
+  const previewDetails = { draftId: id, currentRevision: row.revision, previewRevision: row.preview_revision, previewState: row.preview_state };
+  if (row.preview_state === 'failed') throw new AppError('INVALID_STATE', '任务预览失败，草稿和文件仍保留。请回到任务预览步骤，核对后重新保存预览。', 409, false, { ...previewDetails, reason: 'PREVIEW_FAILED' });
+  if (row.preview_state !== 'ready' || !row.preview_json) throw new AppError('INVALID_STATE', '尚未保存可创建的任务预览。请先保存当前任务预览，再确认创建。', 409, false, { ...previewDetails, reason: 'PREVIEW_NOT_READY' });
+  if (row.preview_revision !== revision) throw new AppError('INVALID_STATE', '任务预览对应的配置版本已过期。请保存当前配置的任务预览，再重新确认。', 409, false, { ...previewDetails, reason: 'PREVIEW_OUTDATED' });
+  if (expectedPreviewAttemptId && expectedPreviewAttemptId !== row.preview_attempt_id) throw new AppError('INVALID_STATE','任务预览已被替换，请重新复核后确认创建。',409,false,{...previewDetails,reason:'PREVIEW_REPLACED'});
   const p = creationPayload.parse(JSON.parse(row.payload_json));
   const recipients = await resolveInviteRecipients(env, userId, p.inviteUsernames);
   const preview = JSON.parse(row.preview_json) as {
@@ -330,7 +332,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
   const encrypted = await seal(JSON.stringify(response), env.AUTH_SECRET);
   const guard = "EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND commit_token=?3 AND status='committed')";
   const stmt = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(id, userId, token, ...binds);
-  const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3").bind(id, userId, revision, token, encrypted, now),
+  const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3 AND preview_attempt_id IS ?7 AND preview_json IS ?8").bind(id, userId, revision, token, encrypted, now,row.preview_attempt_id,row.preview_json),
     stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?12 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', null, now, p.aiCollaborationEnabled ? 1 : 0, p.aiCollaborationEnabled ? 'automatic' : 'manual'),
     stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??(p.brief||p.description),now),...guardedDescriptionStatements(stmt,guard,project,p.description,now)];
   if(p.workspace)batch.push(...workspacePromotionStatements(stmt,guard,project,p.workspace,now));
