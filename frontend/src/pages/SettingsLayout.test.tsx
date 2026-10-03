@@ -16,8 +16,8 @@ function setup(initialEntries = ['/app/settings/profile'], initialIndex?: number
 async function answer(name:'确定'|'取消') { const dialog=await screen.findByRole('dialog'); await act(async()=>{fireEvent.click(within(dialog).getByRole('button',{name}));}); await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull()); }
 afterEach(async () => { await act(async()=>{cancelPageDialog();}); cleanup(); vi.restoreAllMocks(); state.role = 'user'; state.isAdmin = false; });
 it('hides privileged tabs and preserves separate admin capabilities', () => {
- setup(); expect(screen.queryByRole('link', { name: '账户管理' })).toBeNull(); expect(screen.queryByRole('link', { name: 'AI 配置' })).toBeNull(); cleanup();
- state.isAdmin = true; state.role = 'admin'; setup(); expect(screen.getByRole('link', { name: '账户管理' })).toBeInTheDocument(); expect(screen.queryByRole('link', { name: 'AI 配置' })).toBeNull(); cleanup();
+ setup(); expect(screen.queryByRole('link', { name: '系统概况' })).toBeNull(); expect(screen.queryByRole('link', { name: '账户管理' })).toBeNull(); expect(screen.queryByRole('link', { name: 'AI 配置' })).toBeNull(); cleanup();
+ state.isAdmin = true; state.role = 'admin'; setup(); expect(screen.getByRole('link', { name: '系统概况' })).toHaveAttribute('href', '/app/settings/system'); expect(screen.getByRole('link', { name: '账户管理' })).toBeInTheDocument(); expect(screen.queryByRole('link', { name: 'AI 配置' })).toBeNull(); cleanup();
  state.role = 'super_admin'; setup(); expect(screen.getByRole('link', { name: 'AI 配置' })).toBeInTheDocument();
 });
 it('canceling tab navigation preserves unsaved editing; confirming navigates', async () => {
