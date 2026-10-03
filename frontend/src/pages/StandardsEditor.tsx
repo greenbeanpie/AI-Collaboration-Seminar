@@ -30,6 +30,10 @@ function fromVersion(version: StandardVersion): EditorDraft {
   return { title: version.title, notes: version.rubric.notes ?? '', ...(version.status === 'draft' ? { standardsVersionId: version.standardsVersionId, revision: version.revision } : {}), rows: [...rows, ...independentDimensions] };
 }
 export function StandardsEditor() {
+  const { projectId } = useProject();
+  return <ProjectStandardsEditor key={projectId} />;
+}
+function ProjectStandardsEditor() {
   const { projectId, project } = useProject();
   const client = useQueryClient();
   const versions = useQuery({ queryKey: ['standards', projectId], queryFn: () => projectRequest<{ items: StandardVersion[] }>(projectId, '/standards') });
@@ -47,7 +51,7 @@ export function StandardsEditor() {
     const key=await idempotencyKeyForIntent(namespace,body);
     const response=await projectRequest<{jobId:string}>(projectId,'/standards/generate',{method:'POST',body,idempotencyKey:key});
     completeIntent(namespace);return response;
-  },onSuccess:result=>{writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);}});
+  },onSuccess:result=>{setValidationError(null);writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);}});
   const generating=generate.isPending || Boolean(generationJobId && !generationPoll.isSettled);
   useEffect(()=>{
     const job=generationPoll.job;
@@ -108,7 +112,7 @@ export function StandardsEditor() {
         <div className="form-actions"><button className="button button-primary" disabled={save.isPending || conflicted}>保存标准草稿</button><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>取消编辑</button></div>
       </form> : <>
         <div className="chip-list">{versions.data?.items.map(version => <button className="chip" key={version.standardsVersionId} onClick={() => setSelectedId(version.standardsVersionId)}>{version.title} · v{version.version} · {version.status === 'confirmed' ? '已确认' : '草稿'}</button>)}</div>
-        {selected ? <article className="stack"><h3>{selected.title} <StatusPill tone={selected.status === 'confirmed' ? 'good' : 'warn'}>{selected.status === 'confirmed' ? `已确认 v${selected.version}` : '待确认草稿'}</StatusPill></h3>{selected.requirements.map(requirement => { const dimension = selected.rubric.weights.find(weight => weight.key === selected.mappings.find(mapping => mapping.requirementId === requirement.requirementId)?.dimensionKey); return <div className="standard-read-row" key={requirement.requirementId}><strong>{requirement.title}</strong><p>{requirement.detail}</p>{requirement.dueDate && <small>截止：{requirement.dueDate}</small>}<p>{dimension ? `${dimension.label} · 权重 ${dimension.weight}%` : '检查项 · 不计分'}</p>{requirement.citations.map((citation, index) => <blockquote className="quote-box" key={index}>原文依据：{citation.quote}{citation.pageNumber ? `（第 ${citation.pageNumber} 页）` : ''}</blockquote>)}</div>; })}{selected.rubric.notes && <p>{selected.rubric.notes}</p>}{project.myRole === 'owner' && <div className="form-actions"><button className="button button-quiet" onClick={() => { setDraft(fromVersion(selected)); setConflicted(false); save.reset(); }}>{selected.status === 'confirmed' ? '基于此版本修订' : '编辑标准草稿'}</button>{selected.status === 'draft' && <button className="button button-primary" disabled={confirm.isPending} onClick={() => confirm.mutate(selected)}>确认并固定标准版本</button>}</div>}{confirm.error && <ErrorNotice error={confirm.error} />}</article> : !versions.isLoading && !versions.error && <EmptyState title="尚未建立统一标准" detail="将要求与评分维度放入同一标准；可以从已提取要求开始。" />}
+        {selected ? <article className="stack"><h3>{selected.title} <StatusPill tone={selected.status === 'confirmed' ? 'good' : 'warn'}>{selected.status === 'confirmed' ? `已确认 v${selected.version}` : '待确认草稿'}</StatusPill></h3>{selected.requirements.map(requirement => { const dimension = selected.rubric.weights.find(weight => weight.key === selected.mappings.find(mapping => mapping.requirementId === requirement.requirementId)?.dimensionKey); return <div className="standard-read-row" key={requirement.requirementId}><strong>{requirement.title}</strong><p>{requirement.detail}</p>{requirement.dueDate && <small>截止：{requirement.dueDate}</small>}<p>{dimension ? `${dimension.label} · 权重 ${dimension.weight}%` : '检查项 · 不计分'}</p>{requirement.citations.map((citation, index) => <blockquote className="quote-box" key={index}>原文依据：{citation.quote}{citation.pageNumber ? `（第 ${citation.pageNumber} 页）` : ''}</blockquote>)}</div>; })}{selected.rubric.notes && <p>{selected.rubric.notes}</p>}{project.myRole === 'owner' && <div className="form-actions"><button className="button button-quiet" disabled={generating} onClick={() => { setDraft(fromVersion(selected)); setConflicted(false); save.reset(); }}>{selected.status === 'confirmed' ? '基于此版本修订' : '编辑标准草稿'}</button>{selected.status === 'draft' && <button className="button button-primary" disabled={confirm.isPending} onClick={() => confirm.mutate(selected)}>确认并固定标准版本</button>}</div>}{confirm.error && <ErrorNotice error={confirm.error} />}</article> : !versions.isLoading && !versions.error && <EmptyState title="尚未建立统一标准" detail="将要求与评分维度放入同一标准；可以从已提取要求开始。" />}
       </>}
     </SectionCard>
   </div>;

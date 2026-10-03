@@ -7,6 +7,13 @@ import { newId, nowIso } from '../src/core/db';
 import { applyProposal } from '../src/services/collaboration';
 async function fixture() { const o = await seedUser(); const m = await seedUser(); const p = await seedProject(o.userId); await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(), p, m.userId, nowIso()).run(); const req = async (path: string, method = 'GET', body?: unknown, member = false) => { const r = await SELF.fetch(`${BASE}/api/v1/projects/${p}${path}`, { method, headers: { cookie: authCookie((member ? m : o).token), 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, json: await r.json() as any }; }; return { o, m, p, req }; }
 describe('collaboration lifecycle', () => {
+    it('includes the saved deadline in collaboration tasks for local Agent handoff', async () => {
+        const { req } = await fixture();
+        const task = (await req('/collaboration/tasks', 'POST', { title: '有截止日期的成果', criteria: '按时交付' })).json.data;
+        await env.DB.prepare('UPDATE tasks SET due_date=?2 WHERE id=?1').bind(task.taskId, '2026-11-01').run();
+        const listed = (await req('/collaboration/tasks')).json.data.items.find((item: { taskId: string }) => item.taskId === task.taskId);
+        expect(listed.dueDate).toBe('2026-11-01');
+    });
     it('manual defaults, independent settings, owner-only mode and stale revisions', async () => { const { req } = await fixture(); expect((await req('/collaboration/settings')).json.data).toEqual({ aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', planningMode:'manual',progressionMode:'manual', revision: 1 }); expect((await req('/collaboration/settings', 'PATCH', { expectedRevision: 1, assignmentMode: 'automatic' }, true)).status).toBe(403); const r = await req('/collaboration/settings', 'PATCH', { expectedRevision: 1, assignmentMode: 'automatic' }); expect(r.status).toBe(200); expect(r.json.data).toEqual({ aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', planningMode:'manual',progressionMode:'manual', revision: 2 }); expect((await req('/collaboration/settings', 'PATCH', { expectedRevision: 1, evaluationMode: 'automatic' })).status).toBe(409); });
     it('atomic selfclaim and submission→rework→resubmit→accept with bypass prevention', async () => {
         const { req, m } = await fixture();

@@ -20,6 +20,7 @@ export interface CollaborationTask {
     lifecycle_state: string | null;
     criteria: string;
     effort_hours: number;
+    due_date?: string | null;
     parent_task_id: string | null;
     current_submission_id: string | null;
     source_citations_json: string;
@@ -28,7 +29,7 @@ export interface CollaborationTask {
     created_at: string;
     updated_at: string;
 }
-export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, startedAt:r.started_at??null, archivedAt:r.archived_at??null, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state??(r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'), criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
+export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, startedAt:r.started_at??null, archivedAt:r.archived_at??null, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state??(r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'), criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, dueDate: r.due_date ?? null, parentTaskId: r.parent_task_id, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
 export interface Submission {
     id: string;
     project_id: string;

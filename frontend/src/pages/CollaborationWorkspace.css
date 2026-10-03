@@ -6,3 +6,4 @@
 @media(max-width:600px){.collab-toolbar-actions{width:100%;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:stretch}.collab-toolbar-actions .button{min-width:0;padding:10px;font-size:12px;white-space:normal;justify-content:center}.collab-filter{width:100%}.collab-filter .input{flex:1;min-width:0}.collab-task-footer{gap:8px}.collab-task-footer>.tm-meta-item{flex-basis:100%}.collab-task-footer>.button{flex:1;justify-content:center}}
 .collab-ai [hidden], .workspace-subpage[hidden] { display: none; }
 .workspace-subpage { min-width: 0; }
+@media(max-width:600px){.collab-task-footer>.button{flex:1 1 calc(50% - 4px);min-width:0;white-space:nowrap}}

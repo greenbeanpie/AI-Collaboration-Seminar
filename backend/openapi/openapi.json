@@ -9416,6 +9416,12 @@
                     "effortHours": {
                       "type": "number"
                     },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "parentTaskId": {
                       "type": [
                         "string",
@@ -9666,6 +9672,12 @@
               },
               "effortHours": {
                 "type": "number"
+              },
+              "dueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "parentTaskId": {
                 "type": [

@@ -1670,6 +1670,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/standards/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StandardsGenerateResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/standards/{standardsVersionId}": {
         parameters: {
             query?: never;
@@ -9168,6 +9210,14 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        StandardsGenerateResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AssessmentListResponse: {
             data: {
                 items: ({
@@ -10659,6 +10709,7 @@ export interface components {
                         deletedAt?: string | null;
                     }[];
                     effortHours: number;
+                    dueDate?: string | null;
                     /** Format: uuid */
                     parentTaskId: string | null;
                     /** Format: uuid */
@@ -10719,6 +10770,7 @@ export interface components {
                     deletedAt?: string | null;
                 }[];
                 effortHours: number;
+                dueDate?: string | null;
                 /** Format: uuid */
                 parentTaskId: string | null;
                 /** Format: uuid */

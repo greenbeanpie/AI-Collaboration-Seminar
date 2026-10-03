@@ -171,7 +171,7 @@ function ProjectCollaborationWorkspace() {
       <ReferencePicker projectId={projectId} sourceVersionIds={sourceVersions} materialVersionIds={contextMaterialVersions} onChange={selection=>{setSourceVersions(selection.sourceVersionIds);setContextMaterialVersions(selection.materialVersionIds);}} disabled={!owner || ai.isPending}/>
       {aiEnabled && <ProjectSearchOption projectId={projectId} enabled={allowSearch} onChange={setAllowSearch} query={searchQuery} onQuery={setSearchQuery}/>}
       <Field label="持续项目反馈"><textarea className="input" rows={3} maxLength={12000} readOnly={!feedbackAdmin} value={brief} onChange={event => setBrief(event.target.value)} placeholder="保存项目目标、补充信息和持续调整要求；后续项目 AI 操作会使用当前保存版本" /></Field>
-      
+
       {feedback.error && <ErrorNotice error={feedback.error}/>}{saveFeedback.error && <><ErrorNotice error={saveFeedback.error}/><button className="button button-quiet" onClick={async()=>{const result=await feedback.refetch();if(result.data){setBrief(result.data.feedback);setFeedbackBase(result.data.version);saveFeedback.reset();}}}>重新载入已保存反馈</button></>}
       {feedbackAdmin && <button className="button" disabled={feedbackBase===null || saveFeedback.isPending || ai.isPending || brief===feedback.data?.feedback} onClick={()=>saveFeedback.mutate()}>保存反馈</button>}
       {saveFeedback.isSuccess && <p role="status">反馈已保存</p>}
@@ -330,7 +330,7 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, chil
     <h3>任务介绍</h3><p className="collab-preserve">{task.detail || '暂无任务介绍'}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>
     {childrenTasks.length > 0 && <div className="callout"><strong>子任务进度</strong><ul>{childrenTasks.map(child => <li key={child.taskId}>{child.title} · {lifecycleLabels[child.lifecycleState]}</li>)}</ul></div>}
     {owner && <details><summary>调整任务与验收标准</summary><form className="stack" onSubmit={event => { event.preventDefault(); edit.mutate(); }}>
-      
+
       <Field label="调整任务名称"><input className="input" required maxLength={200} value={editDraft.title} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, title: event.target.value }); }} /></Field>
       <Field label="调整任务说明"><textarea className="input" rows={3} maxLength={4000} value={editDraft.detail} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, detail: event.target.value }); }} /></Field>
       <Field label="调整验收标准"><textarea className="input" required rows={4} maxLength={4000} value={editDraft.criteria} onChange={event => { setEditSaved(false); setEditDraft({ ...editDraft, criteria: event.target.value }); }} /></Field>
@@ -361,7 +361,7 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, chil
       {materialId && materialVersions.data?.length === 0 && <p className="form-note">该材料还没有已保存版本，请先到材料中心保存。</p>}
       <div className="collab-version-list">{materialVersions.data?.map(version => <label key={version.versionId} className="collab-version"><input type="checkbox" disabled={versions.length >= 10 && !versions.some(item => item.id === version.versionId)} checked={versions.some(item => item.id === version.versionId)} onChange={event => setVersions(currentVersions => event.target.checked ? [...currentVersions, { id: version.versionId, label: `${materials.data?.find(material => material.materialId === materialId)?.title ?? '材料'} · r${version.revision}` }] : currentVersions.filter(item => item.id !== version.versionId))} /><span>r{version.revision} · {new Date(version.createdAt).toLocaleString('zh-CN')}{version.attachments.length > 0 && <small>含 {version.attachments.length} 个附件，仅供人工参考</small>}</span></label>)}</div>
       {versions.length > 0 && <div className="chip-list">{versions.map(version => <button type="button" className="chip" key={version.id} onClick={() => setVersions(items => items.filter(item => item.id !== version.id))}>{version.label} ×</button>)}</div>}
-      
+
       {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
     </form></section>}
     {!task.assigneeId && <p className="form-note">请先认领任务或由负责人分工，再提交成果。</p>}
