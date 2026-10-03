@@ -10497,6 +10497,7 @@ export interface components {
             data: {
                 startedAt?: string | null;
                 archivedAt?: string | null;
+                pendingHumanReview?: boolean;
                 /** Format: uuid */
                 taskId: string;
                 lifecycleState: string | null;
@@ -10538,6 +10539,7 @@ export interface components {
                 items: {
                     startedAt?: string | null;
                     archivedAt?: string | null;
+                    pendingHumanReview?: boolean;
                     /** Format: uuid */
                     taskId: string;
                     lifecycleState: string | null;
@@ -10683,6 +10685,7 @@ export interface components {
         CollaborationTaskListResponse: {
             data: {
                 items: {
+                    pendingHumanReview?: boolean;
                     startedAt?: string | null;
                     archivedAt?: string | null;
                     /** Format: uuid */
@@ -10744,6 +10747,7 @@ export interface components {
         };
         CollaborationTaskResponse: {
             data: {
+                pendingHumanReview?: boolean;
                 startedAt?: string | null;
                 archivedAt?: string | null;
                 /** Format: uuid */
@@ -10792,6 +10796,7 @@ export interface components {
         CollaborationSubmissionListResponse: {
             data: {
                 items: {
+                    pendingHumanReview?: boolean;
                     /** Format: uuid */
                     submissionId: string;
                     /** Format: uuid */
@@ -10816,6 +10821,19 @@ export interface components {
                     aiDecision: "accept" | "improve" | "rework" | null;
                     aiFeedback: string | null;
                     aiReport: {
+                        /** @enum {string} */
+                        modelCoverage?: "complete" | "needs_human";
+                        humanReview?: {
+                            /** @enum {string} */
+                            status: "pending" | "resolved";
+                            reasonCodes: ("unread_attachments" | "unread_references")[];
+                            reasons: string[];
+                            /** @enum {string} */
+                            decision?: "accept" | "improve" | "rework";
+                            /** Format: uuid */
+                            decidedBy?: string;
+                            decidedAt?: string;
+                        };
                         references?: unknown[];
                         decisionReferences?: unknown[];
                         /** @enum {string} */
@@ -10896,6 +10914,7 @@ export interface components {
         };
         CollaborationSubmissionResponse: {
             data: {
+                pendingHumanReview?: boolean;
                 /** Format: uuid */
                 submissionId: string;
                 /** Format: uuid */
@@ -10920,6 +10939,19 @@ export interface components {
                 aiDecision: "accept" | "improve" | "rework" | null;
                 aiFeedback: string | null;
                 aiReport: {
+                    /** @enum {string} */
+                    modelCoverage?: "complete" | "needs_human";
+                    humanReview?: {
+                        /** @enum {string} */
+                        status: "pending" | "resolved";
+                        reasonCodes: ("unread_attachments" | "unread_references")[];
+                        reasons: string[];
+                        /** @enum {string} */
+                        decision?: "accept" | "improve" | "rework";
+                        /** Format: uuid */
+                        decidedBy?: string;
+                        decidedAt?: string;
+                    };
                     references?: unknown[];
                     decisionReferences?: unknown[];
                     /** @enum {string} */

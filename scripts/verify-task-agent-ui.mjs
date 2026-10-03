@@ -29,6 +29,9 @@ try {
     const page = await context.newPage(); activePage = page; page.setDefaultTimeout(10000);
     page.on('pageerror', error => report.errors.push(error.message));
     const writes = [];
+    let provisional = false;
+    let humanReviewed = false;
+    let showProposal = false;
     let releaseTaskChunk;
     const taskChunkGate = new Promise(resolveGate => { releaseTaskChunk = resolveGate; });
     await context.route('**/*', async route => {
@@ -45,10 +48,19 @@ try {
       else if (p.endsWith('/members/me')) data = { userId, displayName: '测试成员', role: 'owner' };
       else if (p.endsWith('/members')) data = { items: [{ userId, displayName: '测试成员', role: 'owner' }], nextCursor: null };
       else if (p.endsWith('/goal')) data = { title: '发布可用原型', detail: '交付三个页面', revision: 2, graphRevision: 1 };
-      else if (p.endsWith('/tasks')) data = { items: [task, upstream], nextCursor: null };
+      else if (p.endsWith('/tasks')) data = { items: [provisional || humanReviewed ? { ...task, lifecycleState: 'accepted', status: 'done', currentSubmissionId: submissions[0].submissionId, pendingHumanReview: provisional } : task, upstream], nextCursor: null };
       else if (p.endsWith('/collaboration/settings')) data = { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 };
       else if (p.endsWith('/collaboration/feedback/current')) data = { version: 0, feedback: '' };
-      else if (p.endsWith('/submissions')) data = { items: submissions };
+      else if (p.endsWith('/collaboration/proposals')) data = { items: showProposal ? [{ proposalId: 'proposal-1', kind: 'decompose', status: 'pending', revision: 1, createdAt: now, payload: { tasks: [{ key: 'report', title: '写报告并制作图表', detail: '整理研究结果与图表', criteria: '交付完整报告', effortHours: 6, dependsOn: [] }], updates: [] } }] : [], nextCursor: null };
+      else if (p.endsWith('/submissions')) data = { items: provisional || humanReviewed ? [{ ...submissions[0], status: 'accept', decision: 'accept', pendingHumanReview: provisional, revision: humanReviewed ? 2 : 1 }, submissions[1]] : submissions };
+      else if (p.endsWith('/decide')) {
+        const body = route.request().postDataJSON();
+        assert.equal(body.decision, 'accept');
+        assert.equal(body.expectedRevision, 1);
+        assert.equal(body.feedback, '已人工核对附件与链接');
+        provisional = false; humanReviewed = true;
+        data = { ...submissions[0], status: 'accept', decision: 'accept', pendingHumanReview: false, revision: 2 };
+      }
       else if (p.endsWith('/inquiries')) data = { items: [], candidates: [{ taskId: 't0', title: upstream.title, recipientName: '测试成员', recipientSource: 'completion' }] };
       else if (p.endsWith('/standards/generate')) data = { jobId: 'standard-job' };
       else if (p.endsWith('/jobs/standard-job')) data = { jobId: 'standard-job', status: 'succeeded', result: { draft: { title: '自动生成标准', requirements: [{ title: 'AI 交付要求', detail: '验证生成草稿可编辑', category: 'deliverable', dueDate: null, duePrecision: 'unknown', dimensionKey: 'quality' }], weights: [{ key: 'quality', label: '成果质量', weight: 100 }], notes: '根据项目目标整理' } } };
@@ -133,7 +145,32 @@ try {
     assert.deepEqual(writes.map(write => write.p), [`/api/v1/projects/${projectId}/standards/generate`]);
     await capture('generated-standard');
     await page.getByRole('button', { name: '取消编辑', exact: true }).click();
-    report.checks.push({ width, passed: true, verified: 'task actions, independent dialogs, draft preservation, full prompt, download, no writes, no tabs, no overflow' });
+    provisional = true;
+    await page.goto(origin + base + '/tasks');
+    const pendingCard = page.locator('.collab-task').filter({ has: page.getByRole('button', { name: task.title, exact: true }) });
+    await pendingCard.getByText('已完成（待人工审核）', { exact: true }).waitFor();
+    assert.equal(await page.getByText('共 2 项 · 已完成 2 项', { exact: true }).count(), 1);
+    await page.getByLabel('筛选', { exact: true }).selectOption('pending_review');
+    assert.equal(await page.locator('.collab-task').count(), 1);
+    await pendingCard.getByRole('button', { name: '查看与提交', exact: true }).click();
+    await page.getByRole('dialog').getByRole('heading', { name: '人工审核', exact: true }).waitFor();
+    await capture('pending-human-review');
+    await page.getByLabel('第 2 轮验收理由', { exact: true }).fill('已人工核对附件与链接');
+    await page.getByRole('button', { name: '确认人工审核', exact: true }).click();
+    await page.getByRole('dialog').getByRole('heading', { name: '负责人明确验收', exact: true }).waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    await page.getByLabel('筛选', { exact: true }).selectOption('accepted');
+    assert.equal(await page.locator('.collab-task').count(), 2);
+    assert.equal(await page.locator('.collab-task').getByText('已完成（待人工审核）', { exact: true }).count(), 0);
+    showProposal = true;
+    await page.goto(origin + base + '/tasks');
+    await page.getByRole('button', { name: 'AI 拆解、调整与分工', exact: true }).click();
+    await page.getByText('修正建议、部分应用或重新反馈', { exact: true }).click();
+    await page.getByRole('button', { name: '保存方案修正', exact: true }).waitFor();
+    await page.getByRole('button', { name: '应用选中条目', exact: true }).waitFor();
+    await capture('proposal-edit-entry');
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    report.checks.push({ width, passed: true, verified: 'task actions, independent dialogs, draft and history preservation, full prompt, clipboard and download, no writes during handoff, provisional completion and human review, proposal editing entry, no tabs, no overflow' });
     await context.close();
   }
   assert.deepEqual(report.errors, []);

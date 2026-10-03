@@ -8,7 +8,7 @@ const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId:
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
-const task = { startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
+const task = { pendingHumanReview: false, startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -31,6 +31,31 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('counts provisional completion and exposes its pending review filter and owner review action', () => {
+    const pending = { ...task, pendingHumanReview: true, lifecycleState: 'accepted', status: 'done' as const, currentSubmissionId: 's1' };
+    const approved = { ...task, taskId: 't2', title: '正式审核通过的成果', lifecycleState: 'accepted', status: 'done' as const };
+    setup({ tasks: [pending, approved], submissions: [{ ...submission, status: 'accept', decision: 'accept', aiDecision: 'accept', pendingHumanReview: true }] });
+    expect(screen.getByText('共 2 项 · 已完成 2 项')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'pending_review' } });
+    expect(screen.getByRole('button', { name: task.title })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: approved.title })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    expect(screen.getByRole('heading', { name: '人工审核' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '确认人工审核' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '已人工核对附件' } });
+    expect(screen.getByRole('button', { name: '确认人工审核' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'accepted' } });
+    expect(screen.queryByRole('button', { name: task.title })).toBeNull();
+    expect(screen.getByRole('button', { name: approved.title })).toBeInTheDocument();
+  });
+  it('lets ordinary members see provisional completion without granting human-review controls', () => {
+    identity.role = 'member';
+    setup({ tasks: [{ ...task, pendingHumanReview: true, lifecycleState: 'accepted', status: 'done' as const, currentSubmissionId: 's1' }], submissions: [{ ...submission, status: 'accept', decision: 'accept', pendingHumanReview: true }] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    expect(within(screen.getByRole('dialog')).getAllByText('已完成（待人工审核）').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: '确认人工审核' })).toBeNull();
+  });
   it('opens inquiries as a sibling action without embedding inquiries or tabs in task dialogs', async () => {
     const { fetchMock } = setup();
     expect(screen.getByRole('button', { name: '前置任务质询' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
