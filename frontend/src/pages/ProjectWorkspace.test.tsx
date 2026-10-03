@@ -6,7 +6,7 @@ import { WorkWorkspacePage } from './WorkWorkspacePage';
 const state = vi.hoisted(() => ({ role: 'owner' }));
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'project-a', project: { myRole: state.role } }) }));
 vi.mock('./TeamPage', () => ({ TeamPage: () => <h2>真实团队成员列表</h2> }));
-vi.mock('./TasksPage', () => ({ TasksPage: () => <h2>统一主目标与依赖子任务</h2> }));
+vi.mock('./TasksPage', () => ({ TasksPage: () => <h2>统一主目标与依赖任务</h2> }));
 afterEach(() => { cleanup(); state.role = 'owner'; });
 it.each(['owner', 'member'])('keeps team membership without redundant shortcut cards for %s', (role) => {
   state.role = role;
@@ -19,7 +19,7 @@ it.each(['owner', 'member'])('keeps team membership without redundant shortcut c
 });
 it('the old work entry reuses the unified tasks workspace without another requirements summary', () => {
   render(<MemoryRouter><WorkWorkspacePage /></MemoryRouter>);
-  expect(screen.getByRole('heading', { name: '统一主目标与依赖子任务' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '统一主目标与依赖任务' })).toBeInTheDocument();
   expect(screen.queryByText('项目要求')).toBeNull();
   expect(screen.queryByText('评分标准')).toBeNull();
 });

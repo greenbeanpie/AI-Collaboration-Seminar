@@ -33,7 +33,7 @@ export function ProjectOverviewPage() {
 
   return <div className="page-stack project-overview-page">
     <div className="overview-welcome"><div><span className="eyebrow">项目进度</span><h1>一起把下一步做好</h1><p>此处汇总项目服务中已保存的任务、成员、材料与要求状态。</p></div><Link to={`/app/projects/${projectId}/tasks`} className="button button-primary">查看任务 <ArrowRight size={16} /></Link></div>
-    <div className="project-overview-columns"><div><SectionCard title="项目主目标" detail="主目标独立于子任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖子任务</Link></>}</SectionCard>
+    <div className="project-overview-columns"><div><SectionCard title="项目主目标" detail="主目标独立于任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖任务</Link></>}</SectionCard>
     </div><div className="stack">{errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
     <div className="metric-grid overview-metrics">
       <TaskCompletionMetric variant="overview" completed={done} total={taskItems.length} available={tasks.data !== undefined && !tasks.error} unavailableMessage={tasks.error ? '任务统计暂不可用' : '正在读取任务进度'} />

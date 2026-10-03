@@ -43,7 +43,7 @@ async function loaded() { await screen.findByText('模板预览 · 未创建'); 
 it('opens five editable draft areas with no operational tasks, grades or formal-project calls', async () => {
   show(); await loaded();
   expect(within(screen.getByRole('navigation', { name: '模板预览分区' })).getAllByRole('button').map(button => button.textContent)).toEqual(['概览', '任务', '资料', '评分', '团队']);
-  await tab('任务'); expect(screen.getByText('尚无子任务')).toBeInTheDocument(); expect(screen.queryByRole('button', { name: '我来认领' })).toBeNull();
+  await tab('任务'); expect(screen.getByText('尚无任务')).toBeInTheDocument(); expect(screen.queryByRole('button', { name: '我来认领' })).toBeNull();
   await tab('资料'); expect(screen.getByText('尚无文档')).toBeInTheDocument();
   await tab('评分'); expect(screen.getByText('尚无项目标准')).toBeInTheDocument(); expect(screen.queryByText(/本轮总分/)).toBeNull();
   await tab('团队'); expect(screen.getByLabelText('创建后开启 AI 智能协作')).not.toBeChecked(); expect(screen.queryByRole('button', { name: '创建邀请码' })).toBeNull();
@@ -53,23 +53,23 @@ it('opens five editable draft areas with no operational tasks, grades or formal-
 });
 it('saves private payload and keyed tasks, then recovers them on a fresh page without creating a project', async () => {
   const view = show(); await loaded(); fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '私有预览' } });
-  await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加子任务' }));
-  fireEvent.change(screen.getByLabelText('子任务标题'), { target: { value: '整理依据' } }); fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '可追溯原文' } });
+  await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加任务' }));
+  fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '整理依据' } }); fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '可追溯原文' } });
   fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
   await screen.findByText('私有草稿已保存，尚未创建正式项目。');
   expect(writes.map(write => write.path)).toEqual([path, `${path}/preview`]); expect(stored.preview?.tasks[0]?.key).toBeTruthy();
   view.unmount(); show(); await loaded(); await tab('任务');
-  expect(screen.getByLabelText('子任务标题')).toHaveValue('整理依据'); expect(screen.getByLabelText('验收标准')).toHaveValue('可追溯原文');
+  expect(screen.getByLabelText('任务标题')).toHaveValue('整理依据'); expect(screen.getByLabelText('验收标准')).toHaveValue('可追溯原文');
   expect(writes.some(write => write.path.endsWith('/commit') || write.path.startsWith('/api/v1/projects/'))).toBe(false);
 });
 it('creates authored goal, dependencies, documents and standards only at the final save', async () => {
   const { router } = show(); await loaded(); fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '完整预览' } });
   fireEvent.change(screen.getByLabelText(/^项目主目标（可选）/), { target: { value: '完成可复现交付' } });
-  await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加子任务' })); fireEvent.click(screen.getByRole('button', { name: '添加子任务' }));
-  const titles = screen.getAllByLabelText('子任务标题'), criteria = screen.getAllByLabelText('验收标准');
+  await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加任务' })); fireEvent.click(screen.getByRole('button', { name: '添加任务' }));
+  const titles = screen.getAllByLabelText('任务标题'), criteria = screen.getAllByLabelText('验收标准');
   fireEvent.change(titles[0]!, { target: { value: '整理依据' } }); fireEvent.change(criteria[0]!, { target: { value: '完整正文' } });
   fireEvent.change(titles[1]!, { target: { value: '完成成果' } }); fireEvent.change(criteria[1]!, { target: { value: '可复现' } });
-  fireEvent.click(within(screen.getAllByRole('group', { name: '前置子任务' })[1]!).getByLabelText('整理依据'));
+  fireEvent.click(within(screen.getAllByRole('group', { name: '前置任务' })[1]!).getByLabelText('整理依据'));
   await tab('资料'); fireEvent.click(screen.getByRole('button', { name: '新建文档' })); fireEvent.change(screen.getByLabelText('文档标题'), { target: { value: '研究背景' } }); fireEvent.change(screen.getByLabelText('文档用途'), { target: { value: 'background' } }); fireEvent.change(screen.getByLabelText('文档正文（Markdown）'), { target: { value: '# 原始背景\n正文保留' } });
   await tab('评分'); fireEvent.click(screen.getByRole('button', { name: '添加项目标准' })); fireEvent.click(screen.getByRole('button', { name: '添加要求' })); fireEvent.change(screen.getByLabelText('要求标题'), { target: { value: '能够复现结果' } }); fireEvent.click(screen.getByLabelText('此要求参与评分'));
   await tab('团队'); fireEvent.change(screen.getByLabelText(/^拟邀请的登录用户名/), { target: { value: 'alice' } });
@@ -92,9 +92,9 @@ it('keeps unsaved inputs when leaving the draft is canceled', async () => {
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); expect(router.state.location.pathname).toContain('/template/'); expect(screen.getByLabelText('项目名称')).toHaveValue('保留草稿编辑'); expect(writes).toHaveLength(0);
 });
 it('uploads only to the private draft and retains authored tasks when rebuilding its preview', async () => {
-  show(); await loaded(); await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加子任务' })); fireEvent.change(screen.getByLabelText('子任务标题'), { target: { value: '上传后保留任务' } }); fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '文件与目标可核对' } });
+  show(); await loaded(); await tab('任务'); fireEvent.click(screen.getByRole('button', { name: '添加任务' })); fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: '上传后保留任务' } }); fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '文件与目标可核对' } });
   await tab('资料'); fireEvent.change(screen.getByLabelText(/^导入文件（可选）/), { target: { files: [new File(['real text'], 'source.txt', { type: 'text/plain' })] } });
-  await screen.findByText(/文件已暂存到私有草稿/); await tab('任务'); expect(screen.getByLabelText('子任务标题')).toHaveValue('上传后保留任务');
+  await screen.findByText(/文件已暂存到私有草稿/); await tab('任务'); expect(screen.getByLabelText('任务标题')).toHaveValue('上传后保留任务');
   fireEvent.click(screen.getByRole('button', { name: '保存草稿' })); await screen.findByText('私有草稿已保存，尚未创建正式项目。');
   expect(writes[0]?.method).toBe('PUT'); expect(writes[0]?.path).toMatch(/^\/api\/v1\/creation-drafts\/draft-template\/files\//); expect(stored.preview?.tasks[0]?.title).toBe('上传后保留任务'); expect(writes.some(write => write.path.startsWith('/api/v1/projects/') || write.path.endsWith('/commit'))).toBe(false);
 });

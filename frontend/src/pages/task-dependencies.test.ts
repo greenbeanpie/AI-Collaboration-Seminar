@@ -7,8 +7,8 @@ it('orders branching dependencies before the final join without counting a main 
   expect(ordered).toEqual(['a', 'b', 'c', 'join']);
   expect(tasks[0]?.taskId).toBe('join');
 });
-it('preserves legacy records and missing historical parents without creating dependency edges', () => {
-  const tasks = [{ taskId: 'old', parentTaskId: 'missing', dependsOnTaskIds: [] }, { taskId: 'next', dependsOnTaskIds: ['external'] }];
+it('keeps tasks with missing prerequisite references visible', () => {
+  const tasks = [{ taskId: 'old', dependsOnTaskIds: [] }, { taskId: 'next', dependsOnTaskIds: ['external'] }];
   expect(dependencyOrder(tasks)).toEqual(tasks);
 });
 it('does not hide tasks if an older read contains a cycle; the server remains authoritative for writes', () => {

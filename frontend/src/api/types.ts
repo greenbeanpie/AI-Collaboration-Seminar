@@ -9,7 +9,7 @@ export type ProjectSummary = DataOf<'ProjectListResponse'>['items'][number];
 export type Member = Omit<DataOf<'MemberListResponse'>['items'][number], 'username' | 'isAdmin'> & { username?: string | null; isAdmin?: boolean };
 export type Capability = Omit<DataOf<'CapabilitiesResponse'>, 'authentication'> & { authentication?: Partial<NonNullable<DataOf<'CapabilitiesResponse'>['authentication']>> & { mode?: 'password'; passwordEnabled?: boolean; invitationRequired?: boolean; passwordMinLength?: number } };
 type CanonicalTask = DataOf<'TaskResponse'>;
-type AdditiveTaskMetadata = 'criteria' | 'effortHours' | 'parentTaskId' | 'currentSubmissionId' | 'citations' | 'dependsOnTaskIds' | 'unfinishedDependencyIds';
+type AdditiveTaskMetadata = 'criteria' | 'effortHours' | 'currentSubmissionId' | 'citations' | 'dependsOnTaskIds' | 'unfinishedDependencyIds';
 /** Read-only cached dashboards may still contain task snapshots from before the simplification. */
 export type Task = Omit<CanonicalTask, AdditiveTaskMetadata> & Partial<Pick<CanonicalTask, AdditiveTaskMetadata>>;
 export type Material = DataOf<'MaterialResponse'>;

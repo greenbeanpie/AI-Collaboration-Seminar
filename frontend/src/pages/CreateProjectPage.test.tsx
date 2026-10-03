@@ -128,7 +128,7 @@ describe('project creation wizard', () => {
     const titles = screen.getAllByLabelText('标题'); const criteria = screen.getAllByLabelText('验收标准');
     fireEvent.change(titles[0]!, { target: { value: '准备资料' } }); fireEvent.change(criteria[0]!, { target: { value: '正文完整' } });
     fireEvent.change(titles[1]!, { target: { value: '生成成果' } }); fireEvent.change(criteria[1]!, { target: { value: '复现成功' } });
-    const dependencyGroups = screen.getAllByRole('group', { name: '前置子任务' });
+    const dependencyGroups = screen.getAllByRole('group', { name: '前置任务' });
     fireEvent.click(within(dependencyGroups[1]!).getByLabelText('准备资料'));
     fireEvent.click(screen.getByRole('button', { name: '保存当前任务预览' }));
     await waitFor(() => expect(screen.getByRole('button', { name: '进入创建预览' })).not.toBeDisabled());
@@ -156,7 +156,7 @@ describe('project creation wizard', () => {
     expect(screen.getByText('用于团队规划，可在创建后继续邀请成员；不设置项目人数上限。')).toBeInTheDocument();
     await next();
     expect(screen.getByRole('heading', {
-      name: '目标与子任务预览'
+      name: '目标与任务预览'
     })).toBeInTheDocument();
     expect(screen.getByRole('button', {
       name: '进入创建预览'
@@ -241,7 +241,7 @@ it('requests background AI preview, locks edits and adopts the polled result', a
 });
 
 describe('creation preview clarification', () => {
-  const question = { id: 'question-creation', question: '主要交付形式是什么？', reason: '交付形式影响子任务', options: ['演示原型', '调研报告'], allowUndecided: true, round: 1, maxRounds: 3, status: 'pending', revision: 4, createdAt: '2026-10-03T08:00:00Z' };
+  const question = { id: 'question-creation', question: '主要交付形式是什么？', reason: '交付形式影响任务', options: ['演示原型', '调研报告'], allowUndecided: true, round: 1, maxRounds: 3, status: 'pending', revision: 4, createdAt: '2026-10-03T08:00:00Z' };
   function restoreWaiting() {
     draft = { ...draft, revision: 9, previewState: 'waiting_input', previewAttemptId: 'same-preview-attempt', clarification: question, payload: { ...draft.payload, aiCollaborationEnabled: true } };
     sessionStorage.setItem('ai-office:creation-wizard:owner', JSON.stringify({ id: draft.id, files: [] }));

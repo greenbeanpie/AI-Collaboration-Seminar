@@ -32,7 +32,7 @@ describe('project pages share consistent list cache shapes', () => {
   it('task editing reads the member array already loaded by team/overview pages', () => {
     const client = cachedProject();
     render(<QueryClientProvider client={client}><MemoryRouter><TasksPage /></MemoryRouter></QueryClientProvider>);
-    fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     expect(screen.getByRole('option', { name: '真实成员甲' })).toBeInTheDocument();
   });
 
