@@ -101,3 +101,19 @@ it('a requested historical version opens history on the page containing that ver
   expect(within(pager).getByText('2 / 3')).toBeVisible();
   expect(screen.getByText('版本 r5')).toBeVisible();
 });
+
+it('keeps the shared heading, AI assistance and export dropdown inside the editor card', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  renderMaterial({ embedded: true, header: <header><h2>工作区资料标题</h2></header> });
+  await screen.findByLabelText('材料正文编辑器');
+  const card = screen.getByRole('heading', { name: '工作区资料标题' }).closest('.tm-editor-card')! as HTMLElement;
+  expect(within(card).getByRole('button', { name: '打开 AI 协助' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: '正式材料' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Markdown' })).toBeNull();
+  fireEvent.click(within(card).getByRole('button', { name: /^导出文件/ }));
+  expect(screen.getByRole('button', { name: 'Markdown' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '打印 / PDF' }));
+  await waitFor(() => expect(print).toHaveBeenCalledOnce());
+  expect(within(card).getByRole('button', { name: '保存新版本' })).toBeInTheDocument();
+  print.mockRestore();
+});

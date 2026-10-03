@@ -32,3 +32,10 @@
 @media (max-width: 900px) { .project-workspace-sections { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1050px) { .resource-workspace-layout, .assessment-layout { grid-template-columns: minmax(0, 1fr); } .resource-list-panel { max-height: 420px; overflow: auto; } }
 @media (max-width: 600px) { .resource-detail-heading { flex-direction: column; } .standard-dimension-fields { grid-template-columns: minmax(0, 1fr); } .resource-workspace .page-heading > .form-actions { flex-wrap: wrap; } }
+
+.resource-browser-title { margin: 0; font-size: 16px; }
+.resource-list-panel .project-resource-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.resource-detail-panel .tm-editor-card > .resource-detail-heading { padding: 20px 20px 0; margin-bottom: 0; }
+.resource-detail-panel .material-ai-assistance-content:not([hidden]) { padding: 16px 20px; }
+
+.resource-detail-panel .tm-editor-card { overflow: visible; }
