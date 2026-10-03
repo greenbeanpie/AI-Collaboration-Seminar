@@ -119,10 +119,14 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     });
   }
   const data = (payload as ApiEnvelope<DataOf<Name>>).data;
-  if (url === '/api/v1/auth/session') {
+  if (/^\/api\/v1\/auth\/(?:session|sessions|register)$/.test(url)) {
     const user = (data as { user?: unknown }).user;
     if (user && typeof user === 'object' && 'id' in user) {
-      try { rememberAccount(user as NonNullable<ReturnType<typeof offlineAccount>>); }
+      try {
+        const account = user as NonNullable<ReturnType<typeof offlineAccount>>;
+        rememberAccount(account);
+        if (method !== 'GET') await writeSnapshot('/api/v1/auth/session', { user: account }, account.id);
+      }
       catch { window.dispatchEvent(new Event('offline-storage-failed')); }
     }
   }

@@ -30,6 +30,14 @@ describe('API client', () => {
     })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE', status: 503, requestId: 'trace-123' });
   });
 
+  it('switches local account ownership immediately after a successful login', async () => {
+    localStorage.setItem('buwei:offline-account', JSON.stringify({ id: 'previous-account' }));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { user: { id: 'new-account', displayName: '当前账户' } }, requestId: 'login' }, { status: 201 })));
+    await api.post<'AuthSessionResponse'>('/auth/sessions', { account: 'new-user', password: 'fixture-password' });
+    expect(JSON.parse(localStorage.getItem('buwei:offline-account')!)).toMatchObject({ id: 'new-account' });
+    localStorage.removeItem('buwei:offline-account');
+  });
+
   it('loads every cursor page before reporting a complete list', async () => {
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
