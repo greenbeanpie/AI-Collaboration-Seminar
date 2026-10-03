@@ -252,7 +252,10 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       config[purpose]!.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
-    const unchanged = Boolean(latest && JSON.stringify(aiConfigSchema.parse({ ...config, routingMode: config.routingMode ?? 'advanced' })) === JSON.stringify(aiConfigSchema.parse({ ...latest.config, routingMode: latest.config.routingMode ?? 'advanced' })));
+    // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
+    // Normalize only equivalent defaults: an actual search permission change still invalidates probes.
+    const comparable = (value: typeof config) => aiConfigSchema.parse({ ...value, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' });
+    const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {
       if (!latest || !unchanged) throw invalidState('请先保存配置并测试适用模型，配置变化后必须重新测试');

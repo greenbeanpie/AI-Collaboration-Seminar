@@ -31,7 +31,7 @@ describe('background preview and investigation storage',()=>{
   const result=await gcOrphanObjects(env,new Date(Date.now()+60_000).toISOString(),{graceDays:0});
   expect(result.deleted).toContain(orphanKey);expect(await env.FILES.get(key)).not.toBeNull();
  });
- it('manual scoring repeated with the same intent is idempotent and creates one progress event',async()=>{
+ it('removed manual scoring endpoint cannot create records even with repeated intent',async()=>{
   const owner=await seedUser(),projectId=await seedProject(owner.userId),app=createApp();
   const headers={cookie:authCookie(owner.token),'content-type':'application/json','idempotency-key':newId()};
   const request=(path:string,body:unknown)=>app.fetch(new Request(`${BASE}/api/v1/projects/${projectId}${path}`,{method:'POST',headers,body:JSON.stringify(body)}),env);
@@ -39,8 +39,8 @@ describe('background preview and investigation storage',()=>{
   await request(`/standards/${draft.standardsVersionId}/confirm`,{expectedRevision:draft.revision});
   const body={standardsVersionId:draft.standardsVersionId,scores:[{key:'q',score:85}],reason:'人工核对'};
   const one=await request('/assessments/manual',body),two=await request('/assessments/manual',body);
-  expect(one.status).toBe(201);expect(await one.json()).toMatchObject({data:{revision:1,origin:'manual'}});expect(two.status).toBe(201);
-  expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessments WHERE project_id=?1').bind(projectId).first<{n:number}>())!.n).toBe(1);
-  expect((await env.DB.prepare("SELECT COUNT(*) n FROM events WHERE project_id=?1 AND type='assessment.manual_created'").bind(projectId).first<{n:number}>())!.n).toBe(1);
+  expect(one.status).toBe(404);expect(two.status).toBe(404);
+  expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessments WHERE project_id=?1').bind(projectId).first<{n:number}>())!.n).toBe(0);
+  expect((await env.DB.prepare("SELECT COUNT(*) n FROM events WHERE project_id=?1 AND type='assessment.manual_created'").bind(projectId).first<{n:number}>())!.n).toBe(0);
  });
 });

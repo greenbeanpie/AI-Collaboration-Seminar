@@ -23,6 +23,8 @@ describe('unified routing', () => {
       await env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, 1, ?3, ?4)').bind(raw.id, purpose, '{}', new Date().toISOString()).run();
     }
     const read = await get();
+    expect(read.config.searchEnabled).toBe(false);
+    expect((await put({ ...read.config, searchEnabled: true, enabled: true, expectedVersion: read.version })).status).toBe(409);
     expect((await put({ ...read.config, enabled: true, expectedVersion: read.version })).status).toBe(201);
   });
   it('uses unified pricing and retains finite-budget guards before creating work', async () => {
