@@ -3,7 +3,7 @@ import { SourceFullText } from './SourceFullText';
 import { SourceProcessingCard } from './SourceProcessingCard';
 import { ProjectFileLibrary } from './ProjectFileLibrary';
 import { useSourceLifecycle, type LifecycleChange } from './source-lifecycle';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FilePlus2, FileText, Globe2, LoaderCircle, ScanText, Send, Trash2, Type } from 'lucide-react';
@@ -168,6 +168,7 @@ export function SourceRecord({
   onJobUpdate,
   onRemove,
   lifecycleBusy = false,
+  hideTitle = false,
 }: {
   source: SourceItem;
   version?: SourceVersion;
@@ -185,6 +186,7 @@ export function SourceRecord({
   onJobUpdate: (jobId: string, status: Job['status']) => void;
   onRemove?: (source: SourceItem) => void;
   lifecycleBusy?: boolean;
+  hideTitle?: boolean;
 }) {
   const isBusy = parsingSourceId === source.sourceId;
   const serverJob = version?.processingJob;
@@ -204,7 +206,7 @@ export function SourceRecord({
           <StatusPill tone={source.kind === 'file' ? 'blue' : 'neutral'}>{formatSourceKind(source.kind)}</StatusPill>
           {versionBadge && <StatusPill tone={versionBadge.tone}>{versionBadge.label}</StatusPill>}
         </div>
-        <h3>{source.title}</h3>
+        {!hideTitle && <h3>{source.title}</h3>}
         {source.kind === 'file' && <ContributorNames contributors={source.contributors} />}
         <p>创建于 {new Date(source.createdAt).toLocaleString('zh-CN')}</p>
       </div>
@@ -237,7 +239,7 @@ export function SourceRecord({
   </article>;
 }
 
-export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = false }: { embedded?: boolean; selectedSourceId?: string; intakeOnly?: boolean }) {
+export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = false, header }: { header?: ReactNode; embedded?: boolean; selectedSourceId?: string; intakeOnly?: boolean }) {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -602,18 +604,20 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
 
     {!embedded && <ProjectFileLibrary key={projectId} projectId={projectId} pageSize={capability.limits.listMaxPageSize} onChanged={handleLifecycleChanged} />}
     {targetSourceVersionId && !sourceQuery.isLoading && !sources.some((source) => source.currentVersionId === targetSourceVersionId) ? <div className="callout warning-callout">引用对应的来源版本不在当前来源列表中，可能已移入回收站，或它不是当前版本。引用原句仍保留在要求条目中。</div> : null}
-    {!intakeOnly && <SectionCard title={embedded ? '资料原文与处理状态' : '已导入来源'} detail="解析状态和逐页 OCR 状态由后端返回。">
+    {!intakeOnly && <section className="card section-card resource-source-card">
+      {header}
+      <div className="section-head"><div><h2>{embedded ? '资料原文与处理状态' : '已导入来源'}</h2><p>解析状态和逐页 OCR 状态由后端返回。</p></div></div>
       {sourceLifecycle.error ? <ErrorNotice error={sourceLifecycle.error} /> : null}
       {sourceLifecycle.message && <div className="notice notice-success" role="status"><div className="notice-copy"><strong>{sourceLifecycle.message}</strong></div></div>}
       {sourceQuery.isLoading ? <Spinner label="正在读取真实来源记录" /> : sourceQuery.error ? <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} /> : sources.length === 0 ? <EmptyState title="还没有来源记录" detail="导入一份通知或资料后，解析任务和人工确认的要求会在这里关联显示。" /> : <div className="sources-record-list">
         {sources.filter(source => !selectedSourceId || source.sourceId === selectedSourceId).map((source) => {
           const version = versionsBySourceId.get(source.sourceId);
           const target = Boolean(targetSourceVersionId && (source.currentVersionId === targetSourceVersionId || source.sourceId === selectedSourceId));
-          return <SourceRecord key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} lifecycleBusy={sourceLifecycle.busy} onRemove={item => { const resource = sourceResources.find(resource => resource.id === item.sourceId); if (resource) void sourceLifecycle.changeLifecycle(resource, false); }} />;
+          return <SourceRecord hideTitle={Boolean(header && selectedSourceId)} key={source.sourceId} source={source} version={version} projectId={projectId} highlighted={target} highlightedPageNumber={target ? targetPageNumber : null} jobs={trackedJobs.filter((job) => job.sourceId === source.sourceId)} capability={capability} parsingSourceId={parsingSourceId} scanJobId={scanJobId} scanProgress={scanProgressSourceId === source.sourceId ? scanProgress : ''} onParse={(item, versionId) => void startParse(item, versionId)} onRetryJob={(job) => void retryJob(job)} onScan={(job) => void scanPages(job)} onJobUpdate={onJobUpdate} lifecycleBusy={sourceLifecycle.busy} onRemove={item => { const resource = sourceResources.find(resource => resource.id === item.sourceId); if (resource) void sourceLifecycle.changeLifecycle(resource, false); }} />;
         })}
       </div>}
       {versionQueries.some((query) => query.error) && <div className="stack">{versionQueries.map((query, index) => query.error ? <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} /> : null)}</div>}
-    </SectionCard>}
+    </section>}
   </div>;
 }
 

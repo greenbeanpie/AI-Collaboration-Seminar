@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -6,8 +7,8 @@ import { DataWorkspacePage } from './DataWorkspacePage';
 import type { ResourceEntry } from '../api/simplification';
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project: { myRole: 'owner' } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { limits: { listMaxPageSize: 100 } } }) }));
-vi.mock('./MaterialsPage', () => ({ MaterialsPage: ({ materialId, versionId, embedded }: { materialId?: string; versionId?: string; embedded?: boolean }) => <p>文档 {materialId} · 固定版本 {versionId || '当前'} · {embedded ? '详情编辑' : '完整页'}</p> }));
-vi.mock('./SourcesPage', () => ({ SourcesPage: ({ selectedSourceId, intakeOnly }: { selectedSourceId?: string; intakeOnly?: boolean }) => <p>{intakeOnly ? '单一导入表单' : `原文详情 ${selectedSourceId}`}</p> }));
+vi.mock('./MaterialsPage', () => ({ MaterialsPage: ({ materialId, versionId, embedded, header }: { header?: ReactNode; materialId?: string; versionId?: string; embedded?: boolean }) => <div className="card">{header}<p>文档 {materialId} · 固定版本 {versionId || '当前'} · {embedded ? '详情编辑' : '完整页'}</p></div> }));
+vi.mock('./SourcesPage', () => ({ SourcesPage: ({ selectedSourceId, intakeOnly, header }: { header?: ReactNode; selectedSourceId?: string; intakeOnly?: boolean }) => <div className="card">{header}<p>{intakeOnly ? '单一导入表单' : `原文详情 ${selectedSourceId}`}</p></div> }));
 afterEach(cleanup);
 const entry = (id: string, type: 'source' | 'material', purpose: ResourceEntry['purpose'], title: string): ResourceEntry => ({ resourceId: id, resourceType: type, purpose, title, currentVersionId: `v-${id}`, revision: 1, lifecycleVersion: 1, deletedAt: null, fileId: null, canManage: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' });
 function show(url = '/data') {
@@ -35,4 +36,16 @@ it('keeps a material and historical version deep link in the single detail pane'
 it('locates source hashes even when the referenced version is older than the current version', () => {
   show('/data?sourceVersionId=old-source#source-page-source-3');
   expect(screen.getByText('原文详情 source')).toBeInTheDocument();
+});
+
+it('places create and import in the browser sidebar and the shared heading inside the detail card', async () => {
+  show();
+  const list = screen.getByRole('complementary', { name: '项目资料列表' });
+  expect(within(list).getByRole('heading', { name: '资料浏览' })).toBeInTheDocument();
+  expect(within(list).getByRole('button', { name: '新建文档' })).toBeInTheDocument();
+  expect(within(list).getByRole('button', { name: '导入资料' })).toBeInTheDocument();
+  const heading = await screen.findByRole('heading', { name: '研究背景' });
+  expect(heading.closest('.card')).toContainElement(screen.getByLabelText('修改资料用途'));
+  fireEvent.click(within(list).getByRole('button', { name: /原文通知/ }));
+  expect(await screen.findByRole('heading', { name: '原文通知' })).toBeInTheDocument();
 });

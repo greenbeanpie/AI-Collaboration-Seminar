@@ -2,7 +2,8 @@ import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
 import { MaterialAiAssistance } from './MaterialAiAssistance';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { DropdownMenu } from '../components/DropdownMenu';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -73,7 +74,7 @@ function downloadMarkdown(title: string, markdown: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function MaterialsPage({ initialAiOpen = false, embedded = false, materialId: requestedMaterialId, versionId: requestedVersionId }: { initialAiOpen?: boolean; embedded?: boolean; materialId?: string; versionId?: string | null }) {
+export function MaterialsPage({ initialAiOpen = false, embedded = false, materialId: requestedMaterialId, versionId: requestedVersionId, header }: { header?: ReactNode; initialAiOpen?: boolean; embedded?: boolean; materialId?: string; versionId?: string | null }) {
   const { projectId } = useProject();
   const session = useSession();
   const queryClient = useQueryClient();
@@ -363,7 +364,6 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
         detail="编辑服务端正式材料并查看不可变版本。离线修改会尝试保存为当前账户、项目和材料对应的本机草稿，页面会明确显示写入是否成功。"
       />}
 
-      <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} />
 
       {materialsQuery.error && <ErrorNotice error={materialsQuery.error} onRetry={() => void materialsQuery.refetch()} />}
       {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
@@ -428,16 +428,20 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
             {reconnectConfirmation && !recoveryDraft && <div className="tm-inline-notice" role="status"><span className="tm-offline-indicator"><WifiOff size={14} />离线草稿待确认</span> 联网后不会自动保存。点击“保存新版本”后还会再次询问，确认后才会提交。</div>}
 
             <section className="card tm-editor-card">
+              <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} renderHeader={trigger => <>
+              {header}
               <header className="tm-editor-header">
-                <div className="tm-editor-title-wrap"><h2>{material.title}</h2><p>服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
+                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}</h2>}<p>服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
                   {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
                 <div className="tm-editor-actions tm-hide-print">
-                  <button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
-                  <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button>
+                  {trigger}
+                  <DropdownMenu label="导出文件"><button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
+                  <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button></DropdownMenu>
                   <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
+              </>} />
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
               {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
               {editNotice && <p className="tm-inline-notice" role="status">{editNotice}</p>}
