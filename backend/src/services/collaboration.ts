@@ -192,6 +192,7 @@ export async function reviseProposal(env:Env,projectId:string,proposalId:string,
  if(!p)throw notFound();
  if(p.revision!==expectedRevision)throw versionConflict(p.revision);
  if(!reason.trim())throw validationFailed('请说明人工修订理由');
+ payload={...(payload as Record<string,unknown>),effectiveStandardsVersionId:JSON.parse(p.payload_json).effectiveStandardsVersionId??null};
  if(p.kind==='decompose')payload={...(payload as Record<string,unknown>),planningAction:p.status==='applied'?'adjust':JSON.parse(p.payload_json).planningAction??'adjust'};
  const next=payload as {tasks?:unknown[];updates?:unknown[];assignments?:unknown[];goal?:unknown};
  if(p.status==='applied'&&next.tasks?.length)throw validationFailed('已应用方案只能调整现有任务；新增任务请另建方案，避免重复创建');
