@@ -53,12 +53,13 @@ for migration in sorted(MIGRATIONS.glob("*.sql")):
 for table,(columns,rows) in snapshot.items():
     if table in {"contributions", "resource_references", "decisions"}:
         continue  # Deliberately removed by the ledger retirement migration.
-    selection=",".join(f'"{column}"' for column in columns)
-    after=list(db.execute(f'SELECT {selection} FROM "{table}" ORDER BY rowid'))
-    ignored={"project_members":{"major","skills_json","hours_per_week"},"jobs":{"input_json"}}.get(table,set())
+    # 0043 removes only the obsolete parent relationship; the task itself survives.
+    ignored={"project_members":{"major","skills_json","hours_per_week"},"jobs":{"input_json"},"tasks":{"parent_task_id"}}.get(table,set())
     indices=[i for i,column in enumerate(columns) if column not in ignored]
+    selection=",".join(f'"{columns[i]}"' for i in indices)
+    after=list(db.execute(f'SELECT {selection} FROM "{table}" ORDER BY rowid'))
     expected=[tuple(row[i] for i in indices) for row in rows]
-    observed=[tuple(row[i] for i in indices) for row in after]
+    observed=after
     if table == "app_config":
         # Migration 0030 removes the obsolete team-size cap from the default template.
         value_index = columns.index("value_json")

@@ -36,8 +36,8 @@ const credentials = JSON.parse(fs.readFileSync(path.join(root, '.local-secrets/a
     await page.getByLabel('项目说明').fill('先编辑私有预览，最后才正式创建。');
     await page.getByRole('button', { name: '任务', exact: true }).click();
     await page.getByLabel('项目主目标（可选）').fill('形成可复核成果');
-    await page.getByRole('button', { name: /添加子任务/ }).click();
-    await page.getByLabel('子任务标题').fill('完成验证');
+    await page.getByRole('button', { name: /添加任务/ }).click();
+    await page.getByLabel('任务标题').fill('完成验证');
     await page.getByLabel('验收标准').fill('提供验证记录');
     await page.getByRole('button', { name: '资料', exact: true }).click();
     await page.getByRole('button', { name: /新建文档/ }).click();
@@ -49,7 +49,7 @@ const credentials = JSON.parse(fs.readFileSync(path.join(root, '.local-secrets/a
     await page.screenshot({ path: path.join(output, '02-draft-desktop.png'), fullPage: true });
     await page.reload({ waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '任务', exact: true }).click();
-    assert.equal(await page.getByLabel('子任务标题').inputValue(), '完成验证');
+    assert.equal(await page.getByLabel('任务标题').inputValue(), '完成验证');
     const restored = await api(`/creation-drafts/${draftId}`);
     assert.equal(restored.payload.workspace.materials[0].title, '预览成果');
     assert.equal(restored.preview.tasks.length, 1);

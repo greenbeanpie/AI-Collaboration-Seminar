@@ -10,7 +10,7 @@ const now = '2026-10-01T01:00:00Z';
   for (const role of ['owner', 'member']) {
    const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
    const errors = []; page.on('pageerror', error => errors.push(error.message));
-   let task = { taskId: 't1', title: '完成产品原型', detail: '三个关键页面和交互说明', criteria: '提供三个可操作页面，说明移动端适配情况', effortHours: 4, revision: 1, assigneeId: null, lifecycleState: 'open', parentTaskId: null, currentSubmissionId: null, status: 'todo', createdAt: now, updatedAt: now };
+   let task = { taskId: 't1', title: '完成产品原型', detail: '三个关键页面和交互说明', criteria: '提供三个可操作页面，说明移动端适配情况', effortHours: 4, revision: 1, assigneeId: null, lifecycleState: 'open', currentSubmissionId: null, status: 'todo', createdAt: now, updatedAt: now };
    let settings = { assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 };
    let submissions = [];
    await page.route('**/*', async route => {

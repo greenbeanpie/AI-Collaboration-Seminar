@@ -10,7 +10,7 @@ const origin = 'http://127.0.0.1:5203';
 const apiOrigin = 'http://127.0.0.1:8803';
 const now = new Date().toISOString();
 const today = now.slice(0, 10);
-const task = (taskId, changes = {}) => ({ taskId, title: taskId, detail: '', criteria: '完成固定测试交付', effortHours: 1, status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', revision: 1, dueDate: today, duePrecision: 'date', dependsOnTaskIds: [], unfinishedDependencyIds: [], parentTaskId: null, currentSubmissionId: null, citations: [], createdAt: now, updatedAt: now, ...changes });
+const task = (taskId, changes = {}) => ({ taskId, title: taskId, detail: '', criteria: '完成固定测试交付', effortHours: 1, status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', revision: 1, dueDate: today, duePrecision: 'date', dependsOnTaskIds: [], unfinishedDependencyIds: [], currentSubmissionId: null, citations: [], createdAt: now, updatedAt: now, ...changes });
 const projects = [
   { id: 'ready', name: '已分配且可推进的项目' },
   { id: 'waiting', name: '仍有未完成任务的等待项目' },

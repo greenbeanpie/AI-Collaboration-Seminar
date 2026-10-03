@@ -4331,11 +4331,6 @@ export interface paths {
                         criteria: string;
                         /** @default 1 */
                         effortHours?: number;
-                        /**
-                         * Format: uuid
-                         * @default null
-                         */
-                        parentTaskId?: string | null;
                     };
                 };
             };
@@ -5075,8 +5070,6 @@ export interface paths {
                                 criteria: string;
                                 /** @default 1 */
                                 effortHours?: number;
-                                /** Format: uuid */
-                                parentTaskId?: string | null;
                                 key?: string;
                                 dependsOn?: string[];
                                 citations?: {
@@ -10504,8 +10497,6 @@ export interface components {
                 criteria: string;
                 effortHours: number;
                 /** Format: uuid */
-                parentTaskId: string | null;
-                /** Format: uuid */
                 currentSubmissionId: string | null;
                 citations: unknown[];
                 dependsOnTaskIds: string[];
@@ -10545,8 +10536,6 @@ export interface components {
                     lifecycleState: string | null;
                     criteria: string;
                     effortHours: number;
-                    /** Format: uuid */
-                    parentTaskId: string | null;
                     /** Format: uuid */
                     currentSubmissionId: string | null;
                     citations: unknown[];
@@ -10714,8 +10703,6 @@ export interface components {
                     effortHours: number;
                     dueDate?: string | null;
                     /** Format: uuid */
-                    parentTaskId: string | null;
-                    /** Format: uuid */
                     currentSubmissionId: string | null;
                     dependsOnTaskIds: string[];
                     unfinishedDependencyIds: string[];
@@ -10775,8 +10762,6 @@ export interface components {
                 }[];
                 effortHours: number;
                 dueDate?: string | null;
-                /** Format: uuid */
-                parentTaskId: string | null;
                 /** Format: uuid */
                 currentSubmissionId: string | null;
                 dependsOnTaskIds: string[];
@@ -11056,8 +11041,6 @@ export interface components {
                             criteria: string;
                             /** @default 1 */
                             effortHours: number;
-                            /** Format: uuid */
-                            parentTaskId?: string | null;
                             key?: string;
                             dependsOn?: string[];
                             citations?: {
@@ -11144,8 +11127,6 @@ export interface components {
                         criteria: string;
                         /** @default 1 */
                         effortHours: number;
-                        /** Format: uuid */
-                        parentTaskId?: string | null;
                         key?: string;
                         dependsOn?: string[];
                         citations?: {
@@ -12191,7 +12172,6 @@ export interface components {
                     effortHours: number;
                     revision: number;
                     lifecycleState: string | null;
-                    parentTaskId: string | null;
                     currentSubmissionId: string | null;
                     dependsOnTaskIds: string[];
                     citations: {

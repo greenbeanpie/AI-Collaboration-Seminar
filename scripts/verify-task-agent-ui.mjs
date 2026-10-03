@@ -81,6 +81,9 @@ try {
     }
     const card = page.locator('.collab-task').filter({ has: page.getByRole('button', { name: task.title, exact: true }) });
     await card.getByRole('button', { name: '查看与提交', exact: true }).waitFor();
+    await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '新建任务', exact: true }).count(), 1);
+    assert.equal(await page.getByText(/历史父任务|子任务进度/).count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await capture('task-actions');
     await card.getByRole('button', { name: '前置任务质询', exact: true }).click();

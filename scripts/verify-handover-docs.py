@@ -26,7 +26,7 @@ assert not missing_paths, f'Documentation refers to missing source paths: {missi
 
 db = sqlite3.connect(':memory:')
 db.execute('PRAGMA foreign_keys=ON')
-skipped = {'0002_seed.sql', '0033_remove_manual_ledger.sql'}
+skipped = {'0002_seed.sql'}
 migrations = []
 for migration in sorted((ROOT / 'backend/migrations').glob('*.sql')):
     status = 'skipped' if migration.name in skipped else 'applied'

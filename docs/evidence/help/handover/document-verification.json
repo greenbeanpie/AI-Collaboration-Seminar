@@ -1,8 +1,8 @@
 {
   "scope": "read-only source and in-memory SQLite checks",
   "sourcePathsChecked": 76,
-  "tableCount": 78,
-  "columnCount": 723,
+  "tableCount": 79,
+  "columnCount": 742,
   "ddlAndMetadataMatch": true,
   "integrityCheck": "ok",
   "foreignKeyCheck": [],
@@ -169,7 +169,7 @@
     },
     {
       "name": "0033_remove_manual_ledger.sql",
-      "status": "skipped",
+      "status": "applied",
       "sha256": "9c851242bf306e9c3c67d73f9bf1bb2c228b35d13a660c48991942c0fdd192a4"
     },
     {
@@ -196,6 +196,31 @@
       "name": "0038_task_inquiries.sql",
       "status": "applied",
       "sha256": "05e95fa4857fb87cddd9b066d97e1750e2a20f16d5dc5e64c4afbf974f1c6512"
+    },
+    {
+      "name": "0039_ai_clarifications.sql",
+      "status": "applied",
+      "sha256": "d44edbc72da951b4e0d478ede128adcb362a5c905bb5bedba1fa88530f005af4"
+    },
+    {
+      "name": "0040_invitation_task_approval.sql",
+      "status": "applied",
+      "sha256": "fa4eb0b9c9f871153cc6ac9280411553ee92d26bd6cf1b6eb37460fcd090e2e9"
+    },
+    {
+      "name": "0041_project_feedback_versions.sql",
+      "status": "applied",
+      "sha256": "538a33fea655fb3bdeff8c56dfa6afdef773375f51541bc0dfc84e6d9712e954"
+    },
+    {
+      "name": "0042_score_correction_permissions.sql",
+      "status": "applied",
+      "sha256": "73ee921b731f32bb8ea13f2ed132a07a1cf208c1bc3fc2f4ca513235e0f81551"
+    },
+    {
+      "name": "0043_remove_task_parent.sql",
+      "status": "applied",
+      "sha256": "1687bb38fbb5391d08b7a961ba8bb94fdd58d092f96ca54c55252ba944ff2684"
     }
   ],
   "tables": [
@@ -227,6 +252,11 @@
     {
       "table": "ai_calls",
       "columns": 20,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_clarifications",
+      "columns": 16,
       "ddlMatchesMigrations": true
     },
     {
@@ -320,17 +350,12 @@
       "ddlMatchesMigrations": true
     },
     {
-      "table": "contributions",
-      "columns": 9,
-      "ddlMatchesMigrations": true
-    },
-    {
       "table": "creation_draft_files",
       "columns": 12,
       "ddlMatchesMigrations": true
     },
     {
-      "table": "decisions",
+      "table": "draft_preview_dispatches",
       "columns": 8,
       "ddlMatchesMigrations": true
     },
@@ -416,12 +441,22 @@
     },
     {
       "table": "project_creation_drafts",
-      "columns": 15,
+      "columns": 17,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_feedback_versions",
+      "columns": 6,
       "ddlMatchesMigrations": true
     },
     {
       "table": "project_goals",
       "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_invitation_requests",
+      "columns": 11,
       "ddlMatchesMigrations": true
     },
     {
@@ -456,7 +491,7 @@
     },
     {
       "table": "rehearsals",
-      "columns": 12,
+      "columns": 13,
       "ddlMatchesMigrations": true
     },
     {
@@ -467,11 +502,6 @@
     {
       "table": "requirements",
       "columns": 12,
-      "ddlMatchesMigrations": true
-    },
-    {
-      "table": "resource_references",
-      "columns": 9,
       "ddlMatchesMigrations": true
     },
     {
@@ -576,7 +606,7 @@
     },
     {
       "table": "tasks",
-      "columns": 20,
+      "columns": 21,
       "ddlMatchesMigrations": true
     },
     {
