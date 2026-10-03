@@ -36,6 +36,8 @@ try {
     let submittedRound = false;
     let evaluationJobReads = 0;
     let submissionCreates = 0;
+    let currentStandard = { ...standard, active: true };
+    let standardHistory = [currentStandard];
     const automaticSubmission = () => ({ ...submissions[0], submissionId: 'auto-submission', round: 3, status: 'pending', decision: null, revision: 1, feedback: null, evaluationJobId: submissionMode === 'enabled' ? 'evaluation-once' : null, evaluationAttempts: submissionMode === 'enabled' ? 1 : 0 });
     let releaseTaskChunk;
     const taskChunkGate = new Promise(resolveGate => { releaseTaskChunk = resolveGate; });
@@ -73,7 +75,14 @@ try {
       else if (p.endsWith('/inquiries')) data = { items: [], candidates: [{ taskId: 't0', title: upstream.title, recipientName: '测试成员', recipientSource: 'completion' }] };
       else if (p.endsWith('/standards/generate')) data = { jobId: 'standard-job' };
       else if (p.endsWith('/jobs/standard-job')) data = { jobId: 'standard-job', status: 'succeeded', result: { draft: { title: '自动生成标准', requirements: [{ title: 'AI 交付要求', detail: '验证生成草稿可编辑', category: 'deliverable', dueDate: null, duePrecision: 'unknown', dimensionKey: 'quality' }], weights: [{ key: 'quality', label: '成果质量', weight: 100 }], notes: '根据项目目标整理' } } };
-      else if (p.endsWith('/standards')) data = { items: [standard] };
+      else if (p.endsWith('/standards/current')) data = { standard: currentStandard };
+      else if (p.endsWith('/standards')) {
+        if (method === 'POST') {
+          const body = route.request().postDataJSON();
+          currentStandard = { ...currentStandard, title: body.title, version: 2, standardsVersionId: 'latest-standard', rubric: { ...currentStandard.rubric, weights: body.weights, notes: body.notes }, requirements: body.requirements.map((requirement, index) => ({ ...requirement, requirementId: `requirement-${index}`, citations: requirement.citations ?? [] })), mappings: body.requirements.flatMap((requirement, index) => requirement.dimensionKey ? [{ requirementId: `requirement-${index}`, dimensionKey: requirement.dimensionKey }] : []) };
+          standardHistory = [currentStandard, { ...standard, active: false }]; data = currentStandard;
+        } else data = { items: standardHistory };
+      }
       else if (p.endsWith('/materials')) data = { items: [{ materialId: 'mat', title: '访谈记录', currentVersionId: 'v1', revision: 1 }], nextCursor: null };
       else if (p.endsWith('/materials/mat/versions/v1')) data = { versionId: 'v1', materialId: 'mat', revision: 1, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '访谈材料正文与用户需求' }] }] }, markdown: '访谈材料正文与用户需求', attachments: [], createdAt: now };
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data, requestId: 'local-ui-fixture' }) });
@@ -157,7 +166,21 @@ try {
     await page.getByLabel('要求 1 标题', { exact: true }).fill('人工修订生成要求');
     assert.deepEqual(writes.map(write => write.p), [`/api/v1/projects/${projectId}/standards/generate`]);
     await capture('generated-standard');
-    await page.getByRole('button', { name: '取消编辑', exact: true }).click();
+    await page.getByRole('button', { name: '保存并生效', exact: true }).click();
+    await page.getByText('生效标准 v2', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: /确认.*标准/ }).count(), 0);
+    assert.equal(writes.filter(write => write.p.endsWith('/confirm')).length, 0);
+    await page.getByRole('button', { name: '材料检查', exact: true }).click();
+    await page.getByText('生效标准：自动生成标准 · v2', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('combobox', { name: /标准/ }).count(), 0);
+    await capture('effective-standard-no-selection');
+    await page.goto(origin + base + '/tasks');
+    await card.getByRole('button', { name: '交给本地 Agent', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('[role=dialog] textarea')].some(element => element.value.includes('人工修订生成要求')));
+    const updatedPrompt = await page.getByRole('dialog').locator('textarea').inputValue();
+    assert(updatedPrompt.includes('自动生成标准 · v2'));
+    assert(!updatedPrompt.includes('项目质量标准 · v1'));
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     provisional = true;
     await page.goto(origin + base + '/tasks');
     const pendingCard = page.locator('.collab-task').filter({ has: page.getByRole('button', { name: task.title, exact: true }) });

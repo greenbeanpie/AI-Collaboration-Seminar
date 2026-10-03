@@ -10368,6 +10368,10 @@
                             "assistive"
                           ]
                         },
+                        "standardsVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
                         "rubricVersionId": {
                           "type": "string",
                           "format": "uuid"
@@ -10894,6 +10898,10 @@
                     "enum": [
                       "assistive"
                     ]
+                  },
+                  "standardsVersionId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
                   "rubricVersionId": {
                     "type": "string",
@@ -27002,8 +27010,6 @@
                   }
                 },
                 "required": [
-                  "rubricVersionId",
-                  "requirementSetId",
                   "materialVersionIds"
                 ]
               }

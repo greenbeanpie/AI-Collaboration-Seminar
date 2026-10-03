@@ -10,7 +10,7 @@ import { idempotencyKeyForIntent, completeIntent, useVisibleJobPoller, readPendi
 import { useSettingsDirty } from './settings-dirty';
 
 type EditorRow = { key: string; requirementId?: string; standalone?: boolean; title: string; detail: string; category: StandardRequirement['category']; dueDate: string; duePrecision: 'date' | 'datetime' | 'unknown'; originalDueDate?: string | null; scored: boolean; dimensionKey: string; dimensionLabel: string; weight: string; citations: StandardCitation[] };
-type EditorDraft = { title: string; rows: EditorRow[]; notes: string };
+type EditorDraft = { title: string; rows: EditorRow[]; notes: string; base?: { id: string; revision: number } };
 type GeneratedDraft = {title:string;notes:string;requirements:Array<{title:string;detail:string;category:EditorRow['category'];dimensionKey?:string;dueDate:string|null;duePrecision:EditorRow['duePrecision']}>;weights:Array<{key:string;label:string;weight:number}>};
 function fromGenerated(value:GeneratedDraft):EditorDraft {
   const mapped=new Set(value.requirements.map(r=>r.dimensionKey));
@@ -27,7 +27,7 @@ function fromVersion(version: StandardVersion): EditorDraft {
     return { ...newRow(), ...requirement, dueDate: requirement.dueDate?.slice(0, 10) ?? '', originalDueDate: requirement.dueDate, duePrecision: requirement.duePrecision ?? 'unknown', scored: Boolean(dimension), dimensionKey, dimensionLabel: dimension?.label ?? '', weight: dimension ? String(dimension.weight) : '', citations: requirement.citations ?? [] };
   });
   const independentDimensions = version.rubric.weights.filter(weight => !mappedKeys.has(weight.key)).map(weight => ({ ...newRow(), standalone: true, title: weight.label, category: 'scoring' as const, scored: true, dimensionKey: weight.key, dimensionLabel: weight.label, weight: String(weight.weight) }));
-  return { title: version.title, notes: version.rubric.notes ?? '', rows: [...rows, ...independentDimensions] };
+  return { title: version.title, notes: version.rubric.notes ?? '', rows: [...rows, ...independentDimensions], base: { id: version.standardsVersionId, revision: version.revision } };
 }
 export function StandardsEditor() {
   const { projectId } = useProject();
@@ -76,10 +76,10 @@ function ProjectStandardsEditor() {
     for (const weight of weights) { const previous = unique.get(weight.key); if (previous && (previous.weight !== weight.weight || previous.label !== weight.label)) throw new Error('同一个评分维度的名称和权重必须一致。'); unique.set(weight.key, weight); }
     if (unique.size > 10) throw new Error('每份标准最多包含 10 个不同评分维度；其他要求可保留为检查项。');
     const body = { title: draft.title.trim(), requirements: draft.rows.filter(row => !row.standalone).map(row => ({ ...(row.requirementId ? { requirementId: row.requirementId } : {}), title: row.title.trim(), detail: row.detail.trim(), category: row.category, dueDate: row.duePrecision === 'datetime' ? row.originalDueDate ?? null : row.dueDate || null, duePrecision: row.duePrecision, citations: row.citations.map(({ sourceVersionId, fragmentId, pageNumber, quote }) => ({ sourceVersionId, fragmentId, pageNumber, quote })), ...(row.scored ? { dimensionKey: row.dimensionKey.trim() } : {}) })), weights: [...unique.values()], notes: draft.notes.trim() };
-    const tail = '/standards';
-    const namespace = `standards-save:${projectId}:new`;
+    const tail = draft.base ? `/standards/${encodeURIComponent(draft.base.id)}` : '/standards';
+    const namespace = `standards-save:${projectId}:${draft.base?.id ?? 'new'}`;
     const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
-    const result = await projectRequest<StandardVersion>(projectId, tail, { method: 'POST', body, idempotencyKey }); completeIntent(namespace); return result;
+    const result = await projectRequest<StandardVersion>(projectId, tail, { method: draft.base ? 'PATCH' : 'POST', body: { ...body, ...(draft.base ? { expectedRevision: draft.base.revision } : {}) }, idempotencyKey }); completeIntent(namespace); return result;
   }, onSuccess: async () => { setDraft(null); setConflicted(false); setValidationError(null); await invalidate(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) { setConflicted(true); await invalidate(); } } });
   const update = (key: string, patch: Partial<EditorRow>) => setDraft(current => current ? { ...current, rows: current.rows.map(row => row.key === key ? { ...row, ...patch } : row) } : current);
   const importSet = async () => {
@@ -103,7 +103,7 @@ function ProjectStandardsEditor() {
         </fieldset>)}
         <button className="button button-quiet" type="button" disabled={draft.rows.length >= 100} onClick={() => setDraft({ ...draft, rows: [...draft.rows, newRow()] })}><Plus size={16} />添加要求或评分项</button>
         <Field label="标准说明"><textarea className="input" maxLength={2000} rows={3} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} /></Field>
-        {conflicted && <div className="notice notice-warn">标准草稿已更新，本地编辑保留。请核对最新版本；也可另存为新草稿。<button className="button button-quiet" type="button" onClick={() => { setDraft({ ...draft }); setConflicted(false); save.reset(); }}>另存并生效</button></div>}
+        {conflicted && <div className="notice notice-warn">生效标准已更新，本地编辑保留。请核对最新版本后再保存。<button className="button button-quiet" type="button" onClick={() => { setDraft({ ...draft, base: selected ? { id: selected.standardsVersionId, revision: selected.revision } : undefined }); setConflicted(false); save.reset(); }}>已核对生效标准，继续修订</button></div>}
         {validationError !== null && <ErrorNotice error={validationError} />}{save.error && <ErrorNotice error={save.error} />}
         <div className="form-actions"><button className="button button-primary" disabled={save.isPending || conflicted}>保存并生效</button><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>取消编辑</button></div>
       </form> : <>

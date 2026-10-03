@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { ApiError } from '../api/client';
 import { collaborationApi, type TaskSubmission } from '../api/collaboration';
 import { ErrorNotice, Field } from '../components/ui';
+import { projectRequest, type StandardVersion } from '../api/simplification';
 
 export function AssistiveRubricScores({ projectId, submission, owner, onChanged }: { projectId: string; submission: TaskSubmission; owner: boolean; onChanged: () => Promise<void> }) {
   const scoring = submission.aiReport?.rubricScoring;
@@ -30,6 +31,7 @@ export function AssistiveRubricScores({ projectId, submission, owner, onChanged 
 
 function ScoreOverrideForm({ projectId, submission, onChanged }: { projectId: string; submission: TaskSubmission; onChanged: () => Promise<void> }) {
   const scoring = submission.aiReport!.rubricScoring!;
+  const current = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [conflicted, setConflicted] = useState(false);
@@ -42,6 +44,9 @@ function ScoreOverrideForm({ projectId, submission, onChanged }: { projectId: st
     onError: async error => { if (error instanceof ApiError && error.status === 409) setConflicted(true); await onChanged(); },
   });
   if (scoring.status !== 'scored') return null;
+  if (current.isPending) return <p role="status">正在核对生效标准</p>;
+  if (current.error) return <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />;
+  if (!current.data?.standard || current.data.standard.standardsVersionId !== scoring.standardsVersionId) return <p className="notice notice-warn">本轮评分依据的标准已失效，保留为历史记录。请按生效标准重新提交成果。</p>;
   const valid = reason.trim() && scores.every(score => score.score.trim() && Number.isFinite(Number(score.score)) && Number(score.score) >= 0 && Number(score.score) <= 100);
   return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>负责人复核或调整辅助分数</summary>

@@ -28,6 +28,8 @@ interface EventInput {
   key: string; kind: NotificationKind; scope: 'project' | 'ticket'; resourceId: string;
   actorId?: string | null; url: string; now?: string;
   recipientIds?: string[];
+  /** Internal SQL condition using the event insert's existing ?10 timestamp / ?11 record ID bindings. */
+  guardSql?: string;
   record: { table: 'sources' | 'requirement_sets' | 'requirements' | 'support_ticket_messages' | 'project_username_invitations' | 'task_inquiry_messages'; id: string };
 }
 /** Append these statements to the same D1 batch as the business change: durable, deduplicated and atomic. */
@@ -36,7 +38,7 @@ export function notificationStatements(env: Env, input: EventInput): D1PreparedS
   if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements|tasks(?:\?task=[0-9a-f-]+)?)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
   const statements = [
     env.DB.prepare(`INSERT OR IGNORE INTO notification_events(id,event_key,kind,scope,resource_id,actor_id,title,body,url,created_at)
-      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS (SELECT 1 FROM ${input.record.table} WHERE id = ?11)`)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS (SELECT 1 FROM ${input.record.table} WHERE id = ?11) AND (${input.guardSql ?? '1=1'})`)
       .bind(newId(), input.key, input.kind, input.scope, input.resourceId, input.actorId ?? null, title, body, input.url, now, input.record.id),
     env.DB.prepare(`INSERT OR IGNORE INTO notification_inbox(event_id,user_id)
       SELECT e.id,u.id FROM notification_events e JOIN users u JOIN auth_accounts a ON a.user_id = u.id

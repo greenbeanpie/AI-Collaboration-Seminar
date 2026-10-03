@@ -1568,6 +1568,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/standards/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CurrentStandardResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/standards": {
         parameters: {
             query?: never;
@@ -1794,51 +1832,6 @@ export interface paths {
         };
         trace?: never;
     };
-    "/api/v1/projects/{projectId}/standards/{standardsVersionId}/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description 项目 ID */
-                    projectId: string;
-                    standardsVersionId: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        expectedRevision: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description 成功 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["StandardsResponse"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{projectId}/assessments": {
         parameters: {
             query?: never;
@@ -1889,7 +1882,7 @@ export interface paths {
                         /** @enum {string} */
                         kind: "material_review" | "rehearsal";
                         /** Format: uuid */
-                        standardsVersionId: string;
+                        standardsVersionId?: string;
                         /** @default [] */
                         materialVersionIds?: string[];
                         /** @default [] */
@@ -6462,9 +6455,9 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** Format: uuid */
-                        rubricVersionId: string;
+                        rubricVersionId?: string;
                         /** Format: uuid */
-                        requirementSetId: string;
+                        requirementSetId?: string;
                         materialVersionIds: string[];
                     };
                 };
@@ -9061,6 +9054,57 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        CurrentStandardResponse: {
+            data: {
+                standard: {
+                    /** Format: uuid */
+                    standardsVersionId: string;
+                    /** Format: uuid */
+                    projectId: string;
+                    version: number;
+                    title: string;
+                    /** @enum {string} */
+                    status: "draft" | "confirmed";
+                    active: boolean;
+                    revision: number;
+                    requirementSetIds: string[];
+                    /** Format: uuid */
+                    rubricVersionId: string;
+                    mappings: {
+                        /** Format: uuid */
+                        requirementId: string;
+                        dimensionKey: string;
+                    }[];
+                    requirements: {
+                        /** Format: uuid */
+                        requirementId: string;
+                        /** Format: uuid */
+                        requirementSetId: string;
+                        title: string;
+                        detail: string;
+                        category: string;
+                        dueDate: string | null;
+                        duePrecision: string;
+                        citations: unknown[];
+                    }[];
+                    rubric: {
+                        /** Format: uuid */
+                        rubricVersionId: string;
+                        version: number;
+                        weights: {
+                            key: string;
+                            label: string;
+                            weight: number;
+                        }[];
+                        notes: string | null;
+                    };
+                    confirmedAt: string | null;
+                    createdAt: string;
+                } | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         StandardsListResponse: {
             data: {
                 items: {
@@ -9072,6 +9116,7 @@ export interface components {
                     title: string;
                     /** @enum {string} */
                     status: "draft" | "confirmed";
+                    active: boolean;
                     revision: number;
                     requirementSetIds: string[];
                     /** Format: uuid */
@@ -9121,6 +9166,7 @@ export interface components {
                 title: string;
                 /** @enum {string} */
                 status: "draft" | "confirmed";
+                active: boolean;
                 revision: number;
                 requirementSetIds: string[];
                 /** Format: uuid */
@@ -10801,6 +10847,8 @@ export interface components {
                             /** @enum {string} */
                             status: "scored";
                             /** Format: uuid */
+                            standardsVersionId?: string;
+                            /** Format: uuid */
                             rubricVersionId: string;
                             rubricVersion: number;
                             weights: {
@@ -10825,6 +10873,8 @@ export interface components {
                     humanScoreOverride?: {
                         /** @enum {string} */
                         kind: "assistive";
+                        /** Format: uuid */
+                        standardsVersionId?: string;
                         /** Format: uuid */
                         rubricVersionId: string;
                         rubricVersion: number;
@@ -10919,6 +10969,8 @@ export interface components {
                         /** @enum {string} */
                         status: "scored";
                         /** Format: uuid */
+                        standardsVersionId?: string;
+                        /** Format: uuid */
                         rubricVersionId: string;
                         rubricVersion: number;
                         weights: {
@@ -10943,6 +10995,8 @@ export interface components {
                 humanScoreOverride?: {
                     /** @enum {string} */
                     kind: "assistive";
+                    /** Format: uuid */
+                    standardsVersionId?: string;
                     /** Format: uuid */
                     rubricVersionId: string;
                     rubricVersion: number;
@@ -11709,6 +11763,7 @@ export interface components {
                     title: string;
                     /** @enum {string} */
                     status: "draft" | "confirmed";
+                    active: boolean;
                     revision: number;
                     requirementSetIds: string[];
                     /** Format: uuid */

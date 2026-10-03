@@ -78,13 +78,13 @@ it('saving a revision creates the new current standard immediately without a con
   const writes: string[] = [];
   vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: RequestInit) => {
     const path = String(input);
-    if (init?.method === 'POST') { writes.push(path); saved = true; }
-    return Response.json({ requestId: 'r', data: init?.method === 'POST' ? next : path.endsWith('/current') ? { standard: saved ? next : version } : { items: [next, version] } });
+    if (init?.method === 'PATCH') { writes.push(path); saved = true; }
+    return Response.json({ requestId: 'r', data: init?.method === 'PATCH' ? next : path.endsWith('/current') ? { standard: saved ? next : version } : { items: [next, version] } });
   }));
   show([version]);
   fireEvent.click(screen.getByRole('button', { name: '修订生效标准' }));
   fireEvent.change(screen.getByLabelText('标准名称'), { target: { value: next.title } });
   fireEvent.click(screen.getByRole('button', { name: '保存并生效' }));
   expect(await screen.findByText('生效标准 v2')).toBeInTheDocument();
-  expect(writes).toEqual(['/api/v1/projects/p/standards']);
+  expect(writes).toEqual(['/api/v1/projects/p/standards/s']);
 });

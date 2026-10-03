@@ -7,6 +7,7 @@ import type { Env } from '../src/env';
 import { getJob } from '../src/services/jobs';
 import { enqueueEvaluation } from '../src/services/collaboration-evaluation';
 import { runCollaborationAiJob, taskEvaluationSchema, calculateRubricWeightedTotal, type CollaborationAiInput, type EvaluationRubricSnapshot } from '../src/services/collaboration-ai';
+import { saveStandard } from '../src/services/project-simplification';
 
 afterEach(() => vi.unstubAllGlobals());
 await configureGoFixture();
@@ -39,6 +40,10 @@ async function fixture(automatic = false, attachments: unknown[] = []) {
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 async function rubric(f: Fixture, version = 1, status: 'confirmed' | 'draft' = 'confirmed', rubricWeights = weights): Promise<EvaluationRubricSnapshot> {
     const snapshot = { rubricVersionId: id(), version, weights: rubricWeights, notes: '仅用于成果辅助反馈' };
+    if (status === 'confirmed') {
+        const standard = await saveStandard(env, f.projectId, f.user.userId, { title: '生效项目标准', requirements: [], weights: rubricWeights, notes: snapshot.notes });
+        return { standardsVersionId: standard.standardsVersionId, ...standard.rubric };
+    }
     await env.DB.prepare("INSERT INTO rubric_versions(id,project_id,version,source,weights_json,notes,status,confirmed_by,confirmed_at,created_at) VALUES(?1,?2,?3,'custom',?4,?5,?6,?7,?8,?8)").bind(snapshot.rubricVersionId, f.projectId, version, JSON.stringify(rubricWeights), snapshot.notes, status, f.user.userId, now()).run();
     return snapshot;
 }
@@ -72,7 +77,7 @@ async function expectFailedUntouched(f: Fixture, jobId: string) {
 }
 
 describe('bounded assistive rubric scores', () => {
-    it('enqueue freezes latest confirmed rubric, excluding newer drafts', async () => {
+    it('enqueue freezes the effective saved standard and ignores unrelated draft rubrics', async () => {
         const f = await fixture();
         await rubric(f);
         const confirmed = await rubric(f, 2);
@@ -108,7 +113,7 @@ describe('bounded assistive rubric scores', () => {
         await runCollaborationAiJob(env, jobId);
         expect((await getJob(env, jobId)).status).toBe('succeeded');
         const persisted = (await f.persisted()).report;
-        expect(persisted.rubricScoring).toMatchObject({ kind: 'assistive', status: 'unavailable', reason: expect.stringContaining('没有已确认') });
+        expect(persisted.rubricScoring).toMatchObject({ kind: 'assistive', status: 'unavailable', reason: expect.stringContaining('生效项目标准') });
         expect(persisted.rubricScoring.scores).toBeUndefined();
         expect(persisted.scores).toBeUndefined();
     });
@@ -198,13 +203,13 @@ describe('bounded assistive rubric scores', () => {
         expect((await getJob(env, jobId)).status).toBe('succeeded');
         expect((await f.persisted()).report.rubricScoring.scores[0].evidence[0].materialVersionId).toBe(f.versionId);
     });
-    it.each(['new_version', 'mutated_weights', 'newly_confirmed'])('rubric %s during model call cannot persist or autoaccept', async kind => {
+    it.each(['new_version', 'saved_standard_edited', 'newly_saved'])('standard %s during model call cannot persist or autoaccept', async kind => {
         const f = await fixture(true);
-        const frozen = kind === 'newly_confirmed' ? null : await rubric(f);
+        const frozen = kind === 'newly_saved' ? null : await rubric(f);
         const jobId = await f.start();
         vi.stubGlobal('fetch', model(report(f, Boolean(frozen)), async () => {
-            if (kind === 'mutated_weights') await env.DB.prepare('UPDATE rubric_versions SET weights_json=?2 WHERE id=?1').bind(frozen!.rubricVersionId, JSON.stringify([{ key: 'quality', label: '成果质量', weight: 100 }])).run();
-            else await rubric(f, kind === 'newly_confirmed' ? 1 : 2);
+            if (kind === 'saved_standard_edited') await rubric(f, 2, 'confirmed', [{ key: 'quality', label: '成果质量', weight: 100 }]);
+            else await rubric(f, kind === 'newly_saved' ? 1 : 2);
         }));
         await runCollaborationAiJob(env, jobId);
         await expectFailedUntouched(f, jobId);
@@ -250,10 +255,9 @@ describe('bounded assistive rubric scores', () => {
         await expectFailedUntouched(f, jobId);
         expect(provider).toHaveBeenCalledTimes(1);
     });
-    it.each(['duplicate', 'zero_total'])('invalid confirmed rubric %s cannot authorize a scoring job', async kind => {
+    it.each(['duplicate', 'zero_total'])('invalid saved standard %s is rejected before it can authorize scoring', async kind => {
         const f = await fixture();
-        await rubric(f, 1, 'confirmed', kind === 'duplicate' ? [weights[0]!, weights[0]!] : weights.map(weight => ({ ...weight, weight: 0 })));
-        await expect(f.start()).rejects.toThrow('无效');
+        await expect(rubric(f, 1, 'confirmed', kind === 'duplicate' ? [weights[0]!, weights[0]!] : weights.map(weight => ({ ...weight, weight: 0 })))).rejects.toThrow('评分维度');
         expect((await f.persisted()).status).toBe('pending');
     });
 });
@@ -291,7 +295,7 @@ function beforeAutomaticDecision(before: () => Promise<void>): Env {
     return { ...env, DB: database };
 }
 describe('atomic rubric auto-decision guard', () => {
-    it.each(['new_version', 'mutated_weights', 'previously_absent'])('%s changed after final rubric read blocks automatic acceptance and audit', async kind => {
+    it.each(['new_version', 'saved_standard_edited', 'previously_absent'])('%s changed after final rubric read blocks automatic acceptance and audit', async kind => {
         const f = await fixture(true);
         const frozen = kind === 'previously_absent' ? null : await rubric(f);
         const jobId = await f.start();
@@ -299,7 +303,7 @@ describe('atomic rubric auto-decision guard', () => {
         let injected = false;
         const raced = beforeAutomaticDecision(async () => {
             injected = true;
-            if (kind === 'mutated_weights') await env.DB.prepare('UPDATE rubric_versions SET weights_json=?2 WHERE id=?1').bind(frozen!.rubricVersionId, JSON.stringify([{ key: 'quality', label: '成果质量', weight: 100 }])).run();
+            if (kind === 'saved_standard_edited') await rubric(f, 2, 'confirmed', [{ key: 'quality', label: '成果质量', weight: 100 }]);
             else await rubric(f, kind === 'previously_absent' ? 1 : 2);
         });
         await runCollaborationAiJob(raced, jobId);
@@ -340,7 +344,6 @@ async function overrideAudits(f: Fixture) {
 describe('owner assistive score override', () => {
     it('uses original immutable scoring weights, preserves AI report and records scoped user audit', async () => {
         const f = await scoredFixture();
-        await rubric(f, 2, 'confirmed', [{ key: 'new-standard', label: '新的维度', weight: 100 }]);
         const response = await overrideRequest(f, overrideBody(f));
         expect(response.status).toBe(200);
         const body = await response.json() as { data: { humanScoreOverride: unknown; aiReport: unknown; revision: number } };
@@ -354,6 +357,14 @@ describe('owner assistive score override', () => {
         expect(audits).toHaveLength(1);
         expect(audits[0]).toMatchObject({ project_id: f.projectId, actor_type: 'user', actor_id: f.user.userId, entity_id: f.submissionId });
         expect(JSON.parse(String(audits[0]!.payload_json))).toEqual(body.data.humanScoreOverride);
+    });
+    it('rejects a new override under an expired standard without changing historical report or audit', async () => {
+        const f = await scoredFixture();
+        await rubric(f, 2, 'confirmed', [{ key: 'new-standard', label: '新的维度', weight: 100 }]);
+        expect((await overrideRequest(f, overrideBody(f))).status).toBe(409);
+        expect((await overrideRow(f))!.ai_report_json).toBe(f.originalReport);
+        expect((await overrideRow(f))!.human_score_override_json).toBeNull();
+        expect(await overrideAudits(f)).toHaveLength(0);
     });
     it.each(['member', 'admin', 'super_admin'])('%s account cannot substitute for project owner', async kind => {
         const f = await scoredFixture();
