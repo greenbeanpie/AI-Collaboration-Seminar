@@ -119,7 +119,9 @@ export async function aiJsonCall<S extends z.ZodType>(
       // Correct only the final output. Before each repair dispatch the original
       // consent/config/member checks and final sensitive-context read run again.
       const repairTail:Array<{role:'assistant'|'user';content:string}>=[
-        {role:'assistant',content:out.content.slice(0,8000)},
+        // Preserve the full result; gateway input limits stop oversized repairs
+        // before dispatch instead of silently dropping the end of a document.
+        {role:'assistant',content:out.content},
         {role:'user',content:'最终JSON未通过业务结构校验。字段错误：'+JSON.stringify(validationError instanceof z.ZodError ? validationError.issues.map(issue=>({path:issue.path,code:issue.code,message:issue.message})) : [{message:'最终内容必须是合法JSON对象'}])+'。请仅修正这些字段的格式，保持原调查结论，不调用工具；参考资料只能使用已实际读取ID：'+JSON.stringify(out.references.map(r=>r.id))},
       ];
       const repairSchema=z.unknown().transform(raw=>{
@@ -217,7 +219,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     if (attempt === maxAttempts-1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
     messages = [
       ...params.messages,
-      { role: 'assistant', content: (out?.content ?? '').slice(0, 8000) },
+      { role: 'assistant', content: out?.content ?? '' },
       { role: 'user', content: `你的上一次输出不合法（错误：${failure instanceof Error ? failure.message.slice(0, 300) : String(failure)}）。请重新严格按 JSON 结构输出，不要任何额外文字。` },
     ];
   }

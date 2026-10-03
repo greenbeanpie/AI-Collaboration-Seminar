@@ -1,0 +1,320 @@
+{
+  "scope": "entry navigation only; synthetic GET responses; no business execution",
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    }
+  ],
+  "failures": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "message": "locator.selectOption: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('combobox', { name: '切换模板预览分区' })\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"切换模板预览分区\" class=\"input project-content-select\">…</select>\u001b[22m\n\u001b[2m  - attempting select option action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    14 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m       - did not find some options\u001b[22m\n\u001b[2m     - retrying select option action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "message": "locator.selectOption: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('combobox', { name: '切换模板预览分区' })\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"切换模板预览分区\" class=\"input project-content-select\">…</select>\u001b[22m\n\u001b[2m  - attempting select option action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    14 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m       - did not find some options\u001b[22m\n\u001b[2m     - retrying select option action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "message": "locator.selectOption: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('combobox', { name: '切换模板预览分区' })\u001b[22m\n\u001b[2m    - locator resolved to <select aria-label=\"切换模板预览分区\" class=\"input project-content-select\">…</select>\u001b[22m\n\u001b[2m  - attempting select option action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m      - did not find some options\u001b[22m\n\u001b[2m    - retrying select option action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    14 × waiting for element to be visible and enabled\u001b[22m\n\u001b[2m       - did not find some options\u001b[22m\n\u001b[2m     - retrying select option action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "message": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('通知或项目资料原文', { exact: true }) to be visible\u001b[22m\n"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "message": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('通知或项目资料原文', { exact: true }) to be visible\u001b[22m\n"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "message": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('通知或项目资料原文', { exact: true }) to be visible\u001b[22m\n"
+    }
+  ],
+  "blockedWrites": [],
+  "requestedEndpoints": [
+    "GET /api/v1/auth/session",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/settings",
+    "GET /api/v1/notifications/push/status",
+    "GET /api/v1/projects",
+    "GET /api/v1/invitations/inbox",
+    "GET /api/v1/projects/fixture/tasks",
+    "GET /api/v1/projects/archived-fixture/tasks",
+    "GET /api/v1/support/tickets",
+    "GET /api/v1/auth/personal-profile",
+    "GET /api/v1/capabilities",
+    "GET /api/v1/creation-drafts",
+    "GET /api/v1/creation-drafts/draft-wizard",
+    "GET /api/v1/creation-drafts/draft-template",
+    "GET /api/v1/projects/fixture",
+    "GET /api/v1/projects/fixture/resource-library",
+    "GET /api/v1/projects/fixture/sources",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/processing",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/fragments",
+    "GET /api/v1/projects/fixture/files",
+    "GET /api/v1/projects/fixture/standards",
+    "GET /api/v1/projects/fixture/requirement-sets",
+    "GET /api/v1/projects/fixture/goal",
+    "GET /api/v1/projects/fixture/assessments",
+    "GET /api/v1/projects/fixture/materials",
+    "GET /api/v1/projects/fixture/assessments/assessment1",
+    "GET /api/v1/projects/fixture/materials/material1/versions",
+    "GET /api/v1/projects/fixture/assessments/rehearsal-assessment1",
+    "GET /api/v1/projects/fixture/members",
+    "GET /api/v1/projects/fixture/rehearsals",
+    "GET /api/v1/projects/fixture/rehearsals/rehearsal1",
+    "GET /api/v1/auth/personal-profile/import-candidates",
+    "GET /api/v1/projects/fixture/collaboration/settings",
+    "GET /api/v1/projects/fixture/members/me",
+    "GET /api/v1/projects/fixture/tasks/task1/inquiries",
+    "GET /api/v1/projects/fixture/tasks/task1/submissions",
+    "GET /api/v1/projects/fixture/collaboration/proposals",
+    "GET /api/v1/projects/fixture/ai-tools/capabilities"
+  ]
+}

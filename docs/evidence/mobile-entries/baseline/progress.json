@@ -1,0 +1,97 @@
+{
+  "results": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    }
+  ],
+  "failures": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "message": "entry clipped outside the phone viewport"
+    }
+  ],
+  "blockedWrites": []
+}

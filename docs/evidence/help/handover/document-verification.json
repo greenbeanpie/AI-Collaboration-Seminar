@@ -1,0 +1,595 @@
+{
+  "scope": "read-only source and in-memory SQLite checks",
+  "sourcePathsChecked": 76,
+  "tableCount": 78,
+  "columnCount": 723,
+  "ddlAndMetadataMatch": true,
+  "integrityCheck": "ok",
+  "foreignKeyCheck": [],
+  "migrations": [
+    {
+      "name": "0001_init.sql",
+      "status": "applied",
+      "sha256": "451bb23dd26985e7270e4a760503f36d3b5efb93cd08f2df80e022078f5ad3c2"
+    },
+    {
+      "name": "0002_seed.sql",
+      "status": "skipped",
+      "sha256": "d5349f20723e8cbd2ddaed0315b3c8f9814302dd0d3561408ba5490eb2bbeffd"
+    },
+    {
+      "name": "0003_contributions_correction.sql",
+      "status": "applied",
+      "sha256": "88c56cd1e69f02e211f1621bb086a728c63719d0fbdc4cc8bf5892e7a86ee023"
+    },
+    {
+      "name": "0004_ai_probes.sql",
+      "status": "applied",
+      "sha256": "f857fe4c270d527222e29ca3c309d6914badc849d4e26b96b32f41fb4dcf6287"
+    },
+    {
+      "name": "0005_material_attachments.sql",
+      "status": "applied",
+      "sha256": "bbc30305897a96a9ded7d21bdf2c1c843b15ebd398bfd3cf9dea5e8d9289e8b8"
+    },
+    {
+      "name": "0006_project_ai_budget.sql",
+      "status": "applied",
+      "sha256": "8172d591c54ddc805abfa0cf23596c42743a16ca91689949e016148d17c0f7ac"
+    },
+    {
+      "name": "0008_ai_reservation_attempts.sql",
+      "status": "applied",
+      "sha256": "e377998e4d816719d612ca09d0e5a0490de27ed2586eba3f2490d05fb35b6a4d"
+    },
+    {
+      "name": "0009_auth_email_quota.sql",
+      "status": "applied",
+      "sha256": "2fc5da437a3672f38285aa5fb9ab840569d0f4c42d660a0ef0b68b947daf1280"
+    },
+    {
+      "name": "0010_auth_email_recipient_quota.sql",
+      "status": "applied",
+      "sha256": "96ab6edea163ea5c2b953bb331c0b5da007820a166e1fcad815c3af1ee200e41"
+    },
+    {
+      "name": "0011_auth_email_ip_quota.sql",
+      "status": "applied",
+      "sha256": "33fdf1878132a4c18162f8bc51baa0232b8263fe85cf3d98756674c4713af224"
+    },
+    {
+      "name": "0012_password_accounts.sql",
+      "status": "applied",
+      "sha256": "76eb6037a2cf457867db652e85b0a8b95571bd5712d82bc3bf2dad677228cffe"
+    },
+    {
+      "name": "0013_account_roles.sql",
+      "status": "applied",
+      "sha256": "e6fd953e7152f857ea504e1f0cc73cc938d9efeab3454dda6a2c7c479537c59a"
+    },
+    {
+      "name": "0014_support_tickets.sql",
+      "status": "applied",
+      "sha256": "de8b7176129c7d445885c0e050736ce57fc9efad872c47dda468b562590d3d0c"
+    },
+    {
+      "name": "0015_collaboration_lifecycle.sql",
+      "status": "applied",
+      "sha256": "e43b758b4886f59d9ceeff0192314934ab1d7af4843420c9048b1aa957695cac"
+    },
+    {
+      "name": "0016_personal_profiles.sql",
+      "status": "applied",
+      "sha256": "6bf1e75b9cdc767934a5138c7d412cb1cc5ff52297f26d21e672869cf949d258"
+    },
+    {
+      "name": "0017_profile_ai_consent.sql",
+      "status": "applied",
+      "sha256": "758381293691788ca0124ed9602e909ebcc41301fd2130f50e8d6f3072836fc6"
+    },
+    {
+      "name": "0018_ai_diagnostics.sql",
+      "status": "applied",
+      "sha256": "b1be974288696b18b1e38914592fcc80f92b70d2dccab7eaea854ef5dd6740da"
+    },
+    {
+      "name": "0019_notifications.sql",
+      "status": "applied",
+      "sha256": "956bf69afbc443d97412fb64b389a4961af6d20524678f06b9587b75cb90ddf7"
+    },
+    {
+      "name": "0020_source_processing.sql",
+      "status": "applied",
+      "sha256": "52d19a7dc03af8147f86556b8366ca7fa2d8a1a32dcac2132da23d3f196cb962"
+    },
+    {
+      "name": "0021_project_ai_collaboration.sql",
+      "status": "applied",
+      "sha256": "37e3f769c98397c154237008953645e89953a2864bf87b38294ff858f9e07072"
+    },
+    {
+      "name": "0022_file_recycle.sql",
+      "status": "applied",
+      "sha256": "2f430ba63316f80e3d4b3abeef276dd630b9a15fa00549fcd5b528450a7253f3"
+    },
+    {
+      "name": "0023_creation_drafts_tools.sql",
+      "status": "applied",
+      "sha256": "bc8f3e0a5c506852f3c1127e170e1384dca2d7a62b7da2d8235fee1f5ed5096a"
+    },
+    {
+      "name": "0024_username_invitations.sql",
+      "status": "applied",
+      "sha256": "059a036c22fdbe593eed24f8031ffdf6b4ddc9a4026e64364a3dc343c83ef291"
+    },
+    {
+      "name": "0025_project_simplification.sql",
+      "status": "applied",
+      "sha256": "06b3edd79521115e43299297932e928873013b75180deaf0454e0e298620fe7e"
+    },
+    {
+      "name": "0025_ticket_images.sql",
+      "status": "applied",
+      "sha256": "6fb604a1f9e5999ea8797e42008be6f6083b55f39a04cadee334a1c1fc063f9f"
+    },
+    {
+      "name": "0026_profile_resource_simplification.sql",
+      "status": "applied",
+      "sha256": "9274e9aba2182bd86e8a62250c489abde745cde6979f43e4016b6e7b46279f8b"
+    },
+    {
+      "name": "0027_ai_investigation.sql",
+      "status": "applied",
+      "sha256": "41801a8d961692bb178168e4b3b787d8102324361a14b3615524bba451298276"
+    },
+    {
+      "name": "0028_ai_progression.sql",
+      "status": "applied",
+      "sha256": "77850c269275a94d5323ed879e6f29b6f0edc74b4d4004e8fbb2050ce72dbda7"
+    },
+    {
+      "name": "0029_assessment_corrections.sql",
+      "status": "applied",
+      "sha256": "0f9cf5be8d7d9159ffb779f15a508d9cd07a2a09ca8d776a314293c1b28c41a4"
+    },
+    {
+      "name": "0030_unlimited_project_members.sql",
+      "status": "applied",
+      "sha256": "442eabb4dc8d3b8020210960ea3537078322e743932c26388d974d45d517df4e"
+    },
+    {
+      "name": "0031_ai_execution_slices.sql",
+      "status": "applied",
+      "sha256": "b49269b5784532c4d1b11e6fefc0baeb08092487a4b4f0878bcfbce8b464f8d3"
+    },
+    {
+      "name": "0032_task_summaries.sql",
+      "status": "applied",
+      "sha256": "eeeb915854644de99fe419425bd68149c66b685b88c9cbe7cd2198dbcea38c80"
+    },
+    {
+      "name": "0033_remove_manual_ledger.sql",
+      "status": "skipped",
+      "sha256": "9c851242bf306e9c3c67d73f9bf1bb2c228b35d13a660c48991942c0fdd192a4"
+    },
+    {
+      "name": "0034_member_permissions.sql",
+      "status": "applied",
+      "sha256": "ec95ddc9c407356cde4fd2eb163401b49d73afbb41b20fa41137431e528c865d"
+    },
+    {
+      "name": "0035_file_contributors.sql",
+      "status": "applied",
+      "sha256": "6723cbc12f6525829767478c2f9f0bb83f52c7b6215134e7d50e5ac677929cc8"
+    },
+    {
+      "name": "0036_rehearsal_ownership.sql",
+      "status": "applied",
+      "sha256": "6e4e24f8ef8f5acb550f3e34677682c859719188fd8e244b703400ae2be8f2bf"
+    },
+    {
+      "name": "0037_task_readiness.sql",
+      "status": "applied",
+      "sha256": "13b47499789841cc596ba9a1633571499a9662f310049ccfbf3fb388364d2a2c"
+    },
+    {
+      "name": "0038_task_inquiries.sql",
+      "status": "applied",
+      "sha256": "05e95fa4857fb87cddd9b066d97e1750e2a20f16d5dc5e64c4afbf974f1c6512"
+    }
+  ],
+  "tables": [
+    {
+      "table": "account_invitations",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "account_role_audit",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_runs",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_sessions",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_turns",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_calls",
+      "columns": 20,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_config_versions",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_diagnostics",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_execution_slices",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_investigations",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_probes",
+      "columns": 5,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_tool_calls",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "app_config",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "assessment_corrections",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "assessments",
+      "columns": 15,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_accounts",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_challenges",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_email_daily_usage",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_email_ip_attempts",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_email_recipient_usage",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "auth_password_rate_limits",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "collaboration_proposal_revisions",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "collaboration_proposals",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "comments",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "contributions",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "creation_draft_files",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "decisions",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "events",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "file_contributors",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "files",
+      "columns": 18,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "idempotency_records",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "invitations",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "job_outbox",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "jobs",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "material_versions",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "materials",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "notification_events",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "notification_inbox",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "notification_push_outbox",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "notification_settings",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "personal_profile_import_candidates",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "personal_profiles",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_admin_feedback",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_creation_drafts",
+      "columns": 15,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_goals",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_members",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_progression",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "project_username_invitations",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "projects",
+      "columns": 19,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "push_subscriptions",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "rehearsal_turns",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "rehearsals",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "requirement_sets",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "requirements",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_references",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "reviews",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "rubric_versions",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "sessions",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "source_fragments",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "source_pages",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "source_processing",
+      "columns": 13,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "source_versions",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "sources",
+      "columns": 16,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "standards_versions",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "support_ticket_images",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "support_ticket_messages",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "support_tickets",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_completion_people",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_dependencies",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_inquiries",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_inquiry_messages",
+      "columns": 5,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_links",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_readiness",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_submissions",
+      "columns": 23,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_summaries",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "tasks",
+      "columns": 20,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "usage_reservations",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "users",
+      "columns": 5,
+      "ddlMatchesMigrations": true
+    }
+  ],
+  "aiChainSymbolsChecked": 16,
+  "readOnlySqlExamplesChecked": 7
+}

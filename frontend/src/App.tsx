@@ -42,6 +42,7 @@ const TeamWorkspacePage = lazy(() => import('./pages/TeamWorkspacePage').then((m
 const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ default: module.LedgerPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));
 const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ default: module.ExportPage })));
+const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ default: module.HelpPage })));
 
 function RouteLoading() {
   return <main className="center-screen"><Spinner label="正在打开工作区" /></main>;
@@ -111,6 +112,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
+        <Route path="/app/help" element={<HelpPage />} />
         <Route path="/app/support" element={<SupportTicketsPage />} />
         <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
         <Route path="/app/people" element={<ProfileSearchPage />} />

@@ -1,0 +1,137 @@
+{
+  "scope": "entry navigation only; synthetic GET responses; no business execution",
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    }
+  ],
+  "failures": [],
+  "blockedWrites": [],
+  "requestedEndpoints": [
+    "GET /api/v1/auth/session",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/settings",
+    "GET /api/v1/notifications/push/status",
+    "GET /api/v1/projects/fixture",
+    "GET /api/v1/projects/fixture/sources",
+    "GET /api/v1/capabilities",
+    "GET /api/v1/projects/fixture/tasks",
+    "GET /api/v1/projects/fixture/goal",
+    "GET /api/v1/projects/fixture/collaboration/settings",
+    "GET /api/v1/projects/fixture/members",
+    "GET /api/v1/projects/fixture/members/me",
+    "GET /api/v1/projects/fixture/collaboration/proposals",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/processing",
+    "GET /api/v1/projects/fixture/ai-tools/capabilities",
+    "GET /api/v1/admin/account-invitations",
+    "GET /api/v1/admin/accounts",
+    "GET /api/v1/admin/ai-config"
+  ]
+}

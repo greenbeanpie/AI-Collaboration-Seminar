@@ -1,0 +1,350 @@
+{
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "navigation": {
+        "scrollWidth": 219,
+        "clientWidth": 219,
+        "links": [
+          {
+            "name": "我的项目",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "加入项目",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "支持工单",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "帮助文档",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "个人资料",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "设置",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          },
+          {
+            "name": "搜索用户",
+            "width": 219,
+            "height": 43.4375,
+            "visible": true
+          }
+        ]
+      },
+      "checks": [
+        "all-menu-entries-visible-without-scrolling",
+        "help-menu-click",
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "role": "user",
+      "chapters": 9,
+      "navigation": {
+        "scrollWidth": 366,
+        "clientWidth": 366,
+        "links": [
+          {
+            "name": "我的项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "加入项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "支持工单",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "帮助文档",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "个人资料",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "设置",
+            "width": 71,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "搜索用户",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          }
+        ]
+      },
+      "checks": [
+        "all-menu-entries-visible-without-scrolling",
+        "help-menu-click",
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "navigation": {
+        "scrollWidth": 351,
+        "clientWidth": 351,
+        "links": [
+          {
+            "name": "我的项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "加入项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "支持工单",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "帮助文档",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "个人资料",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "设置",
+            "width": 71,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "搜索用户",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          }
+        ]
+      },
+      "checks": [
+        "all-menu-entries-visible-without-scrolling",
+        "help-menu-click",
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "navigation": {
+        "scrollWidth": 296,
+        "clientWidth": 296,
+        "links": [
+          {
+            "name": "我的项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "加入项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "支持工单",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "帮助文档",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "个人资料",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "设置",
+            "width": 71,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "搜索用户",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          }
+        ]
+      },
+      "checks": [
+        "all-menu-entries-visible-without-scrolling",
+        "help-menu-click",
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 790,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "navigation": {
+        "scrollWidth": 766,
+        "clientWidth": 766,
+        "links": [
+          {
+            "name": "我的项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "加入项目",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "支持工单",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "帮助文档",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "个人资料",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "设置",
+            "width": 71,
+            "height": 44,
+            "visible": true
+          },
+          {
+            "name": "搜索用户",
+            "width": 97,
+            "height": 44,
+            "visible": true
+          }
+        ]
+      },
+      "checks": [
+        "all-menu-entries-visible-without-scrolling",
+        "help-menu-click",
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "role": "anonymous",
+      "check": "login-required",
+      "status": "passed"
+    }
+  ]
+}

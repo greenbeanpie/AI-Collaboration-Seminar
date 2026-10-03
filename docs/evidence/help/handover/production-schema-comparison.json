@@ -1,0 +1,481 @@
+{
+  "scope": "Offline comparison against read-only production sqlite_schema export supplied by parent agent. No business rows queried. Cloudflare _cf_KV, d1_migrations and sqlite internal objects excluded.",
+  "business_tables": 78,
+  "business_columns": 723,
+  "all_columns_and_foreign_keys_match": true,
+  "normalized_ddl_differences": [],
+  "extra_objects": [],
+  "explicit_index_count": 51,
+  "explicit_index_differences": [],
+  "extra_explicit_indexes": [],
+  "table_comparisons": [
+    {
+      "table": "account_invitations",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 6
+    },
+    {
+      "table": "account_role_audit",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 6
+    },
+    {
+      "table": "agent_runs",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 14
+    },
+    {
+      "table": "agent_sessions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "agent_turns",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "ai_calls",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 20
+    },
+    {
+      "table": "ai_config_versions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "ai_diagnostics",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "ai_execution_slices",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "ai_investigations",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "ai_probes",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 5
+    },
+    {
+      "table": "ai_tool_calls",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "app_config",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "assessment_corrections",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "assessments",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 15
+    },
+    {
+      "table": "auth_accounts",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "auth_challenges",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "auth_email_daily_usage",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 2
+    },
+    {
+      "table": "auth_email_ip_attempts",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "auth_email_recipient_usage",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "auth_password_rate_limits",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "collaboration_proposal_revisions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "collaboration_proposals",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 11
+    },
+    {
+      "table": "comments",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "contributions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "creation_draft_files",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 12
+    },
+    {
+      "table": "decisions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "events",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "file_contributors",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "files",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 18
+    },
+    {
+      "table": "idempotency_records",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "invitations",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "job_outbox",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "jobs",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 14
+    },
+    {
+      "table": "material_versions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 11
+    },
+    {
+      "table": "materials",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 11
+    },
+    {
+      "table": "notification_events",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "notification_inbox",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 4
+    },
+    {
+      "table": "notification_push_outbox",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "notification_settings",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 4
+    },
+    {
+      "table": "personal_profile_import_candidates",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "personal_profiles",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 14
+    },
+    {
+      "table": "project_admin_feedback",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "project_creation_drafts",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 15
+    },
+    {
+      "table": "project_goals",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "project_members",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "project_progression",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "project_username_invitations",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "projects",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 19
+    },
+    {
+      "table": "push_subscriptions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "rehearsal_turns",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "rehearsals",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 12
+    },
+    {
+      "table": "requirement_sets",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "requirements",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 12
+    },
+    {
+      "table": "resource_references",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 9
+    },
+    {
+      "table": "reviews",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "rubric_versions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "sessions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "source_fragments",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 8
+    },
+    {
+      "table": "source_pages",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 12
+    },
+    {
+      "table": "source_processing",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 13
+    },
+    {
+      "table": "source_versions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 14
+    },
+    {
+      "table": "sources",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 16
+    },
+    {
+      "table": "standards_versions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 14
+    },
+    {
+      "table": "support_ticket_images",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "support_ticket_messages",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "support_tickets",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "task_completion_people",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 3
+    },
+    {
+      "table": "task_dependencies",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 4
+    },
+    {
+      "table": "task_inquiries",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 10
+    },
+    {
+      "table": "task_inquiry_messages",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 5
+    },
+    {
+      "table": "task_links",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 6
+    },
+    {
+      "table": "task_readiness",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 4
+    },
+    {
+      "table": "task_submissions",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 23
+    },
+    {
+      "table": "task_summaries",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 7
+    },
+    {
+      "table": "tasks",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 20
+    },
+    {
+      "table": "usage_reservations",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 11
+    },
+    {
+      "table": "users",
+      "columns_match": true,
+      "foreign_keys_match": true,
+      "column_count": 5
+    }
+  ]
+}

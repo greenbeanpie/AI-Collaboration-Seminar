@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
 import { seedProject, seedUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
-import { buildGuideHistory, executeGuideHistoryTool } from '../src/services/guide-history';
+import { buildGuideHistory, executeGuideHistoryTool, guideHistoryDefinitions } from '../src/services/guide-history';
 import { referencesFromRead, validateReadReferences } from '../src/services/project-evidence';
 import { projectReferenceGuard } from '../src/services/project-reference-guard';
 import { InvestigationContinuation, loadInvestigation, saveInvestigation } from '../src/services/project-investigation';
@@ -22,6 +22,17 @@ async function fixture() {
   return { context: { projectId, userId: owner.userId, guideSessionId: sessionId }, turnId, answer };
 }
 describe('server-bound paged guide history', () => {
+  it('advertises pagination bounds that match execution for both history tools', async () => {
+    const f = await fixture();
+    for (const tool of guideHistoryDefinitions) {
+      const properties = tool.parameters.properties as Record<string, { maximum?: number }>;
+      const maximum = properties.offset!.maximum;
+      expect(typeof maximum).toBe('number');
+      const args = tool.name === 'read_guide_turn' ? { turnId: f.turnId, offset: maximum } : { offset: maximum };
+      await expect(executeGuideHistoryTool(env, f.context, tool.name, args)).resolves.toHaveProperty('nextOffset', null);
+      await expect(executeGuideHistoryTool(env, f.context, tool.name, { ...args, offset: maximum! + 1 })).rejects.toThrow();
+    }
+  });
   it('executes paged history tool calls across slices and reuses the completed response without paying again', async () => {
     await configureGoFixture();
     const f = await fixture(), config = (await loadAiConfig(env.DB))!, jobId = newId();

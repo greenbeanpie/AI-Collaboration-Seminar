@@ -1,0 +1,114 @@
+{
+  "results": [
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    }
+  ],
+  "failures": [],
+  "blockedWrites": []
+}

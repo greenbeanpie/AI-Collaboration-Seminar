@@ -1,0 +1,64 @@
+{
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "checks": [
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "role": "user",
+      "chapters": 9,
+      "checks": [
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "role": "user",
+      "chapters": 9,
+      "checks": [
+        "navigation",
+        "both-documents",
+        "search",
+        "no-results",
+        "anchors",
+        "refresh",
+        "exact-download-content",
+        "no-overflow",
+        "no-browser-errors"
+      ],
+      "status": "passed"
+    },
+    {
+      "role": "anonymous",
+      "check": "login-required",
+      "status": "passed"
+    }
+  ]
+}

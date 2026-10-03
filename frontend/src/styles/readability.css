@@ -66,6 +66,7 @@ details > summary:focus-visible { outline: 3px solid var(--blue); outline-offset
   .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-tabs { top: 71px; scroll-padding-inline: 16px; }
   .main-nav { padding-bottom: 3px; margin-right: 48px; }
+  .office-shell .main-nav { flex-wrap: wrap; overflow-x: visible; margin-right: 0; }
   .profile-row { top: 12px; right: 12px; }
   .profile-row .avatar { display: none; }
   .profile-row .icon-button { display: inline-grid; width: 44px; height: 44px; }

@@ -1,0 +1,41 @@
+{
+  "verifiedAt": "2026-10-03T03:37:00.916Z",
+  "origin": "https://greenbp-team-office.hddhp.workers.dev",
+  "versionId": "bb7cfcc4-8560-44be-ae31-516ebec7dab8",
+  "results": [
+    {
+      "path": "/app/help",
+      "status": 200,
+      "sha256": "82b8f460861dda21dc660a34c2d317b04bba6cb81d412076d8376bdda853ba8c",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/index-CHoICman.js",
+      "status": 200,
+      "sha256": "e8b89d1df659a3fdc49d6caff5db32b68a4980c784a8d23bc429417f4ba1c251",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-B4OLnrRd.js",
+      "status": 200,
+      "sha256": "f2771b383e3ed4bbdd60f8680b8f8f436652b158efe5f0ce7a4d05b998dba38a",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-BJdHmkTp.css",
+      "status": 200,
+      "sha256": "83d3a0a592f4159cf3e9069e2f110dd1a761e49248716478443a144ce5598eed",
+      "matchesBuild": true
+    },
+    {
+      "path": "/api/v1/auth/session",
+      "status": 401,
+      "anonymous": true
+    },
+    {
+      "path": "/api/v1/health",
+      "status": 200
+    }
+  ],
+  "boundary": "Static release bytes and anonymous service checks; authenticated production reading requires a valid existing session. Local browser fixtures verify member routing and document interactions. No production write or model invocation."
+}

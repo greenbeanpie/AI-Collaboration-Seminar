@@ -13,6 +13,11 @@ vi.mock('./AdminAccountsPage', () => ({ AdminAccountsPage: () => <p>Privileged a
 vi.mock('./PersonalProfiles', () => ({ PersonalProfilePage: () => <p>Private profile editor</p>, ProfileSearchPage: () => <p>Exact username search</p>, PublicProfilePage: () => <p>Published profile fields</p> }));
 function setup(path: string) { const router = createMemoryRouter([{ path: '*', element: <App /> }], { initialEntries: [path] }); render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>); return router; }
 afterEach(() => { cleanup(); state.role = 'user'; state.isAdmin = false; });
+it('ordinary authenticated users can open the help route without administrator permission', async () => {
+ setup('/app/help'); await screen.findByRole('heading', { name: '帮助文档' });
+ expect(screen.getByRole('article', { name: '使用说明' })).toBeInTheDocument();
+ expect(screen.queryByRole('alert')).toBeNull();
+});
 it('all account roles can reach privacy and people routes through authenticated routing', async () => {
  for (const role of ['user', 'admin', 'super_admin']) {
   state.role = role; state.isAdmin = role !== 'user';

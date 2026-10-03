@@ -1,0 +1,59 @@
+{
+  "verifiedAt": "2026-10-03T04:28:49.699Z",
+  "origin": "https://greenbp-team-office.hddhp.workers.dev",
+  "versionId": "e51ae8e9-0548-4d24-bd9f-f5e821d6cb17",
+  "results": [
+    {
+      "path": "/app/help",
+      "status": 200,
+      "sha256": "4158d6d3293cd6f14974f6842fa0e12ca76b886d91619d2762dd0e60f766f4ea",
+      "matchesBuild": true
+    },
+    {
+      "path": "/app/help?doc=technical",
+      "status": 200,
+      "sha256": "4158d6d3293cd6f14974f6842fa0e12ca76b886d91619d2762dd0e60f766f4ea",
+      "matchesBuild": true
+    },
+    {
+      "path": "/app/help?doc=database",
+      "status": 200,
+      "sha256": "4158d6d3293cd6f14974f6842fa0e12ca76b886d91619d2762dd0e60f766f4ea",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/index-CKslGmsG.js",
+      "status": 200,
+      "sha256": "d1a2bb6aa97e44d5310be8e6b729bb0465bc74ddb64874cec920b10d83886483",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/index-VpxTgcG5.css",
+      "status": 200,
+      "sha256": "f20f9ada29327c27869d2fde78ae9f110d77b74b718744334d55d44cbc3910db",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-C-sWT1Bz.js",
+      "status": 200,
+      "sha256": "46adcfda0702548d4c607bf3329ed2e489492844c07086ce9764ae7fb4f85336",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-r-2PvElM.css",
+      "status": 200,
+      "sha256": "05c2feba0ad9f21df35aa46b2828e651253fb86afe94651df9ea0bfda7c1c9c3",
+      "matchesBuild": true
+    },
+    {
+      "path": "/api/v1/auth/session",
+      "status": 401,
+      "anonymous": true
+    },
+    {
+      "path": "/api/v1/health",
+      "status": 200
+    }
+  ],
+  "boundary": "Static release bytes and anonymous service checks; authenticated production reading requires a valid existing session. Local browser fixtures verify member routing and document interactions. No production write or model invocation."
+}

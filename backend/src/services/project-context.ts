@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import { notFound, invalidState } from '../core/errors';
 import { sourceLifecycleGuard } from './source-lifecycle';
 import { projectPlanDocumentSql,assessmentDocumentSql } from './project-reference-guard';
+import type { ToolDefinition } from '../ai/tool-transport';
 
 export const discoveryDefinitions = [
   ['get_project_overview', '读取项目背景、目标和任务状态统计'],
@@ -22,14 +23,63 @@ export const discoveryDefinitions = [
   ['read_project_history', '分页读取项目事件与协作评论'],
   ['read_member_workload', '分页读取成员项目角色与任务负载，不披露个人资料'],
 ] as const;
-export const discoveryArgs = z.object({ offset: z.number().int().nonnegative().default(0), query: z.string().max(200).optional(),
-  id: z.string().uuid().optional(), resourceType: z.enum(['source','material']).optional(), versionId: z.string().uuid().optional() }).strict();
+const discoveryArgs = z.object({
+  offset: z.number().int().nonnegative().default(0).describe('首屏为0；后续使用返回的nextOffset。nextOffset为null时停止分页。'),
+  query: z.string().max(200).optional().describe('可选检索条件；不用时省略，不传null。'),
+  id: z.string().uuid().optional().describe('指定对象的UUID，取自相应目录；不是项目ID。'),
+  resourceType: z.enum(['source','material']).optional().describe('资料类型，取自资料目录。'),
+  versionId: z.string().uuid().optional().describe('资料版本UUID，取自目录的versionId；不是资料或项目ID。'),
+}).strict();
+type DiscoveryName = typeof discoveryDefinitions[number][0];
+const discoverySchemas = {
+  get_project_overview: discoveryArgs.pick({}),
+  list_project_plans: discoveryArgs.pick({ offset: true, query: true }),
+  read_project_plan: discoveryArgs.pick({ offset: true, id: true }).required({ id: true }),
+  list_assessments: discoveryArgs.pick({ offset: true, query: true }),
+  read_assessment: discoveryArgs.pick({ offset: true, id: true }).required({ id: true }),
+  list_project_resources: discoveryArgs.pick({ offset: true, query: true }),
+  search_project_information: discoveryArgs.pick({ offset: true }).extend({ query: z.string().trim().min(1).max(200) }),
+  list_resource_versions: discoveryArgs.pick({ offset: true, id: true, resourceType: true }).required({ id: true, resourceType: true }),
+  read_resource: discoveryArgs.pick({ offset: true, resourceType: true, versionId: true }).required({ resourceType: true, versionId: true }),
+  list_tasks: discoveryArgs.pick({ offset: true, query: true }),
+  read_task: discoveryArgs.pick({ offset: true, id: true }).required({ id: true }),
+  read_submission: discoveryArgs.pick({ offset: true, id: true }).required({ id: true }),
+  read_project_standards: discoveryArgs.pick({ offset: true }),
+  read_admin_feedback: discoveryArgs.pick({ offset: true, id: true }),
+  read_project_history: discoveryArgs.pick({ offset: true }),
+  read_member_workload: discoveryArgs.pick({ offset: true }),
+} satisfies Record<DiscoveryName, z.ZodObject>;
+
+/** The model's JSON Schema and execution validator share the same contract. */
+export const discoveryToolDefinitions: ToolDefinition[] = discoveryDefinitions.map(([name, description]) => {
+  const { $schema: _schema, ...parameters } = z.toJSONSchema(discoverySchemas[name], { target: 'draft-7', io: 'input' });
+  return { name, description, parameters };
+});
+
+export function parseDiscoveryArgs(name: string, input: unknown, projectId: string): z.output<typeof discoveryArgs> {
+  if (!Object.hasOwn(discoverySchemas, name)) throw invalidState('未授权工具名称');
+  const schema = discoverySchemas[name as DiscoveryName];
+  let normalized = input;
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const args = { ...input } as Record<string, unknown>;
+    const fields = schema.shape as Record<string, z.ZodType>;
+    // Older checkpoints used a shared superset schema. Only discard harmless
+    // absent placeholders and the already server-bound project identity.
+    for (const key of Object.keys(discoveryArgs.shape)) {
+      if (args[key] === null && (!fields[key] || fields[key].isOptional())) delete args[key];
+    }
+    if ((!fields.id || fields.id.isOptional()) && args.id === projectId) delete args.id;
+    if (!fields.offset && args.offset === 0) delete args.offset;
+    normalized = args;
+  }
+  return discoveryArgs.parse(schema.parse(normalized));
+}
 const PAGE = 20, CHARS = 6000;
 const page = (rows: unknown[], offset: number) => ({ untrustedData: true, items: rows.slice(0,PAGE), nextOffset: rows.length > PAGE ? offset+PAGE : null });
 
 /** Caller enforces membership before and after each read. Queries never accept project identity from the model. */
 export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown): Promise<Record<string,unknown>> {
-  const a = discoveryArgs.parse(input);
+  const a = parseDiscoveryArgs(name, input, projectId);
   if(name==='list_project_plans') {
     const rows=await env.DB.prepare(`SELECT id,kind,status,revision,created_at,updated_at,
       (SELECT reason FROM collaboration_proposal_revisions history WHERE history.proposal_id=record.id AND history.project_id=record.project_id ORDER BY revision DESC LIMIT 1) latestReason
@@ -109,7 +159,8 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     if(name==='read_task'&&!a.id) throw invalidState('缺少任务 id');
     const rows=await env.DB.prepare(`SELECT t.id,t.title,t.detail,t.criteria,t.assignee_id,t.due_date,t.status,t.lifecycle_state,t.revision,t.effort_hours,t.current_submission_id,
       (SELECT json_group_array(depends_on_task_id) FROM task_dependencies d WHERE d.task_id=t.id AND d.project_id=t.project_id) dependencies
-      FROM tasks t WHERE t.project_id=?1 AND (?2 IS NULL OR t.id=?2) AND (?3='' OR instr(lower(t.title||t.detail),lower(?3))>0) ORDER BY t.id LIMIT 21 OFFSET ?4`).bind(projectId,a.id??null,a.query??'',a.offset).all();
+      FROM tasks t WHERE t.project_id=?1 AND (?2 IS NULL OR t.id=?2) AND (?3='' OR instr(lower(t.title||t.detail),lower(?3))>0) ORDER BY t.id LIMIT 21 OFFSET ?4`).bind(projectId,name==='read_task'?a.id:null,a.query??'',a.offset).all();
+    if(name==='read_task'&&!rows.results.length&&a.offset===0) throw notFound('任务不存在或不属于本项目');
     const result={...page(rows.results,a.offset),resourceType:'task'};
     if(name==='read_task') {
       const submissions=await env.DB.prepare('SELECT id,round,status,decision,feedback,revision FROM task_submissions WHERE project_id=?1 AND task_id=?2 ORDER BY round DESC LIMIT 21 OFFSET ?3').bind(projectId,a.id,a.offset).all();

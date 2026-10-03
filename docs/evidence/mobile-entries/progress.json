@@ -1,0 +1,427 @@
+{
+  "results": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 我的项目",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 加入项目",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 支持工单",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 工单详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 个人资料",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 搜索用户",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 用户主页",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 profile",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 security",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 appearance",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 installation",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 notifications",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 user",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 technical",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 database",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目创建选择",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 已有分步草稿",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 已有模板草稿",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目概览",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 任务",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 任务详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 资料列表与文档",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 导入资料入口",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 新建文档入口",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 附件与回收站",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 来源详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 成果文档",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 standards",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 checks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 团队成员",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 团队设置",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 活动历史",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目导出",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "homepage-new-project",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "archive-modal-and-project-link",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "profile-editor",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "read-only-user-search-to-profile",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "support-detail-link",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "topbar-menu-profile-support",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "project-groups-and-subsections",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "data-three-intake-entries-and-resource-detail",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-discussion",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-version-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-AI-panel",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-new-dialog",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "assessment-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "standard-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "new-project-existing-drafts-and-template-picker",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    }
+  ],
+  "failures": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "message": "locator.scrollIntoViewIfNeeded: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '导出文件', exact: true })\u001b[22m\n"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "message": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'AI 拆解、调整与分工', exact: true }).getByRole('button', { name: '更多', exact: true })\u001b[22m\n"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "message": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: '入口审查子任务', exact: true }).getByRole('button', { name: '更多', exact: true })\u001b[22m\n"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "message": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.project-content-wrap').locator('h1,h2,h3,form,[role=\"tablist\"],.empty-state').first() to be visible\u001b[22m\n"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "message": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.project-content-wrap').locator('h1,h2,h3,form,[role=\"tablist\"],.empty-state').first() to be visible\u001b[22m\n"
+    }
+  ],
+  "blockedWrites": []
+}

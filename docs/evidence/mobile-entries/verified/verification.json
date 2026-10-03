@@ -1,0 +1,1635 @@
+{
+  "scope": "entry navigation only; synthetic GET responses; no business execution",
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 我的项目",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 加入项目",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 我的项目",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 我的项目",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 加入项目",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 加入项目",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 支持工单",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 支持工单",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 支持工单",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 工单详情",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 工单详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 工单详情",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 个人资料",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 个人资料",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 个人资料",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 搜索用户",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 搜索用户",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 用户主页",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 搜索用户",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 账户设置 profile",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 用户主页",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 用户主页",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 账户设置 security",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 账户设置 appearance",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 账户设置 installation",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 账户设置 notifications",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 账户设置 profile",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 帮助 user",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 profile",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 security",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 appearance",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 installation",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 账户设置 notifications",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 账户设置 security",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 账户设置 appearance",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 帮助 technical",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 账户设置 installation",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 账户设置 notifications",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 帮助 user",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 user",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 帮助 database",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 technical",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 项目创建选择",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 帮助 technical",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 帮助 database",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 已有分步草稿",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 帮助 database",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 已有模板草稿",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 项目创建选择",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目创建选择",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 已有分步草稿",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 项目概览",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 已有分步草稿",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 任务",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 已有模板草稿",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 已有模板草稿",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 任务详情",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 项目概览",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 任务",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目概览",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 资料列表与文档",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 任务详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 任务",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 资料列表与文档",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 任务详情",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 导入资料入口",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 新建文档入口",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 导入资料入口",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 资料列表与文档",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 附件与回收站",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 来源详情",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 新建文档入口",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 成果文档",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 导入资料入口",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 新建文档入口",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 附件与回收站",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 附件与回收站",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 评分 standards",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 来源详情",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 来源详情",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 评分 checks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 成果文档",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 成果文档",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 评分 rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 评分 standards",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 standards",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 评分 checks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 checks",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 团队成员",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 评分 rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 评分 rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 团队设置",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 团队成员",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 活动历史",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 团队成员",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 团队设置",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 活动历史",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "route: 项目导出",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 团队设置",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "route: 项目导出",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 活动历史",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "route: 项目导出",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "homepage-new-project",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "homepage-new-project",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "archive-modal-and-project-link",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "archive-modal-and-project-link",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "homepage-new-project",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "profile-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "profile-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "read-only-user-search-to-profile",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "read-only-user-search-to-profile",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "archive-modal-and-project-link",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "support-detail-link",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "profile-editor",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "read-only-user-search-to-profile",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "support-detail-link",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "topbar-menu-profile-support",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "topbar-menu-profile-support",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "support-detail-link",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "topbar-menu-profile-support",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "project-groups-and-subsections",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "data-three-intake-entries-and-resource-detail",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-discussion",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "project-groups-and-subsections",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-version-history",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "project-groups-and-subsections",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "data-three-intake-entries-and-resource-detail",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "data-three-intake-entries-and-resource-detail",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "material-discussion",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-AI-panel",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "material-discussion",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-new-dialog",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "material-version-history",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "material-version-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "material-AI-panel",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "assessment-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "material-AI-panel",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "tasks-new-dialog",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "tasks-new-dialog",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "standard-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "new-project-existing-drafts-and-template-picker",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "assessment-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "assessment-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "standard-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "standard-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "new-project-existing-drafts-and-template-picker",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "new-project-existing-drafts-and-template-picker",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "wizard-all-five-existing-draft-steps",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "template-all-five-sections",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "source-intake-all-three-forms",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "source-fulltext-entry",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "file-library-recycle-switch",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "existing-standard-revision-editor",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "manual-score-correction-form",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "manual-score-new-form-with-empty-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "existing-assessment-detail-and-rehearsal-record",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "profile-import-candidates-entry",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "topbar-avatar-and-notification-panel",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "homepage-project-card-and-pending-task-links",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "ordinary-member-project-navigation-and-management-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "team-permission-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "AI-session-history-selection",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "homepage-project-card-and-pending-task-links",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "homepage-project-card-and-pending-task-links",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "login-register-and-guest-entries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "team-permission-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "team-permission-editor-entry",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "AI-session-history-selection",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "AI-session-history-selection",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "login-register-and-guest-entries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "login-register-and-guest-entries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "user",
+      "name": "no-browser-runtime-errors",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "global-menu-clicks",
+      "status": "passed"
+    },
+    {
+      "width": 375,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "accountRole": "super_admin",
+      "name": "settings-tabs-clicks-and-role-boundaries",
+      "status": "passed"
+    }
+  ],
+  "failures": [],
+  "blockedWrites": [],
+  "requestedEndpoints": [
+    "GET /api/v1/auth/session",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/settings",
+    "GET /api/v1/notifications/push/status",
+    "GET /api/v1/projects",
+    "GET /api/v1/invitations/inbox",
+    "GET /api/v1/projects/fixture/tasks",
+    "GET /api/v1/projects/archived-fixture/tasks",
+    "GET /api/v1/support/tickets",
+    "GET /api/v1/support/tickets/ticket1",
+    "GET /api/v1/support/tickets/ticket1/messages",
+    "GET /api/v1/auth/personal-profile",
+    "GET /api/v1/profiles/local_fixture",
+    "GET /api/v1/creation-drafts",
+    "GET /api/v1/capabilities",
+    "GET /api/v1/creation-drafts/draft-wizard",
+    "GET /api/v1/creation-drafts/draft-template",
+    "GET /api/v1/projects/fixture",
+    "GET /api/v1/projects/fixture/goal",
+    "GET /api/v1/projects/fixture/members",
+    "GET /api/v1/projects/fixture/materials",
+    "GET /api/v1/projects/fixture/sources",
+    "GET /api/v1/projects/fixture/requirement-sets",
+    "GET /api/v1/projects/fixture/collaboration/settings",
+    "GET /api/v1/projects/fixture/members/me",
+    "GET /api/v1/projects/fixture/collaboration/proposals",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/processing",
+    "GET /api/v1/projects/fixture/ai-tools/capabilities",
+    "GET /api/v1/projects/fixture/tasks/task1/inquiries",
+    "GET /api/v1/projects/fixture/tasks/task1/submissions",
+    "GET /api/v1/projects/fixture/resource-library",
+    "GET /api/v1/projects/fixture/files",
+    "GET /api/v1/projects/fixture/standards",
+    "GET /api/v1/projects/fixture/assessments",
+    "GET /api/v1/projects/fixture/assessments/assessment1",
+    "GET /api/v1/projects/fixture/materials/material1/versions",
+    "GET /api/v1/projects/fixture/materials/material1",
+    "GET /api/v1/projects/fixture/comments",
+    "GET /api/v1/projects/fixture/assessments/rehearsal-assessment1",
+    "GET /api/v1/projects/fixture/rehearsals",
+    "GET /api/v1/projects/fixture/rehearsals/rehearsal1",
+    "GET /api/v1/projects/fixture/username-invitations",
+    "GET /api/v1/projects/fixture/invitations",
+    "GET /api/v1/projects/fixture/events",
+    "GET /api/v1/projects/fixture/export-bundle",
+    "GET /api/v1/projects/archived-fixture",
+    "GET /api/v1/profiles/search",
+    "GET /api/v1/projects/fixture/materials/material1/versions/version1",
+    "GET /api/v1/project-templates",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/fragments",
+    "GET /api/v1/auth/personal-profile/import-candidates",
+    "GET /api/v1/projects/fixture/agent-sessions",
+    "GET /api/v1/projects/fixture/agent-sessions/session1",
+    "GET /api/v1/projects/fixture/assessments/review1",
+    "GET /api/v1/projects/fixture/assessments/rehearsal1",
+    "GET /api/v1/admin/account-invitations",
+    "GET /api/v1/admin/accounts",
+    "GET /api/v1/admin/ai-config"
+  ]
+}

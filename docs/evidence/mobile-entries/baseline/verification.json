@@ -1,0 +1,133 @@
+{
+  "scope": "entry navigation only; synthetic GET responses; no business execution",
+  "origin": "http://127.0.0.1:5237",
+  "results": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "tasks-AI-dialog-and-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "task-detail-tabs-history",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: sources/source1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: requirements",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: work",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: ai",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: materials/material1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: reviews/review1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: rehearsals/rehearsal1",
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "legacy-link: tasks/task1",
+      "status": "passed"
+    }
+  ],
+  "failures": [
+    {
+      "width": 390,
+      "accountRole": "user",
+      "name": "material-export-menu",
+      "message": "entry clipped outside the phone viewport"
+    }
+  ],
+  "blockedWrites": [],
+  "requestedEndpoints": [
+    "GET /api/v1/auth/session",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/settings",
+    "GET /api/v1/notifications/push/status",
+    "GET /api/v1/projects/fixture",
+    "GET /api/v1/capabilities",
+    "GET /api/v1/projects/fixture/resource-library",
+    "GET /api/v1/projects/fixture/materials",
+    "GET /api/v1/projects/fixture/materials/material1",
+    "GET /api/v1/projects/fixture/materials/material1/versions",
+    "GET /api/v1/projects/fixture/members",
+    "GET /api/v1/projects/fixture/members/me",
+    "GET /api/v1/projects/fixture/comments",
+    "GET /api/v1/projects/fixture/sources",
+    "GET /api/v1/projects/fixture/tasks",
+    "GET /api/v1/projects/fixture/goal",
+    "GET /api/v1/projects/fixture/collaboration/settings",
+    "GET /api/v1/projects/fixture/collaboration/proposals",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1",
+    "GET /api/v1/projects/fixture/sources/source1/versions/source-version1/processing",
+    "GET /api/v1/projects/fixture/ai-tools/capabilities",
+    "GET /api/v1/projects/fixture/tasks/task1/inquiries",
+    "GET /api/v1/projects/fixture/tasks/task1/submissions",
+    "GET /api/v1/projects/fixture/standards",
+    "GET /api/v1/projects/fixture/requirement-sets",
+    "GET /api/v1/projects/fixture/assessments",
+    "GET /api/v1/projects/fixture/assessments/assessment1",
+    "GET /api/v1/projects/fixture/assessments/review1",
+    "GET /api/v1/projects/fixture/assessments/rehearsal-assessment1",
+    "GET /api/v1/projects/fixture/rehearsals",
+    "GET /api/v1/projects/fixture/rehearsals/rehearsal1",
+    "GET /api/v1/projects/fixture/assessments/rehearsal1"
+  ]
+}

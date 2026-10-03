@@ -1,0 +1,71 @@
+{
+  "verifiedAt": "2026-10-03T04:50:56.576Z",
+  "origin": "https://greenbp-team-office.hddhp.workers.dev",
+  "versionId": "950584aa-56d5-4cda-8c87-3e533d7a6a63",
+  "results": [
+    {
+      "path": "/app/help",
+      "status": 200,
+      "sha256": "14cafdc0255ae8169a05deb70abfe59928d78e471260bb9fadb5e2e6735798ce",
+      "matchesBuild": true
+    },
+    {
+      "path": "/app/help?doc=technical",
+      "status": 200,
+      "sha256": "14cafdc0255ae8169a05deb70abfe59928d78e471260bb9fadb5e2e6735798ce",
+      "matchesBuild": true
+    },
+    {
+      "path": "/app/help?doc=database",
+      "status": 200,
+      "sha256": "14cafdc0255ae8169a05deb70abfe59928d78e471260bb9fadb5e2e6735798ce",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/index-VlTz3FMU.js",
+      "status": 200,
+      "sha256": "7496339c556e0e14f7030eabd541eedf5c698b71238a6fb38fc098f97ca3f5a4",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/index-VpxTgcG5.css",
+      "status": 200,
+      "sha256": "f20f9ada29327c27869d2fde78ae9f110d77b74b718744334d55d44cbc3910db",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-Dt25E8ns.js",
+      "status": 200,
+      "sha256": "026d590bb3bb4f3cae2d7487d5e480e1910352e8d4f57d96723000c2d29c3a37",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/HelpPage-r-2PvElM.css",
+      "status": 200,
+      "sha256": "05c2feba0ad9f21df35aa46b2828e651253fb86afe94651df9ea0bfda7c1c9c3",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/TasksMaterials-BSNfk5DT.js",
+      "status": 200,
+      "sha256": "45dff74c1ebdb77f9e3c091aeb9b9ccce7ad574cfed89d5c6c36a54701012917",
+      "matchesBuild": true
+    },
+    {
+      "path": "/assets/TasksMaterials-vV8uls9W.css",
+      "status": 200,
+      "sha256": "2057858375ec62b223e5bb912db726fb64757865248890927cff23aac9675553",
+      "matchesBuild": true
+    },
+    {
+      "path": "/api/v1/auth/session",
+      "status": 401,
+      "anonymous": true
+    },
+    {
+      "path": "/api/v1/health",
+      "status": 200
+    }
+  ],
+  "boundary": "Static release bytes and anonymous service checks; authenticated production reading requires a valid existing session. Local browser fixtures verify member routing and document interactions. No production write or model invocation."
+}

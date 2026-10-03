@@ -43,3 +43,10 @@ deploy/vps/.env
 
 # Full local visual-audit matrix; curated evidence is explicitly committed.
 docs/evidence/ui-audit/
+docs/*/*.jpg
+output/*
+*-preview.png
+
+.dev.vars*
+.env*
+!.env.example
