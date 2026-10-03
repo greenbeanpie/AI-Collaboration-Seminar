@@ -1,9 +1,11 @@
-import { assertRequirementSources, assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
-import { assertProfileStamp, recommendationDispatch, finishRecommendationJob } from './personal-profiles';
+import { effectiveStandard, assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
+import { assertRequirementSources, snapshotRequirementSources, assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
+import { assertProfileStamp, recommendationDispatch, finishRecommendationJob, profileSnapshotGuard } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
+import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { recordEvent } from './events';
 import { settleReservation } from './budget';
@@ -18,6 +20,7 @@ export interface AssignmentSuggestionInput {
   profileStamp?: string;
   projectId: string;
   requestedBy: string;
+  standardsVersionId?:string|null;
   requirementSetId: string | null;
   requirements: Array<{ title: string; detail: string }>;
   sourceSnapshots?: SourceInputSnapshot[];
@@ -57,13 +60,25 @@ async function assertCurrentMember(env: Env, projectId: string, userId: string):
 }
 
 async function assertAssignmentSources(env: Env, input: AssignmentSuggestionInput): Promise<void> {
-  if (input.requirementSetId) await assertRequirementSources(env, input.projectId, input.requirementSetId, input.sourceSnapshots);
+  const standard=await effectiveStandard(env,input.projectId);
+  if(input.standardsVersionId)await assertEffectiveStandard(env,input.projectId,input.standardsVersionId);
+  if(input.requirementSetId && !standard?.requirementSetIds.includes(input.requirementSetId))throw new AppError('INVALID_STATE','项目标准已更新，请重新生成建议',409,false);
+  if(input.standardsVersionId===null && standard)throw new AppError('INVALID_STATE','项目标准已更新，请重新生成建议',409,false);
+
+  if (input.standardsVersionId && standard && input.requirementSetId) {
+    const snapshots=(await Promise.all(standard.requirementSetIds.map(id=>snapshotRequirementSources(env,input.projectId,id)))).flat();
+    await assertSourceInputs(env,input.projectId,snapshots.map(source=>source.sourceVersionId),input.sourceSnapshots);
+    if(JSON.stringify(snapshots)!==JSON.stringify(input.sourceSnapshots??[]))throw new AppError('INVALID_STATE','项目标准引用来源已变化，请重新生成',409,false);
+  } else if (input.requirementSetId) await assertRequirementSources(env, input.projectId, input.requirementSetId, input.sourceSnapshots);
   else await assertSourceInputs(env, input.projectId, input.sourceSnapshots?.map(source => source.sourceVersionId) ?? [], input.sourceSnapshots);
 }
 
 export async function generateAssignmentSuggestions(env: Env, jobId: string, input: AssignmentSuggestionInput, config: LoadedAiConfig, beforeCall?: () => Promise<void>) {
   await beforeCall?.();
   await assertAssignmentSources(env, input);
+  const standard=await effectiveStandard(env,input.projectId);
+  input.requirements=standard?.requirements??[];
+  input.standardsVersionId=standard?.standardsVersionId??null;
   await assertCurrentMember(env, input.projectId, input.requestedBy);
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const currentIds = (JSON.parse(input.profileStamp!) as Array<{ user_id: string }>).map(m => m.user_id).sort();
@@ -187,7 +202,12 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
       payload: { assignmentCount: result.assignments.length, requirementSetId: input.requirementSetId },
     });
     await assertAssignmentSources(env, input);
-    await finishRecommendationJob(env, jobId, result);
+    if(input.standardsVersionId!==undefined) {
+      const standardGuard=input.standardsVersionId?effectiveStandardGuardSql('jobs.project_id','?4'):'(?4 IS NULL AND NOT EXISTS(SELECT 1 FROM standards_versions WHERE project_id=jobs.project_id))';
+      const changed=await env.DB.prepare(`UPDATE jobs SET status='succeeded',result_json=?2,finished_at=?3,updated_at=?3 WHERE id=?1 AND status IN ('running','queued') AND ${profileSnapshotGuard("json_extract(jobs.input_json,'$.profileStamp')",'jobs.project_id')} AND ${sourceInputsGuard('jobs.input_json','jobs.project_id')} AND ${standardGuard}`).bind(jobId,JSON.stringify(result),nowIso(),input.standardsVersionId).run();
+      if(!changed.meta.changes)throw new AppError('INVALID_STATE','项目标准、来源或成员已变化，建议未发布',409,false);
+      await env.DB.prepare("UPDATE job_outbox SET status='done',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();
+    } else await finishRecommendationJob(env, jobId, result);
   } catch (error) {
     if (error instanceof InvestigationContinuation) throw error;
     await settleReservation(env, jobId, 'released');

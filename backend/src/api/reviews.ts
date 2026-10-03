@@ -1,3 +1,4 @@
+import { effectiveStandard, effectiveStandardGuardSql } from '../services/effective-standard';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { snapshotRequirementSources } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -16,8 +17,8 @@ const reviewParams = projectParams.extend({ reviewId: z.string().uuid() });
 
 // 冻结写请求 #3：rubricVersionId、requirementSetId、materialVersionIds
 const createBody = z.object({
-  rubricVersionId: z.string().uuid(),
-  requirementSetId: z.string().uuid(),
+  rubricVersionId: z.string().uuid().optional(),
+  requirementSetId: z.string().uuid().optional(),
   materialVersionIds: z.array(z.string().uuid()).min(1).max(10),
 });
 
@@ -119,16 +120,12 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
       rawBody: JSON.stringify(body),
       required: true,
     }, async () => {
-      const rubric = await c.env.DB.prepare('SELECT id,status FROM rubric_versions WHERE id = ?1 AND project_id = ?2')
-        .bind(body.rubricVersionId, member.projectId)
-        .first<{id:string;status:string}>();
-      if (!rubric) throw notFound('评分标准不存在或不属于本项目');
-      if(rubric.status!=='confirmed')throw invalidState('评分标准尚未确认，请先确认标准');
-      const set = await c.env.DB.prepare('SELECT id FROM requirement_sets WHERE id = ?1 AND project_id = ?2')
-        .bind(body.requirementSetId, member.projectId)
-        .first();
-      if (!set) throw notFound('要求集不存在或不属于本项目');
-      const sourceSnapshots = await snapshotRequirementSources(c.env, member.projectId, body.requirementSetId);
+      const standard = await effectiveStandard(c.env, member.projectId);
+      if (!standard) throw invalidState('请先保存项目标准');
+      if ((body.rubricVersionId && body.rubricVersionId !== standard.rubricVersionId) || (body.requirementSetId && !standard.requirementSetIds.includes(body.requirementSetId))) throw invalidState('项目标准已更新，请使用当前生效标准重新发起');
+      const requirementSetId = standard.requirementSetIds[0];
+      if (!requirementSetId) throw invalidState('当前项目标准没有要求');
+      const sourceSnapshots = (await Promise.all(standard.requirementSetIds.map(id => snapshotRequirementSources(c.env, member.projectId, id)))).flat();
       for (const versionId of body.materialVersionIds) {
         const row = await c.env.DB.prepare(
           'SELECT v.id FROM material_versions v JOIN materials m ON m.id = v.material_id WHERE v.id = ?1 AND m.project_id = ?2',
@@ -141,9 +138,9 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
       return withReservedAiJob(c.env, { projectId: member.projectId, purpose: 'review_run',maxCalls:24 }, async (jobId, configVersionId) => {
         const reviewId = newId();
         const inserted=await c.env.DB.prepare(
-          `INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) SELECT ?1,?2,?3,?4,?5,'pending',?6,?7 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')}`,
+          `INSERT INTO reviews (id, project_id, requirement_set_id, rubric_version_id, material_version_ids_json, status, created_by, created_at) SELECT ?1,?2,?3,?4,?5,'pending',?6,?7 WHERE ${projectPermissionSql('?2','?6','scoreInitiate')} AND ${effectiveStandardGuardSql('?2','?8')}`,
         )
-          .bind(reviewId, member.projectId, body.requirementSetId, body.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso())
+          .bind(reviewId, member.projectId, requirementSetId, standard.rubricVersionId, JSON.stringify(body.materialVersionIds), user.id, nowIso(), standard.standardsVersionId)
           .run();
         if(!inserted.meta.changes)throw permissionDenied('评分发起权限已变化');
 
@@ -152,7 +149,7 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
             jobId,
             projectId: member.projectId,
             kind: 'review_run',
-            input: { reviewId, projectId: member.projectId, configVersionId, sourceSnapshots },
+            input: { reviewId, projectId: member.projectId, configVersionId, sourceSnapshots, standardsVersionId: standard.standardsVersionId },
             createdBy: user.id,
           });
         } catch (error) {

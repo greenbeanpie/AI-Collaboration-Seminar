@@ -1,3 +1,4 @@
+import { assertEffectiveStandard } from '../services/effective-standard';
 import type { FeedbackSnapshot } from '../services/project-feedback';
 import { currentJobClarification } from '../services/ai-clarifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -101,6 +102,19 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
       const rehearsal=await c.env.DB.prepare('SELECT created_by,processing_job_id,status FROM rehearsals WHERE id=?1 AND project_id=?2').bind(input.rehearsalId,job.project_id).first<{created_by:string;processing_job_id:string|null;status:string}>();
       if(!rehearsal || rehearsal.created_by!==c.get('user')!.id)throw permissionDenied('只有本轮发起人可以重试答辩');
       if(rehearsal.status!=='active'||rehearsal.processing_job_id!==job.id)throw invalidState('答辩作业已变化，不能重试旧作业');
+    }
+    if(job.project_id && (job.kind==='review_run'||job.kind==='rehearsal_turn')) {
+      let standardId=typeof input.standardsVersionId==='string'?input.standardsVersionId:null;
+      if(typeof input.assessmentId==='string'||job.kind==='rehearsal_turn') {
+        const row=await c.env.DB.prepare('SELECT standards_version_id FROM assessments WHERE project_id=?1 AND (id=?2 OR entity_id=?3)').bind(job.project_id,input.assessmentId??null,input.rehearsalId??null).first<{standards_version_id:string}>();
+        standardId=row?.standards_version_id??standardId;
+      }
+      if(!standardId && job.kind==='rehearsal_turn') {
+        const row=await c.env.DB.prepare('SELECT reference_inputs_json FROM rehearsals WHERE id=?1 AND project_id=?2').bind(input.rehearsalId,job.project_id).first<{reference_inputs_json:string}>();
+        standardId=(JSON.parse(row?.reference_inputs_json??'{}') as {standardsVersionId?:string}).standardsVersionId??null;
+      }
+      if(!standardId)throw invalidState('请使用当前生效标准重新发起操作');
+      await assertEffectiveStandard(c.env,job.project_id,standardId);
     }
     const newJobId = newId();
     const now = nowIso();

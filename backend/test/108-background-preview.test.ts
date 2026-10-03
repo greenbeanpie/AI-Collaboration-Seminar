@@ -36,7 +36,6 @@ describe('background preview and investigation storage',()=>{
   const headers={cookie:authCookie(owner.token),'content-type':'application/json','idempotency-key':newId()};
   const request=(path:string,body:unknown)=>app.fetch(new Request(`${BASE}/api/v1/projects/${projectId}${path}`,{method:'POST',headers,body:JSON.stringify(body)}),env);
   const draft=(await (await request('/standards',{requirements:[],weights:[{key:'q',label:'质量',weight:1}]})).json() as {data:{standardsVersionId:string;revision:number}}).data;
-  await request(`/standards/${draft.standardsVersionId}/confirm`,{expectedRevision:draft.revision});
   const body={standardsVersionId:draft.standardsVersionId,scores:[{key:'q',score:85}],reason:'人工核对'};
   const one=await request('/assessments/manual',body),two=await request('/assessments/manual',body);
   expect(one.status).toBe(404);expect(two.status).toBe(404);

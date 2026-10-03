@@ -1,3 +1,4 @@
+import { saveStandard } from '../src/services/project-simplification';
 import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -101,10 +102,21 @@ async function setup(): Promise<Setup> {
     .bind(pid)
     .first<{ id: string }>();
 
+  await saveStandard(env,pid,owner.userId,{requirementSetIds:[setRow!.id],rubricVersionId});
   return { owner, pid, materialVersionId: versionId, rubricVersionId, requirementSetId: setRow!.id };
 }
 
 describe('预审', () => {
+  it('resolves the active standard by default and rejects superseded component selectors', async () => {
+    vi.stubGlobal('fetch',compatibleGatewayMock());
+    const f=await setup(),cookie=authCookie(f.owner.token);
+    await saveStandard(env,f.pid,f.owner.userId,{requirements:[{title:'新要求',detail:'作品须符合新的质量要求'}],weights:[{key:'quality',label:'新质量',weight:100}]});
+    const stale=await SELF.fetch(`${BASE}/api/v1/projects/${f.pid}/reviews`,{method:'POST',headers:{cookie,'content-type':'application/json','idempotency-key':crypto.randomUUID()},body:JSON.stringify({rubricVersionId:f.rubricVersionId,requirementSetId:f.requirementSetId,materialVersionIds:[f.materialVersionId]})});
+    expect(stale.status).toBe(409);await stale.text();
+    const current=await SELF.fetch(`${BASE}/api/v1/projects/${f.pid}/reviews`,{method:'POST',headers:{cookie,'content-type':'application/json','idempotency-key':crypto.randomUUID()},body:JSON.stringify({materialVersionIds:[f.materialVersionId]})});
+    expect(current.status).toBe(202);await current.text();
+  });
+
   it('发起 → 运行 → 报告覆盖全部评分维度', async () => {
     vi.stubGlobal('fetch', compatibleGatewayMock());
     const { owner, pid, materialVersionId, rubricVersionId, requirementSetId } = await setup();
