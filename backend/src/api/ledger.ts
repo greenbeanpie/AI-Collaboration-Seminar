@@ -112,7 +112,7 @@ const exportBundleResponse = apiEnvelope(z.object({
     confirmedAt: z.string().nullable(),
     createdAt: z.string(),
   })),
-  tasks: z.array(z.object({ taskId: z.string(), title: z.string(), detail: z.string(), criteria: z.string(), effortHours: z.number(), revision: z.number().int(), lifecycleState: z.string().nullable(), parentTaskId: z.string().nullable(), currentSubmissionId: z.string().nullable(), dependsOnTaskIds: z.array(z.string()), citations: z.array(exportRequirementSchema.shape.citations.element), status: z.string(), assignee_id: z.string().nullable(), due_date: z.string().nullable() })),
+  tasks: z.array(z.object({ taskId: z.string(), title: z.string(), detail: z.string(), criteria: z.string(), effortHours: z.number(), revision: z.number().int(), lifecycleState: z.string().nullable(), currentSubmissionId: z.string().nullable(), dependsOnTaskIds: z.array(z.string()), citations: z.array(exportRequirementSchema.shape.citations.element), status: z.string(), assignee_id: z.string().nullable(), due_date: z.string().nullable() })),
   events: z.array(z.object({ type: z.string(), occurred_at: z.string() })),
   aiUsage: z.object({
     calls: z.number().int(),
@@ -223,9 +223,9 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
         status: 'draft' | 'confirmed'; confirmed_at: string | null; created_at: string;
       }>();
 
-    const tasks = await c.env.DB.prepare('SELECT id, title, detail, criteria, effort_hours, revision, lifecycle_state, parent_task_id, current_submission_id, source_citations_json, status, assignee_id, due_date FROM tasks WHERE project_id = ?1 ORDER BY created_at,id')
+    const tasks = await c.env.DB.prepare('SELECT id, title, detail, criteria, effort_hours, revision, lifecycle_state, current_submission_id, source_citations_json, status, assignee_id, due_date FROM tasks WHERE project_id = ?1 ORDER BY created_at,id')
       .bind(projectId)
-      .all<{ id: string; title: string; detail: string; criteria: string; effort_hours: number; revision: number; lifecycle_state: string | null; parent_task_id: string | null; current_submission_id: string | null; source_citations_json: string; status: string; assignee_id: string | null; due_date: string | null }>();
+      .all<{ id: string; title: string; detail: string; criteria: string; effort_hours: number; revision: number; lifecycle_state: string | null; current_submission_id: string | null; source_citations_json: string; status: string; assignee_id: string | null; due_date: string | null }>();
 
     const [mainGoal, standardRows, assessmentRows, dependencyRows, submissionRows, sourceRows, sourceVersionRows, materialVersionRows, legacyReviews, legacyRehearsals] = await Promise.all([
       projectGoal(c.env, projectId),
@@ -313,7 +313,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
           confirmedAt: rubric.confirmed_at,
           createdAt: rubric.created_at,
         })),
-        tasks: await Promise.all(tasks.results.map(async row => ({ taskId: row.id, title: row.title, detail: row.detail, criteria: row.criteria, effortHours: row.effort_hours, revision: row.revision, lifecycleState: row.lifecycle_state, parentTaskId: row.parent_task_id, currentSubmissionId: row.current_submission_id, dependsOnTaskIds: taskDependencies.filter(edge => edge.taskId === row.id).map(edge => edge.dependsOnTaskId), citations: await Promise.all((JSON.parse(row.source_citations_json || '[]') as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>).map(async citation => ({ ...citation, ...await sourceCitationAvailability(c.env, projectId, citation) }))), status: row.status, assignee_id: row.assignee_id, due_date: row.due_date }))),
+        tasks: await Promise.all(tasks.results.map(async row => ({ taskId: row.id, title: row.title, detail: row.detail, criteria: row.criteria, effortHours: row.effort_hours, revision: row.revision, lifecycleState: row.lifecycle_state, currentSubmissionId: row.current_submission_id, dependsOnTaskIds: taskDependencies.filter(edge => edge.taskId === row.id).map(edge => edge.dependsOnTaskId), citations: await Promise.all((JSON.parse(row.source_citations_json || '[]') as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>).map(async citation => ({ ...citation, ...await sourceCitationAvailability(c.env, projectId, citation) }))), status: row.status, assignee_id: row.assignee_id, due_date: row.due_date }))),
         events: events.results,
         aiUsage: {
           calls: aiUsage?.calls ?? 0,

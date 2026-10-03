@@ -23,7 +23,7 @@ const taskSchema = z.object({
   pendingHumanReview: z.boolean().optional(),
   taskId: z.string().uuid(),
   lifecycleState: z.string().nullable(),
-  criteria: z.string(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(),
+  criteria: z.string(), effortHours: z.number(), currentSubmissionId: z.string().uuid().nullable(),
   citations: z.array(z.unknown()), dependsOnTaskIds: z.array(z.string().uuid()), unfinishedDependencyIds: z.array(z.string().uuid()),
   title: z.string(),
   detail: z.string(),
@@ -60,7 +60,7 @@ const createBody = z.object({
   requirementId: z.string().uuid().nullable().default(null),
   criteria: z.string().max(4000).default(''), effortHours: z.number().min(.25).max(200).default(1),
   dependsOnTaskIds: z.array(z.string().uuid()).max(1000).default([]), expectedGraphRevision:z.number().int().positive().optional(),
-});
+}).strict();
 
 const patchBody = z.object({
   expectedRevision: z.number().int().min(1),
@@ -178,7 +178,7 @@ interface TaskRow {
   revision: number;
   created_at: string;
   updated_at: string;
-  criteria:string;effort_hours:number;parent_task_id:string|null;current_submission_id:string|null;source_citations_json:string;
+  criteria:string;effort_hours:number;current_submission_id:string|null;source_citations_json:string;
 }
 
 function toTask(r: TaskRow) {
@@ -186,7 +186,7 @@ function toTask(r: TaskRow) {
     startedAt: r.started_at ?? null, archivedAt: r.archived_at ?? null,
     taskId: r.id,
     lifecycleState: r.lifecycle_state ?? (r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'),
-    criteria:r.criteria,effortHours:r.effort_hours,parentTaskId:r.parent_task_id,currentSubmissionId:r.current_submission_id,citations:JSON.parse(r.source_citations_json||'[]'),
+    criteria:r.criteria,effortHours:r.effort_hours,currentSubmissionId:r.current_submission_id,citations:JSON.parse(r.source_citations_json||'[]'),
     title: r.title,
     detail: r.detail,
     assigneeId: r.assignee_id,

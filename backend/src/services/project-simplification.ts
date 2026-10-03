@@ -22,7 +22,7 @@ export type DependencyEdge={taskId:string;dependsOnTaskId:string};
 export function validateTaskGraph(taskIds:string[],edges:DependencyEdge[]) {
   const nodes=new Set(taskIds), adjacency=new Map<string,string[]>();
   for(const edge of edges) {
-    if(!nodes.has(edge.taskId)||!nodes.has(edge.dependsOnTaskId)||edge.taskId===edge.dependsOnTaskId) throw validationFailed('依赖必须指向本项目其他子任务');
+    if(!nodes.has(edge.taskId)||!nodes.has(edge.dependsOnTaskId)||edge.taskId===edge.dependsOnTaskId) throw validationFailed('依赖必须指向本项目其他任务');
     const list=adjacency.get(edge.taskId)??[];
     if(list.includes(edge.dependsOnTaskId)) throw validationFailed('依赖不可重复');
     list.push(edge.dependsOnTaskId); adjacency.set(edge.taskId,list);
@@ -31,7 +31,7 @@ export function validateTaskGraph(taskIds:string[],edges:DependencyEdge[]) {
   for(const edge of edges){ degree.set(edge.taskId,degree.get(edge.taskId)!+1); const list=dependents.get(edge.dependsOnTaskId)??[];list.push(edge.taskId);dependents.set(edge.dependsOnTaskId,list); }
   const queue=taskIds.filter(id=>degree.get(id)===0); let count=0;
   for(let i=0;i<queue.length;i++){const id=queue[i]!;count++;for(const dependent of dependents.get(id)??[]){const n=degree.get(dependent)!-1;degree.set(dependent,n);if(n===0)queue.push(dependent);}}
-  if(count!==nodes.size)throw validationFailed('子任务依赖不能形成循环');
+  if(count!==nodes.size)throw validationFailed('任务依赖不能形成循环');
 }
 export async function graphSnapshot(env:Env,projectId:string){
   const [tasks,edges]=await Promise.all([env.DB.prepare('SELECT id FROM tasks WHERE project_id=?1 AND archived_at IS NULL').bind(projectId).all<{id:string}>(),env.DB.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies WHERE project_id=?1 AND task_id IN(SELECT id FROM tasks WHERE archived_at IS NULL) AND depends_on_task_id IN(SELECT id FROM tasks WHERE archived_at IS NULL)').bind(projectId).all<{task_id:string;depends_on_task_id:string}>()]);
@@ -44,7 +44,7 @@ export async function taskDependencies(env:Env,projectId:string,taskId:string){
 export async function replaceTaskDependencies(env:Env,projectId:string,actorId:string,taskId:string,expectedGraphRevision:number,dependsOnTaskIds:string[]){
   await owner(env,projectId,actorId);const goal=await projectGoal(env,projectId);
   if(goal.graphRevision!==expectedGraphRevision)throw versionConflict(goal.graphRevision);
-  const graph=await graphSnapshot(env,projectId);if(!graph.taskIds.includes(taskId))throw notFound('子任务不存在');
+  const graph=await graphSnapshot(env,projectId);if(!graph.taskIds.includes(taskId))throw notFound('任务不存在');
   const edges=[...graph.edges.filter(e=>e.taskId!==taskId),...dependsOnTaskIds.map(id=>({taskId,dependsOnTaskId:id}))];validateTaskGraph(graph.taskIds,edges);
   const token=newId(),now=nowIso(),guard='EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?2)';
   const batch=[env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})`).bind(projectId,expectedGraphRevision,token,actorId),env.DB.prepare(`DELETE FROM task_dependencies WHERE project_id=?1 AND task_id=?3 AND ${guard}`).bind(projectId,token,taskId)];

@@ -19,6 +19,17 @@ async function seedLegacyTask(pid:string,ownerId:string,body:{title:string;detai
 }
 
 describe('任务与评论', () => {
+  it('rejects retired parent fields and returns independent tasks without a parent field', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const cookie = authCookie(owner.token);
+    for (const parentTaskId of [null, crypto.randomUUID()]) {
+      expect((await createTask(cookie, pid, { title: 'Retired relationship', parentTaskId })).status).toBe(400);
+    }
+    const created = await createTask(cookie, pid, { title: 'Independent task' });
+    expect(created.status).toBe(201);
+    expect(created.data).not.toHaveProperty('parentTaskId');
+  });
   it('任务和评论游标分页不会跳过溢出行', async () => {
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);

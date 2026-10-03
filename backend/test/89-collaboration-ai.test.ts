@@ -173,14 +173,14 @@ describe('artifact-only evaluation safety', () => {
         expect(fetchMock).not.toHaveBeenCalled();
         expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
     });
-    it('a parent task cannot autoaccept while its child still needs work', async () => {
-        const f = await fixture('automatic',[{fileId:id()}]);
-        await env.DB.prepare("INSERT INTO tasks(id,project_id,title,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,parent_task_id) VALUES(?1,?2,'未完成子任务','todo',1,?3,?4,?4,'open','需要完成',?5)").bind(id(), f.projectId, f.user.userId, stamp(), f.taskId).run();
+    it('an unrelated unfinished task does not block automatic acceptance', async () => {
+        const f = await fixture('automatic');
+        await env.DB.prepare("INSERT INTO tasks(id,project_id,title,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria) VALUES(?1,?2,'未完成任务','todo',1,?3,?4,?4,'open','需要完成')").bind(id(), f.projectId, f.user.userId, stamp()).run();
         vi.stubGlobal('fetch', model(report(f.versionId)));
         await runCollaborationAiJob(env, f.jobId);
         const result = JSON.parse((await getJob(env, f.jobId)).result_json!);
-        expect(result.autoApplied).toBe(false);
-        expect(result.manualReviewReasons.join(' ')).toContain('子任务');
+        expect(result.autoApplied).toBe(true);
+        expect((await env.DB.prepare('SELECT lifecycle_state FROM tasks WHERE id=?1').bind(f.taskId).first<{lifecycle_state:string}>())?.lifecycle_state).toBe('accepted');
     });
     it('a settings change during the model call cannot commit old results', async () => {
         const f = await fixture('automatic');
@@ -299,9 +299,8 @@ describe('bounded decomposition and assignment continuation', () => {
             const assigned = await getJob(env, result.followupJobId!);
             expect(assigned.status).toBe('succeeded');
             expect(JSON.parse(assigned.result_json!).autoApplied).toBe(true);
-            const children = await env.DB.prepare('SELECT assignee_id,parent_task_id FROM tasks WHERE plan_proposal_id=?1').bind(result.proposalId).all<{
+            const children = await env.DB.prepare('SELECT assignee_id FROM tasks WHERE plan_proposal_id=?1').bind(result.proposalId).all<{
                 assignee_id: string;
-                parent_task_id: string;
             }>();
             expect(children.results).toHaveLength(2);
             expect(children.results.every(t => t.assignee_id === user.userId)).toBe(true);

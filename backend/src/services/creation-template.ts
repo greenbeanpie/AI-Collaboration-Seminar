@@ -16,7 +16,7 @@ const templateStandard=z.object({title:z.string().max(200).default(''),requireme
 });
 export const creationWorkspace=z.object({templateId:z.literal('blank'),materials:z.array(templateMaterial).max(20).default([]),standards:templateStandard.nullable().default(null)}).strict().refine(value=>new Set(value.materials.map(m=>m.key)).size===value.materials.length,'资料标识不可重复');
 export type CreationWorkspace=z.infer<typeof creationWorkspace>;
-export const projectTemplates=[{templateId:'blank' as const,name:'空项目',description:'从空白工作区编辑项目目标、资料、要求与子任务，最终保存后创建项目。'}];
+export const projectTemplates=[{templateId:'blank' as const,name:'空项目',description:'从空白工作区编辑项目目标、资料、要求与任务，最终保存后创建项目。'}];
 type StatementFactory=(sql:string,...binds:unknown[])=>D1PreparedStatement;
 
 /** Every promotion shares the caller's commit-token guard and D1 transaction. */

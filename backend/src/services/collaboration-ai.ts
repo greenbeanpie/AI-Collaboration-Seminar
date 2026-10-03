@@ -189,7 +189,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
                 payload = { ...data, updates: data.updates.map(t => ({ ...t, expectedRevision: input.tasks!.find(snapshot => snapshot.taskId === t.taskId)!.revision })), brief: input.brief };
             } else {
             const answer = await aiJsonCall(env, { projectId: input.projectId, projectTools:{projectId:input.projectId,userId:input.requestedBy,jobId,ownerOnly:true,allowClarification:true,allowSearch:input.allowSearch,searchQuery:input.searchQuery},jobId, purpose: 'textEconomy', configVersionId: config.id, model: model.model, modelConfig: model, promptVersion: 'collaboration-decompose-v4-clarification', beforeCall: async () => { await assertSnapshot(env, input, true); await currentConfig(env, input); }, messages: [
-                    { role: 'system', content: `${dataRule}\n${sourceRule}\n${decompositionGuidance}\n全项目只有一个主目标。根据brief总结主目标goal:{title,detail}，已有明确goalSnapshot时保留其意图。本次重新生成整套未开始任务，旧任务将归档，不得沿用旧任务ID或引用旧任务依赖。reusedTaskIds必须为空。根据主目标拆成需要数量的可认领、可交付、可验收的子任务。每项明确稳定key(如t1)、dependsOn(新增任务key或已有任务UUID数组)、标题、工作内容、验收标准和预计工时(0.25至200)。先读取现有任务及相关材料。tasks数组只包含真正新增且当前不存在的工作；沿用、继续执行或已完成的任务绝不能再次放进tasks，不能仅改标题或加“沿用”字样后复制创建。沿用的任务放进reusedTaskIds，并在新任务dependsOn中引用其真实任务UUID。依赖允许本次新增任务key或本项目已有任务UUID，不能自依赖或成环。保留已有执行人、提交历史和实际进度，不分配人员。不得声称已有责任归属，除非读到明确assignee。每项detail必须明确写“工时估算假设”：规模、字数、图表数量或人员可用时间未给出时标为未知，仅给粗估范围，不把假设写成官方验收要求。goal.detail只写成果和限制，不堆参考UUID或工具调试信息；参考资料放入结构化referenceIds和decisionReferences。先读取相关待审及人工修订方案，优先沿用其有效规划，不把待审工作当作已完成。完成状态优先依据实际任务、提交和验收记录，资料中的完成陈述与记录冲突时明确待核验。资料日期冲突须明确依据和优先级。不确定的假设写在detail。只输出JSON：{"goal":{"title":"主目标","detail":"整体成果"},"reusedTaskIds":[],"tasks":[{"key":"t1","dependsOn":[],"title":"标题","detail":"工作内容","criteria":"验收标准","effortHours":1}]}。` },
+                    { role: 'system', content: `${dataRule}\n${sourceRule}\n${decompositionGuidance}\n全项目只有一个主目标。根据brief总结主目标goal:{title,detail}，已有明确goalSnapshot时保留其意图。本次重新生成整套未开始任务，旧任务将归档，不得沿用旧任务ID或引用旧任务依赖。reusedTaskIds必须为空。根据主目标拆成需要数量的可认领、可交付、可验收的任务。每项明确稳定key(如t1)、dependsOn(新增任务key或已有任务UUID数组)、标题、工作内容、验收标准和预计工时(0.25至200)。先读取现有任务及相关材料。tasks数组只包含真正新增且当前不存在的工作；沿用、继续执行或已完成的任务绝不能再次放进tasks，不能仅改标题或加“沿用”字样后复制创建。沿用的任务放进reusedTaskIds，并在新任务dependsOn中引用其真实任务UUID。依赖允许本次新增任务key或本项目已有任务UUID，不能自依赖或成环。保留已有执行人、提交历史和实际进度，不分配人员。不得声称已有责任归属，除非读到明确assignee。每项detail必须明确写“工时估算假设”：规模、字数、图表数量或人员可用时间未给出时标为未知，仅给粗估范围，不把假设写成官方验收要求。goal.detail只写成果和限制，不堆参考UUID或工具调试信息；参考资料放入结构化referenceIds和decisionReferences。先读取相关待审及人工修订方案，优先沿用其有效规划，不把待审工作当作已完成。完成状态优先依据实际任务、提交和验收记录，资料中的完成陈述与记录冲突时明确待核验。资料日期冲突须明确依据和优先级。不确定的假设写在detail。只输出JSON：{"goal":{"title":"主目标","detail":"整体成果"},"reusedTaskIds":[],"tasks":[{"key":"t1","dependsOn":[],"title":"标题","detail":"工作内容","criteria":"验收标准","effortHours":1}]}。` },
                     { role: 'user', content: JSON.stringify({ brief: input.brief,goalSnapshot:input.goalSnapshot, sourceContext: input.sourceSnapshots,materials:input.materialSnapshots,adminFeedback:feedback }) },
                 ], schema: input.sourceSnapshots?.length ? groundedDecompositionSchema : decompositionSchema });
             const {data}=answer;references=('references' in answer?answer.references:[]) as unknown[];decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
@@ -289,8 +289,8 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
     await currentConfig(env, input);
     const allowed = await env.DB.prepare(`SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=?1 AND p.ai_collaboration_enabled=1 AND p.status='active' AND p.assignment_mode='automatic' AND p.collaboration_revision=?2 AND m.user_id=?3 AND ${projectPermissionSql('m.project_id','m.user_id','taskManage')}`).bind(input.projectId, input.settingsRevision, input.requestedBy).first();
     if (!allowed)
-        throw invalidState('自动分工设置已变化；已创建的子任务保留，可手动认领');
-    const tasks = await env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (?3=1 OR plan_proposal_id=?2 OR parent_task_id=?2) AND lifecycle_state='open' AND assignee_id IS NULL ORDER BY created_at,id`).bind(input.projectId, proposalId,allOpenTasks?1:0).all<{
+        throw invalidState('自动分工设置已变化；已创建的任务保留，可手动认领');
+    const tasks = await env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,revision FROM tasks WHERE project_id=?1 AND (?3=1 OR plan_proposal_id=?2) AND lifecycle_state='open' AND assignee_id IS NULL ORDER BY created_at,id`).bind(input.projectId, proposalId,allOpenTasks?1:0).all<{
         id: string;
         title: string;
         detail: string;
@@ -441,9 +441,6 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     const manualReasons = assessEvidence(report, materials);
     const externalReview = unreadMaterialReview(materials);
     const provisional = report.decision === 'accept' && externalReview.reasonCodes.length > 0 && assessEvidence(report, materials, false).length === 0;
-    const child = await env.DB.prepare('SELECT 1 FROM tasks WHERE project_id=?1 AND parent_task_id=?2 LIMIT 1').bind(input.projectId, submission.task_id).first();
-    if (child)
-        manualReasons.push('含子任务的整体目标需要项目负责人核对全部子任务与整体交付后验收');
     const persistedReport = { references,decisionReferences,decision: report.decision, feedback: report.feedback, evidence: report.evidence, limitations: report.limitations, rubricScoring, modelCoverage: report.coverage, coverage: manualReasons.length ? 'needs_human' : report.coverage, ...(manualReasons.length ? { manualReviewReason: manualReasons.join('；') } : {}) };
     await currentConfig(env, input);
     const verifiedRubric = await assertEvaluationRubric(env, input);
@@ -470,7 +467,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
     }>();
     let autoApplied = false;
     let applyError: string | null = null;
-    if (latest?.status === 'evaluated' && settings?.evaluation_mode === 'automatic' && settings.collaboration_revision === input.settingsRevision && !(report.decision === 'accept' && manualReasons.length && !(provisional && !child))) {
+    if (latest?.status === 'evaluated' && settings?.evaluation_mode === 'automatic' && settings.collaboration_revision === input.settingsRevision && !(report.decision === 'accept' && manualReasons.length && !provisional)) {
         try {
             await currentConfig(env, input);
             const decisionRubric = await assertEvaluationRubric(env, input);
@@ -481,7 +478,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
             applyError = error instanceof Error ? error.message : String(error);
         }
     }
-    await succeedJob(env, jobId, { submissionId: submission.id, decision: report.decision, autoApplied, pendingHumanReview: autoApplied && provisional && !child, manualReviewReasons: manualReasons, applyError });
+    await succeedJob(env, jobId, { submissionId: submission.id, decision: report.decision, autoApplied, pendingHumanReview: autoApplied && provisional, manualReviewReasons: manualReasons, applyError });
 }
 /** Existing jobs/outbox reservation machinery; one operation, at most one repair, no recursive work. */
 export async function runCollaborationAiJob(env: Env, jobId: string): Promise<void> {

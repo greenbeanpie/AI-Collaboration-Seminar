@@ -95,7 +95,7 @@ describe('creation preview and atomic goal graph commit',()=>{
     expect(preview.preview.goal.title).toBe('交付有证据的研究报告');
     const result=await json(await request(`/${draft.id}/commit`,{expectedRevision:1,confirmed:true}));
     expect((await projectGoal(env,result.projectId)).title).toBe('交付有证据的研究报告');
-    const rows=await env.DB.prepare('SELECT id,title,parent_task_id FROM tasks WHERE project_id=?1').bind(result.projectId).all<{id:string;title:string;parent_task_id:string|null}>();expect(rows.results).toHaveLength(2);expect(rows.results.every(t=>t.parent_task_id===null)).toBe(true);
+    const rows=await env.DB.prepare('SELECT id,title FROM tasks WHERE project_id=?1').bind(result.projectId).all<{id:string;title:string}>();expect(rows.results).toHaveLength(2);
     const collect=rows.results.find(t=>t.title==='搜集证据')!,write=rows.results.find(t=>t.title==='撰写报告')!;expect((await taskDependencies(env,result.projectId,write.id)).dependsOnTaskIds).toEqual([collect.id]);
     expect(await env.DB.prepare('SELECT title,purpose,is_default_background FROM materials WHERE project_id=?1').bind(result.projectId).first()).toEqual({title:'项目背景',purpose:'background',is_default_background:1});
     expect((await json(await request(`/${draft.id}/commit`,{expectedRevision:1,confirmed:true}))).projectId).toBe(result.projectId);

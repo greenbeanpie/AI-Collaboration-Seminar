@@ -8585,13 +8585,6 @@
               "effortHours": {
                 "type": "number"
               },
-              "parentTaskId": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "uuid"
-              },
               "currentSubmissionId": {
                 "type": [
                   "string",
@@ -8696,7 +8689,6 @@
               "lifecycleState",
               "criteria",
               "effortHours",
-              "parentTaskId",
               "currentSubmissionId",
               "citations",
               "dependsOnTaskIds",
@@ -8764,13 +8756,6 @@
                     },
                     "effortHours": {
                       "type": "number"
-                    },
-                    "parentTaskId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "uuid"
                     },
                     "currentSubmissionId": {
                       "type": [
@@ -8876,7 +8861,6 @@
                     "lifecycleState",
                     "criteria",
                     "effortHours",
-                    "parentTaskId",
                     "currentSubmissionId",
                     "citations",
                     "dependsOnTaskIds",
@@ -9431,13 +9415,6 @@
                         "null"
                       ]
                     },
-                    "parentTaskId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "format": "uuid"
-                    },
                     "currentSubmissionId": {
                       "type": [
                         "string",
@@ -9497,7 +9474,6 @@
                     "lifecycleState",
                     "criteria",
                     "effortHours",
-                    "parentTaskId",
                     "currentSubmissionId",
                     "dependsOnTaskIds",
                     "unfinishedDependencyIds",
@@ -9691,13 +9667,6 @@
                   "null"
                 ]
               },
-              "parentTaskId": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "uuid"
-              },
               "currentSubmissionId": {
                 "type": [
                   "string",
@@ -9757,7 +9726,6 @@
               "lifecycleState",
               "criteria",
               "effortHours",
-              "parentTaskId",
               "currentSubmissionId",
               "dependsOnTaskIds",
               "unfinishedDependencyIds",
@@ -10917,13 +10885,6 @@
                                 "maximum": 200,
                                 "default": 1
                               },
-                              "parentTaskId": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "format": "uuid"
-                              },
                               "key": {
                                 "type": "string"
                               },
@@ -10971,7 +10932,8 @@
                             "required": [
                               "title",
                               "criteria"
-                            ]
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "updates": {
@@ -11048,7 +11010,8 @@
                               "criteria",
                               "taskId",
                               "expectedRevision"
-                            ]
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "assignments": {
@@ -11268,13 +11231,6 @@
                           "maximum": 200,
                           "default": 1
                         },
-                        "parentTaskId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "format": "uuid"
-                        },
                         "key": {
                           "type": "string"
                         },
@@ -11322,7 +11278,8 @@
                       "required": [
                         "title",
                         "criteria"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "updates": {
@@ -11399,7 +11356,8 @@
                         "criteria",
                         "taskId",
                         "expectedRevision"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "assignments": {
@@ -15539,12 +15497,6 @@
                         "null"
                       ]
                     },
-                    "parentTaskId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "currentSubmissionId": {
                       "type": [
                         "string",
@@ -15624,7 +15576,6 @@
                     "effortHours",
                     "revision",
                     "lifecycleState",
-                    "parentTaskId",
                     "currentSubmissionId",
                     "dependsOnTaskIds",
                     "citations",
@@ -22872,7 +22823,8 @@
                 },
                 "required": [
                   "title"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -23667,20 +23619,13 @@
                     "minimum": 0.25,
                     "maximum": 200,
                     "default": 1
-                  },
-                  "parentTaskId": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "format": "uuid",
-                    "default": null
                   }
                 },
                 "required": [
                   "title",
                   "criteria"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -24814,13 +24759,6 @@
                               "maximum": 200,
                               "default": 1
                             },
-                            "parentTaskId": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "format": "uuid"
-                            },
                             "key": {
                               "type": "string"
                             },
@@ -24868,7 +24806,8 @@
                           "required": [
                             "title",
                             "criteria"
-                          ]
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "updates": {
@@ -24945,7 +24884,8 @@
                             "criteria",
                             "taskId",
                             "expectedRevision"
-                          ]
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "assignments": {
