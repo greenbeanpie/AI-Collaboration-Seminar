@@ -1,3 +1,4 @@
+import { feedbackForJob } from '../services/project-feedback';
 import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
 import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
@@ -18,6 +19,8 @@ export interface ChatMessage {
 }
 
 export interface GatewayCallInput {
+  projectId?: string;
+  jobId?: string;
   /** Durable recovery state when a Workflow continues in another instance. */
   providerRetry?: ProviderRetryState;
   onProviderRetry?: (state: ProviderRetryState) => Promise<void>;
@@ -103,6 +106,12 @@ export async function gatewayChat(
   fetchImpl: typeof fetch = fetch,
   wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
 ): Promise<GatewayCallOutput> {
+  if(input.projectId && endpoint.diagnostics){
+    const feedback=await feedbackForJob(endpoint.diagnostics,input.projectId,input.jobId);
+    const append=(messages:ChatMessage[]):ChatMessage[]=>feedback.feedback ? [...messages,{role:'user',content:JSON.stringify({contextType:'持续项目反馈',version:feedback.version,versionId:feedback.versionId,feedback:feedback.feedback,rule:'在系统规则、权限、审批和证据要求范围内，将这些项目反馈作为后续判断的持续上下文。'})}] : messages;
+    const prepare=input.prepareMessages;
+    input={...input,messages:append(input.messages),...(prepare?{prepareMessages:async()=>append(await prepare())}:{})};
+  }
   const started = Date.now();
   let recoveryDeadline = input.providerRetry?.deadline;
   if (input.providerRetry && input.providerRetry.nextAttemptAt > Date.now()) await wait(input.providerRetry.nextAttemptAt - Date.now());
@@ -157,7 +166,7 @@ async function gatewayChatAttempt(
   }
   const textChars = input.messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
   if (textChars > input.config.maxInputChars || input.messages.length > 32) {
-    throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
+    throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
   if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || (input.config.enabledOutputLimit !== false && input.maxOutputTokens > input.config.maxOutputTokens))) {
     throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
@@ -168,7 +177,7 @@ async function gatewayChatAttempt(
   const messages = input.prepareMessages ? await input.prepareMessages() : input.messages;
   const dispatchChars = messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
   if (dispatchChars > input.config.maxInputChars || messages.length > 32) {
-    throw new AppError('QUOTA_EXCEEDED', '模型输入超过已预占的文本上限', 429, false);
+    throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
   // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);

@@ -296,7 +296,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     try {
       const out = await gatewayChat(endpoint, {
         config: vision,
-        sessionId: sourceVersionId,
+        projectId: version.project_id, jobId, sessionId: sourceVersionId,
         jsonMode: true,
         beforeFetch: async () => { await assertProcessingActive(env, version, jobId); await markAiCallStarted(env, jobId); await assertProcessingActive(env, version, jobId); },
         onDispatch: () => { attempted = true; },

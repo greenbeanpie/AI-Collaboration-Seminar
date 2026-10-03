@@ -12,6 +12,8 @@ const task = { dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as 
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+  client.setQueryData(['project-feedback', 'p1'], {versionId:null,version:0,feedback:'',actorId:null,createdAt:null});
+  client.setQueryData(['project-feedback-history','p1'],{items:[]});
   client.setQueryData(['project-assistant-sources', 'p1'], []);
   client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
   client.setQueryData(['collaboration-tasks', 'p1'], { items: tasks });
@@ -36,13 +38,13 @@ describe('collaboration lifecycle', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: '生成拆解建议' })).toBeNull();
     fireEvent.click(toggle);
-    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '保留拆解草稿' } });
+    fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '保留拆解草稿' } });
     expect(screen.getByRole('dialog', { name: 'AI 拆解、调整与分工' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(toggle);
-    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('保留拆解草稿');
-    expect(screen.getByRole('dialog')).toContainElement(screen.getByLabelText('目标、补充信息或调整要求'));
+    expect(screen.getByLabelText('持续项目反馈')).toHaveValue('保留拆解草稿');
+    expect(screen.getByRole('dialog')).toContainElement(screen.getByLabelText('持续项目反馈'));
   });
   it('filters with an inline label and retains focusable dependency guidance next to status', () => {
     const { view } = setup({ tasks: [task, { ...task, taskId: 't2', title: '待采集', assigneeId: null, lifecycleState: 'open', unfinishedDependencyIds: ['t1'], dependsOnTaskIds: ['t1'] }] });
@@ -69,7 +71,10 @@ describe('collaboration lifecycle', () => {
   it('keeps AI and task creation controls unavailable to ordinary members', () => {
     identity.role = 'member'; const { fetchMock } = setup();
     expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/ai/clarifications'))).toBe(false);
-    expect(screen.queryByRole('button', { name: 'AI 拆解、调整与分工' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name:'AI 拆解、调整与分工'}));
+    expect(screen.getByLabelText('持续项目反馈')).toHaveAttribute('readonly');
+    expect(screen.queryByRole('button',{name:'保存反馈'})).toBeNull();
+    expect(screen.getByRole('button',{name:'生成拆解建议'})).toBeDisabled();
     expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
   });
   it('opens history only through the submenu, pages one submission, and preserves drafts', () => {
@@ -119,7 +124,7 @@ describe('collaboration lifecycle', () => {
     setup({ submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '返回后保留' } });
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', {name:/更多/}));
     fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
     fireEvent.click(screen.getByRole('button', { name: '返回前页' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -129,9 +134,8 @@ describe('collaboration lifecycle', () => {
     const oldProposal = { proposalId: 'p-old', kind: 'assign', status: 'applied', revision: 1, payload: { assignments: [] }, createdAt: '2026-10-01T00:00:00Z' };
     const { client } = setup({ proposals: [oldProposal, { ...oldProposal, proposalId: 'p-new', createdAt: '2026-10-02T00:00:00Z' }] });
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
-    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '保留 AI 要求' } });
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '保留 AI 要求' } });
+    fireEvent.click(screen.getByRole('button', { name: '历史记录' }));
     const region = screen.getByRole('region', { name: 'AI 拆解、调整与分工' });
     expect(within(region).getAllByRole('article')).toHaveLength(1);
     expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-new');
@@ -141,7 +145,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-old');
     expect(within(region).queryByRole('button', { name: '应用选中条目' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
-    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('保留 AI 要求');
+    expect(screen.getByLabelText('持续项目反馈')).toHaveValue('保留 AI 要求');
   });
 
   it('retains a pending owner decision when browsing read-only history', () => {
@@ -162,13 +166,14 @@ describe('collaboration lifecycle', () => {
     const fallback = fetchMock.getMockImplementation()!;
     let status = 'running';
     fetchMock.mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/collaboration/feedback/current')) return Response.json({data:{version:1,versionId:'v1',feedback:'创建交付任务',actorId:'m1',createdAt:'2026-10-03'},requestId:'r1'});
       if (String(url).endsWith('/collaboration/decompose') || String(url).endsWith('/jobs/j1')) {
         return new Response(JSON.stringify({ data: { jobId: 'j1', status, result: null }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       return fallback(url, options);
     });
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
-    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '创建交付任务' } });
+    fireEvent.change(screen.getByLabelText('持续项目反馈'), { target: { value: '创建交付任务' } });
     fireEvent.click(screen.getByRole('button', { name: '生成拆解建议' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/jobs/j1'))).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
@@ -177,7 +182,7 @@ describe('collaboration lifecycle', () => {
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/jobs/j1')).length).toBeGreaterThan(1));
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
     await waitFor(() => expect(screen.getByText(/AI 任务：.*完成/)).toBeVisible());
-    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('创建交付任务');
+    expect(screen.getByLabelText('持续项目反馈')).toHaveValue('创建交付任务');
   });
 
   it('keeps older pending proposals actionable and pins unsaved correction drafts', async () => {
@@ -189,8 +194,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.change(screen.getByLabelText('修正理由或重新反馈'), { target: { value: '未保存的方案修正' } });
     act(() => client.setQueryData(['collaboration-proposals', 'p1'], { items: [old, latest, { ...old, proposalId: 'newest', createdAt: '2026-10-03T00:00:00Z' }] }));
     await waitFor(() => expect(screen.getByLabelText('修正理由或重新反馈')).toHaveValue('未保存的方案修正'));
-    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
-    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '历史记录' }));
     fireEvent.change(screen.getByLabelText('选择建议记录'), { target: { value: 'older' } });
     expect(screen.queryByRole('button', { name: '应用选中条目' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '打开此建议进行处理' }));
@@ -421,4 +425,17 @@ describe('collaboration lifecycle', () => {
     const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'PATCH')!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 7, aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual' });
   });
+});
+
+it('does not start AI when permanent feedback saving fails', async()=>{
+ identity.aiEnabled=true;const {client,fetchMock}=setup();
+ act(()=>client.setQueryData(['collaboration-settings','p1'],{aiCollaborationEnabled:true,assignmentMode:'manual',evaluationMode:'manual',revision:7}));
+ const fallback=fetchMock.getMockImplementation()!;
+ fetchMock.mockImplementation(async(url,options)=>String(url).endsWith('/collaboration/feedback/current') ? Response.json({error:{code:'VERSION_CONFLICT',message:'反馈已变化'},requestId:'r'},{status:409}) : fallback(url,options));
+ fireEvent.click(screen.getByRole('button',{name:'AI 拆解、调整与分工'}));
+ fireEvent.change(screen.getByLabelText('持续项目反馈'),{target:{value:'新的持续要求'}});
+ fireEvent.click(screen.getByRole('button',{name:'生成拆解建议'}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'重新载入已保存反馈'})).toBeInTheDocument());
+ expect(fetchMock.mock.calls.some(([path])=>String(path).endsWith('/collaboration/decompose'))).toBe(false);
+ expect(screen.getByLabelText('持续项目反馈')).toHaveValue('新的持续要求');
 });

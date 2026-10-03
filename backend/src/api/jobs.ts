@@ -1,3 +1,4 @@
+import type { FeedbackSnapshot } from '../services/project-feedback';
 import { currentJobClarification } from '../services/ai-clarifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -19,6 +20,7 @@ const jobResponse = apiEnvelope(
     status: z.enum(['queued', 'running', 'waiting_input', 'succeeded', 'failed', 'cancelled']),
     result: z.unknown().nullable(),
     error: z.unknown().nullable(),
+    feedbackSnapshot: z.object({versionId:z.string().nullable(),version:z.number(),feedback:z.string(),actorId:z.string().nullable(),createdAt:z.string().nullable()}).optional(),
     attempts: z.number().int(),
     createdAt: z.string(),
   }),
@@ -61,7 +63,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         .first<{ role: string }>();
       if (!member) throw permissionDenied('不是项目成员');
     }
-    const input = JSON.parse(job.input_json) as {operation?:string;profileStamp?:string};
+    const input = JSON.parse(job.input_json) as {operation?:string;profileStamp?:string;feedbackSnapshot?:FeedbackSnapshot};
     if (job.project_id && (job.kind === 'assignment_suggest' || input.operation === 'collaboration.assign')) {
       await assertProfileStamp(c.env,job.project_id,input.profileStamp);
     }
@@ -73,6 +75,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         status: job.status,
         result: clarification ? {...(job.result_json?JSON.parse(job.result_json):{}),clarification} : job.result_json ? (JSON.parse(job.result_json) as unknown) : null,
         error: job.error_json ? (JSON.parse(job.error_json) as unknown) : null,
+        feedbackSnapshot: input.feedbackSnapshot,
         attempts: job.attempts,
         createdAt: job.created_at,
       }),

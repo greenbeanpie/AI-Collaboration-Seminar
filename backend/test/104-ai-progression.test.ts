@@ -1,3 +1,4 @@
+import { saveProjectFeedback } from '../src/services/project-feedback';
 import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { describe,it,expect,vi,afterEach } from 'vitest';
@@ -15,7 +16,7 @@ async function fixture(){const user=await seedUser(),projectId=await seedProject
 async function event(projectId:string,actor='user',recent=false){await env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) VALUES(?1,?2,?3,'test','task.updated','task','test',?1,'{}',?4)`).bind(newId(),projectId,actor,new Date(Date.now()-(recent?0:60000)).toISOString()).run();}
 afterEach(()=>vi.unstubAllGlobals());
 describe('autonomous progress and independent owner correction',()=>{
- it('freezes admin feedback across execution slices and rejects an old response after new feedback',async()=>{
+ it('keeps the frozen permanent feedback across execution slices after a later update',async()=>{
   const f=await fixture();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();
   const response=await createApp().fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/collaboration/decompose`,{method:'POST',headers:{cookie:authCookie(f.user.token),'content-type':'application/json','idempotency-key':newId()},body:JSON.stringify({brief:'根据真实材料拆解'})}),offline);
   expect(response.status).toBe(202);const jobId=(await response.json() as {data:{jobId:string}}).data.jobId;
@@ -23,10 +24,10 @@ describe('autonomous progress and independent owner correction',()=>{
   await expect(runCollaborationAiJob({...offline,AI_EXECUTION_SLICE:true},jobId)).rejects.toBeInstanceOf(InvestigationContinuation);
   const before=JSON.parse((await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(jobId).first<{input_json:string}>())!.input_json).adminFeedbackStamp;
   expect(typeof before).toBe('string');
-  await env.DB.prepare("INSERT INTO project_admin_feedback(id,project_id,actor_id,target_type,feedback,created_at) VALUES(?1,?2,?3,'project','新增人工约束：不新增重复任务',?4)").bind(newId(),f.projectId,f.user.userId,nowIso()).run();
-  await runCollaborationAiJob({...offline,AI_EXECUTION_SLICE:true},jobId);
+  await saveProjectFeedback(env,f.projectId,f.user.userId,'新增人工约束：不新增重复任务',0);
+  await expect(runCollaborationAiJob({...offline,AI_EXECUTION_SLICE:true},jobId)).rejects.toBeInstanceOf(InvestigationContinuation);
   const latest=await env.DB.prepare('SELECT input_json,status,error_json FROM jobs WHERE id=?1').bind(jobId).first<{input_json:string;status:string;error_json:string}>();
-  expect(latest?.status).toBe('failed');expect(latest?.error_json).toContain('管理员反馈已变化');expect(JSON.parse(latest!.input_json).adminFeedbackStamp).toBe(before);expect(fetch).toHaveBeenCalledTimes(1);
+  expect(latest?.status).not.toBe('failed');expect(JSON.parse(latest!.input_json).adminFeedbackStamp).toBe(before);expect(JSON.parse(latest!.input_json).feedbackSnapshot.feedback).toBe('');expect(fetch).toHaveBeenCalledTimes(1);
  });
  it('debounces user events, ignores AI events and persists exactly one progression job',async()=>{const f=await fixture();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();await event(f.projectId,'ai');await dispatchProjectProgression(offline);expect(await env.DB.prepare('SELECT 1 FROM project_progression WHERE project_id=?1').bind(f.projectId).first()).toBeNull();await event(f.projectId,'user',true);await dispatchProjectProgression(offline);expect(await env.DB.prepare('SELECT 1 FROM project_progression WHERE project_id=?1').bind(f.projectId).first()).toBeNull();await env.DB.prepare('UPDATE events SET occurred_at=?2 WHERE project_id=?1').bind(f.projectId,new Date(Date.now()-60000).toISOString()).run();await dispatchProjectProgression(offline);await dispatchProjectProgression(offline);const jobs=await env.DB.prepare('SELECT input_json FROM jobs WHERE project_id=?1').bind(f.projectId).all<{input_json:string}>();expect(jobs.results).toHaveLength(1);expect(JSON.parse(jobs.results[0]!.input_json).progression).toBe(true);});
  it('a source waiting for user input does not starve progress on other project information',async()=>{const f=await fixture();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_at,updated_at) VALUES(?1,?2,'parse_source','waiting_input','{}',0,?3,?3)").bind(newId(),f.projectId,nowIso()).run();await event(f.projectId);await dispatchProjectProgression(offline);expect((await env.DB.prepare("SELECT COUNT(*) n FROM jobs WHERE project_id=?1 AND kind='agent_run'").bind(f.projectId).first<{n:number}>())!.n).toBe(1);});

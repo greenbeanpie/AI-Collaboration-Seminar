@@ -1,3 +1,4 @@
+import { currentProjectFeedback, projectFeedbackHistory, saveProjectFeedback } from '../services/project-feedback';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { taskSummarySchema, readTaskSummary, enqueueTaskSummary } from '../services/task-summary';
 import { sourceReferenceAvailability } from '../services/source-inputs';
@@ -23,6 +24,7 @@ import { applyProposal, reviseProposal, audit, decideSubmission, owner, toCollab
 import { projectParams } from './projects';
 import { projectGoal, taskDependencies } from '../services/project-simplification';
 import { loadResourceVersionText } from '../services/resources';
+const feedbackSnapshotSchema = z.object({versionId:z.string().nullable(),version:z.number().int().nonnegative(),feedback:z.string(),actorId:z.string().nullable(),createdAt:z.string().nullable()});
 const revision = z.number().int().positive();
 const mode = z.enum(['manual', 'automatic']);
 const taskInput = z.object({ title: z.string().min(1).max(200), detail: z.string().max(4000).default(''), criteria: z.string().min(1).max(4000), effortHours: z.number().min(.25).max(200).default(1), parentTaskId: z.string().uuid().nullable().default(null) });
@@ -37,7 +39,7 @@ function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path:
     const extras: Record<string, z.ZodString> = {};
     for (const match of path.matchAll(/\{(\w+)\}/g))
         extras[match[1]!] = z.string().uuid();
-    const [out, name] = path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
+    const [out, name] = path === '/feedback/current' ? [feedbackSnapshotSchema,'ProjectFeedbackCurrentResponse'] : path === '/feedback/history' ? [z.object({items:z.array(feedbackSnapshotSchema)}),'ProjectFeedbackHistoryResponse'] : path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
     const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals') ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
     const dispatch = (async (c: Context<AppEnv>) => {
         if (method === 'post' && path === '/tasks') {
@@ -212,14 +214,18 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
       if(!results[0]!.meta.changes)throw invalidState('任务版本或权限已变化');
       return c.json(apiData(c,await taskWithReferences(c,await task(c))));
     });
+    route(app,'get','/feedback/current',undefined,async c=>{const {projectId}=ids(c);return c.json(apiData(c,await currentProjectFeedback(c.env,projectId)));});
+    route(app,'get','/feedback/history',undefined,async c=>{const {projectId}=ids(c);return c.json(apiData(c,{items:await projectFeedbackHistory(c.env,projectId)}));});
+    route(app,'post','/feedback/current',z.object({feedback:z.string().max(12000),expectedVersion:z.number().int().nonnegative()}),async c=>{const {projectId,userId}=ids(c);const b=await c.req.json();return c.json(apiData(c,await saveProjectFeedback(c.env,projectId,userId,b.feedback,b.expectedVersion)));});
     route(app,'post','/feedback',z.object({feedback:z.string().min(1).max(12000),targetType:z.enum(['project','task','proposal','submission']).default('project'),targetId:z.string().uuid().optional(),requestAiRedo:z.boolean().default(false)}),async c=>{
       const {projectId,userId}=ids(c);await owner(c.env,projectId,userId);const b=await c.req.json(),id=newId();
       const type=b.targetType??'project';
+      if(type==='project'){const current=await currentProjectFeedback(c.env,projectId);const saved=await saveProjectFeedback(c.env,projectId,userId,b.feedback,current.version);return c.json(apiData(c,{feedbackId:saved.versionId,queued:false}));}
       const tables:Record<string,string>={task:'tasks',proposal:'collaboration_proposals',submission:'task_submissions'};
       if(type!=='project'&&(!b.targetId||!await c.env.DB.prepare(`SELECT 1 FROM ${tables[type]} WHERE id=?1 AND project_id=?2`).bind(b.targetId,projectId).first()))throw validationFailed('反馈目标不属于项目');
       await c.env.DB.batch([c.env.DB.prepare(`INSERT INTO project_admin_feedback(id,project_id,actor_id,target_type,target_id,feedback,request_ai_redo,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})`).bind(id,projectId,userId,type,b.targetId??null,b.feedback,b.requestAiRedo?1:0,nowIso()),audit(c.env,projectId,userId,'collaboration.admin_feedback',id,b,true)]);
       if(b.requestAiRedo)await c.env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2 WHERE project_id=?1 AND status='pending'").bind(projectId,nowIso()).run();
-      return c.json(apiData(c,{feedbackId:id,queued:!!b.requestAiRedo}));
+      return c.json(apiData(c,{feedbackId:id,queued:false}));
     });
     for (const operation of ['decompose', 'assign', 'evaluate'] as const) {
         const path = operation === 'evaluate' ? '/submissions/{submissionId}/evaluate' : '/' + operation;

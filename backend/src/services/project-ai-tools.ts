@@ -335,7 +335,7 @@ export async function projectToolConversation(env: Env, params: {
     let dispatched = false, out: Awaited<ReturnType<typeof gatewayChat>> | undefined, error: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode,
+        projectId: context.projectId, jobId: context.jobId, config, messages, jsonMode: !toolMode.nativeSearch, privateContext: true, sessionId: providerSessionId, toolMode,
         providerRetry, onProviderRetry: investigationId ? async state => {
           providerRetry=state;
           if(toolMode.nativeSearch) searchUsed=false;

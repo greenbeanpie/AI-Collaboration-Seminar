@@ -1,3 +1,4 @@
+import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
@@ -61,7 +62,8 @@ export async function createJobAndDispatch(
     const source = await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(supplied.sourceVersionId).first<{ ai_config_version_id: string | null }>();
     frozenConfig = source?.ai_config_version_id ?? frozenConfig;
   }
-  const input = { ...supplied, configVersionId: frozenConfig, ...(lifecycle ? { sourceLifecycleVersion: lifecycle.lifecycleVersion } : {}) };
+  const feedbackSnapshot = params.projectId ? await currentProjectFeedback(env, params.projectId) : undefined;
+  const input = { ...supplied, feedbackSnapshot, configVersionId: frozenConfig, ...(lifecycle ? { sourceLifecycleVersion: lifecycle.lifecycleVersion } : {}) };
   const writes = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at)

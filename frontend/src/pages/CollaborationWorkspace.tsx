@@ -3,7 +3,7 @@ import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, UserRound } from 'lucide-react';
@@ -13,22 +13,22 @@ import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { jobStatusLabel, useVisibleJobPoller } from './aiWorkflowSupport';
-import { ProjectSourceContext } from './ProjectSourceContext';
+import { ReferencePicker } from './ReferencePicker';
+import './ProjectWorkspace.css';
 import { AssistiveRubricScores } from './AssistiveRubricScores';
 import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { dependencyOrder } from './task-dependencies';
 import { DateInput } from '../components/DateInput';
-import { FixedMaterialVersions } from './FixedMaterialVersions';
 import './CollaborationWorkspace.css';
 import { taskSummarySource, taskSummaryPreview, useTaskSummaries } from './useTaskSummaries';
 import { ProposalCorrection } from './ProposalCorrection';
-import { ProjectAiFeedback } from './ProjectAiFeedback';
 import { AiClarificationCard } from '../components/AiClarificationCard';
 import { clarificationApi, clarificationFromJob, clarificationQueryKey, type ProjectClarification, type ClarificationAnswer } from '../api/clarifications';
 
 const lifecycleLabels = { open: '待认领', in_progress: '进行中', submitted: '待验收', accepted: '已通过', improve: '需改进', rework: '需重做' };
 const decisionLabels = { accept: '通过', improve: '改进', rework: '重做' };
 const taskStateLabel = (task: CollaborationTask) => task.lifecycleState === 'accepted' && !task.currentSubmissionId ? '历史已完成' : lifecycleLabels[task.lifecycleState];
+type FeedbackSnapshot = {versionId:string|null;version:number;feedback:string;actorId:string|null;createdAt:string|null};
 const defaultDraft = { title: '', detail: '', criteria: '', effortHours: '1', dueDate: '', assigneeId: '' };
 
 export function CollaborationWorkspace() {
@@ -42,6 +42,9 @@ function ProjectCollaborationWorkspace() {
   const { projectId, project } = useProject();
   const client = useQueryClient();
   const owner = projectPermission(project,'taskManage');
+  const feedbackAdmin = project.myRole === 'owner' || project.canGrantPermissions === true;
+  const feedback = useQuery({queryKey:['project-feedback',projectId],queryFn:()=>projectRequest<FeedbackSnapshot>(projectId,'/collaboration/feedback/current')});
+  const feedbackHistory = useQuery({queryKey:['project-feedback-history',projectId],queryFn:()=>projectRequest<{items:FeedbackSnapshot[]}>(projectId,'/collaboration/feedback/history')});
   const capabilities = useCapabilities();
   const modelEnabled = capabilities.data?.features.aiEnabled === true;
   const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: () => collaborationApi.tasks(projectId) });
@@ -50,7 +53,7 @@ function ProjectCollaborationWorkspace() {
   const aiEnabled = modelEnabled && settings.data?.aiCollaborationEnabled === true;
   const members = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
   const me = useQuery({ queryKey: ['member-me', projectId], queryFn: () => api.get<'MemberResponse'>(projectPath(projectId, '/members/me')) });
-  const proposals = useQuery({ queryKey: ['collaboration-proposals', projectId], queryFn: () => collaborationApi.proposals(projectId), enabled: owner });
+  const proposals = useQuery({ queryKey: ['collaboration-proposals', projectId], queryFn: () => collaborationApi.proposals(projectId) });
   const [createOpen, setCreateOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [draft, setDraft] = useState(defaultDraft);
@@ -84,13 +87,11 @@ function ProjectCollaborationWorkspace() {
   }, [proposalHistory, proposalRecord, searchParams, setSearchParams]);
   const setSelectedId = (id: string) => { const next = new URLSearchParams(searchParams); if (id) next.set('task', id); else next.delete('task'); setSearchParams(next, { replace: true }); };
   const [brief, setBrief] = useState('');
+  const [feedbackBase,setFeedbackBase]=useState<number|null>(null);
+  useEffect(()=>{if(feedback.data && feedbackBase===null){setBrief(feedback.data.feedback);setFeedbackBase(feedback.data.version);}},[feedback.data,feedbackBase]);
+  const saveFeedback=useMutation({mutationFn:async()=>{if(feedbackBase===null)throw new Error('持续反馈尚未读取，请稍后重试');const result=await projectRequest<FeedbackSnapshot>(projectId,'/collaboration/feedback/current',{method:'POST',body:{feedback:brief,expectedVersion:feedbackBase}});setFeedbackBase(result.version);client.setQueryData(['project-feedback',projectId],result);await client.invalidateQueries({queryKey:['project-feedback-history',projectId]});return result;}});
   const [sourceVersions, setSourceVersions] = useState<string[]>([]);
   const [contextMaterialVersions, setContextMaterialVersions] = useState<string[]>([]);
-  const [contextVersionsOpen, setContextVersionsOpen] = useState(false);
-  const [sourceReadiness, setSourceReadiness] = useState<Record<string, boolean>>({});
-  const sourcesPending = sourceVersions.some(id => sourceReadiness[id] !== true);
-  const sourceReady = useCallback((id: string, ready: boolean) => setSourceReadiness(values => values[id] === ready ? values : { ...values, [id]: ready }), []);
-  const sourceSelection = (id: string, checked: boolean) => setSourceVersions(values => checked ? values.includes(id) || values.length >= 5 ? values : [...values, id] : values.filter(value => value !== id));
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobRefresh, setJobRefresh] = useState(0);
   const job = useVisibleJobPoller(jobId, jobRefresh);
@@ -144,10 +145,10 @@ function ProjectCollaborationWorkspace() {
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-proposals', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId] }); } }, [job.isSettled, jobId, client, projectId]);
   const create = useMutation({ mutationFn: () => collaborationApi.createTask(projectId, { ...draft, title: draft.title.trim(), criteria: draft.criteria.trim(), effortHours: Number(draft.effortHours), dueDate: draft.dueDate || null, assigneeId: draft.assigneeId || null, dependsOnTaskIds: createDependencies, expectedGraphRevision: createGraphRevision }), onSuccess: async () => { setCreateOpen(false); setDraft(defaultDraft); setCreateDependencies([]); await invalidate(); }, onError: invalidate });
   const claim = useMutation({ mutationFn: (task: CollaborationTask) => collaborationApi.claim(projectId, task), onSuccess: invalidate, onError: invalidate });
-  const ai = useMutation({ mutationFn: (action: 'decompose' | 'adjust' | 'assign') => action === 'decompose' ? collaborationApi.decompose(projectId, brief.trim(), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, brief.trim(), rows.filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).map(row => row.taskId), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').map(row => row.taskId)), onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
+  const ai = useMutation({ mutationFn: async (action: 'decompose' | 'adjust' | 'assign') => { if(feedbackAdmin && brief !== feedback.data?.feedback) await saveFeedback.mutateAsync(); return action === 'decompose' ? collaborationApi.decompose(projectId, '依据项目主目标与已保存的持续项目反馈生成任务拆解方案', sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, '依据已保存的持续项目反馈提出当前任务调整方案', rows.filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).map(row => row.taskId), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').map(row => row.taskId)); }, onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
   const renderProposal = (proposal: CollaborationProposal, readOnly = false) => (<article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div>{!readOnly && <ProposalCorrection key={proposal.proposalId} projectId={projectId} proposal={proposal} members={members.data ?? []} onChanged={invalidate} />}<RemovedSourceNotice payload={proposal.payload} /><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /></article>);
   return <SectionCard title={historyPage ? '任务历史' : '子任务'} detail={historyPage ? '每页展示一条记录，保留提交时的内容与固定版本引用。' : '按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。'}>
-    <div hidden={historyPage}><div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" aria-label="筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{owner && <button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(true)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
+    <div hidden={historyPage}><div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" aria-label="筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{<button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(true)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
     </div>
     {!historyPage && <>
       {owner && clarifications.error && <ErrorNotice error={clarifications.error} onRetry={() => void clarifications.refetch()} />}
@@ -156,28 +157,29 @@ function ProjectCollaborationWorkspace() {
       {waitingForAnswer && !questions.length && <p role="status">AI 正在等待补充信息，正在核对待回答问题。</p>}
       {jobId && !aiOpen && <JobProgress job={job} />}
     </>}
-    {owner && <Modal title={proposalHistory ? 'AI 建议历史' : 'AI 拆解、调整与分工'} mode={proposalHistory ? 'page' : aiOpen && !historyPage ? 'dialog' : 'hidden'} onClose={proposalHistory ? returnFromHistory : () => setAiOpen(false)}>
+    {<Modal title={proposalHistory ? 'AI 建议历史' : 'AI 拆解、调整与分工'} mode={proposalHistory ? 'page' : aiOpen && !historyPage ? 'dialog' : 'hidden'} onClose={proposalHistory ? returnFromHistory : () => setAiOpen(false)} headerActions={!proposalHistory ? <button className="button button-quiet" onClick={() => openHistory('proposals', orderedProposals[0]?.proposalId)}>历史记录</button> : undefined}>
     <section id="collab-ai-panel" className="collab-ai" aria-label="AI 拆解、调整与分工">
       <div className="stack" hidden={proposalHistory}>
-      <div className="form-actions"><DropdownMenu label="更多"><button className="button button-quiet" onClick={() => openHistory('proposals', orderedProposals[0]?.proposalId)}>查看历史版本</button></DropdownMenu></div>
       {questions.map(question => <AiClarificationCard key={question.id} question={question} onAnswer={answer => resolveClarification(question, answer)} onCancel={() => resolveClarification(question)} onRefresh={refreshClarifications} />)}
-      <p className="form-note">负责人可补充信息、提出要求或要求调整。AI 自主查阅项目内授权信息，所选版本优先参考。自动应用遵循项目设置，负责人始终可以修正结果或重新反馈。过期结果不会覆盖成员的新操作。</p>
       {!aiEnabled && <p className="notice notice-warn">{!settings.data?.aiCollaborationEnabled ? '本项目 AI 智能协作已关闭，请由负责人在项目设置开启。' : 'AI 模型当前不可用。'}可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
-      <ProjectSourceContext projectId={projectId} enabled={aiEnabled} selected={sourceVersions} onSelection={sourceSelection} onReady={sourceReady} />
-      <details onToggle={event => setContextVersionsOpen(event.currentTarget.open)}><summary>选择背景、参考或成果文档的固定版本</summary>{contextVersionsOpen && <FixedMaterialVersions projectId={projectId} selected={contextMaterialVersions} onChange={setContextMaterialVersions} disabled={!aiEnabled || ai.isPending} />}</details>
-      {sourcesPending && <p className="notice notice-warn">选定资料尚未完整处理。可继续调查，AI 将检查可读取范围并报告未处理内容。</p>}
+      <ReferencePicker projectId={projectId} sourceVersionIds={sourceVersions} materialVersionIds={contextMaterialVersions} onChange={selection=>{setSourceVersions(selection.sourceVersionIds);setContextMaterialVersions(selection.materialVersionIds);}} disabled={!owner || ai.isPending}/>
       {aiEnabled && <ProjectSearchOption projectId={projectId} enabled={allowSearch} onChange={setAllowSearch} query={searchQuery} onQuery={setSearchQuery}/>}
-      <Field label="目标、补充信息或调整要求"><textarea className="input" rows={3} maxLength={12000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="描述目标或要求调整的内容；AI 将创建可验收任务，或仅调整本页尚未提交、尚未验收的任务" /></Field>
-      <div className="form-actions"><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || !rows.some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务</button><button className="button" disabled={!aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工</button></div>
+      <Field label="持续项目反馈"><textarea className="input" rows={3} maxLength={12000} readOnly={!feedbackAdmin} value={brief} onChange={event => setBrief(event.target.value)} placeholder="保存项目目标、补充信息和持续调整要求；后续项目 AI 操作会使用当前保存版本" /></Field>
+      <p className="form-note">持续保存并用于后续项目 AI 判断；清空后保存可取消当前反馈。{!feedbackAdmin && '仅项目管理员可修改。'}</p>
+      {feedback.error && <ErrorNotice error={feedback.error}/>}{saveFeedback.error && <><ErrorNotice error={saveFeedback.error}/><button className="button button-quiet" onClick={async()=>{const result=await feedback.refetch();if(result.data){setBrief(result.data.feedback);setFeedbackBase(result.data.version);saveFeedback.reset();}}}>重新载入已保存反馈</button></>}
+      {feedbackAdmin && <button className="button" disabled={feedbackBase===null || saveFeedback.isPending || ai.isPending || brief===feedback.data?.feedback} onClick={()=>saveFeedback.mutate()}>保存反馈</button>}
+      {saveFeedback.isSuccess && <p role="status">反馈已保存</p>}
+      <div className="form-actions"><button className="button" disabled={feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || (allowSearch&&!searchQuery.trim()) || ai.isPending || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || (allowSearch&&!searchQuery.trim()) || ai.isPending || !rows.some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务</button><button className="button" disabled={feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工</button></div>
       {ai.error && <ErrorNotice error={ai.error} />}
       {handoffNotice && <p className="form-note">{handoffNotice}</p>}
       <JobProgress job={job} />
+      {(job.job as unknown as {feedbackSnapshot?:FeedbackSnapshot})?.feedbackSnapshot && <details><summary>本次使用的持续反馈版本 {(job.job as unknown as {feedbackSnapshot:FeedbackSnapshot}).feedbackSnapshot.version}</summary><p style={{whiteSpace:'pre-wrap'}}>{(job.job as unknown as {feedbackSnapshot:FeedbackSnapshot}).feedbackSnapshot.feedback || '未设置持续反馈'}</p></details>}
       {jobId&&<ProjectToolCalls projectId={projectId} jobId={jobId}/>}
       {proposals.error && <ErrorNotice error={proposals.error} />}
-      {activeProposal && renderProposal(activeProposal)}
-      {activeProposal && orderedProposals[0]?.proposalId !== activeProposal.proposalId && <p className="form-note">有新的 AI 建议。为保留当前修改，请通过“更多 → 查看历史版本”选择需要处理的建议。</p>}
+      {activeProposal && renderProposal(activeProposal, !owner)}
+      {activeProposal && orderedProposals[0]?.proposalId !== activeProposal.proposalId && <p className="form-note">有新的 AI 建议。为保留当前修改，请通过标题栏“历史记录”选择需要处理的建议。</p>}
       </div>
-      {proposalHistory && <><h3>AI 建议历史</h3>{proposals.isLoading && <Spinner label="读取 AI 建议历史" />}{!proposals.isLoading && !proposals.error && !proposalRecord && <p className="muted">尚无 AI 建议记录。</p>}{proposalRecord && <div className="collab-history-pager"><button className="button button-small" disabled={proposalIndex === 0} onClick={() => chooseProposal(orderedProposals[proposalIndex - 1]!.proposalId)}>上一页</button><Field label="选择建议记录"><select className="input" value={proposalRecord.proposalId} onChange={event => chooseProposal(event.target.value)}>{orderedProposals.map((item, index) => <option key={item.proposalId} value={item.proposalId}>记录 {orderedProposals.length - index} · {new Date(item.createdAt).toLocaleString('zh-CN')}</option>)}</select></Field><span aria-live="polite">第 {proposalIndex + 1} / {orderedProposals.length} 页</span><button className="button button-small" disabled={proposalIndex === orderedProposals.length - 1} onClick={() => chooseProposal(orderedProposals[proposalIndex + 1]!.proposalId)}>下一页</button></div>}</>}
+      {proposalHistory && <><h3>持续反馈版本历史</h3>{feedbackHistory.error && <ErrorNotice error={feedbackHistory.error}/>}<div className="stack">{feedbackHistory.data?.items.map(item=><article className="form-note" key={item.versionId}><strong>版本 {item.version} · {item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN') : ''}</strong><p style={{whiteSpace:'pre-wrap'}}>{item.feedback || '已清空持续反馈'}</p></article>)}</div><h3>AI 建议历史</h3>{proposals.isLoading && <Spinner label="读取 AI 建议历史" />}{!proposals.isLoading && !proposals.error && !proposalRecord && <p className="muted">尚无 AI 建议记录。</p>}{proposalRecord && <div className="collab-history-pager"><button className="button button-small" disabled={proposalIndex === 0} onClick={() => chooseProposal(orderedProposals[proposalIndex - 1]!.proposalId)}>上一页</button><Field label="选择建议记录"><select className="input" value={proposalRecord.proposalId} onChange={event => chooseProposal(event.target.value)}>{orderedProposals.map((item, index) => <option key={item.proposalId} value={item.proposalId}>记录 {orderedProposals.length - index} · {new Date(item.createdAt).toLocaleString('zh-CN')}</option>)}</select></Field><span aria-live="polite">第 {proposalIndex + 1} / {orderedProposals.length} 页</span><button className="button button-small" disabled={proposalIndex === orderedProposals.length - 1} onClick={() => chooseProposal(orderedProposals[proposalIndex + 1]!.proposalId)}>下一页</button></div>}</>}
       {proposals.error && proposalHistory && <ErrorNotice error={proposals.error} />}
       {proposalHistory && proposalRecord && <>{renderProposal(proposalRecord, true)}<button className="button button-quiet" onClick={() => { setActiveProposalId(proposalRecord.proposalId); returnFromHistory(); }}>打开此建议进行处理</button></>}
     </section></Modal>}
@@ -193,7 +195,6 @@ function ProjectCollaborationWorkspace() {
       {task.parentTaskId && <small>历史父任务 · {rows.find(row => row.taskId === task.parentTaskId)?.title ?? task.parentTaskId}</small>}
       <div className="collab-toolbar collab-task-footer"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-primary button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button></div>
     </article>)}</div>
-    {owner && <ProjectAiFeedback projectId={projectId} />}
     {createOpen && <Modal title="新建子任务" onClose={() => setCreateOpen(false)}><form className="stack" onSubmit={event => { event.preventDefault(); create.mutate(); }}>
       <Field label="任务名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>
       <Field label="任务说明"><textarea className="input" rows={3} maxLength={4000} value={draft.detail} onChange={event => setDraft({ ...draft, detail: event.target.value })} /></Field>

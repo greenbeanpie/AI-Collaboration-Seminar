@@ -183,7 +183,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     let failure: unknown;
     try {
       out = await gatewayChat(endpoint, {
-        config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
+        projectId: params.projectId, jobId: params.jobId, config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
         beforeFetch: async () => {
           await params.beforeCall?.();
           await markAiCallStarted(env, params.jobId);
@@ -199,7 +199,7 @@ export async function aiJsonCall<S extends z.ZodType>(
         onDispatch: () => { attempted = true; },
       });
     } catch (error) {
-      if (!attempted) { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
+      if (!attempted) { if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
       failure = error;
     }
     let data: z.infer<S> | undefined;
