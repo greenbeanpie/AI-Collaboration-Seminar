@@ -1,0 +1,178 @@
+/** Local fixture-only browser acceptance. Never contacts a model or production backend.
+ * node scripts/verify-ui-regressions.mjs [preview-url] [absolute-output-directory]
+ */
+import { createRequire } from 'node:module';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/hmz/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const origin = process.argv[2] || 'http://127.0.0.1:5175';
+assert(['localhost','127.0.0.1'].includes(new URL(origin).hostname),'Only a local preview is supported');
+const out = resolve(process.argv[3] || 'output/ui-regressions');
+await mkdir(out,{recursive:true});
+const id='11111111-1111-4111-8111-111111111111', userId='22222222-2222-4222-8222-222222222222', standardId='33333333-3333-4333-8333-333333333333', assessmentId='44444444-4444-4444-8444-444444444444', now='2026-10-03T09:00:00.000Z';
+const base=`/app/projects/${id}`;
+const result={preview:origin,fixtureOnly:true,startedAt:new Date().toISOString(),checks:[],screenshots:[],errors:[],requests:[]};
+const browser=await chromium.launch({headless:true,executablePath:process.env.EDGE_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+async function scenario(name,role,run,scoreCorrect=false){
+  const context=await browser.newContext({viewport:{width:1440,height:1100},serviceWorkers:'block'});
+  const page=await context.newPage();page.setDefaultTimeout(8000);
+  const state={feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='admin'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
+  const permissions={teamManage:role==='admin',taskManage:role==='admin',resourceManage:role==='admin',scoreInitiate:true,scoreCorrect:role==='admin'||scoreCorrect};
+  const project={projectId:id,name:'浏览器验证项目',description:'仅本地 HTTP fixtures',revision:1,status:'active',myRole:role==='admin'?'owner':'member',permissions,canGrantPermissions:role==='admin',createdAt:now,updatedAt:now,deadlineDate:'2026-10-30',deadlinePrecision:'date'};
+  const member={memberId:'member-1',userId,displayName:role==='admin'?'管理员':'普通成员',username:'fixture-user',email:null,role:project.myRole,permissions,permissionsRevision:1};
+  const rubric={weights:[{key:'quality',label:'质量',weight:100}]};
+  const standard={standardsVersionId:standardId,title:'已确认标准',version:1,revision:1,status:'confirmed',rubric,requirements:[],createdAt:now};
+  const assessment={assessmentId,kind:'material_review',status:'succeeded',historical:false,revision:1,origin:'ai',standardsVersionId:standardId,standardsVersion:1,goalRevision:1,goal:{title:'验证主目标',detail:'左侧目标详细说明'},materialVersionIds:[],rehearsalId:null,createdAt:now,report:{kind:'assistive',status:'scored',scores:[{key:'quality',label:'质量',score:80,comment:'已有真实评分',confidence:0.8,evidence:[]}],weightedTotal:80,summary:'已有评分记录',requirementChecks:[],limitations:[]}};
+  page.on('pageerror',error=>result.errors.push({scenario:name,message:error.message}));
+  await context.route('**/*',async route=>{
+    const url=new URL(route.request().url());
+    if(url.origin!==new URL(origin).origin){await route.abort();return;}
+    if(!url.pathname.startsWith('/api/')){await route.continue();return;}
+    const path=url.pathname,method=route.request().method(),body=route.request().postDataJSON();
+    result.requests.push({scenario:name,path,method});
+    if(method!=='GET')state.writes.push({path,method,body});
+    let data={items:[],nextCursor:null};
+    if(path==='/api/v1/auth/session')data={user:{id:userId,username:'fixture-user',displayName:member.displayName,email:null,isAdmin:role==='admin',role:role==='admin'?'super_admin':'user'}};
+    else if(path==='/api/v1/capabilities')data={features:{aiEnabled:true,uploadsEnabled:true},competitionTemplate:{teamSizeLimit:10},authentication:{mode:'password'}};
+    else if(path==='/api/v1/notifications/settings')data={inAppEnabled:false,pushEnabled:false};
+    else if(path==='/api/v1/notifications/push/status')data={configured:false};
+    else if(path==='/api/v1/notifications')data={items:[],nextCursor:null,unreadCount:0};
+    else if(path==='/api/v1/admin/ai-config'){
+      if(method==='PUT'){state.config=body;data={version:2,enabled:false};}
+      else data={config:{},version:0,enabled:false};
+    }
+    else if(path===`/api/v1/projects/${id}`)data=project;
+    else if(path.endsWith('/members/me'))data=member;
+    else if(path.endsWith('/members'))data={items:[member],nextCursor:null};
+    else if(path.endsWith('/goal'))data={title:'验证主目标',detail:'左侧目标详细说明',revision:1,graphRevision:1};
+    else if(path.endsWith('/tasks'))data={items:[],nextCursor:null};
+    else if(path.endsWith('/collaboration/settings'))data={revision:1,aiCollaborationEnabled:true,assignmentMode:'manual',acceptanceMode:'manual',rubricMode:'manual'};
+    else if(path.endsWith('/collaboration/feedback/current')){
+      if(method==='POST')state.feedback={...state.feedback,feedback:body.feedback,version:state.feedback.version+1};
+      data=state.feedback;
+    }
+    else if(path.endsWith('/collaboration/feedback/history'))data={items:[state.feedback]};
+    else if(path.endsWith('/collaboration/decompose'))data={jobId:'55555555-5555-4555-8555-555555555555'};
+    else if(path.startsWith('/api/v1/jobs/'))data={jobId:path.split('/').at(-1),status:'succeeded',attempts:1,feedbackSnapshot:state.feedback,createdAt:now,updatedAt:now};
+    else if(path.endsWith('/ai-tools/capabilities'))data={fileTools:true,search:{supported:false,reason:'管理员尚未启用互联网搜索'},searchCost:'unknown'};
+    else if(path.endsWith('/ai/clarifications'))data={items:[]};
+    else if(path.endsWith('/invitation-requests')){
+      if(method==='POST')state.invitations.push({id:'invite-1',username:body.username,requestedBy:userId,status:'pending',revision:1,createdAt:now});
+      data={items:state.invitations};
+    }
+    else if(path.endsWith('/invitation-requests/invite-1/decide')){state.invitations[0].status=body.action==='approve'?'approved':'rejected';data=state.invitations[0];}
+    else if(path.endsWith('/sources'))data={items:[{sourceId:'source-1',title:'本地参考通知',currentVersionId:'66666666-6666-4666-8666-666666666666'}],nextCursor:null};
+    else if(path.endsWith('/standards'))data={items:[standard]};
+    else if(path.endsWith('/assessments'))data={items:[assessment],nextCursor:null};
+    else if(path.endsWith(`/assessments/${assessmentId}`))data=assessment;
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data,requestId:'fixture-only'})});
+  });
+  const screenshot=async suffix=>{const path=resolve(out,`${name}-${suffix}.png`);await page.screenshot({path,fullPage:true});result.screenshots.push(path);};
+  try{await run({page,state,screenshot});result.checks.push({name,passed:true});}
+  catch(error){await screenshot('failure');result.checks.push({name,passed:false,error:error.stack});}
+  finally{await context.close();}
+}
+try{
+  await scenario('ordinary-invitation','member',async({page,state,screenshot})=>{
+    await page.goto(origin+base+'/team');
+    await page.getByRole('heading',{name:'按用户名申请邀请组员'}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'创建邀请码'}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'发送项目邀请',exact:true}).count(),0);
+    await page.getByLabel('完整用户名',{exact:true}).fill('new-member');
+    await page.getByRole('button',{name:'报请管理员批准'}).click();
+    await page.getByText('申请已提交，等待管理员批准。').waitFor();
+    assert(state.writes.some(item=>item.path.endsWith('/invitation-requests')&&item.body.username==='new-member'));
+    assert(!state.writes.some(item=>item.path.endsWith('/invitations')));
+    await screenshot('pending');
+  });
+  await scenario('administrator-invitation','admin',async({page,state,screenshot})=>{
+    await page.goto(origin+base+'/team');
+    await page.getByRole('button',{name:'创建邀请码'}).waitFor();
+    await page.getByRole('heading',{name:'成员邀请申请'}).waitFor();
+    await page.getByRole('button',{name:'批准并发送邀请'}).click();
+    await page.getByText('已批准并发送邀请',{exact:false}).waitFor();
+    assert(state.writes.some(item=>item.path.endsWith('/decide')&&item.body.action==='approve'));
+    await screenshot('cards');
+  });
+  await scenario('feedback-reference-history','admin',async({page,state,screenshot})=>{
+    await page.goto(origin+base+'/tasks');
+    await page.getByRole('button',{name:/AI 拆解/}).click();
+    const dialog=page.getByRole('dialog',{name:'AI 拆解、调整与分工'});
+    await dialog.waitFor();
+    assert.equal(await page.getByText('负责人反馈与重新判断',{exact:true}).count(),0);
+    const feedback=dialog.getByLabel('持续项目反馈',{exact:false});
+    await feedback.fill('新持续反馈，保留草稿');
+    await dialog.getByRole('button',{name:'选择优先参考文件'}).click();
+    const picker=page.getByRole('dialog',{name:'选择优先参考文件'});
+    await picker.waitFor();
+    await picker.getByRole('checkbox',{name:'本地参考通知'}).check();
+    await screenshot('picker-page');
+    await picker.getByRole('button',{name:'完成选择并返回'}).click();
+    assert.equal(await feedback.inputValue(),'新持续反馈，保留草稿');
+    await screenshot('picker-return');
+    await dialog.getByRole('button',{name:'重新生成整套任务建议',exact:true}).click();
+    await page.getByText('反馈已保存',{exact:true}).waitFor();
+    await page.waitForFunction(()=>document.body.innerText.includes('本次使用的持续反馈版本'));
+    const saveIndex=state.writes.findIndex(item=>item.path.endsWith('/feedback/current'));
+    const aiIndex=state.writes.findIndex(item=>item.path.endsWith('/decompose'));
+    assert(saveIndex>=0&&aiIndex>saveIndex,'feedback must persist before AI request');
+    assert.equal(state.feedback.feedback,'新持续反馈，保留草稿');
+    const history=dialog.getByRole('button',{name:'历史记录',exact:true});
+    assert(await history.evaluate(node=>Boolean(node.closest('.modal-head'))));
+    await history.click();
+    await page.getByRole('heading',{name:'持续反馈版本历史'}).waitFor();
+    await screenshot('history');
+  });
+  for(const [role,grant] of [['member',false],['member',true],['admin',false]])await scenario(`scoring-${role}-${grant?'granted':'default'}`,role,async({page,screenshot})=>{
+    await page.goto(origin+base+'/assessment?section=checks');
+    await page.getByRole('heading',{name:'独立评分记录'}).waitFor();
+    const correction=page.getByRole('heading',{name:'修正本轮评分',exact:true});
+    if(role==='admin'||grant){await correction.waitFor();assert(await correction.evaluate(node=>Boolean(node.closest('.assessment-layout'))));}
+    else assert.equal(await correction.count(),0);
+    assert.equal(await page.getByRole('heading',{name:'独立人工评分',exact:true}).count(),0);
+    await screenshot('history');
+  },grant);
+  await scenario('overview-layout','member',async({page,screenshot})=>{
+    await page.goto(origin+base);
+    await page.getByRole('heading',{name:'项目主目标',exact:true}).waitFor();
+    assert.equal(await page.getByText('材料版本',{exact:true}).count(),0);
+    const columns=page.locator('.project-overview-columns');
+    const geometry=await columns.evaluate(node=>Array.from(node.children).map(child=>{const box=child.getBoundingClientRect();return{x:box.x,y:box.y,width:box.width,height:box.height};}));
+    assert(geometry[1].x>geometry[0].x+geometry[0].width-1,'desktop columns must sit side by side');
+    result.checks.push({name:'overview-desktop-geometry',passed:true,geometry});
+    await screenshot('desktop');
+    await page.setViewportSize({width:390,height:844});
+    const mobile=await columns.evaluate(node=>Array.from(node.children).map(child=>{const box=child.getBoundingClientRect();return{x:box.x,y:box.y,width:box.width,height:box.height};}));
+    assert(mobile[1].y>=mobile[0].y+mobile[0].height-1,'mobile layout must stack');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile must not scroll horizontally');
+    result.checks.push({name:'overview-mobile-geometry',passed:true,geometry:mobile});
+    await screenshot('mobile');
+  });
+  await scenario('opencode-custom-url','admin',async({page,state,screenshot})=>{
+    await page.goto(origin+'/app/settings/ai');
+    await page.getByRole('button',{name:'保存配置',exact:true}).waitFor();
+    await page.getByLabel('统一模型供应商',{exact:false}).selectOption('opencode-zen');
+    await page.getByLabel('统一模型 API key',{exact:false}).fill('fixture-explicit-key');
+    await page.getByLabel('统一模型 API URL',{exact:false}).fill('https://fixture-proxy.example/v1/chat/completions');
+    assert.equal(await page.getByLabel('统一模型供应商',{exact:false}).inputValue(),'custom');
+    assert.equal(await page.getByLabel('统一模型 API key',{exact:false}).inputValue(),'fixture-explicit-key');
+    await page.getByRole('button',{name:'保存配置',exact:true}).click();
+    await page.getByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。',{exact:true}).waitFor();
+    assert.equal(state.config.unified.providerPreset,'custom');
+    assert.equal(state.config.unified.apiKey,'fixture-explicit-key');
+    assert.equal(state.config.unified.apiProtocol,'chat-completions');
+    await page.getByLabel('允许 AI 使用提供商原生互联网搜索').check();
+    await page.getByRole('button',{name:'保存配置',exact:true}).click();
+    await page.waitForTimeout(100);
+    assert.equal(state.config.searchEnabled,true);
+    await screenshot('saved');
+  });
+}finally{
+  await browser.close();
+  result.finishedAt=new Date().toISOString();result.passed=result.checks.every(check=>check.passed)&&result.errors.length===0;
+  await writeFile(resolve(out,'results.json'),JSON.stringify(result,null,2));
+  console.log(JSON.stringify({passed:result.passed,checks:result.checks,screenshots:result.screenshots,errors:result.errors,report:resolve(out,'results.json')},null,2));
+  if(!result.passed)process.exitCode=1;
+}
