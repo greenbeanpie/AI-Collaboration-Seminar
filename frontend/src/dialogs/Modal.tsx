@@ -7,11 +7,13 @@ function lockPageScroll() {
   return () => { if (--modalCount === 0) document.body.style.overflow = originalOverflow; };
 }
 
-export function Modal({ title, children, onClose, descriptionId }: { title: string; descriptionId?: string; children: ReactNode; onClose: () => void }) {
+export function Modal({ title, children, onClose, descriptionId, mode = 'dialog' }: { title: string; descriptionId?: string; children: ReactNode; onClose: () => void; mode?: 'dialog' | 'page' | 'hidden' }) {
   const dialog = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
+    if (mode === 'page') { dialog.current?.focus(); return; }
+    if (mode !== 'dialog') return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const unlockScroll = lockPageScroll();
     const focusable = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') ?? []).filter(element => element.getClientRects().length > 0);
@@ -28,6 +30,6 @@ export function Modal({ title, children, onClose, descriptionId }: { title: stri
     };
     document.addEventListener('keydown', keydown);
     return () => { document.removeEventListener('keydown', keydown); unlockScroll(); previousFocus?.focus(); };
-  }, []);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialog} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-label={title} aria-describedby={descriptionId}><div className="modal-head"><h2>{title}</h2><button className="icon-button" aria-label="关闭" onClick={onClose}>×</button></div>{children}</section></div>;
+  }, [mode]);
+  return <div hidden={mode === 'hidden'} className={mode === 'dialog' ? 'modal-backdrop' : 'workspace-subpage'} role={mode === 'dialog' ? 'presentation' : undefined} onMouseDown={(event) => { if (mode === 'dialog' && event.target === event.currentTarget) onClose(); }}><section ref={dialog} tabIndex={-1} className={mode === 'dialog' ? 'modal' : 'stack'} role={mode === 'dialog' ? 'dialog' : undefined} aria-modal={mode === 'dialog' ? true : undefined} aria-label={title} aria-describedby={descriptionId}><div className="modal-head"><h2>{title}</h2><button className={mode === 'page' ? 'button button-quiet' : 'icon-button'} aria-label={mode === 'page' ? '返回任务操作' : '关闭'} onClick={onClose}>{mode === 'page' ? '返回任务操作' : '×'}</button></div>{children}</section></div>;
 }

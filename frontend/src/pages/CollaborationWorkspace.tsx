@@ -1,3 +1,4 @@
+import { DropdownMenu } from '../components/DropdownMenu';
 import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { TaskInquiries } from './TaskInquiries';
@@ -7,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, UserRound } from 'lucide-react';
 import { ApiError, api, listAllItems, projectPath } from '../api/client';
-import { collaborationApi, type CollaborationTask, type SubmissionDecision, type TaskSubmission } from '../api/collaboration';
+import { collaborationApi, type CollaborationTask, type CollaborationProposal, type SubmissionDecision, type TaskSubmission } from '../api/collaboration';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -55,7 +56,30 @@ function ProjectCollaborationWorkspace() {
   const [createDependencies, setCreateDependencies] = useState<string[]>([]);
   const [createGraphRevision, setCreateGraphRevision] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
+  const historyType = searchParams.get('view') === 'history' ? searchParams.get('historyType') : null;
+  const historyPage = historyType === 'proposals' || historyType === 'submissions';
+  const proposalHistory = historyType === 'proposals';
   const selectedId = searchParams.get('task') ?? '';
+  const openHistory = (type: 'proposals' | 'submissions', recordId?: string) => {
+    const next = new URLSearchParams(searchParams); next.set('view', 'history'); next.set('historyType', type);
+    if (recordId) next.set('record', recordId); else next.delete('record'); setSearchParams(next);
+  };
+  const returnFromHistory = () => {
+    const next = new URLSearchParams(searchParams); next.delete('view'); next.delete('historyType'); next.delete('record'); setSearchParams(next);
+    if (proposalHistory) setAiOpen(true);
+  };
+  const orderedProposals = [...(proposals.data?.items ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.proposalId.localeCompare(a.proposalId));
+  const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
+  const activeProposal = activeProposalId ? orderedProposals.find(item => item.proposalId === activeProposalId) : orderedProposals[0];
+  useEffect(() => { if (!activeProposalId && activeProposal) setActiveProposalId(activeProposal.proposalId); }, [activeProposalId, activeProposal]);
+  const proposalRecord = orderedProposals.find(item => item.proposalId === searchParams.get('record')) ?? orderedProposals[0];
+  const proposalIndex = proposalRecord ? orderedProposals.indexOf(proposalRecord) : 0;
+  const chooseProposal = (id: string) => { const next = new URLSearchParams(searchParams); next.set('record', id); setSearchParams(next); };
+  useEffect(() => {
+    if (proposalHistory && proposalRecord && !searchParams.get('record')) {
+      const next = new URLSearchParams(searchParams); next.set('record', proposalRecord.proposalId); setSearchParams(next, { replace: true });
+    }
+  }, [proposalHistory, proposalRecord, searchParams, setSearchParams]);
   const setSelectedId = (id: string) => { const next = new URLSearchParams(searchParams); if (id) next.set('task', id); else next.delete('task'); setSearchParams(next, { replace: true }); };
   const [brief, setBrief] = useState('');
   const [sourceVersions, setSourceVersions] = useState<string[]>([]);
@@ -85,9 +109,14 @@ function ProjectCollaborationWorkspace() {
   const create = useMutation({ mutationFn: () => collaborationApi.createTask(projectId, { ...draft, title: draft.title.trim(), criteria: draft.criteria.trim(), effortHours: Number(draft.effortHours), dueDate: draft.dueDate || null, assigneeId: draft.assigneeId || null, dependsOnTaskIds: createDependencies, expectedGraphRevision: createGraphRevision }), onSuccess: async () => { setCreateOpen(false); setDraft(defaultDraft); setCreateDependencies([]); await invalidate(); }, onError: invalidate });
   const claim = useMutation({ mutationFn: (task: CollaborationTask) => collaborationApi.claim(projectId, task), onSuccess: invalidate, onError: invalidate });
   const ai = useMutation({ mutationFn: (action: 'decompose' | 'adjust' | 'assign') => action === 'decompose' ? collaborationApi.decompose(projectId, brief.trim(), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, brief.trim(), rows.filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).map(row => row.taskId), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : collaborationApi.suggestAssignments(projectId, rows.filter(row => !row.assigneeId && row.lifecycleState === 'open').map(row => row.taskId)), onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
-  return <SectionCard title="子任务" detail="按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。">
-    <div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" aria-label="筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{owner && <button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(open => !open)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
-    {owner && <section id="collab-ai-panel" className="collab-ai" hidden={!aiOpen} aria-label="AI 拆解、调整与分工">
+  const renderProposal = (proposal: CollaborationProposal, readOnly = false) => (<article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div>{!readOnly && <ProposalCorrection key={proposal.proposalId} projectId={projectId} proposal={proposal} members={members.data ?? []} onChanged={invalidate} />}<RemovedSourceNotice payload={proposal.payload} /><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /></article>);
+  return <SectionCard title={historyPage ? '任务历史' : '子任务'} detail={historyPage ? '每页展示一条记录，保留提交时的内容与固定版本引用。' : '按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。'}>
+    <div hidden={historyPage}><div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" aria-label="筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{owner && <button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(true)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
+    </div>
+    {owner && <Modal title={proposalHistory ? 'AI 建议历史' : 'AI 拆解、调整与分工'} mode={proposalHistory ? 'page' : aiOpen && !historyPage ? 'dialog' : 'hidden'} onClose={proposalHistory ? returnFromHistory : () => setAiOpen(false)}>
+    <section id="collab-ai-panel" className="collab-ai" aria-label="AI 拆解、调整与分工">
+      <div className="stack" hidden={proposalHistory}>
+      <div className="form-actions"><DropdownMenu label="更多"><button className="button button-quiet" onClick={() => openHistory('proposals', orderedProposals[0]?.proposalId)}>查看历史版本</button></DropdownMenu></div>
       <p className="form-note">负责人可补充信息、提出要求或要求调整。AI 自主查阅项目内授权信息，所选版本优先参考。自动应用遵循项目设置，负责人始终可以修正结果或重新反馈。过期结果不会覆盖成员的新操作。</p>
       {!aiEnabled && <p className="notice notice-warn">{!settings.data?.aiCollaborationEnabled ? '本项目 AI 智能协作已关闭，请由负责人在项目设置开启。' : 'AI 模型当前不可用。'}可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
       <ProjectSourceContext projectId={projectId} enabled={aiEnabled} selected={sourceVersions} onSelection={sourceSelection} onReady={sourceReady} />
@@ -101,8 +130,14 @@ function ProjectCollaborationWorkspace() {
       <JobProgress job={job} />
       {jobId&&<ProjectToolCalls projectId={projectId} jobId={jobId}/>}
       {proposals.error && <ErrorNotice error={proposals.error} />}
-      {proposals.data?.items.map(proposal => <article key={proposal.proposalId} className="collab-proposal"><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div><ProposalCorrection key={proposal.proposalId} projectId={projectId} proposal={proposal} members={members.data ?? []} onChanged={invalidate} /><RemovedSourceNotice payload={proposal.payload} /><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /></article>)}
-    </section>}
+      {activeProposal && renderProposal(activeProposal)}
+      {activeProposal && orderedProposals[0]?.proposalId !== activeProposal.proposalId && <p className="form-note">有新的 AI 建议。为保留当前修改，请通过“更多 → 查看历史版本”选择需要处理的建议。</p>}
+      </div>
+      {proposalHistory && <><h3>AI 建议历史</h3>{proposals.isLoading && <Spinner label="读取 AI 建议历史" />}{!proposals.isLoading && !proposals.error && !proposalRecord && <p className="muted">尚无 AI 建议记录。</p>}{proposalRecord && <div className="collab-history-pager"><button className="button button-small" disabled={proposalIndex === 0} onClick={() => chooseProposal(orderedProposals[proposalIndex - 1]!.proposalId)}>上一页</button><Field label="选择建议记录"><select className="input" value={proposalRecord.proposalId} onChange={event => chooseProposal(event.target.value)}>{orderedProposals.map((item, index) => <option key={item.proposalId} value={item.proposalId}>记录 {orderedProposals.length - index} · {new Date(item.createdAt).toLocaleString('zh-CN')}</option>)}</select></Field><span aria-live="polite">第 {proposalIndex + 1} / {orderedProposals.length} 页</span><button className="button button-small" disabled={proposalIndex === orderedProposals.length - 1} onClick={() => chooseProposal(orderedProposals[proposalIndex + 1]!.proposalId)}>下一页</button></div>}</>}
+      {proposals.error && proposalHistory && <ErrorNotice error={proposals.error} />}
+      {proposalHistory && proposalRecord && <>{renderProposal(proposalRecord, true)}<button className="button button-quiet" onClick={() => { setActiveProposalId(proposalRecord.proposalId); returnFromHistory(); }}>打开此建议进行处理</button></>}
+    </section></Modal>}
+    <div hidden={historyPage}>
     {[tasks.error, settings.error, members.error, me.error, claim.error].filter(Boolean).map((error, index) => <ErrorNotice key={index} error={error} />)}
     {tasks.isLoading && <Spinner label="读取协作任务" />}
     {!tasks.isLoading && !tasks.error && !rows.length && <EmptyState title="把交付目标变成明确任务" detail="先写清完成标准与预计投入，再由成员认领。无需开启 AI。" />}
@@ -125,7 +160,9 @@ function ProjectCollaborationWorkspace() {
       {goal.data && createGraphRevision !== goal.data.graphRevision && <p className="notice notice-warn">任务依赖已变化，草稿保留。请复核前置选择后确认使用最新依赖图。<button type="button" className="button button-quiet" onClick={() => setCreateGraphRevision(goal.data!.graphRevision)}>已复核前置任务</button></p>}
       {create.error && <ErrorNotice error={create.error} />}<div className="form-actions"><button type="button" className="button button-quiet" onClick={() => setCreateOpen(false)}>取消</button><button className="button button-primary" disabled={create.isPending || !draft.title.trim() || !draft.criteria.trim() || createGraphRevision !== goal.data?.graphRevision}>{create.isPending ? '创建中…' : '创建子任务'}</button></div>
     </form></Modal>}
-    {selected && <Modal title={selected.title} onClose={() => setSelectedId('')}><TaskLifecycleDetail key={selected.taskId} projectId={projectId} task={selected} tasks={rows} graphRevision={goal.data?.graphRevision} childrenTasks={rows.filter(row => row.parentTaskId === selected.taskId)} owner={owner} meId={me.data?.userId} members={members.data ?? []} aiEnabled={aiEnabled} onChanged={invalidate} /></Modal>}
+    </div>
+    {historyPage && ((!owner && proposalHistory) || (historyType === 'submissions' && !selected && !tasks.isLoading)) && <><button className="button button-quiet" onClick={returnFromHistory}>返回任务操作</button><EmptyState title="历史记录不可用" detail="该任务不在当前项目中，或你没有查看权限。" /></>}
+    {selected && <Modal title={historyType === 'submissions' ? `${selected.title} · 提交与验收历史` : selected.title} mode={historyType === 'submissions' ? 'page' : historyPage ? 'hidden' : 'dialog'} onClose={historyType === 'submissions' ? returnFromHistory : () => setSelectedId('')}><TaskLifecycleDetail key={selected.taskId} projectId={projectId} task={selected} tasks={rows} graphRevision={goal.data?.graphRevision} childrenTasks={rows.filter(row => row.parentTaskId === selected.taskId)} owner={owner} meId={me.data?.userId} members={members.data ?? []} aiEnabled={aiEnabled} onChanged={invalidate} /></Modal>}
   </SectionCard>;
 }
 
@@ -168,8 +205,12 @@ function ProposalPreview({ payload, members, tasks }: { payload: Record<string, 
 
 function TaskLifecycleDetail({ projectId, task, tasks, graphRevision, childrenTasks, owner, meId, members, aiEnabled, onChanged }: { projectId: string; task: CollaborationTask; tasks: CollaborationTask[]; graphRevision?: number; childrenTasks: CollaborationTask[]; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; aiEnabled: boolean; onChanged: () => Promise<void> }) {
   const client = useQueryClient();
-  const [view, setView] = useState<'submit' | 'settings' | 'history'>('submit');
-  const [historyId, setHistoryId] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const historyPage = searchParams.get('view') === 'history' && searchParams.get('historyType') === 'submissions';
+  const [view, setView] = useState<'submit' | 'settings'>('submit');
+  const historyId = searchParams.get('record') ?? '';
+  const setHistoryId = (id: string) => { const next = new URLSearchParams(searchParams); next.set('record', id); setSearchParams(next); };
+  const openHistory = () => { const next = new URLSearchParams(searchParams); next.set('view', 'history'); next.set('historyType', 'submissions'); if (selectedHistory) next.set('record', selectedHistory.submissionId); setSearchParams(next); };
   const [editDraft, setEditDraft] = useState({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours) });
   const [editBaseRevision, setEditBaseRevision] = useState(task.revision);
   const [editConflicted, setEditConflicted] = useState(false);
@@ -213,20 +254,25 @@ function TaskLifecycleDetail({ projectId, task, tasks, graphRevision, childrenTa
   const orderedHistory = [...(history.data?.items ?? [])].sort((a, b) => b.round - a.round);
   const selectedHistory = orderedHistory.find(item => item.submissionId === historyId) ?? orderedHistory[0];
   const historyIndex = selectedHistory ? orderedHistory.indexOf(selectedHistory) : 0;
-  const renderSubmission = (submission: TaskSubmission) => (<article className="collab-history" key={submission.submissionId}>
+  useEffect(() => {
+    if (historyPage && selectedHistory && !historyId) {
+      const next = new URLSearchParams(searchParams); next.set('record', selectedHistory.submissionId); setSearchParams(next, { replace: true });
+    }
+  }, [historyPage, selectedHistory, historyId, searchParams, setSearchParams]);
+  const renderSubmission = (submission: TaskSubmission, readOnly = false) => (<article className="collab-history" key={submission.submissionId}>
       <div className="collab-toolbar"><strong>第 {submission.round} 轮</strong><small>{new Date(submission.createdAt).toLocaleString('zh-CN')} · {members.find(member => member.userId === submission.submittedBy)?.displayName ?? '项目成员'}</small><StatusPill>{submission.decision ? decisionLabels[submission.decision] : submission.aiDecision ? 'AI 已评价，待确认' : '待评价'}</StatusPill></div>
       <p className="collab-preserve">{submission.body}</p><details><summary>本轮验收标准与绑定版本</summary><p className="collab-preserve">{submission.criteria}</p>{submission.materialVersionIds.length ? <ul>{submission.materialVersionIds.map(id => <li key={id}>{submission.materialVersions?.find(version => version.versionId === id) ? <BoundMaterialVersion projectId={projectId} version={submission.materialVersions.find(version => version.versionId === id)!} /> : <>材料固定版本：{id}</>}</li>)}</ul> : <p>未绑定材料版本</p>}</details>
       {submission.aiReport && <div className="callout"><RemovedSourceNotice payload={submission.aiReport} /><strong>证据覆盖：{submission.aiReport.coverage === 'complete' ? '模型认为文本证据完整' : '需要人工核验'}</strong><ul>{submission.aiReport.evidence.map((evidence, index) => <li key={index}><span>固定版本 {evidence.materialVersionId}</span><p className="collab-preserve">{evidence.quote}</p></li>)}</ul>{submission.aiReport.manualReviewReason && <p className="notice notice-warn">{submission.aiReport.manualReviewReason}</p>}{submission.aiReport.limitations.length > 0 && <><strong>限制与待核验项</strong><ul>{submission.aiReport.limitations.map((limitation, index) => <li key={index}>{limitation}</li>)}</ul></>}</div>}
-      <AssistiveRubricScores projectId={projectId} submission={submission} owner={owner} onChanged={refresh} />
+      <AssistiveRubricScores projectId={projectId} submission={submission} owner={owner && !readOnly} onChanged={refresh} />
       {submission.aiDecision && <div className="callout"><strong>AI 建议：{decisionLabels[submission.aiDecision]}</strong><p className="collab-preserve">{submission.aiFeedback}</p><p className="form-note">仅供协作评价，不是能力评定；未读取的附件需人工核验。</p></div>}
       {submission.decision && <div className="callout"><strong>验收决定：{decisionLabels[submission.decision]}</strong><p className="collab-preserve">{submission.feedback}</p></div>}
-      {current?.submissionId === submission.submissionId && (owner || (!submission.decision && submission.submittedBy === meId)) && <><button className="button button-small" disabled={!aiEnabled || submission.status !== 'pending' || submission.evaluationAttempts >= 3 || evaluate.isPending || (!!jobId && !job.isSettled)} onClick={() => evaluate.mutate(submission.submissionId)}><Sparkles size={14} />请求 AI 评价</button>{!aiEnabled && <p className="form-note">AI 未启用，负责人仍可直接验收。</p>}{submission.evaluationAttempts >= 3 && <p className="form-note">本轮 AI 评价已达 3 次上限，请负责人手动核验。</p>}{owner && <SubmissionDecisionForm projectId={projectId} submission={submission} onChanged={refresh} />}</>}
+      {!readOnly && current?.submissionId === submission.submissionId && (owner || (!submission.decision && submission.submittedBy === meId)) && <><button className="button button-small" disabled={!aiEnabled || submission.status !== 'pending' || submission.evaluationAttempts >= 3 || evaluate.isPending || (!!jobId && !job.isSettled)} onClick={() => evaluate.mutate(submission.submissionId)}><Sparkles size={14} />请求 AI 评价</button>{!aiEnabled && <p className="form-note">AI 未启用，负责人仍可直接验收。</p>}{submission.evaluationAttempts >= 3 && <p className="form-note">本轮 AI 评价已达 3 次上限，请负责人手动核验。</p>}{owner && <SubmissionDecisionForm projectId={projectId} submission={submission} onChanged={refresh} />}</>}
     </article>);
   return <div className="stack collab-detail">
-    <TaskInquiries key={task.taskId} projectId={projectId} taskId={task.taskId} meId={meId}/>
+    <div hidden={historyPage}><TaskInquiries key={task.taskId} projectId={projectId} taskId={task.taskId} meId={meId}/>
     <div className="collab-toolbar"><StatusPill>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span></div>
     {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；负责人可安排分工与验收。</p>}
-    <div className="collab-detail-nav" aria-label="任务详情导航"><div className="collab-detail-tabs" role="tablist" aria-label="任务操作"><button role="tab" id="task-submit-tab" aria-controls="task-submit-panel" aria-selected={view === 'submit'} className="button" onClick={() => setView('submit')}>提交和查看</button><button role="tab" id="task-settings-tab" aria-controls="task-settings-panel" aria-selected={view === 'settings'} className="button" onClick={() => setView('settings')}>任务设置</button></div><button className="button button-quiet button-small" aria-pressed={view === 'history'} onClick={() => setView('history')}>历史记录{orderedHistory.length ? `（${orderedHistory.length}）` : ''}</button></div>
+    <div className="collab-detail-nav" aria-label="任务详情导航"><div className="collab-detail-tabs" role="tablist" aria-label="任务操作"><button role="tab" id="task-submit-tab" aria-controls="task-submit-panel" aria-selected={view === 'submit'} className="button" onClick={() => setView('submit')}>提交和查看</button><button role="tab" id="task-settings-tab" aria-controls="task-settings-panel" aria-selected={view === 'settings'} className="button" onClick={() => setView('settings')}>任务设置</button></div><DropdownMenu label="更多"><button className="button button-quiet" onClick={openHistory}>查看历史版本</button></DropdownMenu></div>
     <section id="task-settings-panel" role="tabpanel" aria-labelledby="task-settings-tab" hidden={view !== 'settings'} className="stack">
     <DependencyEditor projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} owner={owner} onChanged={onChanged} />
     <h3>任务介绍</h3><p className="collab-preserve">{task.detail || '暂无任务介绍'}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>
@@ -270,12 +316,13 @@ function TaskLifecycleDetail({ projectId, task, tasks, graphRevision, childrenTa
     {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由负责人手动验收。</div>}
     {history.isLoading && <Spinner label="读取提交历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
     {history.data?.items.length === 0 && <p className="muted">{task.lifecycleState === 'accepted' && !task.currentSubmissionId ? '历史完成状态已保留，未补造提交与验收记录。' : '尚未提交成果。'}</p>}
-    {orderedHistory[0] && <details className="collab-latest"><summary>上一轮提交 · 第 {orderedHistory[0].round} 轮</summary>{renderSubmission(orderedHistory[0])}</details>}
+    {current && renderSubmission(current)}
     </section>
-    {view === 'history' && <section className="stack" aria-label="提交与验收历史"><h3>提交与验收历史</h3>
+    </div>
+    {historyPage && <section className="stack" aria-label="提交与验收历史"><h3>提交与验收历史</h3>
     {history.isLoading && <Spinner label="读取提交历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
     {history.data?.items.length === 0 && <p className="muted">{task.lifecycleState === 'accepted' && !task.currentSubmissionId ? '历史完成状态已保留，未补造提交与验收记录。' : '尚未提交成果。'}</p>}
-    {selectedHistory && <><div className="collab-history-pager"><button className="button button-small" disabled={historyIndex === 0} onClick={() => setHistoryId(orderedHistory[historyIndex - 1]!.submissionId)}>上一页</button><Field label="选择提交轮次"><select className="input" value={selectedHistory.submissionId} onChange={event => setHistoryId(event.target.value)}>{orderedHistory.map(item => <option key={item.submissionId} value={item.submissionId}>第 {item.round} 轮</option>)}</select></Field><span aria-live="polite">{historyIndex + 1} / {orderedHistory.length}</span><button className="button button-small" disabled={historyIndex === orderedHistory.length - 1} onClick={() => setHistoryId(orderedHistory[historyIndex + 1]!.submissionId)}>下一页</button></div>{renderSubmission(selectedHistory)}</>}
+    {selectedHistory && <><div className="collab-history-pager"><button className="button button-small" disabled={historyIndex === 0} onClick={() => setHistoryId(orderedHistory[historyIndex - 1]!.submissionId)}>上一页</button><Field label="选择提交轮次"><select className="input" value={selectedHistory.submissionId} onChange={event => setHistoryId(event.target.value)}>{orderedHistory.map(item => <option key={item.submissionId} value={item.submissionId}>第 {item.round} 轮</option>)}</select></Field><span aria-live="polite">第 {historyIndex + 1} / {orderedHistory.length} 页</span><button className="button button-small" disabled={historyIndex === orderedHistory.length - 1} onClick={() => setHistoryId(orderedHistory[historyIndex + 1]!.submissionId)}>下一页</button></div>{renderSubmission(selectedHistory, true)}</>}
     </section>}
     {evaluate.error && <ErrorNotice error={evaluate.error} />}<JobProgress job={job} />
   </div>;

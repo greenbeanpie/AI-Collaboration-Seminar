@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { CollaborationWorkspace } from './CollaborationWorkspace';
@@ -10,13 +10,13 @@ vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnab
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
 const task = { dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
-function setup({ tasks = [task], submissions = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
+function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   client.setQueryData(['project-assistant-sources', 'p1'], []);
   client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
   client.setQueryData(['collaboration-tasks', 'p1'], { items: tasks });
   client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 });
-  client.setQueryData(['collaboration-proposals', 'p1'], { items: [] });
+  client.setQueryData(['collaboration-proposals', 'p1'], { items: proposals });
   client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: submissions });
   client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }]);
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
@@ -30,16 +30,19 @@ function setup({ tasks = [task], submissions = [] as unknown[], component = 'wor
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
   it('places AI controls in the creation toolbar and preserves the draft when collapsed', () => {
-    const { view } = setup();
+    setup();
     const toggle = screen.getByRole('button', { name: 'AI 拆解、调整与分工' });
     expect(toggle.nextElementSibling).toBe(screen.getByRole('button', { name: '新建子任务' }));
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: '生成拆解建议' })).toBeNull();
     fireEvent.click(toggle);
     fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '保留拆解草稿' } });
-    fireEvent.click(toggle); fireEvent.click(toggle);
+    expect(screen.getByRole('dialog', { name: 'AI 拆解、调整与分工' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(toggle);
     expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('保留拆解草稿');
-    expect(view.container.querySelector('#collab-ai-panel')?.nextElementSibling?.className).toBe('collab-grid');
+    expect(screen.getByRole('dialog')).toContainElement(screen.getByLabelText('目标、补充信息或调整要求'));
   });
   it('filters with an inline label and retains focusable dependency guidance next to status', () => {
     const { view } = setup({ tasks: [task, { ...task, taskId: 't2', title: '待采集', assigneeId: null, lifecycleState: 'open', unfinishedDependencyIds: ['t1'], dependsOnTaskIds: ['t1'] }] });
@@ -68,16 +71,19 @@ describe('collaboration lifecycle', () => {
     expect(screen.queryByRole('button', { name: 'AI 拆解、调整与分工' })).toBeNull();
     expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
   });
-  it('keeps the new draft above a collapsed latest round and pages one historical submission', () => {
+  it('opens history only through the submenu, pages one submission, and preserves drafts', () => {
     setup({ tasks: [{ ...task, lifecycleState: 'improve', currentSubmissionId: 's3' }], submissions: [submission, { ...submission, submissionId: 's3', round: 3, body: '第三轮真实内容' }, { ...submission, submissionId: 's2', round: 2, body: '第二轮真实内容' }] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(screen.getByRole('tab', { name: '提交和查看' })).toHaveAttribute('aria-selected', 'true');
-    const latest = screen.getByText('上一轮提交 · 第 3 轮').closest('details');
-    expect(latest).not.toHaveAttribute('open');
+    expect(screen.queryByText('上一轮提交 · 第 3 轮')).toBeNull();
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '未提交草稿' } });
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     expect(screen.queryByRole('button', { name: '提交本轮成果' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '历史记录（3）' }));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    expect(screen.queryByRole('region', { name: '提交与验收历史' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('location')).toHaveTextContent('view=history');
     const historySection = screen.getByRole('region', { name: '提交与验收历史' });
     expect(historySection.querySelectorAll('.collab-history')).toHaveLength(1);
     expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s3');
@@ -86,8 +92,109 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s2');
     fireEvent.change(screen.getByLabelText('选择提交轮次'), { target: { value: 's1' } });
     expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
     fireEvent.click(screen.getByRole('tab', { name: '提交和查看' }));
     expect(screen.getByLabelText('成果说明')).toHaveValue('未提交草稿');
+  });
+
+  it('pins a directly linked submission while newer records arrive', async () => {
+    const { client } = setup({ submissions: [submission], entries: ['/tasks?task=t1&view=history&historyType=submissions&record=s1'] });
+    expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s1');
+    expect(screen.getByRole('button', { name: '上一页' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
+    act(() => client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: [submission, { ...submission, submissionId: 's2', round: 2 }] }));
+    expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s1');
+    await waitFor(() => expect(screen.getByRole('button', { name: '上一页' })).toBeEnabled());
+    expect(screen.queryByRole('button', { name: '确认验收决定' })).toBeNull();
+  });
+  it('displays empty history and returns to a task dialog', () => {
+    setup({ entries: ['/tasks?task=t1&view=history&historyType=submissions'] });
+    expect(within(screen.getByRole('region', { name: '提交与验收历史' })).getByText('尚未提交成果。')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '下一页' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
+    expect(screen.getByRole('dialog', { name: '交付原型' })).toBeInTheDocument();
+  });
+  it('returns from history via browser navigation without discarding the submission draft', () => {
+    setup({ submissions: [submission] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '返回后保留' } });
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回前页' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('成果说明')).toHaveValue('返回后保留');
+  });
+  it('pages one AI proposal and retains AI input when returning', () => {
+    const oldProposal = { proposalId: 'p-old', kind: 'assign', status: 'applied', revision: 1, payload: { assignments: [] }, createdAt: '2026-10-01T00:00:00Z' };
+    const { client } = setup({ proposals: [oldProposal, { ...oldProposal, proposalId: 'p-new', createdAt: '2026-10-02T00:00:00Z' }] });
+    fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
+    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '保留 AI 要求' } });
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    const region = screen.getByRole('region', { name: 'AI 拆解、调整与分工' });
+    expect(within(region).getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-new');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-old');
+    act(() => client.setQueryData(['collaboration-proposals', 'p1'], { items: [oldProposal, { ...oldProposal, proposalId: 'p-later', createdAt: '2026-10-03T00:00:00Z' }] }));
+    expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-old');
+    expect(within(region).queryByRole('button', { name: '应用选中条目' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
+    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('保留 AI 要求');
+  });
+
+  it('retains a pending owner decision when browsing read-only history', () => {
+    setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '待提交验收理由' } });
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    expect(screen.queryByRole('button', { name: '确认验收决定' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
+    expect(screen.getByLabelText('第 1 轮验收理由')).toHaveValue('待提交验收理由');
+  });
+
+  it('keeps polling an AI job after the dialog closes and restores its completed progress', async () => {
+    identity.aiEnabled = true;
+    const { client, fetchMock } = setup();
+    act(() => client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: true, assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 }));
+    const fallback = fetchMock.getMockImplementation()!;
+    let status = 'running';
+    fetchMock.mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/collaboration/decompose') || String(url).endsWith('/jobs/j1')) {
+        return new Response(JSON.stringify({ data: { jobId: 'j1', status, result: null }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return fallback(url, options);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
+    fireEvent.change(screen.getByLabelText('目标、补充信息或调整要求'), { target: { value: '创建交付任务' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成拆解建议' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/jobs/j1'))).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    status = 'succeeded';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/jobs/j1')).length).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
+    await waitFor(() => expect(screen.getByText(/AI 任务：.*完成/)).toBeVisible());
+    expect(screen.getByLabelText('目标、补充信息或调整要求')).toHaveValue('创建交付任务');
+  });
+
+  it('keeps older pending proposals actionable and pins unsaved correction drafts', async () => {
+    const old = { proposalId: 'older', kind: 'assign', status: 'pending', revision: 1, payload: { assignments: [] }, createdAt: '2026-10-01T00:00:00Z' };
+    const latest = { ...old, proposalId: 'latest', createdAt: '2026-10-02T00:00:00Z' };
+    const { client } = setup({ proposals: [old, latest] });
+    fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
+    fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));
+    fireEvent.change(screen.getByLabelText('修正理由或重新反馈'), { target: { value: '未保存的方案修正' } });
+    act(() => client.setQueryData(['collaboration-proposals', 'p1'], { items: [old, latest, { ...old, proposalId: 'newest', createdAt: '2026-10-03T00:00:00Z' }] }));
+    await waitFor(() => expect(screen.getByLabelText('修正理由或重新反馈')).toHaveValue('未保存的方案修正'));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.click(screen.getByRole('button', { name: '查看历史版本' }));
+    fireEvent.change(screen.getByLabelText('选择建议记录'), { target: { value: 'older' } });
+    expect(screen.queryByRole('button', { name: '应用选中条目' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '打开此建议进行处理' }));
+    fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));
+    expect(screen.getByRole('button', { name: '应用选中条目' })).toBeEnabled();
   });
 
   it('preserves legacy completion and never creates fabricated submissions', () => {
@@ -161,7 +268,6 @@ describe('collaboration lifecycle', () => {
   it('requires explicit owner feedback and uses submission revision for a decision', async () => {
     const { fetchMock } = setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByText('上一轮提交 · 第 1 轮'));
     expect(screen.getByRole('button', { name: '确认验收决定' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('第 1 轮验收结论'), { target: { value: 'improve' } });
     fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '补全移动端布局' } });
@@ -272,7 +378,6 @@ describe('collaboration lifecycle', () => {
   it('pins an owner decision to the reviewed submission revision', async () => {
     const { client, fetchMock } = setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByText('上一轮提交 · 第 1 轮'));
     fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '旧评价结论' } });
     act(() => { client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: [{ ...submission, revision: 3, status: 'evaluated', aiDecision: 'improve', aiFeedback: '新增缺口' }] }); });
     await waitFor(() => expect(screen.getByRole('button', { name: '确认验收决定' })).toBeDisabled());
