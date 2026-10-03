@@ -1,4 +1,4 @@
-import { projectPermissionSql } from '../services/project-permissions';
+import { requireProjectPermission, projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -115,6 +115,8 @@ interface InvitationRow {
 export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/invitations', requireUser, requireProjectMember({ permission: 'teamManage' }));
   app.use('/api/v1/projects/:projectId/invitations/:invitationId', requireUser, requireProjectMember({ permission: 'teamManage' }));
+  app.use('/api/v1/projects/:projectId/invitations', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
+  app.use('/api/v1/projects/:projectId/invitations/:invitationId', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
   app.use('/api/v1/invitations/accept', requireUser);
 
   app.openapi(invitationCreateRoute, async (c) => {
@@ -126,7 +128,7 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
     const expiresAt = new Date(Date.now() + body.expiresInDays * 86_400_000).toISOString();
     const inserted = await c.env.DB.prepare(
       `INSERT INTO invitations (id, project_id, code_hash, created_by, expires_at, max_uses, used_count, created_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0, ?7 WHERE ${projectPermissionSql('?2','?4','teamManage')}`,
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0, ?7 WHERE ${projectPermissionSql('?2','?4','grant')}`,
     )
       .bind(invitationId, member.projectId, await sha256Hex(code), c.get('user')!.id, expiresAt, body.maxUses, createdAt)
       .run();
@@ -169,7 +171,7 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(invitationRevokeRoute, async (c) => {
     const { invitationId } = c.req.valid('param');
     const result = await c.env.DB.prepare(
-      `UPDATE invitations SET revoked_at = ?2 WHERE id = ?1 AND project_id = ?3 AND revoked_at IS NULL AND ${projectPermissionSql('?3','?4','teamManage')}`,
+      `UPDATE invitations SET revoked_at = ?2 WHERE id = ?1 AND project_id = ?3 AND revoked_at IS NULL AND ${projectPermissionSql('?3','?4','grant')}`,
     )
       .bind(invitationId, nowIso(), c.get('member')!.projectId, c.get('user')!.id)
       .run();

@@ -1,4 +1,5 @@
 import { currentProjectFeedback, projectFeedbackHistory, saveProjectFeedback } from '../services/project-feedback';
+import { assertCanRegenerate } from '../services/task-planning-policy';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { taskSummarySchema, readTaskSummary, enqueueTaskSummary } from '../services/task-summary';
 import { sourceReferenceAvailability } from '../services/source-inputs';
@@ -30,11 +31,11 @@ const mode = z.enum(['manual', 'automatic']);
 const taskInput = z.object({ title: z.string().min(1).max(200), detail: z.string().max(4000).default(''), criteria: z.string().min(1).max(4000), effortHours: z.number().min(.25).max(200).default(1), parentTaskId: z.string().uuid().nullable().default(null) });
 const settingsSchema = z.object({ aiCollaborationEnabled: z.boolean(), assignmentMode: mode, evaluationMode: mode, planningMode:mode, progressionMode:mode, revision });
 const citationReferenceSchema = projectSourceCitationSchema.extend({ availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
-const taskSchema = z.object({ taskId: z.string().uuid(), title: z.string(), detail: z.string(), status: z.enum(['todo', 'doing', 'blocked', 'done']), assigneeId: z.string().uuid().nullable(), revision, lifecycleState: z.enum(['open', 'in_progress', 'submitted', 'accepted', 'improve', 'rework']), criteria: z.string(), citations: z.array(citationReferenceSchema).optional(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(), dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid()),createdAt: z.string(), updatedAt: z.string() }).extend(taskSummarySchema.partial().shape);
+const taskSchema = z.object({ startedAt:z.string().nullable().optional(),archivedAt:z.string().nullable().optional(),taskId: z.string().uuid(), title: z.string(), detail: z.string(), status: z.enum(['todo', 'doing', 'blocked', 'done']), assigneeId: z.string().uuid().nullable(), revision, lifecycleState: z.enum(['open', 'in_progress', 'submitted', 'accepted', 'improve', 'rework']), criteria: z.string(), citations: z.array(citationReferenceSchema).optional(), effortHours: z.number(), parentTaskId: z.string().uuid().nullable(), currentSubmissionId: z.string().uuid().nullable(), dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid()),createdAt: z.string(), updatedAt: z.string() }).extend(taskSummarySchema.partial().shape);
 const decisionSchema = z.enum(['accept', 'improve', 'rework']);
 const reportSchema = z.object({ references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),decision: decisionSchema, feedback: z.string(), evidence: z.array(z.object({ materialVersionId: z.string().uuid(), quote: z.string() })), limitations: z.array(z.string()), coverage: z.enum(['complete', 'needs_human']), manualReviewReason: z.string().optional(), rubricScoring: rubricScoringSchema.optional() });
 const submissionSchema = z.object({ submissionId: z.string().uuid(), taskId: z.string().uuid(), round: z.number(), submittedBy: z.string().uuid(), body: z.string(), materialVersionIds: z.array(z.string().uuid()), materialVersions: z.array(z.object({ versionId: z.string().uuid(), materialId: z.string().uuid(), title: z.string(), revision: z.number() })).optional(), criteria: z.string(), status: z.enum(['pending', 'evaluated', 'accept', 'improve', 'rework']), aiDecision: decisionSchema.nullable(), aiFeedback: z.string().nullable(), aiReport: reportSchema.nullable(), humanScoreOverride: z.object({ kind: z.literal('assistive'), rubricVersionId: z.string().uuid(), rubricVersion: revision, scores: z.array(z.object({ key: z.string(), score: z.number() })), weightedTotal: z.number(), reason: z.string(), decidedBy: z.string().uuid(), decidedAt: z.string() }).nullable().optional(), decision: decisionSchema.nullable(), feedback: z.string().nullable(), evaluationJobId: z.string().uuid().nullable(), evaluationAttempts: z.number(), evaluationError: z.string().optional(), revision, createdAt: z.string(), updatedAt: z.string() });
-const proposalSchema = z.object({ proposalId: z.string().uuid(), kind: z.enum(['decompose', 'assign']), payload: z.object({ references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),causeEventId:z.string().optional(),progression:z.boolean().optional(),goal:z.object({title:z.string(),detail:z.string()}).optional(),brief: z.string().optional(), sourceVersionIds: z.array(z.string().uuid()).optional(), tasks: z.array(taskInput.omit({parentTaskId:true}).extend({ parentTaskId:z.string().uuid().nullable().optional(),key:z.string().optional(),dependsOn:z.array(z.string()).optional(),citations: z.array(projectSourceCitationSchema).optional() })).optional(), updates: z.array(taskInput.omit({ parentTaskId: true }).extend({ taskId: z.string().uuid(), expectedRevision: revision, citations: z.array(projectSourceCitationSchema).optional() })).optional(), assignments: z.array(z.object({ taskId: z.string().uuid(), assigneeId: z.string().uuid().nullable(), expectedRevision: revision, reason: z.string() })).optional(), considerations: z.array(z.string()).optional() }), status: z.enum(['pending', 'applied', 'stale']), revision, createdAt: z.string() });
+const proposalSchema = z.object({ proposalId: z.string().uuid(), kind: z.enum(['decompose', 'assign']), payload: z.object({ planningAction:z.enum(['regenerate','adjust']).optional(),references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),causeEventId:z.string().optional(),progression:z.boolean().optional(),goal:z.object({title:z.string(),detail:z.string()}).optional(),brief: z.string().optional(), sourceVersionIds: z.array(z.string().uuid()).optional(), tasks: z.array(taskInput.omit({parentTaskId:true}).extend({ parentTaskId:z.string().uuid().nullable().optional(),key:z.string().optional(),dependsOn:z.array(z.string()).optional(),citations: z.array(projectSourceCitationSchema).optional() })).optional(), updates: z.array(taskInput.omit({ parentTaskId: true }).extend({ taskId: z.string().uuid(), expectedRevision: revision, citations: z.array(projectSourceCitationSchema).optional() })).optional(), assignments: z.array(z.object({ taskId: z.string().uuid(), assigneeId: z.string().uuid().nullable(), expectedRevision: revision, reason: z.string() })).optional(), considerations: z.array(z.string()).optional() }), status: z.enum(['pending', 'applied', 'stale']), revision, createdAt: z.string() });
 function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path: string, body: z.ZodType | undefined, handler: (c: Context<AppEnv>) => Promise<Response>, status: 200 | 201 | 202 = 200) {
     const extras: Record<string, z.ZodString> = {};
     for (const match of path.matchAll(/\{(\w+)\}/g))
@@ -71,8 +72,8 @@ async function settings(c: Context<AppEnv>) {
 const ids = (c: Context<AppEnv>) => ({ projectId: c.req.param('projectId')!, userId: c.get('user')!.id });
 async function task(c: Context<AppEnv>) {
     const r = await c.env.DB.prepare('SELECT * FROM tasks WHERE id=?1 AND project_id=?2').bind(c.req.param('taskId'), c.req.param('projectId')).first<CollaborationTask>();
-    if (!r)
-        throw notFound('协作任务不存在');
+    if (!r || (r as CollaborationTask & {archived_at?:string}).archived_at)
+        throw notFound('协作任务不存在或已归档');
     return r;
 }
 async function taskWithReferences(c: Context<AppEnv>, row: CollaborationTask) {
@@ -96,7 +97,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     route(app, 'get', '/tasks', undefined, async (c) => {
         const paging = parsePaging(c.req.query());
         const cursor = paging.cursor;
-        const rows = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1
+        const rows = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND archived_at IS NULL
             AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
             ORDER BY created_at DESC,id DESC LIMIT ?4`)
             .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<CollaborationTask>();
@@ -139,7 +140,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 await owner(c.env, projectId, userId);
             const assignee = action === 'claim' ? userId : b.assigneeId;
             const condition = action === 'claim' ? "(lifecycle_state='open' OR (lifecycle_state IS NULL AND status!='done')) AND assignee_id IS NULL" : "1=1";
-            const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE tasks SET assignee_id=?3,current_submission_id=CASE WHEN lifecycle_state='accepted' THEN current_submission_id ELSE NULL END,status=CASE WHEN lifecycle_state='accepted' THEN status WHEN ?3 IS NULL THEN 'todo' ELSE 'doing' END,lifecycle_state=CASE WHEN lifecycle_state='accepted' THEN lifecycle_state WHEN ?3 IS NULL THEN 'open' ELSE 'in_progress' END,revision=revision+1,updated_at=?4 WHERE id=?1 AND project_id=?2 AND revision=?5 AND ${condition} AND (?3 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3)) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6 AND (?7=0 OR ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')}))`).bind(c.req.param('taskId'), projectId, assignee, nowIso(), b.expectedRevision, userId, action === 'assign' ? 1 : 0), audit(c.env, projectId, userId, 'collaboration.' + action, c.req.param('taskId')!, b, true)]);
+            const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE tasks SET assignee_id=?3,current_submission_id=CASE WHEN lifecycle_state='accepted' THEN current_submission_id ELSE NULL END,status=CASE WHEN lifecycle_state='accepted' THEN status WHEN ?3 IS NULL THEN 'todo' ELSE 'doing' END,lifecycle_state=CASE WHEN lifecycle_state='accepted' THEN lifecycle_state WHEN ?3 IS NULL THEN 'open' ELSE 'in_progress' END,revision=revision+1,updated_at=?4 WHERE id=?1 AND project_id=?2 AND archived_at IS NULL AND revision=?5 AND ${condition} AND (?3 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3)) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6 AND (?7=0 OR ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')}))`).bind(c.req.param('taskId'), projectId, assignee, nowIso(), b.expectedRevision, userId, action === 'assign' ? 1 : 0), audit(c.env, projectId, userId, 'collaboration.' + action, c.req.param('taskId')!, b, true)]);
             if (!result[0]!.meta.changes)
                 throw invalidState('任务已被领取、成员或版本已变化');
             return c.json(apiData(c, await taskWithReferences(c, await task(c))));
@@ -235,6 +236,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             const b = schema.parse(await c.req.json()) as Record<string, unknown>;
             if (operation !== 'evaluate')
                 await owner(c.env, projectId, userId);
+            if(operation==='decompose'&&!b.taskIds)await assertCanRegenerate(c.env,projectId);
             const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId, operation: 'collaboration.' + operation, rawBody: JSON.stringify({ projectId, submissionId: c.req.param('submissionId'), ...b }) }, async () => {
                 const config = await loadAiConfig(c.env.DB);
                 if (!config?.enabled)
@@ -243,6 +245,8 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 if (!s.aiCollaborationEnabled || !await c.env.DB.prepare("SELECT 1 FROM projects WHERE id=?1 AND status='active'").bind(projectId).first()) throw aiUnavailable('本项目 AI 智能协作已关闭或项目已归档，可继续手动协作');
                 const input: Record<string, unknown> = { operation: 'collaboration.' + operation, projectId, requestedBy: userId, settingsRevision: s.revision, ...b };
                 if(operation==='decompose'){
+                  input.planningAction=b.taskIds?'adjust':'regenerate';
+                  if(!b.taskIds)await assertCanRegenerate(c.env,projectId);
                   const goal=await projectGoal(c.env,projectId);input.goalSnapshot=goal;input.goalRevision=goal.revision;input.graphRevision=goal.graphRevision;
                   const materialSnapshots=[];
                   for(const materialVersionId of (b.materialVersionIds??[]) as string[]){const row=await loadResourceVersionText(c.env,projectId,'material',materialVersionId);materialSnapshots.push({materialVersionId,title:row.title,markdown:row.text,revision:row.revision});}input.materialSnapshots=materialSnapshots;
@@ -251,12 +255,12 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 if (operation === 'decompose' && b.taskIds) {
                     const selectedIds = b.taskIds as string[];
                     if (new Set(selectedIds).size !== selectedIds.length) throw validationFailed('调整范围不可重复');
-                    const selected = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND id IN(SELECT value FROM json_each(?2)) AND (lifecycle_state IN ('open','in_progress','improve','rework') OR (lifecycle_state IS NULL AND status!='done'))`).bind(projectId, JSON.stringify(selectedIds)).all<CollaborationTask>();
+                    const selected = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND archived_at IS NULL AND id IN(SELECT value FROM json_each(?2)) AND (lifecycle_state IN ('open','in_progress','improve','rework') OR (lifecycle_state IS NULL AND status!='done'))`).bind(projectId, JSON.stringify(selectedIds)).all<CollaborationTask>();
                     if (selected.results.length !== selectedIds.length) throw invalidState('请选择本项目尚未提交、尚未验收的协作任务');
                     input.tasks = selected.results.map(t => ({ taskId: t.id, title: t.title, detail: t.detail, criteria: t.criteria, effortHours: t.effort_hours, revision: t.revision }));
                 }
                 if (operation === 'assign') {
-                    const tasks = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND id IN(SELECT value FROM json_each(?2)) AND (lifecycle_state='open' OR (lifecycle_state IS NULL AND status!='done')) AND assignee_id IS NULL`).bind(projectId, JSON.stringify(b.taskIds)).all<CollaborationTask>();
+                    const tasks = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND archived_at IS NULL AND id IN(SELECT value FROM json_each(?2)) AND (lifecycle_state='open' OR (lifecycle_state IS NULL AND status!='done')) AND assignee_id IS NULL`).bind(projectId, JSON.stringify(b.taskIds)).all<CollaborationTask>();
                     if (tasks.results.length !== (b.taskIds as string[]).length)
                         throw invalidState('请选择未领取的协作任务');
                     input.tasks = tasks.results.map(t => ({ taskId: t.id, title: t.title, detail: t.detail, criteria: t.criteria, effortHours: t.effort_hours, revision: t.revision }));

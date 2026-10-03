@@ -31,7 +31,7 @@ describe('project operation permissions',()=>{
     expect(b.data.items.find(m=>m.userId===f.member.userId)).toMatchObject({permissions:memberPermissions,permissionsRevision:1});
     expect((await f.req(f.member.token,'/invitations')).status).toBe(403);
     const grant=await f.req(f.owner.token,`/members/${f.member.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions});expect(grant.status).toBe(200);
-    expect((await f.req(f.member.token,'/invitations')).status).toBe(200);
+    expect((await f.req(f.member.token,'/invitations')).status).toBe(403);
     expect((await f.req(f.member.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions})).status).toBe(403);
     expect((await f.req(f.member.token,`/members/${f.owner.userId}`,'DELETE')).status).toBe(404);
     expect((await env.DB.prepare("SELECT COUNT(*) n FROM events WHERE project_id=?1 AND type='member.permissions_changed'").bind(f.projectId).first<{n:number}>())?.n).toBe(1);

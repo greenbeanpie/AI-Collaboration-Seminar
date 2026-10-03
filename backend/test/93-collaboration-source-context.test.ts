@@ -196,7 +196,9 @@ describe('strict source citations and finite task outputs', () => {
         provider({ tasks: [], updates: [{ ...task([s, second]), taskId: j.taskId }] });
         await runCollaborationAiJob(offline, j.jobId);
         expect((await getJob(env, j.jobId)).status).toBe('succeeded');
-        expect(JSON.parse((await getJob(env, j.jobId)).result_json!).autoApplied).toBe(true);
+        const outcome=JSON.parse((await getJob(env,j.jobId)).result_json!);
+        expect(outcome.autoApplied).toBe(false);
+        await applyProposal(env,f.projectId,outcome.proposalId,1,f.user.userId);
         expect(await env.DB.prepare('SELECT title,assignee_id,revision FROM tasks WHERE id=?1').bind(j.taskId).first()).toMatchObject({ title: '验证案例与结果', assignee_id: f.user.userId, revision: 2 });
     });
     it.each(['missing', 'quote', 'version', 'fragment', 'page', 'citation_privilege', 'task_privilege', 'delete_project'])('rejects %s citation/output and does not create tasks', async kind => {
@@ -265,14 +267,16 @@ describe('source context dispatch and atomic application guards', () => {
         await runCollaborationAiJob(raced, j.jobId);
         await noProposal(f, j.jobId);
     });
-    it('atomic automatic application rejects a change after proposal insertion', async () => {
+    it('atomic administrator application rejects a change after proposal insertion', async () => {
         const f = await fixture(true), s = await source(f), j = await job(f, [s], true);
         provider({ tasks: [], updates: [{ ...task([s]), taskId: j.taskId }] });
         const raced = beforeStatement('UPDATE collaboration_proposals SET status=', () => changeSource(f, s, 'body'), true);
-        await runCollaborationAiJob(raced, j.jobId);
-        const done = await getJob(env, j.jobId);
+        await runCollaborationAiJob(offline,j.jobId);
+        const done=await getJob(env,j.jobId);
         expect(done.status).toBe('succeeded');
-        expect(JSON.parse(done.result_json!)).toMatchObject({ autoApplied: false, applyError: expect.any(String) });
+        const outcome=JSON.parse(done.result_json!);
+        expect(outcome.autoApplied).toBe(false);
+        await expect(applyProposal(raced,f.projectId,outcome.proposalId,1,f.user.userId)).rejects.toThrow();
         expect(await env.DB.prepare('SELECT title,revision FROM tasks WHERE id=?1').bind(j.taskId).first()).toMatchObject({ title: '旧任务', revision: 1 });
         expect((await env.DB.prepare('SELECT status FROM collaboration_proposals WHERE job_id=?1').bind(j.jobId).first<{ status: string }>())?.status).toBe('pending');
     });
@@ -332,12 +336,13 @@ describe('independent 0020 text readiness', () => {
         await runCollaborationAiJob(beforeStatement('INSERT INTO collaboration_proposals', () => stage(f, s, 'processing')), j.jobId);
         await noProposal(f, j.jobId);
     });
-    it('atomic automatic apply rejects a text-stage change after proposal persistence', async () => {
+    it('atomic administrator application rejects a text-stage change after proposal persistence', async () => {
         const f = await fixture(true); const s = await source(f);
         await stage(f, s, 'ready'); const j = await job(f, [s]); provider({ tasks: [task([s])] });
-        await runCollaborationAiJob(beforeStatement("UPDATE collaboration_proposals SET status='applied'", () => stage(f, s, 'waiting_input'), true), j.jobId);
-        const result = JSON.parse((await getJob(env, j.jobId)).result_json!) as { autoApplied: boolean; applyError: string };
-        expect(result.autoApplied).toBe(false); expect(result.applyError).toBeTruthy();
+        await runCollaborationAiJob(offline,j.jobId);
+        const result=JSON.parse((await getJob(env,j.jobId)).result_json!);
+        expect(result.autoApplied).toBe(false);
+        await expect(applyProposal(beforeStatement("UPDATE collaboration_proposals SET status='applied'",()=>stage(f,s,'waiting_input'),true),f.projectId,result.proposalId,1,f.user.userId)).rejects.toThrow();
         expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(0);
     });
 });
@@ -347,6 +352,7 @@ describe('grounded task provenance after applying a plan', () => {
         const f = await fixture(true); const s = await source(f); const j = await job(f, [s]);
         provider({ tasks: [task([s])] }); await runCollaborationAiJob(offline, j.jobId);
         const output = JSON.parse((await getJob(env, j.jobId)).result_json!) as { proposalId: string };
+        await applyProposal(env,f.projectId,output.proposalId,1,f.user.userId);
         const row = await env.DB.prepare('SELECT source_citations_json FROM tasks WHERE plan_proposal_id=?1').bind(output.proposalId).first<{ source_citations_json: string }>();
         expect(JSON.parse(row!.source_citations_json)).toEqual([cite(s)]);
         const response = await app.fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/collaboration/tasks`, { headers: { cookie: authCookie(f.user.token) } }), env);
@@ -357,6 +363,8 @@ describe('grounded task provenance after applying a plan', () => {
     it('retains grounded adjustment citations without changing the existing assignee', async () => {
         const f = await fixture(true); const s = await source(f); const j = await job(f, [s], true);
         provider({ tasks: [], updates: [{ ...task([s]), taskId: j.taskId }] }); await runCollaborationAiJob(offline, j.jobId);
+        const outcome=JSON.parse((await getJob(env,j.jobId)).result_json!);
+        await applyProposal(env,f.projectId,outcome.proposalId,1,f.user.userId);
         const row = await env.DB.prepare('SELECT source_citations_json,assignee_id FROM tasks WHERE id=?1').bind(j.taskId).first<{ source_citations_json: string; assignee_id: string }>();
         expect(JSON.parse(row!.source_citations_json)).toEqual([cite(s)]); expect(row!.assignee_id).toBe(f.user.userId);
     });

@@ -256,7 +256,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const paging = parsePaging(c.req.valid('query'));
     const status = c.req.valid('query').status ?? 'all';
-    const conditions = ['project_id = ?1'];
+    const conditions = ['project_id = ?1','archived_at IS NULL'];
     const binds: unknown[] = [member.projectId];
     if (status !== 'all') {
       binds.push(status);
@@ -301,6 +301,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(taskId, projectId)
       .first<TaskRow>();
     if (!current) throw notFound('任务不存在');
+    if ((current as TaskRow & {archived_at?:string}).archived_at)throw invalidState('归档任务仅可查看历史');
     if(current.lifecycle_state||body.criteria!==undefined||body.effortHours!==undefined){
       if(body.status!==undefined||body.assigneeId!==undefined)throw invalidState('任务完成与重新分工需要提交和验收流程');
       await owner(c.env,projectId,c.get('user')!.id);
@@ -397,6 +398,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(taskId, projectId)
       .first<TaskRow>();
     if (!current) throw notFound('任务不存在');
+    if ((current as TaskRow & {archived_at?:string}).archived_at)throw invalidState('归档任务仅可查看历史');
     if (current.lifecycle_state) throw invalidState('协作任务必须使用协作流程接口，不能绕过提交与验收');
     if (current.revision !== expectedRevision) throw versionConflict(current.revision);
 

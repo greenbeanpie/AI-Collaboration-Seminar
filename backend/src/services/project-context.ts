@@ -112,14 +112,14 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const rows=await env.DB.prepare(`SELECT * FROM (
       SELECT 'source' resourceType,s.id resourceId,s.title,s.current_version_id versionId FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND (instr(lower(s.title),lower(?2))>0 OR EXISTS(SELECT 1 FROM source_fragments f WHERE f.source_version_id=v.id AND instr(lower(f.content),lower(?2))>0))
       UNION ALL SELECT 'material',m.id,m.title,m.current_version_id FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND instr(lower(m.title||v.markdown),lower(?2))>0
-      UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND instr(lower(title||detail||criteria),lower(?2))>0)
+      UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND archived_at IS NULL AND instr(lower(title||detail||criteria),lower(?2))>0)
       ORDER BY resourceType,resourceId LIMIT 21 OFFSET ?3`).bind(projectId,a.query,a.offset).all();
     return page(rows.results,a.offset);
   }
   if (name === 'get_project_overview') {
     const project = await env.DB.prepare('SELECT id,name,description,revision,competition_deadline_date FROM projects WHERE id=?1').bind(projectId).first();
     const goal = await env.DB.prepare('SELECT title,detail,revision,graph_revision FROM project_goals WHERE project_id=?1').bind(projectId).first();
-    const tasks = await env.DB.prepare('SELECT status,lifecycle_state,COUNT(*) count FROM tasks WHERE project_id=?1 GROUP BY status,lifecycle_state').bind(projectId).all();
+    const tasks = await env.DB.prepare('SELECT status,lifecycle_state,COUNT(*) count FROM tasks WHERE project_id=?1 AND archived_at IS NULL GROUP BY status,lifecycle_state').bind(projectId).all();
     const feedbackExists=await env.DB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_admin_feedback'").first();
     const feedback=feedbackExists?(await env.DB.prepare('SELECT id,target_type,target_id,substr(feedback,1,1000) feedback,created_at FROM project_admin_feedback WHERE project_id=?1 ORDER BY created_at DESC,id DESC LIMIT 5').bind(projectId).all()).results:[];
     return {untrustedData:true,project,goal,tasks:tasks.results,adminFeedback:feedback,feedbackMayBeIncomplete:feedback.length===5,resourceType:'project',resourceId:projectId,text:JSON.stringify({project,goal,tasks:tasks.results})};
@@ -159,7 +159,7 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     if(name==='read_task'&&!a.id) throw invalidState('缺少任务 id');
     const rows=await env.DB.prepare(`SELECT t.id,t.title,t.detail,t.criteria,t.assignee_id,t.due_date,t.status,t.lifecycle_state,t.revision,t.effort_hours,t.current_submission_id,
       (SELECT json_group_array(depends_on_task_id) FROM task_dependencies d WHERE d.task_id=t.id AND d.project_id=t.project_id) dependencies
-      FROM tasks t WHERE t.project_id=?1 AND (?2 IS NULL OR t.id=?2) AND (?3='' OR instr(lower(t.title||t.detail),lower(?3))>0) ORDER BY t.id LIMIT 21 OFFSET ?4`).bind(projectId,name==='read_task'?a.id:null,a.query??'',a.offset).all();
+      FROM tasks t WHERE t.project_id=?1 AND t.archived_at IS NULL AND (?2 IS NULL OR t.id=?2) AND (?3='' OR instr(lower(t.title||t.detail),lower(?3))>0) ORDER BY t.id LIMIT 21 OFFSET ?4`).bind(projectId,name==='read_task'?a.id:null,a.query??'',a.offset).all();
     if(name==='read_task'&&!rows.results.length&&a.offset===0) throw notFound('任务不存在或不属于本项目');
     const result={...page(rows.results,a.offset),resourceType:'task'};
     if(name==='read_task') {

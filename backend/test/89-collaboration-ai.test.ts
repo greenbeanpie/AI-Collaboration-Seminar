@@ -6,7 +6,8 @@ import { assignmentOutputSchema } from '../src/services/assignment';
 import { seedProject, seedUser } from './helpers/seed';
 import { reserveAiSlot } from '../src/services/budget';
 import { getJob } from '../src/services/jobs';
-import { runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
+import { applyProposal } from '../src/services/collaboration';
+import { continueConfirmedPlan, runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 afterEach(() => vi.unstubAllGlobals());
 await configureGoFixture();
 const id = () => crypto.randomUUID();
@@ -198,7 +199,7 @@ describe('bounded decomposition and assignment continuation', () => {
             autoApplied: boolean;
             followupJobId: string | null;
         };
-        expect(result.autoApplied).toBe(mode === 'automatic');
+        expect(result.autoApplied).toBe(false);
         if (mode === 'manual') {
             expect(result.followupJobId).toBeNull();
             expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(projectId).first<{
@@ -206,6 +207,9 @@ describe('bounded decomposition and assignment continuation', () => {
             }>())?.n).toBe(0);
         }
         else {
+            expect(result.followupJobId).toBeNull();
+            await applyProposal(offline,projectId,result.proposalId,1,user.userId);
+            result.followupJobId=(await continueConfirmedPlan(offline,projectId,result.proposalId,user.userId)).followupJobId;
             expect(result.followupJobId).toBe(result.proposalId);
             await runCollaborationAiJob(offline, result.followupJobId!);
             const assigned = await getJob(env, result.followupJobId!);

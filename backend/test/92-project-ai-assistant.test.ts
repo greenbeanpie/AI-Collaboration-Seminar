@@ -77,16 +77,20 @@ describe('default-off project AI authority', () => {
 });
 
 describe('bounded owner task instructions', () => {
-  it('automatically applies an eligible task edit once while preserving assignee and project-scoped actor', async () => {
+  it('requires administrator approval for task edits and preserves assignee after approval', async () => {
     const f = await fixture();
     const fetch = provider({ tasks: [], updates: [update(f.taskId)] });
     await runCollaborationAiJob(env, f.jobId);
     const job = await getJob(env, f.jobId);
     expect(job.status).toBe('succeeded');
+    expect((await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1').bind(f.taskId).first<{revision:number}>())?.revision).toBe(1);
+    const outcome=JSON.parse(job.result_json!);
+    expect(outcome.autoApplied).toBe(false);
+    expect((await request(f.owner.token,`/projects/${f.projectId}/collaboration/proposals/${outcome.proposalId}/apply`,{expectedRevision:1})).status).toBe(200);
     const task = await env.DB.prepare('SELECT title,criteria,assignee_id,revision FROM tasks WHERE id=?1').bind(f.taskId).first();
     expect(task).toMatchObject({ title: '缩小范围后的任务', criteria: '主路径可用且全部控件支持键盘', assignee_id: f.owner.userId, revision: 2 });
     const event = await env.DB.prepare("SELECT actor_type,actor_id FROM events WHERE project_id=?1 AND type='collaboration.proposal_applied'").bind(f.projectId).first();
-    expect(event).toEqual({ actor_type: 'ai', actor_id: `project-ai:${f.projectId}` });
+    expect(event).toEqual({ actor_type: 'user', actor_id: f.owner.userId });
     await runCollaborationAiJob(env, f.jobId);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(1);

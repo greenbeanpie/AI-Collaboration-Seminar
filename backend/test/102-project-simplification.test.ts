@@ -69,16 +69,16 @@ describe('one goal and informative subtask dependencies',()=>{
   });
 });
 describe('atomic requirements and grading versions',()=>{
-  it('reuses an existing task as a dependency without copying or changing it',async()=>{
+  it('adds an approved supplemental task without copying or changing existing work',async()=>{
     const f=await fixture(),existing=await task(f,'已有样本采集');
     await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();
-    const created=await json(await f.request('/collaboration/decompose',{brief:'沿用采集任务，仅新增数据整理'}));
-    vi.stubGlobal('fetch',model({reusedTaskIds:[existing],tasks:[{key:'analysis',dependsOn:[existing],title:'数据整理',detail:'仅整理采集后的结果',criteria:'数据可溯源',effortHours:2}]}));
+    const created=await json(await f.request('/collaboration/decompose',{brief:'沿用采集任务，仅新增数据整理',taskIds:[existing]}));
+    vi.stubGlobal('fetch',model({updates:[],tasks:[{title:'数据整理',detail:'仅整理采集后的结果',criteria:'数据可溯源',effortHours:2}]}));
     await runCollaborationAiJob(offline,created.jobId);
     const result=JSON.parse((await getJob(env,created.jobId)).result_json!);
     expect((await f.request(`/collaboration/proposals/${result.proposalId}/apply`,{expectedRevision:1})).status).toBe(200);
     const rows=(await json(await f.request('/tasks'))).items;
-    expect(rows).toHaveLength(2);expect(rows.find((r:any)=>r.title==='数据整理').dependsOnTaskIds).toEqual([existing]);
+    expect(rows).toHaveLength(2);expect(rows.find((r:any)=>r.title==='数据整理').dependsOnTaskIds).toEqual([]);
     expect(rows.find((r:any)=>r.taskId===existing).revision).toBe(7);
   });
   it('publishes selected components together and keeps non-scoring requirements',async()=>{const f=await fixture();const created=await json(await f.request('/standards',{title:'统一要求',requirements:[{title:'交付日期',detail:'周五提交',category:'deadline',dueDate:'2026-10-09',duePrecision:'date'},{title:'成果质量',detail:'证据清晰',dimensionKey:'quality'}],weights:[{key:'quality',label:'质量',weight:100}]}));expect(created.requirements[0].dueDate).toBe('2026-10-09');expect(created.mappings).toHaveLength(1);const confirmed=await json(await f.request(`/standards/${created.standardsVersionId}/confirm`,{expectedRevision:created.revision}));expect(confirmed.status).toBe('confirmed');expect(confirmed.requirements).toHaveLength(2);expect((await env.DB.prepare('SELECT status FROM rubric_versions WHERE id=?1').bind(confirmed.rubricVersionId).first<{status:string}>())!.status).toBe('confirmed');expect((await f.request(`/standards/${created.standardsVersionId}`,{expectedRevision:confirmed.revision,title:'覆盖',requirements:[],weights:[]},'PATCH')).status).toBe(409);expect(await confirmedStandard(env,f.projectId,created.standardsVersionId)).toMatchObject({title:'统一要求'});});

@@ -34,7 +34,7 @@ export function validateTaskGraph(taskIds:string[],edges:DependencyEdge[]) {
   if(count!==nodes.size)throw validationFailed('子任务依赖不能形成循环');
 }
 export async function graphSnapshot(env:Env,projectId:string){
-  const [tasks,edges]=await Promise.all([env.DB.prepare('SELECT id FROM tasks WHERE project_id=?1').bind(projectId).all<{id:string}>(),env.DB.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies WHERE project_id=?1').bind(projectId).all<{task_id:string;depends_on_task_id:string}>()]);
+  const [tasks,edges]=await Promise.all([env.DB.prepare('SELECT id FROM tasks WHERE project_id=?1 AND archived_at IS NULL').bind(projectId).all<{id:string}>(),env.DB.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies WHERE project_id=?1 AND task_id IN(SELECT id FROM tasks WHERE archived_at IS NULL) AND depends_on_task_id IN(SELECT id FROM tasks WHERE archived_at IS NULL)').bind(projectId).all<{task_id:string;depends_on_task_id:string}>()]);
   return {taskIds:tasks.results.map(t=>t.id),edges:edges.results.map(e=>({taskId:e.task_id,dependsOnTaskId:e.depends_on_task_id}))};
 }
 export async function taskDependencies(env:Env,projectId:string,taskId:string){

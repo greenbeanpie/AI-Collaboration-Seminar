@@ -1,4 +1,5 @@
-import { projectPermissionSql } from '../services/project-permissions';
+import { registerInvitationRequestRoutes } from './invitation-requests';
+import { requireProjectPermission, projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser, requireProjectMember } from '../core/auth';
@@ -29,6 +30,7 @@ const query = z.object({
   offset: z.string().regex(/^\d+$/).optional()
 });
 export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
+  registerInvitationRequestRoutes(app);
   const inbox = '/api/v1/invitations/inbox', outbox = '/api/v1/projects/{projectId}/username-invitations';
   app.use(inbox, requireUser);
   app.use(inbox + '/*', requireUser);
@@ -90,6 +92,7 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
       })
     }, async () => {
       try {
+        await requireProjectPermission(c.env,p,u,'grant');
         return {status: 201 as const, body: {id: await sendUsernameInvite(c.env, p, u, b.username, b.expiresInDays)}};
       } catch (error) {
         // These service errors occur before invitation insertion or after a
@@ -140,6 +143,7 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
       }
     }
   }), async (c) => {
+    await requireProjectPermission(c.env,c.get('member')!.projectId,c.get('user')!.id,'grant');
     const p = c.get('member')!.projectId, id = c.req.valid('param').invitationId;
     const current = await c.env.DB.prepare('SELECT status FROM project_username_invitations WHERE id=?1 AND project_id=?2').bind(id, p).first<{
       status: string;
@@ -155,7 +159,7 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
     if (current.status !== 'pending') {
       throw invalidState('只能撤销待处理邀请');
     }
-    const changed = await c.env.DB.prepare(`UPDATE project_username_invitations SET status='revoked',handled_at=?3 WHERE id=?1 AND project_id=?2 AND status='pending' AND ${projectPermissionSql('?2','?4','teamManage')}`).bind(id, p, nowIso(), c.get('user')!.id).run();
+    const changed = await c.env.DB.prepare(`UPDATE project_username_invitations SET status='revoked',handled_at=?3 WHERE id=?1 AND project_id=?2 AND status='pending' AND ${projectPermissionSql('?2','?4','grant')}`).bind(id, p, nowIso(), c.get('user')!.id).run();
     if (!changed.meta.changes) {
       throw invalidState('邀请状态已变化');
     }

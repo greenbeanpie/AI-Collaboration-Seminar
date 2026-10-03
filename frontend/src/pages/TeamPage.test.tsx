@@ -15,6 +15,7 @@ it.each(['owner', 'member'])('retains member management without profile shortcut
   client.setQueryData(['members', 'p'], [{ userId: 'u', displayName: '真实成员', role: 'member', email: null }]);
   client.setQueryData(['tasks', 'p'], []);
   client.setQueryData(['invitations', 'p'], { items: [] });
+  client.setQueryData(['invitation-requests','p'],{items:[]});
   render(<QueryClientProvider client={client}><TeamPage /></QueryClientProvider>);
   expect(screen.getByText('真实成员')).toBeInTheDocument();
   expect(screen.queryByText('专业、技能与特长、偏好及每周可用时间统一在全局个人资料中维护。')).toBeNull();
@@ -26,5 +27,8 @@ it.each(['owner', 'member'])('retains member management without profile shortcut
   } else {
     expect(screen.queryByRole('button', { name: '移除成员 真实成员' })).toBeNull();
     expect(screen.getByRole('button', { name: '退出项目' })).toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'创建邀请码'})).toBeNull();
+    expect(screen.queryByText('账号邀请')).toBeNull();
+    expect(screen.getByRole('button',{name:'报请管理员批准'})).toBeInTheDocument();
   }
 });

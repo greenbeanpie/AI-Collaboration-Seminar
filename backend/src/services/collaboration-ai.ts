@@ -1,3 +1,4 @@
+import { assertCanRegenerate } from './task-planning-policy';
 import { UserClarificationPending } from './ai-clarifications';
 import { decompositionGuidance } from './decomposition-prompt';
 import { projectPermissionSql, projectAccess } from './project-permissions';
@@ -22,6 +23,7 @@ export interface CollaborationAiInput {
     requestedBy: string;
     settingsRevision: number;
     progression?:boolean; causeEventId?:string; adminFeedbackStamp?:string; feedbackSnapshot?:unknown;
+    planningAction?: 'regenerate' | 'adjust';
     configVersionId?: string;
     profileStamp?: string;
     brief?: string;
@@ -152,6 +154,7 @@ async function assertSnapshot(env: Env, input: CollaborationAiInput, ownerOnly: 
         .bind(input.projectId, input.settingsRevision, input.requestedBy, ownerOnly ? 1 : 0).first();
     if (!row)
         throw invalidState('项目设置或成员权限已变化，请重新发起');
+    if(input.operation==='collaboration.decompose'&&!input.progression&&!input.taskIds?.length)await assertCanRegenerate(env,input.projectId);
     await assertProjectSourceContext(env, input.projectId, input.sourceSnapshots);
     if(input.feedbackSnapshot===undefined&&input.adminFeedbackStamp!==undefined&&await projectFeedbackStamp(env,input.projectId)!==input.adminFeedbackStamp)throw invalidState('管理员反馈已变化，请重新读取后生成');
     if(input.operation==='collaboration.decompose'&&input.goalRevision!==undefined){const goal=await projectGoal(env,input.projectId);if(goal.revision!==input.goalRevision||goal.graphRevision!==input.graphRevision)throw invalidState('主目标或依赖图已变化，请重新生成');}
@@ -186,13 +189,16 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
                 payload = { ...data, updates: data.updates.map(t => ({ ...t, expectedRevision: input.tasks!.find(snapshot => snapshot.taskId === t.taskId)!.revision })), brief: input.brief };
             } else {
             const answer = await aiJsonCall(env, { projectId: input.projectId, projectTools:{projectId:input.projectId,userId:input.requestedBy,jobId,ownerOnly:true,allowClarification:true,allowSearch:input.allowSearch,searchQuery:input.searchQuery},jobId, purpose: 'textEconomy', configVersionId: config.id, model: model.model, modelConfig: model, promptVersion: 'collaboration-decompose-v4-clarification', beforeCall: async () => { await assertSnapshot(env, input, true); await currentConfig(env, input); }, messages: [
-                    { role: 'system', content: `${dataRule}\n${sourceRule}\n${decompositionGuidance}\n全项目只有一个主目标。根据brief总结主目标goal:{title,detail}，已有明确goalSnapshot时保留其意图。根据主目标拆成需要数量的可认领、可交付、可验收的子任务。每项明确稳定key(如t1)、dependsOn(新增任务key或已有任务UUID数组)、标题、工作内容、验收标准和预计工时(0.25至200)。先读取现有任务及相关材料。tasks数组只包含真正新增且当前不存在的工作；沿用、继续执行或已完成的任务绝不能再次放进tasks，不能仅改标题或加“沿用”字样后复制创建。沿用的任务放进reusedTaskIds，并在新任务dependsOn中引用其真实任务UUID。依赖允许本次新增任务key或本项目已有任务UUID，不能自依赖或成环。保留已有执行人、提交历史和实际进度，不分配人员。不得声称已有责任归属，除非读到明确assignee。每项detail必须明确写“工时估算假设”：规模、字数、图表数量或人员可用时间未给出时标为未知，仅给粗估范围，不把假设写成官方验收要求。goal.detail只写成果和限制，不堆参考UUID或工具调试信息；参考资料放入结构化referenceIds和decisionReferences。先读取相关待审及人工修订方案，优先沿用其有效规划，不把待审工作当作已完成。完成状态优先依据实际任务、提交和验收记录，资料中的完成陈述与记录冲突时明确待核验。资料日期冲突须明确依据和优先级。不确定的假设写在detail。只输出JSON：{"goal":{"title":"主目标","detail":"整体成果"},"reusedTaskIds":[],"tasks":[{"key":"t1","dependsOn":[],"title":"标题","detail":"工作内容","criteria":"验收标准","effortHours":1}]}。` },
+                    { role: 'system', content: `${dataRule}\n${sourceRule}\n${decompositionGuidance}\n全项目只有一个主目标。根据brief总结主目标goal:{title,detail}，已有明确goalSnapshot时保留其意图。本次重新生成整套未开始任务，旧任务将归档，不得沿用旧任务ID或引用旧任务依赖。reusedTaskIds必须为空。根据主目标拆成需要数量的可认领、可交付、可验收的子任务。每项明确稳定key(如t1)、dependsOn(新增任务key或已有任务UUID数组)、标题、工作内容、验收标准和预计工时(0.25至200)。先读取现有任务及相关材料。tasks数组只包含真正新增且当前不存在的工作；沿用、继续执行或已完成的任务绝不能再次放进tasks，不能仅改标题或加“沿用”字样后复制创建。沿用的任务放进reusedTaskIds，并在新任务dependsOn中引用其真实任务UUID。依赖允许本次新增任务key或本项目已有任务UUID，不能自依赖或成环。保留已有执行人、提交历史和实际进度，不分配人员。不得声称已有责任归属，除非读到明确assignee。每项detail必须明确写“工时估算假设”：规模、字数、图表数量或人员可用时间未给出时标为未知，仅给粗估范围，不把假设写成官方验收要求。goal.detail只写成果和限制，不堆参考UUID或工具调试信息；参考资料放入结构化referenceIds和decisionReferences。先读取相关待审及人工修订方案，优先沿用其有效规划，不把待审工作当作已完成。完成状态优先依据实际任务、提交和验收记录，资料中的完成陈述与记录冲突时明确待核验。资料日期冲突须明确依据和优先级。不确定的假设写在detail。只输出JSON：{"goal":{"title":"主目标","detail":"整体成果"},"reusedTaskIds":[],"tasks":[{"key":"t1","dependsOn":[],"title":"标题","detail":"工作内容","criteria":"验收标准","effortHours":1}]}。` },
                     { role: 'user', content: JSON.stringify({ brief: input.brief,goalSnapshot:input.goalSnapshot, sourceContext: input.sourceSnapshots,materials:input.materialSnapshots,adminFeedback:feedback }) },
                 ], schema: input.sourceSnapshots?.length ? groundedDecompositionSchema : decompositionSchema });
             const {data}=answer;references=('references' in answer?answer.references:[]) as unknown[];decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
             if (new Set(data.tasks.map(t => t.title)).size !== data.tasks.length)
                 throw new AppError('AI_OUTPUT_INVALID', '拆解包含重复任务标题', 502, false);
-            const keyed=data.tasks.map((t,i)=>({...t,key:t.key??`t${i+1}`}));const existingGraph=await graphSnapshot(env,input.projectId);if(keyed.some(t=>existingGraph.taskIds.includes(t.key))||data.reusedTaskIds.some(id=>!existingGraph.taskIds.includes(id)))throw new AppError('AI_OUTPUT_INVALID','沿用任务必须来自当前项目，新增key不能覆盖已有任务ID',502,false);validateTaskGraph([...existingGraph.taskIds,...keyed.map(t=>t.key)],[...existingGraph.edges,...keyed.flatMap(t=>t.dependsOn.map(key=>({taskId:t.key,dependsOnTaskId:key})))]);
+            const keyed=data.tasks.map((t,i)=>({...t,key:t.key??`t${i+1}`}));
+            const regenerating=!input.progression&&!input.taskIds?.length;
+            if(regenerating&&(data.reusedTaskIds.length||keyed.some(t=>t.dependsOn.some(id=>!keyed.some(other=>other.key===id)))))throw new AppError('AI_OUTPUT_INVALID','重新生成不得沿用将归档的旧任务',502,false);
+            const existingGraph=regenerating?{taskIds:[] as string[],edges:[]}:await graphSnapshot(env,input.projectId);if(keyed.some(t=>existingGraph.taskIds.includes(t.key))||data.reusedTaskIds.some(id=>!existingGraph.taskIds.includes(id)))throw new AppError('AI_OUTPUT_INVALID','沿用任务必须来自当前项目，新增key不能覆盖已有任务ID',502,false);validateTaskGraph([...existingGraph.taskIds,...keyed.map(t=>t.key)],[...existingGraph.edges,...keyed.flatMap(t=>t.dependsOn.map(key=>({taskId:t.key,dependsOnTaskId:key})))]);
             payload = { ...data,tasks:keyed,goal:data.goal??(input.goalSnapshot?{title:input.goalSnapshot.title,detail:input.goalSnapshot.detail}:undefined), brief: input.brief };
             }
         }
@@ -207,7 +213,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
             payload = { assignments: output.assignments.map(a => ({ ...a, expectedRevision: input.tasks!.find(t => t.taskId === a.taskId)!.revision })), considerations: output.considerations };
             references=('references' in output?output.references:[]) as unknown[];decisionReferences=('decisionReferences' in output?output.decisionReferences:[]) as unknown[];
         }
-        payload={...(payload as Record<string,unknown>),references,decisionReferences,causeEventId:input.causeEventId,progression:input.progression};
+        payload={...(payload as Record<string,unknown>),planningAction:input.planningAction??(!input.progression&&!input.taskIds?.length?'regenerate':'adjust'),references,decisionReferences,causeEventId:input.causeEventId,progression:input.progression};
         await assertSnapshot(env, input, true);
         if (input.sourceSnapshots?.length) {
             validateProjectSourceCitations(input.sourceSnapshots, payload);
@@ -240,7 +246,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
     }>();
     let autoApplied = existing?.status === 'applied';
     let applyError: string | null = null;
-    if (!autoApplied && (kind==='assign'?settings?.assignment_mode==='automatic':settings?.planning_mode==='automatic'&&(!input.progression||settings?.progression_mode==='automatic')) && settings?.collaboration_revision === input.settingsRevision) {
+    if (!autoApplied && kind==='assign' && settings?.assignment_mode==='automatic' && settings?.collaboration_revision === input.settingsRevision) {
         try {
             await currentConfig(env, input);
             await applyProposal(env, input.projectId, proposalId, 1, input.requestedBy, true, config.id);

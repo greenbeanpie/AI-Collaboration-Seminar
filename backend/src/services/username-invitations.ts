@@ -56,7 +56,7 @@ export async function expireUsernameInvites(env: Env, projectId?: string) {
 /** Diagnose the failed atomic write from fresh state instead of listing guesses. */
 async function invitationWriteFailure(env: Env, projectId: string, ownerId: string, recipientId: string, accepting = false): Promise<never> {
   const current = await env.DB.prepare(`SELECT p.status,p.team_size_limit,
-    ${projectPermissionSql('p.id','?2','teamManage')} owner_active,
+    ${projectPermissionSql('p.id','?2','grant')} owner_active,
     EXISTS(SELECT 1 FROM project_members WHERE project_id=p.id AND user_id=?3) already_member,
     (SELECT COUNT(*) FROM project_members WHERE project_id=p.id) member_count
     FROM projects p WHERE p.id=?1`).bind(projectId, ownerId, recipientId).first<{status:string;team_size_limit:number|null;owner_active:number;already_member:number;member_count:number}>();
@@ -72,8 +72,8 @@ async function invitationWriteFailure(env: Env, projectId: string, ownerId: stri
   }
   throw invalidState('邀请未成功保存，请刷新后重试');
 }
-export async function sendUsernameInvite(env: Env, projectId: string, ownerId: string, username: string, expiresInDays: number) {
-  const owner = await env.DB.prepare(`SELECT 1 FROM projects p WHERE p.id=?1 AND p.status='active' AND ${projectPermissionSql('p.id','?2','teamManage')}`).bind(projectId, ownerId).first();
+export async function sendUsernameInvite(env: Env, projectId: string, ownerId: string, username: string, expiresInDays: number, approvalRequestId?: string) {
+  const owner = await env.DB.prepare(`SELECT 1 FROM projects p WHERE p.id=?1 AND p.status='active' AND ${projectPermissionSql('p.id','?2','grant')}`).bind(projectId, ownerId).first();
   if (!owner) {
     throw permissionDenied('需要当前有效项目负责人权限');
   }
@@ -89,11 +89,12 @@ export async function sendUsernameInvite(env: Env, projectId: string, ownerId: s
     id: string;
   }>();
   if (prior) {
+    if(approvalRequestId)await env.DB.prepare(`UPDATE project_invitation_requests SET status='approved',revision=revision+1,decided_by=?3,invitation_id=?4,decided_at=?5 WHERE id=?1 AND project_id=?2 AND status='pending' AND ${projectPermissionSql('?2','?3','grant')}`).bind(approvalRequestId,projectId,ownerId,prior.id,nowIso()).run();
     return prior.id;
   }
   const id = newId(), now = nowIso(), expires = new Date(Date.now() + expiresInDays * 86400000).toISOString();
   const result = await env.DB.batch([env.DB.prepare(`INSERT INTO project_username_invitations(id,project_id,recipient_id,username,invited_by,expires_at,created_at)
- SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?2 AND m.user_id=?5 AND ${projectPermissionSql('m.project_id','m.user_id','teamManage')} AND p.status='active' AND (p.team_size_limit IS NULL OR (SELECT COUNT(*) FROM project_members WHERE project_id=?2)<p.team_size_limit)) AND NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3) ON CONFLICT DO NOTHING`).bind(id, projectId, recipient.userId, recipient.username, ownerId, expires, now), ...invitationNotificationStatements(env, id, ownerId, now)]);
+ SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE m.project_id=?2 AND m.user_id=?5 AND ${projectPermissionSql('m.project_id','m.user_id','grant')} AND p.status='active' AND (p.team_size_limit IS NULL OR (SELECT COUNT(*) FROM project_members WHERE project_id=?2)<p.team_size_limit)) AND (?8 IS NULL OR EXISTS(SELECT 1 FROM project_invitation_requests WHERE id=?8 AND project_id=?2 AND status='pending')) AND NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3) ON CONFLICT DO NOTHING`).bind(id, projectId, recipient.userId, recipient.username, ownerId, expires, now,approvalRequestId??null), ...(approvalRequestId?[env.DB.prepare(`UPDATE project_invitation_requests SET status='approved',revision=revision+1,decided_by=?3,invitation_id=?4,decided_at=?5 WHERE id=?1 AND project_id=?2 AND status='pending' AND EXISTS(SELECT 1 FROM project_username_invitations WHERE id=?4) AND ${projectPermissionSql('?2','?3','grant')}`).bind(approvalRequestId,projectId,ownerId,id,now)]:[]), ...invitationNotificationStatements(env, id, ownerId, now)]);
   if (!result[0]?.meta.changes) {
     const duplicate = await env.DB.prepare("SELECT id FROM project_username_invitations WHERE project_id=?1 AND recipient_id=?2 AND status='pending'").bind(projectId, recipient.userId).first<{
       id: string;
@@ -132,7 +133,7 @@ export async function handleUsernameInvite(env: Env, id: string, userId: string,
   }
   const memberId = newId();
   const result = await env.DB.batch([
-    env.DB.prepare(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?1,i.project_id,?3,'member',?4 FROM project_username_invitations i JOIN projects p ON p.id=i.project_id WHERE i.id=?2 AND i.recipient_id=?3 AND i.status='pending' AND i.expires_at>?4 AND p.status='active' AND ${projectPermissionSql('i.project_id','i.invited_by','teamManage')} AND NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=i.project_id AND user_id=?3) AND (p.team_size_limit IS NULL OR (SELECT COUNT(*) FROM project_members WHERE project_id=i.project_id)<p.team_size_limit)`).bind(memberId, id, userId, now),
+    env.DB.prepare(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?1,i.project_id,?3,'member',?4 FROM project_username_invitations i JOIN projects p ON p.id=i.project_id WHERE i.id=?2 AND i.recipient_id=?3 AND i.status='pending' AND i.expires_at>?4 AND p.status='active' AND ${projectPermissionSql('i.project_id','i.invited_by','grant')} AND NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=i.project_id AND user_id=?3) AND (p.team_size_limit IS NULL OR (SELECT COUNT(*) FROM project_members WHERE project_id=i.project_id)<p.team_size_limit)`).bind(memberId, id, userId, now),
     env.DB.prepare("UPDATE project_username_invitations SET status='accepted',handled_at=?3 WHERE id=?1 AND recipient_id=?2 AND status='pending' AND EXISTS(SELECT 1 FROM project_members WHERE id=?4)").bind(id, userId, now, memberId)
   ]);
   if (!result[0]?.meta.changes) {
