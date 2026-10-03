@@ -149,7 +149,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
   await assertProfileStamp(env, input.projectId, input.profileStamp);
   const current = await loadAiConfig(env.DB);
   if (!current?.enabled || current.id !== config.id) throw new AppError('INVALID_STATE', 'AI 设置已变化，请重新生成推荐', 409, false);
-  return { references,decisionReferences,assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
+  return { effectiveStandardsVersionId:answer.effectiveStandardsVersionId??null,references,decisionReferences,assignments: data.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId,
     reason: a.assigneeId ? '任务偏好推荐，请与成员确认意愿和工作量。' : '暂无推荐人选，请由团队协商。' })), considerations: ['推荐仅供任务协作参考，不代表能力评价。'] };
 }
 
