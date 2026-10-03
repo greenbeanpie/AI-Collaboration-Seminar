@@ -61,7 +61,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     response = await fetch(apiUrl(path, options.query), {
       method,
       credentials: 'include',
-      cache: /^(?:\/api\/v1)?\/(?:jobs(?:\/|$)|creation-drafts(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|admin\/accounts(?:\/|$)|auth(?:\/|$))/.test(path) ? 'no-store' : undefined,
+      cache: /^(?:\/api\/v1)?\/(?:jobs(?:\/|$)|creation-drafts(?:\/|$)|projects\/[^/]+\/ai\/clarifications(?:\/|$)|projects\/[^/]+\/collaboration\/proposals(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|admin\/accounts(?:\/|$)|auth(?:\/|$))/.test(path) ? 'no-store' : undefined,
       headers,
       body: options.rawBody ?? (hasJsonBody ? JSON.stringify(options.body) : undefined),
       signal: options.signal,

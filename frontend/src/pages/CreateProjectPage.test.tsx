@@ -239,3 +239,65 @@ it('requests background AI preview, locks edits and adopts the polled result', a
  finish({...draft,previewState:'ready',previewRevision:draft.revision,preview:{mode:'ai',goal:{title:'第二次后台目标',detail:'新调查结果'},tasks:[]}});
  await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('第二次后台目标'));
 });
+
+describe('creation preview clarification', () => {
+  const question = { id: 'question-creation', question: '主要交付形式是什么？', reason: '交付形式影响子任务', options: ['演示原型', '调研报告'], allowUndecided: true, round: 1, maxRounds: 3, status: 'pending', revision: 4, createdAt: '2026-10-03T08:00:00Z' };
+  function restoreWaiting() {
+    draft = { ...draft, revision: 9, previewState: 'waiting_input', previewAttemptId: 'same-preview-attempt', clarification: question, payload: { ...draft.payload, aiCollaborationEnabled: true } };
+    sessionStorage.setItem('ai-office:creation-wizard:owner', JSON.stringify({ id: draft.id, files: [] }));
+    mount();
+  }
+  it('recovers the persisted question after reload and resumes its existing preview without regenerating', async () => {
+    restoreWaiting();
+    await screen.findByText(question.question);
+    expect(screen.getByRole('button', { name: '生成 AI 拆分预览' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '进入创建预览' })).toBeDisabled();
+    mocks.post.mockImplementation(async (path: string, body: unknown) => {
+      expect(path).toBe('/api/v1/creation-drafts/draft-1/clarifications/question-creation/answer');
+      expect(body).toEqual({ expectedRevision: 4, option: '演示原型' });
+      draft = { ...draft, previewState: 'running', clarification: { ...question, status: 'answered' } };
+      return draft;
+    });
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path.endsWith('/draft-1')) {
+        draft = { ...draft, previewState: 'ready', previewRevision: draft.revision, preview: { mode: 'ai', goal: { title: '完成演示原型', detail: '' }, tasks: [] }, clarification: null };
+        return draft;
+      }
+      return { items: [] };
+    });
+    fireEvent.click(screen.getByRole('radio', { name: '演示原型' }));
+    fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '进入创建预览' })).toBeEnabled());
+    expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('完成演示原型');
+    expect(draft.previewAttemptId).toBe('same-preview-attempt');
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(question.question)).not.toBeInTheDocument();
+  });
+  it('submits an explicit undecided response and renders the next bounded question', async () => {
+    restoreWaiting(); await screen.findByText(question.question);
+    mocks.post.mockImplementation(async () => {
+      draft = { ...draft, clarification: { ...question, id: 'question-next', question: '有固定的截止日期吗？', round: 2, revision: 1 } };
+      return draft;
+    });
+    fireEvent.click(screen.getByRole('button', { name: '尚未决定，先保留未决范围' }));
+    await screen.findByText('有固定的截止日期吗？');
+    expect(mocks.post).toHaveBeenCalledWith('/api/v1/creation-drafts/draft-1/clarifications/question-creation/answer', { expectedRevision: 4, undecided: true });
+    expect(screen.getByText('第 2 / 3 轮')).toBeInTheDocument();
+  });
+  it('retains the response on error and lets cancellation release the preview without creating a project', async () => {
+    restoreWaiting(); await screen.findByText(question.question);
+    mocks.post.mockRejectedValueOnce(new Error('回答提交中断')).mockImplementationOnce(async () => {
+      draft = { ...draft, previewState: 'cancelled', clarification: { ...question, status: 'cancelled' } };
+      return draft;
+    });
+    fireEvent.change(screen.getByLabelText('补充回答'), { target: { value: '提交社区调研报告' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
+    await screen.findByText('回答提交中断');
+    expect(screen.getByLabelText('补充回答')).toHaveValue('提交社区调研报告');
+    fireEvent.click(screen.getByRole('button', { name: '取消本次 AI 操作' }));
+    await waitFor(() => expect(screen.queryByText(question.question)).not.toBeInTheDocument());
+    expect(mocks.post).toHaveBeenLastCalledWith('/api/v1/creation-drafts/draft-1/clarifications/question-creation/cancel', { expectedRevision: 4 });
+    expect(screen.getByRole('button', { name: '生成 AI 拆分预览' })).toBeEnabled();
+    expect(mocks.post.mock.calls.some(([path]) => String(path).endsWith('/commit'))).toBe(false);
+  });
+});

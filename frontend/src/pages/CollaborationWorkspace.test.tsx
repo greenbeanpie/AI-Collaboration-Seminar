@@ -67,7 +67,8 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByRole('button', { name: '保存前置依赖' })).toBeInTheDocument();
   });
   it('keeps AI and task creation controls unavailable to ordinary members', () => {
-    identity.role = 'member'; setup();
+    identity.role = 'member'; const { fetchMock } = setup();
+    expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/ai/clarifications'))).toBe(false);
     expect(screen.queryByRole('button', { name: 'AI 拆解、调整与分工' })).toBeNull();
     expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
   });
@@ -242,8 +243,8 @@ describe('collaboration lifecycle', () => {
     fireEvent.change(screen.getByLabelText(/^验收标准/), { target: { value: '无错字并保留核对清单' } });
     fireEvent.change(screen.getByLabelText('预计投入（小时）'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: '创建子任务' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'POST')!;
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')).toBe(true));
+    const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')!;
     expect(String(call[0])).toContain('/projects/p1/tasks');
     expect(JSON.parse(call[1]!.body as string)).toMatchObject({ title: '校对文稿', criteria: '无错字并保留核对清单', effortHours: 2 });
   });

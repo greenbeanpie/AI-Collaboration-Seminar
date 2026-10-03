@@ -7,6 +7,8 @@ import type { DataOf } from '../api/types';
 import { useSession, useCapabilities } from '../auth';
 import { Field, ErrorNotice, PageHeading, Spinner } from '../components/ui';
 import { DateInput } from '../components/DateInput';
+import { AiClarificationCard } from '../components/AiClarificationCard';
+import { clarificationApi, type ClarificationAnswer } from '../api/clarifications';
 import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
 import { isTemplatePayload } from '../api/project-templates';
@@ -58,7 +60,8 @@ function CreationWizard({ userId }: {
   const previewEpoch = useRef(0), latestDraft = useRef(draft);
   latestDraft.current = draft;
   const previewRunning = draft?.previewState === 'running';
-  const busy = actionBusy || previewRunning;
+  const previewWaiting = draft?.previewState === 'waiting_input';
+  const busy = actionBusy || previewRunning || previewWaiting;
   const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && previewRunning && !actionBusy), refetchInterval: query => query.state.data?.draft.previewState === 'running' || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || latestDraft.current.previewState !== 'running' || next.revision < latestDraft.current.revision) return; setDraft(next); setPayload(next.payload); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description }); setConfirmed(false); } }, [draftPoll.data]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
@@ -107,6 +110,7 @@ function CreationWizard({ userId }: {
           return;
         }
         setDraft(next);
+        if (next.previewState === 'waiting_input' || next.previewState === 'running') setStep(3);
         setPayload(next.payload);
         setManual(next.preview?.tasks ?? []);
         setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
@@ -115,7 +119,7 @@ function CreationWizard({ userId }: {
     }
   }, [saved, loaded, navigate]);
   useEffect(() => {
-    if (!busy) {
+    if (!actionBusy && !previewRunning) {
       return;
     }
     const leave = (event: BeforeUnloadEvent) => {
@@ -124,7 +128,7 @@ function CreationWizard({ userId }: {
     };
     window.addEventListener('beforeunload', leave);
     return () => window.removeEventListener('beforeunload', leave);
-  }, [busy]);
+  }, [actionBusy, previewRunning]);
   const run = async (action: () => Promise<void>) => {
     if (lock.current || previewRunning) {
       return;
@@ -250,9 +254,39 @@ function CreationWizard({ userId }: {
     remember(id, []);
     setManual(next.preview?.tasks ?? []);
     setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: next.payload.brief || next.payload.description });
-    setStep(0);
+    setStep(next.previewState === 'waiting_input' || next.previewState === 'running' ? 3 : 0);
     setResult(null);
   });
+  const resolveClarification = async (answer?: ClarificationAnswer) => {
+    if (!draft?.clarification || lock.current) return;
+    lock.current = true;
+    previewEpoch.current++;
+    setBusy(true);
+    try {
+      const updated = answer
+        ? await clarificationApi.answerDraft(draft.id, draft.clarification, answer)
+        : await clarificationApi.cancelDraft(draft.id, draft.clarification);
+      accept(updated);
+      if (updated.previewState === 'ready') {
+        setManual(updated.preview?.tasks ?? []);
+        setManualGoal(updated.preview?.goal ?? updated.payload.goal ?? { title: updated.payload.name, detail: updated.payload.brief || updated.payload.description });
+      }
+      setStep(3);
+    } finally {
+      lock.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
+  const refreshClarification = async () => {
+    if (!draft) return;
+    previewEpoch.current++;
+    const updated = await api.get<'CreationDraftResponse'>(draftPath(draft.id));
+    accept(updated);
+    if (updated.previewState === 'ready') {
+      setManual(updated.preview?.tasks ?? []);
+      setManualGoal(updated.preview?.goal ?? updated.payload.goal ?? { title: updated.payload.name, detail: updated.payload.brief || updated.payload.description });
+    }
+  };
   const setField = <K extends keyof WizardPayload>(key: K, value: WizardPayload[K]) => {
     setPayload(p => ({
       ...p, [key]: value
@@ -278,6 +312,8 @@ function CreationWizard({ userId }: {
       expectedRevision: draft.revision, confirmed: true
     })))}>恢复创建结果与邀请</button></section> : <>
  <h2>{wizardSteps[step]}</h2>
+ {previewWaiting && draft?.clarification?.status === 'pending' && <AiClarificationCard question={draft.clarification} disabled={actionBusy} onAnswer={resolveClarification} onCancel={() => resolveClarification()} onRefresh={refreshClarification} />}
+ {previewWaiting && !draft?.clarification && <div className="callout"><p>AI 正在等待补充信息，正在核对问题状态。</p><button type="button" className="button button-quiet" disabled={actionBusy} onClick={() => void refreshClarification().catch(setError)}>重新读取待回答问题</button></div>}
  {step === 0 && <><Field label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field label="主目标（可选）" hint="可直接给出团队大目标；留空时，AI 会根据说明与资料概括，并在预览中等待复核。"><input className="input" maxLength={200} value={payload.goal?.title ?? ''} disabled={busy} onChange={e => { const title = e.target.value; setField('goal', title.trim() ? { title, detail: payload.goal?.detail ?? '' } : undefined); setManualGoal({ title, detail: payload.goal?.detail ?? '' }); }}/></Field><Field label="项目说明"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field label="截止日期" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
           const date = e.target.value;
           setPayload(p => {
@@ -364,7 +400,7 @@ function CreationWizard({ userId }: {
       void list.refetch();
     })}>取消草稿（保留资料）</button>}</div>
  </>}
- {busy && <p role="status">正在保存或核对结果，请稍候…</p>}{Boolean(error) && <ErrorNotice error={error}/>}<p className="form-note">草稿只对当前账户可见。移出创建的原文件会保留在草稿记录中；取消后可恢复。最终创建使用同一草稿标识，失败或网络中断后请刷新核对结果。</p>{draft && <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void openDraft(draft.id)}>刷新草稿状态</button>}
+ {(actionBusy || previewRunning) && <p role="status">正在保存或核对结果，请稍候…</p>}{Boolean(error) && <ErrorNotice error={error}/>}<p className="form-note">草稿只对当前账户可见。移出创建的原文件会保留在草稿记录中；取消后可恢复。最终创建使用同一草稿标识，失败或网络中断后请刷新核对结果。</p>{draft && <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void openDraft(draft.id)}>刷新草稿状态</button>}
  </form></div>;
 }
 function sameTasks(a: WizardTask[], b: WizardTask[]) {

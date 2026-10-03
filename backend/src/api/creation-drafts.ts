@@ -8,7 +8,9 @@ import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
 import { creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
-import { enqueueDraftPreview } from '../services/draft-preview-jobs';
+import { enqueueDraftPreview, enqueueDraftContinuation } from '../services/draft-preview-jobs';
+import { answerClarification, answerSchema, cancelClarification, clarificationSchema } from '../services/ai-clarifications';
+import { loadDraftCheckpoint } from '../services/draft-preview-checkpoints';
 import { projectTemplates } from '../services/creation-template';
 const base = '/api/v1/creation-drafts';
 const params = z.object({
@@ -22,7 +24,7 @@ const fileSchema = z.object({
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
     goal:creationGoal.optional(),tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
-  }).nullable(), previewRevision: revision.nullable(), previewAttemptId: z.string().uuid().nullable().optional(), previewState: z.string(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
+  }).nullable(), previewRevision: revision.nullable(), previewAttemptId: z.string().uuid().nullable().optional(), previewState: z.string(), clarification: clarificationSchema.nullable(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
 });
 const response = apiEnvelope(schema, 'CreationDraftResponse');
 const commitResponse = apiEnvelope(z.object({
@@ -157,8 +159,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     if (row.revision !== body.expectedRevision) {
       throw versionConflict(row.revision);
     }
-    const changed = await c.env.DB.prepare("UPDATE project_creation_drafts SET status=?4,revision=revision+1,preview_state='none',updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status!='committed'").bind(id, user, body.expectedRevision, body.status, nowIso()).run();
-    if (!changed.meta.changes) {
+    const changes = await c.env.DB.batch([c.env.DB.prepare("UPDATE project_creation_drafts SET status=?4,revision=revision+1,preview_state='none',preview_waiting_id=NULL,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status!='committed'").bind(id, user, body.expectedRevision, body.status, nowIso()),
+      c.env.DB.prepare("UPDATE ai_clarifications SET status='cancelled',revision=revision+1,updated_at=?5 WHERE draft_id=?1 AND owner_id=?2 AND status='pending' AND context_revision=?3 AND EXISTS(SELECT 1 FROM project_creation_drafts d WHERE d.id=?1 AND d.owner_id=?2 AND d.revision=?3+1 AND d.status=?4 AND d.preview_waiting_id IS NULL)").bind(id,user,body.expectedRevision,body.status,nowIso())]);
+    if (!changes[0]?.meta.changes) {
       throw invalidState('草稿已变化');
     }
     return c.json(apiData(c, await draftView(c.env, await getDraft(c.env, id, user))), 200);
@@ -268,6 +271,21 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     };
     if(b.background && b.mode==='ai')return c.json(apiData(c,await enqueueDraftPreview(c.env,c.req.valid('param').draftId,c.get('user')!.id,b.expectedRevision,b.tasks,b.regenerate,b.goal)),200);
     return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate,b.goal)), 200);
+  });
+  const questionParams=params.extend({questionId:z.string().uuid()});
+  app.openapi(createRoute({method:'post',path:base+'/{draftId}/clarifications/{questionId}/answer',tags:['creation'],request:{params:questionParams,body:json(answerSchema)},responses:{200:{description:'保存回答并继续原预览',content:{'application/json':{schema:response}}}}}),async c=>{
+    const {draftId,questionId}=c.req.valid('param'),userId=c.get('user')!.id,row=await getDraft(c.env,draftId,userId);
+    if(!row.preview_attempt_id)throw invalidState('草稿没有可恢复的预览');
+    const restored=await loadDraftCheckpoint(c.env,row.preview_attempt_id);
+    if(!restored||restored.checkpoint.draftId!==draftId||restored.checkpoint.userId!==userId)throw invalidState('预览恢复内容不存在');
+    await answerClarification(c.env,{draftId,userId,attemptId:row.preview_attempt_id,revision:restored.checkpoint.revision},questionId,c.req.valid('json'));
+    return c.json(apiData(c,await enqueueDraftContinuation(c.env,draftId,userId,row.preview_attempt_id,questionId)),200);
+  });
+  app.openapi(createRoute({method:'post',path:base+'/{draftId}/clarifications/{questionId}/cancel',tags:['creation'],request:{params:questionParams,body:json(z.object({expectedRevision:revision}).strict())},responses:{200:{description:'取消本次澄清，可手动修改预览',content:{'application/json':{schema:response}}}}}),async c=>{
+    const {draftId,questionId}=c.req.valid('param'),userId=c.get('user')!.id,row=await getDraft(c.env,draftId,userId);
+    if(!row.preview_attempt_id)throw invalidState('草稿没有可取消的澄清');
+    await cancelClarification(c.env,{draftId,userId,attemptId:row.preview_attempt_id,revision:row.revision},questionId,(c.req.valid('json') as {expectedRevision:number}).expectedRevision);
+    return c.json(apiData(c,await draftView(c.env,await getDraft(c.env,draftId,userId))),200);
   });
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/commit', tags: ['creation'], request: {

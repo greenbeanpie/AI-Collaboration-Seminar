@@ -1,3 +1,6 @@
+import { clarificationSchema, answerSchema, listProjectClarifications, projectClarificationBinding, answerClarification, cancelClarification } from '../services/ai-clarifications';
+import { activeExecutionSlice, dispatchExecutionSlice } from '../services/ai-execution-slices';
+import { getJob } from '../services/jobs';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser, requireProjectMember } from '../core/auth';
@@ -7,6 +10,23 @@ import { projectParams } from './projects';
 import { loadAiConfig } from '../ai/config';
 import { nativeSearchCapability } from '../ai/tool-transport';
 export function registerAiToolRoutes(app: OpenAPIHono<AppEnv>) {
+  const clarificationBase='/api/v1/projects/{projectId}/ai/clarifications';
+  app.use('/api/v1/projects/:projectId/ai/clarifications',requireUser,requireProjectMember());
+  app.use('/api/v1/projects/:projectId/ai/clarifications/*',requireUser,requireProjectMember());
+  app.openapi(createRoute({method:'get',path:clarificationBase,tags:['agent'],request:{params:projectParams},responses:{200:{description:'本轮发起人待回答的问题，刷新后恢复',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(clarificationSchema)}),'ProjectAiClarificationsResponse')}}}}}),async c=>c.json(apiData(c,{items:await listProjectClarifications(c.env,c.req.valid('param').projectId,c.get('user')!.id)}),200));
+  for(const action of ['answer','cancel'] as const){
+    app.openapi(createRoute({method:'post',path:clarificationBase+'/{questionId}/'+action,tags:['agent'],request:{params:projectParams.extend({questionId:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:action==='answer'?answerSchema:z.object({expectedRevision:z.number().int().min(1)}).strict()}}}},responses:{200:{description:'回答后恢复原任务，或取消等待',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid(),status:z.string()}),'ProjectAiClarificationActionResponse')}}}}}),async c=>{
+      const {projectId,questionId}=c.req.valid('param'),body=c.req.valid('json');
+      const binding=await projectClarificationBinding(c.env,projectId,c.get('user')!.id,questionId);
+      if(action==='answer'){
+        await answerClarification(c.env,binding,questionId,body);
+        const slice=await activeExecutionSlice(c.env,binding.jobId!);if(slice?.status==='pending')await dispatchExecutionSlice(c.env,slice);
+      }else await cancelClarification(c.env,binding,questionId,body.expectedRevision);
+      const job=await getJob(c.env,binding.jobId!);
+      return c.json(apiData(c,{jobId:job.id,status:job.status}),200);
+    });
+  }
+
   app.use('/api/v1/projects/:projectId/ai-tools/*', requireUser, requireProjectMember());
   app.openapi(createRoute({
     method: 'get', path: '/api/v1/projects/{projectId}/ai-tools/capabilities', tags: ['agent'], request: {

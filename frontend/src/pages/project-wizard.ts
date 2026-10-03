@@ -17,6 +17,7 @@ export function canConfirmDraft(draft: WizardDraft) {
 export function confirmationIssue(latest: WizardDraft, reviewed: WizardDraft): string | null {
   if (latest.status === 'committed') return null;
   if (latest.status === 'cancelled') return '草稿已取消，配置和文件仍保留。请恢复草稿后重新确认。';
+  if (latest.previewState === 'waiting_input') return 'AI 正在等待补充信息，请回答问题或取消本次 AI 操作后继续。';
   if (latest.previewState === 'running') return '任务预览仍在生成，请等待完成后重新核对。';
   if (latest.previewState === 'failed') return '任务预览失败，草稿和文件仍保留。请核对并重新保存当前任务预览。';
   if (!canConfirmDraft(latest) || !latest.preview) return '尚未保存当前配置的任务预览。请保存任务预览后重新确认。';

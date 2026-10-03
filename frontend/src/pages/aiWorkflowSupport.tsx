@@ -12,7 +12,7 @@ export type JobPollState = {
 const pollDelays = [2_000, 3_000, 5_000, 8_000, 10_000];
 
 /** Poll a real backend job while this page is visible, starting at two seconds and backing off to ten. */
-export function useVisibleJobPoller(jobId: string | null) {
+export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
   const [state, setState] = useState<{ jobId: string | null } & JobPollState>({ jobId: null, job: null, error: null, loading: false });
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function useVisibleJobPoller(jobId: string | null) {
       if (timer !== undefined) window.clearTimeout(timer);
       controller?.abort();
     };
-  }, [jobId]);
+  }, [jobId, refreshKey]);
 
   const current: JobPollState & { jobId: string | null } = state.jobId === jobId
     ? { jobId: state.jobId, job: state.job, error: state.error, loading: state.loading }

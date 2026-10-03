@@ -1,3 +1,4 @@
+import { currentJobClarification } from '../services/ai-clarifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -64,12 +65,13 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     if (job.project_id && (job.kind === 'assignment_suggest' || input.operation === 'collaboration.assign')) {
       await assertProfileStamp(c.env,job.project_id,input.profileStamp);
     }
+    const clarification=job.status==='waiting_input'?await currentJobClarification(c.env,job.id,c.get('user')!.id):null;
     return c.json(
       apiData(c, {
         jobId: job.id,
         kind: job.kind,
         status: job.status,
-        result: job.result_json ? (JSON.parse(job.result_json) as unknown) : null,
+        result: clarification ? {...(job.result_json?JSON.parse(job.result_json):{}),clarification} : job.result_json ? (JSON.parse(job.result_json) as unknown) : null,
         error: job.error_json ? (JSON.parse(job.error_json) as unknown) : null,
         attempts: job.attempts,
         createdAt: job.created_at,

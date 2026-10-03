@@ -1136,6 +1136,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    questionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text?: string;
+                        option?: string;
+                        undecided?: boolean;
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 保存回答并继续原预览 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    questionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 取消本次澄清，可手动修改预览 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creation-drafts/{draftId}/commit": {
         parameters: {
             query?: never;
@@ -5966,6 +6057,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/ai/clarifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 本轮发起人待回答的问题，刷新后恢复 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAiClarificationsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/ai/clarifications/{questionId}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    questionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text?: string;
+                        option?: string;
+                        undecided?: boolean;
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 回答后恢复原任务，或取消等待 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAiClarificationActionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/ai/clarifications/{questionId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    questionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 回答后恢复原任务，或取消等待 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectAiClarificationActionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/ai-tools/capabilities": {
         parameters: {
             query?: never;
@@ -8321,6 +8543,28 @@ export interface components {
                 /** Format: uuid */
                 previewAttemptId?: string | null;
                 previewState: string;
+                clarification: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: uuid */
+                    jobId?: string;
+                    question: string;
+                    reason?: string;
+                    options: string[];
+                    allowUndecided: boolean;
+                    round: number;
+                    /** @enum {number} */
+                    maxRounds: 3;
+                    /** @enum {string} */
+                    status: "pending" | "answered" | "cancelled";
+                    revision: number;
+                    answer?: {
+                        text?: string;
+                        option?: string;
+                        undecided?: boolean;
+                    };
+                    createdAt: string;
+                } | null;
                 previewError: string | null;
                 files: {
                     /** Format: uuid */
@@ -8443,6 +8687,28 @@ export interface components {
                     /** Format: uuid */
                     previewAttemptId?: string | null;
                     previewState: string;
+                    clarification: {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        jobId?: string;
+                        question: string;
+                        reason?: string;
+                        options: string[];
+                        allowUndecided: boolean;
+                        round: number;
+                        /** @enum {number} */
+                        maxRounds: 3;
+                        /** @enum {string} */
+                        status: "pending" | "answered" | "cancelled";
+                        revision: number;
+                        answer?: {
+                            text?: string;
+                            option?: string;
+                            undecided?: boolean;
+                        };
+                        createdAt: string;
+                    } | null;
                     previewError: string | null;
                     files: {
                         /** Format: uuid */
@@ -11088,6 +11354,43 @@ export interface components {
                 /** Format: uuid */
                 materialVersionId: string;
                 revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectAiClarificationsResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    id: string;
+                    /** Format: uuid */
+                    jobId?: string;
+                    question: string;
+                    reason?: string;
+                    options: string[];
+                    allowUndecided: boolean;
+                    round: number;
+                    /** @enum {number} */
+                    maxRounds: 3;
+                    /** @enum {string} */
+                    status: "pending" | "answered" | "cancelled";
+                    revision: number;
+                    answer?: {
+                        text?: string;
+                        option?: string;
+                        undecided?: boolean;
+                    };
+                    createdAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectAiClarificationActionResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                status: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

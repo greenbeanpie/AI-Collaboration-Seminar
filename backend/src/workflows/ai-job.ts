@@ -10,6 +10,8 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string; s
   async run(event: WorkflowEvent<{ jobId: string; slice?:number; draftPreview?:DraftPreviewInput }>, step: WorkflowStep): Promise<void> {
     if(event.payload.draftPreview){
       const draft=event.payload.draftPreview;
+      // A clarification pause ends this instance successfully; the answer starts a distinct
+      // deterministic continuation instance and the same encrypted draft checkpoint.
       await step.do('draft-preview',{retries:{limit:0,delay:'5 seconds'}},()=>previewDraft(this.env,draft.draftId,draft.userId,draft.revision,'ai',draft.tasks,false,draft.goal,draft.attempt));
       return;
     }

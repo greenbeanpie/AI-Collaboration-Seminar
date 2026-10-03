@@ -1,3 +1,5 @@
+import { invalidateStaleProjectClarifications } from './services/ai-clarifications';
+import { recoverDraftPreviews } from './services/draft-preview-jobs';
 import { recoverExecutionSlices } from './services/ai-execution-slices';
 import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
@@ -14,6 +16,7 @@ import { dispatchProjectProgression } from './services/project-progression';
  * 3. 清理过期会话与验证码挑战。
  */
 export async function handleScheduled(env: Env): Promise<void> {
+  try { await invalidateStaleProjectClarifications(env); } catch { console.error('[cron] Clarification cleanup failed'); }
   try { await dispatchProjectProgression(env); } catch(error) { console.error('[cron] progression failed',error); }
   try { await dispatchNotifications(env); } catch { console.error('[cron] Notification dispatch failed'); }
   const now = nowIso();
@@ -23,6 +26,7 @@ export async function handleScheduled(env: Env): Promise<void> {
   }
   // Requeue missing instances before selecting the due outbox, so recovery dispatches in this run.
   await recoverExecutionSlices(env);
+  try { await recoverDraftPreviews(env); } catch { console.error('[cron] Draft preview recovery failed'); }
   await recoverJobs(env, nowIso());
   await releaseStaleReservations(env, now);
   try {

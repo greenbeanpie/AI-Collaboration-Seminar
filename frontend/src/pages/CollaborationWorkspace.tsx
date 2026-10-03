@@ -23,6 +23,8 @@ import './CollaborationWorkspace.css';
 import { taskSummarySource, taskSummaryPreview, useTaskSummaries } from './useTaskSummaries';
 import { ProposalCorrection } from './ProposalCorrection';
 import { ProjectAiFeedback } from './ProjectAiFeedback';
+import { AiClarificationCard } from '../components/AiClarificationCard';
+import { clarificationApi, clarificationFromJob, clarificationQueryKey, type ProjectClarification, type ClarificationAnswer } from '../api/clarifications';
 
 const lifecycleLabels = { open: '待认领', in_progress: '进行中', submitted: '待验收', accepted: '已通过', improve: '需改进', rework: '需重做' };
 const decisionLabels = { accept: '通过', improve: '改进', rework: '重做' };
@@ -90,7 +92,41 @@ function ProjectCollaborationWorkspace() {
   const sourceReady = useCallback((id: string, ready: boolean) => setSourceReadiness(values => values[id] === ready ? values : { ...values, [id]: ready }), []);
   const sourceSelection = (id: string, checked: boolean) => setSourceVersions(values => checked ? values.includes(id) || values.length >= 5 ? values : [...values, id] : values.filter(value => value !== id));
   const [jobId, setJobId] = useState<string | null>(null);
-  const job = useVisibleJobPoller(jobId);
+  const [jobRefresh, setJobRefresh] = useState(0);
+  const job = useVisibleJobPoller(jobId, jobRefresh);
+  const resolvedQuestions = useRef(new Set<string>());
+  const clarifications = useQuery({
+    queryKey: clarificationQueryKey(projectId),
+    queryFn: ({ signal }) => clarificationApi.list(projectId, signal),
+    enabled: owner,
+    retry: false,
+    refetchOnMount: 'always',
+    refetchInterval: jobId && !job.isSettled ? 3000 : false,
+    refetchIntervalInBackground: false,
+  });
+  const jobQuestion = job.job?.status === 'waiting_input' && jobId ? clarificationFromJob(job.job.result, jobId) : null;
+  const questions = (owner ? clarifications.data?.items ?? [] : []).filter(question => question.status === 'pending' && !resolvedQuestions.current.has(question.id));
+  if (jobQuestion && !resolvedQuestions.current.has(jobQuestion.id) && !questions.some(question => question.id === jobQuestion.id)) questions.push(jobQuestion);
+  const waitingForAnswer = questions.length > 0 || job.job?.status === 'waiting_input';
+  useEffect(() => {
+    if (job.job?.status === 'waiting_input') void client.invalidateQueries({ queryKey: clarificationQueryKey(projectId) });
+  }, [job.job?.status, job.job?.result, client, projectId]);
+  const refreshClarifications = async () => {
+    const refreshed = await clarifications.refetch();
+    if (refreshed.error) throw refreshed.error;
+    setJobRefresh(value => value + 1);
+  };
+  const resolveClarification = async (question: ProjectClarification, answer?: ClarificationAnswer) => {
+    const result = answer
+      ? await clarificationApi.answerProject(projectId, question, answer)
+      : await clarificationApi.cancelProject(projectId, question);
+    resolvedQuestions.current.add(question.id);
+    client.setQueryData<{ items: ProjectClarification[] }>(clarificationQueryKey(projectId), current => ({ items: (current?.items ?? []).filter(item => item.id !== question.id) }));
+    setJobId(result.jobId);
+    setJobRefresh(value => value + 1);
+    setHandoffNotice(answer ? '回答已提交，AI 将继续本次任务。' : '本次 AI 操作已取消。');
+    void client.invalidateQueries({ queryKey: clarificationQueryKey(projectId) });
+  };
   const followedJobs = useRef(new Set<string>());
   const [handoffNotice, setHandoffNotice] = useState('');
   useEffect(() => {
@@ -113,10 +149,18 @@ function ProjectCollaborationWorkspace() {
   return <SectionCard title={historyPage ? '任务历史' : '子任务'} detail={historyPage ? '每页展示一条记录，保留提交时的内容与固定版本引用。' : '按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。'}>
     <div hidden={historyPage}><div className="collab-toolbar"><div className="chip-list"><span className="chip">共 {rows.length} 项 · 已完成 {rows.filter(task => task.lifecycleState === 'accepted').length} 项</span><span className="chip">分工：{!settings.data ? '尚未读取' : settings.data.assignmentMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span><span className="chip">验收：{!settings.data ? '尚未读取' : settings.data.evaluationMode === 'automatic' ? '自动应用 AI' : '负责人确认'}</span></div><label className="collab-filter"><span>筛选</span><select className="input" aria-label="筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">全部子任务</option>{Object.entries(lifecycleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><div className="collab-toolbar-actions">{owner && <button className="button button-quiet" aria-expanded={aiOpen} aria-controls="collab-ai-panel" onClick={() => setAiOpen(true)}><Sparkles size={16} />AI 拆解、调整与分工</button>}{owner && <button className="button button-primary" disabled={!goal.data} onClick={() => { create.reset(); setCreateGraphRevision(goal.data!.graphRevision); setCreateOpen(true); }}><Plus size={16} />新建子任务</button>}</div></div>
     </div>
+    {!historyPage && <>
+      {owner && clarifications.error && <ErrorNotice error={clarifications.error} onRetry={() => void clarifications.refetch()} />}
+      {!owner && questions.map(question => <AiClarificationCard key={question.id} question={question} onAnswer={answer => resolveClarification(question, answer)} onCancel={() => resolveClarification(question)} onRefresh={refreshClarifications} />)}
+      {owner && questions.length > 0 && <div className="notice notice-warn" role="status"><span>AI 等待你的回答，本次操作已暂停。</span><button type="button" className="button button-quiet" onClick={() => setAiOpen(true)}>回答 AI 的问题（{questions.length}）</button></div>}
+      {waitingForAnswer && !questions.length && <p role="status">AI 正在等待补充信息，正在核对待回答问题。</p>}
+      {jobId && !aiOpen && <JobProgress job={job} />}
+    </>}
     {owner && <Modal title={proposalHistory ? 'AI 建议历史' : 'AI 拆解、调整与分工'} mode={proposalHistory ? 'page' : aiOpen && !historyPage ? 'dialog' : 'hidden'} onClose={proposalHistory ? returnFromHistory : () => setAiOpen(false)}>
     <section id="collab-ai-panel" className="collab-ai" aria-label="AI 拆解、调整与分工">
       <div className="stack" hidden={proposalHistory}>
       <div className="form-actions"><DropdownMenu label="更多"><button className="button button-quiet" onClick={() => openHistory('proposals', orderedProposals[0]?.proposalId)}>查看历史版本</button></DropdownMenu></div>
+      {questions.map(question => <AiClarificationCard key={question.id} question={question} onAnswer={answer => resolveClarification(question, answer)} onCancel={() => resolveClarification(question)} onRefresh={refreshClarifications} />)}
       <p className="form-note">负责人可补充信息、提出要求或要求调整。AI 自主查阅项目内授权信息，所选版本优先参考。自动应用遵循项目设置，负责人始终可以修正结果或重新反馈。过期结果不会覆盖成员的新操作。</p>
       {!aiEnabled && <p className="notice notice-warn">{!settings.data?.aiCollaborationEnabled ? '本项目 AI 智能协作已关闭，请由负责人在项目设置开启。' : 'AI 模型当前不可用。'}可以继续手动创建、分工、提交和验收，不会生成模拟结果。</p>}
       <ProjectSourceContext projectId={projectId} enabled={aiEnabled} selected={sourceVersions} onSelection={sourceSelection} onReady={sourceReady} />
@@ -124,7 +168,7 @@ function ProjectCollaborationWorkspace() {
       {sourcesPending && <p className="notice notice-warn">选定资料尚未完整处理。可继续调查，AI 将检查可读取范围并报告未处理内容。</p>}
       {aiEnabled && <ProjectSearchOption projectId={projectId} enabled={allowSearch} onChange={setAllowSearch} query={searchQuery} onQuery={setSearchQuery}/>}
       <Field label="目标、补充信息或调整要求"><textarea className="input" rows={3} maxLength={12000} value={brief} onChange={event => setBrief(event.target.value)} placeholder="描述目标或要求调整的内容；AI 将创建可验收任务，或仅调整本页尚未提交、尚未验收的任务" /></Field>
-      <div className="form-actions"><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || !rows.some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务</button><button className="button" disabled={!aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工</button></div>
+      <div className="form-actions"><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>生成拆解建议</button><button className="button" disabled={!aiEnabled || !brief.trim() || (allowSearch&&!searchQuery.trim()) || ai.isPending || !rows.some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务</button><button className="button" disabled={!aiEnabled || ai.isPending || !rows.some(row => !row.assigneeId && row.lifecycleState === 'open') || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工</button></div>
       {ai.error && <ErrorNotice error={ai.error} />}
       {handoffNotice && <p className="form-note">{handoffNotice}</p>}
       <JobProgress job={job} />
