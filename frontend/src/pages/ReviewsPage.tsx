@@ -4,7 +4,8 @@ import { Play, RefreshCw, ShieldAlert } from 'lucide-react';
 import { api, projectPath, listAllItems } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
-import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
+import { EmptyState, ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
+import { projectRequest, type StandardVersion } from '../api/simplification';
 import type { DataOf } from '../api/types';
 import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 
@@ -17,21 +18,17 @@ export function ReviewsPage() {
   const { projectId } = useProject();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const requirementQuery = useQuery({ queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) });
-  const rubricQuery = useQuery({ queryKey: ['rubrics', projectId], queryFn: () => listAllItems<'RubricListResponse'>(projectPath(projectId, '/rubrics')) });
+  const standardQuery = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
   const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
   const reviewListQuery = useQuery({ queryKey: ['reviews', projectId], queryFn: () => listAllItems<'ReviewListResponse'>(projectPath(projectId, '/reviews')) });
   const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
-  const confirmedRequirementSets = (requirementQuery.data ?? []).filter((set) => set.status === 'confirmed');
-  const confirmedRubrics = (rubricQuery.data ?? []).filter((rubric) => rubric.status === 'confirmed');
+  const standard = standardQuery.data?.standard;
   const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
     queryKey: ['materialVersions', projectId, material.materialId],
     queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
     staleTime: 15_000,
   })) });
 
-  const [requirementSetId, setRequirementSetId] = useState('');
-  const [rubricVersionId, setRubricVersionId] = useState('');
   const [selectedMaterialVersionIds, setSelectedMaterialVersionIds] = useState<string[]>([]);
   const [initializedMaterialSelection, setInitializedMaterialSelection] = useState(false);
   const [selectedReviewId, setSelectedReviewId] = useState('');
@@ -69,12 +66,6 @@ export function ReviewsPage() {
     return { byVersionId, errors, loaded: materialVersionQueries.every((query) => Boolean(query.data)) };
   }, [materialVersionQueries, materials]);
 
-  useEffect(() => {
-    if (!requirementSetId && confirmedRequirementSets.length > 0) setRequirementSetId(confirmedRequirementSets[0]?.requirementSetId ?? '');
-  }, [confirmedRequirementSets, requirementSetId]);
-  useEffect(() => {
-    if (!rubricVersionId && confirmedRubrics.length > 0) setRubricVersionId(confirmedRubrics[0]?.rubricId ?? '');
-  }, [confirmedRubrics, rubricVersionId]);
   useEffect(() => {
     if (materialQuery.data && !initializedMaterialSelection) {
       setSelectedMaterialVersionIds(currentMaterialVersions.slice(0, 10).map((version) => version.versionId));
@@ -114,14 +105,14 @@ export function ReviewsPage() {
 
   const handleStartReview = async (event: FormEvent) => {
     event.preventDefault();
-    if (!aiEnabled || creating || hasPendingReviewJob || !requirementSetId || !rubricVersionId || selectedMaterialVersionIds.length === 0) return;
+    if (!aiEnabled || creating || hasPendingReviewJob || !standard || selectedMaterialVersionIds.length === 0) return;
     setCreating(true);
     setCreateError(null);
-    const body = { rubricVersionId, requirementSetId, materialVersionIds: [...selectedMaterialVersionIds].sort() };
+    const body = { materialVersionIds: [...selectedMaterialVersionIds].sort() };
     const namespace = `review-create:${projectId}`;
     try {
       const key = await idempotencyKeyForIntent(namespace, body);
-      const result = await api.post<'ReviewCreateResponse'>(projectPath(projectId, '/reviews'), body, { idempotencyKey: key });
+      const result = await projectRequest<{ reviewId: string; jobId: string }>(projectId, '/reviews', { method: 'POST', body, idempotencyKey: key });
       completeIntent(namespace);
       setSelectedReviewId(result.reviewId);
       const pending = { jobId: result.jobId, entityId: result.reviewId, action: 'create' };
@@ -156,28 +147,17 @@ export function ReviewsPage() {
       ? current.filter((id) => id !== versionId)
       : current.length < 10 ? [...current, versionId] : current);
   };
-  const inputLoading = requirementQuery.isLoading || rubricQuery.isLoading || materialQuery.isLoading;
+  const inputLoading = standardQuery.isLoading || materialQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
-    <PageHeading eyebrow="复核 / 预审" title="按已确认的标准检查材料" detail="每份报告会保留使用的要求集、评分标准和材料版本 ID。AI 预审意见供团队内部讨论，不构成官方评审结论。" />
+    <PageHeading eyebrow="复核 / 预审" title="按生效项目标准检查材料" detail="每份报告会保留使用的要求集、评分标准和材料版本 ID。AI 预审意见供团队内部讨论，不构成官方评审结论。" />
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会开始预审。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 新预审不会生成模拟报告；已有后端报告仍可查看。</div>}
 
     <div className="ai-workflow-grid">
-      <SectionCard title="发起新预审" detail="只使用负责人已确认的要求集和评分标准，并绑定当前材料版本。">
+      <SectionCard title="发起新预审" detail="使用最新保存的生效项目标准，并绑定当前材料版本。">
         {inputLoading ? <Spinner label="正在读取确认标准和材料" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleStartReview(event)}>
-          <Field label="已确认要求集">
-            <select className="ai-workflow-select" value={requirementSetId} onChange={(event) => setRequirementSetId(event.target.value)}>
-              <option value="">选择已确认要求集</option>
-              {confirmedRequirementSets.map((set) => <option key={set.requirementSetId} value={set.requirementSetId}>要求集 · {formatWorkflowDate(set.confirmedAt ?? '')} · {set.requirements.length} 条</option>)}
-            </select>
-          </Field>
-          <Field label="已确认评分标准">
-            <select className="ai-workflow-select" value={rubricVersionId} onChange={(event) => setRubricVersionId(event.target.value)}>
-              <option value="">选择已确认评分标准</option>
-              {confirmedRubrics.map((rubric) => <option key={rubric.rubricId} value={rubric.rubricId}>{rubric.source === 'official' ? '官方模板' : '自拟'} · v{rubric.version} · {rubric.weights.length} 个评分项</option>)}
-            </select>
-          </Field>
+          <p>生效标准：{standard ? `${standard.title} · v${standard.version}` : '尚未保存项目标准'}</p>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">当前材料版本 <small>至少选择 1 个，最多 10 个。报告会固定这些版本 ID。</small></div>
             {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
@@ -195,16 +175,15 @@ export function ReviewsPage() {
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
           {pendingReviewJob && <div className="ai-workflow-field ai-workflow-field-wide"><JobPanel jobId={pendingReviewJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && !capabilities.error} onRetry={() => void handleRetryJob()} /></div>}
           <div className="ai-workflow-actions ai-workflow-field-wide">
-            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || hasPendingReviewJob || !requirementSetId || !rubricVersionId || selectedMaterialVersionIds.length === 0}><Play size={15} />{creating ? '正在创建预审' : hasPendingReviewJob ? '预审任务处理中' : '发起真实预审'}</button>
-            {confirmedRequirementSets.length === 0 && <span className="muted">没有已确认要求集</span>}
-            {confirmedRubrics.length === 0 && <span className="muted">没有已确认评分标准</span>}
+            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || hasPendingReviewJob || !standard || selectedMaterialVersionIds.length === 0}><Play size={15} />{creating ? '正在创建预审' : hasPendingReviewJob ? '预审任务处理中' : '发起真实预审'}</button>
+
           </div>
         </form>}
-        {(requirementQuery.error || rubricQuery.error || materialQuery.error) && <div className="stack">{requirementQuery.error && <ErrorNotice error={requirementQuery.error} onRetry={() => void requirementQuery.refetch()} />}{rubricQuery.error && <ErrorNotice error={rubricQuery.error} onRetry={() => void rubricQuery.refetch()} />}{materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}</div>}
+        {standardQuery.error && <ErrorNotice error={standardQuery.error} onRetry={() => void standardQuery.refetch()} />}{materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
       </SectionCard>
 
       <SectionCard title="预审历史" detail="报告均由后端读取；版本变化时标记报告是否已过期。">
-        {reviewListQuery.isLoading ? <Spinner label="正在读取预审记录" /> : reviewListQuery.error ? <ErrorNotice error={reviewListQuery.error} onRetry={() => void reviewListQuery.refetch()} /> : reviews.length === 0 ? <EmptyState title="还没有预审报告" detail="选择确认标准和材料版本后发起第一份预审。" /> : <div className="ai-workflow-report-list">
+        {reviewListQuery.isLoading ? <Spinner label="正在读取预审记录" /> : reviewListQuery.error ? <ErrorNotice error={reviewListQuery.error} onRetry={() => void reviewListQuery.refetch()} /> : reviews.length === 0 ? <EmptyState title="还没有预审报告" detail="保存项目标准并选择材料版本后发起第一份预审。" /> : <div className="ai-workflow-report-list">
           {reviews.map((item) => {
             const state = freshness(item.materialVersionIds);
             return <button className="ai-workflow-report-button" key={item.reviewId} aria-current={selectedReviewId === item.reviewId} onClick={() => setSelectedReviewId(item.reviewId)}>

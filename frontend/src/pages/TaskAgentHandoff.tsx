@@ -16,7 +16,7 @@ export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string
     queryFn: async () => {
       const [goal, standards, materials] = await Promise.all([
         projectRequest<ProjectGoal>(projectId, '/goal'),
-        projectRequest<{ items: StandardVersion[] }>(projectId, '/standards'),
+        projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current'),
         listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials')),
       ]);
       const dependencies: CollaborationTask[] = [];
@@ -53,10 +53,8 @@ export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string
           materialContext.push({ materialId: bound.materialId, title: `${bound.title}（前置任务成果）`, versionId: version.versionId, revision: version.revision, markdown: version.markdown, attachments: version.attachments.map(file => ({ name: file.name, unavailable: file.availability === 'unavailable', url: new URL(projectPath(projectId, `/files/${encodeURIComponent(file.fileId)}/content`), window.location.origin).href })) });
         }
       }
-      const confirmed = standards.items.filter(item => item.status === 'confirmed').sort((a, b) => b.version - a.version);
-      const relevantStandards = confirmed.length ? [confirmed[0]] : [...standards.items].sort((a, b) => b.version - a.version).slice(0, 1);
       const projectUrl = new URL(window.location.href); projectUrl.search = ''; projectUrl.searchParams.set('task', task.taskId);
-      return buildTaskAgentPrompt({ projectId, projectUrl: projectUrl.href, task, goal, standards: relevantStandards, dependencies: dependencyContext, materials: materialContext });
+      return buildTaskAgentPrompt({ projectId, projectUrl: projectUrl.href, task, goal, standards: standards.standard ? [standards.standard] : [], dependencies: dependencyContext, materials: materialContext });
     },
   });
   const copy = async () => {
