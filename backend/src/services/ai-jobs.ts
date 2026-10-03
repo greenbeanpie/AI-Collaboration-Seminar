@@ -1,4 +1,5 @@
 import { runTaskSummaryJob } from './task-summary';
+import { runStandardsGeneration } from './standards-generation';
 import type { Env } from '../env';
 import { getJob } from './jobs';
 import { runAgentJob } from './agent';
@@ -13,6 +14,9 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
+      if (JSON.parse(job.input_json).operation === 'standards.generate') {
+        await runStandardsGeneration(env,jobId); return;
+      }
       if (JSON.parse(job.input_json).operation === 'collaboration.summary') {
         await runTaskSummaryJob(env,jobId); return;
       }

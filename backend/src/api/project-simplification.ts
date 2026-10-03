@@ -16,6 +16,7 @@ import { projectParams } from './projects';
 import { correctAssessment, correctionInput } from '../services/assessment-corrections';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { recordEvent } from '../services/events';
+import { enqueueStandardsGeneration } from '../services/standards-generation';
 
 const revision=z.number().int().positive();
 export const goalSchema=z.object({projectId:z.string().uuid(),title:z.string(),detail:z.string(),revision,graphRevision:revision});
@@ -54,6 +55,11 @@ export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
   endpoint(app,'put','/tasks/{taskId}/dependencies','TaskDependenciesResponse',z.object({taskId:z.string().uuid(),dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid()),graphRevision:revision}),async c=>{const b=await c.req.json();return c.json(apiData(c,await replaceTaskDependencies(c.env,c.req.param('projectId')!,c.get('user')!.id,c.req.param('taskId')!,b.expectedGraphRevision,b.dependsOnTaskIds)));},z.object({expectedGraphRevision:revision,dependsOnTaskIds:z.array(z.string().uuid()).max(1000)}).strict());
   endpoint(app,'get','/standards','StandardsListResponse',z.object({items:z.array(standardSchema)}),async c=>{const rows=await c.env.DB.prepare('SELECT * FROM standards_versions WHERE project_id=?1 ORDER BY version DESC').bind(c.req.param('projectId')).all<StandardRow>();return c.json(apiData(c,{items:await Promise.all(rows.results.map(r=>standardView(c.env,r)))}));});
   endpoint(app,'post','/standards','StandardsResponse',standardSchema,async c=>c.json(apiData(c,await saveStandard(c.env,c.req.param('projectId')!,c.get('user')!.id,standardInput.parse(await c.req.json()))),201),standardInput,201);
+  endpoint(app,'post','/standards/generate','StandardsGenerateResponse',z.object({jobId:z.string().uuid()}),async c=>{
+    const projectId=c.req.param('projectId')!,userId=c.get('user')!.id;
+    const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),userId,operation:'standards.generate',rawBody:JSON.stringify({projectId})},async()=>({status:202 as const,body:await enqueueStandardsGeneration(c.env,projectId,userId)}));
+    return c.json(apiData(c,result.body),202);
+  },z.object({}).strict(),202);
   endpoint(app,'patch','/standards/{standardsVersionId}','StandardsResponse',standardSchema,async c=>{const {expectedRevision,...fields}=await c.req.json() as StandardsInput&{expectedRevision:number};return c.json(apiData(c,await saveStandard(c.env,c.req.param('projectId')!,c.get('user')!.id,standardInput.parse(fields),c.req.param('standardsVersionId')!,expectedRevision)));},z.object({expectedRevision:revision,...standardInput.shape}).strict());
   endpoint(app,'post','/standards/{standardsVersionId}/confirm','StandardsResponse',standardSchema,async c=>{const b=await c.req.json();return c.json(apiData(c,await confirmStandard(c.env,c.req.param('projectId')!,c.get('user')!.id,c.req.param('standardsVersionId')!,b.expectedRevision)));},z.object({expectedRevision:revision}).strict());
   endpoint(app,'get','/assessments','AssessmentListResponse',z.object({items:z.array(assessmentSchema),nextCursor:z.string().nullable()}),async c=>{

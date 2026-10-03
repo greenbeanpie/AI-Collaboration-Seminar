@@ -1,0 +1,23 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { env, BASE } from './helpers/env';
+import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
+import { seedProject, seedUser, authCookie } from './helpers/seed';
+import { createApp } from '../src/app';
+import type { Env } from '../src/env';
+import { generatedStandardSchema, enqueueStandardsGeneration } from '../src/services/standards-generation';
+import { runAiJob } from '../src/services/ai-jobs';
+import { getJob } from '../src/services/jobs';
+import { projectGoal, saveStandard, confirmStandard } from '../src/services/project-simplification';
+await configureGoFixture();
+afterEach(()=>vi.unstubAllGlobals());
+const offline={...env,AGENT_WORKFLOW:{create:async()=>{throw new Error('offline fixture');}}} as unknown as Env;
+const draft={title:'项目标准',requirements:[{title:'提供可复核成果',detail:'建议提供完整依据',category:'deliverable',dimensionKey:'quality',dueDate:null,duePrecision:'unknown'}],weights:[{key:'quality',label:'成果质量',weight:100}],notes:'建议评分，待确认'};
+async function fixture(){await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();const user=await seedUser(),projectId=await seedProject(user.userId);return {user,projectId};}
+function provider(before?:()=>Promise<void>){const fn=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{assertGoRequest(url,init);await before?.();return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({...draft,referenceIds:[],decisionReferences:[]})}}],usage:{prompt_tokens:30,completion_tokens:20}}),{headers:{'content-type':'application/json'}});});vi.stubGlobal('fetch',fn);return fn;}
+describe('AI project standards drafts',()=>{
+  it('rejects malformed weights and nonexistent mapped dimensions',()=>{expect(generatedStandardSchema.safeParse(draft).success).toBe(true);expect(generatedStandardSchema.safeParse({...draft,weights:[{key:'other',label:'其他',weight:90}]}).success).toBe(false);});
+  it('runs through the AI workflow and leaves publication under owner confirmation',async()=>{const f=await fixture(),job=await enqueueStandardsGeneration(offline,f.projectId,f.user.userId),mock=provider();await runAiJob(offline,job.jobId);const result=await getJob(env,job.jobId);expect(result.status).toBe('succeeded');expect(JSON.parse(result.result_json!).draft).toEqual(draft);expect(await env.DB.prepare('SELECT id FROM standards_versions WHERE project_id=?1').bind(f.projectId).first()).toBeNull();const saved=await saveStandard(env,f.projectId,f.user.userId,JSON.parse(result.result_json!).draft);expect(saved.status).toBe('draft');expect((await confirmStandard(env,f.projectId,f.user.userId,saved.standardsVersionId,saved.revision)).status).toBe('confirmed');await runAiJob(offline,job.jobId);expect(mock).toHaveBeenCalledTimes(1);});
+  it('rejects changed goal and revoked ownership before sending a model request',async()=>{const f=await fixture(),a=await enqueueStandardsGeneration(offline,f.projectId,f.user.userId),mock=provider();await env.DB.prepare('UPDATE project_goals SET revision=revision+1 WHERE project_id=?1').bind(f.projectId).run();await runAiJob(offline,a.jobId);expect((await getJob(env,a.jobId)).status).toBe('failed');const b=await enqueueStandardsGeneration(offline,f.projectId,f.user.userId);await env.DB.prepare("UPDATE project_members SET role='member' WHERE project_id=?1").bind(f.projectId).run();await runAiJob(offline,b.jobId);expect((await getJob(env,b.jobId)).status).toBe('failed');expect(mock).not.toHaveBeenCalled();});
+  it('rejects a late response after the project goal changes',async()=>{const f=await fixture(),a=await enqueueStandardsGeneration(offline,f.projectId,f.user.userId);provider(async()=>{await env.DB.prepare('UPDATE project_goals SET revision=revision+1 WHERE project_id=?1').bind(f.projectId).run();});await runAiJob(offline,a.jobId);expect((await getJob(env,a.jobId)).status).toBe('failed');});
+  it('enforces permission and idempotency at the HTTP endpoint',async()=>{const f=await fixture(),app=createApp(),key=crypto.randomUUID();const request=(token:string)=>app.fetch(new Request(`${BASE}/api/v1/projects/${f.projectId}/standards/generate`,{method:'POST',headers:{cookie:authCookie(token),'content-type':'application/json','idempotency-key':key},body:'{}'}),offline);const first=await request(f.user.token),again=await request(f.user.token);expect(first.status).toBe(202);expect(again.status).toBe(202);expect((await first.json() as any).data.jobId).toBe((await again.json() as any).data.jobId);const outsider=await seedUser();expect((await request(outsider.token)).status).toBe(403);const goal=await projectGoal(env,f.projectId);expect(goal.revision).toBe(1);});
+});

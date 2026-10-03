@@ -94,6 +94,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     if (job.status !== 'failed') throw invalidState('仅失败任务可重试');
     const input = JSON.parse(job.input_json) as Record<string, unknown>;
     if (input.operation === 'source.summary') throw invalidState('请在文件总结状态中单独重试，以核对最新总结版本');
+    if (input.operation === 'standards.generate') throw invalidState('请从项目标准重新生成，以核对当前目标和权限');
     if (typeof input.operation === 'string' && input.operation.startsWith('collaboration.')) throw invalidState('协作任务请从当前任务重新发起，以重新核对版本与预算');
     if(job.kind==='rehearsal_turn') {
       const rehearsal=await c.env.DB.prepare('SELECT created_by,processing_job_id,status FROM rehearsals WHERE id=?1 AND project_id=?2').bind(input.rehearsalId,job.project_id).first<{created_by:string;processing_job_id:string|null;status:string}>();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { ApiError, listAllItems, projectPath } from '../api/client';
@@ -6,11 +6,17 @@ import { projectRequest, type StandardCitation, type StandardRequirement, type S
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { DateInput } from '../components/DateInput';
-import { idempotencyKeyForIntent, completeIntent } from './aiWorkflowSupport';
+import { idempotencyKeyForIntent, completeIntent, useVisibleJobPoller, readPendingJob, writePendingJob, clearPendingJob } from './aiWorkflowSupport';
 import { useSettingsDirty } from './settings-dirty';
 
 type EditorRow = { key: string; requirementId?: string; standalone?: boolean; title: string; detail: string; category: StandardRequirement['category']; dueDate: string; duePrecision: 'date' | 'datetime' | 'unknown'; originalDueDate?: string | null; scored: boolean; dimensionKey: string; dimensionLabel: string; weight: string; citations: StandardCitation[] };
 type EditorDraft = { title: string; rows: EditorRow[]; notes: string; standardsVersionId?: string; revision?: number };
+type GeneratedDraft = {title:string;notes:string;requirements:Array<{title:string;detail:string;category:EditorRow['category'];dimensionKey?:string;dueDate:string|null;duePrecision:EditorRow['duePrecision']}>;weights:Array<{key:string;label:string;weight:number}>};
+function fromGenerated(value:GeneratedDraft):EditorDraft {
+  const mapped=new Set(value.requirements.map(r=>r.dimensionKey));
+  const rows=value.requirements.map(r=>{const weight=value.weights.find(w=>w.key===r.dimensionKey);return {...newRow(),...r,dueDate:r.dueDate?.slice(0,10)??'',originalDueDate:r.dueDate,dimensionKey:r.dimensionKey??'',scored:Boolean(weight),dimensionLabel:weight?.label??'',weight:weight?String(weight.weight):''};});
+  return {title:value.title,notes:value.notes,rows:[...rows,...value.weights.filter(w=>!mapped.has(w.key)).map(w=>({...newRow(),standalone:true,title:w.label,category:'scoring' as const,scored:true,dimensionKey:w.key,dimensionLabel:w.label,weight:String(w.weight)}))]};
+}
 const categoryLabels = { deadline: '截止日期', deliverable: '交付成果', format: '格式', scoring: '评分', team: '团队', other: '其他' };
 const newRow = (): EditorRow => ({ key: crypto.randomUUID(), title: '', detail: '', category: 'deliverable', dueDate: '', duePrecision: 'unknown', scored: false, dimensionKey: '', dimensionLabel: '', weight: '', citations: [] });
 function fromVersion(version: StandardVersion): EditorDraft {
@@ -33,6 +39,27 @@ export function StandardsEditor() {
   const [setId, setSetId] = useState('');
   const [conflicted, setConflicted] = useState(false);
   const [validationError, setValidationError] = useState<unknown>(null);
+  const pendingKey=`standards-generation:${projectId}`;
+  const [generationJobId,setGenerationJobId]=useState<string|null>(()=>readPendingJob(pendingKey)?.jobId??null);
+  const generationPoll=useVisibleJobPoller(generationJobId);
+  const generate=useMutation({mutationFn:async()=>{
+    const body={};const namespace=`standards-generate:${projectId}`;
+    const key=await idempotencyKeyForIntent(namespace,body);
+    const response=await projectRequest<{jobId:string}>(projectId,'/standards/generate',{method:'POST',body,idempotencyKey:key});
+    completeIntent(namespace);return response;
+  },onSuccess:result=>{writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);}});
+  const generating=generate.isPending || Boolean(generationJobId && !generationPoll.isSettled);
+  useEffect(()=>{
+    const job=generationPoll.job;
+    if(!job || !generationPoll.isSettled || !generationJobId)return;
+    clearPendingJob(pendingKey,generationJobId);
+    if(job.status==='succeeded'){
+      const result=job.result as {draft?:GeneratedDraft}|null;
+      if(result?.draft){setDraft(fromGenerated(result.draft));setSelectedId('');setConflicted(false);setValidationError(null);}
+    }
+    if(job.status==='failed' || job.status==='cancelled')setValidationError(job.error??new Error('生成未完成，请重新发起'));
+    setGenerationJobId(null);
+  },[generationPoll.job,generationPoll.isSettled,generationJobId,pendingKey]);
   useSettingsDirty(Boolean(draft));
   const selected = versions.data?.items.find(version => version.standardsVersionId === selectedId) ?? versions.data?.items[0];
   const invalidate = async () => { await Promise.all([client.invalidateQueries({ queryKey: ['standards', projectId] }), client.invalidateQueries({ queryKey: ['requirementSets', projectId] }), client.invalidateQueries({ queryKey: ['rubrics', projectId] })]); };
@@ -64,7 +91,8 @@ export function StandardsEditor() {
     } catch (error) { setValidationError(error); }
   };
   return <div className="page-stack">
-    <SectionCard title="项目标准" detail="每条要求可选关联评分维度与权重；未计分要求保留为检查项。负责人确认后固定要求和评分版本。" action={project.myRole === 'owner' && !draft ? <button className="button button-primary" onClick={() => { setDraft({ title: '项目标准', rows: [newRow()], notes: '' }); setConflicted(false); save.reset(); }}><Plus size={16} />新建标准</button> : undefined}>
+    <SectionCard title="项目标准" detail="每条要求可选关联评分维度与权重；未计分要求保留为检查项。负责人确认后固定要求和评分版本。" action={project.myRole === 'owner' && !draft ? <div className="form-actions"><button className="button button-quiet" disabled={generating} onClick={()=>generate.mutate()}>AI 生成标准</button><button className="button button-primary" disabled={generating} onClick={() => { setDraft({ title: '项目标准', rows: [newRow()], notes: '' }); setConflicted(false); save.reset(); }}><Plus size={16} />新建标准</button></div> : undefined}>
+      {generating && <Spinner label="生成项目标准" />}{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
       {versions.isLoading && <Spinner label="读取标准版本" />}{versions.error && <ErrorNotice error={versions.error} onRetry={() => void versions.refetch()} />}
       {draft ? <form className="stack standards-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <Field label="标准名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>
