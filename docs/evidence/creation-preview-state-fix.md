@@ -22,3 +22,5 @@
 改动文件：backend/src/services/creation-drafts.ts、backend/src/api/creation-drafts.ts、frontend/src/pages/CreateProjectPage.tsx、frontend/src/pages/project-wizard.ts、frontend/src/api/client.ts；同步生成 OpenAPI/类型，并更新前后端回归测试。scripts/verify-creation-preview.mjs 可进行独立 HTTP 验收，--production 需要显式指定；只使用手动预览，无外部模型调用，测试项目随后归档并撤销测试会话。
 
 无数据库迁移。保留主工作区其他未提交改动；前端发布使用当前线上界面的隔离快照叠加本次修复，后端从已核对生产版本的源代码更新。
+
+生产发布已完成：后端 7cea2605-0623-4c41-9907-ca43deec6bcd；前端 27f898ec-dd65-467a-b4a7-5e19ca6ff855。普通验收账号的 10 项生产 HTTP 检查通过，拒绝同版本旧预览标识，有效确认创建成功，重放返回同一项目；测试项目归档，会话撤销，无 AI 调用。线上入口 /assets/index-B9nrf5H5.js 与保留现有功能的发布快照 SHA-256 一致=true；D1/R2 依赖检查正常。未修改截图同学的真实草稿或文件。
