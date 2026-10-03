@@ -78,10 +78,6 @@
 .dashboard-task-due.urgent { color: var(--red); }
 .dashboard-task:hover strong { color: var(--blue); }
 .dashboard-attention-note { margin: 10px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); }
-.dashboard-invitations { border-top: 1px solid var(--line); padding-top: 8px; color: var(--muted); font-size: 12px; }
-.dashboard-invitations summary { width: fit-content; }
-.dashboard-invitations summary > svg { vertical-align: middle; margin-right: 5px; }
-.dashboard-invitations .card { margin-top: 12px; }
 .dashboard-archive-note { color: var(--muted); font-size: 13px; }
 .dashboard-archive-list { display: grid; gap: 18px; }
 .dashboard-archive-project { display: flex; align-items: center; justify-content: space-between; color: var(--blue); font-weight: 650; margin-bottom: 8px; }

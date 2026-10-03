@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DashboardPage } from './DashboardPage';
 import type { Task } from '../api/types';
-vi.mock('./UsernameInvitations', () => ({ ReceivedInvitations: () => <div>邀请入口</div> }));
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn(() => new Promise(() => {})) }));
 afterEach(cleanup);
 const task = (taskId: string, status: Task['status'] = 'doing', changes: Partial<Task> = {}) => ({taskId,title:taskId,status,dueDate:null,duePrecision:'unknown',lifecycleState:status === 'done' ? 'accepted' : 'in_progress',assigneeId:'member',dependsOnTaskIds:[],unfinishedDependencyIds:[],revision:1,...changes}) as Task;
@@ -25,6 +24,15 @@ function setup(options: { loading?: boolean; archive?: boolean; membersLoading?:
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[options.archive?'/app?archive=1':'/app']}><DashboardPage /></MemoryRouter></QueryClientProvider>);
 }
 describe('dashboard interactions',()=>{
+ it('keeps one invitation entry in the upper metrics and removes the lower inbox disclosure',()=>{
+  const { container } = setup();
+  const invitationLink = screen.getByRole('link',{name:/项目邀请.*输入邀请码，或处理收到的邀请/});
+  expect(invitationLink).toHaveAttribute('href','/app/join');
+  expect(invitationLink.closest('.dashboard-metrics')).not.toBeNull();
+  expect(container.querySelectorAll('a[href="/app/join"]')).toHaveLength(1);
+  expect(container.querySelector('.dashboard-invitations')).toBeNull();
+  expect(screen.queryByText('收到的项目邀请')).not.toBeInTheDocument();
+ });
  it('includes pending in active, excludes archive from main list and filters completed',()=>{
   setup();
   const projects = screen.getByRole('region',{name:'项目区'});

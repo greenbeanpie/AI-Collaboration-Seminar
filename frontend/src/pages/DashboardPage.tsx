@@ -5,7 +5,6 @@ import { ArrowUpRight, CalendarDays, CheckCheck, CircleCheck, Clock3, FolderKanb
 import { listAllItems } from '../api/client';
 import type { ProjectSummary, Task } from '../api/types';
 import { ErrorNotice, EmptyState, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
-import { ReceivedInvitations } from './UsernameInvitations';
 import { deadlineBarStyle, deadlineSummary, pendingProjectGroups, projectDisplayStatus, remainingDays, uniqueProjectTasks, type ProjectDisplayStatus } from './dashboard-summary';
 import './DashboardPage.css';
 
@@ -82,7 +81,7 @@ export function DashboardPage() {
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>
       <DeadlineMetric tasks={pending} available={actionableAvailable} />
       <div className="dashboard-metric"><span className="dashboard-metric-label"><CircleCheck size={16} />任务完成率</span><strong className="dashboard-metric-value">{available ? rate : '—'}<small>%</small></strong><span className="dashboard-metric-foot">{available ? `${completed} / ${allTasks.length} 项任务已完成` : firstTaskError ? '任务统计暂不可用' : '正在读取任务进度'}</span></div>
-      <Link className="dashboard-metric dashboard-join" to="/app/join"><span className="dashboard-metric-label">加入现有团队</span><strong>有邀请代码？</strong><span>与伙伴一起推进下一个项目</span><span className="dashboard-join-link">输入邀请代码 <ArrowUpRight size={14} /></span></Link>
+      <Link className="dashboard-metric dashboard-join" to="/app/join"><span className="dashboard-metric-label">加入现有团队</span><strong>项目邀请</strong><span>输入邀请码，或处理收到的邀请</span><span className="dashboard-join-link">查看并接受邀请 <ArrowUpRight size={14} /></span></Link>
     </div>
     {attentionError && <ErrorNotice error={attentionError} onRetry={() => { [...taskQueries, ...memberQueries].forEach(query => { if (query.error) void query.refetch(); }); }} />}
     <div className="dashboard-columns">
@@ -102,7 +101,6 @@ export function DashboardPage() {
         {actionableAvailable && (summary.overdue > 0 || summary.undated > 0) && <p className="dashboard-attention-note">{summary.overdue} 项已逾期 · {summary.undated} 项截止待确认（未计入柱状图）</p>}
       </aside>
     </div>
-    <details className="dashboard-invitations"><summary><UsersRound size={16} />收到的项目邀请</summary><ReceivedInvitations /></details>
     {archiveOpen && <Modal title="归档任务" onClose={closeArchive}><p className="dashboard-archive-note">已归档项目及其任务，仅供回顾。归档与完成状态分别记录。</p>{projectsQuery.error ? <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : archived.length === 0 ? <EmptyState title="暂无归档任务" /> : <div className="dashboard-archive-list">{archived.map(({ project, tasks, error }) => <section key={project.id}><Link className="dashboard-archive-project" to={`/app/projects/${encodeURIComponent(project.id)}`}>{project.name}<ArrowUpRight size={14} /></Link>{error ? <ErrorNotice error={error} onRetry={() => void taskQueries[projects.findIndex(item => item.id === project.id)].refetch()} /> : !tasks ? <Spinner label="正在读取归档任务" /> : tasks.length === 0 ? <p>此项目暂无任务。</p> : tasks.map(task => <Link className="dashboard-archive-task" key={task.taskId} to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span>{task.title}</span><StatusPill tone="neutral">{taskLabels[task.status]}</StatusPill></Link>)}</section>)}</div>}</Modal>}
   </div>;
 }

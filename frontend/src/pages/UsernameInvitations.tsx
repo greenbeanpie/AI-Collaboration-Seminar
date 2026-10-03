@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, projectPath } from '../api/client';
-import { ErrorNotice, Field, SectionCard } from '../components/ui';
+import { ErrorNotice, Field, SectionCard, Spinner } from '../components/ui';
 const labels: Record<string, string> = {
   pending: '待处理', accepted: '已接受', declined: '已拒绝', revoked: '已撤销', expired: '已过期'
 };
@@ -30,7 +30,7 @@ export function ReceivedInvitations() {
       });
     }
   });
-  return <SectionCard title="收到的项目邀请" detail="接受后加入普通成员；待处理邀请不预占人数，名额先到先成功。">{query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()}/>} {handle.error && <ErrorNotice error={handle.error}/>} {query.data?.items.length === 0 && <p>暂无项目邀请。</p>} {query.data?.items.map(invite => <article className="callout" key={invite.id}><strong>{invite.projectName}</strong><p>{invite.inviterName} 邀请你成为组员 · {labels[invite.status]} · 有效至 {new Date(invite.expiresAt).toLocaleDateString('zh-CN')}</p>{invite.status === 'pending' && <div className="form-actions"><button className="button button-primary button-small" disabled={handle.isPending} onClick={() => handle.mutate({
+  return <SectionCard title="收到的项目邀请" detail="接受后加入普通成员；待处理邀请不预占人数，名额先到先成功。">{query.isLoading && <Spinner label="正在读取项目邀请" />}{query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()}/>} {handle.error && <ErrorNotice error={handle.error}/>} {query.data?.items.length === 0 && <p>暂无项目邀请。</p>} {query.data?.items.map(invite => <article className="callout" key={invite.id}><strong>{invite.projectName}</strong><p>{invite.inviterName} 邀请你成为组员 · {labels[invite.status]} · 有效至 {new Date(invite.expiresAt).toLocaleDateString('zh-CN')}</p>{invite.status === 'pending' && <div className="form-actions"><button className="button button-primary button-small" disabled={handle.isPending} onClick={() => handle.mutate({
     id: invite.id, action: 'accept'
   })}>接受邀请</button><button className="button button-quiet button-small" disabled={handle.isPending} onClick={() => handle.mutate({
     id: invite.id, action: 'decline'
