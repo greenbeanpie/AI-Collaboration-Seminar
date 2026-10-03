@@ -60,12 +60,12 @@ describe('actionable project groups', () => {
     const rows = [assigned('ancestor'), assigned('accepted-before-ancestor', { status: 'done', dependsOnTaskIds: ['ancestor'] }), assigned('ready', { dependsOnTaskIds: ['accepted-before-ancestor'] }), assigned('old-cache', { dependsOnTaskIds: undefined, unfinishedDependencyIds: undefined }), assigned('server-ready', { dependsOnTaskIds: undefined, unfinishedDependencyIds: [] })];
     expect(actionableProjectTasks(rows, members).map(t => t.taskId)).toEqual(['ancestor', 'ready', 'server-ready']);
   });
-  it('deduplicates task IDs at their latest revision, retaining distinct parent and child deliverables', () => {
-    const parent = assigned('parent');
-    const child = assigned('child', { parentTaskId: 'parent' });
-    const rows = [parent, parent, child, assigned('reassigned'), assigned('reassigned', { revision: 2, assigneeId: null })];
+  it('deduplicates task IDs at their latest revision, retaining distinct deliverables', () => {
+    const first = assigned('first');
+    const second = assigned('second');
+    const rows = [first, first, second, assigned('reassigned'), assigned('reassigned', { revision: 2, assigneeId: null })];
     expect(uniqueProjectTasks(rows)).toHaveLength(3);
-    expect(actionableProjectTasks(rows, members).map(t => t.taskId)).toEqual(['parent', 'child']);
+    expect(actionableProjectTasks(rows, members).map(t => t.taskId)).toEqual(['first', 'second']);
   });
   it('keeps zero-actionable incomplete projects, excludes empty/completed/archived projects, and totals only displayed actionable tasks', () => {
     const entry = (id: string, tasks: Task[], status = 'active') => ({ project: { id, name: id, status } as ProjectSummary, tasks, members });

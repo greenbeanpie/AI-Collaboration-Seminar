@@ -34,7 +34,7 @@ export function TeamPage() {
   return <div className="page-stack team-page">
     <PageHeading title="团队成员" detail="管理角色、邀请与当前任务负荷。分工、提交和验收统一在任务工作区进行。" action={<StatusPill tone="blue">{members.data?.length ?? '—'} 位成员</StatusPill>} />
     {[members, tasks].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
-    <div className="compact-team-grid"><SectionCard title="成员与任务负荷" detail="负荷依据未完成子任务的预计工时计算。">
+    <div className="compact-team-grid"><SectionCard title="成员与任务负荷" detail="负荷依据未完成任务的预计工时计算。">
       {members.isLoading && <Spinner label="正在读取成员" />}
       {members.data?.length ? <div className="team-member-list">{members.data.map(member => {
         const assigned = tasks.data?.filter(task => task.assigneeId === member.userId && task.status !== 'done') ?? [];

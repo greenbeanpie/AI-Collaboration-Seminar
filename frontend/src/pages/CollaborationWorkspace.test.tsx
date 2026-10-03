@@ -8,7 +8,7 @@ const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId:
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
-const task = { pendingHumanReview: false, startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', parentTaskId: null, currentSubmissionId: null as string | null };
+const task = { pendingHumanReview: false, startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -31,6 +31,17 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('uses task terminology and keeps task settings free of retired hierarchy controls', () => {
+    setup({ tasks: [task, { ...task, taskId: 't2', title: '整理依据', dependsOnTaskIds: ['t1'] }] });
+    expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新建任务' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '全部任务' })).toBeInTheDocument();
+    expect(screen.queryByText(/历史父任务|子任务/)).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]!);
+    expect(screen.getByRole('dialog', { name: '交付原型 · 任务设置' })).toBeInTheDocument();
+    expect(screen.queryByText('任务进度')).toBeNull();
+    expect(within(screen.getByRole('dialog')).getByRole('heading', { name: '前置依赖' })).toBeInTheDocument();
+  });
   it('counts provisional completion and exposes its pending review filter and owner review action', () => {
     const pending = { ...task, pendingHumanReview: true, lifecycleState: 'accepted', status: 'done' as const, currentSubmissionId: 's1' };
     const approved = { ...task, taskId: 't2', title: '正式审核通过的成果', lifecycleState: 'accepted', status: 'done' as const };
@@ -79,7 +90,7 @@ describe('collaboration lifecycle', () => {
   it('places AI controls in the creation toolbar and preserves the draft when collapsed', () => {
     setup();
     const toggle = screen.getByRole('button', { name: 'AI 拆解、调整与分工' });
-    expect(toggle.nextElementSibling).toBe(screen.getByRole('button', { name: '新建子任务' }));
+    expect(toggle.nextElementSibling).toBe(screen.getByRole('button', { name: '新建任务' }));
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: '重新生成整套任务建议' })).toBeNull();
     fireEvent.click(toggle);
@@ -120,7 +131,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByLabelText('持续项目反馈')).toHaveAttribute('readonly');
     expect(screen.queryByRole('button',{name:'保存反馈'})).toBeNull();
     expect(screen.getByRole('button',{name:'重新生成整套任务建议'})).toBeDisabled();
-    expect(screen.queryByRole('button', { name: '新建子任务' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '新建任务' })).toBeNull();
   });
   it('opens history directly from the submission toolbar, pages one submission, and preserves drafts', () => {
     setup({ tasks: [{ ...task, lifecycleState: 'improve', currentSubmissionId: 's3' }], submissions: [submission, { ...submission, submissionId: 's3', round: 3, body: '第三轮真实内容' }, { ...submission, submissionId: 's2', round: 2, body: '第二轮真实内容' }] });
@@ -288,11 +299,11 @@ describe('collaboration lifecycle', () => {
     const { fetchMock } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
     expect(screen.getByRole('button', { name: '重新生成整套任务建议' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '校对文稿' } });
     fireEvent.change(screen.getByLabelText(/^验收标准/), { target: { value: '无错字并保留核对清单' } });
     fireEvent.change(screen.getByLabelText('预计投入（小时）'), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建子任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')!;
     expect(String(call[0])).toContain('/projects/p1/tasks');
@@ -449,7 +460,7 @@ describe('collaboration lifecycle', () => {
   });
   it('resets open drafts and task details when changing projects', () => {
     const { client, view } = setup();
-    fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '旧项目草稿' } });
     for (const key of ['collaboration-tasks', 'collaboration-proposals']) client.setQueryData([key, 'p2'], { items: [] });
     client.setQueryData(['collaboration-settings', 'p2'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 });
@@ -459,7 +470,7 @@ describe('collaboration lifecycle', () => {
     identity.projectId = 'p2';
     view.rerender(<QueryClientProvider client={client}><MemoryRouter><NavigationProbe /><CollaborationWorkspace /></MemoryRouter></QueryClientProvider>);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '新建子任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '新建任务' }));
     expect(screen.getByLabelText('任务名称')).toHaveValue('');
     expect(screen.queryByText('交付原型')).not.toBeInTheDocument();
   });

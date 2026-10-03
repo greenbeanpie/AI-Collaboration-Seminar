@@ -21,13 +21,13 @@ export function sameTemplateValue(a: unknown, b: unknown): boolean {
 export function validateTemplateForm(form: TemplateForm): void {
   if (!form.payload.name.trim() || form.payload.name.length > 100) throw new Error('项目名称需要 1–100 个字符。');
   if (!Number.isInteger(form.payload.teamSize) || form.payload.teamSize < 1 || form.payload.teamSize > 100) throw new Error('计划组员人数需要是 1–100 的整数。');
-  if (form.tasks.length > 20) throw new Error('子任务最多 20 项。');
+  if (form.tasks.length > 20) throw new Error('任务最多 20 项。');
   const keys = new Set(form.tasks.map(task => task.key));
-  if (keys.size !== form.tasks.length) throw new Error('子任务标识重复，请重新读取或调整任务。');
+  if (keys.size !== form.tasks.length) throw new Error('任务标识重复，请重新读取或调整任务。');
   const tasks = new Map(form.tasks.map(task => [task.key, task]));
   const visited = new Set<string>(), visiting = new Set<string>();
-  const visit = (key: string) => { if (visiting.has(key)) throw new Error('子任务依赖存在循环，请调整前置关系。'); if (visited.has(key)) return; visiting.add(key); for (const dependency of tasks.get(key)?.dependsOn ?? []) { if (dependency === key || !keys.has(dependency)) throw new Error('前置任务必须是本预览中的其他子任务。'); visit(dependency); } visiting.delete(key); visited.add(key); };
-  for (const [index, task] of form.tasks.entries()) { if (!task.title.trim() || !task.criteria.trim()) throw new Error(`第 ${index + 1} 个子任务需要标题和验收标准。`); if (!Number.isFinite(task.effortHours) || task.effortHours < .25 || task.effortHours > 200) throw new Error(`第 ${index + 1} 个子任务的预计工时需要为 0.25–200 小时。`); visit(task.key); }
+  const visit = (key: string) => { if (visiting.has(key)) throw new Error('任务依赖存在循环，请调整前置关系。'); if (visited.has(key)) return; visiting.add(key); for (const dependency of tasks.get(key)?.dependsOn ?? []) { if (dependency === key || !keys.has(dependency)) throw new Error('前置任务必须是本预览中的其他任务。'); visit(dependency); } visiting.delete(key); visited.add(key); };
+  for (const [index, task] of form.tasks.entries()) { if (!task.title.trim() || !task.criteria.trim()) throw new Error(`第 ${index + 1} 个任务需要标题和验收标准。`); if (!Number.isFinite(task.effortHours) || task.effortHours < .25 || task.effortHours > 200) throw new Error(`第 ${index + 1} 个任务的预计工时需要为 0.25–200 小时。`); visit(task.key); }
   const workspace: TemplateWorkspace = form.payload.workspace!;
   if (workspace.materials.length > 20) throw new Error('项目预览最多包含 20 份文档。');
   for (const [index, material] of workspace.materials.entries()) if (!material.title.trim()) throw new Error(`第 ${index + 1} 份文档需要标题。`);
