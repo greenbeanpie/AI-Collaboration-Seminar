@@ -1,6 +1,8 @@
 # 数据库完整结构字典
 
-本附录由 `backend/migrations/*.sql` 在空的 SQLite 内存数据库重放后提取。按完整文件名排序，跳过 `0002_seed.sql` 与 `0033_remove_manual_ledger.sql`。它是保留历史账本的兼容参考结构，不能替代生产数据库实际应用记录。2026-10-03额外只读比对生产结构：78张业务表、723列、1视图、5触发器、51显式索引与本参考一致；没有读取业务行。生产实际应用了37个迁移文件，包含演示seed而未应用0033。列约束、外键与索引均源自 SQLite 元数据；完整 CHECK 表达式保留在每表 DDL。
+本附录由 `backend/migrations/*.sql` 在空的 SQLite 内存数据库重放后提取。按完整文件名排序，仅跳过演示数据 `0002_seed.sql`，包含退役账本迁移 `0033_remove_manual_ledger.sql`；当前参考含 79 张业务表。它不能替代生产数据库实际应用记录。列约束、外键与索引均源自 SQLite 元数据；完整 CHECK 表达式保留在每表 DDL。
+
+当前参考结构包含 `0043_remove_task_parent.sql`，移除了历史任务父子关系；任务平级保存，主目标和前置依赖分别维护。下方结构描述的是代码中迁移完成后的目标结构，不表示生产数据库已应用该变更。
 
 [返回技术说明](/app/help?doc=technical)。每张表可从章节目录直接定位，也可按字段名搜索。
 
@@ -245,6 +247,66 @@ CREATE TABLE ai_calls (
 , reservation_id TEXT REFERENCES usage_reservations(id), draft_id TEXT REFERENCES project_creation_drafts(id), search_usage_json TEXT);
 CREATE INDEX idx_ai_calls_reservation ON ai_calls(reservation_id);
 CREATE INDEX idx_ai_calls_project ON ai_calls (project_id, created_at);
+```
+
+## `ai_clarifications`
+
+| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
+| --- | --- | --- | --- | --- |
+| `id` | TEXT | 否 | 无 | 1 |
+| `project_id` | TEXT | 否 | 无 | 否 |
+| `job_id` | TEXT | 否 | 无 | 否 |
+| `draft_id` | TEXT | 否 | 无 | 否 |
+| `owner_id` | TEXT | 是 | 无 | 否 |
+| `attempt_id` | TEXT | 是 | 无 | 否 |
+| `context_revision` | INTEGER | 否 | 无 | 否 |
+| `tool_call_id` | TEXT | 是 | 无 | 否 |
+| `question_json` | TEXT | 是 | 无 | 否 |
+| `answer_json` | TEXT | 否 | 无 | 否 |
+| `transition_token` | TEXT | 否 | 无 | 否 |
+| `round` | INTEGER | 是 | 无 | 否 |
+| `status` | TEXT | 是 | 'pending' | 否 |
+| `revision` | INTEGER | 是 | 1 | 否 |
+| `created_at` | TEXT | 是 | 无 | 否 |
+| `updated_at` | TEXT | 是 | 无 | 否 |
+
+外键：
+- `owner_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `draft_id` → `project_creation_drafts.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
+- `job_id` → `jobs.id`；ON DELETE NO ACTION；复合关系编号 2，顺序 0。
+- `project_id` → `projects.id`；ON DELETE NO ACTION；复合关系编号 3，顺序 0。
+
+索引：
+- `idx_ai_clarifications_one_pending`：`attempt_id`；UNIQUE。
+- `idx_ai_clarifications_draft`：`draft_id`, `attempt_id`, `created_at`；普通索引。
+- `idx_ai_clarifications_job`：`job_id`, `owner_id`, `status`, `created_at`；普通索引。
+- `sqlite_autoindex_ai_clarifications_2`：`attempt_id`, `tool_call_id`；UNIQUE。
+- `sqlite_autoindex_ai_clarifications_1`：`id`；UNIQUE。
+
+```sql
+CREATE TABLE ai_clarifications (
+ id TEXT PRIMARY KEY,
+ project_id TEXT REFERENCES projects(id),
+ job_id TEXT REFERENCES jobs(id),
+ draft_id TEXT REFERENCES project_creation_drafts(id),
+ owner_id TEXT NOT NULL REFERENCES users(id),
+ attempt_id TEXT NOT NULL,
+ context_revision INTEGER,
+ tool_call_id TEXT NOT NULL,
+ question_json TEXT NOT NULL,
+ answer_json TEXT,
+ transition_token TEXT,
+ round INTEGER NOT NULL CHECK(round BETWEEN 1 AND 3),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','answered','cancelled')),
+ revision INTEGER NOT NULL DEFAULT 1,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ CHECK((job_id IS NOT NULL AND project_id IS NOT NULL AND draft_id IS NULL) OR (draft_id IS NOT NULL AND job_id IS NULL AND project_id IS NULL)),
+ UNIQUE(attempt_id,tool_call_id)
+);
+CREATE UNIQUE INDEX idx_ai_clarifications_one_pending ON ai_clarifications(attempt_id) WHERE status='pending';
+CREATE INDEX idx_ai_clarifications_draft ON ai_clarifications(draft_id,attempt_id,created_at);
+CREATE INDEX idx_ai_clarifications_job ON ai_clarifications(job_id,owner_id,status,created_at);
 ```
 
 ## `ai_config_versions`
@@ -797,43 +859,6 @@ CREATE TABLE comments (
 CREATE INDEX idx_comments_target ON comments (target_type, target_id);
 ```
 
-## `contributions`
-
-| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
-| --- | --- | --- | --- | --- |
-| `id` | TEXT | 否 | 无 | 1 |
-| `project_id` | TEXT | 是 | 无 | 否 |
-| `user_id` | TEXT | 是 | 无 | 否 |
-| `kind` | TEXT | 是 | 'manual' | 否 |
-| `description` | TEXT | 是 | 无 | 否 |
-| `evidence_json` | TEXT | 是 | '{}' | 否 |
-| `created_at` | TEXT | 是 | 无 | 否 |
-| `updated_at` | TEXT | 是 | 无 | 否 |
-| `correction_of` | TEXT | 否 | 无 | 否 |
-
-外键：
-- `correction_of` → `contributions.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
-- `user_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
-- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 2，顺序 0。
-
-索引：
-- `idx_contributions_project`：`project_id`, `user_id`；普通索引。
-- `sqlite_autoindex_contributions_1`：`id`；UNIQUE。
-
-```sql
-CREATE TABLE contributions (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id),
-  kind TEXT NOT NULL DEFAULT 'manual',
-  description TEXT NOT NULL,
-  evidence_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-, correction_of TEXT REFERENCES contributions(id));
-CREATE INDEX idx_contributions_project ON contributions (project_id, user_id);
-```
-
 ## `creation_draft_files`
 
 | 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
@@ -877,37 +902,39 @@ CREATE TABLE creation_draft_files (
 CREATE INDEX idx_creation_draft_files_draft ON creation_draft_files(draft_id,removed,created_at,id);
 ```
 
-## `decisions`
+## `draft_preview_dispatches`
 
 | 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
 | --- | --- | --- | --- | --- |
-| `id` | TEXT | 否 | 无 | 1 |
-| `project_id` | TEXT | 是 | 无 | 否 |
-| `title` | TEXT | 是 | 无 | 否 |
-| `detail` | TEXT | 是 | '' | 否 |
-| `made_by` | TEXT | 是 | 无 | 否 |
-| `decided_at` | TEXT | 是 | 无 | 否 |
-| `related_json` | TEXT | 是 | '{}' | 否 |
+| `instance_id` | TEXT | 否 | 无 | 1 |
+| `draft_id` | TEXT | 是 | 无 | 否 |
+| `attempt_id` | TEXT | 是 | 无 | 否 |
+| `context_revision` | INTEGER | 是 | 无 | 否 |
+| `question_id` | TEXT | 否 | 无 | 否 |
+| `status` | TEXT | 是 | 'pending' | 否 |
 | `created_at` | TEXT | 是 | 无 | 否 |
+| `updated_at` | TEXT | 是 | 无 | 否 |
 
 外键：
-- `made_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
-- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 1，顺序 0。
+- `question_id` → `ai_clarifications.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `draft_id` → `project_creation_drafts.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
 
 索引：
-- `sqlite_autoindex_decisions_1`：`id`；UNIQUE。
+- `idx_draft_preview_dispatches_pending`：`status`, `updated_at`；普通索引。
+- `sqlite_autoindex_draft_preview_dispatches_1`：`instance_id`；UNIQUE。
 
 ```sql
-CREATE TABLE decisions (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  detail TEXT NOT NULL DEFAULT '',
-  made_by TEXT NOT NULL REFERENCES users(id),
-  decided_at TEXT NOT NULL,
-  related_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL
+CREATE TABLE draft_preview_dispatches (
+ instance_id TEXT PRIMARY KEY,
+ draft_id TEXT NOT NULL REFERENCES project_creation_drafts(id),
+ attempt_id TEXT NOT NULL,
+ context_revision INTEGER NOT NULL,
+ question_id TEXT REFERENCES ai_clarifications(id),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','dispatched','cancelled')),
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
 );
+CREATE INDEX idx_draft_preview_dispatches_pending ON draft_preview_dispatches(status,updated_at);
 ```
 
 ## `events`
@@ -1522,9 +1549,12 @@ CREATE INDEX idx_project_admin_feedback_project ON project_admin_feedback(projec
 | `result_encrypted` | TEXT | 否 | 无 | 否 |
 | `created_at` | TEXT | 是 | 无 | 否 |
 | `updated_at` | TEXT | 是 | 无 | 否 |
+| `preview_waiting_id` | TEXT | 否 | 无 | 否 |
+| `preview_config_version_id` | TEXT | 否 | 无 | 否 |
 
 外键：
-- `owner_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `preview_config_version_id` → `ai_config_versions.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `owner_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
 
 索引：
 - `idx_creation_drafts_owner`：`owner_id`, `updated_at`；普通索引。
@@ -1548,8 +1578,39 @@ CREATE TABLE project_creation_drafts (
  result_encrypted TEXT,
  created_at TEXT NOT NULL,
  updated_at TEXT NOT NULL
-);
+, preview_waiting_id TEXT, preview_config_version_id TEXT REFERENCES ai_config_versions(id));
 CREATE INDEX idx_creation_drafts_owner ON project_creation_drafts(owner_id,updated_at);
+```
+
+## `project_feedback_versions`
+
+| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
+| --- | --- | --- | --- | --- |
+| `id` | TEXT | 否 | 无 | 1 |
+| `project_id` | TEXT | 是 | 无 | 否 |
+| `version` | INTEGER | 是 | 无 | 否 |
+| `feedback` | TEXT | 是 | 无 | 否 |
+| `actor_id` | TEXT | 否 | 无 | 否 |
+| `created_at` | TEXT | 是 | 无 | 否 |
+
+外键：
+- `actor_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 1，顺序 0。
+
+索引：
+- `sqlite_autoindex_project_feedback_versions_2`：`project_id`, `version`；UNIQUE。
+- `sqlite_autoindex_project_feedback_versions_1`：`id`；UNIQUE。
+
+```sql
+CREATE TABLE project_feedback_versions (
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ version INTEGER NOT NULL,
+ feedback TEXT NOT NULL,
+ actor_id TEXT REFERENCES users(id),
+ created_at TEXT NOT NULL,
+ UNIQUE(project_id,version)
+);
 ```
 
 ## `project_goals`
@@ -1578,6 +1639,36 @@ CREATE TABLE project_goals (
  revision INTEGER NOT NULL DEFAULT 1, graph_revision INTEGER NOT NULL DEFAULT 1,
  graph_token TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+```
+
+## `project_invitation_requests`
+
+| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
+| --- | --- | --- | --- | --- |
+| `id` | TEXT | 否 | 无 | 1 |
+| `project_id` | TEXT | 是 | 无 | 否 |
+| `requested_by` | TEXT | 是 | 无 | 否 |
+| `username` | TEXT | 是 | 无 | 否 |
+| `expires_in_days` | INTEGER | 是 | 7 | 否 |
+| `status` | TEXT | 是 | 'pending' | 否 |
+| `revision` | INTEGER | 是 | 1 | 否 |
+| `decided_by` | TEXT | 否 | 无 | 否 |
+| `invitation_id` | TEXT | 否 | 无 | 否 |
+| `created_at` | TEXT | 是 | 无 | 否 |
+| `decided_at` | TEXT | 否 | 无 | 否 |
+
+外键：
+- `decided_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `requested_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
+- `project_id` → `projects.id`；ON DELETE NO ACTION；复合关系编号 2，顺序 0。
+
+索引：
+- `invitation_request_pending`：`project_id`, `requested_by`, `username`；UNIQUE。
+- `sqlite_autoindex_project_invitation_requests_1`：`id`；UNIQUE。
+
+```sql
+CREATE TABLE project_invitation_requests(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),requested_by TEXT NOT NULL REFERENCES users(id),username TEXT NOT NULL,expires_in_days INTEGER NOT NULL DEFAULT 7,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),revision INTEGER NOT NULL DEFAULT 1,decided_by TEXT REFERENCES users(id),invitation_id TEXT,created_at TEXT NOT NULL,decided_at TEXT);
+CREATE UNIQUE INDEX invitation_request_pending ON project_invitation_requests(project_id,requested_by,username) WHERE status='pending';
 ```
 
 ## `project_members`
@@ -1823,6 +1914,7 @@ CREATE TABLE rehearsal_turns (
 | `finish_job_id` | TEXT | 否 | 无 | 否 |
 | `finish_snapshot_json` | TEXT | 否 | 无 | 否 |
 | `processing_job_id` | TEXT | 否 | 无 | 否 |
+| `reference_inputs_json` | TEXT | 是 | '{}' | 否 |
 
 外键：
 - `created_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
@@ -1843,7 +1935,7 @@ CREATE TABLE rehearsals (
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL,
   finished_at TEXT
-, finish_job_id TEXT, finish_snapshot_json TEXT, processing_job_id TEXT);
+, finish_job_id TEXT, finish_snapshot_json TEXT, processing_job_id TEXT, reference_inputs_json TEXT NOT NULL DEFAULT '{}');
 ```
 
 ## `requirement_sets`
@@ -1924,42 +2016,6 @@ CREATE TABLE requirements (
   field_state TEXT NOT NULL DEFAULT 'ai_suggestion' CHECK (field_state IN ('ai_suggestion', 'edited', 'confirmed')),
   updated_at TEXT NOT NULL,
   UNIQUE (requirement_set_id, seq)
-);
-```
-
-## `resource_references`
-
-| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
-| --- | --- | --- | --- | --- |
-| `id` | TEXT | 否 | 无 | 1 |
-| `project_id` | TEXT | 是 | 无 | 否 |
-| `kind` | TEXT | 是 | 无 | 否 |
-| `title` | TEXT | 是 | 无 | 否 |
-| `url` | TEXT | 否 | 无 | 否 |
-| `file_id` | TEXT | 否 | 无 | 否 |
-| `meta_json` | TEXT | 是 | '{}' | 否 |
-| `declared_by` | TEXT | 是 | 无 | 否 |
-| `created_at` | TEXT | 是 | 无 | 否 |
-
-外键：
-- `declared_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
-- `file_id` → `files.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
-- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 2，顺序 0。
-
-索引：
-- `sqlite_autoindex_resource_references_1`：`id`；UNIQUE。
-
-```sql
-CREATE TABLE resource_references (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('url', 'file', 'model', 'other')),
-  title TEXT NOT NULL,
-  url TEXT,
-  file_id TEXT REFERENCES files(id),
-  meta_json TEXT NOT NULL DEFAULT '{}',
-  declared_by TEXT NOT NULL REFERENCES users(id),
-  created_at TEXT NOT NULL
 );
 ```
 
@@ -2714,18 +2770,18 @@ CREATE TABLE task_summaries (
 | `updated_at` | TEXT | 是 | 无 | 否 |
 | `lifecycle_state` | TEXT | 否 | 无 | 否 |
 | `criteria` | TEXT | 是 | '' | 否 |
-| `parent_task_id` | TEXT | 否 | 无 | 否 |
 | `current_submission_id` | TEXT | 否 | 无 | 否 |
 | `effort_hours` | REAL | 是 | 1 | 否 |
 | `source_citations_json` | TEXT | 是 | '[]' | 否 |
 | `plan_proposal_id` | TEXT | 否 | 无 | 否 |
+| `started_at` | TEXT | 否 | 无 | 否 |
+| `archived_at` | TEXT | 否 | 无 | 否 |
 
 外键：
-- `parent_task_id` → `tasks.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
-- `created_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
-- `requirement_id` → `requirements.id`；ON DELETE NO ACTION；复合关系编号 2，顺序 0。
-- `assignee_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 3，顺序 0。
-- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 4，顺序 0。
+- `created_by` → `users.id`；ON DELETE NO ACTION；复合关系编号 0，顺序 0。
+- `requirement_id` → `requirements.id`；ON DELETE NO ACTION；复合关系编号 1，顺序 0。
+- `assignee_id` → `users.id`；ON DELETE NO ACTION；复合关系编号 2，顺序 0。
+- `project_id` → `projects.id`；ON DELETE CASCADE；复合关系编号 3，顺序 0。
 
 索引：
 - `idx_tasks_project_id`：`project_id`, `id`；UNIQUE。
@@ -2747,9 +2803,11 @@ CREATE TABLE tasks (
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-, lifecycle_state TEXT CHECK (lifecycle_state IN ('open','in_progress','submitted','accepted','improve','rework')), criteria TEXT NOT NULL DEFAULT '', parent_task_id TEXT REFERENCES tasks(id), current_submission_id TEXT, effort_hours REAL NOT NULL DEFAULT 1 CHECK(effort_hours > 0 AND effort_hours <= 200), source_citations_json TEXT NOT NULL DEFAULT '[]', plan_proposal_id TEXT);
+, lifecycle_state TEXT CHECK (lifecycle_state IN ('open','in_progress','submitted','accepted','improve','rework')), criteria TEXT NOT NULL DEFAULT '', current_submission_id TEXT, effort_hours REAL NOT NULL DEFAULT 1 CHECK(effort_hours > 0 AND effort_hours <= 200), source_citations_json TEXT NOT NULL DEFAULT '[]', plan_proposal_id TEXT, started_at TEXT, archived_at TEXT);
 CREATE UNIQUE INDEX idx_tasks_project_id ON tasks(project_id,id);
 CREATE INDEX idx_tasks_project ON tasks (project_id, status);
+CREATE TRIGGER tasks_started_insert AFTER INSERT ON tasks WHEN NEW.assignee_id IS NOT NULL OR NEW.status IN ('doing','done') OR NEW.lifecycle_state IN ('in_progress','submitted','improve','rework','accepted') BEGIN UPDATE tasks SET started_at=COALESCE(NEW.started_at,NEW.updated_at) WHERE id=NEW.id; END;
+CREATE TRIGGER tasks_started_update AFTER UPDATE OF assignee_id,status,lifecycle_state ON tasks WHEN OLD.started_at IS NOT NULL OR NEW.assignee_id IS NOT NULL OR NEW.status IN ('doing','done') OR NEW.lifecycle_state IN ('in_progress','submitted','improve','rework','accepted') BEGIN UPDATE tasks SET started_at=COALESCE(OLD.started_at,NEW.started_at,NEW.updated_at) WHERE id=NEW.id; END;
 ```
 
 ## `usage_reservations`
