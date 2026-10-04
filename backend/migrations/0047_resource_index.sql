@@ -20,12 +20,13 @@ CREATE TABLE resource_index_blocks (
  start_offset INTEGER NOT NULL,
  end_offset INTEGER NOT NULL,
  content TEXT NOT NULL,
+ search_content TEXT NOT NULL,
  UNIQUE(project_id,resource_type,version_id,seq)
 );
 CREATE INDEX idx_resource_blocks_version ON resource_index_blocks(project_id,resource_type,version_id,seq);
 CREATE VIRTUAL TABLE resource_index_fts USING fts5(content, block_id UNINDEXED, tokenize='trigram');
 CREATE TRIGGER resource_index_insert AFTER INSERT ON resource_index_blocks BEGIN
- INSERT INTO resource_index_fts(rowid,content,block_id) VALUES(new.rowid,new.content,new.id);
+ INSERT INTO resource_index_fts(rowid,content,block_id) VALUES(new.rowid,new.search_content,new.id);
 END;
 CREATE TRIGGER resource_index_delete AFTER DELETE ON resource_index_blocks BEGIN
  DELETE FROM resource_index_fts WHERE rowid=old.rowid;
