@@ -53,7 +53,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   await assertActive();const count=await env.DB.prepare('SELECT COUNT(*) n FROM audio_pipeline_calls WHERE job_id=?1').bind(jobId).first<{n:number}>();
   const media=await env.DB.prepare('SELECT COUNT(*) n FROM media_calls WHERE job_id=?1').bind(jobId).first<{n:number}>();
   // The Whisper record also lives in media_calls: subtract its duplicate.
-  const total=(count?.n??0)+(media?.n??0)-(row.transcript_r2_key?1:0);if(total>=LIMITS.audioPipelineMaxCalls)throw invalidState('达到音频任务总调用上限');
+  const whisper=await env.DB.prepare('SELECT COUNT(*) n FROM media_calls WHERE job_id=?1 AND model=?2').bind(jobId,WHISPER_MODEL).first<{n:number}>();const total=(count?.n??0)+(media?.n??0)-(whisper?.n??0);if(total>=LIMITS.audioPipelineMaxCalls)throw invalidState('达到音频任务总调用上限');
   const callId=newId();await env.DB.prepare('INSERT INTO audio_pipeline_calls(id,job_id,stage,block_index,created_at) VALUES(?1,?2,?3,?4,?5)').bind(callId,jobId,stage,index,nowIso()).run();
   if(job.project_id)await markAiCallStarted(env,jobId);await set(stage);return callId;
  };

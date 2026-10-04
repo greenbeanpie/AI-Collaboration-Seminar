@@ -84,6 +84,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       await assertActive();const window=windows[index]!;
       const held=await env.DB.prepare('UPDATE media_processing SET lease_expires_at=?3 WHERE id=?1 AND lease_token=?2').bind(state.id,leaseToken,new Date(Date.now()+900000).toISOString()).run();if(!held.meta.changes){continuing=true;return {status:'running'};}
       const generating=await env.DB.prepare("UPDATE media_processing SET stage='generating',updated_at=?2 WHERE id=?1 AND stage='processing'").bind(state.id,nowIso()).run();if(!generating.meta.changes)throw invalidState('媒体请求已在运行，拒绝重放');
+      const allowance=await env.DB.prepare("SELECT (SELECT COUNT(*) FROM audio_pipeline_calls WHERE job_id=?1)+(SELECT COUNT(*) FROM media_calls WHERE job_id=?1 AND model!='@cf/openai/whisper-large-v3-turbo') n WHERE EXISTS(SELECT 1 FROM audio_pipeline WHERE job_id=?1)").bind(jobId).first<{n:number}>();if(allowance&&allowance.n>=64)throw invalidState('达到音频任务总调用上限');
       const callId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,window_end,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,'started',?7)").bind(callId,jobId,mediaConfig!.id,model.model,window.start,window.end??null,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
