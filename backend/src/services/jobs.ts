@@ -57,7 +57,7 @@ export async function createJobAndDispatch(
   let frozenConfig = supplied.configVersionId ?? latestConfig?.id;
   // Independent summaries freeze the config chosen for this job, while parse/OCR
   // and requirements continue sharing the source's original frozen version.
-  if (supplied.operation !== 'source.summary' && typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
+  if (supplied.operation !== 'source.summary' && supplied.operation !== 'media.summary' && typeof supplied.sourceVersionId === 'string' && latestConfig?.enabled) {
     await env.DB.prepare(`UPDATE source_versions SET ai_config_version_id = ?2 WHERE id = ?1 AND ai_config_version_id IS NULL AND ${sourceLifecycleGuard('?1', '?3')}`).bind(supplied.sourceVersionId, frozenConfig ?? null, lifecycle!.lifecycleVersion).run();
     const source = await env.DB.prepare('SELECT ai_config_version_id FROM source_versions WHERE id = ?1').bind(supplied.sourceVersionId).first<{ ai_config_version_id: string | null }>();
     frozenConfig = source?.ai_config_version_id ?? frozenConfig;
@@ -209,6 +209,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
     // business completion or another recovery cannot be overwritten.
     const started = await env.DB.prepare(
       `SELECT EXISTS (SELECT 1 FROM ai_calls WHERE job_id = ?1)
+         OR EXISTS (SELECT 1 FROM media_calls WHERE job_id = ?1)
          OR EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?1 AND attempts_started > 0) AS started`,
     ).bind(jobId).first<{ started: number }>();
     if ((!active && started?.started) || active?.status === 'running' || active?.status === 'complete') {

@@ -1,4 +1,4 @@
-import { validateMediaModel } from '../ai/gemini-media';
+import { validateMediaModel, GeminiMediaClient } from '../ai/gemini-media';
 import { registerAdminAccountRoutes } from './admin-accounts';
 import { createMiddleware } from 'hono/factory';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -6,7 +6,7 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { nowIso, newId, timingSafeEqual } from '../core/db';
-import { seal } from '../ai/secrets';
+import { seal, unseal } from '../ai/secrets';
 import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { createAccountInvitation } from '../services/accounts';
 import { AppError, versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
@@ -194,6 +194,13 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     await recordAiDiagnostic(c.env, { requestId, operation, phase: 'request_finished', status: failed ? 'failed' : 'succeeded', durationMs: Math.min(3_600_000, Date.now() - started), httpStatus: c.res.status, errorCode: failed ? diagnosticErrorCode(c.error) : 'NONE', ...(typeof current === 'number' && Number.isSafeInteger(current) && current >= 0 ? { configVersion: current } : {}) });
   });
   app.use('/api/v1/admin/*', requireAdmin);
+  app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/media-probe',tags:['admin'],summary:'只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用）',responses:{200:{description:'模型元数据检查，不等同真实媒体质量验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MediaProbeResponse')}}}}}),async c=>{
+    const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mediaUnderstanding;
+    if(!loaded||!model?.apiKeyEncrypted)throw invalidState('请先保存音视频模型及密钥');
+    const passed=await new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET)).probe();
+    return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'官方模型元数据可访问，支持 generateContent；音视频摘要质量需真实样本核对':'官方模型未声明 generateContent'}),200);
+  });
+
   registerAdminAccountRoutes(app);
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
   app.openapi(listAccountInvitationsRoute, async c => {
@@ -258,7 +265,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
     // Normalize only equivalent defaults: an actual search permission change still invalidates probes.
-    const comparable = (value: typeof config) => aiConfigSchema.parse({ ...value, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' });
+    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, ...core}=value; void _media; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
     const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {

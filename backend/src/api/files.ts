@@ -9,7 +9,8 @@ import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { changeFileLifecycle } from '../services/file-lifecycle';
-import { createFileInit, readFileContent, storeFileContent } from '../services/files';
+import { createFileInit, readFileContent, storeFileContent, readBoundedUpload, uploadLimit } from '../services/files';
+import { notFound } from '../core/errors';
 
 const paramsProject = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 const paramsFile = paramsProject.extend({ fileId: z.string().uuid() });
@@ -54,7 +55,7 @@ const contentRoute = createRoute({
   method: 'put',
   path: '/api/v1/projects/{projectId}/files/{fileId}/content',
   tags: ['files'],
-  summary: '上传文件内容（二进制，≤10MiB，按实际上传字节校验）',
+  summary: '上传文件内容（二进制，文档≤10MiB，音视频≤50MiB，按实际字节校验）',
   request: { params: paramsFile },
   responses: {
     201: { content: { 'application/json': { schema: storedResponse } }, description: '校验通过并已存储' },
@@ -145,11 +146,15 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(contentRoute, async (c) => {
     const { projectId, fileId } = c.req.valid('param');
-    const chunks:Uint8Array[]=[];let size=0;
-    const reader=c.req.raw.body?.getReader();
-    if(reader)try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.byteLength;if(size>LIMITS.recommendedCloudFileBytes){await reader.cancel();throw new AppError('FILE_TOO_LARGE','单次快捷上传超过10 MiB，请改用分片上传；文件总大小没有应用上限',413,false);}chunks.push(r.value);}}finally{reader.releaseLock();}
-    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
-
+    const file=await c.env.DB.prepare('SELECT ext FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL').bind(fileId,projectId).first<{ext:string}>();
+    if(!file)throw notFound('文件不存在');
+    const fileLimit=uploadLimit(file.ext);
+    let bytes:Uint8Array;
+    try { bytes=await readBoundedUpload(c.req.raw.body,fileLimit ?? LIMITS.recommendedCloudFileBytes); }
+    catch(error) {
+      if(fileLimit===null&&error instanceof AppError&&error.code==='FILE_TOO_LARGE')throw new AppError('FILE_TOO_LARGE','单次快捷上传超过10 MiB，请改用分片上传；文件总大小没有应用上限',413,false);
+      throw error;
+    }
     const stored = await storeFileContent(c.env, { projectId, fileId, bytes });
     return c.json(
       apiData(c, { fileId, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeDetected: stored.mimeDetected }),

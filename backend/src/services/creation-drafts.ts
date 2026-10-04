@@ -1,5 +1,6 @@
 import { validateDocx } from './docx-validation';
 import { readDraftDocument } from './draft-documents';
+import { mediaSummaryText, type MediaSummary } from '../ai/gemini-media';
 import { enqueueDraftMedia } from './media-summary';
 import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
@@ -75,7 +76,7 @@ export async function getDraft(env: Env, id: string, userId: string) {
   return row;
 }
 export async function draftFiles(env: Env, id: string) {
-  return (await env.DB.prepare('SELECT f.*, (SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11').bind(id).all<DraftFile>()).results;
+  return (await env.DB.prepare(`SELECT f.*, COALESCE((SELECT COALESCE(m.stage,'pending') FROM jobs j LEFT JOIN media_processing m ON m.job_id=j.id WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' AND j.status IN ('queued','running') ORDER BY j.created_at DESC LIMIT 1),(SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1)) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11`).bind(id).all<DraftFile>()).results;
 }
 const draftReadArgs=z.object({fileId:z.string().uuid(),offset:z.number().int().min(0).max(1000000).default(0),charOffset:z.number().int().min(0).max(24000).default(0)}).strict();
 const draftReadTool={name:'read_draft_document',description:'按文件ID分页读取草稿原文块。offset是块偏移；DOCX页码null，用locator引用；继续使用nextOffset与nextCharOffset。',parameters:z.toJSONSchema(draftReadArgs,{target:'draft-7',io:'input'})};
@@ -205,8 +206,13 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   if(isMediaExtension(ext))await enqueueDraftMedia(env,id,fileId,userId);
   return draftView(env, await getDraft(env, id, userId));
 }
+async function assertDraftMediaSettled(env:Env,id:string){
+  const pending=await env.DB.prepare("SELECT 1 FROM creation_draft_files f JOIN jobs j ON json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' WHERE f.draft_id=?1 AND f.removed=0 AND j.status IN ('queued','running') LIMIT 1").bind(id).first();
+  if(pending)throw invalidState('音视频摘要仍在处理；请等待完成，或移出这些文件后继续。失败文件可不依赖其内容继续创建。');
+}
 /** Freeze the exact input and model version before an asynchronous dispatch. */
 export async function prepareDraftPreviewAttempt(env:Env,row:DraftRow,attempt:string,requestedGoal?:z.infer<typeof creationGoal>) {
+  await assertDraftMediaSettled(env,row.id);
   const existing=await loadDraftCheckpoint(env,attempt);
   if(existing)return existing;
   const config=await requireEnabledAiConfig(env.DB);
@@ -352,6 +358,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     };
   }
   editable(row, revision);
+  await assertDraftMediaSettled(env,id);
   const previewDetails = { draftId: id, currentRevision: row.revision, previewRevision: row.preview_revision, previewState: row.preview_state };
   if (row.preview_state === 'failed') throw new AppError('INVALID_STATE', '任务预览失败，草稿和文件仍保留。请回到任务预览步骤，核对后重新保存预览。', 409, false, { ...previewDetails, reason: 'PREVIEW_FAILED' });
   if (row.preview_state !== 'ready' || !row.preview_json) throw new AppError('INVALID_STATE', '尚未保存可创建的任务预览。请先保存当前任务预览，再确认创建。', 409, false, { ...previewDetails, reason: 'PREVIEW_NOT_READY' });
@@ -410,6 +417,15 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
       pageId: newId(), fragmentId: newId(), seq:i, number: f.ext==='.pdf'?i + 1:null, text, status: hasExtractableText(text) ? 'extracted' : 'none'
     })));
     batch.push(stmt(`INSERT INTO source_pages(id,source_version_id,project_id,page_number,text_status,ocr_status,updated_at) SELECT json_extract(value,'$.pageId'),?4,?5,json_extract(value,'$.number'),json_extract(value,'$.status'),'none',?6 FROM json_each(?7) WHERE json_extract(value,'$.number') IS NOT NULL AND ${guard}`, version, project, now, importedPages), stmt(`INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at) SELECT json_extract(value,'$.fragmentId'),?4,?5,json_extract(value,'$.number'),json_extract(value,'$.seq'),'text',json_extract(value,'$.text'),?6 FROM json_each(?7) WHERE length(json_extract(value,'$.text'))>0 AND ${guard}`, version, project, now, importedPages));
+    if(isMediaExtension(f.ext) && f.media_stage==='ready' && f.media_summary){
+      const summary=JSON.parse(f.media_summary) as MediaSummary;
+      const firstPage=(JSON.parse(importedPages) as Array<{fragmentId:string}>)[0];
+      const savedSummary={title:summary.title,summary:mediaSummaryText(summary),keyPoints:summary.keyPoints.length?summary.keyPoints:[summary.summary],citations:firstPage?[{fragmentId:firstPage.fragmentId,pageNumber:null,quote:'AI 摘要（非逐字原文）'}]:[],caveats:summary.caveats};
+      batch.push(stmt(`UPDATE source_processing SET summary_status='ready',summary_json=?5,summary_revision=1,updated_at=?6 WHERE source_version_id=?4 AND ${guard}`,version,JSON.stringify(savedSummary),now));
+      batch.push(stmt(`UPDATE media_processing SET source_version_id=?4,draft_file_id=NULL,updated_at=?5 WHERE draft_file_id=?6 AND stage='ready' AND ${guard}`,version,now,f.id));
+      batch.push(stmt(`UPDATE jobs SET project_id=?4 WHERE project_id IS NULL AND id IN (SELECT job_id FROM media_processing WHERE source_version_id=?5) AND ${guard}`,project,version));
+    }
+
   }
   const taskIds=new Map(preview.tasks.map((task,i)=>[task.key??`t${i+1}`,newId()]));
   const edges=preview.tasks.flatMap((task,i)=>(task.dependsOn??[]).map(key=>({taskId:taskIds.get(task.key??`t${i+1}`)!,dependsOnTaskId:taskIds.get(key)??key})));

@@ -13,6 +13,14 @@ function view(state=base,aiEnabled=true) {
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><SourceProcessingCard projectId="p" sourceId="s" versionId="v" aiEnabled={aiEnabled} active={false}/></QueryClientProvider>);
 }
 describe('independent file summary UI',()=>{
+  it('labels incomplete media summaries and retains key timestamps and failure details', async () => {
+    view({...base,textStatus:'failed',media:{stage:'failed',durationSeconds:1200,completedWindows:1,error:'第二个窗口未完成',summary:{title:'会议',summary:'已读取部分会议重点',keyPoints:[],conclusions:[],actionItems:[],timestamps:[{seconds:30,description:'讨论交付范围'}],caveats:[],complete:false}}});
+    expect(await screen.findByText('音视频 AI 摘要（非逐字原文）')).toBeInTheDocument();
+    expect(screen.getByText('部分摘要，尚未完整覆盖：')).toBeInTheDocument();
+    expect(screen.getByText('已读取部分会议重点')).toBeInTheDocument();
+    expect(screen.getByText('[30s] 讨论交付范围')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('第二个窗口未完成');
+  });
   it('does not invent a summary before generation and explains the separate AI action',async()=>{
     view(); expect(await screen.findByRole('button',{name:'生成文件总结'})).toBeEnabled();
     expect(screen.getByText(/可能产生 AI 用量/)).toBeInTheDocument(); expect(api.post).not.toHaveBeenCalled();

@@ -517,3 +517,16 @@ it('editing an OpenCode preset URL converts to custom and preserves explicit key
   await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
   expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'custom', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions', apiProtocol: 'chat-completions' } });
 });
+
+ it('preserves independent media config in unified mode and probes only free metadata',async()=>{
+  const media={...savedModel,providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com',keyConfigured:true,mediaInputPricePerMTokens:{audio:1,video:2,text:.5}};
+  const calls:Record<string,unknown>[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(url:string,init?:RequestInit)=>{if(init?.method==='GET')return Response.json({data:{version:8,enabled:true,config:{...savedConfig,mediaUnderstanding:media}}});if(url.endsWith('/media-probe'))return Response.json({data:{passed:true,detail:'元数据通过'}});calls.push(JSON.parse(String(init?.body)));return Response.json({data:{version:9,enabled:true}});}));
+  await setup(true,false);
+  expect(screen.getByLabelText('音视频 Gemini 模型')).toHaveValue('gemini-2.5-flash');
+  fireEvent.click(screen.getByRole('button',{name:'测试音视频模型元数据（不生成）'}));await screen.findByText('元数据通过');
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'),{target:{value:'deepseek-v4-pro'}});
+  expect(screen.getByLabelText('音视频 Gemini 模型')).toHaveValue('gemini-2.5-flash');
+  fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
+  expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash',apiKey:'',mediaInputPricePerMTokens:{audio:1,video:2,text:.5}},clearMediaUnderstanding:false});
+ });

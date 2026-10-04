@@ -1,3 +1,4 @@
+import { loadAiConfig } from '../ai/config';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -13,6 +14,7 @@ const capabilitiesResponse = apiEnvelope(
         .object({
           aiEnabled: z.boolean(),
           documentImports:z.boolean().optional(),resourceIndex:z.boolean().optional(),ocrBatching:z.boolean().optional(),
+          mediaEnabled:z.boolean().optional(),
           webFetch: z.boolean(),
           emailMode: z.enum(['echo', 'resend']),
         })
@@ -92,7 +94,7 @@ async function competitionTemplate(db: D1Database): Promise<{ teamSizeLimit: num
  */
 export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(capabilitiesRoute, async (c) => {
-    const [aiEnabled, template] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB)]);
+    const [aiEnabled, template, mediaConfig] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB), loadAiConfig(c.env.DB).catch(()=>null)]);
     return c.json(
       apiData(c, {
         apiVersion: 'v1' as const,
@@ -100,6 +102,7 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         features: {
           aiEnabled,
           documentImports:c.env.DOCUMENT_IMPORTS_ENABLED!=='false',resourceIndex:c.env.RESOURCE_INDEX_ENABLED!=='false',ocrBatching:c.env.OCR_BATCH_ENABLED!=='false',
+          mediaEnabled:Boolean(mediaConfig?.enabled&&mediaConfig.config.mediaUnderstanding?.apiKeyEncrypted),
           webFetch: true,
           emailMode: c.env.EMAIL_MODE,
         },

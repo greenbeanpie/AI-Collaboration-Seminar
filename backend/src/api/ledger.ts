@@ -260,7 +260,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
               COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
               CASE WHEN COUNT(*) = 0 OR SUM(CASE WHEN cost_status = 'unknown' THEN 1 ELSE 0 END) > 0
                    THEN 'unknown' ELSE 'known' END AS cost_status
-         FROM ai_calls WHERE project_id = ?1`,
+         FROM (SELECT prompt_tokens,completion_tokens,cost_status FROM ai_calls WHERE project_id=?1 UNION ALL SELECT m.prompt_tokens,m.completion_tokens,m.cost_status FROM media_calls m JOIN jobs j ON j.id=m.job_id WHERE j.project_id=?1)`,
     )
       .bind(projectId)
       .first<{ calls: number; prompt_tokens: number; completion_tokens: number; cost_status: string }>();

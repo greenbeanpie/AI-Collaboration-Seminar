@@ -1,6 +1,6 @@
 import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { completeCreationFile, creationFileHash, newCreationFile, readCreationDraft, writeCreationDraft, type CreationDraft, type CreationFile } from './project-creation-workflow';
+import { validateCreationFiles, completeCreationFile, creationFileHash, newCreationFile, readCreationDraft, writeCreationDraft, type CreationDraft, type CreationFile } from './project-creation-workflow';
 
 const response = (data: unknown) => Response.json({ data, requestId: 'fixture' });
 const original = () => new File(['hello'], 'original.txt', { type: 'text/plain', lastModified: 1 });
@@ -98,3 +98,5 @@ describe('creation file reconciliation', () => {
     expect(writeCreationDraft(draft)).toBe(false);
   });
 });
+
+it('accepts 50 MiB media while retaining the existing ordinary file cap',()=>{expect(validateCreationFiles([{name:'recording.mp4',size:50*1024*1024}],10*1024*1024)).toBeNull();expect(validateCreationFiles([{name:'audio.mp3',size:50*1024*1024+1}],10*1024*1024)).toContain('50.0 MiB');expect(validateCreationFiles([{name:'notes.pdf',size:11*1024*1024}],10*1024*1024)).toContain('10.0 MiB');});

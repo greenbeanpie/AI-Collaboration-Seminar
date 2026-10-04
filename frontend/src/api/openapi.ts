@@ -7529,7 +7529,7 @@ export interface paths {
                 };
             };
         };
-        /** 上传文件内容（二进制，≤10MiB，按实际上传字节校验） */
+        /** 上传文件内容（二进制，文档≤10MiB，音视频≤50MiB，按实际字节校验） */
         put: {
             parameters: {
                 query?: never;
@@ -8226,6 +8226,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ai-config/media-probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 模型元数据检查，不等同真实媒体质量验证 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaProbeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/accounts": {
         parameters: {
             query?: never;
@@ -8477,6 +8513,11 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -8511,6 +8552,11 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -8543,6 +8589,11 @@ export interface paths {
                             goHeaders?: {
                                 userAgent?: string;
                                 sessionPrefix?: string;
+                            };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
                             };
                             /** @default null */
                             pricePerMTokens?: [
@@ -8577,6 +8628,11 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
+                            };
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -8609,6 +8665,11 @@ export interface paths {
                             goHeaders?: {
                                 userAgent?: string;
                                 sessionPrefix?: string;
+                            };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
                             };
                             /** @default null */
                             pricePerMTokens?: [
@@ -9623,6 +9684,7 @@ export interface components {
                     documentImports?: boolean;
                     resourceIndex?: boolean;
                     ocrBatching?: boolean;
+                    mediaEnabled?: boolean;
                     webFetch: boolean;
                     /** @enum {string} */
                     emailMode: "echo" | "resend";
@@ -13673,6 +13735,16 @@ export interface components {
                     pageNumber: number | null;
                     quote: string;
                 }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        MediaProbeResponse: {
+            data: {
+                passed: boolean;
+                model: string;
+                configVersion: number;
+                detail: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
