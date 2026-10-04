@@ -30,12 +30,14 @@ describe('recycled original history', () => {
     const set: DataOf<'RequirementSetResponse'> = { requirementSetId: 'set', sourceVersionId: 'v', sourceAvailability: 'unavailable', sourceDeletedAt: '2026-10-02T00:00:00Z', revision: 1, status: 'confirmed', confirmedAt: '2026-10-01T00:00:00Z', requirements: [{ requirementId: 'r', seq: 1, category: 'deliverable', title: '保留的确认要求', detail: '原件删除不修改已确认要求', dueDate: null, duePrecision: 'unknown', fieldState: 'confirmed', citations: [{ sourceVersionId: 'v', fragmentId: 'fragment', pageNumber: 2, quote: '请提交作品介绍和演示视频', availability: 'unavailable', deletedAt: '2026-10-02T00:00:00Z' }] }] };
     client.setQueryData(['requirementSets', 'p'], [set]);
     client.setQueryData(['requirementSet', 'p', 'set'], set);
+    client.setQueryData(['current-standard', 'p'], { standard: { standardsVersionId: 's', title: '标准', version: 1, requirements: set.requirements, mappings: [], rubric: { weights: [], notes: null } } });
+    client.setQueryData(['standards', 'p'], { items: [] });
     client.setQueryData(['rubrics', 'p'], []);
     client.setQueryData(['capabilities'], { limits: { listMaxPageSize: 100 } });
     client.setQueryData(['sources', 'p'], []);
     wrapper(<RequirementsPage />, client);
-    expect(await screen.findByText('1. 保留的确认要求')).toBeInTheDocument();
-    expect(screen.getByText('请提交作品介绍和演示视频')).toBeInTheDocument();
+    expect(await screen.findByText('保留的确认要求')).toBeInTheDocument();
+    expect(screen.getByText(/请提交作品介绍和演示视频/)).toBeInTheDocument();
     expect(screen.getByText(/历史引文保留/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '查看来源' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '查看原始来源' })).not.toBeInTheDocument();

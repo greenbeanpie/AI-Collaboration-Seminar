@@ -65,8 +65,7 @@ describe('Simplification integration and complete export', () => {
     ]);
     const standard = await call<{ standardsVersionId: string; revision: number; requirementSetIds: string[]; rubricVersionId: string }>(cookie, `${prefix}/standards`, { title: 'Combined standard', requirements: [{ title: 'Keep original evidence', detail: 'Deliver an artifact', category: 'deliverable', dimensionKey: 'quality' }], weights: [{ key: 'quality', label: 'Quality', weight: 100 }] });
     expect(standard.response.status).toBe(201);
-    const confirmed = await call<Record<string, unknown>>(cookie, `${prefix}/standards/${standard.data.data.standardsVersionId}/confirm`, { expectedRevision: standard.data.data.revision });
-    expect(confirmed.response.status).toBe(200);
+    const confirmed = standard;
     const goal = await call<Record<string, unknown>>(cookie, `${prefix}/goal`);
     await env.DB.batch([
       env.DB.prepare("INSERT INTO reviews(id,project_id,requirement_set_id,rubric_version_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,?3,?4,?5,'failed',?6,?7)").bind(review, projectId, standard.data.data.requirementSetIds[0]!, standard.data.data.rubricVersionId, JSON.stringify([version]), user.userId, now),

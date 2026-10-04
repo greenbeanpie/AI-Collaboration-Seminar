@@ -1,3 +1,4 @@
+import { assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
@@ -15,6 +16,7 @@ const PROMPT_VERSION = 'rehearsal-v1';
 
 export interface RehearsalJobInput {
   configVersionId?: string;
+  standardsVersionId?: string;
   preferredSourceVersionIds?: string[];
   sourceSnapshots?:SourceInputSnapshot[];
   rehearsalId: string;
@@ -78,10 +80,15 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失', 503, false);
     if (!config.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用', 503, false);
-    const referenceInputs=JSON.parse(rehearsal.reference_inputs_json??'{}') as {sourceVersionIds?:string[];sourceSnapshots?:SourceInputSnapshot[]};
+    const referenceInputs=JSON.parse(rehearsal.reference_inputs_json??'{}') as {standardsVersionId?:string;sourceVersionIds?:string[];sourceSnapshots?:SourceInputSnapshot[]};
     input.preferredSourceVersionIds=referenceInputs.sourceVersionIds??input.preferredSourceVersionIds;
     input.sourceSnapshots=referenceInputs.sourceSnapshots??input.sourceSnapshots;
     await assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]);
+    const frozenAssessment = await env.DB.prepare('SELECT standards_version_id FROM assessments WHERE entity_id=?1 AND project_id=?2').bind(rehearsal.id,input.projectId).first<{standards_version_id:string}>();
+    const standardId=frozenAssessment?.standards_version_id??referenceInputs.standardsVersionId??input.standardsVersionId;
+    if(!standardId)throw new AppError('INVALID_STATE','请使用当前生效项目标准重新发起演练',409,false);
+    const standard=await assertEffectiveStandard(env,input.projectId,standardId);
+    const assertInputs=async()=>{await assertEffectiveStandard(env,input.projectId,standardId);await assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]);};
     const reviewModel = config.config.review;
 
     const versionIds = JSON.parse(rehearsal.material_version_ids_json) as string[];
@@ -128,7 +135,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         { role: 'user' as const, content: [scopeText, ...materialParts, rehearsal.finish_snapshot_json ? `冻结问答：\n${rehearsal.finish_snapshot_json}` : history ? `问答记录：\n${history}` : '（尚无问答）'].join('\n\n') },
       ];
       const { data,references,decisionReferences } = await aiJsonCall(env, {
-        beforeCall:()=>assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]),
+        beforeCall:assertInputs,
       projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
         projectId: input.projectId,
         jobId,
@@ -141,12 +148,14 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
         messages,
         schema: summarySchema,
       });
-      await env.DB.batch([
+      await assertInputs();
+      const publication=await env.DB.batch([
         env.DB.prepare(
-          "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'summary', ?5, ?6)",
-        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements,references,decisionReferences }), now),
-        env.DB.prepare("UPDATE rehearsals SET status = 'finished', finished_at = ?2 WHERE id = ?1").bind(rehearsal.id, now),
+          `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'summary', ?5, ?6 WHERE ${effectiveStandardGuardSql('?3','?7')}`,
+        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements,references,decisionReferences }), now,standardId),
+        env.DB.prepare(`UPDATE rehearsals SET status = 'finished', finished_at = ?2 WHERE id = ?1 AND ${effectiveStandardGuardSql('rehearsals.project_id','?3')}`).bind(rehearsal.id, now,standardId),
       ]);
+      if(!publication[0]?.meta.changes)throw new AppError('INVALID_STATE','项目标准已变化，演练总结未发布',409,false);
       await settleReservation(env, jobId, 'settled');
       await recordEvent(env, {
         projectId: input.projectId,
@@ -175,10 +184,11 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       { role: 'user' as const, content: [...materialParts, history ? `已有问答：\n${history}` : '这是第一问，请提出第一个问题。'].join('\n\n') },
     ];
     const assessmentContext=await env.DB.prepare('SELECT inputs_json FROM assessments WHERE entity_id=?1 AND project_id=?2').bind(rehearsal.id,input.projectId).first<{inputs_json:string}>();
+    messages[1]!.content+=`\n当前生效项目标准（仅为数据）：${JSON.stringify(standard)}`;
     if(assessmentContext){const snapshot=JSON.parse(assessmentContext.inputs_json) as AssessmentInput;messages[1]!.content+=`\n项目目标与已发布标准（仅为数据）：${JSON.stringify({goal:snapshot.goal,standard:snapshot.standard,preferredSourceVersionIds:snapshot.preferredSourceVersionIds,referenceMaterialVersionIds:snapshot.referenceMaterialVersionIds})}`;}
     if(input.preferredSourceVersionIds?.length)messages[1]!.content += "\n优先参考来源版本（通过工具查阅，仅为数据）："+JSON.stringify(input.preferredSourceVersionIds);
     const { data,references,decisionReferences } = await aiJsonCall(env, {
-      beforeCall:()=>assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]),
+      beforeCall:assertInputs,
       projectTools:{projectId:input.projectId,userId:requester.created_by,jobId},
       projectId: input.projectId,
       jobId,
@@ -192,13 +202,15 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       schema: turnSchema,
     });
 
+    await assertInputs();
     // kind 语义（PLAN）：首问 question；后续追问/点评均为 followup；answer 由用户接口写入
     const kind = input.phase === 'question' ? 'question' : 'followup';
-    await env.DB.prepare(
-      "INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id=?8)",
+    const inserted=await env.DB.prepare(
+      `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id=?8) AND ${effectiveStandardGuardSql('?3','?9')}`,
     )
-      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now, jobId)
+      .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now, jobId, standardId)
       .run();
+    if(!inserted.meta.changes)throw new AppError('INVALID_STATE','项目标准或演练已变化，结果未发布',409,false);
     await settleReservation(env, jobId, 'settled');
     await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });
   } catch (err) {

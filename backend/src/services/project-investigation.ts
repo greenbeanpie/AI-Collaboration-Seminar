@@ -13,6 +13,7 @@ export class InvestigationContinuation extends Error {
   }
 }
 export interface InvestigationCheckpoint {
+  effectiveStandardsVersionId?:string|null;
   step: number; exchanges: ToolExchange[]; references: ProjectReference[];
   trace: Array<{name:string;status:string;fileId?:string}>;
   compacted?: string; pendingDispatch?: boolean; content?: string;

@@ -18,7 +18,7 @@ export const discoveryDefinitions = [
   ['list_tasks', '分页读取任务说明、验收标准、归属、进度和依赖'],
   ['read_task', '读取指定任务及其相关提交、反馈、依赖'],
   ['read_submission', '读取固定成果提交、材料版本及评价反馈'],
-  ['read_project_standards', '分页读取已确认要求、统一标准和评分规则'],
+  ['read_project_standards', '分页读取当前生效项目标准的要求和评分规则'],
   ['read_admin_feedback', '分页读取管理员明确修正和重新反馈；后续判断须采用最新反馈'],
   ['read_project_history', '分页读取项目事件与协作评论'],
   ['read_member_workload', '分页读取成员项目角色与任务负载，不披露个人资料'],
@@ -175,9 +175,9 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     return {untrustedData:true,...row,resourceType:'submission',resourceId:a.id,offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null};
   }
   if(name==='read_project_standards') {
-    const standards=await env.DB.prepare("SELECT id,version,revision,title,snapshot_json FROM standards_versions WHERE project_id=?1 AND status='confirmed' ORDER BY version DESC LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
-    const requirements=await env.DB.prepare("SELECT r.* FROM requirements r JOIN requirement_sets s ON s.id=r.requirement_set_id WHERE r.project_id=?1 AND s.status='confirmed' ORDER BY r.id LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
-    const rubrics=await env.DB.prepare("SELECT id,version,weights_json,notes FROM rubric_versions WHERE project_id=?1 AND status='confirmed' ORDER BY version DESC LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
+    const standards=await env.DB.prepare("SELECT id,version,revision,title,snapshot_json FROM standards_versions WHERE project_id=?1 AND version=(SELECT MAX(version) FROM standards_versions WHERE project_id=?1) ORDER BY version DESC LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
+    const requirements=await env.DB.prepare("SELECT r.* FROM requirements r JOIN requirement_sets s ON s.id=r.requirement_set_id WHERE r.project_id=?1 AND s.id IN(SELECT value FROM standards_versions active,json_each(active.requirement_set_ids_json) WHERE active.project_id=?1 AND active.version=(SELECT MAX(version) FROM standards_versions WHERE project_id=?1)) ORDER BY r.id LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
+    const rubrics=await env.DB.prepare("SELECT id,version,weights_json,notes FROM rubric_versions WHERE project_id=?1 AND id=(SELECT rubric_version_id FROM standards_versions WHERE project_id=?1 ORDER BY version DESC LIMIT 1) ORDER BY version DESC LIMIT 21 OFFSET ?2").bind(projectId,a.offset).all();
     return {untrustedData:true,standards:{...page(standards.results,a.offset),resourceType:'standard'},requirements:{...page(requirements.results,a.offset),resourceType:'requirement'},rubrics:{...page(rubrics.results,a.offset),resourceType:'rubric'}};
   }
   if(name==='read_admin_feedback') {

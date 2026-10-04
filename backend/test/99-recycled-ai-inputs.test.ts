@@ -1,3 +1,4 @@
+import { saveStandard } from '../src/services/project-simplification';
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -36,6 +37,7 @@ async function fixture() {
     env.DB.prepare("INSERT INTO rubric_versions(id,project_id,version,source,weights_json,status,created_at) VALUES(?1,?2,1,'custom',?3,'confirmed',?4)").bind(rubricId, projectId, JSON.stringify([{ key: 'quality', label: '质量', weight: 100 }]), now),
     env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,source_citations_json) VALUES(?1,?2,'历史任务','保留历史任务','todo',1,?3,?4,?4,'open','核对要求',1,?5)").bind(id(), projectId, user.userId, now, JSON.stringify([citation])),
   ]);
+  await saveStandard(env,projectId,user.userId,{requirementSetIds:[setId],rubricVersionId:rubricId});
   return { user, projectId, sourceId, sourceVersionId, fileId, setId, requirementId, materialId, materialVersionId, rubricId, citation };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -125,9 +127,9 @@ describe('recycled sources are unavailable for new AI inputs', () => {
     const explicit = await request(f, 'assignment-suggestions', 'POST', { requirementSetId: f.setId });
     expect(explicit.status).toBe(404);
     const automatic = await request(f, 'assignment-suggestions', 'POST', {});
-    expect(automatic.status).toBe(202);
-    const jobId = (await automatic.json() as { data: { jobId: string } }).data.jobId;
-    expect(JSON.parse((await getJob(env, jobId)).input_json)).toMatchObject({ requirementSetId: null, requirements: [], sourceSnapshots: [] });
+    expect(automatic.status).toBe(404);
+    await automatic.text();
+
   });
   it('rejects agent selection before enqueue and stale restored snapshots before a fetch', async () => {
     const f = await fixture(); await recycle(f);

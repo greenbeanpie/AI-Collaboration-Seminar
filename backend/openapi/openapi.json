@@ -2505,6 +2505,221 @@
           "requestId"
         ]
       },
+      "CurrentStandardResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "standard": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "standardsVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "confirmed"
+                    ]
+                  },
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "requirementSetIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mappings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "requirementId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "dimensionKey": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requirementId",
+                        "dimensionKey"
+                      ]
+                    }
+                  },
+                  "requirements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "requirementId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "requirementSetId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "type": "string"
+                        },
+                        "dueDate": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "duePrecision": {
+                          "type": "string"
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "required": [
+                        "requirementId",
+                        "requirementSetId",
+                        "title",
+                        "detail",
+                        "category",
+                        "dueDate",
+                        "duePrecision",
+                        "citations"
+                      ]
+                    }
+                  },
+                  "rubric": {
+                    "type": "object",
+                    "properties": {
+                      "rubricVersionId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "weights": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "weight": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label",
+                            "weight"
+                          ]
+                        },
+                        "maxItems": 10
+                      },
+                      "notes": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "rubricVersionId",
+                      "version",
+                      "weights",
+                      "notes"
+                    ]
+                  },
+                  "confirmedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "standardsVersionId",
+                  "projectId",
+                  "version",
+                  "title",
+                  "status",
+                  "active",
+                  "revision",
+                  "requirementSetIds",
+                  "rubricVersionId",
+                  "mappings",
+                  "requirements",
+                  "rubric",
+                  "confirmedAt",
+                  "createdAt"
+                ]
+              }
+            },
+            "required": [
+              "standard"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "StandardsListResponse": {
         "type": "object",
         "properties": {
@@ -2537,6 +2752,9 @@
                         "draft",
                         "confirmed"
                       ]
+                    },
+                    "active": {
+                      "type": "boolean"
                     },
                     "revision": {
                       "type": "integer",
@@ -2690,6 +2908,7 @@
                     "version",
                     "title",
                     "status",
+                    "active",
                     "revision",
                     "requirementSetIds",
                     "rubricVersionId",
@@ -2743,6 +2962,9 @@
                   "draft",
                   "confirmed"
                 ]
+              },
+              "active": {
+                "type": "boolean"
               },
               "revision": {
                 "type": "integer",
@@ -2896,6 +3118,7 @@
               "version",
               "title",
               "status",
+              "active",
               "revision",
               "requirementSetIds",
               "rubricVersionId",
@@ -10001,6 +10224,10 @@
                                     "scored"
                                   ]
                                 },
+                                "standardsVersionId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
                                 "rubricVersionId": {
                                   "type": "string",
                                   "format": "uuid"
@@ -10140,6 +10367,10 @@
                           "enum": [
                             "assistive"
                           ]
+                        },
+                        "standardsVersionId": {
+                          "type": "string",
+                          "format": "uuid"
                         },
                         "rubricVersionId": {
                           "type": "string",
@@ -10524,6 +10755,10 @@
                               "scored"
                             ]
                           },
+                          "standardsVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
                           "rubricVersionId": {
                             "type": "string",
                             "format": "uuid"
@@ -10663,6 +10898,10 @@
                     "enum": [
                       "assistive"
                     ]
+                  },
+                  "standardsVersionId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
                   "rubricVersionId": {
                     "type": "string",
@@ -13626,6 +13865,9 @@
                         "confirmed"
                       ]
                     },
+                    "active": {
+                      "type": "boolean"
+                    },
                     "revision": {
                       "type": "integer",
                       "exclusiveMinimum": 0
@@ -13778,6 +14020,7 @@
                     "version",
                     "title",
                     "status",
+                    "active",
                     "revision",
                     "requirementSetIds",
                     "rubricVersionId",
@@ -19658,6 +19901,38 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/standards/current": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentStandardResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/standards": {
       "get": {
         "tags": [
@@ -20178,67 +20453,6 @@
         }
       }
     },
-    "/api/v1/projects/{projectId}/standards/{standardsVersionId}/confirm": {
-      "post": {
-        "tags": [
-          "project-simplification"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "standardsVersionId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "expectedRevision": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0
-                  }
-                },
-                "required": [
-                  "expectedRevision"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StandardsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{projectId}/assessments": {
       "get": {
         "tags": [
@@ -20345,8 +20559,7 @@
                   }
                 },
                 "required": [
-                  "kind",
-                  "standardsVersionId"
+                  "kind"
                 ],
                 "additionalProperties": false
               }
@@ -25489,59 +25702,6 @@
         }
       }
     },
-    "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/evaluate": {
-      "post": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /submissions/{submissionId}/evaluate",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "submissionId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationJobResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility": {
       "get": {
         "tags": [
@@ -27014,8 +27174,6 @@
                   }
                 },
                 "required": [
-                  "rubricVersionId",
-                  "requirementSetId",
                   "materialVersionIds"
                 ]
               }

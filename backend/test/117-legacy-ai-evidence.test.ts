@@ -1,3 +1,4 @@
+import { saveStandard } from '../src/services/project-simplification';
 import { createExecutionContext,waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach,describe,expect,it,vi } from 'vitest';
 import { env,BASE } from './helpers/env';
@@ -24,7 +25,8 @@ async function fixture(){
     env.DB.prepare("INSERT INTO materials(id,project_id,title,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,'成果',?3,?4,?5,?5)").bind(materialId,projectId,materialVersionId,owner.userId,now),
     env.DB.prepare("INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,origin,author_id,created_at) VALUES(?1,?2,?3,1,'{}',?4,'manual',?5,?6)").bind(materialVersionId,materialId,projectId,markdown,owner.userId,now),
   ]);
-  return {owner,member,projectId,setId,rubricId,materialVersionId,markdown,weights};
+  const standard=await saveStandard(env,projectId,owner.userId,{requirementSetIds:[setId],rubricVersionId:rubricId});
+  return {standardId:standard.standardsVersionId,owner,member,projectId,setId,rubricId,materialVersionId,markdown,weights};
 }
 type Fixture=Awaited<ReturnType<typeof fixture>>;
 async function job(f:Fixture,kind:'review_run'|'rehearsal_turn',input:unknown){
@@ -34,7 +36,7 @@ async function job(f:Fixture,kind:'review_run'|'rehearsal_turn',input:unknown){
 async function review(f:Fixture){
   const id=newId(),sourceSnapshots=await snapshotRequirementSources(env,f.projectId,f.setId);
   await env.DB.prepare("INSERT INTO reviews(id,project_id,requirement_set_id,rubric_version_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,?3,?4,?5,'pending',?6,?7)").bind(id,f.projectId,f.setId,f.rubricId,JSON.stringify([f.materialVersionId]),f.owner.userId,nowIso()).run();
-  return {id,jobId:await job(f,'review_run',{reviewId:id,projectId:f.projectId,sourceSnapshots})};
+  return {id,jobId:await job(f,'review_run',{reviewId:id,projectId:f.projectId,standardsVersionId:f.standardId,sourceSnapshots})};
 }
 function provider(output:unknown,capture?:(body:{messages:Array<{role:string;content:string}>})=>void){
   const fetch=vi.fn(async(_url:unknown,init?:RequestInit)=>{capture?.(JSON.parse(String(init?.body)));return Response.json({choices:[{message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:10,completion_tokens:5}});});vi.stubGlobal('fetch',fetch);return fetch;
@@ -57,16 +59,22 @@ describe('legacy AI compatibility retains trustworthy evidence',()=>{
     const f=await fixture(),r=await review(f),output=report(f);output.scores[0]!.evidence[0]!.quote='并不存在的资料';provider(output);await runReviewJob(env,r.jobId);
     expect((await getJob(env,r.jobId)).status).toBe('failed');expect((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string|null}>())!.report_json).toBeNull();
   });
-  it('refuses new reviews with unconfirmed rubrics and gives queued legacy drafts qualitative output',async()=>{
-    const f=await fixture();await env.DB.prepare("UPDATE rubric_versions SET status='draft' WHERE id=?1").bind(f.rubricId).run();
-    const response=await request(f,'reviews','POST',{rubricVersionId:f.rubricId,requirementSetId:f.setId,materialVersionIds:[f.materialVersionId]});expect(response.status).toBe(409);
-    const r=await review(f);provider(report(f));await runReviewJob(env,r.jobId);const stored=JSON.parse((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string}>())!.report_json);expect(stored.status).toBe('unscorable');expect(stored.overall.score).toBeNull();
+  it('rejects explicit untracked rubric choices and queued reviews without a tracked project standard',async()=>{
+    const f=await fixture(),otherRubric=newId();
+    await env.DB.prepare("INSERT INTO rubric_versions(id,project_id,version,source,weights_json,status,created_at) VALUES(?1,?2,2,'custom',?3,'draft',?4)").bind(otherRubric,f.projectId,JSON.stringify(f.weights),nowIso()).run();
+    const response=await request(f,'reviews','POST',{rubricVersionId:otherRubric,requirementSetId:f.setId,materialVersionIds:[f.materialVersionId]});expect(response.status).toBe(409);await response.text();
+    const r=await review(f);
+    await env.DB.prepare("UPDATE jobs SET input_json=json_remove(input_json,'$.standardsVersionId') WHERE id=?1").bind(r.jobId).run();
+    const fetch=provider(report(f));await runReviewJob(env,r.jobId);
+    expect(fetch).not.toHaveBeenCalled();expect((await getJob(env,r.jobId)).status).toBe('failed');
+    expect((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string|null}>())!.report_json).toBeNull();
+    expect((await request(f,`reviews/${r.id}`)).status).toBe(200);
   });
   it('passes the selected member and actual responsibility tasks and retains legacy summary evidence in GET turns',async()=>{
     const f=await fixture(),taskId=newId(),otherTaskId=newId(),now=nowIso();
     for(const [id,assignee,title]of[[taskId,f.member.userId,'目标成员负责的采样'],[otherTaskId,f.owner.userId,'其他成员负责的排版']])await env.DB.prepare("INSERT INTO tasks(id,project_id,title,detail,criteria,status,revision,assignee_id,created_by,created_at,updated_at,lifecycle_state) VALUES(?1,?2,?3,'实际任务说明','记录来源','doing',1,?4,?5,?6,?6,'in_progress')").bind(id,f.projectId,title,assignee,f.owner.userId,now).run();
     const rehearsalId=newId();await env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,member_id,material_version_ids_json,status,created_by,created_at) VALUES(?1,?2,'member',?3,'[]','active',?4,?5)").bind(rehearsalId,f.projectId,f.member.userId,f.owner.userId,now).run();
-    const jobId=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'});await env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2 WHERE id=?1').bind(rehearsalId,jobId).run();
+    const jobId=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary',standardsVersionId:f.standardId});await env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2 WHERE id=?1').bind(rehearsalId,jobId).run();
     provider({summary:'对实际任务和回答的总结',strengths:[],improvements:[],referenceIds:[],decisionReferences:[{decisionPath:'summary',referenceIds:[`project:${f.projectId}:0`]}]},body=>{
       const user=body.messages[1]!.content;expect(user).toContain(f.member.userId);expect(user).toContain(taskId);expect(user).not.toContain(otherTaskId);expect(body.messages[0]!.content).toContain('个人');
     });

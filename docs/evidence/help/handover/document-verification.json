@@ -1,6 +1,6 @@
 {
   "scope": "read-only source and in-memory SQLite checks",
-  "sourcePathsChecked": 76,
+  "sourcePathsChecked": 77,
   "tableCount": 79,
   "columnCount": 742,
   "ddlAndMetadataMatch": true,
@@ -221,6 +221,11 @@
       "name": "0043_remove_task_parent.sql",
       "status": "applied",
       "sha256": "1687bb38fbb5391d08b7a961ba8bb94fdd58d092f96ca54c55252ba944ff2684"
+    },
+    {
+      "name": "0044_saved_standard_activation.sql",
+      "status": "applied",
+      "sha256": "8f3f6325b9fcd8345b0a36ff5a3cf4b5da7f5ade90072f578bd051d2b2d52b7d"
     }
   ],
   "tables": [

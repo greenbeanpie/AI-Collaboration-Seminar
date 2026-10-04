@@ -23,7 +23,7 @@ it('keeps an unscorable answer-based result separate from zero and identifies im
 it('routes an old rehearsal ID to its historical feedback and offers both scoring forms', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(['project-goal', 'p'], { title: '共同目标', revision: 3 });
-  client.setQueryData(['standards', 'p'], { items: [] });
+  client.setQueryData(['standards', 'p'], { items: [] }); client.setQueryData(['current-standard', 'p'], { standard: null });
   client.setQueryData(['assessments', 'p'], [{ assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, createdAt: '2026-10-01', rehearsalId: 'old', standardsVersion: null }]);
   client.setQueryData(['assessment', 'p', 'old'], { assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, rehearsalId: 'old', goal: null, standardsVersion: null, report: null, materialVersionIds: [] });
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/assessment?section=rehearsals&rehearsalId=old']}><AssessmentWorkspacePage /></MemoryRouter></QueryClientProvider>);
@@ -40,7 +40,7 @@ it('recovers a failed assessment job from server history and retries its real jo
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const assessment = { assessmentId: 'failed', kind: 'material_review', status: 'failed', goal: { title: '冻结目标', detail: '原始目标说明' }, goalRevision: 2, standardsVersionId: 's', standardsVersion: 1, materialVersionIds: ['v1'], rehearsalId: null, jobId: 'j-failed', jobError: '评分作业失败，请重试', historical: false, report: null, createdAt: '2026-10-01' };
   client.setQueryData(['project-goal', 'p'], { title: '共同目标', revision: 3 });
-  client.setQueryData(['standards', 'p'], { items: [] });
+  client.setQueryData(['standards', 'p'], { items: [] }); client.setQueryData(['current-standard', 'p'], { standard: { standardsVersionId: 's', title: '规则', version: 1, rubric: { weights: [] } } });
   client.setQueryData(['assessments', 'p'], [assessment]);
   client.setQueryData(['assessment', 'p', 'failed'], assessment);
   const writes: string[] = [];
@@ -64,7 +64,7 @@ function record(id: string, kind: Assessment['kind'], status = 'succeeded', extr
 function showRecords(records: Assessment[], entry: string) {
   const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
   client.setQueryData(['project-goal','p'],{title:'共同目标',revision:1});
-  client.setQueryData(['standards','p'],{items:[]});
+  client.setQueryData(['standards','p'],{items:[]});client.setQueryData(['current-standard','p'],{standard:{standardsVersionId:'s',title:'生效规则',version:1,rubric:{weights:[]}}});
   client.setQueryData(['assessments','p'],records);
   for (const item of records) client.setQueryData(['assessment','p',item.assessmentId],item);
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
@@ -172,4 +172,21 @@ it('keeps a retry response attached to its originating record after selection ch
   await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
   expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
   expect(screen.queryByText(/本轮评分任务/)).toBeNull();
+});
+
+it('creates scoring using the server effective standard without a standard selection or version override', async () => {
+  authState.enabled = true;
+  const writes: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (init?.method === 'POST') writes.push(JSON.parse(String(init.body)));
+    return Response.json({ requestId:'r', data: init?.method === 'POST' ? { assessmentId:'new', jobId:'new-job' } : { items:[], nextCursor:null } });
+  }));
+  showRecords([], '/assessment?section=checks');
+  expect(screen.getByText('生效标准：生效规则 · v1')).toBeInTheDocument();
+  expect(screen.queryByRole('combobox',{name:/标准/})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'开始本轮材料检查'}));
+  await waitFor(()=>expect(writes).toHaveLength(1));
+  expect(writes[0]).toMatchObject({kind:'material_review', goalRevision:1});
+  expect(writes[0]).not.toHaveProperty('standardsVersionId');
+  expect(writes[0]).not.toHaveProperty('rubricVersionId');
 });

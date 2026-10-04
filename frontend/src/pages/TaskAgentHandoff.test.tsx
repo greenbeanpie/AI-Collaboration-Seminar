@@ -11,7 +11,7 @@ vi.mock('../api/collaboration', () => ({ collaborationApi: { submissions: reads.
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 const task = { taskId: 't3', title: '制作报告', detail: '比较两个方案', criteria: '给出可复现证据', dueDate: '2026-10-10', revision: 3, effortHours: 4, lifecycleState: 'in_progress', dependsOnTaskIds: ['t2'], currentSubmissionId: null, citations: [{ sourceVersionId: 'src1', quote: '要求可复现', pageNumber: 2 }] } as unknown as CollaborationTask & { dueDate: string };
 function setup() {
-  reads.request.mockImplementation(async (_id, path) => path.endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: true, reason: '可通过资料分析完成', jobId: 'j1' } : path === '/goal' ? { title: '项目目标', detail: '分析效率', revision: 2 } : { items: [{ title: '正式标准', standardsVersionId: 'std1', version: 4, status: 'confirmed', requirements: [{ title: '可复现性', detail: '保存脚本', citations: [{ sourceVersionId: 'standard-source', quote: '评分需保存证据', pageNumber: 8 }] }], rubric: { weights: [{ label: '正确性', weight: 60 }], notes: '核验结果' } }] });
+  reads.request.mockImplementation(async (_id, path) => path.endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: true, reason: null, jobId: 'j1' } : path === '/goal' ? { title: '项目目标', detail: '分析效率', revision: 2 } : { standard: { title: '正式标准', standardsVersionId: 'std1', version: 4, status: 'confirmed', requirements: [{ title: '可复现性', detail: '保存脚本', citations: [{ sourceVersionId: 'standard-source', quote: '评分需保存证据', pageNumber: 8 }] }], rubric: { weights: [{ label: '正确性', weight: 60 }], notes: '核验结果' } } });
   reads.list.mockResolvedValue([{ materialId: 'm1', title: '原始数据', currentVersionId: 'v1' }]);
   reads.version.mockResolvedValue({ versionId: 'v1', revision: 5, markdown: '固定正文', attachments: [{ fileId: 'f1', name: '数据.csv' }] });
   reads.submissions.mockResolvedValue({ items: [{ submissionId: 's1', round: 1, body: '前置结论', materialVersionIds: ['v1'] }] });
@@ -51,7 +51,7 @@ describe('portable task handoff', () => {
     for (const fragment of ['分析效率', '正式标准', '2026-10-10', 'standard-source', '评分需保存证据', '保存脚本', '正确性', '给出可复现证据', '准备数据', '确认范围', '前置结论', '固定正文', '数据.csv', '/files/f1/content', '要求可复现']) expect(prompt).toContain(fragment);
     fireEvent.click(screen.getByRole('button', { name: '复制提示词' }));
     expect(await screen.findByText('提示词已复制，可粘贴给本地 Agent 执行。')).toBeInTheDocument();
-    expect(writeText).toHaveBeenCalledWith(prompt); expect(reads.submissions).toHaveBeenCalledWith('p1', 't1');
+    expect(reads.request).toHaveBeenCalledWith('p1', '/standards/current'); expect(reads.request).not.toHaveBeenCalledWith('p1', '/standards'); expect(prompt).toContain('生效标准'); expect(prompt).not.toContain('待确认'); expect(writeText).toHaveBeenCalledWith(prompt); expect(reads.submissions).toHaveBeenCalledWith('p1', 't1');
   });
   it('keeps the prompt selectable when clipboard access fails', async () => {
     vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } }); setup();

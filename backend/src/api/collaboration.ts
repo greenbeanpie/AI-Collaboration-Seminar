@@ -26,6 +26,7 @@ import { applyProposal, reviseProposal, audit, decideSubmission, owner, toCollab
 import { projectParams } from './projects';
 import { projectGoal, taskDependencies } from '../services/project-simplification';
 import { loadResourceVersionText } from '../services/resources';
+import { assertEffectiveStandard, effectiveStandardGuardSql } from '../services/effective-standard';
 const feedbackSnapshotSchema = z.object({versionId:z.string().nullable(),version:z.number().int().nonnegative(),feedback:z.string(),actorId:z.string().nullable(),createdAt:z.string().nullable()});
 const revision = z.number().int().positive();
 const mode = z.enum(['manual', 'automatic']);
@@ -35,7 +36,7 @@ const citationReferenceSchema = projectSourceCitationSchema.extend({ availabilit
 const taskSchema = z.object({ pendingHumanReview:z.boolean().optional(), startedAt:z.string().nullable().optional(),archivedAt:z.string().nullable().optional(),taskId: z.string().uuid(), title: z.string(), detail: z.string(), status: z.enum(['todo', 'doing', 'blocked', 'done']), assigneeId: z.string().uuid().nullable(), revision, lifecycleState: z.enum(['open', 'in_progress', 'submitted', 'accepted', 'improve', 'rework']), criteria: z.string(), citations: z.array(citationReferenceSchema).optional(), effortHours: z.number(), dueDate: z.string().nullable().optional(), currentSubmissionId: z.string().uuid().nullable(), dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid()),createdAt: z.string(), updatedAt: z.string() }).extend(taskSummarySchema.partial().shape);
 const decisionSchema = z.enum(['accept', 'improve', 'rework']);
 const reportSchema = z.object({ modelCoverage:z.enum(['complete','needs_human']).optional(),humanReview:z.object({status:z.enum(['pending','resolved']),reasonCodes:z.array(z.enum(['unread_attachments','unread_references'])),reasons:z.array(z.string()),decision:z.enum(['accept','improve','rework']).optional(),decidedBy:z.string().uuid().optional(),decidedAt:z.string().optional()}).optional(), references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),decision: decisionSchema, feedback: z.string(), evidence: z.array(z.object({ materialVersionId: z.string().uuid(), quote: z.string() })), limitations: z.array(z.string()), coverage: z.enum(['complete', 'needs_human']), manualReviewReason: z.string().optional(), rubricScoring: rubricScoringSchema.optional() });
-const submissionSchema = z.object({pendingHumanReview:z.boolean().optional(), submissionId: z.string().uuid(), taskId: z.string().uuid(), round: z.number(), submittedBy: z.string().uuid(), body: z.string(), materialVersionIds: z.array(z.string().uuid()), materialVersions: z.array(z.object({ versionId: z.string().uuid(), materialId: z.string().uuid(), title: z.string(), revision: z.number() })).optional(), criteria: z.string(), status: z.enum(['pending', 'evaluated', 'accept', 'improve', 'rework']), aiDecision: decisionSchema.nullable(), aiFeedback: z.string().nullable(), aiReport: reportSchema.nullable(), humanScoreOverride: z.object({ kind: z.literal('assistive'), rubricVersionId: z.string().uuid(), rubricVersion: revision, scores: z.array(z.object({ key: z.string(), score: z.number() })), weightedTotal: z.number(), reason: z.string(), decidedBy: z.string().uuid(), decidedAt: z.string() }).nullable().optional(), decision: decisionSchema.nullable(), feedback: z.string().nullable(), evaluationJobId: z.string().uuid().nullable(), evaluationAttempts: z.number(), evaluationError: z.string().optional(), revision, createdAt: z.string(), updatedAt: z.string() });
+const submissionSchema = z.object({pendingHumanReview:z.boolean().optional(), submissionId: z.string().uuid(), taskId: z.string().uuid(), round: z.number(), submittedBy: z.string().uuid(), body: z.string(), materialVersionIds: z.array(z.string().uuid()), materialVersions: z.array(z.object({ versionId: z.string().uuid(), materialId: z.string().uuid(), title: z.string(), revision: z.number() })).optional(), criteria: z.string(), status: z.enum(['pending', 'evaluated', 'accept', 'improve', 'rework']), aiDecision: decisionSchema.nullable(), aiFeedback: z.string().nullable(), aiReport: reportSchema.nullable(), humanScoreOverride: z.object({ kind: z.literal('assistive'), standardsVersionId:z.string().uuid().optional(), rubricVersionId: z.string().uuid(), rubricVersion: revision, scores: z.array(z.object({ key: z.string(), score: z.number() })), weightedTotal: z.number(), reason: z.string(), decidedBy: z.string().uuid(), decidedAt: z.string() }).nullable().optional(), decision: decisionSchema.nullable(), feedback: z.string().nullable(), evaluationJobId: z.string().uuid().nullable(), evaluationAttempts: z.number(), evaluationError: z.string().optional(), revision, createdAt: z.string(), updatedAt: z.string() });
 const proposalSchema = z.object({ proposalId: z.string().uuid(), kind: z.enum(['decompose', 'assign']), payload: z.object({ planningAction:z.enum(['regenerate','adjust']).optional(),references:z.array(z.unknown()).optional(),decisionReferences:z.array(z.unknown()).optional(),causeEventId:z.string().optional(),progression:z.boolean().optional(),goal:z.object({title:z.string(),detail:z.string()}).optional(),brief: z.string().optional(), sourceVersionIds: z.array(z.string().uuid()).optional(), tasks: z.array(taskInput.extend({ key:z.string().optional(),dependsOn:z.array(z.string()).optional(),citations: z.array(projectSourceCitationSchema).optional() })).optional(), updates: z.array(taskInput.extend({ taskId: z.string().uuid(), expectedRevision: revision, citations: z.array(projectSourceCitationSchema).optional() })).optional(), assignments: z.array(z.object({ taskId: z.string().uuid(), assigneeId: z.string().uuid().nullable(), expectedRevision: revision, reason: z.string() })).optional(), considerations: z.array(z.string()).optional() }), status: z.enum(['pending', 'applied', 'stale']), revision, createdAt: z.string() });
 function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path: string, body: z.ZodType | undefined, handler: (c: Context<AppEnv>) => Promise<Response>, status: 200 | 201 | 202 = 200) {
     const extras: Record<string, z.ZodString> = {};
@@ -44,8 +45,8 @@ function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path:
     const [out, name] = path === '/feedback/current' ? [feedbackSnapshotSchema,'ProjectFeedbackCurrentResponse'] : path === '/feedback/history' ? [z.object({items:z.array(feedbackSnapshotSchema)}),'ProjectFeedbackHistoryResponse'] : path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
     const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals') ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
     const dispatch = (async (c: Context<AppEnv>) => {
-        if (method === 'post' && path === '/tasks') {
-            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: 'collaboration.createTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), body: await c.req.json() }) }, async () => {
+        if (method === 'post' && (path === '/tasks' || path === '/tasks/{taskId}/submissions')) {
+            const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: path === '/tasks' ? 'collaboration.createTask' : 'collaboration.submitTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), ...(path === '/tasks' ? {} : { taskId: c.req.param('taskId') }), body: await c.req.json() }) }, async () => {
                 const response = await handler(c);
                 const json = await response.json() as {
                     data: unknown;
@@ -163,10 +164,13 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
             throw invalidState('任务已变化、材料不属于本项目或已达20轮上限');
         let evaluationError: string | undefined;
         try {
-            await enqueueEvaluation(c.env, projectId, id, userId);
+            const config = await loadAiConfig(c.env.DB);
+            const projectSettings = await settings(c);
+            if (config?.enabled && projectSettings.aiCollaborationEnabled)
+                await enqueueEvaluation(c.env, projectId, id, userId);
         }
         catch (error) {
-            evaluationError = error instanceof Error ? error.message : 'AI评价暂不可用，可手动重试或请负责人验收';
+            evaluationError = error instanceof Error ? error.message : '本轮AI评价未能启动，请负责人验收';
         }
         const row = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(id).first<Submission>();
         return c.json(apiData(c, { ...toSubmission(row!), ...(evaluationError ? { evaluationError } : {}) }), 201);
@@ -181,12 +185,14 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!current) throw notFound();
         const report = current.ai_report_json ? JSON.parse(current.ai_report_json) as { rubricScoring?: unknown } : null;
         const scoring = rubricScoringSchema.safeParse(report?.rubricScoring);
-        if (!scoring.success || scoring.data.status !== 'scored') throw invalidState('本轮没有可复核的辅助评分；请先使用已确认评分标准进行成果评价');
+        if (!scoring.success || scoring.data.status !== 'scored') throw invalidState('本轮没有可复核的辅助评分；请先使用生效项目标准提交成果');
         const rubric = scoring.data;
+        const active = await assertEffectiveStandard(c.env, projectId);
+        if (rubric.standardsVersionId !== active.standardsVersionId) throw invalidState('本轮评分依据的项目标准已失效，请使用生效标准重新提交成果');
         if (new Set(b.scores.map(score => score.key)).size !== b.scores.length || b.scores.length !== rubric.weights.length || rubric.weights.some(weight => !b.scores.some(score => score.key === weight.key))) throw validationFailed('人工复核必须完整覆盖本轮评分标准，不能新增或遗漏维度');
         const weightedTotal = calculateRubricWeightedTotal(rubric.weights, b.scores);
-        const override = { kind: 'assistive', rubricVersionId: rubric.rubricVersionId, rubricVersion: rubric.rubricVersion, scores: b.scores, weightedTotal, reason: b.reason, decidedBy: userId, decidedAt: nowIso() };
-        const results = await c.env.DB.batch([c.env.DB.prepare(`UPDATE task_submissions SET human_score_override_json=?4,revision=revision+1,updated_at=?5 WHERE id=?1 AND project_id=?2 AND revision=?3 AND ai_report_json=?6 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?7 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})`).bind(submissionId, projectId, b.expectedRevision, JSON.stringify(override), override.decidedAt, current.ai_report_json, userId), audit(c.env, projectId, userId, 'collaboration.scores_overridden', submissionId, override, true)]);
+        const override = { kind: 'assistive', standardsVersionId: active.standardsVersionId, rubricVersionId: rubric.rubricVersionId, rubricVersion: rubric.rubricVersion, scores: b.scores, weightedTotal, reason: b.reason, decidedBy: userId, decidedAt: nowIso() };
+        const results = await c.env.DB.batch([c.env.DB.prepare(`UPDATE task_submissions SET human_score_override_json=?4,revision=revision+1,updated_at=?5 WHERE id=?1 AND project_id=?2 AND revision=?3 AND ai_report_json=?6 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?7 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')}) AND ${effectiveStandardGuardSql('?2','?8')}`).bind(submissionId, projectId, b.expectedRevision, JSON.stringify(override), override.decidedAt, current.ai_report_json, userId, active.standardsVersionId), audit(c.env, projectId, userId, 'collaboration.scores_overridden', submissionId, override, true)]);
         if (!results[0]!.meta.changes) throw invalidState('提交评价或权限已变化，请重新核对评分');
         const updated = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(submissionId).first<Submission>();
         return c.json(apiData(c, toSubmission(updated!)));
@@ -228,14 +234,13 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
       if(b.requestAiRedo)await c.env.DB.prepare("UPDATE collaboration_proposals SET status='stale',revision=revision+1,updated_at=?2 WHERE project_id=?1 AND status='pending'").bind(projectId,nowIso()).run();
       return c.json(apiData(c,{feedbackId:id,queued:false}));
     });
-    for (const operation of ['decompose', 'assign', 'evaluate'] as const) {
-        const path = operation === 'evaluate' ? '/submissions/{submissionId}/evaluate' : '/' + operation;
-        const schema = operation === 'decompose' ? z.object({ allowSearch:z.boolean().default(false),searchQuery:z.string().trim().min(1).max(500).optional(),brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).optional(),materialVersionIds:z.array(z.string().uuid()).max(10).optional() }).strict() : operation === 'assign' ? z.object({ taskIds: z.array(z.string().uuid()).min(1) }) : z.object({});
+    for (const operation of ['decompose', 'assign'] as const) {
+        const path = '/' + operation;
+        const schema = operation === 'decompose' ? z.object({ allowSearch:z.boolean().default(false),searchQuery:z.string().trim().min(1).max(500).optional(),brief: z.string().min(1).max(12000), taskIds: z.array(z.string().uuid()).min(1).optional(), sourceVersionIds: z.array(z.string().uuid()).min(1).optional(),materialVersionIds:z.array(z.string().uuid()).max(10).optional() }).strict() : z.object({ taskIds: z.array(z.string().uuid()).min(1) });
         route(app, 'post', path, schema, async (c) => {
             const { projectId, userId } = ids(c);
             const b = schema.parse(await c.req.json()) as Record<string, unknown>;
-            if (operation !== 'evaluate')
-                await owner(c.env, projectId, userId);
+            await owner(c.env, projectId, userId);
             if(operation==='decompose'&&!b.taskIds)await assertCanRegenerate(c.env,projectId);
             const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId, operation: 'collaboration.' + operation, rawBody: JSON.stringify({ projectId, submissionId: c.req.param('submissionId'), ...b }) }, async () => {
                 const config = await loadAiConfig(c.env.DB);
@@ -271,8 +276,6 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                     input.profileStamp = await profileStamp(c.env, projectId);
                     input.members = members.results.map(m => ({ userId: m.user_id, loadHours: m.load_hours }));
                 }
-                if (operation === 'evaluate')
-                    return { status: 202 as const, body: { jobId: await enqueueEvaluation(c.env, projectId, c.req.param('submissionId')!, userId) } };
                 return withReservedAiJob(c.env, { projectId, purpose: 'assignment_suggest',maxCalls:24 }, async (jobId, configVersionId) => {
                     try {
                         await createJobAndDispatch(c.env, { projectId, kind: 'agent_run', jobId, createdBy: userId, input: { ...input, configVersionId } });

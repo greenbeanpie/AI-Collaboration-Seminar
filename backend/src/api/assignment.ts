@@ -1,12 +1,12 @@
 import { snapshotRequirementSources, type SourceInputSnapshot } from '../services/source-inputs';
-import { sourceLifecycleGuard } from '../services/source-lifecycle';
+import { effectiveStandard } from '../services/effective-standard';
 import { profileStamp } from '../services/personal-profiles';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
-import { invalidState, notFound, validationFailed } from '../core/errors';
+import { invalidState, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withReservedAiJob } from '../services/budget';
 import { createJobAndDispatch } from '../services/jobs';
@@ -97,31 +97,11 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     if (taskRows.length === 0) throw invalidState('当前没有可生成分工建议的未完成任务');
 
-    let requirementSetId: string | null = null;
-    if (body.requirementSetId) {
-      const set = await c.env.DB.prepare('SELECT id, status FROM requirement_sets WHERE id = ?1 AND project_id = ?2')
-        .bind(body.requirementSetId, member.projectId)
-        .first<{ id: string; status: 'draft' | 'confirmed' }>();
-      if (!set) throw notFound('要求集不存在');
-      if (set.status !== 'confirmed') throw invalidState('分工建议只能使用已确认的要求集');
-      requirementSetId = set.id;
-    } else {
-      const set = await c.env.DB.prepare(
-        `SELECT id FROM requirement_sets WHERE project_id=?1 AND status='confirmed' AND (source_version_id IS NULL OR ${sourceLifecycleGuard('source_version_id', 'NULL')}) ORDER BY confirmed_at DESC,id DESC LIMIT 1`,
-      )
-        .bind(member.projectId)
-        .first<{ id: string }>();
-      requirementSetId = set?.id ?? null;
-    }
-
-    const sourceSnapshots: SourceInputSnapshot[] = requirementSetId ? await snapshotRequirementSources(c.env, member.projectId, requirementSetId) : [];
-    const requirements = requirementSetId
-      ? await c.env.DB.prepare(
-          'SELECT title, detail FROM requirements WHERE project_id = ?1 AND requirement_set_id = ?2 ORDER BY seq, id',
-        )
-          .bind(member.projectId, requirementSetId)
-          .all<{ title: string; detail: string }>()
-      : { results: [] as Array<{ title: string; detail: string }> };
+    const standard = await effectiveStandard(c.env, member.projectId);
+    if (body.requirementSetId && !standard?.requirementSetIds.includes(body.requirementSetId)) throw invalidState('项目标准已更新，请使用当前生效标准重新生成');
+    const requirementSetId = standard?.requirementSetIds[0] ?? null;
+    const sourceSnapshots: SourceInputSnapshot[] = standard ? (await Promise.all(standard.requirementSetIds.map(id => snapshotRequirementSources(c.env, member.projectId, id)))).flat() : [];
+    const requirements = standard?.requirements ?? [];
     const members = await c.env.DB.prepare(
       `SELECT pm.user_id,COALESCE((SELECT SUM(t.effort_hours) FROM tasks t WHERE t.project_id=pm.project_id AND t.assignee_id=pm.user_id AND t.status!='done'),0) load_hours
        FROM project_members pm
@@ -142,7 +122,8 @@ export function registerAssignmentRoutes(app: OpenAPIHono<AppEnv>): void {
           projectId: member.projectId,
           requestedBy: user.id,
           requirementSetId,
-          requirements: requirements.results,
+          requirements,
+          standardsVersionId: standard?.standardsVersionId ?? null,
           sourceSnapshots,
           tasks: taskRows.map((task) => ({
             taskId: task.id,

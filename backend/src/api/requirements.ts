@@ -305,7 +305,7 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
     const now = nowIso();
     const intent = c.req.header('idempotency-key');
     const eventKey = `requirement_changed:${requirementId}:${c.get('user')!.id}:${intent ? await sha256Hex(intent + JSON.stringify(body)) : newId()}`;
-    await c.env.DB.batch([c.env.DB.prepare(
+    const written = await c.env.DB.batch([c.env.DB.prepare(
       `UPDATE requirements SET
          title = COALESCE(?2, title),
          detail = COALESCE(?3, detail),
@@ -314,7 +314,7 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
          category = COALESCE(?7, category),
          field_state = 'edited',
          updated_at = ?8
-       WHERE id = ?1`,
+       WHERE id = ?1 AND EXISTS(SELECT 1 FROM requirement_sets s WHERE s.id=requirements.requirement_set_id AND s.status='draft') AND NOT EXISTS(SELECT 1 FROM standards_versions saved,json_each(saved.requirement_set_ids_json) link WHERE link.value=requirements.requirement_set_id)`,
     )
       .bind(
         requirementId,
@@ -326,8 +326,9 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
         body.category ?? null,
         now,
       ),
-      ...notificationStatements(c.env, { key: eventKey, kind: 'requirement_changed', scope: 'project', resourceId: c.get('member')!.projectId, actorId: c.get('user')!.id, now, url: `/app/projects/${c.get('member')!.projectId}/requirements`, record: { table: 'requirements', id: requirementId } }),
+      ...notificationStatements(c.env, { key: eventKey, kind: 'requirement_changed', scope: 'project', resourceId: c.get('member')!.projectId, actorId: c.get('user')!.id, now, url: `/app/projects/${c.get('member')!.projectId}/requirements`, record: { table: 'requirements', id: requirementId }, guardSql: "EXISTS(SELECT 1 FROM requirements r JOIN requirement_sets s ON s.id=r.requirement_set_id WHERE r.id=?11 AND r.updated_at=?10 AND s.status='draft' AND NOT EXISTS(SELECT 1 FROM standards_versions saved,json_each(saved.requirement_set_ids_json) link WHERE link.value=r.requirement_set_id))" }),
     ]);
+    if (!written[0]?.meta.changes) throw invalidState('该要求已属于保存的项目标准，请另存标准新版本');
     const updated = await c.env.DB.prepare('SELECT * FROM requirements WHERE id = ?1').bind(requirementId).first<RequirementRow>();
     if (!updated) throw notFound('要求条目不存在');
     return c.json(apiData(c, await toRequirement(c.env, c.get('member')!.projectId, updated)), 200);
@@ -370,9 +371,10 @@ export function registerRequirementRoutes(app: OpenAPIHono<AppEnv>): void {
       .first<RubricRow>();
     if (!row) throw notFound('评分标准不存在');
     if (row.status === 'confirmed') throw invalidState('已确认的评分标准不可修改（请新增版本）');
-    await c.env.DB.prepare('UPDATE rubric_versions SET weights_json = COALESCE(?2, weights_json), notes = CASE WHEN ?3 = 1 THEN ?4 ELSE notes END WHERE id = ?1')
+    const written = await c.env.DB.prepare("UPDATE rubric_versions SET weights_json = COALESCE(?2, weights_json), notes = CASE WHEN ?3 = 1 THEN ?4 ELSE notes END WHERE id = ?1 AND status='draft' AND NOT EXISTS(SELECT 1 FROM standards_versions WHERE rubric_version_id=rubric_versions.id)")
       .bind(rubricId, body.weights ? JSON.stringify(body.weights) : null, 'notes' in body ? 1 : 0, body.notes ?? null)
       .run();
+    if (!written.meta.changes) throw invalidState('该评分规则已属于保存的项目标准，请另存标准新版本');
     const updated = await c.env.DB.prepare('SELECT * FROM rubric_versions WHERE id = ?1').bind(rubricId).first<RubricRow>();
     if (!updated) throw notFound('评分标准不存在');
     return c.json(apiData(c, toRubric(updated)), 200);

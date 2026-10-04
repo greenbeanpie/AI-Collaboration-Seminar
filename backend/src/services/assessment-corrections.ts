@@ -1,3 +1,4 @@
+import { effectiveStandard, assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { projectPermissionSql, requireProjectPermission } from './project-permissions';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -13,7 +14,7 @@ const dimension = z.object({
   evidence: z.array(assessmentEvidenceSchema).max(20).default([]),
 }).strict();
 export const manualAssessmentInput = z.object({
-  standardsVersionId: z.string().uuid(), materialVersionIds: z.array(z.string().uuid()).default([]),
+  standardsVersionId: z.string().uuid().optional(), materialVersionIds: z.array(z.string().uuid()).default([]),
   goalRevision: z.number().int().positive().optional(), scores: z.array(dimension).max(10),
   summary: z.string().max(8000).default('项目负责人独立人工评分'), reason: z.string().trim().min(1).max(4000),
 }).strict();
@@ -59,12 +60,15 @@ function revise(row: AssessmentRow, overrides: z.infer<typeof dimension>[], summ
 
 export async function createManualAssessment(env:Env,projectId:string,actorId:string,raw:unknown) {
   await requireProjectPermission(env,projectId,actorId,'scoreInitiate');
-  const b=manualAssessmentInput.parse(raw),input=await assessmentInputs(env,projectId,b.standardsVersionId,b.materialVersionIds,b.goalRevision),id=newId(),now=nowIso();
-  const row:AssessmentRow={id,project_id:projectId,kind:'material_review',entity_id:null,goal_revision:input.goal.revision,standards_version_id:b.standardsVersionId,inputs_json:JSON.stringify(input),status:'succeeded',report_json:null,job_id:null,created_by:actorId,created_at:now};
+  const b=manualAssessmentInput.parse(raw),standard=await effectiveStandard(env,projectId);
+  if(!standard)throw invalidState('请先保存项目标准');
+  if(b.standardsVersionId && b.standardsVersionId!==standard.standardsVersionId)throw invalidState('项目标准已更新，请使用当前生效标准重新评分');
+  const standardId=standard.standardsVersionId,input=await assessmentInputs(env,projectId,standardId,b.materialVersionIds,b.goalRevision),id=newId(),now=nowIso();
+  const row:AssessmentRow={id,project_id:projectId,kind:'material_review',entity_id:null,goal_revision:input.goal.revision,standards_version_id:standardId,inputs_json:JSON.stringify(input),status:'succeeded',report_json:null,job_id:null,created_by:actorId,created_at:now};
   await validateEvidence(env,row,b.scores);
   const report=revise(row,b.scores,b.summary,false);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,goal_revision,standards_version_id,inputs_json,status,report_json,created_by,created_at,origin) SELECT ?1,?2,'material_review',?3,?4,?5,'succeeded',?6,?7,?8,'manual' WHERE ${projectPermissionSql('?2','?7','scoreInitiate')}`).bind(id,projectId,input.goal.revision,b.standardsVersionId,row.inputs_json,JSON.stringify(report),actorId,now),
+    env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,goal_revision,standards_version_id,inputs_json,status,report_json,created_by,created_at,origin) SELECT ?1,?2,'material_review',?3,?4,?5,'succeeded',?6,?7,?8,'manual' WHERE ${projectPermissionSql('?2','?7','scoreInitiate')} AND ${effectiveStandardGuardSql('?2','?4')}`).bind(id,projectId,input.goal.revision,standardId,row.inputs_json,JSON.stringify(report),actorId,now),
     env.DB.prepare('INSERT INTO assessment_corrections(id,assessment_id,project_id,actor_id,revision,reason,report_json,created_at) SELECT ?1,?2,?3,?4,1,?5,?6,?7 WHERE EXISTS(SELECT 1 FROM assessments WHERE id=?2)').bind(newId(),id,projectId,actorId,b.reason,JSON.stringify(report),now),
   ]);
   const saved=await env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow>();
@@ -77,13 +81,14 @@ export async function correctAssessment(env:Env,projectId:string,id:string,actor
   await requireProjectPermission(env,projectId,actorId,'scoreCorrect');
   const b=correctionInput.parse(raw),row=await env.DB.prepare('SELECT * FROM assessments WHERE id=?1 AND project_id=?2').bind(id,projectId).first<AssessmentRow & {revision:number}>();
   if(!row)throw notFound();
+  await assertEffectiveStandard(env,projectId,row.standards_version_id);
   if(row.revision!==b.expectedRevision)throw versionConflict(row.revision);
   if(!['succeeded','failed'].includes(row.status))throw invalidState('本轮尚未结束，不能修正评分');
   if(row.kind==='rehearsal'&&row.status==='active')throw invalidState('请结束演练后再人工复评');
   await validateEvidence(env,row,b.scores);
   const report=revise(row,b.scores,b.summary,true),now=nowIso(),token=newId();
   const results=await env.DB.batch([
-    env.DB.prepare(`UPDATE assessments SET ai_report_json=COALESCE(ai_report_json,CASE WHEN origin='ai' THEN report_json END),report_json=?4,origin=CASE WHEN origin='manual' THEN 'manual' ELSE 'ai_adjusted' END,status='succeeded',revision=revision+1 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status IN ('succeeded','failed') AND ${projectPermissionSql('?2','?5','scoreCorrect')}`).bind(id,projectId,b.expectedRevision,JSON.stringify(report),actorId),
+    env.DB.prepare(`UPDATE assessments SET ai_report_json=COALESCE(ai_report_json,CASE WHEN origin='ai' THEN report_json END),report_json=?4,origin=CASE WHEN origin='manual' THEN 'manual' ELSE 'ai_adjusted' END,status='succeeded',revision=revision+1 WHERE id=?1 AND project_id=?2 AND revision=?3 AND status IN ('succeeded','failed') AND ${projectPermissionSql('?2','?5','scoreCorrect')} AND ${effectiveStandardGuardSql('?2','assessments.standards_version_id')}`).bind(id,projectId,b.expectedRevision,JSON.stringify(report),actorId),
     env.DB.prepare(`INSERT INTO assessment_corrections(id,assessment_id,project_id,actor_id,revision,reason,previous_report_json,report_json,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE EXISTS(SELECT 1 FROM assessments WHERE id=?2 AND project_id=?3 AND revision=?5 AND report_json=?8)`).bind(token,id,projectId,actorId,b.expectedRevision+1,b.reason,row.report_json,JSON.stringify(report),now),
   ]);
   if(!results[0]?.meta.changes)throw invalidState('评分或权限已变化，请刷新');

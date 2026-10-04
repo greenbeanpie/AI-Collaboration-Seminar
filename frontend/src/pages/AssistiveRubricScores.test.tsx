@@ -5,9 +5,10 @@ import { AssistiveRubricScores } from './AssistiveRubricScores';
 import type { TaskSubmission } from '../api/collaboration';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
-const submission: TaskSubmission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '完成', materialVersionIds: ['v1'], criteria: '可核对成果', status: 'evaluated', aiDecision: 'improve', aiFeedback: '补充测试', decision: null, feedback: null, evaluationJobId: null, evaluationAttempts: 1, revision: 3, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', aiReport: { decision: 'improve', feedback: '补充测试', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }], limitations: [], coverage: 'complete', rubricScoring: { kind: 'assistive', status: 'scored', rubricVersionId: 'rubric1', rubricVersion: 2, weights: [{ key: 'quality', label: '质量', weight: 60 }, { key: 'evidence', label: '证据', weight: 40 }], weightedTotal: 76, scores: [{ key: 'quality', score: 80, confidence: 0.85, comment: '主路径实现完整', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }] }, { key: 'evidence', score: 70, confidence: 0.7, comment: '需补充测试', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }] }] } } };
+const submission: TaskSubmission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '完成', materialVersionIds: ['v1'], criteria: '可核对成果', status: 'evaluated', aiDecision: 'improve', aiFeedback: '补充测试', decision: null, feedback: null, evaluationJobId: null, evaluationAttempts: 1, revision: 3, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', aiReport: { decision: 'improve', feedback: '补充测试', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }], limitations: [], coverage: 'complete', rubricScoring: { kind: 'assistive', status: 'scored', standardsVersionId: 'standard1', rubricVersionId: 'rubric1', rubricVersion: 2, weights: [{ key: 'quality', label: '质量', weight: 60 }, { key: 'evidence', label: '证据', weight: 40 }], weightedTotal: 76, scores: [{ key: 'quality', score: 80, confidence: 0.85, comment: '主路径实现完整', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }] }, { key: 'evidence', score: 70, confidence: 0.7, comment: '需补充测试', evidence: [{ materialVersionId: 'v1', quote: '已实现三个页面' }] }] } } };
 function setup(owner = true) {
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity }, mutations: { retry: false } } });
+  client.setQueryData(['current-standard', 'p1'], { standard: { standardsVersionId: 'standard1' } });
   const onChanged = vi.fn(async () => {});
   const fetch = vi.fn(async (url: unknown, init?: RequestInit) => { void url; void init; return Response.json({ data: { ...submission, revision: 4 }, requestId: 'scores' }); });
   vi.stubGlobal('fetch', fetch);
@@ -20,6 +21,14 @@ it('renders assistive scores, frozen weights, confidence and evidence without ca
   expect(screen.getByText(/置信度 85%/)).toBeInTheDocument();
   expect(screen.queryByText(/不作为正式课程成绩/)).not.toBeInTheDocument();
   expect(screen.queryByText('负责人复核或调整辅助分数')).not.toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('keeps historical scores readable but blocks a new override after the standard changes', async () => {
+  const { client, fetch } = setup();
+  client.setQueryData(['current-standard', 'p1'], { standard: { standardsVersionId: 'standard2' } });
+  expect(await screen.findByText(/本轮评分依据的标准已失效/)).toBeInTheDocument();
+  expect(screen.getByText('AI 辅助总分：76.00 / 100')).toBeInTheDocument();
+  expect(screen.queryByText('保存辅助分数复核')).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
 it('requires a reason and submits only owner score intent with the reviewed revision', async () => {
