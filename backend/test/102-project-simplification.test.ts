@@ -97,7 +97,7 @@ describe('atomic requirements and grading versions',()=>{
   it('rejects duplicate dimensions and cross-project references before creating components',async()=>{const f=await fixture(),outsider=await seedUser();expect((await f.request('/standards',{requirements:[],weights:[{key:'x',label:'一',weight:50},{key:'x',label:'二',weight:50}]})).status).toBe(400);expect((await f.request('/standards',{requirementSetIds:[],rubricVersionId:newId()})).status).toBe(400);expect((await f.request('/standards',{requirements:[],weights:[]},'POST',outsider.token)).status).toBe(403);expect((await env.DB.prepare('SELECT COUNT(*) n FROM standards_versions WHERE project_id=?1').bind(f.projectId).first<{n:number}>())!.n).toBe(0);});
 });
 describe('creation preview and atomic goal graph commit',()=>{
-  it('commits reviewed goal, keyed dependencies and editable background exactly once',async()=>{
+  it('commits reviewed goal, keyed dependencies and system background exactly once',async()=>{
     const user=await seedUser(),app=createApp();
     const request=(path:string,body:unknown)=>app.fetch(new Request(`${BASE}/api/v1/creation-drafts${path}`,{method:'POST',headers:{cookie:authCookie(user.token),'content-type':'application/json','idempotency-key':newId()},body:JSON.stringify(body)}),offline);
     const draft=await json(await request('',{name:'研究项目',description:'原始背景正文',brief:'完成报告',goal:{title:'交付有证据的研究报告',detail:'明确解释研究结论'},teamSize:1,aiCollaborationEnabled:false,inviteLabels:[],inviteUsernames:[]}));
@@ -107,7 +107,7 @@ describe('creation preview and atomic goal graph commit',()=>{
     expect((await projectGoal(env,result.projectId)).title).toBe('交付有证据的研究报告');
     const rows=await env.DB.prepare('SELECT id,title FROM tasks WHERE project_id=?1').bind(result.projectId).all<{id:string;title:string}>();expect(rows.results).toHaveLength(2);
     const collect=rows.results.find(t=>t.title==='搜集证据')!,write=rows.results.find(t=>t.title==='撰写报告')!;expect((await taskDependencies(env,result.projectId,write.id)).dependsOnTaskIds).toEqual([collect.id]);
-    expect(await env.DB.prepare('SELECT title,purpose,is_default_background FROM materials WHERE project_id=?1').bind(result.projectId).first()).toEqual({title:'项目背景',purpose:'background',is_default_background:1});
+    expect(await env.DB.prepare('SELECT title,purpose,is_default_background FROM materials WHERE project_id=?1').bind(result.projectId).first()).toEqual({title:'系统背景',purpose:'background',is_default_background:1});
     expect((await json(await request(`/${draft.id}/commit`,{expectedRevision:1,confirmed:true}))).projectId).toBe(result.projectId);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM task_dependencies WHERE project_id=?1').bind(result.projectId).first<{n:number}>())!.n).toBe(1);
   });

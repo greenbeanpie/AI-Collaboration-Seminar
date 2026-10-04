@@ -1095,6 +1095,34 @@
                     ],
                     "additionalProperties": false
                   },
+                  "planningMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  },
+                  "assignmentMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  },
+                  "evaluationMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  },
+                  "progressionMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ]
+                  },
                   "deadlineDate": {
                     "type": "string",
                     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
@@ -1711,6 +1739,34 @@
                             "templateId"
                           ],
                           "additionalProperties": false
+                        },
+                        "planningMode": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "automatic"
+                          ]
+                        },
+                        "assignmentMode": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "automatic"
+                          ]
+                        },
+                        "evaluationMode": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "automatic"
+                          ]
+                        },
+                        "progressionMode": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "automatic"
+                          ]
                         },
                         "deadlineDate": {
                           "type": "string",
@@ -6761,6 +6817,55 @@
             },
             "required": [
               "removed"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "InvitationPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectName": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "goal": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "detail"
+                ]
+              }
+            },
+            "required": [
+              "projectId",
+              "projectName",
+              "description",
+              "goal"
             ]
           },
           "requestId": {
@@ -11936,6 +12041,9 @@
               "canEdit": {
                 "type": "boolean"
               },
+              "systemManaged": {
+                "type": "boolean"
+              },
               "materialId": {
                 "type": "string",
                 "format": "uuid"
@@ -12093,6 +12201,9 @@
                   "type": "object",
                   "properties": {
                     "canEdit": {
+                      "type": "boolean"
+                    },
+                    "systemManaged": {
                       "type": "boolean"
                     },
                     "materialId": {
@@ -12476,6 +12587,9 @@
                     },
                     "canManage": {
                       "type": "boolean"
+                    },
+                    "systemManaged": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -12581,6 +12695,9 @@
                 "format": "uuid"
               },
               "canManage": {
+                "type": "boolean"
+              },
+              "systemManaged": {
                 "type": "boolean"
               }
             },
@@ -18526,13 +18643,45 @@
                     ],
                     "additionalProperties": false
                   },
+                  "planningMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "assignmentMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "evaluationMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "progressionMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
                   "deadlineDate": {
                     "type": "string",
                     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                   },
                   "aiCollaborationEnabled": {
                     "type": "boolean",
-                    "default": false
+                    "default": true
                   },
                   "teamSize": {
                     "type": "integer",
@@ -18867,6 +19016,34 @@
                           "templateId"
                         ],
                         "additionalProperties": false
+                      },
+                      "planningMode": {
+                        "type": "string",
+                        "enum": [
+                          "manual",
+                          "automatic"
+                        ]
+                      },
+                      "assignmentMode": {
+                        "type": "string",
+                        "enum": [
+                          "manual",
+                          "automatic"
+                        ]
+                      },
+                      "evaluationMode": {
+                        "type": "string",
+                        "enum": [
+                          "manual",
+                          "automatic"
+                        ]
+                      },
+                      "progressionMode": {
+                        "type": "string",
+                        "enum": [
+                          "manual",
+                          "automatic"
+                        ]
                       },
                       "deadlineDate": {
                         "type": "string",
@@ -19516,7 +19693,39 @@
                   },
                   "aiCollaborationEnabled": {
                     "type": "boolean",
-                    "default": false
+                    "default": true
+                  },
+                  "assignmentMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "evaluationMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "planningMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
+                  },
+                  "progressionMode": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "automatic"
+                    ],
+                    "default": "automatic"
                   }
                 },
                 "required": [
@@ -21109,6 +21318,46 @@
         }
       }
     },
+    "/api/v1/invitations/preview": {
+      "post": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "只读邀请码预览，不占用次数或加入项目",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "项目邀请详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/invitations": {
       "post": {
         "tags": [
@@ -21585,6 +21834,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UsernameInvitationCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/inbox/{invitationId}/preview": {
+      "get": {
+        "tags": [
+          "invitations"
+        ],
+        "summary": "本人只读查看待接受邀请的项目详情",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "invitationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "项目邀请详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreviewResponse"
                 }
               }
             }

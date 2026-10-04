@@ -508,7 +508,10 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         body = { kind, url: parsedUrl.toString() };
       } else {
         if (!file) throw new Error('请先选择 PDF、TXT 或 Markdown 文件。');
-        if (file.size > capability.limits.maxFileBytes) throw new Error(`文件大小超过服务端上限 ${formatBytes(capability.limits.maxFileBytes)}。`);
+        const mediaFile = /\.(mp3|wav|m4a|mp4|webm)$/i.test(file.name);
+        const uploadLimit = mediaFile ? (capability.limits.maxMediaBytes ?? 50 * 1024 * 1024) : capability.limits.maxFileBytes;
+        if (mediaFile && capability.features.mediaEnabled === false) throw new Error('音视频模型尚未配置，请联系管理员配置独立 Gemini 模型。');
+        if (file.size > uploadLimit) throw new Error(`文件大小超过服务端上限 ${formatBytes(uploadLimit)}。`);
         if (!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error('仅支持 PDF、TXT 或 Markdown 文件。');
         const pendingMatches = pendingUpload?.file === file;
         if (pendingMatches) {
@@ -575,7 +578,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
 
     {!capability.features.aiEnabled ? <div className="callout warning-callout">服务能力报告 AI 未启用。仍可保存来源，但解析和要求提取不可用；不会展示演示结果。</div> : null}
 
-    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 文件。">
+    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 和音视频文件。">
       <form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
         <div className="sources-intake-tabs" role="group" aria-label="来源类型">
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'paste'} onClick={() => setKind('paste')}><Type size={15} /> 粘贴文本</button>
@@ -589,8 +592,8 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
           <Field label="公开网页地址" hint="网页是否可读取取决于后端网络与域名规则；失败时会显示服务端原因。"><input className="input" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.org/notice" disabled={!capability.features.webFetch} /></Field>
         </>}
         {kind === 'file' && <>
-          <Field label="选择来源文件" hint={`支持 PDF、TXT、Markdown；单文件上限 ${formatBytes(fileMax)}。PDF 页数上限 ${capability.limits.maxPdfPages} 页。由服务端检查文件头和真实字节数。`}>
-            <input className="input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
+          <Field label="选择来源文件" hint={`支持 PDF、TXT、Markdown；音视频支持 MP3、WAV、M4A、MP4、WebM，上限 50 MiB；普通文档上限 ${formatBytes(fileMax)}。PDF 页数上限 ${capability.limits.maxPdfPages} 页。由服务端检查文件头和真实字节数。`}>
+            <input className="input" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm,application/pdf,text/plain,text/markdown" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
           </Field>
           <FileContributorPicker projectId={projectId} value={contributorIds} onChange={ids => { setContributorIds(ids); if (file) fileInitIntentKeys.current.delete(file); }} disabled={submitting || Boolean(pendingUpload)} />
           {file && <div className="callout">已选择 {file.name} · {formatBytes(file.size)}{pendingUpload?.file === file ? ' · 文件内容已上传，重试时会复用上传记录' : ''}</div>}

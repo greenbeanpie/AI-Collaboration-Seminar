@@ -5,7 +5,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
+import { invalidState, notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
@@ -482,10 +482,11 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
         throw invalidState('该运行没有可采纳的草稿');
       }
 
-      const material = await c.env.DB.prepare('SELECT id, revision FROM materials WHERE id = ?1 AND project_id = ?2')
+      const material = await c.env.DB.prepare('SELECT id, revision, system_managed FROM materials WHERE id = ?1 AND project_id = ?2')
         .bind(body.materialId, member.projectId)
-        .first<{ id: string; revision: number }>();
+        .first<{ id: string; revision: number; system_managed: number }>();
       if (!material) throw notFound('材料不存在');
+      if (material.system_managed === 1) throw permissionDenied('系统背景不能采纳 AI 修改');
       if (material.revision !== body.expectedRevision) throw versionConflict(material.revision);
 
       const latest = await c.env.DB.prepare('SELECT MAX(revision) AS r FROM material_versions WHERE material_id = ?1')

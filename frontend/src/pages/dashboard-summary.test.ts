@@ -67,18 +67,18 @@ describe('actionable project groups', () => {
     expect(uniqueProjectTasks(rows)).toHaveLength(3);
     expect(actionableProjectTasks(rows, members).map(t => t.taskId)).toEqual(['first', 'second']);
   });
-  it('keeps zero-actionable incomplete projects, excludes empty/completed/archived projects, and totals only displayed actionable tasks', () => {
+  it('excludes zero-actionable incomplete projects, excludes empty/completed/archived projects, and totals only displayed actionable tasks', () => {
     const entry = (id: string, tasks: Task[], status = 'active') => ({ project: { id, name: id, status } as ProjectSummary, tasks, members });
     const groups = pendingProjectGroups([entry('ready-project', [assigned('ready'), assigned('ready'), assigned('waiting', { assigneeId: null })]), entry('zero-project', [assigned('blocked', { status: 'blocked' })]), entry('done-project', [assigned('done', { status: 'done' })]), entry('empty-project', []), entry('archived-project', [assigned('archive')], 'archived')]);
-    expect(groups.map(g => g.project.id)).toEqual(['ready-project', 'zero-project']);
-    expect(groups.map(g => g.actionable.length)).toEqual([1, 0]);
+    expect(groups.map(g => g.project.id)).toEqual(['ready-project']);
+    expect(groups.map(g => g.actionable.length)).toEqual([1]);
     expect(groups.flatMap(g => g.actionable).map(t => t.taskId)).toEqual(['ready']);
   });
   it('orders project groups and tasks by the next actionable deadline', () => {
     const entry = (id: string, tasks: Task[]) => ({ project: { id, name: id, status: 'active' } as ProjectSummary, tasks, members });
     const dated = (id: string, date: string) => assigned(id, { dueDate: date, duePrecision: 'date' });
     const groups = pendingProjectGroups([entry('later', [dated('late', '2027-02-01')]), entry('sooner', [dated('next', '2027-01-02'), dated('first', '2027-01-01')]), entry('blocked', [dated('unassigned-urgent', '2026-01-01'), assigned('unassigned', { assigneeId: null })].map(t => ({ ...t, assigneeId: null })))]);
-    expect(groups.map(g => g.project.id)).toEqual(['sooner', 'later', 'blocked']);
+    expect(groups.map(g => g.project.id)).toEqual(['sooner', 'later']);
     expect(groups[0].actionable.map(t => t.taskId)).toEqual(['first', 'next']);
   });
 });

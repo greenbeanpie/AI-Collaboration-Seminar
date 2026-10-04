@@ -122,7 +122,8 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const tasks = await env.DB.prepare('SELECT status,lifecycle_state,COUNT(*) count FROM tasks WHERE project_id=?1 AND archived_at IS NULL GROUP BY status,lifecycle_state').bind(projectId).all();
     const feedbackExists=await env.DB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_admin_feedback'").first();
     const feedback=feedbackExists?(await env.DB.prepare('SELECT id,target_type,target_id,substr(feedback,1,1000) feedback,created_at FROM project_admin_feedback WHERE project_id=?1 ORDER BY created_at DESC,id DESC LIMIT 5').bind(projectId).all()).results:[];
-    return {untrustedData:true,project,goal,tasks:tasks.results,adminFeedback:feedback,feedbackMayBeIncomplete:feedback.length===5,resourceType:'project',resourceId:projectId,text:JSON.stringify({project,goal,tasks:tasks.results})};
+    const systemBackground = await env.DB.prepare("SELECT 'material' resourceType,m.id resourceId,v.id versionId,v.revision,v.markdown text FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND m.system_managed=1").bind(projectId).first();
+    return {untrustedData:true,project,goal,systemBackground,tasks:tasks.results,adminFeedback:feedback,feedbackMayBeIncomplete:feedback.length===5,resourceType:'project',resourceId:projectId,text:JSON.stringify({project,goal,tasks:tasks.results})};
   }
   if (name === 'list_project_resources') {
     const rows = await env.DB.prepare(`SELECT * FROM (

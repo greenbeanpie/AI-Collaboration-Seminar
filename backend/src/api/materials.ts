@@ -21,6 +21,7 @@ const versionParams = materialParams.extend({ versionId: z.string().uuid() });
 const attachmentSchema = z.object({ contributors:z.array(contributorSchema).optional(), fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
 const materialSchema = z.object({
   canEdit:z.boolean().optional(),
+  systemManaged:z.boolean().optional(),
   materialId: z.string().uuid(),
   title: z.string(),
   kind: z.string(),
@@ -129,6 +130,7 @@ const getVersionRoute = createRoute({
 });
 
 interface MaterialRow {
+  system_managed: number;
   id: string;
   project_id: string;
   created_by: string;
@@ -200,7 +202,8 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow, ac
     ? await env.DB.prepare('SELECT * FROM material_versions WHERE id = ?1').bind(material.current_version_id).first<VersionRow>()
     : null;
   return {
-    canEdit:material.created_by===actorId || Boolean(await env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(material.project_id,actorId).first()),
+    systemManaged:material.system_managed === 1,
+    canEdit:material.system_managed !== 1 && (material.created_by===actorId || Boolean(await env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(material.project_id,actorId).first())),
     materialId: material.id,
     title: material.title,
     kind: material.kind,
@@ -248,6 +251,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       ).bind(versionId, materialId, member.projectId, JSON.stringify(emptyDoc), docToMarkdown(emptyDoc), user.id, now),
     ]);
     const material = await loadMaterial(c.env, materialId, member.projectId);
+    if (material.system_managed === 1) throw permissionDenied('系统背景由项目设置自动同步，不能手动修改');
     return c.json(apiData(c, await materialDetail(c.env, material,c.get('user')!.id)), 201);
   });
 
@@ -272,6 +276,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     return c.json(
       apiData(c, {
         items: pageRows.map((r) => ({
+          systemManaged: r.system_managed === 1,
+          canEdit: r.system_managed !== 1 && (r.created_by === c.get('user')!.id || c.get('member')!.permissions.resourceManage),
           materialId: r.id,
           title: r.title,
           kind: r.kind,
@@ -297,6 +303,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const materialId = c.req.valid('param').materialId;
     const material = await loadMaterial(c.env, materialId, member.projectId);
+    if (material.system_managed === 1) throw permissionDenied('系统背景由项目设置自动同步，不能手动修改');
     const actorId=c.get('user')!.id;
     if (material.created_by!==actorId && !await c.env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(member.projectId,actorId).first()) throw permissionDenied('只能编辑本人创建或有资料管理权限的材料');
     if (material.revision !== body.expectedRevision) throw versionConflict(material.revision);

@@ -43,7 +43,11 @@ const createBody = z.object({
   deadlineDate: dateOnly.optional(),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']).default('unknown'),
   aiBudgetUsd: z.number().nonnegative().nullable().optional(),
-  aiCollaborationEnabled: z.boolean().default(false),
+  aiCollaborationEnabled: z.boolean().default(true),
+  assignmentMode: z.enum(['manual','automatic']).default('automatic'),
+  evaluationMode: z.enum(['manual','automatic']).default('automatic'),
+  planningMode: z.enum(['manual','automatic']).default('automatic'),
+  progressionMode: z.enum(['manual','automatic']).default('automatic'),
 });
 
 const patchBody = z.object({
@@ -149,8 +153,8 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       const now = nowIso();
       await c.env.DB.batch([
         c.env.DB.prepare(
-          `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9, ?10, ?11, ?11)`,
+          `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode,planning_mode,progression_mode)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14)`,
         ).bind(
           projectId,
           body.name,
@@ -162,7 +166,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
           user.id,
           now,
           body.aiCollaborationEnabled ? 1 : 0,
-          body.aiCollaborationEnabled ? 'automatic' : 'manual',
+          body.assignmentMode, body.evaluationMode, body.planningMode, body.progressionMode,
         ),
         c.env.DB.prepare(
           "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'owner', ?4)",

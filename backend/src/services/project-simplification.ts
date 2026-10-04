@@ -15,7 +15,10 @@ export async function projectGoal(env: Env, projectId: string): Promise<Goal> {
 export async function updateGoal(env: Env, projectId:string, actorId:string, input:{expectedRevision:number;title?:string;detail?:string}) {
   await owner(env,projectId,actorId,'owner'); await projectGoal(env,projectId);
   const changed=await env.DB.prepare(`UPDATE project_goals SET title=COALESCE(?3,title),detail=COALESCE(?4,detail),revision=revision+1,updated_at=?5 WHERE project_id=?1 AND revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6 AND role='owner')`).bind(projectId,input.expectedRevision,input.title??null,input.detail??null,nowIso(),actorId).run();
-  if(!changed.meta.changes) throw invalidState('主目标或权限已变化，请刷新');
+  if(!changed.meta.changes) {
+    await owner(env,projectId,actorId,'owner');
+    throw versionConflict((await projectGoal(env,projectId)).revision);
+  }
   return projectGoal(env,projectId);
 }
 export type DependencyEdge={taskId:string;dependsOnTaskId:string};

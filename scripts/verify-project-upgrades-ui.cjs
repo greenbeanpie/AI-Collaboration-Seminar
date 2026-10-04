@@ -103,7 +103,9 @@ async function verify() {
       await page.goto(origin+'/app/projects/ready/settings');
       const title=page.getByLabel('主目标',{exact:true});
       await title.fill('浏览器更新的主目标');
+      const savedGoal=page.waitForResponse(response=>response.url().endsWith('/goal')&&response.request().method()==='PATCH');
       await page.getByRole('button',{name:'保存项目目标',exact:true}).click();
+      await savedGoal;
       await page.waitForFunction(()=>Array.from(document.querySelectorAll('button')).find(button=>button.textContent==='保存项目目标')?.disabled);
       const goalWrite=requests.find(r=>r.path.endsWith('/goal')&&r.method==='PATCH');
       assert.equal(goalWrite.body.expectedRevision,1);
@@ -112,7 +114,7 @@ async function verify() {
       report.checks.push({width,name:'Owner saves project goal with revision',passed:true});
 
       await page.goto(origin+'/app/projects/ready/data?resourceType=material&resourceId=background');
-      await page.getByText(/系统背景 · 自动同步/).waitFor();
+      await page.getByText('系统背景 · 自动同步',{exact:true}).waitFor();
       assert.equal(await page.getByRole('button',{name:'保存新版本',exact:true}).count(),0);
       assert.equal(await page.getByLabel('修改资料用途',{exact:true}).count(),0);
       assert.equal(await page.locator('[contenteditable=true]').count(),0);

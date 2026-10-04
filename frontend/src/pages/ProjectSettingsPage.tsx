@@ -1,5 +1,6 @@
 import { DateInput } from '../components/DateInput';
 import { useEffect, useState } from 'react';
+import { ProjectGoalSettings } from './ProjectGoalSettings';
 import { CollaborationSettings } from './CollaborationSettings';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Save } from 'lucide-react';
@@ -64,6 +65,7 @@ export function ProjectSettingsPage() {
       </form>
     </SectionCard>
 
+    <ProjectGoalSettings />
     <CollaborationSettings />
   </div>;
 }
