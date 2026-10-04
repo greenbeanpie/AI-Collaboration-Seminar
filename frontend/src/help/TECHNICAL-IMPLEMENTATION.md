@@ -352,7 +352,11 @@ reservation: reserved → settled / released / pending_reconcile
 
 任务简介实际表名为 `task_summaries`，operation 为 `collaboration.summary`。`runAiJob` 优先处理此 operation，否则会误落通用协作执行器。输入冻结 `sourceHash`；`runTaskSummaryJob` 每次调用及发布都检查 task、claim、用户、配置及 hash，生成最多 60 字简介，最多一次格式修复，不提供项目工具。
 
-本地 Agent 交接的适用性由 `task-agent-eligibility.ts` 调用当前 `textEconomy` 模型判断，不使用关键词规则。`GET/POST .../collaboration/tasks/{taskId}/agent-eligibility` 分别读取状态和显式发起检查；POST 校验 `expectedRevision`。`agent_run` 的 `collaboration.agent-eligibility` operation 独立派发，最多一次格式修复、无工具调用，并复用预算与 `ai_calls` 审计。`task_agent_eligibility` 按完整标题、说明、验收标准、配置版本及提示词版本的哈希缓存；调用前后及原子发布时检查内容、成员资格、配置和作业状态。前端卡片与弹窗共享查询，仅当前任务版本的 `ready/eligible=true` 开放提示词读取和导出；失败不自动重发付费检查。本站仍通过复制或下载提示词交接，本次未接入 DSH 桥接。
+本地 Agent 交接的适用性由 `task-agent-eligibility.ts` 调用当前 `textEconomy` 模型判断，不使用关键词规则。任务保存和内容修改通过数据库触发器记录后台检查需求，由现有定时维护有界派发；已有任务及重新启用 AI 后的失效判断也会补检。判断按完整标题、说明、验收标准、配置版本及提示词版本的哈希缓存，失败不自动重发付费检查；前端仅读取和轮询状态。只有当前内容对应的 `ready/eligible=true` 允许代实施。
+
+`GET/POST .../collaboration/tasks/{taskId}/assistance-plan` 读取和手动生成持久化辅助计划；生成作业复用预算、审计和 Workflow。计划上下文包含项目背景、目标、生效标准、资料及前置任务固定成果，发布前再次核对上下文和成员资格。重新生成时保留上次成功计划，过期只标记、不自动生成。辅助计划不受整项任务执行适用性限制。
+
+DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目录通过 DSH 原生选择器绑定。插件持久化凭据并在启动和网络恢复后自动连接；打开任务的“AI 辅助”弹窗不派发执行。只有显式执行才创建交接，成果回传为待核对草稿。手动复制、下载提示词作为无桥接配置时的交接方式保留。
 
 创建项目草稿预览走例外路径：`enqueueDraftPreview → AGENT_WORKFLOW.create({draftPreview}) → previewDraft → gatewayChat`。它尚无正式 project ID，不使用普通项目 `usage_reservations`、调查工具或执行分片。预览使用 `preview_state/preview_attempt_id/preview_revision`，只生成主目标及 1–20 个任务，不分工、不评分，验证依赖无循环及文件页逐字 citations。模型输出失败不通过 `aiJsonCall` 修复；显式重新生成可能再次计费。提交项目后通过 `draft_id` 将对应 `ai_calls.project_id` 归到新项目。
 
