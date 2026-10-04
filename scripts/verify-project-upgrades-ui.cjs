@@ -39,7 +39,7 @@ async function installFixture(context, requests) {
     else if (p.endsWith('/members')) data={items:[{userId:user.id,role:'owner',displayName:user.displayName,joinedAt:now}],nextCursor:null};
     else if (p.endsWith('/tasks')) data={items:p.includes('/ready/')?[task('可完成任务')]:p.includes('/blocked/')?[task('受阻任务',{status:'blocked'})]:[],nextCursor:null};
     else if (p.endsWith('/goal')) {if(method==='PATCH')currentGoal={...currentGoal,...req.postDataJSON(),revision:currentGoal.revision+1};data=currentGoal;}
-    else if (p.endsWith('/collaboration/settings')) data={revision:1,aiCollaborationEnabled:true,planningMode:'auto',assignmentMode:'auto',evaluationMode:'auto',progressionMode:'auto'};
+    else if (p.endsWith('/collaboration/settings')) data={revision:1,aiCollaborationEnabled:true,planningMode:'automatic',assignmentMode:'automatic',evaluationMode:'automatic',progressionMode:'automatic'};
     else if (p.endsWith('/resource-library')) data={items:[{resourceType:'material',resourceId:'background',title:'系统背景',purpose:'background',systemManaged:true,canManage:false,canEdit:false,revision:1,currentVersionId:'bg-version',createdAt:now,updatedAt:now}],nextCursor:null};
     else if (p.endsWith('/materials')) data={items:[background],nextCursor:null};
     else if (p.endsWith('/materials/background')) data=background;
@@ -99,6 +99,21 @@ async function verify() {
       assert.equal(await attention.getByText('测试项目 empty',{exact:true}).count(),0);
       await page.screenshot({path:path.join(output,`dashboard-${width}.png`),fullPage:true});
       report.checks.push({width,name:'Dashboard excludes projects with no actionable tasks',passed:true});
+
+      await page.goto(origin+'/app/projects/new/wizard');
+      const aiToggle=page.getByRole('checkbox',{name:/AI 智能协作/});
+      await aiToggle.waitFor();
+      assert.equal(await aiToggle.isChecked(),true);
+      for(const label of ['任务规划','任务分工','提交验收','项目推进']) assert.equal(await page.getByLabel(label,{exact:true}).inputValue(),'automatic');
+      await page.getByLabel('任务规划',{exact:true}).selectOption('manual');
+      await aiToggle.uncheck();
+      assert.equal(await page.getByLabel('任务规划',{exact:true}).isDisabled(),true);
+      await aiToggle.check();
+      assert.equal(await page.getByLabel('任务规划',{exact:true}).inputValue(),'manual');
+      assert.equal(await page.getByLabel('项目名称',{exact:true}).getAttribute('required'),'');
+      assert.equal(await page.getByLabel('项目说明（可选）',{exact:true}).getAttribute('required'),null);
+      await page.screenshot({path:path.join(output,`creation-config-${width}.png`),fullPage:true});
+      report.checks.push({width,name:'Creation defaults enabled and independent automatic modes, retains disabled choices',passed:true});
 
       await page.goto(origin+'/app/projects/ready/settings');
       const title=page.getByLabel('主目标',{exact:true});

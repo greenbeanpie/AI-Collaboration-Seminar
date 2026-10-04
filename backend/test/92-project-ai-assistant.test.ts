@@ -47,10 +47,10 @@ describe('project AI authority', () => {
     expect((await repeat.json() as { data: { id: string } }).data.id).toBe(created.id);
     expect((await request(owner.token, '/projects', { name: '另一意图' }, 'POST', key)).status).toBe(409);
     const settings = await request(owner.token, `/projects/${created.id}/collaboration/settings`);
-    expect((await settings.json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', planningMode:'manual',progressionMode:'manual', revision: 1 });
+    expect((await settings.json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'automatic', planningMode:'automatic',progressionMode:'automatic', revision: 1 });
     const enabled = await request(owner.token, '/projects', { name: '明确开启项目', aiCollaborationEnabled: true });
     const enabledId = (await enabled.json() as { data: { id: string } }).data.id;
-    expect((await (await request(owner.token, `/projects/${enabledId}/collaboration/settings`)).json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'automatic', planningMode:'manual',progressionMode:'manual', revision: 1 });
+    expect((await (await request(owner.token, `/projects/${enabledId}/collaboration/settings`)).json() as { data: unknown }).data).toEqual({ aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'automatic', planningMode:'automatic',progressionMode:'automatic', revision: 1 });
   });
   it('current project ownership is required, with CAS and one audit event', async () => {
     const owner = await seedUser();

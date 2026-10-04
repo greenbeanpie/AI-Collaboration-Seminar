@@ -209,6 +209,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
     // business completion or another recovery cannot be overwritten.
     const started = await env.DB.prepare(
       `SELECT EXISTS (SELECT 1 FROM ai_calls WHERE job_id = ?1)
+         OR EXISTS (SELECT 1 FROM media_calls WHERE job_id = ?1)
          OR EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?1 AND attempts_started > 0) AS started`,
     ).bind(jobId).first<{ started: number }>();
     if ((!active && started?.started) || active?.status === 'running' || active?.status === 'complete') {

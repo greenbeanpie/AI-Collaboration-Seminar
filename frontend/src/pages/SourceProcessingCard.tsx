@@ -11,7 +11,7 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
   const [error,setError] = useState<unknown>(null); const [submitting,setSubmitting] = useState(false);
   const action = useRef(false); const intent = useRef<{key:string;revision:number}|null>(null);
   const query = useQuery({ queryKey: ['sourceProcessing',projectId,sourceId,versionId], queryFn: () => api.get<'SourceProcessingResponse'>(path), retry: false,
-    refetchInterval: q => active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' ? 2500 : false,
+    refetchInterval: q => active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' || ['pending','uploading','processing','generating'].includes(q.state.data?.media?.stage ?? '') ? 2500 : false,
     refetchIntervalInBackground: false,
   });
   const state = query.data;
@@ -29,6 +29,7 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {state && <>
       <p>正文提取：{names[state.textStatus]} · 要求提取：{names[state.requirementsStatus]} · 文件总结：<StatusPill tone={state.summaryStatus === 'ready' ? 'good' : state.summaryStatus === 'failed' ? 'bad' : 'neutral'}>{names[state.summaryStatus]}</StatusPill></p>
+      {state.media && <div className="callout"><strong>音视频 AI 摘要（非逐字原文）</strong><p>处理阶段：{({pending:'排队',uploading:'上传',processing:'处理文件',generating:'生成摘要',ready:'完成',failed:'失败'} as Record<string,string>)[state.media.stage] ?? state.media.stage} · 已完成 {state.media.completedWindows} 个时间窗口</p>{state.media.error && <p role="alert">{state.media.error}</p>}{state.media.summary && !state.media.summary.complete && <><p>部分摘要，尚未完整覆盖：</p><p style={{whiteSpace:'pre-wrap'}}>{state.media.summary.summary}</p></>}{state.media.summary?.timestamps.map((point,index) => <p key={index}>[{point.seconds}s] {point.description}</p>)}</div>}
       {state.requirementsError && <p className="callout warning-callout">要求提取失败：{state.requirementsError}。已提取正文和文件总结保留，可单独重试要求提取。</p>}
       {state.summaryStatus === 'failed' && <p className="callout warning-callout">{state.summaryError ?? '总结失败，原文件和正文已保留。'}</p>}
       {state.summaryStatus === 'ready' && state.summary && <div>
@@ -36,7 +37,7 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
         <ul>{state.summary.keyPoints.map((point,index) => <li key={index}>{point}</li>)}</ul>
         {state.coveredChars !== null && state.totalChars !== null && state.coveredChars < state.totalChars && <p className="callout warning-callout">本次总结仅覆盖 {state.coveredChars}/{state.totalChars} 个正文字符，请结合原文查看其余内容。</p>}
         {state.summary.caveats.map((note,index) => <p key={index}>注意：{note}</p>)}
-        <details><summary>核对总结原文引用</summary>{state.summary.citations.map((cite,index) => <p key={index}>{cite.pageNumber ? `第 ${cite.pageNumber} 页` : '正文'}：{cite.quote}</p>)}</details>
+        <details><summary>{state.media ? '查看摘要依据说明' : '核对总结原文引用'}</summary>{state.summary.citations.map((cite,index) => <p key={index}>{cite.pageNumber ? `第 ${cite.pageNumber} 页` : '正文'}：{cite.quote}</p>)}</details>
         <p className="sources-inline-note">AI 总结需人工核对，不会替代原文件或要求确认。</p>
       </div>}
       {state.summaryStatus !== 'ready' && !['queued','running'].includes(state.summaryStatus) && <button type="button" className="button button-quiet button-small" disabled={submitting || state.textStatus !== 'ready' || !aiEnabled} onClick={() => void start()}>{submitting ? '正在提交…' : state.summaryStatus === 'failed' || state.summaryStatus === 'cancelled' ? '单独重试文件总结' : '生成文件总结'}</button>}
