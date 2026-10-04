@@ -2,13 +2,13 @@
 
 核查日期：2026 年 10 月 5 日。本次交付为源码评估和接入计划，尚未接入或启用新的语音模型，未进行收费模型实测。
 
-结论：`gemini-3.5-transcribe-live` 已有 Google 官方文档；Cloudflare AI Gateway 已提供 Google 实时 WebSocket 转发。二者在协议层具备组合条件，但文档不能证明当前账户、Gateway 和该具体模型已兼容。推荐方案为 **Transcribe Live 仅转录 → 现有文字模型出题、追问和评分 → 独立 TTS 朗读已保存的问题**。只支持评委与答辩者轮流发言，播放结束后才能录音。通用 `gemini-3.5-live` 未在本次核查的官方模型目录中列出，不以类似名称的翻译模型替代。
+结论：`gemini-3.5-transcribe-live` 已有 Google 官方文档；Cloudflare AI Gateway 已提供 Google 实时 WebSocket 转发。二者在协议层具备组合条件，但文档不能证明当前账户、Gateway 和该具体模型已兼容。按最新要求，保留现有 Whisper 转录路径并作为默认，设置中由用户在 **Whisper / Gemini Transcribe Live** 两者中选择，不自动切换转录提供者。选择 Gemini 时，推荐方案为 **Transcribe Live 仅转录 → 现有文字模型出题、追问和评分 → 独立 TTS 朗读已保存的问题**。只支持评委与答辩者轮流发言，播放结束后才能录音。通用 `gemini-3.5-live` 未在本次核查的官方模型目录中列出，不以类似名称的翻译模型替代。
 
 ## 当前实现和必须改变的边界
 
 | 子系统 | 已实现行为 | 接入影响 |
 | --- | --- | --- |
-| 上传音频初步转录 | `backend/src/services/audio-pipeline.ts` 调用 Workers AI binding 的 `@cf/openai/whisper-large-v3-turbo`；转录保存在私有 R2 | 不是 Gemini，也未经过 Gateway；替换需要新 ASR 适配器和 PCM 解码来源 |
+| 上传音频初步转录 | `backend/src/services/audio-pipeline.ts` 调用 Workers AI binding 的 `@cf/openai/whisper-large-v3-turbo`；转录保存在私有 R2 | 按最新要求保留该默认路径；新增可选 Gemini ASR 适配器和 PCM 解码来源，不删除 Whisper |
 | 转录检查与总结 | 原生 Whisper 指标检查后，由 `visionEconomy` 检查文本，全部通过才由 `textEconomy` 分块总结与合并 | 保留现有文字模型职责；Gemini ASR 不提供 Whisper 指标时必须使用独立检查逻辑，不能伪造指标或沿用指标门槛 |
 | 媒体回退 | `backend/src/ai/gemini-media.ts` 使用 Google Files 上传、查询、删除以及 `generateContent` 摘要 | 硬编码 Google 直连；严格 Gateway 模式必须迁移或禁用该回退，不能偷偷直连 |
 | 模拟答辩 | `frontend/src/pages/RehearsalsPage.tsx` 是文本输入、提交回答和结束；未发现录音、浏览器 ASR 或 TTS 实现 | 这是新增语音输入与播放能力，不是更换现有语音供应商 |
@@ -31,19 +31,25 @@ Cloudflare [Google AI Studio REST 文档](https://developers.cloudflare.com/ai-g
 
 ## 目标架构和接口
 
-浏览器只连接本项目 Worker。服务端持有 Gateway Token 和 Google key，或使用已验证的 Gateway BYOK；浏览器不获得供应商密钥、Gateway 长期 Token 或含密钥的连接地址。Worker 到外部只允许以上两个 Gateway 域名路由，拒绝重定向，错误诊断去除认证信息。
+浏览器只连接本项目 Worker。服务端持有 Gateway Token 和 Google key，或使用已验证的 Gateway BYOK；浏览器不获得供应商密钥、Gateway 长期 Token 或含密钥的连接地址。所有 Google 相关新请求只允许以上两个 Gateway 路由，拒绝重定向，错误诊断去除认证信息。Whisper 按最新用户要求保留既有 Workers AI binding；该路径目前未经 Gateway，不能宣称其已经通过 Gateway。本计划的 Google 限制是仅经 Gateway 转发、不直接与 Google API 通信，不将保留 Whisper 解释成改用 Google 直连的授权。
 
 ### 初步音频转录
 
-1. 新增独立 `audioTranscription` 配置槽，保存模型、Gateway 标识、启用状态、语言提示和已核查价格；增加 `gemini-transcribe-first` 策略，默认不启用。与媒体摘要配置分开冻结，避免一个型号承担不同协议职责。
+1. 增加首选转录配置 `audioTranscriptionProvider: 'whisper' | 'gemini-transcribe-live'`，默认 `whisper`；新建独立 `audioTranscription` 配置槽，仅保存 Gemini 模型、Gateway 标识、语言提示和已核查价格。保留 Whisper 固定模型、现有 binding 和独立原生质量检查。转录选择和 `mediaUnderstanding` 音视频理解摘要配置分别冻结，前者只做识别，后者不能被当作第二个 ASR 提供者。
 2. ASR 适配器将最终转录归一化为提供者、模型、文本、音频时长、音频覆盖范围、可用时间信息及完整性状态。缺失字段保持未知；不得以空值填出 Whisper 质量指标，不声称有提供者未返回的词级时间戳。
 3. 保留私有 R2 中间结果、分块检查、文字摘要和断点恢复。文本检查仅能判断文本内在问题，不能证明识别准确率；没有原生置信度时报告这一限制。对音频内容明显异常或覆盖不完整的结果进入待人工处理，不能重复请求摘要冒充成功。
 4. 先支持经过可靠解码的 PCM/WAV 输入。在现有 Workers 中不能假设具备 MP3、M4A 等解码能力；验证可部署的服务端解码方案后才扩大格式范围。长文件按确定的音频时间窗口解码、转录并保存检查点，不把一次短语音 WebSocket 测试当成四小时文件验收。当前四小时边界保持，实际模型会话限制、窗口尺寸和跨窗口边界去重规则须经长音频 PoC 冻结。
 5. Google Files API 包含二阶段 resumable 上传地址，普通 Gateway `generateContent` 文档不足以证明全链路可代理。新严格模式不使用未经验证的旧直连摘要回退。若 Files 上传、轮询及删除无法全部经 Gateway，停止该回退并展示需要人工处理；旧路径迁移属于必要兼容工作，不能只替换生成 URL。
 
+设置页将初步转录区域改为明确的二选一单选项，只显示 Whisper 和 Gemini Transcribe Live，不增加“自动”“优先 Gemini”或混合选项。Whisper 显示 binding 可用性及固定模型；Gemini 显示配置完整性、Gateway 探测状态与实际音频验收状态，三者不得合并成一个“已验证”。未填写 Gemini 必要配置、未配置 Gateway 认证或探测不通过时，不能保存启用 Gemini；服务端同样校验，避免绕过 UI。尚未完成真实音频验收时保持生产入口关闭，允许保存完整但未启用的 Gemini 配置。修改提供者不产生收费请求；测试按钮明确说明是否实际发送音频和产生费用。
+
+旧配置迁移默认 Whisper，并保留原 `audioProcessingStrategy` 的历史值以解释已有作业；新作业使用冻结的二选一配置。旧 `gemini-only` 是直接媒体摘要策略，不等同于 Gemini ASR，不能自动映射成已启用 Transcribe Live。迁移后的新转录路径不在识别失败时切换另一个提供者；用户可在设置中主动更换，新的作业才使用新配置。既有摘要回退另行按 Gateway 边界验证，不能将它包装成自动 ASR 切换。
+
 ### 两方轮流答辩
 
 顺序固定为：生成并保存评委文本 → TTS 合成 → 播放 → 用户点击开始回答 → ASR 字幕 → 停止回答并等待最终转录 → 用户核对/编辑 → 提交现有文字答案 → 原文字作业生成下一问。播放、录音、提交、生成下一问互斥；首版不支持打断、全双工、自动抢话或自动提交。
+
+转录选择也适用于未来语音答辩输入。选 Gemini 时提供实时字幕；选 Whisper 时先录制整段受支持音频，停止后由既有 binding 识别再显示结果，不承诺 Whisper 已有实时字幕。两种模式均需用户核对再提交，不自动切换。Whisper 答辩音频为新增接入工作，保留目前上传音频路径不等于已实现这一入口。
 
 - 新增 `POST .../rehearsals/{id}/voice-sessions`，请求仅携带当前问题序号和期望版本，返回本项目会话 ID、期限和本项目 WebSocket 地址。创建和连接均检查发起人、项目成员身份、演练状态、当前问题及预算；浏览器不得自选 provider、model、system prompt 或工具。
 - Worker 构造固定 ASR setup，仅发送当前回答音频及少量经过授权的术语提示，不传项目材料、历史问答或评分标准。通过 AudioWorklet 重采样 PCM，手动开始/结束；最终片段按本项目单调序号存储，临时字幕只显示、可覆盖。
@@ -62,7 +68,7 @@ TTS 失败保留已保存的问题与阅读能力；ASR 失败保留文本编辑
 
 1. **Gateway PoC**：使用正式拟用账户，获取 ASR setup 成功响应，传入中文样本，收齐临时与最终字幕；验证手动结束、断线和模态限制。TTS 通过 Gateway REST 返回可播放中文音频，人工核对与输入文字一致。保存脱敏请求协议、型号、版本、用量与失败记录。此阶段不调用 Google 直连作对照。
 2. **上传音频 PoC**：同一内容的 WAV、MP3、M4A、静音、噪音、专业术语和中英混合样本；检查解码后覆盖与音频总时长、跨窗口重复/漏字、原文件保留和取消恢复。核查长文件时间定位，不使用编造时间点。初期将中文样本准确性人工核对和关键事实无误作为接受条件，不宣称固定准确率。
-3. **接口与状态测试**：其他成员不能录音/合成；旧问题不能写回；重复请求和多设备并发不创建重复回答/音频；转录与 Whisper 指标分离；麦克风拒绝、无声输入、字幕超时、TTS 空音频、超额与停用均有可操作错误。所有 Google 出站 fetch/WebSocket 地址断言为 Gateway，直连域名和重定向拒绝。
+3. **接口与状态测试**：Whisper 仍为默认且继续调用既有 binding；二选一选择和作业冻结配置一致；选择 Gemini 失败不会调用 Whisper，反之亦然；Gemini 缺配置或探测失败不能保存启用。其他成员不能录音/合成；旧问题不能写回；重复请求和多设备并发不创建重复回答/音频；转录与 Whisper 指标分离；麦克风拒绝、无声输入、字幕超时、TTS 空音频、超额与停用均有可操作错误。所有 Google 出站 fetch/WebSocket 地址断言为 Gateway，直连域名和重定向拒绝。
 4. **浏览器验收**：在目标 macOS Chrome/Safari 实际授权麦克风；播放期间无法录音，结束播放后可开始；最终字幕可修改，提交后数据库仅一个回答，现有文字模型正常追问和结束评分。重播不收费；刷新后恢复已保存历史，不自动开启麦克风。
 5. **发布**：在独立 worktree 实现，更新 API 类型与迁移；运行类型检查、相关测试和构建，合并提交、推送，部署现有后端/前端 Worker。部署前配置私有存储与 Gateway 凭据，完成迁移；少量真实账户灰度验证后才打开语音开关。回滚通过关闭新策略保留原文字答辩和已保存证据。
 
