@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "browser": "agent-browser Chromium",
+  "backend": "real local Workers/D1/R2",
+  "actualPluginRunner": true,
+  "dshAdapter": "simulated",
+  "production": false,
+  "modelCalls": 0,
+  "prompts": 1,
+  "projectId": "87d54b36-2e67-4469-81f7-3409341f7652",
+  "taskId": "9847bedc-881b-4ef5-a3de-d1903e35dd60",
+  "handoffId": "46709235-03ac-465b-9368-cf462c77b40f",
+  "checks": [
+    "actual browser pairing approval",
+    "actual device directory binding display",
+    "one click website dispatch",
+    "actual runner claim and artifact upload",
+    "unchecked review disabled",
+    "manual review adoption submits once",
+    "mobile settings no horizontal overflow"
+  ],
+  "geometry": {
+    "width": 390,
+    "scrollWidth": 390,
+    "overflow": false
+  },
+  "screenshots": [
+    "draft-before-review.png",
+    "mobile-settings.png"
+  ]
+}

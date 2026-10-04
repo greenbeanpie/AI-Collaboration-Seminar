@@ -1,0 +1,39 @@
+{
+  "publicSource": "https://greenbp-team-office.hddhp.workers.dev/plugins/dsh-team-office-bridge-0.1.0.tgz",
+  "sha256": "d39b8c268de3cb9cfc3e1504b91501d92db3281ab09790b9f5c8c7c421d93f54",
+  "installedViaOfficialManager": true,
+  "bundleEnabled": true,
+  "dependencyCount": 1,
+  "anonymousStatus": 401,
+  "authenticatedStatus": 200,
+  "foreignOriginStatus": 403,
+  "compatible": true,
+  "dshVersion": "0.2.0-rc.2",
+  "configured": false,
+  "clientInBootGraph": true,
+  "personalProfileTouched": false,
+  "paidRequests": 0,
+  "upstreamFsStatsWarning": true,
+  "browserCardInteraction": {
+    "passed": true,
+    "isolatedSession": "dsh-bridge-remote-release",
+    "steps": [
+      "continue preview notice",
+      "skip API key configuration",
+      "open Plugins",
+      "open 补位桥接器 card"
+    ],
+    "headingVisible": true,
+    "unconnectedStatusVisible": true,
+    "connectButtonEnabled": true,
+    "refreshObserved": {
+      "before": 20,
+      "after": 24,
+      "elapsedMilliseconds": 5500
+    },
+    "pageErrors": 0,
+    "screenshot": "test/smoke-remote-card.png",
+    "productionPairingCreated": false,
+    "nativeDirectoryPickerTested": false
+  }
+}

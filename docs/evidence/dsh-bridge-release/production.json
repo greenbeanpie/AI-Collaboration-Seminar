@@ -1,0 +1,118 @@
+{
+  "runId": "925044e0-9076-4ab6-9d99-7e6e6878a65b",
+  "origin": "https://greenbp-team-office.hddhp.workers.dev",
+  "mode": "production",
+  "startedAt": "2026-10-04T05:04:54.095Z",
+  "passed": true,
+  "infrastructure": "deployed Workers, D1 and R2",
+  "actualPluginRunner": true,
+  "dshAdapter": "simulated; this verifier does not execute a native DSH model",
+  "nativeDshVerification": "separate native RC2 verification; not asserted by this script",
+  "globalAiConfigurationChanged": false,
+  "semanticCheckRequests": 1,
+  "semanticJobsRetried": 0,
+  "usagePolicy": {
+    "projectBudgetUsd": null,
+    "semanticJobDispatchLimit": 1,
+    "semanticReservationMaxCalls": 2,
+    "paidJobRetries": 0,
+    "normalAdoptionMayAddOneEvaluationJob": true
+  },
+  "normalEvaluation": "Reviewed adoption may enqueue one normal evaluation even with manual project mode; this verifier never retries it.",
+  "checks": [
+    {
+      "name": "Existing password account authenticates; no credential reset",
+      "passed": true
+    },
+    {
+      "name": "Existing global AI configuration is enabled and unchanged",
+      "passed": true
+    },
+    {
+      "name": "Isolated project uses manual modes and task is assigned to the account owner",
+      "passed": true
+    },
+    {
+      "name": "Hash-only pairing, browser project scopes and display-label mapping succeed",
+      "passed": true
+    },
+    {
+      "name": "One real semantic job allows the digital task; repeated dispatch reuses it without retry",
+      "passed": true
+    },
+    {
+      "name": "Shipped runner claims fixed snapshot, uploads real R2 bytes and leaves task unchanged as a review draft",
+      "passed": true
+    },
+    {
+      "name": "Human-reviewed adoption and replay create exactly one normal submission and material version",
+      "passed": true
+    },
+    {
+      "name": "Device revocation denies new claims and runner receives no additional execution",
+      "passed": true
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "device revoked and local active execution stopped",
+      "passed": true
+    },
+    {
+      "name": "isolated test project archived with evidence retained",
+      "passed": true
+    },
+    {
+      "name": "password session logged out",
+      "passed": true
+    }
+  ],
+  "userId": "cd155964-6ed5-4f20-ad0b-bfd2a09a109b",
+  "projectId": "58a4abbc-c59f-443c-a1f0-89f4fd96b76f",
+  "taskId": "6aa58a5a-1108-4045-9dd2-883b4f379b24",
+  "taskRevision": 2,
+  "deviceId": "710f9738-50c3-49cd-bc01-386a81b1e967",
+  "handoffId": "d846add8-00d1-4019-a38d-2d3639aae52c",
+  "lastHandoffState": "ready_for_review",
+  "eligibility": {
+    "status": "ready",
+    "eligible": true,
+    "jobId": "c4e9c3c2-39ad-4bad-ac29-68bdda02376b",
+    "taskRevision": 2
+  },
+  "semanticJob": {
+    "jobId": "c4e9c3c2-39ad-4bad-ac29-68bdda02376b",
+    "status": "succeeded",
+    "attempts": 1
+  },
+  "artifact": {
+    "artifactId": "2fe582a4-1a1d-4ac6-b4ee-5e67a3ac8da3",
+    "fileId": "8186cf23-5bfb-4598-aee6-de81e2a34af9",
+    "name": "acceptance-report.txt",
+    "sizeBytes": 224,
+    "sha256": "0cb8ae1969911577d2a43ca940102822d3b63dd123a2127d21780c4835c10e18"
+  },
+  "submissionId": "d1e9a21e-f926-45e0-ad70-ba84af7bccac",
+  "materialVersionIds": [
+    "ac955b97-747e-4771-b04e-a40433f8522f"
+  ],
+  "normalEvaluationJob": {
+    "jobId": "36540fc4-41dc-455e-b714-ef64c27ef126",
+    "status": "running",
+    "attempts": 1
+  },
+  "runner": {
+    "prompts": 1,
+    "releases": 1,
+    "cancellations": 0,
+    "completionState": "ready_for_review"
+  },
+  "finishedAt": "2026-10-04T05:05:47.415Z",
+  "normalEvaluationFinal": {
+    "status": "failed",
+    "errorCode": "PERMISSION_DENIED",
+    "projectArchivedAt": "2026-10-04T05:05:45.871Z",
+    "jobFinishedAt": "2026-10-04T05:05:46.452Z",
+    "limitation": "The original verifier archived the test project while normal evaluation was running. The durable bridge submission passed; evaluation completion was not verified. The verifier now waits before archival and retains projects with active jobs; no paid job was retried."
+  }
+}

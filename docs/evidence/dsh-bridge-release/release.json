@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-04",
+  "branch": "codex/dsh-bridge",
+  "implementationCommit": "1dcf2fbf3e4dca2a91edcdc5165705146fda2494",
+  "downloadOriginFixCommit": "c4d1dfa9a9ffbcd873fe9bd5a6823654f3ed9937",
+  "officialDshSourceHead": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "backendVersion": "c1b83380-230a-4955-8925-262c65c4ecb2",
+  "frontendVersion": "57f7ca6a-9160-4788-bd9b-2cd833a946f8",
+  "migration": "0053_agent_bridges.sql",
+  "package": {
+    "url": "https://greenbp-team-office.hddhp.workers.dev/plugins/dsh-team-office-bridge-0.1.0.tgz",
+    "bytes": 15024,
+    "sha256": "d39b8c268de3cb9cfc3e1504b91501d92db3281ab09790b9f5c8c7c421d93f54",
+    "officialRemoteInstallationPassed": true
+  },
+  "checks": {
+    "backend": { "files": 113, "passed": 1022 },
+    "frontend": { "files": 109, "passed": 658 },
+    "plugin": { "passed": 39, "skipped": 1, "skipReason": "Windows ordinary file symlink privilege unavailable; junction rejection passed" },
+    "typecheck": "passed",
+    "lint": "passed",
+    "frontendBuild": "passed",
+    "backendAndFrontendDeployDryRun": "passed",
+    "nativeRc2Lifecycle": { "passed": true, "localFixtureRequests": 3, "paidRequests": 0 },
+    "nativeRemoteInstallAndBrowserCard": "passed",
+    "localBrowserPairDispatchDraftReviewedSubmission": "passed",
+    "productionSemanticCheckAndRunnerTransportReviewedSubmission": "passed"
+  },
+  "backup": {
+    "timeTravelRecoveryPointSaved": true,
+    "criticalTablesSqlSavedPrivately": true,
+    "fullSqlExport": "unavailable because existing FTS5 virtual tables are unsupported by D1 export"
+  },
+  "evidence": ["production.json", "browser-local.json", "contract-local.json", "native-remote-install.json"],
+  "limits": [
+    "Production transport acceptance used the actual BridgeRunner with a simulated DSH adapter; actual RC2 lifecycle was tested separately against a localhost model fixture.",
+    "Native folder picker clicks and paid DSH model task quality were not tested.",
+    "Latest source full runtime boot was not tested; public APIs and compatibility gates were checked.",
+    "Normal AI evaluation completion was not verified: the initial verifier archived its test project during evaluation and the permission guard rejected it. The verifier now waits before archival, retains active-job projects and never retries paid jobs.",
+    "Existing Workers test teardown diagnostics and upstream DSH DEP0180 warning were not suppressed."
+  ],
+  "preservation": {
+    "originalWorkspaceTrackedFilesUntouched": true,
+    "existingAccountsAndGlobalModelConfigurationPreserved": true,
+    "documentParsingAndWhisperCapabilitiesStillEnabled": true,
+    "productionTestDevicesRevokedAndProjectsArchived": true,
+    "personalDshProfileUntouched": true
+  }
+}

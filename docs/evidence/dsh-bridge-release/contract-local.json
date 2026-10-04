@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "production": false,
+  "actualBackend": "Wrangler local Workers D1/R2",
+  "actualPluginRunner": true,
+  "dshAdapter": "simulated; native RC2 lifecycle separately smoke-tested",
+  "modelCalls": 0,
+  "prompts": 1,
+  "projectId": "b259aef6-6741-4c02-b048-a7bad14a84b5",
+  "taskId": "df610aa0-4c93-4642-b9f8-07dcf1bc7d90",
+  "handoffId": "66d45772-b1f7-463a-a06d-8233415e65f5",
+  "submissionId": "ebd9fa73-1463-4e5c-b4ab-e6fa8742e89b",
+  "checks": [
+    "device pairing and browser scopes",
+    "one-click cached-eligibility dispatch",
+    "native runner HTTP claim/snapshot/events",
+    "real filesystem artifacts SHA256",
+    "automatic draft keeps task state unchanged",
+    "same submission on reviewed adoption retry",
+    "revocation stops receiving",
+    "no parser/audio/index work from artifact upload"
+  ]
+}
