@@ -22,7 +22,7 @@ describe('draft streamed original and client text import',()=>{
  it('rejects DOCX name spoofing rather than trusting ZIP header and central-name strings',async()=>{
   const f=await fixture(),bytes=new TextEncoder().encode('PK [Content_Types].xml word/document.xml');
   await beginDraftUpload(env,f.id,f.userId,f.fileId,'伪造.docx',bytes.length,1);await uploadDraftPart(env,f.id,f.userId,f.fileId,1,new Response(bytes).body,bytes.length);
-  await expect(completeDraftUpload(env,f.id,f.userId,f.fileId)).rejects.toThrow('DOCX');
+  await expect(completeDraftUpload(env,f.id,f.userId,f.fileId)).rejects.toThrow('DOCX');expect((await draftUploadStatus(env,f.id,f.userId,f.fileId)).status).toBe('cancelled');
   expect((await getDraft(env,f.id,f.userId)).revision).toBe(1);
  });
  it('promotes interrupted extraction as partial and preserves image omission warnings on complete text',async()=>{
@@ -59,7 +59,7 @@ describe('draft streamed original and client text import',()=>{
   const f=await fixture(),other=await seedUser();await beginDraftUpload(env,f.id,f.userId,f.fileId,'资料.txt',10,1);
   await expect(draftUploadStatus(env,f.id,other.userId,f.fileId)).rejects.toThrow('不存在');
   await expect(completeDraftUpload(env,f.id,f.userId,f.fileId)).rejects.toThrow('分片');
-  await cancelDraftUpload(env,f.id,f.userId,f.fileId);await expect(draftUploadStatus(env,f.id,f.userId,f.fileId)).rejects.toThrow('取消');
+  await cancelDraftUpload(env,f.id,f.userId,f.fileId);expect((await draftUploadStatus(env,f.id,f.userId,f.fileId)).status).toBe('cancelled');expect((await cancelDraftUpload(env,f.id,f.userId,f.fileId)).status).toBe('cancelled');
   const draft=await getDraft(env,f.id,f.userId);expect(draft.revision).toBe(1);
  });
 });
