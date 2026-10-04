@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getDocument } from 'pdfjs-dist';
-import { renderPdfPages } from './source-pdf-render';
+import { iteratePdfPages, renderPdfPages } from './source-pdf-render';
 
 vi.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
@@ -16,6 +16,28 @@ afterEach(() => {
 });
 
 describe('renderPdfPages cleanup and bounds', () => {
+  it('does not render the next page until requested and destroys the document on early iterator return', async () => {
+    const page = { getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale }), render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })), cleanup: vi.fn() };
+    const getPage = vi.fn().mockResolvedValue(page);
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    mockedGetDocument.mockReturnValue({ promise: Promise.resolve({ numPages: 40, getPage }), destroy } as unknown as ReturnType<typeof getDocument>);
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => ({}), toBlob: (callback: BlobCallback) => callback(new Blob(['jpeg'])) }) });
+    const iterator = iteratePdfPages(new Uint8Array([1]), [1, 2], { maxPdfPages: null, pageImageMaxEdge: 2000, pageImageMaxBytes: 2 * 1024 * 1024 });
+    const first = await iterator.next();
+    expect(first.value).toMatchObject({ pageNumber: 1 });
+    expect(getPage).toHaveBeenCalledTimes(1);
+    expect(page.cleanup).toHaveBeenCalledOnce();
+    await iterator.return(undefined);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(getPage).toHaveBeenCalledTimes(1);
+  });
+  it('honors pre-aborted cancellation without allocating a loading task', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const iterator = iteratePdfPages(new Uint8Array([1]), [1], { maxPdfPages: null, pageImageMaxEdge: 2000, pageImageMaxBytes: 2 * 1024 * 1024 }, { signal: controller.signal });
+    await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockedGetDocument).not.toHaveBeenCalled();
+  });
   it('destroys the loading task when loading rejects', async () => {
     const failure = new Error('password required');
     const task = {
