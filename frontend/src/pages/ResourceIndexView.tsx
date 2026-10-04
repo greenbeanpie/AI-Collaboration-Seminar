@@ -48,7 +48,7 @@ export function PageReviewActions({projectId,sourceId,versionId,fileId,aiEnabled
    }else {
     const bytes=await downloadSourcePdf(projectId,fileId),{iteratePdfPages}=await import('./source-pdf-render');
     let images:Array<{pageNumber:number;fileId:string}>=[];
-    const send=async()=>{await documentRequest(projectPath(projectId,`/sources/${sourceId}/page-images`),{method:'POST',body:{sourceVersionId:versionId,images}});images=[];};
+    const send=async()=>{await documentRequest(projectPath(projectId,`/sources/${sourceId}/page-images`),{method:'POST',body:{sourceVersionId:versionId,images,analyze:false}});images=[];};
     for await(const image of iteratePdfPages(bytes,selected,{maxPdfPages:null,pageImageMaxEdge:2000,pageImageMaxBytes:2*1024*1024})) {
      setNotice(`正在准备第 ${image.pageNumber} 页补充识别`);
      const id=await uploadProjectFile(projectId,image.file,undefined,undefined,{derivedFromFileId:fileId});images.push({pageNumber:image.pageNumber,fileId:id});

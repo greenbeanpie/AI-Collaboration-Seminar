@@ -160,6 +160,6 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(downloadRoute, async (c) => {
     const { projectId, fileId } = c.req.valid('param');
     const file = await readFileContent(c.env, { projectId, fileId, range:c.req.header('range') });
-    return new Response(file.body,{status:file.status,headers:{'content-type':file.mime,...file.headers}});
+    return new Response(file.body,{status:file.status,headers:{'content-type':file.mime,...file.headers,'cache-control':'no-store','x-request-id':c.get('requestId')??crypto.randomUUID()}});
   });
 }

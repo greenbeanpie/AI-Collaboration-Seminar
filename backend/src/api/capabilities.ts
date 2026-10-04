@@ -12,6 +12,7 @@ const capabilitiesResponse = apiEnvelope(
       features: z
         .object({
           aiEnabled: z.boolean(),
+          documentImports:z.boolean().optional(),resourceIndex:z.boolean().optional(),ocrBatching:z.boolean().optional(),
           webFetch: z.boolean(),
           emailMode: z.enum(['echo', 'resend']),
         })
@@ -97,6 +98,7 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         environment: c.env.ENV_NAME,
         features: {
           aiEnabled,
+          documentImports:c.env.DOCUMENT_IMPORTS_ENABLED!=='false',resourceIndex:c.env.RESOURCE_INDEX_ENABLED!=='false',ocrBatching:c.env.OCR_BATCH_ENABLED!=='false',
           webFetch: true,
           emailMode: c.env.EMAIL_MODE,
         },

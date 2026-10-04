@@ -10,6 +10,7 @@ interface Block { id:string; seq:number; fragment_id:string|null; page_number:nu
 const BLOCK=1800, PAGE=20;
 
 export async function assertIndexedResource(env:Env, projectId:string, target:ResourceIndexTarget):Promise<Resource> {
+ if(env.RESOURCE_INDEX_ENABLED==='false')throw invalidState('材料索引功能暂时关闭');
  const row=target.resourceType==='source'
   ? await env.DB.prepare(`SELECT s.id resourceId,s.title,s.lifecycle_version revision,COALESCE(v.extraction_coverage,p.text_status,'pending') coverage,p.text_status textStatus FROM source_versions v JOIN sources s ON s.id=v.source_id LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE v.id=?1 AND v.project_id=?2 AND s.project_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')}`).bind(target.versionId,projectId).first<Resource>()
   : await env.DB.prepare(`SELECT m.id resourceId,m.title,v.revision,'ready' coverage FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE v.id=?1 AND v.project_id=?2 AND m.project_id=?2`).bind(target.versionId,projectId).first<Resource>();

@@ -13,8 +13,9 @@ const params=z.object({projectId:z.string().uuid()}),session=params.extend({sess
 const envelope=apiEnvelope(z.record(z.string(),z.unknown()),'DocumentImportResponse');
 const body=<T extends z.ZodType>(schema:T)=>({content:{'application/json':{schema}},required:true as const});
 export function registerDocumentImportRoutes(app:OpenAPIHono<AppEnv>) {
- app.use('/api/v1/projects/:projectId/document-imports',requireUser,requireProjectMember());
- app.use('/api/v1/projects/:projectId/document-imports/*',requireUser,requireProjectMember());
+ const enabled:import('hono').MiddlewareHandler<AppEnv>=async(c,next)=>{if(c.env.DOCUMENT_IMPORTS_ENABLED==='false')throw invalidState('正文导入入口暂时关闭，原文件保留');await next();};
+ app.use('/api/v1/projects/:projectId/document-imports',enabled,requireUser,requireProjectMember());
+ app.use('/api/v1/projects/:projectId/document-imports/*',enabled,requireUser,requireProjectMember());
  const responses={200:{description:'解析会话',content:{'application/json':{schema:envelope}}}};
  app.openapi(createRoute({method:'post',path:base,tags:['sources'],request:{params,body:body(z.object({sourceVersionId:z.string().uuid(),method:z.enum(['browser-pdf','browser-docx'])}).strict())},responses}),async c=>{const b=c.req.valid('json');return c.json(apiData(c,await startDocumentImport(c.env,c.req.valid('param').projectId,c.get('user')!.id,b.sourceVersionId,b.method)),200);});
  app.openapi(createRoute({method:'get',path:base+'/{sessionId}',tags:['sources'],request:{params:session},responses}),async c=>{const p=c.req.valid('param');return c.json(apiData(c,await documentImportStatus(c.env,p.projectId,c.get('user')!.id,p.sessionId)),200);});

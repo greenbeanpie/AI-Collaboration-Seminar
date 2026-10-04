@@ -104,6 +104,15 @@
                   "aiEnabled": {
                     "type": "boolean"
                   },
+                  "documentImports": {
+                    "type": "boolean"
+                  },
+                  "resourceIndex": {
+                    "type": "boolean"
+                  },
+                  "ocrBatching": {
+                    "type": "boolean"
+                  },
                   "webFetch": {
                     "type": "boolean"
                   },
@@ -7582,6 +7591,24 @@
                   "string",
                   "null"
                 ]
+              },
+              "extractionMethod": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "extractionCoverage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "extractionWarnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "pageCount": {
                 "type": [
@@ -18895,7 +18922,7 @@
                           "type": "array",
                           "items": {
                             "type": "string",
-                            "maxLength": 500
+                            "maxLength": 1000
                           },
                           "maxItems": 20
                         }
@@ -18981,10 +19008,14 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "maxLength": 500
+                      "maxLength": 1000
                     },
                     "maxItems": 100,
                     "default": []
+                  },
+                  "interrupted": {
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "required": [
@@ -23002,6 +23033,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "analyze": {
+                    "type": "boolean",
+                    "default": true
+                  },
                   "sourceVersionId": {
                     "type": "string",
                     "format": "uuid"
@@ -29244,6 +29279,56 @@
                 },
                 "required": [
                   "totalPages"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/extract": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "sourceVersionId"
                 ],
                 "additionalProperties": false
               }

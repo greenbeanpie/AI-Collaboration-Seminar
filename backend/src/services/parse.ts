@@ -249,7 +249,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   const endpoint = { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: env.AUTH_SECRET, envName: env.ENV_NAME, diagnostics: env };
   const modelKey = await sha256Hex(JSON.stringify([vision.provider, vision.apiUrl, vision.apiProtocol, vision.model]));
   const capability = await env.DB.prepare('SELECT single_image_only FROM ocr_model_capabilities WHERE endpoint_model_hash = ?1').bind(modelKey).first<{ single_image_only: number }>();
-  let singleOnly = Boolean(capability?.single_image_only);
+  let singleOnly = env.OCR_BATCH_ENABLED==='false'||Boolean(capability?.single_image_only);
   const pages = await env.DB.prepare(`SELECT p.id, p.page_number, p.image_file_id, f.size_bytes FROM source_pages p LEFT JOIN files f ON f.id = p.image_file_id WHERE p.source_version_id = ?1 AND p.image_status = 'uploaded' AND p.ocr_status = 'pending' ORDER BY p.page_number`).bind(version.id).all<{ id: string; page_number: number; image_file_id: string; size_bytes: number | null }>();
   for (const page of pages.results) {
     if (page.size_bytes !== null && page.size_bytes !== undefined) continue;
@@ -558,6 +558,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
     await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+    if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.ocr'){await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,ocrReady:true});return {status:(await getJob(env,jobId)).status};}
     await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
     await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>

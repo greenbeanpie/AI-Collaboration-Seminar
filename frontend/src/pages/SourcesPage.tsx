@@ -227,6 +227,8 @@ export function SourceRecord({
       {version?.charCount !== null && version?.charCount !== undefined && <span>{version.charCount.toLocaleString()} 字符</span>}
       {currentFileId && <span>已关联原文件，可继续渲染扫描页</span>}
     </div>
+    {version?.extractionCoverage === 'partial' && <p className="callout warning-callout">正文覆盖部分资料，请核对未读取对象与原文件。</p>}
+    {Boolean(version?.extractionWarnings?.length) && <ul>{version?.extractionWarnings?.map((warning,i)=><li key={i}>{warning}</li>)}</ul>}
     {version?.parseError && <div className="callout danger-callout">{version.parseError}</div>}
     {version?.pages.length ? <div className="sources-pages" aria-label="逐页处理状态">{version.pages.map((page) => {
       const status = sourcePageStatus(version, page.pageNumber);
@@ -538,6 +540,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         body = { kind, fileId };
       }
       if (title.trim()) body.title = title.trim();
+      else if(kind==='file'&&file)body.title=file.name.slice(0,200);
       const sourceIntentId = JSON.stringify(body);
       let sourceIntentKey = sourceIntentKeys.current.get(sourceIntentId);
       if (!sourceIntentKey) {

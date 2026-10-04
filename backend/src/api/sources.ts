@@ -68,6 +68,9 @@ const versionResponse = apiEnvelope(
     fileId: z.string().uuid().nullable(),
     status: z.enum(['pending', 'processing', 'ready', 'failed']),
     parseError: z.string().nullable(),
+    extractionMethod:z.string().nullable().optional(),
+    extractionCoverage:z.string().nullable().optional(),
+    extractionWarnings:z.array(z.string()).optional(),
     pageCount: z.number().int().nullable(),
     charCount: z.number().int().nullable(),
     pages: z.array(pageStatusSchema),
@@ -93,6 +96,7 @@ const renderRequestsResponse = apiEnvelope(
 );
 
 const pageImagesBody = z.object({
+  analyze:z.boolean().default(true),
   sourceVersionId: z.string().uuid(),
   images: z
     .array(
@@ -196,6 +200,7 @@ interface VersionRow {
   file_id: string | null;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   parse_error: string | null;
+  extraction_method:string|null;extraction_coverage:string|null;extraction_warnings_json:string;
   page_count: number | null;
   char_count: number | null;
 }
@@ -211,7 +216,7 @@ interface PageRow {
 async function projectSourceVersion(env: AppEnv['Bindings'], projectId: string, sourceId: string, versionId: string): Promise<VersionRow> {
   await loadActiveSourceVersion(env,versionId);
   const version = await env.DB.prepare(
-    'SELECT id, source_id, revision, origin, file_id, status, parse_error, page_count, char_count FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3',
+    'SELECT id, source_id, revision, origin, file_id, status, parse_error, page_count, char_count, extraction_method,extraction_coverage,extraction_warnings_json FROM source_versions WHERE id = ?1 AND source_id = ?2 AND project_id = ?3',
   ).bind(versionId, sourceId, projectId).first<VersionRow>();
   if (!version) throw notFound('来源版本不存在');
   return version;
@@ -370,6 +375,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         contributors:await fileContributors(c.env,c.get('member')!.projectId,version.file_id),
         status: version.status,
         parseError: version.parse_error,
+        extractionMethod:version.extraction_method,extractionCoverage:version.extraction_coverage,extractionWarnings:JSON.parse(version.extraction_warnings_json??'[]'),
         pageCount: version.page_count,
         charCount: version.char_count,
         pages: pages.results.map((p) => ({
@@ -522,7 +528,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         jobId = await createJobAndDispatch(c.env, {
           projectId: member.projectId,
           kind: 'ocr_pages',
-          input: { sourceId, sourceVersionId: versionId, sourceLifecycleVersion:lifecycle.lifecycleVersion, phase: 'ocr' },
+          input: { sourceId, sourceVersionId: versionId, sourceLifecycleVersion:lifecycle.lifecycleVersion, phase: 'ocr',operation:body.analyze?'source.parse':'source.ocr' },
           createdBy: c.get('user')!.id,
         });
       }

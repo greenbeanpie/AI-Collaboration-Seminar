@@ -51,13 +51,13 @@ export async function finishDocumentImport(env:Env,project:string,user:string,id
  if(s.status==='processing'){const claimed=await env.DB.prepare("UPDATE document_parse_sessions SET status='finalizing' WHERE id=?1 AND status='processing' AND next_batch=?2").bind(id,s.next_batch).run();if(!claimed.meta.changes)throw invalidState('解析批次仍在更新，请重新读取进度');}else if(s.status!=='finalizing')throw invalidState('解析会话不可完成');
  const pages=await env.DB.prepare('SELECT COUNT(*) n,MIN(page_number) first,MAX(page_number) last FROM document_parse_pages WHERE session_id=?1').bind(id).first<{n:number;first:number;last:number}>();
  if(s.method==='browser-pdf'&&!interrupted&&(totalPages!==pages?.n||pages?.first!==1||pages?.last!==totalPages)){await env.DB.prepare("UPDATE document_parse_sessions SET status='processing' WHERE id=?1 AND status='finalizing'").bind(id).run();throw invalidState('PDF 页覆盖范围不完整');}
- const merged=[...new Set([...JSON.parse(s.warnings_json) as string[],...warnings, ...(partial?['本机解析中断，正文仅部分完成']:[])])];
+ const merged=[...new Set([...JSON.parse(s.warnings_json) as string[],...warnings, ...(interrupted?['本机解析中断，正文仅部分完成']:[])])];
  const missing=await env.DB.prepare("SELECT COUNT(*) n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(s.source_version_id).first<{n:number}>();
  const size=await env.DB.prepare('SELECT COALESCE(SUM(length(content)),0) n FROM source_fragments WHERE source_version_id=?1').bind(s.source_version_id).first<{n:number}>();
  const incomplete=interrupted||!!missing?.n;
  await env.DB.batch([
   env.DB.prepare(`UPDATE document_parse_sessions SET status=?2,total_pages=?3,warnings_json=?4,updated_at=?5 WHERE id=?1 AND status='finalizing' AND next_batch=?8 AND ${sourceLifecycleGuard('?6','?7')}`).bind(id,partial?'partial':'complete',totalPages,JSON.stringify(merged),nowIso(),s.source_version_id,s.lifecycle_version,s.next_batch),
-  env.DB.prepare(`UPDATE source_versions SET status='processing',char_count=?2,page_count=?3,extraction_method=?4,extraction_warnings_json=?5,extraction_coverage=?7,parse_error=NULL WHERE id=?1 AND ${sourceLifecycleGuard('?1','?6')}`).bind(s.source_version_id,size?.n??0,totalPages,s.method,JSON.stringify(merged),s.lifecycle_version,partial||incomplete?'partial':'complete')
+  env.DB.prepare(`UPDATE source_versions SET status=?8,char_count=?2,page_count=?3,extraction_method=?4,extraction_warnings_json=?5,extraction_coverage=?7,parse_error=NULL WHERE id=?1 AND ${sourceLifecycleGuard('?1','?6')}`).bind(s.source_version_id,size?.n??0,totalPages,s.method,JSON.stringify(merged),s.lifecycle_version,partial||incomplete?'partial':'complete',incomplete?'processing':'ready')
  ]);
  await setSourceStage(env,s.source_version_id,'text',incomplete?'waiting_input':'ready',partial?'本机解析仅部分完成':null,s.lifecycle_version);
  return {...await documentImportStatus(env,project,user,id),textReady:!incomplete,needsImages:missing?.n??0};

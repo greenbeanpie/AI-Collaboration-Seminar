@@ -864,6 +864,8 @@ export interface paths {
                         status: "complete" | "partial";
                         /** @default [] */
                         warnings?: string[];
+                        /** @default false */
+                        interrupted?: boolean;
                     };
                 };
             };
@@ -3431,6 +3433,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @default true */
+                        analyze?: boolean;
                         /** Format: uuid */
                         sourceVersionId: string;
                         images: {
@@ -7766,6 +7770,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/document-imports/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/document-imports/analyze": {
         parameters: {
             query?: never;
@@ -9341,6 +9389,9 @@ export interface components {
                 /** @description AI 是否启用由 ai_config_versions 决定；不暴露任何密钥 */
                 features: {
                     aiEnabled: boolean;
+                    documentImports?: boolean;
+                    resourceIndex?: boolean;
+                    ocrBatching?: boolean;
                     webFetch: boolean;
                     /** @enum {string} */
                     emailMode: "echo" | "resend";
@@ -11075,6 +11126,9 @@ export interface components {
                 /** @enum {string} */
                 status: "pending" | "processing" | "ready" | "failed";
                 parseError: string | null;
+                extractionMethod?: string | null;
+                extractionCoverage?: string | null;
+                extractionWarnings?: string[];
                 pageCount: number | null;
                 charCount: number | null;
                 pages: {
