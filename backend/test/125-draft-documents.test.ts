@@ -3,9 +3,15 @@ import {env} from './helpers/env';
 import {seedUser} from './helpers/seed';
 import {newId,nowIso} from '../src/core/db';
 import {beginDraftUpload,uploadDraftPart,completeDraftUpload,importDraftBlocks,finishDraftImport,readDraftDocument,draftUploadStatus,cancelDraftUpload} from '../src/services/draft-documents';
-import {getDraft,commitDraft,previewDraft} from '../src/services/creation-drafts';
+import {getDraft,commitDraft,previewDraft,uploadDraftFile} from '../src/services/creation-drafts';
 async function fixture(){const owner=await seedUser(),id=newId(),time=nowIso();await env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id,owner.userId,JSON.stringify({name:'分块项目',description:'',brief:'',teamSize:1,inviteLabels:[],inviteUsernames:[],aiCollaborationEnabled:false}),newId(),time).run();return {id,userId:owner.userId,fileId:newId()};}
 describe('draft streamed original and client text import',()=>{
+ it('validates later legacy text against the original and rejects invented non-PDF page numbers',async()=>{
+  const f=await fixture();await uploadDraftFile(env,f.id,f.userId,1,f.fileId,'文本.txt',new TextEncoder().encode('前段'.repeat(1000)+'确切尾段引用'));
+  const task={title:'核对尾段',detail:'核查',criteria:'原文可见',effortHours:1,dependsOn:[],citations:[{fileId:f.fileId,pageNumber:null,quote:'确切尾段引用'}]};
+  const preview=await previewDraft(env,f.id,f.userId,2,'manual',[task],true);expect(preview.previewState).toBe('ready');
+  await expect(previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{...task.citations[0]!,pageNumber:1}]}],true)).rejects.toThrow('原文不符');
+ });
  it('retains long text and nullable page locators through promotion, with idempotent completion',async()=>{
   const f=await fixture(),bytes=new TextEncoder().encode('original');
   const begun=await beginDraftUpload(env,f.id,f.userId,f.fileId,'资料.txt',bytes.length,1);expect(begun.partBytes).toBeGreaterThan(0);
