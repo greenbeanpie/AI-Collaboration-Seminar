@@ -1,4 +1,4 @@
-import { ResourceIndexView,BrowserSourceRecovery } from './ResourceIndexView';
+import { ResourceIndexView,BrowserSourceRecovery,PageReviewActions } from './ResourceIndexView';
 import { importBrowserFile,documentRequest } from './document-import-client';
 import { ContributorNames, FileContributorPicker } from '../components/FileContributors';
 import { SourceFullText } from './SourceFullText';
@@ -236,6 +236,7 @@ export function SourceRecord({
     {displayedJob && <SourceJobProgress projectId={projectId} tracked={displayedJob} capability={capability} onUpdate={onJobUpdate} onRetryJob={onRetryJob} onScan={onScan} scanning={scanJobId === displayedJob.jobId} />}
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
     {version && <ResourceIndexView projectId={projectId} resourceType="source" versionId={version.sourceVersionId} fileId={currentFileId} />}
+    {version && currentFileId && version.pageCount !== null && <PageReviewActions projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} fileId={currentFileId} aiEnabled={Boolean(capability?.features.aiEnabled)} />}
     {version && currentFileId && <BrowserSourceRecovery projectId={projectId} versionId={version.sourceVersionId} fileId={currentFileId} />}
     {version && <SourceFullText sourceId={source.sourceId} sourceVersionId={version.sourceVersionId} />}
     {version && <SourceProcessingCard projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} aiEnabled={Boolean(capability?.features.aiEnabled)} active={Boolean(activeJob)} />}
@@ -568,7 +569,8 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
           const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/analyze'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});
           trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;
         }
-      } else if(capability.features.aiEnabled) parseStarted=await startParse({sourceId:source.sourceId,title:source.title},source.sourceVersionId);
+      } else if(!capability.features.aiEnabled&&kind==='file'&&file&&/\.pdf$/i.test(file.name)) {const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/extract'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;}
+      else if(capability.features.aiEnabled) parseStarted=await startParse({sourceId:source.sourceId,title:source.title},source.sourceVersionId);
       setText('');
       setUrl('');
       setTitle('');
@@ -595,9 +597,9 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
   return <div className="page-stack sources-page">
     {!embedded && <PageHeading eyebrow="项目资料" title="通知来源" detail="导入可核对的通知原文。解析任务会生成待确认要求；所有记录和状态来自项目服务。" />}
 
-    {!capability.features.aiEnabled ? <div className="callout warning-callout">服务能力报告 AI 未启用。仍可保存来源，但解析和要求提取不可用；不会展示演示结果。</div> : null}
+    {!capability.features.aiEnabled ? <div className="callout warning-callout">AI 未启用。仍可读取文件正文；总结、要求提取与视觉 OCR 暂不可用。</div> : null}
 
-    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 文件。">
+    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/DOCX/TXT/Markdown 文件。">
       <form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
         <div className="sources-intake-tabs" role="group" aria-label="来源类型">
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'paste'} onClick={() => setKind('paste')}><Type size={15} /> 粘贴文本</button>

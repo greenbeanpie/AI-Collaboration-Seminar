@@ -63,7 +63,7 @@ describe('文件上传与下载', () => {
     expect(get.status).toBe(404);
   });
 
-  it('超过 10MiB → 413 且不落 R2', async () => {
+  it('快捷请求超过10MiB需分片，总文件没有应用上限', async () => {
     const owner = await seedUser('owner@example.com');
     const pid = await seedProject(owner.userId);
     const init = await initFile(owner.token, pid);

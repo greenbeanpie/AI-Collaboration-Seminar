@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery,useQueryClient } from '@tanstack/react-query';
 import { projectPath } from '../api/client';
 import { documentRequest,importBrowserFile } from './document-import-client';
+import { downloadSourcePdf,uploadProjectFile } from './source-workflows';
 import { ErrorNotice } from '../components/ui';
 type Entry={sectionId:string;heading:string;pageNumber:number|null;excerpt?:string};
 type Directory={items:Entry[];nextOffset:number|null;indexStatus:string;coverage:string};
@@ -33,4 +34,30 @@ export function BrowserSourceRecovery({projectId,versionId,fileId}:{projectId:st
   }catch(e){setError(e);}finally{setBusy(false);setController(undefined);}
  }
  return <details className="card"><summary>本机读取原文、云端失败回退</summary><p className="form-note">依赖本机内存与性能，复杂对象可能无法读取；中断时保留已提交正文。客户端提取结果尚未经服务器独立核对。</p><button className="button button-quiet" disabled={busy} onClick={()=>void recover()}>读取服务器保留的原文件</button><label className="field">选择同一份 PDF / DOCX<input type="file" accept=".pdf,.docx" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void recover(f);}}/></label>{busy&&<button className="button button-quiet" onClick={()=>controller?.abort()}>停止本机解析</button>}{notice&&<p role="status">{notice}</p>}{error!=null&&<ErrorNotice error={error}/>}</details>;
+}
+export function PageReviewActions({projectId,sourceId,versionId,fileId,aiEnabled}:{projectId:string;sourceId:string;versionId:string;fileId:string;aiEnabled:boolean}) {
+ const queryClient=useQueryClient(),[pages,setPages]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState<unknown>();
+ async function run(ocr:boolean) {
+  setBusy(true);setError(undefined);
+  try {
+   const selected=[...new Set(pages.split(/[,，\s]+/).filter(Boolean).map(Number))];
+   if(!selected.length||selected.some(n=>!Number.isSafeInteger(n)||n<1))throw new Error('请输入真实页码，例如 1,2,3');
+   if(!ocr) {
+    for(let i=0;i<selected.length;i+=100)await documentRequest(projectPath(projectId,'/document-imports/blank-pages'),{method:'POST',body:{sourceVersionId:versionId,pages:selected.slice(i,i+100)}});
+    setNotice('选定空白页已确认，不调用 OCR 模型。');
+   }else {
+    const bytes=await downloadSourcePdf(projectId,fileId),{iteratePdfPages}=await import('./source-pdf-render');
+    let images:Array<{pageNumber:number;fileId:string}>=[];
+    const send=async()=>{await documentRequest(projectPath(projectId,`/sources/${sourceId}/page-images`),{method:'POST',body:{sourceVersionId:versionId,images}});images=[];};
+    for await(const image of iteratePdfPages(bytes,selected,{maxPdfPages:null,pageImageMaxEdge:2000,pageImageMaxBytes:2*1024*1024})) {
+     setNotice(`正在准备第 ${image.pageNumber} 页补充识别`);
+     const id=await uploadProjectFile(projectId,image.file,undefined,undefined,{derivedFromFileId:fileId});images.push({pageNumber:image.pageNumber,fileId:id});
+     if(images.length===3)await send();
+    }
+    if(images.length)await send();setNotice('补充 OCR 已提交，会记录模型用量；识别结果待人工复核。');
+   }
+   await queryClient.invalidateQueries({predicate:q=>['sourceVersion','sourceProcessing','resourceIndex','sourceFragments'].includes(String(q.queryKey[0]))});
+  }catch(e){setError(e);}finally{setBusy(false);}
+ }
+ return <details className="card"><summary>补充识别或确认空白页</summary><p className="form-note">有页码、标题但主体是图片的页面，也可以补充 OCR。识别可能产生模型用量；确认空白不会调用模型。</p><label className="field">页码<input className="input" value={pages} onChange={e=>setPages(e.target.value)} placeholder="例如 1,2,3"/></label><div className="button-row"><button className="button button-quiet" disabled={busy||!aiEnabled} onClick={()=>void run(true)}>补充 OCR</button><button className="button button-quiet" disabled={busy} onClick={()=>void run(false)}>确认这些页为空白</button></div>{notice&&<p role="status">{notice}</p>}{error!=null&&<ErrorNotice error={error}/>}</details>;
 }

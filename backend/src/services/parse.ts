@@ -317,6 +317,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   }
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND image_status='none' AND text_status='none'").bind(version.id).first<{n:number}>();
   await assertProcessingActive(env,version,jobId);
+  await env.DB.prepare(`UPDATE source_versions SET char_count=(SELECT COALESCE(SUM(length(content)),0) FROM source_fragments WHERE source_version_id=?1) WHERE id=?1 AND ${processingGuard('?1','?2','?3')}`).bind(version.id,version.lifecycleVersion,jobId??null).run();
   return {ocred,failed,stillMissing:missing?.n ?? 0};
 }
 

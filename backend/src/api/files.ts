@@ -2,6 +2,8 @@ import { contributorSchema, fileContributors } from '../services/file-contributo
 import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
+import { AppError } from '../core/errors';
+import { LIMITS } from '../core/limits';
 import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
@@ -143,7 +145,11 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(contentRoute, async (c) => {
     const { projectId, fileId } = c.req.valid('param');
-    const bytes = new Uint8Array(await c.req.raw.arrayBuffer());
+    const chunks:Uint8Array[]=[];let size=0;
+    const reader=c.req.raw.body?.getReader();
+    if(reader)try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.byteLength;if(size>LIMITS.recommendedCloudFileBytes){await reader.cancel();throw new AppError('FILE_TOO_LARGE','单次快捷上传超过10 MiB，请改用分片上传；文件总大小没有应用上限',413,false);}chunks.push(r.value);}}finally{reader.releaseLock();}
+    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+
     const stored = await storeFileContent(c.env, { projectId, fileId, bytes });
     return c.json(
       apiData(c, { fileId, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeDetected: stored.mimeDetected }),

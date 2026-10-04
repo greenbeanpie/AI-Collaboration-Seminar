@@ -56,6 +56,11 @@ export const projectTemplateApi = {
   commit: async (draftId: string, expectedRevision: number): Promise<DataOf<'CreationCommitResponse'>> => { const body = { expectedRevision, confirmed: true }; const namespace = `template-commit:${draftId}`; const idempotencyKey = await idempotencyKeyForIntent(namespace, body); const result = await api.post<'CreationCommitResponse'>(templateDraftPath(draftId, '/commit'), body, { idempotencyKey }); completeIntent(namespace); return result; },
   state: (draftId: string, expectedRevision: number, status: 'active' | 'cancelled') => api.post<'CreationDraftResponse'>(templateDraftPath(draftId, '/state'), { expectedRevision, status }) as Promise<TemplateDraft>,
   upload: async (userId: string, draftId: string, expectedRevision: number, file: File, signal?: AbortSignal, parsingMode: 'auto' | 'cloud' | 'browser' = 'auto') => {
+    if(parsingMode==='auto'&&/\.pdf$/i.test(file.name)&&file.size<=10*1024*1024) {
+      await import('../pages/source-pdf-render');const {getDocument}=await import('pdfjs-dist');
+      const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
+      try{if((await task.promise).numPages>30)parsingMode='browser';}finally{await task.destroy();}
+    }
     if(file.size>10*1024*1024||/\.docx$/i.test(file.name)||parsingMode==='browser')return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
     const sha256 = await creationFileHash(file);
     const identity = { name: file.name, size: file.size, sha256 };

@@ -132,6 +132,7 @@ export async function storeFileContent(
     .first<FileRow>();
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
+  if(!params.bytes.length)throw validationFailed('文件不能为空');
 
   const spec = MAGIC_SPECS.find((m) => m.exts.includes(row.ext) && m.detect(params.bytes));
   let mimeDetected: string;
@@ -182,7 +183,7 @@ export async function readFileContent(
   const active=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL AND lifecycle_version=?3 AND status='available'").bind(row.id,params.projectId,row.lifecycle_version).first();
   if(!active) throw notFound('文件已移入回收站或生命周期已变化');
   const headers:Record<string,string>={'accept-ranges':'bytes','etag':obj.httpEtag};
-  const range=obj.range;
+  const range=params.range?obj.range:undefined;
   if(range && 'offset' in range && 'length' in range) {headers['content-range']=`bytes ${range.offset}-${range.offset!+range.length!-1}/${obj.size}`;headers['content-length']=String(range.length);}
   else headers['content-length']=String(obj.size);
   return { body, mime: row.mime_detected ?? 'application/octet-stream',headers,status:range?206:200 };

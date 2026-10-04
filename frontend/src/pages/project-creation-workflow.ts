@@ -1,3 +1,4 @@
+import { uploadMultipartFile,importBrowserFile } from './document-import-client';
 import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
 import { createIntentKey } from './source-workflows';
 
@@ -145,7 +146,7 @@ export async function completeCreationFile(
   if (!file.uploadConfirmed) {
     if (!original) throw new Error('请重新选择同一原文件，再重试未完成的上传。');
     if (original.name !== file.name || original.size !== file.size) throw new Error('所选文件与原文件名称或大小不同，请重新选择。');
-    const sha256 = await creationFileHash(original);
+    const sha256 = original.size>8*1024*1024&&!file.sha256 ? undefined : await creationFileHash(original);
     if (file.sha256 && sha256 !== file.sha256) throw new Error('所选文件内容已变化，请重新选择最初上传的原文件。');
     update({ sha256, status: 'uploading', error: undefined });
     if (stopped()) return file;
@@ -162,11 +163,12 @@ export async function completeCreationFile(
       if (stopped()) return file;
       update({ uploadAttempted: true });
       try {
-        const stored = await request<'FileStoredResponse'>(projectPath(projectId, `/files/${encodeURIComponent(file.fileId!)}/content`), {
+        if(original.size>8*1024*1024||/\.docx$/i.test(original.name)){await uploadMultipartFile(projectId,file.fileId!,original);update({uploadConfirmed:true});}
+        else { const stored = await request<'FileStoredResponse'>(projectPath(projectId, `/files/${encodeURIComponent(file.fileId!)}/content`), {
           method: 'PUT', rawBody: original, headers: { 'Content-Type': contentType(file.name) },
         });
         if (stored.fileId !== file.fileId || stored.sizeBytes !== file.size || stored.sha256 !== file.sha256) throw new Error('上传响应与原文件校验不一致，已停止建立来源。');
-        update({ uploadConfirmed: true });
+        update({ uploadConfirmed: true }); }
       } catch (error) {
         // An accepted PUT whose response was lost must never allocate/upload another file.
         const uncertain = !(error instanceof ApiError) || error.status === 0 || error.status >= 500 || error.code === 'INVALID_RESPONSE' || error.code === 'INVALID_STATE';
@@ -179,6 +181,7 @@ export async function completeCreationFile(
   update({ status: 'linking', error: undefined });
   const source = await api.post<'SourceCreateResponse'>(projectPath(projectId, '/sources'), { kind: 'file', fileId: file.fileId, title: file.name.slice(0, 200) }, { idempotencyKey: file.sourceKey });
   if (!source.sourceId || !source.sourceVersionId) throw new Error('来源响应尚未确认，请用原进度重试。');
+  if(original&&(/\.docx$/i.test(original.name)||(/\.pdf$/i.test(original.name)&&original.size>10*1024*1024)))await importBrowserFile(projectId,source.sourceVersionId,original);
   update({ sourceId: source.sourceId, sourceVersionId: source.sourceVersionId, status: 'complete', error: undefined });
   return file;
 }

@@ -837,6 +837,23 @@
           "requestId"
         ]
       },
+      "DraftDocumentOperationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "ProjectTemplateListResponse": {
         "type": "object",
         "properties": {
@@ -1231,8 +1248,15 @@
                                 "format": "uuid"
                               },
                               "pageNumber": {
-                                "type": "integer",
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
                                 "minimum": 1
+                              },
+                              "locator": {
+                                "type": "string",
+                                "maxLength": 200
                               },
                               "quote": {
                                 "type": "string",
@@ -1848,8 +1872,15 @@
                                       "format": "uuid"
                                     },
                                     "pageNumber": {
-                                      "type": "integer",
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
                                       "minimum": 1
+                                    },
+                                    "locator": {
+                                      "type": "string",
+                                      "maxLength": 200
                                     },
                                     "quote": {
                                       "type": "string",
@@ -18583,6 +18614,402 @@
         }
       }
     },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "name",
+                  "sizeBytes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/{partNumber}": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "required": true,
+            "name": "partNumber",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/complete": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "blocks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "pageNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 24000
+                        },
+                        "headingPath": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "maxItems": 6
+                        },
+                        "warnings": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "pageNumber",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "blocks"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports/complete": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "blocks": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "partial"
+                    ]
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "maxItems": 100,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "blocks",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "草稿文档操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftDocumentOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/project-templates": {
       "get": {
         "tags": [
@@ -19551,8 +19978,15 @@
                                 "format": "uuid"
                               },
                               "pageNumber": {
-                                "type": "integer",
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
                                 "minimum": 1
+                              },
+                              "locator": {
+                                "type": "string",
+                                "maxLength": 200
                               },
                               "quote": {
                                 "type": "string",
@@ -28800,6 +29234,10 @@
                     "default": []
                   },
                   "partial": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "interrupted": {
                     "type": "boolean",
                     "default": false
                   }
