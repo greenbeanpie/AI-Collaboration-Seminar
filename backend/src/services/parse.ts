@@ -248,7 +248,14 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   const modelKey = await sha256Hex(JSON.stringify([vision.provider, vision.apiUrl, vision.apiProtocol, vision.model]));
   const capability = await env.DB.prepare('SELECT single_image_only FROM ocr_model_capabilities WHERE endpoint_model_hash = ?1').bind(modelKey).first<{ single_image_only: number }>();
   let singleOnly = Boolean(capability?.single_image_only);
-  const pages = await env.DB.prepare(`SELECT p.id, p.page_number, p.image_file_id, f.size_bytes FROM source_pages p LEFT JOIN files f ON f.id = p.image_file_id WHERE p.source_version_id = ?1 AND p.image_status = 'uploaded' AND p.ocr_status = 'pending' ORDER BY p.page_number`).bind(version.id).all<{ id: string; page_number: number; image_file_id: string; size_bytes: number }>();
+  const pages = await env.DB.prepare(`SELECT p.id, p.page_number, p.image_file_id, f.size_bytes FROM source_pages p LEFT JOIN files f ON f.id = p.image_file_id WHERE p.source_version_id = ?1 AND p.image_status = 'uploaded' AND p.ocr_status = 'pending' ORDER BY p.page_number`).bind(version.id).all<{ id: string; page_number: number; image_file_id: string; size_bytes: number | null }>();
+  for (const page of pages.results) {
+    if (page.size_bytes !== null && page.size_bytes !== undefined) continue;
+    const file = await env.DB.prepare("SELECT r2_key FROM files WHERE id=?1 AND status='available' AND deleted_at IS NULL").bind(page.image_file_id).first<{r2_key:string}>();
+    const object = file ? await env.FILES.head(file.r2_key) : null;
+    if (!object) throw new AppError('SOURCE_PARSE_FAILED','页面图片缺失，请重新上传',422,false);
+    page.size_bytes=object.size;
+  }
   let ocred = 0; let failed = 0; let batches = 0;
   for (let offset = 0; offset < pages.results.length;) {
     await assertProcessingActive(env, version, jobId);
