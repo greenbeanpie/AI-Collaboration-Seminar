@@ -12911,6 +12911,2382 @@
           "requestId"
         ]
       },
+      "AgentBridgepostpairings": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "pairingId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "approvalUrl": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pairingId",
+              "approvalUrl",
+              "expiresAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegetpairingspairingId": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "pairingId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deviceName": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "expired"
+                ]
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "pairingId",
+              "deviceName",
+              "expiresAt",
+              "status",
+              "projects"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostpairingspairingIdapprove": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "paired": {
+                "type": "boolean"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deviceName": {
+                "type": "string"
+              },
+              "bridgeVersion": {
+                "type": "string"
+              },
+              "dshVersion": {
+                "type": "string"
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "workspaceLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name",
+                    "workspaceLabel"
+                  ]
+                }
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "protocolVersion": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            },
+            "required": [
+              "paired",
+              "deviceId",
+              "deviceName",
+              "bridgeVersion",
+              "dshVersion",
+              "projects",
+              "revoked",
+              "lastSeenAt",
+              "protocolVersion"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegetdevice": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "paired": {
+                "type": "boolean"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deviceName": {
+                "type": "string"
+              },
+              "bridgeVersion": {
+                "type": "string"
+              },
+              "dshVersion": {
+                "type": "string"
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "workspaceLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name",
+                    "workspaceLabel"
+                  ]
+                }
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "protocolVersion": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            },
+            "required": [
+              "paired",
+              "deviceId",
+              "deviceName",
+              "bridgeVersion",
+              "dshVersion",
+              "projects",
+              "revoked",
+              "lastSeenAt",
+              "protocolVersion"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegetdevices": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "paired": {
+                      "type": "boolean"
+                    },
+                    "deviceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "deviceName": {
+                      "type": "string"
+                    },
+                    "bridgeVersion": {
+                      "type": "string"
+                    },
+                    "dshVersion": {
+                      "type": "string"
+                    },
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "projectId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "workspaceLabel": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "projectId",
+                          "name",
+                          "workspaceLabel"
+                        ]
+                      }
+                    },
+                    "revoked": {
+                      "type": "boolean"
+                    },
+                    "lastSeenAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "protocolVersion": {
+                      "type": "number",
+                      "enum": [
+                        1
+                      ]
+                    }
+                  },
+                  "required": [
+                    "paired",
+                    "deviceId",
+                    "deviceName",
+                    "bridgeVersion",
+                    "dshVersion",
+                    "projects",
+                    "revoked",
+                    "lastSeenAt",
+                    "protocolVersion"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgedeletedevicesdeviceId": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "revoked"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostdevicedisconnect": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "revoked"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostdeviceworkspaces": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "paired": {
+                "type": "boolean"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deviceName": {
+                "type": "string"
+              },
+              "bridgeVersion": {
+                "type": "string"
+              },
+              "dshVersion": {
+                "type": "string"
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "workspaceLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name",
+                    "workspaceLabel"
+                  ]
+                }
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "protocolVersion": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            },
+            "required": [
+              "paired",
+              "deviceId",
+              "deviceName",
+              "bridgeVersion",
+              "dshVersion",
+              "projects",
+              "revoked",
+              "lastSeenAt",
+              "protocolVersion"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostdeviceheartbeat": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "ok"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "handoffId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskRevision": {
+                "type": "integer"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "checking",
+                  "waiting_device",
+                  "claimed",
+                  "running",
+                  "waiting_input",
+                  "uploading",
+                  "ready_for_review",
+                  "blocked",
+                  "failed",
+                  "cancel_requested",
+                  "cancelled",
+                  "dispatch_uncertain"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshotHash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "type": "number"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "artifactId",
+                        "fileId",
+                        "name",
+                        "sizeBytes",
+                        "sha256"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "summary",
+                  "artifacts"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "adoptedSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "handoffId",
+              "projectId",
+              "taskId",
+              "taskRevision",
+              "deviceId",
+              "state",
+              "reason",
+              "snapshotHash",
+              "sessionId",
+              "result",
+              "stale",
+              "adoptedSubmissionId",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "handoffId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "taskRevision": {
+                      "type": "integer"
+                    },
+                    "deviceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "waiting_device",
+                        "claimed",
+                        "running",
+                        "waiting_input",
+                        "uploading",
+                        "ready_for_review",
+                        "blocked",
+                        "failed",
+                        "cancel_requested",
+                        "cancelled",
+                        "dispatch_uncertain"
+                      ]
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "snapshotHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "result": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "summary": {
+                          "type": "string"
+                        },
+                        "artifacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "fileId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "sizeBytes": {
+                                "type": "number"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              }
+                            },
+                            "required": [
+                              "artifactId",
+                              "fileId",
+                              "name",
+                              "sizeBytes",
+                              "sha256"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "summary",
+                        "artifacts"
+                      ]
+                    },
+                    "stale": {
+                      "type": "boolean"
+                    },
+                    "adoptedSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "handoffId",
+                    "projectId",
+                    "taskId",
+                    "taskRevision",
+                    "deviceId",
+                    "state",
+                    "reason",
+                    "snapshotHash",
+                    "sessionId",
+                    "result",
+                    "stale",
+                    "adoptedSubmissionId",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegethandoffshandoffId": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "handoffId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskRevision": {
+                "type": "integer"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "checking",
+                  "waiting_device",
+                  "claimed",
+                  "running",
+                  "waiting_input",
+                  "uploading",
+                  "ready_for_review",
+                  "blocked",
+                  "failed",
+                  "cancel_requested",
+                  "cancelled",
+                  "dispatch_uncertain"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshotHash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "type": "number"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "artifactId",
+                        "fileId",
+                        "name",
+                        "sizeBytes",
+                        "sha256"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "summary",
+                  "artifacts"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "adoptedSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "handoffId",
+              "projectId",
+              "taskId",
+              "taskRevision",
+              "deviceId",
+              "state",
+              "reason",
+              "snapshotHash",
+              "sessionId",
+              "result",
+              "stale",
+              "adoptedSubmissionId",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdcancel": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "handoffId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskRevision": {
+                "type": "integer"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "checking",
+                  "waiting_device",
+                  "claimed",
+                  "running",
+                  "waiting_input",
+                  "uploading",
+                  "ready_for_review",
+                  "blocked",
+                  "failed",
+                  "cancel_requested",
+                  "cancelled",
+                  "dispatch_uncertain"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshotHash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "type": "number"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "artifactId",
+                        "fileId",
+                        "name",
+                        "sizeBytes",
+                        "sha256"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "summary",
+                  "artifacts"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "adoptedSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "handoffId",
+              "projectId",
+              "taskId",
+              "taskRevision",
+              "deviceId",
+              "state",
+              "reason",
+              "snapshotHash",
+              "sessionId",
+              "result",
+              "stale",
+              "adoptedSubmissionId",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdadoptandsubmit": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "pendingHumanReview": {
+                "type": "boolean"
+              },
+              "submissionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "round": {
+                "type": "number"
+              },
+              "submittedBy": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "body": {
+                "type": "string"
+              },
+              "materialVersionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "materialVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "materialId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "versionId",
+                    "materialId",
+                    "title",
+                    "revision"
+                  ]
+                }
+              },
+              "criteria": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "evaluated",
+                  "accept",
+                  "improve",
+                  "rework"
+                ]
+              },
+              "aiDecision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "accept",
+                  "improve",
+                  "rework",
+                  null
+                ]
+              },
+              "aiFeedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "aiReport": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "modelCoverage": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "needs_human"
+                    ]
+                  },
+                  "humanReview": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "resolved"
+                        ]
+                      },
+                      "reasonCodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "unread_attachments",
+                            "unread_references"
+                          ]
+                        }
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "decision": {
+                        "type": "string",
+                        "enum": [
+                          "accept",
+                          "improve",
+                          "rework"
+                        ]
+                      },
+                      "decidedBy": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "decidedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reasonCodes",
+                      "reasons"
+                    ]
+                  },
+                  "references": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "decisionReferences": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "accept",
+                      "improve",
+                      "rework"
+                    ]
+                  },
+                  "feedback": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "materialVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "quote": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "materialVersionId",
+                        "quote"
+                      ]
+                    }
+                  },
+                  "limitations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "coverage": {
+                    "type": "string",
+                    "enum": [
+                      "complete",
+                      "needs_human"
+                    ]
+                  },
+                  "manualReviewReason": {
+                    "type": "string"
+                  },
+                  "rubricScoring": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "assistive"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "unavailable"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "assistive"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "scored"
+                            ]
+                          },
+                          "standardsVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "rubricVersionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "rubricVersion": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "weights": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "weight": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "weight"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 1,
+                            "maxItems": 10
+                          },
+                          "weightedTotal": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          "scores": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 40
+                                },
+                                "score": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "confidence": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "comment": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                },
+                                "evidence": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "materialVersionId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "quote": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000
+                                      }
+                                    },
+                                    "required": [
+                                      "materialVersionId",
+                                      "quote"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 1
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "score",
+                                "confidence",
+                                "comment",
+                                "evidence"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 1,
+                            "maxItems": 10
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "status",
+                          "rubricVersionId",
+                          "rubricVersion",
+                          "weights",
+                          "weightedTotal",
+                          "scores"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "decision",
+                  "feedback",
+                  "evidence",
+                  "limitations",
+                  "coverage"
+                ]
+              },
+              "humanScoreOverride": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "assistive"
+                    ]
+                  },
+                  "standardsVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "rubricVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "rubricVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "scores": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "score": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "score"
+                      ]
+                    }
+                  },
+                  "weightedTotal": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "decidedBy": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "decidedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "rubricVersionId",
+                  "rubricVersion",
+                  "scores",
+                  "weightedTotal",
+                  "reason",
+                  "decidedBy",
+                  "decidedAt"
+                ]
+              },
+              "decision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "accept",
+                  "improve",
+                  "rework",
+                  null
+                ]
+              },
+              "feedback": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evaluationJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "evaluationAttempts": {
+                "type": "number"
+              },
+              "evaluationError": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "submissionId",
+              "taskId",
+              "round",
+              "submittedBy",
+              "body",
+              "materialVersionIds",
+              "criteria",
+              "status",
+              "aiDecision",
+              "aiFeedback",
+              "aiReport",
+              "decision",
+              "feedback",
+              "evaluationJobId",
+              "evaluationAttempts",
+              "revision",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostdeviceclaim": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "handoff": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "handoffId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "taskId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "taskRevision": {
+                    "type": "integer"
+                  },
+                  "deviceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "checking",
+                      "waiting_device",
+                      "claimed",
+                      "running",
+                      "waiting_input",
+                      "uploading",
+                      "ready_for_review",
+                      "blocked",
+                      "failed",
+                      "cancel_requested",
+                      "cancelled",
+                      "dispatch_uncertain"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "snapshotHash": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "sessionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "result": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "summary": {
+                        "type": "string"
+                      },
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "fileId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "sizeBytes": {
+                              "type": "number"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "artifactId",
+                            "fileId",
+                            "name",
+                            "sizeBytes",
+                            "sha256"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "summary",
+                      "artifacts"
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "adoptedSubmissionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "handoffId",
+                  "projectId",
+                  "taskId",
+                  "taskRevision",
+                  "deviceId",
+                  "state",
+                  "reason",
+                  "snapshotHash",
+                  "sessionId",
+                  "result",
+                  "stale",
+                  "adoptedSubmissionId",
+                  "createdAt",
+                  "updatedAt"
+                ]
+              }
+            },
+            "required": [
+              "handoff"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdevents": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "handoffId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "taskId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "taskRevision": {
+                    "type": "integer"
+                  },
+                  "deviceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "checking",
+                      "waiting_device",
+                      "claimed",
+                      "running",
+                      "waiting_input",
+                      "uploading",
+                      "ready_for_review",
+                      "blocked",
+                      "failed",
+                      "cancel_requested",
+                      "cancelled",
+                      "dispatch_uncertain"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "snapshotHash": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "sessionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "result": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "summary": {
+                        "type": "string"
+                      },
+                      "artifacts": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "artifactId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "fileId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "sizeBytes": {
+                              "type": "number"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "artifactId",
+                            "fileId",
+                            "name",
+                            "sizeBytes",
+                            "sha256"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "summary",
+                      "artifacts"
+                    ]
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "adoptedSubmissionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "handoffId",
+                  "projectId",
+                  "taskId",
+                  "taskRevision",
+                  "deviceId",
+                  "state",
+                  "reason",
+                  "snapshotHash",
+                  "sessionId",
+                  "result",
+                  "stale",
+                  "adoptedSubmissionId",
+                  "createdAt",
+                  "updatedAt"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "acknowledged": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "cancelled"
+                    ]
+                  }
+                },
+                "required": [
+                  "acknowledged",
+                  "state"
+                ]
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdheartbeat": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "cancelRequested": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "cancelRequested"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegethandoffshandoffIdsnapshot": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "text"
+                  ]
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fileId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "contentPath": {
+                      "type": "string"
+                    },
+                    "sizeBytes": {
+                      "type": "number"
+                    },
+                    "sha256": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "lifecycleVersion": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "fileId",
+                    "name",
+                    "contentPath",
+                    "sizeBytes",
+                    "sha256",
+                    "lifecycleVersion"
+                  ]
+                }
+              },
+              "artifactPolicy": {
+                "type": "object",
+                "properties": {
+                  "maxFileBytes": {
+                    "type": "number"
+                  },
+                  "maxArtifacts": {
+                    "type": "number"
+                  },
+                  "extensions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "maxFileBytes",
+                  "maxArtifacts",
+                  "extensions"
+                ]
+              },
+              "snapshotHash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "prompt",
+              "inputs",
+              "files",
+              "artifactPolicy",
+              "snapshotHash"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdartifacts": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "artifactId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "uploadPath": {
+                "type": "string"
+              },
+              "stored": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "artifactId",
+              "fileId",
+              "uploadPath",
+              "stored"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeposthandoffshandoffIdcomplete": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "handoffId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "projectId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskRevision": {
+                "type": "integer"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "checking",
+                  "waiting_device",
+                  "claimed",
+                  "running",
+                  "waiting_input",
+                  "uploading",
+                  "ready_for_review",
+                  "blocked",
+                  "failed",
+                  "cancel_requested",
+                  "cancelled",
+                  "dispatch_uncertain"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshotHash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "sessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "artifactId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "type": "number"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "artifactId",
+                        "fileId",
+                        "name",
+                        "sizeBytes",
+                        "sha256"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "summary",
+                  "artifacts"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "adoptedSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "handoffId",
+              "projectId",
+              "taskId",
+              "taskRevision",
+              "deviceId",
+              "state",
+              "reason",
+              "snapshotHash",
+              "sessionId",
+              "result",
+              "stale",
+              "adoptedSubmissionId",
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgeStoredResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "stored": {
+                "type": "boolean"
+              },
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "stored",
+              "fileId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AssignmentSuggestionResponse": {
         "type": "object",
         "properties": {
@@ -27932,6 +30308,1166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskAgentEligibilityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/pairings": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /pairings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "credentialHash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "deviceName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "bridgeVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "dshVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "required": [
+                  "credentialHash",
+                  "deviceName",
+                  "bridgeVersion",
+                  "dshVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostpairings"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostpairings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/pairings/{pairingId}": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /pairings/{pairingId}",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "pairingId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetpairingspairingId"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetpairingspairingId"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/pairings/{pairingId}/approve": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /pairings/{pairingId}/approve",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "pairingId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "projectIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostpairingspairingIdapprove"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostpairingspairingIdapprove"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/device": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /device",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevice"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevice"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/devices": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /devices",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevices"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/devices/{deviceId}": {
+      "delete": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge delete /devices/{deviceId}",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "deviceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgedeletedevicesdeviceId"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgedeletedevicesdeviceId"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/device/disconnect": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /device/disconnect",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdevicedisconnect"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdevicedisconnect"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/device/workspaces": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /device/workspaces",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "workspaceLabel": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "workspaceLabel"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceworkspaces"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceworkspaces"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/device/heartbeat": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /device/heartbeat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceheartbeat"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceheartbeat"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/projects/{projectId}/tasks/{taskId}/handoffs": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /projects/{projectId}/tasks/{taskId}/handoffs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "targetDeviceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "targetDeviceId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /projects/{projectId}/tasks/{taskId}/handoffs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /handoffs/{handoffId}",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegethandoffshandoffId"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegethandoffshandoffId"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/cancel": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/cancel",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdcancel"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdcancel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/adopt-and-submit": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/adopt-and-submit",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedTaskRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "reviewed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "expectedTaskRevision",
+                  "reviewed"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdadoptandsubmit"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdadoptandsubmit"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/device/claim": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /device/claim",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceclaim"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdeviceclaim"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/events": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/events",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sequence": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_created",
+                      "prompt_accepted",
+                      "running",
+                      "waiting_input",
+                      "uploading",
+                      "failed",
+                      "cancelled",
+                      "dispatch_uncertain"
+                    ]
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "sequence",
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdevents"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdevents"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/heartbeat": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/heartbeat",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdheartbeat"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdheartbeat"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/snapshot": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /handoffs/{handoffId}/snapshot",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegethandoffshandoffIdsnapshot"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegethandoffshandoffIdsnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/artifacts",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "artifactId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 52428800
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "maxLength": 150
+                  }
+                },
+                "required": [
+                  "artifactId",
+                  "name",
+                  "sizeBytes",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdartifacts"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdartifacts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/complete": {
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /handoffs/{handoffId}/complete",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                  },
+                  "artifactIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 20
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "summary",
+                  "artifactIds",
+                  "sessionId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdcomplete"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeposthandoffshandoffIdcomplete"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/inputs/{fileId}": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "Download authorized fixed input",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts/{artifactId}/content": {
+      "put": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "Store validated bridge artifact without automatic parsing",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "handoffId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "artifactId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgeStoredResponse"
                 }
               }
             }

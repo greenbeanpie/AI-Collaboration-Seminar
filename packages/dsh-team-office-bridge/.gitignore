@@ -1,0 +1,5 @@
+*.tgz
+smoke-home*/
+install-smoke-home/
+smoke-overlay.yml
+smoke-probe.mjs

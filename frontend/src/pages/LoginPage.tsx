@@ -42,7 +42,9 @@ export function LoginPage(props: Props) {
     onSuccess: (result) => {
       setPassword(''); setInvitationCode(''); setError(null);
       queryClient.setQueryData(['session'], result.user as User);
-      navigate('/app', { replace: true });
+      const returnTo = searchParams.get('returnTo');
+      // Only the bridge's local pairing route is an allowed login continuation.
+      navigate(returnTo && /^\/app\/agent-bridges\/connect\?pairing=[a-zA-Z0-9-]+$/.test(returnTo) ? returnTo : '/app', { replace: true });
     },
     onError: setError,
   });

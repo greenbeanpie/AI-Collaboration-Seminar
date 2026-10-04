@@ -1,0 +1,3 @@
+- insert:
+    - id: team-office-bridge
+      name: '@greenbeanpie/dsh-team-office-bridge'

@@ -6034,6 +6034,1084 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-bridges/pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /pairings */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        credentialHash: string;
+                        deviceName: string;
+                        bridgeVersion: string;
+                        dshVersion: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostpairings"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostpairings"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/pairings/{pairingId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /pairings/{pairingId} */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pairingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetpairingspairingId"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetpairingspairingId"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/pairings/{pairingId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /pairings/{pairingId}/approve */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    pairingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        projectIds: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostpairingspairingIdapprove"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostpairingspairingIdapprove"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /device */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevice"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevice"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /devices */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevices"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevices"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** DSH bridge delete /devices/{deviceId} */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    deviceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgedeletedevicesdeviceId"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgedeletedevicesdeviceId"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/device/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /device/disconnect */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdevicedisconnect"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdevicedisconnect"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/device/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /device/workspaces */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        projectId: string;
+                        workspaceLabel: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceworkspaces"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceworkspaces"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/device/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /device/heartbeat */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceheartbeat"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceheartbeat"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/projects/{projectId}/tasks/{taskId}/handoffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /projects/{projectId}/tasks/{taskId}/handoffs */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** DSH bridge post /projects/{projectId}/tasks/{taskId}/handoffs */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        /** Format: uuid */
+                        targetDeviceId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /handoffs/{handoffId} */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegethandoffshandoffId"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegethandoffshandoffId"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/cancel */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdcancel"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdcancel"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/adopt-and-submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/adopt-and-submit */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedTaskRevision: number;
+                        /** @enum {boolean} */
+                        reviewed: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdadoptandsubmit"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdadoptandsubmit"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/device/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /device/claim */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceclaim"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdeviceclaim"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/events */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sequence: number;
+                        /** @enum {string} */
+                        type: "session_created" | "prompt_accepted" | "running" | "waiting_input" | "uploading" | "failed" | "cancelled" | "dispatch_uncertain";
+                        sessionId?: string;
+                        message?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdevents"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdevents"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/heartbeat */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdheartbeat"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdheartbeat"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /handoffs/{handoffId}/snapshot */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegethandoffshandoffIdsnapshot"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegethandoffshandoffIdsnapshot"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/artifacts */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        artifactId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                        contentType?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdartifacts"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdartifacts"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** DSH bridge post /handoffs/{handoffId}/complete */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        summary: string;
+                        artifactIds: string[];
+                        sessionId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdcomplete"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeposthandoffshandoffIdcomplete"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/inputs/{fileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download authorized fixed input */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description File */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts/{artifactId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Store validated bridge artifact without automatic parsing */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handoffId: string;
+                    artifactId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Stored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgeStoredResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/assignment-suggestions": {
         parameters: {
             query?: never;
@@ -12740,6 +13818,590 @@ export interface components {
                 reason: string | null;
                 /** Format: uuid */
                 jobId: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostpairings: {
+            data: {
+                /** Format: uuid */
+                pairingId: string;
+                approvalUrl: string;
+                expiresAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegetpairingspairingId: {
+            data: {
+                /** Format: uuid */
+                pairingId: string;
+                deviceName: string;
+                expiresAt: string;
+                /** @enum {string} */
+                status: "pending" | "approved" | "expired";
+                projects: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostpairingspairingIdapprove: {
+            data: {
+                paired: boolean;
+                /** Format: uuid */
+                deviceId: string;
+                deviceName: string;
+                bridgeVersion: string;
+                dshVersion: string;
+                projects: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                    workspaceLabel: string | null;
+                }[];
+                revoked: boolean;
+                lastSeenAt: string | null;
+                /** @enum {number} */
+                protocolVersion: 1;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegetdevice: {
+            data: {
+                paired: boolean;
+                /** Format: uuid */
+                deviceId: string;
+                deviceName: string;
+                bridgeVersion: string;
+                dshVersion: string;
+                projects: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                    workspaceLabel: string | null;
+                }[];
+                revoked: boolean;
+                lastSeenAt: string | null;
+                /** @enum {number} */
+                protocolVersion: 1;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegetdevices: {
+            data: {
+                items: {
+                    paired: boolean;
+                    /** Format: uuid */
+                    deviceId: string;
+                    deviceName: string;
+                    bridgeVersion: string;
+                    dshVersion: string;
+                    projects: {
+                        /** Format: uuid */
+                        projectId: string;
+                        name: string;
+                        workspaceLabel: string | null;
+                    }[];
+                    revoked: boolean;
+                    lastSeenAt: string | null;
+                    /** @enum {number} */
+                    protocolVersion: 1;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgedeletedevicesdeviceId: {
+            data: {
+                /** @enum {boolean} */
+                revoked: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostdevicedisconnect: {
+            data: {
+                /** @enum {boolean} */
+                revoked: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostdeviceworkspaces: {
+            data: {
+                paired: boolean;
+                /** Format: uuid */
+                deviceId: string;
+                deviceName: string;
+                bridgeVersion: string;
+                dshVersion: string;
+                projects: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                    workspaceLabel: string | null;
+                }[];
+                revoked: boolean;
+                lastSeenAt: string | null;
+                /** @enum {number} */
+                protocolVersion: 1;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostdeviceheartbeat: {
+            data: {
+                /** @enum {boolean} */
+                ok: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostprojectsprojectIdtaskstaskIdhandoffs: {
+            data: {
+                /** Format: uuid */
+                handoffId: string;
+                /** Format: uuid */
+                projectId: string;
+                /** Format: uuid */
+                taskId: string;
+                taskRevision: number;
+                /** Format: uuid */
+                deviceId: string;
+                /** @enum {string} */
+                state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                reason: string | null;
+                snapshotHash: string | null;
+                sessionId: string | null;
+                result: {
+                    summary: string;
+                    artifacts: {
+                        /** Format: uuid */
+                        artifactId: string;
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                    }[];
+                } | null;
+                stale: boolean;
+                /** Format: uuid */
+                adoptedSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegetprojectsprojectIdtaskstaskIdhandoffs: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    handoffId: string;
+                    /** Format: uuid */
+                    projectId: string;
+                    /** Format: uuid */
+                    taskId: string;
+                    taskRevision: number;
+                    /** Format: uuid */
+                    deviceId: string;
+                    /** @enum {string} */
+                    state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                    reason: string | null;
+                    snapshotHash: string | null;
+                    sessionId: string | null;
+                    result: {
+                        summary: string;
+                        artifacts: {
+                            /** Format: uuid */
+                            artifactId: string;
+                            /** Format: uuid */
+                            fileId: string;
+                            name: string;
+                            sizeBytes: number;
+                            sha256: string;
+                        }[];
+                    } | null;
+                    stale: boolean;
+                    /** Format: uuid */
+                    adoptedSubmissionId: string | null;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegethandoffshandoffId: {
+            data: {
+                /** Format: uuid */
+                handoffId: string;
+                /** Format: uuid */
+                projectId: string;
+                /** Format: uuid */
+                taskId: string;
+                taskRevision: number;
+                /** Format: uuid */
+                deviceId: string;
+                /** @enum {string} */
+                state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                reason: string | null;
+                snapshotHash: string | null;
+                sessionId: string | null;
+                result: {
+                    summary: string;
+                    artifacts: {
+                        /** Format: uuid */
+                        artifactId: string;
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                    }[];
+                } | null;
+                stale: boolean;
+                /** Format: uuid */
+                adoptedSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdcancel: {
+            data: {
+                /** Format: uuid */
+                handoffId: string;
+                /** Format: uuid */
+                projectId: string;
+                /** Format: uuid */
+                taskId: string;
+                taskRevision: number;
+                /** Format: uuid */
+                deviceId: string;
+                /** @enum {string} */
+                state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                reason: string | null;
+                snapshotHash: string | null;
+                sessionId: string | null;
+                result: {
+                    summary: string;
+                    artifacts: {
+                        /** Format: uuid */
+                        artifactId: string;
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                    }[];
+                } | null;
+                stale: boolean;
+                /** Format: uuid */
+                adoptedSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdadoptandsubmit: {
+            data: {
+                pendingHumanReview?: boolean;
+                /** Format: uuid */
+                submissionId: string;
+                /** Format: uuid */
+                taskId: string;
+                round: number;
+                /** Format: uuid */
+                submittedBy: string;
+                body: string;
+                materialVersionIds: string[];
+                materialVersions?: {
+                    /** Format: uuid */
+                    versionId: string;
+                    /** Format: uuid */
+                    materialId: string;
+                    title: string;
+                    revision: number;
+                }[];
+                criteria: string;
+                /** @enum {string} */
+                status: "pending" | "evaluated" | "accept" | "improve" | "rework";
+                /** @enum {string|null} */
+                aiDecision: "accept" | "improve" | "rework" | null;
+                aiFeedback: string | null;
+                aiReport: {
+                    /** @enum {string} */
+                    modelCoverage?: "complete" | "needs_human";
+                    humanReview?: {
+                        /** @enum {string} */
+                        status: "pending" | "resolved";
+                        reasonCodes: ("unread_attachments" | "unread_references")[];
+                        reasons: string[];
+                        /** @enum {string} */
+                        decision?: "accept" | "improve" | "rework";
+                        /** Format: uuid */
+                        decidedBy?: string;
+                        decidedAt?: string;
+                    };
+                    references?: unknown[];
+                    decisionReferences?: unknown[];
+                    /** @enum {string} */
+                    decision: "accept" | "improve" | "rework";
+                    feedback: string;
+                    evidence: {
+                        /** Format: uuid */
+                        materialVersionId: string;
+                        quote: string;
+                    }[];
+                    limitations: string[];
+                    /** @enum {string} */
+                    coverage: "complete" | "needs_human";
+                    manualReviewReason?: string;
+                    rubricScoring?: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "unavailable";
+                        reason: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "scored";
+                        /** Format: uuid */
+                        standardsVersionId?: string;
+                        /** Format: uuid */
+                        rubricVersionId: string;
+                        rubricVersion: number;
+                        weights: {
+                            key: string;
+                            label: string;
+                            weight: number;
+                        }[];
+                        weightedTotal: number;
+                        scores: {
+                            key: string;
+                            score: number;
+                            confidence: number;
+                            comment: string;
+                            evidence: {
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            }[];
+                        }[];
+                    };
+                } | null;
+                humanScoreOverride?: {
+                    /** @enum {string} */
+                    kind: "assistive";
+                    /** Format: uuid */
+                    standardsVersionId?: string;
+                    /** Format: uuid */
+                    rubricVersionId: string;
+                    rubricVersion: number;
+                    scores: {
+                        key: string;
+                        score: number;
+                    }[];
+                    weightedTotal: number;
+                    reason: string;
+                    /** Format: uuid */
+                    decidedBy: string;
+                    decidedAt: string;
+                } | null;
+                /** @enum {string|null} */
+                decision: "accept" | "improve" | "rework" | null;
+                feedback: string | null;
+                /** Format: uuid */
+                evaluationJobId: string | null;
+                evaluationAttempts: number;
+                evaluationError?: string;
+                revision: number;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostdeviceclaim: {
+            data: {
+                handoff: {
+                    /** Format: uuid */
+                    handoffId: string;
+                    /** Format: uuid */
+                    projectId: string;
+                    /** Format: uuid */
+                    taskId: string;
+                    taskRevision: number;
+                    /** Format: uuid */
+                    deviceId: string;
+                    /** @enum {string} */
+                    state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                    reason: string | null;
+                    snapshotHash: string | null;
+                    sessionId: string | null;
+                    result: {
+                        summary: string;
+                        artifacts: {
+                            /** Format: uuid */
+                            artifactId: string;
+                            /** Format: uuid */
+                            fileId: string;
+                            name: string;
+                            sizeBytes: number;
+                            sha256: string;
+                        }[];
+                    } | null;
+                    stale: boolean;
+                    /** Format: uuid */
+                    adoptedSubmissionId: string | null;
+                    createdAt: string;
+                    updatedAt: string;
+                } | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdevents: {
+            data: {
+                /** Format: uuid */
+                handoffId: string;
+                /** Format: uuid */
+                projectId: string;
+                /** Format: uuid */
+                taskId: string;
+                taskRevision: number;
+                /** Format: uuid */
+                deviceId: string;
+                /** @enum {string} */
+                state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                reason: string | null;
+                snapshotHash: string | null;
+                sessionId: string | null;
+                result: {
+                    summary: string;
+                    artifacts: {
+                        /** Format: uuid */
+                        artifactId: string;
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                    }[];
+                } | null;
+                stale: boolean;
+                /** Format: uuid */
+                adoptedSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            } | {
+                /** @enum {boolean} */
+                acknowledged: true;
+                /** @enum {string} */
+                state: "cancelled";
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdheartbeat: {
+            data: {
+                cancelRequested: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegethandoffshandoffIdsnapshot: {
+            data: {
+                prompt: string;
+                inputs: {
+                    path: string;
+                    text: string;
+                }[];
+                files: {
+                    /** Format: uuid */
+                    fileId: string;
+                    name: string;
+                    contentPath: string;
+                    sizeBytes: number;
+                    sha256: string | null;
+                    lifecycleVersion: number;
+                }[];
+                artifactPolicy: {
+                    maxFileBytes: number;
+                    maxArtifacts: number;
+                    extensions: string[];
+                };
+                snapshotHash: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdartifacts: {
+            data: {
+                /** Format: uuid */
+                artifactId: string;
+                /** Format: uuid */
+                fileId: string;
+                uploadPath: string;
+                stored: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeposthandoffshandoffIdcomplete: {
+            data: {
+                /** Format: uuid */
+                handoffId: string;
+                /** Format: uuid */
+                projectId: string;
+                /** Format: uuid */
+                taskId: string;
+                taskRevision: number;
+                /** Format: uuid */
+                deviceId: string;
+                /** @enum {string} */
+                state: "checking" | "waiting_device" | "claimed" | "running" | "waiting_input" | "uploading" | "ready_for_review" | "blocked" | "failed" | "cancel_requested" | "cancelled" | "dispatch_uncertain";
+                reason: string | null;
+                snapshotHash: string | null;
+                sessionId: string | null;
+                result: {
+                    summary: string;
+                    artifacts: {
+                        /** Format: uuid */
+                        artifactId: string;
+                        /** Format: uuid */
+                        fileId: string;
+                        name: string;
+                        sizeBytes: number;
+                        sha256: string;
+                    }[];
+                } | null;
+                stale: boolean;
+                /** Format: uuid */
+                adoptedSubmissionId: string | null;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgeStoredResponse: {
+            data: {
+                stored: boolean;
+                /** Format: uuid */
+                fileId: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

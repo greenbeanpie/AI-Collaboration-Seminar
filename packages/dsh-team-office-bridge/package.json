@@ -1,0 +1,62 @@
+{
+  "name": "@greenbeanpie/dsh-team-office-bridge",
+  "version": "0.1.0",
+  "description": "补位项目办公室本地 DSH 桥接器：授权接收任务并回传成果草稿",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./runner": "./src/runner.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "build.mjs",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/index.js && node --check src/client.js && node --check src/runner.js",
+    "build": "node build.mjs",
+    "prepack": "node build.mjs",
+    "smoke:host": "node test/smoke-host-run.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-api-session-controller": ">=0.2.0-rc.2 <0.2.1 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.1 <0.3.0",
+    "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.2 <0.2.1 || >=0.2.1-alpha.1 <0.2.1 || >=0.2.1 <0.3.0",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web",
+      "external": [
+        "react"
+      ]
+    }
+  },
+  "license": "AGPL-3.0-only"
+}

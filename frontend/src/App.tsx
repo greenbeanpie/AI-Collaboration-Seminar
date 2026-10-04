@@ -43,6 +43,7 @@ const LedgerPage = lazy(() => import('./pages/LedgerPage').then((module) => ({ d
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((module) => ({ default: module.ProjectSettingsPage })));
 const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ default: module.ExportPage })));
 const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ default: module.HelpPage })));
+const AgentBridgesPage = lazy(() => import('./pages/AgentBridgesPage').then(module => ({ default: module.AgentBridgesPage })));
 
 function RouteLoading() {
   return <div className="content-wrap"><Spinner label="正在打开工作区" /></div>;
@@ -77,7 +78,7 @@ function ProtectedApp() {
   }, [navigate, queryClient]);
   if (session.isLoading) return <div className="content-wrap"><Spinner label="正在检查账户" /></div>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
-  if (!session.data) return <Navigate to="/login" replace />;
+  if (!session.data) return <Navigate to={location.pathname === '/app/agent-bridges/connect' ? `/login?returnTo=${encodeURIComponent(location.pathname + location.search)}` : '/login'} replace />;
   return <AppShell user={session.data}><NotificationRuntime key={session.data.id} userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Suspense fallback={<RouteLoading />}><Outlet /></Suspense></AppShell>;
 }
 
@@ -113,6 +114,7 @@ export default function App() {
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/help" element={<HelpPage />} />
+        <Route path="/app/agent-bridges/connect" element={<AgentBridgesPage />} />
         <Route path="/app/support" element={<SupportTicketsPage />} />
         <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
         <Route path="/app/people" element={<ProfileSearchPage />} />
@@ -124,6 +126,7 @@ export default function App() {
           <Route path="privacy" element={<Navigate to="/app/profile" replace />} />
           <Route path="security" element={<AccountSettingsPage section="security" />} />
           <Route path="installation" element={<InstallationSettings/>} />
+          <Route path="agent-bridges" element={<AgentBridgesPage />} />
           <Route path="notifications" element={<AccountNotifications/>} />
           <Route path="appearance" element={<ThemeSelector variant="field" />} />
           <Route element={<SystemAdminOnly />}>

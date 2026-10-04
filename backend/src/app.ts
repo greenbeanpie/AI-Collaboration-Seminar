@@ -1,3 +1,4 @@
+import { registerAgentBridgeRoutes } from './api/agent-bridges';
 import { registerDocumentImportRoutes } from './api/document-imports';
 import { resourceIndexApi } from './api/resource-index';
 import { registerMultipartRoutes } from './api/file-multipart';
@@ -99,6 +100,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerTaskInquiryRoutes(app);
   registerCollaborationRoutes(app);
   registerTaskAgentEligibilityRoutes(app);
+  registerAgentBridgeRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerResourceRoutes(app);

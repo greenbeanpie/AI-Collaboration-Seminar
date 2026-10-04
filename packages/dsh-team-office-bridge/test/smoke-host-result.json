@@ -1,0 +1,45 @@
+{
+  "state": "ready_for_review",
+  "completionRegistered": true,
+  "userRpcMatched": true,
+  "normalTurnEnded": true,
+  "toolResultRecorded": true,
+  "eventTypes": [
+    "permission/preset",
+    "sandbox/mode",
+    "approval/policy",
+    "agent/inbox/spliced",
+    "turn/start",
+    "step/start",
+    "system/message",
+    "user/message",
+    "request/header",
+    "request/context",
+    "session/title",
+    "session/title-llm-request",
+    "session-log-deepseek/delivery-accepted",
+    "assistant/message",
+    "tool/call",
+    "tool/result",
+    "step/end",
+    "turn/end"
+  ],
+  "cloudEvents": [
+    {
+      "type": "session_created",
+      "sequence": 1
+    },
+    {
+      "type": "prompt_accepted",
+      "sequence": 2
+    },
+    {
+      "type": "uploading",
+      "sequence": 3
+    }
+  ],
+  "modelProvider": "builtin-deepseek-local-http-fixture",
+  "modelCalls": 3,
+  "paidRequests": 0,
+  "dshBodyChanged": false
+}

@@ -7,8 +7,13 @@ import { ErrorNotice, Field, Spinner } from '../components/ui';
 import { buildTaskAgentPrompt, type AgentMaterial } from './task-agent-prompt';
 import { useTaskAgentEligibility } from './useTaskAgentEligibility';
 import { TaskAgentEligibilityNotice } from './TaskAgentEligibilityNotice';
+import { TaskBridgeHandoff } from './TaskBridgeHandoff';
 
 export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string; task: CollaborationTask; tasks: CollaborationTask[] }) {
+  return <TaskBridgeHandoff key={`${projectId}:${task.taskId}:${task.revision}`} projectId={projectId} task={task}><LegacyTaskAgentHandoff projectId={projectId} task={task} tasks={tasks} /></TaskBridgeHandoff>;
+}
+
+function LegacyTaskAgentHandoff({ projectId, task, tasks }: { projectId: string; task: CollaborationTask; tasks: CollaborationTask[] }) {
   const eligibility = useTaskAgentEligibility(projectId, task);
   const [status, setStatus] = useState('');
   const [transferError, setTransferError] = useState<Error | null>(null);
