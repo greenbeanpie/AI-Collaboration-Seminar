@@ -1,7 +1,7 @@
 import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
 import { createIntentKey } from './source-workflows';
 
-export const creationFileExtensions = '.pdf,.png,.jpg,.jpeg,.webp,.txt,.md';
+export const creationFileExtensions = '.pdf,.docx,.png,.jpg,.jpeg,.webp,.txt,.md';
 export const creationFileLimit = 10;
 
 export type CreationPayload = {
@@ -45,16 +45,16 @@ export function newCreationFile(file: File): CreationFile {
     initKey: createIntentKey(), sourceKey: createIntentKey(), uploadAttempted: false, uploadConfirmed: false, status: 'pending' };
 }
 
-export function validateCreationFiles(files: readonly Pick<File, 'name' | 'size'>[], maxFileBytes: number): string | null {
+export function validateCreationFiles(files: readonly Pick<File, 'name' | 'size'>[], maxFileBytes: number | null): string | null {
   if (files.length > creationFileLimit) return `最多选择 ${creationFileLimit} 个文件。`;
-  if (!Number.isFinite(maxFileBytes) || maxFileBytes <= 0) return '文件大小限制尚未确认，请先重新读取后端能力。';
+  if (maxFileBytes !== null && (!Number.isFinite(maxFileBytes) || maxFileBytes <= 0)) return '文件大小限制尚未确认，请先重新读取后端能力。';
   for (const file of files) {
     const dot = file.name.lastIndexOf('.');
     const extension = dot > 0 ? file.name.slice(dot).toLowerCase() : '';
     if (!creationFileExtensions.split(',').includes(extension)) return `不支持「${file.name}」的文件类型。`;
     if (file.name.length > 255) return '文件名不能超过 255 个字符。';
     if (file.size === 0) return `「${file.name}」为空文件，请重新选择。`;
-    if (file.size > maxFileBytes) return `「${file.name}」超过单文件 ${(maxFileBytes / (1024 * 1024)).toFixed(1)} MiB 上限。`;
+    if (maxFileBytes !== null && file.size > maxFileBytes) return `「${file.name}」超过单文件 ${(maxFileBytes / (1024 * 1024)).toFixed(1)} MiB 上限。`;
   }
   return null;
 }

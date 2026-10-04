@@ -89,7 +89,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
     if (!selected || pendingRef.current) return;
     const chosen = Array.from(selected);
     const limit = capabilities.data?.limits.maxFileBytes;
-    const validation = limit ? validateCreationFiles(chosen, limit) : '请先读取后端文件大小限制，再选择文件。';
+    const validation = capabilities.data ? validateCreationFiles(chosen, limit ?? null) : '请先读取后端文件大小限制，再选择文件。';
     if (validation) { setSelectionError(validation); return; }
     if (frozen) {
       let matched = 0;
@@ -117,7 +117,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
     const existing = draftRef.current;
     const remainingUploads = files.filter(file => !file.uploadConfirmed && !file.sourceId);
     if (remainingUploads.length) {
-      const validation = validateCreationFiles(remainingUploads, capabilities.data?.limits.maxFileBytes ?? 0);
+      const validation = validateCreationFiles(remainingUploads, capabilities.data?.limits.maxFileBytes ?? null);
       if (validation) { setSelectionError(validation); return; }
     }
     pendingRef.current = true; stopped.current = false; setPending(true); setError(null); setSelectionError(null);
@@ -208,7 +208,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
       <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>默认关闭。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
       {aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="form-note">{capabilities.data ? '系统 AI 当前未启用。项目开关可保存，但模型不可用时不会执行 AI 协作。' : '正在确认系统 AI 能力；开关不代表模型已可用。'}</div>}
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
-      <Field label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `每个不超过 ${(capabilities.data.limits.maxFileBytes / (1024 * 1024)).toFixed(1)} MiB。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>
+      <Field label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、DOCX、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `建议10 MiB以上PDF使用本地解析。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>
       {selectionError && <div className="notice notice-error" role="alert">{selectionError}</div>}
       {files.length > 0 && <ul className="page-stack" aria-label="文件上传进度">{files.map(file => <li key={file.localId}>
         <strong>{file.name}</strong> · {(file.size / 1024).toFixed(1)} KiB · {file.sourceId ? '已保存原文件并建立来源' : pending && file.status === 'uploading' ? '正在上传或核对原文件' : pending && file.status === 'linking' ? '正在建立来源' : file.uploadConfirmed ? '原文件已上传，来源尚未确认' : file.status === 'failed' ? '上传未完成' : file.status === 'needs_file' ? '需要重新选择原文件' : '等待上传'}

@@ -1,3 +1,4 @@
+import { registerDraftDocumentRoutes } from './draft-documents';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser } from '../core/auth';
@@ -43,6 +44,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.use(base, requireUser);
   app.use(base + '/*', requireUser);
   app.use('/api/v1/project-templates',requireUser);
+  registerDraftDocumentRoutes(app);
   app.openapi(createRoute({method:'get',path:'/api/v1/project-templates',tags:['creation'],responses:{200:{description:'可用项目模板',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({templateId:z.literal('blank'),name:z.string(),description:z.string()}))}),'ProjectTemplateListResponse')}}}}}),async c=>c.json(apiData(c,{items:projectTemplates}),200));
   app.openapi(createRoute({method:'post',path:base+'/from-template',tags:['creation'],request:{body:json(fromTemplateBody)},responses:{201:{description:'私有模板编辑草稿，尚未创建项目',content:{'application/json':{schema:response}}}}}),async c=>{
     const body=fromTemplateBody.parse(c.req.valid('json')),user=c.get('user')!;
@@ -196,9 +198,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
             break;
           }
           size += chunk.value.length;
-          if (size > LIMITS.maxFileBytes) {
+          if (size > 10*1024*1024) {
             await reader.cancel();
-            throw fileTooLarge(LIMITS.maxFileBytes);
+            throw fileTooLarge(10*1024*1024);
           }
           chunks.push(chunk.value);
         }
