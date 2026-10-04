@@ -4,14 +4,14 @@ import { sourceLifecycleGuard } from './source-lifecycle';
 
 export type ResourceIndexType = 'source' | 'material';
 export interface ResourceIndexTarget { resourceType: ResourceIndexType; versionId: string }
-interface Resource { resourceId:string; title:string; revision:number; coverage:string }
+interface Resource { resourceId:string; title:string; revision:number; coverage:string; textStatus?:string }
 interface State { cursor:number; next_seq:number; heading:string; status:string }
 interface Block { id:string; seq:number; fragment_id:string|null; page_number:number|null; heading:string; start_offset:number; end_offset:number; content:string }
 const BLOCK=1800, PAGE=20;
 
 export async function assertIndexedResource(env:Env, projectId:string, target:ResourceIndexTarget):Promise<Resource> {
  const row=target.resourceType==='source'
-  ? await env.DB.prepare(`SELECT s.id resourceId,s.title,s.lifecycle_version revision,COALESCE(v.extraction_coverage,p.text_status,'pending') coverage FROM source_versions v JOIN sources s ON s.id=v.source_id LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE v.id=?1 AND v.project_id=?2 AND s.project_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')}`).bind(target.versionId,projectId).first<Resource>()
+  ? await env.DB.prepare(`SELECT s.id resourceId,s.title,s.lifecycle_version revision,COALESCE(v.extraction_coverage,p.text_status,'pending') coverage,p.text_status textStatus FROM source_versions v JOIN sources s ON s.id=v.source_id LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE v.id=?1 AND v.project_id=?2 AND s.project_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')}`).bind(target.versionId,projectId).first<Resource>()
   : await env.DB.prepare(`SELECT m.id resourceId,m.title,v.revision,'ready' coverage FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE v.id=?1 AND v.project_id=?2 AND m.project_id=?2`).bind(target.versionId,projectId).first<Resource>();
  if(!row)throw notFound('资料版本不存在、已回收或不属于当前项目');
  return row;
@@ -57,10 +57,10 @@ export async function buildResourceIndexBatch(env:Env,projectId:string,target:Re
  await assertIndexedResource(env,projectId,target);
  const statements=blocks.map(b=>env.DB.prepare(`INSERT OR IGNORE INTO resource_index_blocks(id,project_id,resource_type,version_id,seq,fragment_id,page_number,heading,start_offset,end_offset,content,search_content) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?13 WHERE EXISTS(SELECT 1 FROM resource_index_state WHERE project_id=?2 AND resource_type=?3 AND version_id=?4 AND cursor=?12)`)
   .bind(`${target.resourceType}:${target.versionId}:${b.seq}`,projectId,target.resourceType,target.versionId,b.seq,b.fragmentId,b.pageNumber,b.heading,b.start,b.start+Array.from(b.text).length,b.text,state.cursor,b.searchText));
- statements.push(env.DB.prepare(`UPDATE resource_index_state SET cursor=?4,next_seq=?5,heading=?6,status=?7 WHERE project_id=?1 AND resource_type=?2 AND version_id=?3 AND cursor=?8`).bind(projectId,target.resourceType,target.versionId,cursor,seq,heading,done&&['ready','complete','partial'].includes(resource.coverage)?'ready':'building',state.cursor));
+ statements.push(env.DB.prepare(`UPDATE resource_index_state SET cursor=?4,next_seq=?5,heading=?6,status=?7 WHERE project_id=?1 AND resource_type=?2 AND version_id=?3 AND cursor=?8`).bind(projectId,target.resourceType,target.versionId,cursor,seq,heading,done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building',state.cursor));
  await env.DB.batch(statements);
  await assertIndexedResource(env,projectId,target);
- return {cursor,next_seq:seq,heading,status:done&&['ready','complete','partial'].includes(resource.coverage)?'ready':'building'};
+ return {cursor,next_seq:seq,heading,status:done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building'};
 }
 
 export async function getResourceIndex(env:Env,projectId:string,target:ResourceIndexTarget,offset=0) {
