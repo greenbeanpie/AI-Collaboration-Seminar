@@ -18,8 +18,8 @@ describe('GET /api/v1/capabilities', () => {
     expect(body.data.environment).toBe('local');
     expect(typeof body.data.features.aiEnabled).toBe('boolean');
     expect(['echo', 'resend']).toContain(body.data.features.emailMode);
-    expect(body.data.limits.maxFileBytes).toBe(10 * 1024 * 1024);
-    expect(body.data.limits.maxPdfPages).toBe(30);
+    expect(body.data.limits.maxFileBytes).toBeNull();
+    expect(body.data.limits.maxPdfPages).toBeNull();
     expect(body.data.limits.pageImageMaxBytes).toBe(2 * 1024 * 1024);
     expect(body.data.limits.listMaxPageSize).toBe(100);
     expect(body.data.limits.concurrentAiTasksPerProject).toBe(2);

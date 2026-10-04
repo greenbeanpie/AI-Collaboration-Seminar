@@ -46,6 +46,7 @@ const legacyCreateBody = z.object({
   aiCollaborationEnabled: z.boolean().default(false),
 });
 
+
 const createBody = legacyCreateBody.extend({aiCollaborationEnabled:z.boolean().default(true),assignmentMode:z.enum(['manual','automatic']).default('automatic'),evaluationMode:z.enum(['manual','automatic']).default('automatic'),planningMode:z.enum(['manual','automatic']).default('automatic'),progressionMode:z.enum(['manual','automatic']).default('automatic')});
 
 const patchBody = z.object({

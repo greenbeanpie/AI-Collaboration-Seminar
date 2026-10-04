@@ -193,16 +193,15 @@ describe('来源解析流水线', () => {
     expect(ocrFrags?.needs_review).toBe(1);
   });
 
-  it('超过 30 页限制 → 任务失败 SOURCE_PARSE_FAILED', async () => {
+  it('超过旧30页建议仍可提取正文', async () => {
     vi.stubGlobal('fetch', mockGatewayFetch());
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);
-    const fileId = await uploadFile(authCookie(owner.token), pid, '超长.pdf', makePdf(LIMITS.maxPdfPages + 1));
+    const fileId = await uploadFile(authCookie(owner.token), pid, '超长.pdf', makePdf(31));
     const { sourceId } = await createSource(authCookie(owner.token), pid, { kind: 'file', fileId });
     const jobId = await startParse(authCookie(owner.token), pid, sourceId);
     const done = await ensureJobDone(authCookie(owner.token), jobId);
-    expect(done.status).toBe('failed');
-    expect((done.error as { code: string }).code).toBe('SOURCE_PARSE_FAILED');
+    expect(done.status).toBe('succeeded');
   });
 
   it('网页来源：白名单外拒绝；白名单内可解析', async () => {

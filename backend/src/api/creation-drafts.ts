@@ -1,6 +1,7 @@
 import { cancelDraftMediaStatements } from '../services/draft-media-lifecycle';
 import { audioStatusSchema, audioResumeSchema } from './audio-schema';
 import { resumeWaitingAudioFallback } from '../services/audio-pipeline';
+import { registerDraftDocumentRoutes } from './draft-documents';
 import { extOf, uploadLimit } from '../services/files';
 import { mediaSummarySchema } from '../ai/gemini-media';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -48,6 +49,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.use(base, requireUser);
   app.use(base + '/*', requireUser);
   app.use('/api/v1/project-templates',requireUser);
+  registerDraftDocumentRoutes(app);
   app.openapi(createRoute({method:'get',path:'/api/v1/project-templates',tags:['creation'],responses:{200:{description:'可用项目模板',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({templateId:z.literal('blank'),name:z.string(),description:z.string()}))}),'ProjectTemplateListResponse')}}}}}),async c=>c.json(apiData(c,{items:projectTemplates}),200));
   app.openapi(createRoute({method:'post',path:base+'/from-template',tags:['creation'],request:{body:json(fromTemplateBody)},responses:{201:{description:'私有模板编辑草稿，尚未创建项目',content:{'application/json':{schema:response}}}}}),async c=>{
     const body=fromTemplateBody.parse(c.req.valid('json')),user=c.get('user')!;
@@ -203,9 +205,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
             break;
           }
           size += chunk.value.length;
-          if (size > uploadLimit(extOf(q.name))) {
+          if (size > Math.min(10*1024*1024,uploadLimit(extOf(q.name))??Infinity)) {
             await reader.cancel();
-            throw fileTooLarge(uploadLimit(extOf(q.name)));
+            throw fileTooLarge(Math.min(10*1024*1024,uploadLimit(extOf(q.name))??Infinity));
           }
           chunks.push(chunk.value);
         }

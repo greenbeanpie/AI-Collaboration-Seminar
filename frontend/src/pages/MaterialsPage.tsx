@@ -1,3 +1,4 @@
+import { ResourceIndexView } from './ResourceIndexView';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
 import { MaterialAiAssistance } from './MaterialAiAssistance';
@@ -457,6 +458,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 {editor && <EditorContent editor={editor} />}
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
+              {material.currentVersion?.versionId && <ResourceIndexView projectId={projectId} resourceType="material" versionId={material.currentVersion?.versionId} />}
               <>{material.canEdit === false && <p className="form-note">此材料可查看；修改需创建者或资料管理权限。</p>}<MaterialAttachments material={material} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
               <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>

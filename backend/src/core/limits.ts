@@ -1,13 +1,16 @@
 /** 全局限制常量。/capabilities 下发的值必须与此处硬校验一致。 */
 export const LIMITS = {
   /** 单文件上传上限（按实际上传字节计） */
-  maxFileBytes: 10 * 1024 * 1024,
+  maxFileBytes: null,
   maxMediaBytes: 50 * 1024 * 1024,
   audioTranscriptChunkChars: 12000,
   audioTranscriptMaxChunks: 24,
   audioPipelineMaxCalls: 64,
   /** 单个 PDF 最大页数 */
-  maxPdfPages: 30,
+  maxPdfPages: null,
+  recommendedCloudFileBytes: 10 * 1024 * 1024,
+  recommendedCloudPdfPages: 30,
+  uploadPartBytes: 8 * 1024 * 1024,
   /** 页面图片长边上限（像素） */
   pageImageMaxEdge: 2000,
   /** 页面图片单张上限 */
@@ -38,4 +41,4 @@ export const LIMITS = {
 } as const;
 
 /** 允许上传的扩展名与可检测的文件魔数（见 services/files.ts） */
-export const ALLOWED_UPLOAD_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.mp3', '.wav', '.m4a', '.mp4', '.webm'] as const;
+export const ALLOWED_UPLOAD_EXTENSIONS = ['.pdf', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.txt', '.md', '.mp3', '.wav', '.m4a', '.mp4', '.webm'] as const;

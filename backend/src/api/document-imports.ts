@@ -1,0 +1,30 @@
+import { OpenAPIHono,createRoute,z } from '@hono/zod-openapi';
+import type { AppEnv } from '../env';
+import { requireUser,requireProjectMember } from '../core/auth';
+import { apiData } from '../core/api';
+import { apiEnvelope } from '../core/openapi';
+import { startDocumentImport,documentImportStatus,appendDocumentBatch,finishDocumentImport,analyzeImportedSource } from '../services/document-imports';
+import { loadActiveSourceVersion,sourceLifecycleGuard } from '../services/source-lifecycle';
+import { createJobAndDispatch } from '../services/jobs';
+import { setSourceStage } from '../services/source-summary';
+import { invalidState,notFound } from '../core/errors';
+const base='/api/v1/projects/{projectId}/document-imports';
+const params=z.object({projectId:z.string().uuid()}),session=params.extend({sessionId:z.string().uuid()});
+const envelope=apiEnvelope(z.record(z.string(),z.unknown()),'DocumentImportResponse');
+const body=<T extends z.ZodType>(schema:T)=>({content:{'application/json':{schema}},required:true as const});
+export function registerDocumentImportRoutes(app:OpenAPIHono<AppEnv>) {
+ const enabled:import('hono').MiddlewareHandler<AppEnv>=async(c,next)=>{c.header('Cache-Control','no-store');if(c.env.DOCUMENT_IMPORTS_ENABLED==='false')throw invalidState('正文导入入口暂时关闭，原文件保留');await next();};
+ app.use('/api/v1/projects/:projectId/document-imports',enabled,requireUser,requireProjectMember());
+ app.use('/api/v1/projects/:projectId/document-imports/*',enabled,requireUser,requireProjectMember());
+ const responses={200:{description:'解析会话',content:{'application/json':{schema:envelope}}}};
+ app.openapi(createRoute({method:'post',path:base,tags:['sources'],request:{params,body:body(z.object({sourceVersionId:z.string().uuid(),method:z.enum(['browser-pdf','browser-docx'])}).strict())},responses}),async c=>{const b=c.req.valid('json');return c.json(apiData(c,await startDocumentImport(c.env,c.req.valid('param').projectId,c.get('user')!.id,b.sourceVersionId,b.method)),200);});
+ app.openapi(createRoute({method:'get',path:base+'/{sessionId}',tags:['sources'],request:{params:session},responses}),async c=>{const p=c.req.valid('param');return c.json(apiData(c,await documentImportStatus(c.env,p.projectId,c.get('user')!.id,p.sessionId)),200);});
+ app.openapi(createRoute({method:'post',path:base+'/{sessionId}/batches',tags:['sources'],request:{params:session,body:body(z.object({batchNumber:z.number().int().nonnegative(),blocks:z.array(z.object({seq:z.number().int().nonnegative(),pageNumber:z.number().int().positive().nullable(),text:z.string().max(24000),headingPath:z.array(z.string().max(200)).max(10).optional(),warnings:z.array(z.string().max(1000)).max(20).optional()}).strict()).min(1).max(10)}).strict())},responses}),async c=>{const p=c.req.valid('param'),b=c.req.valid('json');return c.json(apiData(c,await appendDocumentBatch(c.env,p.projectId,c.get('user')!.id,p.sessionId,b.batchNumber,b.blocks)),200);});
+ app.openapi(createRoute({method:'post',path:base+'/{sessionId}/complete',tags:['sources'],request:{params:session,body:body(z.object({totalPages:z.number().int().nonnegative().nullable(),warnings:z.array(z.string().max(1000)).max(100).default([]),partial:z.boolean().default(false),interrupted:z.boolean().default(false)}).strict())},responses}),async c=>{const p=c.req.valid('param'),b=c.req.valid('json');return c.json(apiData(c,await finishDocumentImport(c.env,p.projectId,c.get('user')!.id,p.sessionId,b.totalPages,b.warnings,b.partial,b.interrupted)),200);});
+ app.openapi(createRoute({method:'post',path:base+'/extract',tags:['sources'],request:{params,body:body(z.object({sourceVersionId:z.string().uuid()}).strict())},responses}),async c=>{const project=c.req.valid('param').projectId,version=c.req.valid('json').sourceVersionId,active=await loadActiveSourceVersion(c.env,version);if(active.projectId!==project)throw notFound('来源不存在');const jobId=await createJobAndDispatch(c.env,{projectId:project,createdBy:c.get('user')!.id,kind:'parse_source',input:{operation:'source.text',sourceId:active.sourceId,sourceVersionId:version,sourceLifecycleVersion:active.lifecycleVersion,phase:'extract'}});return c.json(apiData(c,{jobId,status:'queued'}),200);});
+ app.openapi(createRoute({method:'post',path:base+'/analyze',tags:['sources'],request:{params,body:body(z.object({sourceVersionId:z.string().uuid()}).strict())},responses}),async c=>{return c.json(apiData(c,await analyzeImportedSource(c.env,c.req.valid('param').projectId,c.get('user')!.id,c.req.valid('json').sourceVersionId)),200);});
+ app.openapi(createRoute({method:'post',path:base+'/blank-pages',tags:['sources'],request:{params,body:body(z.object({sourceVersionId:z.string().uuid(),pages:z.array(z.number().int().positive()).min(1).max(100)}).strict())},responses}),async c=>{const p=c.req.valid('param'),b=c.req.valid('json'),active=await loadActiveSourceVersion(c.env,b.sourceVersionId);if(active.projectId!==p.projectId)throw notFound('来源不存在');
+ const result=await c.env.DB.prepare(`UPDATE source_pages SET text_status='empty',updated_at=?3 WHERE source_version_id=?1 AND page_number IN(SELECT value FROM json_each(?2)) AND text_status='none' AND ${sourceLifecycleGuard('?1','?4')}`).bind(b.sourceVersionId,JSON.stringify(b.pages),new Date().toISOString(),active.lifecycleVersion).run();if(!result.meta.changes)throw invalidState('没有可确认的空白页');
+ const missing=await c.env.DB.prepare("SELECT 1 FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(b.sourceVersionId).first();const interrupted=await c.env.DB.prepare("SELECT 1 FROM document_parse_sessions WHERE source_version_id=?1 AND status NOT IN ('complete')").bind(b.sourceVersionId).first();if(!missing&&!interrupted)await setSourceStage(c.env,b.sourceVersionId,'text','ready',null,active.lifecycleVersion);
+ return c.json(apiData(c,{confirmed:result.meta.changes,textReady:!missing&&!interrupted}),200);});
+}

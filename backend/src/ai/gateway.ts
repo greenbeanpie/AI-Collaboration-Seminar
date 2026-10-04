@@ -1,3 +1,4 @@
+import { MULTIMODAL_LIMITS } from './multimodal-limits';
 import { feedbackForJob } from '../services/project-feedback';
 import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
 import { unseal } from './secrets';
@@ -182,7 +183,25 @@ async function gatewayChatAttempt(
   // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
-  if (JSON.stringify(body).length > input.config.maxInputChars * 6 + 32000) throw new AppError('QUOTA_EXCEEDED', '工具上下文超过当前模型输入限制', 429, false);
+  const serializedBody = JSON.stringify(body);
+  const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
+  if (images.length && !input.config.supportsVision) throw new AppError('AI_UNAVAILABLE','当前模型不支持图像；不会回落到其他端点',503,false);
+  if (images.length > MULTIMODAL_LIMITS.images) throw new AppError('QUOTA_EXCEEDED', '单次视觉请求最多包含3张图片', 422, false);
+  let encodedImages = 0;
+  for (const image of images) {
+    if (image.type !== 'image_url') continue;
+    const url = image.image_url.url;
+    if (url.startsWith('data:')) {
+      const match = /^data:[^;,]+;base64,([A-Za-z0-9+/]*={0,2})$/u.exec(url);
+      if (!match || match[1]!.length % 4 !== 0) throw new AppError('VALIDATION_FAILED', '页面图片不是有效的base64数据URL', 422, false);
+      const base64 = match[1]!;
+      const bytes = base64.length / 4 * 3 - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
+      if (bytes > MULTIMODAL_LIMITS.imageBytes) throw new AppError('QUOTA_EXCEEDED', '单张视觉图片超过2 MiB处理边界', 422, false);
+      encodedImages += base64.length;
+    }
+  }
+  if (encodedImages > MULTIMODAL_LIMITS.imagePayloadBytes || serializedBody.length - encodedImages > input.config.maxInputChars * 6 + 32000) throw new AppError('QUOTA_EXCEEDED', '工具或文字上下文超过当前模型输入限制', 429, false);
+  if (images.length && new TextEncoder().encode(serializedBody).length > MULTIMODAL_LIMITS.requestBytes) throw new AppError('QUOTA_EXCEEDED', '视觉请求超过9 MiB传输边界', 422, false);
   if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
   if (input.privateContext) {
     headers['cf-aig-skip-cache'] = 'true';
@@ -197,7 +216,7 @@ async function gatewayChatAttempt(
     res = await fetchImpl(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: serializedBody,
       signal: timeoutSignal,
       // Inspect a redirect response, but never follow it or forward credentials.
       redirect: 'manual',
@@ -231,11 +250,17 @@ async function gatewayChatAttempt(
   }
 
   if (!res.ok) {
-    await res.body?.cancel();
+    let multipleImagesRejected = false;
+    if ([400, 422].includes(res.status)) {
+      try {
+        const reason = JSON.stringify(await readProviderJson(res)).slice(0, 12000);
+        multipleImagesRejected = /(?:only|maximum|max(?:imum)?|at most)\s+(?:one|1)\s+image|multiple\s+images?\s+(?:(?:are|is)\s+)?(?:not\s+supported|unsupported)|不支持多(?:张|个)图|最多.{0,3}(?:1|一)张/u.test(reason.toLowerCase());
+      } catch { /* Invalid provider rejection bodies do not enable replay. */ }
+    } else await res.body?.cancel();
     const retryable = res.status === 429 || res.status >= 500;
     throw new AppError('AI_UNAVAILABLE', `模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
       status: res.status,
-
+      ...(multipleImagesRejected ? { multipleImagesRejected: true } : {}),
     });
   }
 

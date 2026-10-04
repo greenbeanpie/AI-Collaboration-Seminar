@@ -1,3 +1,4 @@
+import { backfillResourceIndexes } from './services/resource-index';
 import { cleanupMediaFiles } from './services/media-summary';
 import { invalidateStaleProjectClarifications } from './services/ai-clarifications';
 import { recoverDraftPreviews } from './services/draft-preview-jobs';
@@ -28,6 +29,7 @@ export async function handleScheduled(env: Env): Promise<void> {
   }
   // Requeue missing instances before selecting the due outbox, so recovery dispatches in this run.
   await recoverExecutionSlices(env);
+  try { await backfillResourceIndexes(env,5); } catch { console.error('[cron] resource index backfill failed'); }
   try { await recoverDraftPreviews(env); } catch { console.error('[cron] Draft preview recovery failed'); }
   await recoverJobs(env, nowIso());
   await releaseStaleReservations(env, now);

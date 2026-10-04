@@ -81,6 +81,9 @@
       "name": "greenbp-team-office-backend",
       "vars": {
         "ENV_NAME": "production",
+        "DOCUMENT_IMPORTS_ENABLED": "true",
+        "RESOURCE_INDEX_ENABLED": "true",
+        "OCR_BATCH_ENABLED": "true",
         "EMAIL_MODE": "resend",
         "ALLOWED_ORIGINS": "https://team.greenbp.dpdns.org,https://greenbp-team-office.hddhp.workers.dev",
         "CLOUDFLARE_ACCOUNT_ID": "17a6817bca6612a9cb11d0395eeba0ac",

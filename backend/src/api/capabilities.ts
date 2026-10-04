@@ -13,6 +13,7 @@ const capabilitiesResponse = apiEnvelope(
       features: z
         .object({
           aiEnabled: z.boolean(),
+          documentImports:z.boolean().optional(),resourceIndex:z.boolean().optional(),ocrBatching:z.boolean().optional(),
           mediaEnabled:z.boolean().optional(),
           audioTranscriptionEnabled: z.boolean().optional(),
           videoSummaryEnabled: z.boolean().optional(),
@@ -21,9 +22,12 @@ const capabilitiesResponse = apiEnvelope(
         })
         .openapi({ description: 'AI 是否启用由 ai_config_versions 决定；不暴露任何密钥' }),
       limits: z.object({
-        maxFileBytes: z.number().int(),
-        maxMediaBytes:z.number().int().optional(),
-        maxPdfPages: z.number().int(),
+        maxFileBytes: z.number().int().nullable(),
+        maxMediaBytes: z.number().int().nullable(),
+        maxPdfPages: z.number().int().nullable(),
+        recommendedCloudFileBytes: z.number().int(),
+        recommendedCloudPdfPages: z.number().int(),
+        uploadPartBytes: z.number().int(),
         pageImageMaxEdge: z.number().int(),
         pageImageMaxBytes: z.number().int(),
         listDefaultPageSize: z.number().int(),
@@ -101,6 +105,7 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         environment: c.env.ENV_NAME,
         features: {
           aiEnabled,
+          documentImports:c.env.DOCUMENT_IMPORTS_ENABLED!=='false',resourceIndex:c.env.RESOURCE_INDEX_ENABLED!=='false',ocrBatching:c.env.OCR_BATCH_ENABLED!=='false',
           mediaEnabled: audioTranscriptionEnabled || videoSummaryEnabled,
           audioTranscriptionEnabled,
           videoSummaryEnabled,
@@ -109,8 +114,11 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         },
         limits: {
           maxFileBytes: LIMITS.maxFileBytes,
-        maxMediaBytes:LIMITS.maxMediaBytes,
+          maxMediaBytes: LIMITS.maxMediaBytes,
           maxPdfPages: LIMITS.maxPdfPages,
+          recommendedCloudFileBytes: LIMITS.recommendedCloudFileBytes,
+          recommendedCloudPdfPages: LIMITS.recommendedCloudPdfPages,
+          uploadPartBytes: LIMITS.uploadPartBytes,
           pageImageMaxEdge: LIMITS.pageImageMaxEdge,
           pageImageMaxBytes: LIMITS.pageImageMaxBytes,
           listDefaultPageSize: LIMITS.listDefaultPageSize,

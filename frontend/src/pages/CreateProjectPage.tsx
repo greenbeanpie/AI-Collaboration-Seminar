@@ -12,7 +12,7 @@ import { AiClarificationCard } from '../components/AiClarificationCard';
 import { clarificationApi, type ClarificationAnswer } from '../api/clarifications';
 import { readCreationDraft, creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
-import { isTemplatePayload } from '../api/project-templates';
+import { isTemplatePayload,projectTemplateApi } from '../api/project-templates';
 import { emptyWizardPayload, wizardSteps, canConfirmDraft, confirmationIssue, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
 import './ProjectWizard.css';
 import { CreationBehaviorFields } from './CreationBehaviorFields';
@@ -70,6 +70,7 @@ function CreationWizard({ userId }: {
   const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? ''))) || next.revision < latestDraft.current.revision) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); if (next.revision !== previous.revision) setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); setConfirmed(false); } }, [draftPoll.data]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
+  const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
   const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
   const list = useQuery({
@@ -186,7 +187,8 @@ function CreationWizard({ userId }: {
           throw new Error(`请重新选择未确认上传的原文件：${file.name}`);
         }
         try {
-          current = await request<'CreationDraftResponse'>(draftPath(current.id, `/files/${file.id}`), {
+          if(/\.docx$/i.test(file.name)||file.original.size>10*1024*1024||parseMode==='browser')current=await projectTemplateApi.upload(userId,current.id,current.revision,file.original,undefined,parseMode);
+          else current = await request<'CreationDraftResponse'>(draftPath(current.id, `/files/${file.id}`), {
             method: 'PUT', query: {
               expectedRevision: current.revision, name: file.name
             }, rawBody: file.original
@@ -214,7 +216,7 @@ function CreationWizard({ userId }: {
     }
     const chosen = Array.from(files), validation = validateCreationFiles([...draft?.files.map(f => ({
         name: f.name, size: f.sizeBytes
-      })) ?? [], ...chosen], capabilities.data?.limits.maxFileBytes ?? 0);
+      })) ?? [], ...chosen], capabilities.data?.limits.maxFileBytes ?? null);
     if (validation) {
       setError(new Error(validation));
       return;
@@ -335,7 +337,7 @@ function CreationWizard({ userId }: {
           });
           setConfirmed(false);
         }}/></Field><label className="field"><span><input type="checkbox" checked={payload.aiCollaborationEnabled} disabled={busy} onChange={e => setField('aiCollaborationEnabled', e.target.checked)}/> AI 智能协作</span><small>开启后可生成拆分预览，并启用项目 AI 分工与评价。预览可能产生现有模型用量；创建时复用已确认结果。</small></label><CreationBehaviorFields payload={payload} disabled={busy} onChange={(key, value) => setField(key, value)} />{payload.aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="callout">系统 AI 当前不可用，可以手动配置任务并继续创建。</div>}</>}
- {step === 1 && <><Field label="上传项目文件（可选）" hint="最多10个文件，支持 PDF、图片、TXT、Markdown 和音视频（50 MiB）。上传只暂存到私有草稿，音视频后台生成摘要。"><input ref={fileInput} className="input" type="file" multiple accept={creationFileExtensions} disabled={busy || !capabilities.data} onChange={e => {
+ {step === 1 && <><Field label="正文解析方式"><select className="input" value={parseMode} onChange={e=>setParseMode(e.target.value as typeof parseMode)}><option value="auto">自动建议：小PDF云端，大PDF本机；DOCX本机</option><option value="cloud">云端读取小PDF</option><option value="browser">本机读取正文</option></select></Field><Field label="上传项目文件（可选）" hint="最多10个文件，支持 PDF、DOCX、图片、TXT、Markdown 和音视频（50 MiB）。上传只暂存到私有草稿，音视频后台生成摘要。"><input ref={fileInput} className="input" type="file" multiple accept={creationFileExtensions} disabled={busy || !capabilities.data} onChange={e => {
       select(e.target.files);
       e.target.value = '';
     }}/></Field>{draft?.files.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}</strong><small>{(file.sizeBytes / 1024).toFixed(1)} KiB · 已暂存 · {file.textReady ? '已读取文本' : '尚无可读取文本'}</small><AudioPipelineStatus audio={file.audio} disabled={busy} onRefresh={() => void run(async () => { const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); })} onResume={() => void run(async () => { if(!file.mediaJobId)return; await api.post<'DraftAudioFallbackResumeResponse'>(draftPath(draft!.id,`/files/${file.id}/media-resume`),{jobId:file.mediaJobId}); const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); setConfirmed(false); })}/>{file.mediaStatus && <p>音视频处理：{file.mediaStatus}{file.mediaSummary ? ' · AI 摘要（非逐字原文）' : ''}</p>}{file.mediaError && <p role="alert">{file.mediaError}</p>}{file.textError && <p>{file.textError}</p>}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void run(async () => {

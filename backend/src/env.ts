@@ -5,6 +5,9 @@ export interface Env {
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
   AI?: Cloudflare.Env['AI'];
+  DOCUMENT_IMPORTS_ENABLED?: string;
+  RESOURCE_INDEX_ENABLED?: string;
+  OCR_BATCH_ENABLED?: string;
   DB: D1Database;
   FILES: R2Bucket;
   PARSE_WORKFLOW: Workflow;

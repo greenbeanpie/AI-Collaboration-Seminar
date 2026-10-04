@@ -1,3 +1,5 @@
+import { ResourceIndexView,BrowserSourceRecovery,PageReviewActions } from './ResourceIndexView';
+import { importBrowserFile,documentRequest } from './document-import-client';
 import { ContributorNames, FileContributorPicker } from '../components/FileContributors';
 import { SourceFullText } from './SourceFullText';
 import { SourceProcessingCard } from './SourceProcessingCard';
@@ -225,6 +227,8 @@ export function SourceRecord({
       {version?.charCount !== null && version?.charCount !== undefined && <span>{version.charCount.toLocaleString()} 字符</span>}
       {currentFileId && <span>已关联原文件，可继续渲染扫描页</span>}
     </div>
+    {version?.extractionCoverage === 'partial' && <p className="callout warning-callout">正文覆盖部分资料，请核对未读取对象与原文件。</p>}
+    {Boolean(version?.extractionWarnings?.length) && <ul>{version?.extractionWarnings?.map((warning,i)=><li key={i}>{warning}</li>)}</ul>}
     {version?.parseError && <div className="callout danger-callout">{version.parseError}</div>}
     {version?.pages.length ? <div className="sources-pages" aria-label="逐页处理状态">{version.pages.map((page) => {
       const status = sourcePageStatus(version, page.pageNumber);
@@ -233,6 +237,9 @@ export function SourceRecord({
     })}</div> : null}
     {displayedJob && <SourceJobProgress projectId={projectId} tracked={displayedJob} capability={capability} onUpdate={onJobUpdate} onRetryJob={onRetryJob} onScan={onScan} scanning={scanJobId === displayedJob.jobId} />}
     {displayedJob && scanProgress && <p className="sources-inline-note">{scanProgress}</p>}
+    {version && <ResourceIndexView projectId={projectId} resourceType="source" versionId={version.sourceVersionId} fileId={currentFileId} />}
+    {version && currentFileId && version.pageCount !== null && <PageReviewActions projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} fileId={currentFileId} aiEnabled={Boolean(capability?.features.aiEnabled)} />}
+    {version && currentFileId && <BrowserSourceRecovery projectId={projectId} versionId={version.sourceVersionId} fileId={currentFileId} />}
     {version && <SourceFullText sourceId={source.sourceId} sourceVersionId={version.sourceVersionId} />}
     {version && <SourceProcessingCard projectId={projectId} sourceId={source.sourceId} versionId={version.sourceVersionId} aiEnabled={Boolean(capability?.features.aiEnabled)} active={Boolean(activeJob)} />}
     {version?.status === 'ready' && <p className="sources-inline-note">要求草稿和引用请到“评分”的项目标准查看。引用展示原句与页码，可展开下方全文片段核对原文件。</p>}
@@ -251,6 +258,9 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
   const [text, setText] = useState('');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');
+  const importAbort=useRef<AbortController|null>(null);
+  useEffect(()=>()=>importAbort.current?.abort(),[]);
   const [contributorIds, setContributorIds] = useState<string[] | undefined>();
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -448,18 +458,17 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         setScanProgress(`正在读取来源 PDF（${pageNumbers.length} 页待处理）…`);
         const bytes = await downloadSourcePdf(projectId, fileId);
         ensureAvailable();
-        const { renderPdfPages } = await import('./source-pdf-render');
-        const images = await renderPdfPages(bytes, pageNumbers, {
-          pageImageMaxEdge: capability.limits.pageImageMaxEdge,
-          pageImageMaxBytes: capability.limits.pageImageMaxBytes,
-          maxPdfPages: capability.limits.maxPdfPages,
-        }, (pageNumber) => setScanProgress(`已渲染第 ${pageNumber} 页，正在上传…`));
-        const uploadedImages: Array<{ pageNumber: number; fileId: string }> = [];
-        for (const image of images) {
-          ensureAvailable();
-          setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
-          const imageFileId = await uploadProjectFile(projectId, image.file, undefined, undefined, { derivedFromFileId: fileId });
-          uploadedImages.push({ pageNumber: image.pageNumber, fileId: imageFileId });
+        const { iteratePdfPages } = await import('./source-pdf-render');
+        const uploadedImages: Array<{pageNumber:number;fileId:string}>=[];
+        for await(const image of iteratePdfPages(bytes,pageNumbers,{
+          pageImageMaxEdge:capability.limits.pageImageMaxEdge,pageImageMaxBytes:capability.limits.pageImageMaxBytes,maxPdfPages:null,
+        })) {
+          ensureAvailable();setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
+          const imageFileId=await uploadProjectFile(projectId,image.file,undefined,undefined,{derivedFromFileId:fileId});
+          uploadedImages.push({pageNumber:image.pageNumber,fileId:imageFileId});
+          if(uploadedImages.length===100) {
+            await api.post<'PageImagesResponse'>(projectPath(projectId,`/sources/${encodeURIComponent(tracked.sourceId)}/page-images`),{sourceVersionId:tracked.sourceVersionId,images:uploadedImages.splice(0)},{idempotencyKey:createIntentKey()});
+          }
         }
         pending = {
           body: { sourceVersionId: tracked.sourceVersionId, images: uploadedImages },
@@ -470,6 +479,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         setScanProgress('沿用上次提交的同一批页面图片和请求编号，确认服务端处理状态…');
       }
       ensureAvailable();
+      if(pending.body.images.length===0){await queryClient.invalidateQueries({queryKey:['sourceVersion',projectId]});return;}
       const accepted = await api.post<'PageImagesResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(tracked.sourceId)}/page-images`), pending.body, { idempotencyKey: pending.idempotencyKey });
       ensureAvailable();
       pageImagesIntentKeys.current.delete(tracked.jobId);
@@ -507,14 +517,14 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('仅支持 HTTP 或 HTTPS 网页地址。');
         body = { kind, url: parsedUrl.toString() };
       } else {
-        if (!file) throw new Error('请先选择 PDF、TXT 或 Markdown 文件。');
+        if (!file) throw new Error('请先选择 PDF、DOCX、TXT、Markdown 或音视频文件。');
         const mediaFile = /\.(mp3|wav|m4a|mp4|webm)$/i.test(file.name);
-        const uploadLimit = mediaFile ? (capability.limits.maxMediaBytes ?? 50 * 1024 * 1024) : capability.limits.maxFileBytes;
+        const uploadLimit = mediaFile ? capability.limits.maxMediaBytes : capability.limits.maxFileBytes;
         const audioFile = /\.(mp3|wav|m4a)$/i.test(file.name);
         const mediaEnabled = audioFile ? (capability.features.audioTranscriptionEnabled ?? capability.features.mediaEnabled) : (capability.features.videoSummaryEnabled ?? capability.features.mediaEnabled);
         if (mediaFile && mediaEnabled === false) throw new Error('该媒体的处理能力尚未启用；音频可使用 Whisper，视频需要独立 Gemini 配置。');
-        if (file.size > uploadLimit) throw new Error(`文件大小超过服务端上限 ${formatBytes(uploadLimit)}。`);
-        if (!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error('仅支持 PDF、TXT 或 Markdown 文件。');
+        if (uploadLimit != null && file.size > uploadLimit) throw new Error(`文件大小超过服务端上限 ${formatBytes(uploadLimit)}。`);
+        if (!/\.(pdf|docx|txt|md|mp3|wav|m4a|mp4|webm)$/i.test(file.name)) throw new Error('仅支持 PDF、DOCX、TXT、Markdown、MP3、WAV、M4A、MP4 或 WebM 文件。');
         const pendingMatches = pendingUpload?.file === file;
         if (pendingMatches) {
           fileId = pendingUpload.fileId;
@@ -535,6 +545,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         body = { kind, fileId };
       }
       if (title.trim()) body.title = title.trim();
+      else if(kind==='file'&&file)body.title=file.name.slice(0,200);
       const sourceIntentId = JSON.stringify(body);
       let sourceIntentKey = sourceIntentKeys.current.get(sourceIntentId);
       if (!sourceIntentKey) {
@@ -550,19 +561,35 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
       await queryClient.invalidateQueries({ queryKey: ['sources', projectId] });
       await queryClient.invalidateQueries({ queryKey: ['resource-library', projectId] });
       setSubmitStage('启动解析任务…');
-      const parseStarted = capability.features.aiEnabled
-        ? await startParse({ sourceId: source.sourceId, title: source.title }, source.sourceVersionId)
-        : false;
+      let parseStarted=false;let browserNotice='';
+      let browserSelected=kind==='file'&&file&&/\.(pdf|docx)$/i.test(file.name)&&(/\.docx$/i.test(file.name)||parseMode==='browser'||(parseMode==='auto'&&file.size>10*1024*1024));
+      if(kind==='file'&&file&&/\.pdf$/i.test(file.name)&&parseMode==='auto'&&!browserSelected) {
+        await import('./source-pdf-render');
+        const {getDocument}=await import('pdfjs-dist');
+        const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
+        try {browserSelected=(await task.promise).numPages>30;} finally{await task.destroy();}
+      }
+      if(browserSelected&&file) {
+        const abort=new AbortController();importAbort.current=abort;
+        const result=await importBrowserFile(projectId,source.sourceVersionId,file,abort.signal,setSubmitStage);
+        importAbort.current=null;browserNotice=(result.textReady?'本机正文已保存。':`正文部分完成，${result.needsImages} 页待补充。`)+(result.warnings.length?' '+result.warnings.join('；'):'');
+        if(result.textReady&&capability.features.aiEnabled) {
+          const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/analyze'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});
+          trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;
+        }
+      } else if(!capability.features.aiEnabled&&kind==='file'&&file&&/\.pdf$/i.test(file.name)) {const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/extract'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;}
+      else if(capability.features.aiEnabled) parseStarted=await startParse({sourceId:source.sourceId,title:source.title},source.sourceVersionId);
       setText('');
       setUrl('');
       setTitle('');
       setFile(null);
-      setSuccessMessage(!capability.features.aiEnabled
+      setSuccessMessage(browserNotice || (!capability.features.aiEnabled
         ? '来源已创建并保存。当前服务能力显示 AI 未启用，暂不能发起要求提取。'
-        : parseStarted ? '来源已创建，解析任务已提交。' : '来源已创建，但解析请求未成功；请在来源列表中确认状态后重试解析。');
+        : parseStarted ? '来源已创建，解析任务已提交。' : '来源已创建，但解析请求未成功；请在来源列表中确认状态后重试解析。'));
     } catch (error) {
       setActionError(error);
     } finally {
+      importAbort.current=null;
       setSubmitting(false);
       setSubmitStage('');
       void queryClient.invalidateQueries({ queryKey: ['files', projectId] });
@@ -572,15 +599,15 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
   if (capabilityQuery.isLoading) return <div className="page-stack"><Spinner label="正在读取服务能力与文件限制" /></div>;
   if (capabilityQuery.error || !capability) return <div className="page-stack"><PageHeading eyebrow="项目资料" title="通知来源" detail="先读取服务能力，确定文件与页面图片限制后再导入。" /><ErrorNotice error={capabilityQuery.error ?? new Error('服务能力暂不可用。')} onRetry={() => void capabilityQuery.refetch()} /></div>;
 
-  const fileMax = capability.limits.maxFileBytes;
+
   const canSubmit = !submitting && (kind !== 'web' || capability.features.webFetch);
 
   return <div className="page-stack sources-page">
     {!embedded && <PageHeading eyebrow="项目资料" title="通知来源" detail="导入可核对的通知原文。解析任务会生成待确认要求；所有记录和状态来自项目服务。" />}
 
-    {!capability.features.aiEnabled ? <div className="callout warning-callout">服务能力报告 AI 未启用。仍可保存来源，但解析和要求提取不可用；不会展示演示结果。</div> : null}
+    {!capability.features.aiEnabled ? <div className="callout warning-callout">AI 未启用。仍可读取文件正文；总结、要求提取与视觉 OCR 暂不可用。</div> : null}
 
-    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/TXT/Markdown 和音视频文件。">
+    {(!embedded || intakeOnly) && <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/DOCX/TXT/Markdown 和音视频文件。">
       <form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
         <div className="sources-intake-tabs" role="group" aria-label="来源类型">
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'paste'} onClick={() => setKind('paste')}><Type size={15} /> 粘贴文本</button>
@@ -594,8 +621,8 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
           <Field label="公开网页地址" hint="网页是否可读取取决于后端网络与域名规则；失败时会显示服务端原因。"><input className="input" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.org/notice" disabled={!capability.features.webFetch} /></Field>
         </>}
         {kind === 'file' && <>
-          <Field label="选择来源文件" hint={`支持 PDF、TXT、Markdown；音视频支持 MP3、WAV、M4A、MP4、WebM，上限 50 MiB；普通文档上限 ${formatBytes(fileMax)}。PDF 页数上限 ${capability.limits.maxPdfPages} 页。由服务端检查文件头和真实字节数。`}>
-            <input className="input" type="file" accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm,application/pdf,text/plain,text/markdown" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
+          <Field label="选择来源文件" hint="支持 PDF、DOCX、TXT、Markdown、MP3、WAV、M4A、MP4、WebM，没有应用层文件大小或文档页数上限。大文档建议本机解析，实际受设备和平台能力限制；音视频原文件由独立 Gemini 模型生成摘要，仍受供应商能力限制。">
+            <input className="input" type="file" accept=".pdf,.docx,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,audio/mpeg,audio/wav,audio/mp4,video/mp4,video/webm" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
           </Field>
           <FileContributorPicker projectId={projectId} value={contributorIds} onChange={ids => { setContributorIds(ids); if (file) fileInitIntentKeys.current.delete(file); }} disabled={submitting || Boolean(pendingUpload)} />
           {file && <div className="callout">已选择 {file.name} · {formatBytes(file.size)}{pendingUpload?.file === file ? ' · 文件内容已上传，重试时会复用上传记录' : ''}</div>}
@@ -603,6 +630,8 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         <Field label="来源标题（可选）"><input className="input" value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} placeholder={kind === 'file' ? file?.name ?? '使用文件名' : kind === 'web' ? '使用网页标题' : '粘贴文本'} /></Field>
         {actionError ? <ErrorNotice error={actionError} /> : null}
         {successMessage && <div className="notice notice-success" role="status"><FilePlus2 size={17} /><div className="notice-copy"><strong>{successMessage}</strong></div></div>}
+        {kind === 'file' && (!file || /\.(pdf|docx)$/i.test(file.name)) && <Field label="正文解析方式"><select className="input" value={parseMode} onChange={e=>setParseMode(e.target.value as typeof parseMode)}><option value="auto">自动建议：小 PDF 云端，大 PDF 本机；DOCX 本机</option><option value="cloud">云端读取文字型 PDF</option><option value="browser">本机读取 PDF / DOCX</option></select><p className="form-note">10 MiB / 30 页是建议切换阈值，不是导入上限。未读取的图片、公式等会明确提示。</p></Field>}
+        {submitting && importAbort.current && <button type="button" className="button button-quiet" onClick={()=>importAbort.current?.abort()}>停止本机解析</button>}
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={!canSubmit || (kind === 'file' && (!file || contributorIds?.length === 0))}>{submitting ? <><LoaderCircle className="spin" size={15} /> {submitStage || '正在提交'}</> : <><Send size={15} /> {capability.features.aiEnabled ? '导入并开始解析' : '导入来源'}</>}</button><span className="sources-inline-note">按服务端单页上限分批读取完整来源列表。</span></div>
       </form>
     </SectionCard>}

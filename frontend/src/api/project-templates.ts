@@ -19,6 +19,34 @@ export function isTemplatePayload(payload: unknown): payload is TemplatePayload 
   const workspace = payload.workspace;
   return Boolean(workspace && typeof workspace === 'object' && 'templateId' in workspace && workspace.templateId === 'blank');
 }
+async function importTemplateDocument(draftId:string,fileId:string,draft:TemplateDraft,file:File,signal?:AbortSignal) {
+ const expectedRevision=draft.revision;
+ const {parseBrowserDocument}=await import('../pages/browser-document');
+ let submitted=0;
+ const normalizeWarnings=(warnings:string[])=>{const unique=[...new Set(warnings)].map(w=>w.slice(0,1000));return unique.length>100?[...unique.slice(0,99),`共有${unique.length}条解析警告；此处列出前99条，材料覆盖仍为部分`]:unique;};
+ const send=async(blocks:Array<{seq:number;pageNumber:number|null;text:string;headingPath?:string[];warnings?:string[]}>)=>{
+  blocks=blocks.map(b=>({...b,headingPath:b.headingPath?.slice(0,6).map(h=>h.slice(0,200)),warnings:b.warnings?.slice(0,20).map(w=>w.slice(0,1000))}));
+  let pending:typeof blocks=[];let chars=0;
+  const flush=async()=>{if(!pending.length)return;await templateRequest(templateDraftPath(draftId,`/files/${fileId}/imports`),{method:'POST',body:{expectedRevision,blocks:pending},signal});submitted+=pending.length;pending=[];chars=0;};
+  for(const block of blocks){if(pending.length===10||chars+block.text.length>24000)await flush();pending.push(block);chars+=block.text.length;}await flush();
+ };
+ let result:{status:'complete'|'partial';blocks:number;warnings:string[]};
+ if(/\.(txt|md)$/i.test(file.name)){
+  const decoder=new TextDecoder(),reader=file.stream().getReader();let seq=0,buffer='';
+  try{for(;;){if(signal?.aborted)throw new DOMException('已取消','AbortError');const chunk=await reader.read();buffer+=decoder.decode(chunk.value,{stream:!chunk.done});while(buffer.length>=16000){await send([{seq:seq++,pageNumber:null,text:buffer.slice(0,/[\uD800-\uDBFF]/.test(buffer[15999]!)?15999:16000)}]);buffer=buffer.slice(/[\uD800-\uDBFF]/.test(buffer[15999]!)?15999:16000);}if(chunk.done)break;}if(buffer)await send([{seq:seq++,pageNumber:null,text:buffer}]);result={status:'complete',blocks:seq,warnings:[]};}finally{reader.releaseLock();}
+ }else {const parsed=await parseBrowserDocument(file,{signal,onBatch:async({blocks})=>{await send(blocks.map(b=>({...b,warnings:b.warnings?.map(w=>w.message)})));}});result={...parsed,warnings:parsed.warnings.map(w=>w.message)};}
+ if(result.blocks!==submitted)throw new Error('正文提交数量与浏览器解析结果不符，原文件已保留。');
+ return templateRequest<TemplateDraft>(templateDraftPath(draftId,`/files/${fileId}/imports/complete`),{method:'POST',body:{expectedRevision,blocks:result.blocks,status:result.status,warnings:normalizeWarnings(result.warnings)},signal});
+}
+async function uploadTemplateMultipart(userId:string,draftId:string,expectedRevision:number,file:File,signal?:AbortSignal) {
+ const identity={name:file.name,size:file.size,lastModified:file.lastModified},namespace=`template-multipart:${userId}:${draftId}:${file.name}:${file.size}:${file.lastModified}`;
+ const fileId=await idempotencyKeyForIntent(namespace,identity),tail=`/files/${fileId}/multipart`;
+ const session=await templateRequest<{partBytes:number;status:string;parts?:Array<{partNumber:number;sizeBytes:number}>}>(templateDraftPath(draftId,tail),{method:'POST',body:{expectedRevision,name:file.name,sizeBytes:file.size},signal});
+ if(session.status==='uploading')for(let offset=0,part=1;offset<file.size;offset+=session.partBytes,part++){const size=Math.min(session.partBytes,file.size-offset);if(session.parts?.some(p=>p.partNumber===part&&p.sizeBytes===size))continue;await templateRequest(templateDraftPath(draftId,`${tail}/${part}`),{method:'PUT',rawBody:file.slice(offset,offset+session.partBytes),signal});}
+ const draft=await templateRequest<TemplateDraft>(templateDraftPath(draftId,`${tail}/complete`),{method:'POST',signal});
+ const result=/\.(pdf|docx|txt|md)$/i.test(file.name)?await importTemplateDocument(draftId,fileId,draft,file,signal):draft;
+ completeIntent(namespace);return result;
+}
 export const projectTemplateApi = {
   catalog: (signal?: AbortSignal) => templateRequest<{ items: ProjectTemplate[] }>('/api/v1/project-templates', { signal }),
   create: async (userId: string, signal?: AbortSignal) => { const body = { templateId: 'blank' }; const namespace = `blank-template:${userId}`; const idempotencyKey = await idempotencyKeyForIntent(namespace, body); const result = await templateRequest<TemplateDraft>('/api/v1/creation-drafts/from-template', { method: 'POST', body, idempotencyKey, signal }); completeIntent(namespace); return result; },
@@ -27,7 +55,13 @@ export const projectTemplateApi = {
   preview: (draftId: string, expectedRevision: number, goal: WizardGoal, tasks: TemplateTask[]) => api.post<'CreationDraftResponse'>(templateDraftPath(draftId, '/preview'), { expectedRevision, mode: 'manual', goal, tasks, regenerate: true }) as Promise<TemplateDraft>,
   commit: async (draftId: string, expectedRevision: number): Promise<DataOf<'CreationCommitResponse'>> => { const body = { expectedRevision, confirmed: true }; const namespace = `template-commit:${draftId}`; const idempotencyKey = await idempotencyKeyForIntent(namespace, body); const result = await api.post<'CreationCommitResponse'>(templateDraftPath(draftId, '/commit'), body, { idempotencyKey }); completeIntent(namespace); return result; },
   state: (draftId: string, expectedRevision: number, status: 'active' | 'cancelled') => api.post<'CreationDraftResponse'>(templateDraftPath(draftId, '/state'), { expectedRevision, status }) as Promise<TemplateDraft>,
-  upload: async (userId: string, draftId: string, expectedRevision: number, file: File, signal?: AbortSignal) => {
+  upload: async (userId: string, draftId: string, expectedRevision: number, file: File, signal?: AbortSignal, parsingMode: 'auto' | 'cloud' | 'browser' = 'auto') => {
+    if(parsingMode==='auto'&&/\.pdf$/i.test(file.name)&&file.size<=10*1024*1024) {
+      await import('../pages/source-pdf-render');const {getDocument}=await import('pdfjs-dist');
+      const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
+      try{if((await task.promise).numPages>30)parsingMode='browser';}finally{await task.destroy();}
+    }
+    if(file.size>10*1024*1024||/\.docx$/i.test(file.name)||(parsingMode==='browser'&&/\.(pdf|txt|md)$/i.test(file.name)))return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
     const sha256 = await creationFileHash(file);
     const identity = { name: file.name, size: file.size, sha256 };
     const namespace = `template-upload:${userId}:${draftId}:${sha256}:${encodeURIComponent(file.name)}`;
@@ -35,7 +69,7 @@ export const projectTemplateApi = {
     try {
       const result = await templateRequest<TemplateDraft>(templateDraftPath(draftId, `/files/${fileId}`), { method: 'PUT', query: { expectedRevision, name: file.name }, rawBody: file, signal });
       if (!result.files.some(item => item.id === fileId && item.name === file.name && item.sizeBytes === file.size && item.sha256 === sha256)) throw new Error('上传响应与原文件校验不一致，已保留草稿，请重新核对。');
-      completeIntent(namespace); return result;
+      completeIntent(namespace); return /\.pdf$/i.test(file.name)&&/资源|内存|CPU|limit|memory|超过|超出/i.test(result.files.find(item=>item.id===fileId)?.textError??'')?importTemplateDocument(draftId,fileId,result,file,signal):result;
     } catch (reason) {
       if (signal?.aborted) throw reason;
       try {

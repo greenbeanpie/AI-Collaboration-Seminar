@@ -1,3 +1,4 @@
+import { prepareSourceText } from '../src/services/resource-preparation';
 import { SELF } from 'cloudflare:test';
 import { expect, it } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -27,6 +28,10 @@ it('exposes only quality metadata and binds source continuation to the authorize
   expect((await request(owner.token,path+'/media-resume',{jobId:newId()})).status).toBe(404);
   expect((await request(owner.token,path+'/media-resume',{jobId})).status).toBe(409);
   expect(await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first()).toEqual({status:'waiting_input'});
+  await env.DB.prepare("UPDATE jobs SET kind='agent_run',input_json=json_set(input_json,'$.operation','media.summary') WHERE id=?1").bind(jobId).run();
+  const before=(await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(projectId).first<{n:number}>())!.n;
+  await expect(prepareSourceText(env,projectId,versionId,owner.userId)).rejects.toThrow();
+  expect((await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(projectId).first<{n:number}>())!.n).toBe(before);
 });
 
 it.each(['draft','file'])('cancels the waiting audio task atomically when its %s is cancelled or removed', async target => {

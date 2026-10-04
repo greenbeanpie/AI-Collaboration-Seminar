@@ -1,7 +1,6 @@
 import { getResolvedPDFJS, extractText } from 'unpdf';
 import cmaps from '../pdf/cmaps.json';
 import { AppError } from '../core/errors';
-import { LIMITS } from '../core/limits';
 
 // Adobe CMaps from the repository's pinned pdfjs-dist 6.2.108 distribution.
 // Bundled locally: PDF parsing never fetches a CDN, the source URL, or a model.
@@ -41,7 +40,6 @@ export async function extractPdfText(bytes: Uint8Array): Promise<{ totalPages: n
   });
   try {
     const pdf = await task.promise;
-    if (pdf.numPages > LIMITS.maxPdfPages) throw new AppError('SOURCE_PARSE_FAILED', `PDF 超过 ${LIMITS.maxPdfPages} 页限制`, 422, false, { pageCount: pdf.numPages });
     const result = await extractText(pdf, { mergePages: false });
     // Font lookup failures can silently drop Chinese while leaving ASCII behind.
     // Do not report such pages as scans or proceed with an incomplete summary.

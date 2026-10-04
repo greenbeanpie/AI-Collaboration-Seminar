@@ -9,7 +9,7 @@ export async function prepareSourceText(env:Env,projectId:string,versionId:strin
   if(source.projectId!==projectId)throw invalidState('来源不属于当前项目');
   const ready=await env.DB.prepare("SELECT 1 FROM source_versions v LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE v.id=?1 AND (p.text_status='ready' OR (p.source_version_id IS NULL AND v.status='ready'))").bind(versionId).first();
   if(ready)return;
-  const pending=await env.DB.prepare("SELECT id FROM jobs WHERE project_id=?1 AND json_extract(input_json,'$.sourceVersionId')=?2 AND kind IN ('parse_source','ocr_pages','requirement_extract','web_fetch') AND status IN ('queued','running','waiting_input') AND COALESCE(json_extract(input_json,'$.operation'),'')!='source.summary' ORDER BY created_at DESC LIMIT 1").bind(projectId,versionId).first<{id:string}>();
+  const pending=await env.DB.prepare("SELECT id FROM jobs WHERE project_id=?1 AND json_extract(input_json,'$.sourceVersionId')=?2 AND (kind IN ('parse_source','ocr_pages','requirement_extract','web_fetch') OR (kind='agent_run' AND json_extract(input_json,'$.operation')='media.summary')) AND status IN ('queued','running','waiting_input') AND COALESCE(json_extract(input_json,'$.operation'),'')!='source.summary' ORDER BY created_at DESC LIMIT 1").bind(projectId,versionId).first<{id:string}>();
   const jobId=pending?.id??await createJobAndDispatch(env,{projectId,kind:'parse_source',createdBy:userId??null,input:{operation:'source.text',sourceId:source.sourceId,sourceVersionId:versionId,sourceLifecycleVersion:source.lifecycleVersion,phase:'extract'}});
   const deadline=Date.now()+60_000;
   while(Date.now()<deadline){

@@ -82,14 +82,18 @@ describe('independent source summaries', () => {
     resolve(new Response()); expect((await running).status).toBe('succeeded');
   });
 
-  it('validates project access and rejects stale revisions and incomplete text without model calls', async () => {
+  it('validates project access and rejects stale revisions and permits explicitly partial summaries', async () => {
     const f = await fixture(); const outsider = await seedUser();
     expect((await SELF.fetch(f.path,{headers:{cookie:authCookie(outsider.token)}})).status).toBe(403);
     const fetch = vi.fn(); vi.stubGlobal('fetch',fetch);
     const stale = await SELF.fetch(`${f.path}/summary`,{method:'POST',headers:{cookie:f.cookie,'content-type':'application/json'},body:JSON.stringify({expectedSummaryRevision:9})});
     expect(stale.status).toBe(409); expect(fetch).not.toHaveBeenCalled();
     await env.DB.prepare("UPDATE source_pages SET text_status='none' WHERE source_version_id=?1 AND page_number=1").bind(f.sourceVersionId).run();
-    expect((await SELF.fetch(`${f.path}/summary`,{method:'POST',headers:{cookie:f.cookie,'content-type':'application/json'},body:JSON.stringify({expectedSummaryRevision:0})})).status).toBe(409); expect(fetch).not.toHaveBeenCalled();
+    vi.stubGlobal('fetch',mockGatewayFetch());
+    const partial=await enqueueSourceSummary({...env,PARSE_WORKFLOW:{create:vi.fn(async()=>({id:crypto.randomUUID()}))}} as unknown as Env,f.sourceVersionId,f.owner.userId,0);
+    expect((await runSourceSummary(env,partial.jobId)).status).toBe('succeeded');
+    const summary=await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string}>();
+    expect(JSON.parse(summary!.summary_json).caveats.join('')).toContain('1 页尚未读取');
   });
 
   it('does not save fabricated summary citations', async () => {
@@ -121,4 +125,15 @@ describe('independent source summaries', () => {
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM requirements WHERE project_id=?1').bind(f.projectId).first<{n:number}>())?.n).toBe(0);
     expect((await env.DB.prepare('SELECT result_json FROM jobs WHERE id=?1').bind(jobId).first<{result_json:string}>())?.result_json).toContain('"count":0');
   });
+  it('preserves browser extraction warnings and partial coverage in both prompt and saved caveats', async () => {
+    const f=await fixture();const jobId=await summaryJob(f);
+    await env.DB.prepare("UPDATE source_versions SET extraction_coverage='partial',extraction_warnings_json=?2 WHERE id=?1").bind(f.sourceVersionId,JSON.stringify(['内嵌图片未识别','复杂公式未读取'])).run();
+    const fetch=mockGatewayFetch();vi.stubGlobal('fetch',fetch);
+    expect((await runSourceSummary(env,jobId)).status).toBe('succeeded');
+    const body=JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(JSON.stringify(body)).toContain('内嵌图片未识别');
+    const saved=await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string}>();
+    expect(JSON.parse(saved!.summary_json).caveats).toEqual(expect.arrayContaining(['内嵌图片未识别','复杂公式未读取','本机正文仅部分读取，未读取内容不能推断。']));
+  });
+
 });

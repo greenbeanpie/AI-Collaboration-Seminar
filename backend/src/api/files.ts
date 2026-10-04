@@ -2,6 +2,8 @@ import { contributorSchema, fileContributors } from '../services/file-contributo
 import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
+import { AppError } from '../core/errors';
+import { LIMITS } from '../core/limits';
 import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
@@ -146,7 +148,13 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
     const { projectId, fileId } = c.req.valid('param');
     const file=await c.env.DB.prepare('SELECT ext FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL').bind(fileId,projectId).first<{ext:string}>();
     if(!file)throw notFound('文件不存在');
-    const bytes = await readBoundedUpload(c.req.raw.body,uploadLimit(file.ext));
+    const fileLimit=uploadLimit(file.ext);
+    let bytes:Uint8Array;
+    try { bytes=await readBoundedUpload(c.req.raw.body,fileLimit ?? LIMITS.recommendedCloudFileBytes); }
+    catch(error) {
+      if(fileLimit===null&&error instanceof AppError&&error.code==='FILE_TOO_LARGE')throw new AppError('FILE_TOO_LARGE','单次快捷上传超过10 MiB，请改用分片上传；文件总大小没有应用上限',413,false);
+      throw error;
+    }
     const stored = await storeFileContent(c.env, { projectId, fileId, bytes });
     return c.json(
       apiData(c, { fileId, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeDetected: stored.mimeDetected }),
@@ -156,7 +164,7 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(downloadRoute, async (c) => {
     const { projectId, fileId } = c.req.valid('param');
-    const file = await readFileContent(c.env, { projectId, fileId });
-    return c.body(file.body, 200, { 'content-type': file.mime });
+    const file = await readFileContent(c.env, { projectId, fileId, range:c.req.header('range') });
+    return new Response(file.body,{status:file.status,headers:{'content-type':file.mime,...file.headers,'cache-control':'no-store','x-request-id':c.get('requestId')??crypto.randomUUID()}});
   });
 }

@@ -618,6 +618,275 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        name: string;
+                        sizeBytes: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/{partNumber}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                    partNumber: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        blocks: {
+                            seq: number;
+                            pageNumber: number | null;
+                            text: string;
+                            headingPath?: string[];
+                            warnings?: string[];
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        blocks: number;
+                        /** @enum {string} */
+                        status: "complete" | "partial";
+                        /** @default [] */
+                        warnings?: string[];
+                        /** @default false */
+                        interrupted?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 草稿文档操作结果 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftDocumentOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/project-templates": {
         parameters: {
             query?: never;
@@ -1181,7 +1450,8 @@ export interface paths {
                             citations?: {
                                 /** Format: uuid */
                                 fileId: string;
-                                pageNumber: number;
+                                pageNumber: number | null;
+                                locator?: string;
                                 quote: string;
                             }[];
                         }[];
@@ -3336,6 +3606,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @default true */
+                        analyze?: boolean;
                         /** Format: uuid */
                         sourceVersionId: string;
                         images: {
@@ -7399,6 +7671,653 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sizeBytes: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 开始或恢复分片上传 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MultipartInitResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 上传状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MultipartOperationResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/parts/{partNumber}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header: {
+                    "x-part-size": string;
+                };
+                path: {
+                    projectId: string;
+                    fileId: string;
+                    sessionId: string;
+                    partNumber: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 分片已接收 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MultipartOperationResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description complete */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MultipartOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description abort */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MultipartOperationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                        /** @enum {string} */
+                        method: "browser-pdf" | "browser-docx";
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        batchNumber: number;
+                        blocks: {
+                            seq: number;
+                            pageNumber: number | null;
+                            text: string;
+                            headingPath?: string[];
+                            warnings?: string[];
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        totalPages: number | null;
+                        /** @default [] */
+                        warnings?: string[];
+                        /** @default false */
+                        partial?: boolean;
+                        /** @default false */
+                        interrupted?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/document-imports/blank-pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                        pages: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 解析会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocumentImportResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    offset?: number | null;
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                    resourceType: "source" | "material";
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 固定版本内部目录及覆盖状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourceIndexResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    offset?: number | null;
+                    query: string;
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                    resourceType: "source" | "material";
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 资料内部检索，摘录不算读取原文 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourceIndexSearchResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/section": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    offset?: number | null;
+                    sectionId: string;
+                    neighbors?: "true" | "false";
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                    resourceType: "source" | "material";
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 读取实际原文供引用 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourceSectionResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/ai-config/media-probe": {
         parameters: {
             query?: never;
@@ -8856,6 +9775,9 @@ export interface components {
                 /** @description AI 是否启用由 ai_config_versions 决定；不暴露任何密钥 */
                 features: {
                     aiEnabled: boolean;
+                    documentImports?: boolean;
+                    resourceIndex?: boolean;
+                    ocrBatching?: boolean;
                     mediaEnabled?: boolean;
                     audioTranscriptionEnabled?: boolean;
                     videoSummaryEnabled?: boolean;
@@ -8864,9 +9786,12 @@ export interface components {
                     emailMode: "echo" | "resend";
                 };
                 limits: {
-                    maxFileBytes: number;
-                    maxMediaBytes?: number;
-                    maxPdfPages: number;
+                    maxFileBytes: number | null;
+                    maxMediaBytes: number | null;
+                    maxPdfPages: number | null;
+                    recommendedCloudFileBytes: number;
+                    recommendedCloudPdfPages: number;
+                    uploadPartBytes: number;
                     pageImageMaxEdge: number;
                     pageImageMaxBytes: number;
                     listDefaultPageSize: number;
@@ -9036,6 +9961,13 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        DraftDocumentOperationResponse: {
+            data: {
+                [key: string]: unknown;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         ProjectTemplateListResponse: {
             data: {
                 items: {
@@ -9140,7 +10072,8 @@ export interface components {
                         citations: {
                             /** Format: uuid */
                             fileId: string;
-                            pageNumber: number;
+                            pageNumber: number | null;
+                            locator?: string;
                             quote: string;
                         }[];
                     }[];
@@ -9342,7 +10275,8 @@ export interface components {
                             citations: {
                                 /** Format: uuid */
                                 fileId: string;
-                                pageNumber: number;
+                                pageNumber: number | null;
+                                locator?: string;
                                 quote: string;
                             }[];
                         }[];
@@ -10721,6 +11655,9 @@ export interface components {
                 /** @enum {string} */
                 status: "pending" | "processing" | "ready" | "failed";
                 parseError: string | null;
+                extractionMethod?: string | null;
+                extractionCoverage?: string | null;
+                extractionWarnings?: string[];
                 pageCount: number | null;
                 charCount: number | null;
                 pages: {
@@ -10739,7 +11676,7 @@ export interface components {
                     /** @enum {string} */
                     status: "queued" | "running" | "waiting_input";
                     /** @enum {string} */
-                    phase: "extract" | "ocr";
+                    phase: "extract" | "ocr" | "analyze";
                 } | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -12858,6 +13795,105 @@ export interface components {
                 sizeBytes: number;
                 sha256: string;
                 mimeDetected: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        MultipartInitResponse: {
+            data: {
+                sessionId: string;
+                partBytes: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        MultipartOperationResponse: {
+            data: {
+                [key: string]: unknown;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        DocumentImportResponse: {
+            data: {
+                [key: string]: unknown;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ResourceIndexResponse: {
+            data: {
+                /** @enum {boolean} */
+                untrustedData: true;
+                /** @enum {string} */
+                resourceType: "source" | "material";
+                versionId: string;
+                resourceId: string;
+                title: string;
+                revision: number;
+                coverage: string;
+                /** @enum {boolean} */
+                directoryOnly: true;
+                indexStatus: string;
+                items: {
+                    sectionId: string;
+                    seq: number;
+                    heading: string;
+                    pageNumber: number | null;
+                    startOffset: number;
+                    endOffset: number;
+                }[];
+                nextOffset: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ResourceIndexSearchResponse: {
+            data: {
+                /** @enum {boolean} */
+                untrustedData: true;
+                /** @enum {string} */
+                resourceType: "source" | "material";
+                versionId: string;
+                resourceId: string;
+                title: string;
+                revision: number;
+                coverage: string;
+                /** @enum {boolean} */
+                directoryOnly: true;
+                indexStatus: string;
+                items: {
+                    sectionId: string;
+                    heading: string;
+                    pageNumber: number | null;
+                    startOffset: number;
+                    excerpt: string;
+                }[];
+                nextOffset: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ResourceSectionResponse: {
+            data: {
+                /** @enum {boolean} */
+                untrustedData: true;
+                /** @enum {string} */
+                resourceType: "source" | "material";
+                versionId: string;
+                resourceId: string;
+                title: string;
+                revision: number;
+                coverage: string;
+                sectionId: string;
+                offset: number;
+                nextOffset: number | null;
+                text?: string;
+                fragments?: {
+                    fragmentId: string;
+                    pageNumber: number | null;
+                    quote: string;
+                }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

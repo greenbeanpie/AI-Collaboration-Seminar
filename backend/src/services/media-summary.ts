@@ -112,6 +112,8 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       const active=await loadActiveSourceVersion(env,sourceVersionId,input.sourceLifecycleVersion),fragmentId=newId(),guard=sourceLifecycleGuard('?1','?2')+" AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running'))";
       const documentSummary={title:summary.title,summary:text,keyPoints:summary.keyPoints.length?summary.keyPoints:[summary.summary],citations:[{fragmentId,pageNumber:null,quote:'AI 摘要（非逐字原文）'}],caveats:summary.caveats};
       await env.DB.batch([
+        env.DB.prepare(`DELETE FROM resource_index_blocks WHERE version_id=?1 AND resource_type='source' AND project_id=(SELECT project_id FROM source_versions WHERE id=?1) AND ${guard}`).bind(sourceVersionId,active.lifecycleVersion,jobId),
+        env.DB.prepare(`DELETE FROM resource_index_state WHERE version_id=?1 AND resource_type='source' AND project_id=(SELECT project_id FROM source_versions WHERE id=?1) AND ${guard}`).bind(sourceVersionId,active.lifecycleVersion,jobId),
         env.DB.prepare(`DELETE FROM source_fragments WHERE source_version_id=?1 AND ${guard}`).bind(sourceVersionId,active.lifecycleVersion,jobId),
         env.DB.prepare(`INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at) SELECT ?4,?1,?5,NULL,1,'text',?6,?7 WHERE ${guard}`).bind(sourceVersionId,active.lifecycleVersion,jobId,fragmentId,active.projectId,text,nowIso()),
         env.DB.prepare(`UPDATE source_versions SET char_count=?4,page_count=NULL,status='ready',parse_error=NULL WHERE id=?1 AND ${guard}`).bind(sourceVersionId,active.lifecycleVersion,jobId,text.length),

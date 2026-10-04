@@ -1,3 +1,4 @@
+import { buildResourceIndexBatch } from '../src/services/resource-index';
 import {afterEach,describe,it,expect,vi} from 'vitest';
 import {env} from './helpers/env';
 import {seedProject,seedUser} from './helpers/seed';
@@ -21,6 +22,16 @@ env.DB.prepare("INSERT INTO source_versions(id,source_id,project_id,revision,ori
 env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','running',?3,0,?4,?5,?5)").bind(jobId,projectId,JSON.stringify({sourceVersionId:versionId,sourceLifecycleVersion:1,configVersionId:config.id,phase:'extract'}),owner.userId,now)]);
 const run=vi.fn(async(model:string,input:unknown)=>{expect(model).toBe(WHISPER_MODEL);expect(input).toMatchObject({task:'transcribe',vad_filter:true});expect((input as {audio:{body:unknown}}).audio.body).toBeInstanceOf(ReadableStream);return t;});return {config,owner,jobId,versionId,projectId,run,local:{...env,AI:{run},AGENT_WORKFLOW:{create:vi.fn(async()=>({}))}} as unknown as typeof env};}
 function llm(values:unknown[]){let i=0;const request=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const input=JSON.parse(String(init?.body));expect(input.messages[0].content).not.toContain('持续项目反馈');return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(values[i++])}}],usage:{prompt_tokens:10,completion_tokens:20}});});vi.stubGlobal('fetch',request);return request;}
+it('invalidates the existing ResourceIndex when a new media summary replaces source fragments',async()=>{
+ const f=await fixture();llm([q,summary]);await runMediaJob(f.local,f.jobId,f.versionId);
+ const target={resourceType:'source' as const,versionId:f.versionId};await buildResourceIndexBatch(f.local,f.projectId,target);
+ const old=await env.DB.prepare('SELECT content,fragment_id FROM resource_index_blocks WHERE version_id=?1').bind(f.versionId).all<{content:string;fragment_id:string}>();expect(old.results.length).toBeGreaterThan(0);
+ const jobId=newId(),now=nowIso();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','running',?3,?4,?5,?5)").bind(jobId,f.projectId,JSON.stringify({operation:'media.summary',sourceVersionId:f.versionId,sourceLifecycleVersion:1,configVersionId:f.config.id,phase:'extract'}),f.owner.userId,now).run();
+ llm([q,{...summary,summary:'新一轮总结：需要再次核对发布证据。'}]);await runMediaJob(f.local,jobId,f.versionId);
+ expect((await env.DB.prepare('SELECT COUNT(*) n FROM resource_index_blocks WHERE version_id=?1').bind(f.versionId).first<{n:number}>())!.n).toBe(0);
+ await buildResourceIndexBatch(f.local,f.projectId,target);
+ const indexed=await env.DB.prepare('SELECT content,fragment_id FROM resource_index_blocks WHERE version_id=?1').bind(f.versionId).all<{content:string;fragment_id:string}>();expect(indexed.results.map(row=>row.content).join('')).toContain('新一轮总结');expect(indexed.results.map(row=>row.fragment_id)).not.toContain(old.results[0]!.fragment_id);
+});
 describe('Whisper conservative gates',()=>{
  it('does not mistake language probability for transcript accuracy',()=>expect(transcriptGate(transcript)).toEqual([]));
  for(const [name,patch] of [['low logprob',{avg_logprob:-1.01}],['speech probability boundary',{no_speech_prob:0.6}],['compression boundary',{compression_ratio:2.41}],['missing metric',{avg_logprob:undefined}],['invalid times',{end:31}]] as const){it(name,()=>expect(transcriptGate({...transcript,segments:[{...transcript.segments![0],...patch}]})).not.toEqual([]));}

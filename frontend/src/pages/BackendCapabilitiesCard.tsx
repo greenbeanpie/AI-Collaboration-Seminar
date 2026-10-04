@@ -13,8 +13,8 @@ export function BackendCapabilitiesCard() {
         <div className="capability-row"><span>AI 服务</span><StatusPill tone={capabilities.data.features.aiEnabled ? 'good' : 'warn'}>{capabilities.data.features.aiEnabled ? '已启用' : '暂未启用'}</StatusPill></div>
         <div className="capability-row"><span>网页抓取</span><strong>{capabilities.data.features.webFetch ? '可用' : '未启用'}</strong></div>
         <div className="capability-row"><span>邮箱验证码模式</span><strong>{capabilities.data.features.emailMode}</strong></div>
-        <div className="capability-row"><span>文件大小上限</span><strong>{(capabilities.data.limits.maxFileBytes / (1024 * 1024)).toFixed(0)} MiB</strong></div>
-        <div className="capability-row"><span>PDF 页数上限</span><strong>{capabilities.data.limits.maxPdfPages} 页</strong></div>
+        <div className="capability-row"><span>文件大小上限</span><strong>{capabilities.data.limits.maxFileBytes == null ? '无应用层上限' : `${(capabilities.data.limits.maxFileBytes / (1024 * 1024)).toFixed(0)} MiB`}</strong></div>
+        <div className="capability-row"><span>PDF 页数上限</span><strong>{capabilities.data.limits.maxPdfPages == null ? '无应用层上限' : `${capabilities.data.limits.maxPdfPages} 页`}</strong></div>
         <div className="capability-row"><span>扫描页长边</span><strong>{capabilities.data.limits.pageImageMaxEdge} px</strong></div>
         <div className="capability-row"><span>单页图片上限</span><strong>{(capabilities.data.limits.pageImageMaxBytes / (1024 * 1024)).toFixed(1)} MiB</strong></div>
         <div className="capability-row"><span>AI 并发上限</span><strong>{capabilities.data.limits.concurrentAiTasksPerProject} 项 / 项目</strong></div>
