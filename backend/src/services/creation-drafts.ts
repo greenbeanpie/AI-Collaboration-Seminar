@@ -303,12 +303,18 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     if(new Set(output.map(t=>t.key)).size!==output.length)throw validationFailed('任务标识不可重复');
     validateTaskGraph(output.map(t=>t.key!),output.flatMap(t=>t.dependsOn.map(key=>({taskId:t.key!,dependsOnTaskId:key}))));
     for (const t of output)for (const c of t.citations) {
-      const f=context.find(f=>f.fileId===c.fileId);
       if(c.locator) {
         const seq=Number(c.locator.replace(/^block:/,''));
         const block=await env.DB.prepare('SELECT content,page_number FROM draft_document_blocks WHERE draft_id=?1 AND file_id=?2 AND seq=?3').bind(id,c.fileId,seq).first<{content:string;page_number:number|null}>();
         if(!block||block.page_number!==c.pageNumber||!block.content.includes(c.quote))throw invalidState('预览引用与导入原文不符');
-      } else if(c.pageNumber===null?!f?.pages.some(page=>page.includes(c.quote)):!f?.pages[c.pageNumber-1]?.includes(c.quote))throw invalidState('预览的来源引用与原文不符');
+      } else {
+        // Validate against immutable actual draft text, including tool-read later pages;
+        // the initial prompt contains only a bounded preview and cannot validate all quotes.
+        const valid=await env.DB.prepare(`SELECT 1 FROM creation_draft_files f WHERE f.id=?1 AND f.draft_id=?2 AND f.removed=0 AND
+          ((?3 IS NULL AND f.ext!='.pdf' AND EXISTS(SELECT 1 FROM json_each(f.pages_json) WHERE instr(value,?4)>0))
+          OR (?3 IS NOT NULL AND f.ext='.pdf' AND instr(json_extract(f.pages_json,'$['||(?3-1)||']'),?4)>0))`).bind(c.fileId,id,c.pageNumber,c.quote).first();
+        if(!valid)throw invalidState('预览的来源引用与原文不符');
+      }
     }
     const preview={goal,tasks:output,mode,...(configVersionId?{configVersionId}:{})};
     const nextRevision=payload.workspace?revision+1:revision;
