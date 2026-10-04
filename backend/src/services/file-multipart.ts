@@ -53,6 +53,8 @@ export async function putMultipartPart(env:Env,project:string,file:string,user:s
  const owner=crypto.randomUUID(),now=nowIso(),expiry=new Date(Date.now()+LEASE_MS).toISOString();
  const claim=await env.DB.prepare(`INSERT INTO file_upload_part_leases(session_id,part_number,lease_owner,expires_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM file_upload_sessions WHERE id=?1 AND status='uploading') AND ${liveGuard('?5','?6','?7','?8',true)} ON CONFLICT(session_id,part_number) DO UPDATE SET lease_owner=excluded.lease_owner,expires_at=excluded.expires_at WHERE file_upload_part_leases.expires_at<=?9`).bind(id,part,owner,expiry,file,project,user,s.lifecycle_version,now).run();
  if(!claim.meta.changes)throw invalidState('同一分片已有上传，请等待或在租约过期后重试');
+ // An in-flight replacement must not leave an older ETag eligible for completion after lease expiry.
+ await env.DB.prepare('DELETE FROM file_upload_parts WHERE session_id=?1 AND part_number=?2 AND EXISTS(SELECT 1 FROM file_upload_part_leases WHERE session_id=?1 AND part_number=?2 AND lease_owner=?3)').bind(id,part,owner).run();
  try {
   const fixed=new FixedLengthStream(expected),controller=new AbortController();
   const transfer=body.pipeTo(fixed.writable,{signal:controller.signal});
