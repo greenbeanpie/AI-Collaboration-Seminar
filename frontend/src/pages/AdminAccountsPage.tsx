@@ -1,3 +1,4 @@
+import { AdminAiRetries } from './AdminAiRetries';
 import { useSettingsDirty } from './settings-dirty';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -54,6 +55,7 @@ export function AdminAccountsPage() {
   if (!authorized) return <SectionCard title="需要系统管理员权限"><p role="alert">只有系统管理员可以管理注册邀请码。项目负责人不具备此权限。</p></SectionCard>;
   return <div className="page-stack">
     <PageHeading eyebrow="系统管理" title="账户注册邀请码" detail="邀请码允许创建一个新账户，成功注册后即失效。它与团队的项目邀请独立。" action={superAdmin && <Link className="button button-quiet" to="/app/settings/ai">AI 模型设置</Link>} />
+    <AdminAiRetries key={`${session.data?.id}:${session.data?.role}`} userId={session.data!.id} superAdmin={superAdmin} onDenied={denyAccess} />
     {notice && <p role="status">{notice}</p>}
     <SectionCard title="账户等级与管理" detail="超级管理员管理账户等级和系统配置；普通管理员管理一般用户与邀请码。项目成员权限独立保留。">
       {accounts.isLoading && <Spinner label="正在读取账户" />}
