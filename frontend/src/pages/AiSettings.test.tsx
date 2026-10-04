@@ -5,6 +5,21 @@ import { AiSettings } from './AiSettings';
 
 async function setup(admin = true, advanced = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); if (admin) await waitFor(() => expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled()); if (advanced && admin) fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } }); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('defaults legacy audio strategy to Whisper and saves strategy independently without paid probes', async () => {
+  const calls:Record<string,unknown>[]=[];
+  vi.stubGlobal('fetch', vi.fn(async (_url:string,init?:RequestInit) => {
+    if(init?.method==='GET') return Response.json({data:{version:8,enabled:true,config:savedConfig}});
+    expect(init?.method).toBe('PUT'); calls.push(JSON.parse(String(init?.body))); return Response.json({data:{version:9,enabled:true}});
+  }));
+  await setup(true,false);
+  expect(screen.getByLabelText('音频处理策略')).toHaveValue('whisper-first');
+  expect(screen.getByText(/全部检查评分至少 0.85/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('音频处理策略'), {target:{value:'gemini-only'}});
+  fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
+  await screen.findByText('配置已保存，AI 保持启用。');
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
+});
 it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
   const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };
   const legacy = { ...deepseek, provider: 'workers-ai', providerPreset: undefined, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', apiUrl: '' };

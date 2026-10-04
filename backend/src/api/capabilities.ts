@@ -14,6 +14,8 @@ const capabilitiesResponse = apiEnvelope(
         .object({
           aiEnabled: z.boolean(),
           mediaEnabled:z.boolean().optional(),
+          audioTranscriptionEnabled: z.boolean().optional(),
+          videoSummaryEnabled: z.boolean().optional(),
           webFetch: z.boolean(),
           emailMode: z.enum(['echo', 'resend']),
         })
@@ -91,13 +93,17 @@ async function competitionTemplate(db: D1Database): Promise<{ teamSizeLimit: num
 export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(capabilitiesRoute, async (c) => {
     const [aiEnabled, template, mediaConfig] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB), loadAiConfig(c.env.DB).catch(()=>null)]);
+    const videoSummaryEnabled = Boolean(mediaConfig?.enabled && mediaConfig.config.mediaUnderstanding?.apiKeyEncrypted);
+    const audioTranscriptionEnabled = Boolean(mediaConfig?.enabled && (mediaConfig.config.audioProcessingStrategy ?? 'whisper-first') === 'whisper-first' && (c.env as unknown as { AI?: unknown }).AI);
     return c.json(
       apiData(c, {
         apiVersion: 'v1' as const,
         environment: c.env.ENV_NAME,
         features: {
           aiEnabled,
-          mediaEnabled:Boolean(mediaConfig?.enabled&&mediaConfig.config.mediaUnderstanding?.apiKeyEncrypted),
+          mediaEnabled: audioTranscriptionEnabled || videoSummaryEnabled,
+          audioTranscriptionEnabled,
+          videoSummaryEnabled,
           webFetch: true,
           emailMode: c.env.EMAIL_MODE,
         },

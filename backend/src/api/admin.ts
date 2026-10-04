@@ -45,6 +45,7 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 
 const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/, 'API key 不能包含控制字符').optional(), clearKey: z.boolean().optional() });
 const configShape = z.object({
+  audioProcessingStrategy: z.enum(['whisper-first', 'gemini-only']).optional(),
   searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
   unified: editableModel.optional(),
@@ -221,6 +222,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         version: loaded.version,
         enabled: loaded.enabled,
         config: {
+          audioProcessingStrategy: loaded.config.audioProcessingStrategy ?? 'whisper-first',
           routingMode: loaded.config.routingMode ?? 'advanced',
           searchEnabled: loaded.config.searchEnabled === true,
           ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const).flatMap(purpose => {
@@ -244,7 +246,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
     const { notes } = body;
     // Legacy saves must preserve inactive drafts and must not silently switch the active route.
-    const parsed = aiConfigSchema.safeParse({ ...body, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
+    const parsed = aiConfigSchema.safeParse({ ...body, audioProcessingStrategy: body.audioProcessingStrategy ?? latest?.config.audioProcessingStrategy, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
     for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const) {
@@ -265,7 +267,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
     // Normalize only equivalent defaults: an actual search permission change still invalidates probes.
-    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, ...core}=value; void _media; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
+    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, audioProcessingStrategy: _audio, ...core}=value; void _media; void _audio; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
     const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {

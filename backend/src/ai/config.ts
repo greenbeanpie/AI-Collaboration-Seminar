@@ -31,6 +31,7 @@ export const aiModelConfigSchema = z.object({
 });
 
 export const aiConfigSchema = z.object({
+  audioProcessingStrategy: z.enum(['whisper-first', 'gemini-only']).optional(),
   searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
   unified: aiModelConfigSchema.optional(),
