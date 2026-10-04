@@ -54,6 +54,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     }
     let remote=await client.get(state.provider_name);
     for(let poll=0;remote.state==='PROCESSING' && poll<25;poll++){await assertActive();await new Promise(resolve=>setTimeout(resolve,2000));remote=await client.get(state.provider_name);}
+    if(remote.state==='PROCESSING'){continuing=true;return {status:'running'};}
     if(remote.state!=='ACTIVE')throw new AppError('AI_UNAVAILABLE','Google 媒体文件尚未可用或处理失败；请稍后主动重试',503,false);
     if(file.mime.startsWith('video/')&&!remote.videoMetadata?.videoDuration&&!state.duration_seconds)throw new AppError('AI_OUTPUT_INVALID','无法确认视频时长，拒绝声称完整处理',422,false);
     const duration=remote.videoMetadata?.videoDuration?Number.parseFloat(remote.videoMetadata.videoDuration):state.duration_seconds??undefined;

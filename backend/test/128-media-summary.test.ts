@@ -36,6 +36,13 @@ env.DB.prepare("INSERT INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha
 env.DB.prepare("INSERT INTO jobs(id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES(?1,'agent_run','running',?2,0,?3,?4,?4)").bind(jobId,JSON.stringify({operation:'media.draft',draftId,fileId,configVersionId:config.id}),owner.userId,now),
 ]);return {owner,draftId,fileId,jobId};}
 describe('Gemini media processing',()=>{
+ it('includes billed thinking tokens in media output usage',async()=>{
+   const {model}=await modelFixture();
+   const request=vi.fn(async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(output)}]}}],usageMetadata:{promptTokenCount:10,candidatesTokenCount:20,thoughtsTokenCount:30,promptTokensDetails:[{modality:'VIDEO',tokenCount:10}]}}));
+   const result=await new GeminiMediaClient(model,'fixture-media-key',request).summarize({name:'files/example',uri:'https://generativelanguage.googleapis.com/v1beta/files/example'},'video/mp4',0,30);
+   expect(result.completionTokens).toBe(50);
+   expect(mediaCost(model,result)).toBe((10*3+50*2)/1e6);
+ });
  it.each([['.mp3',[73,68,51],'audio/mpeg'],['.wav',[82,73,70,70,0,0,0,0,87,65,86,69],'audio/wav'],['.m4a',[0,0,0,16,102,116,121,112],'audio/mp4'],['.mp4',[0,0,0,16,102,116,121,112],'video/mp4'],['.webm',[26,69,223,163],'video/webm']] as const)('validates %s magic and separate size limit',(ext,bytes,mime)=>{expect(validateUploadBytes(ext,new Uint8Array(bytes))).toBe(mime);expect(uploadLimit(ext)).toBe(50*1024*1024);expect(()=>validateUploadBytes(ext,new Uint8Array([1,2,3]))).toThrow();});
  it('retains legacy image limit and rejects oversized media',()=>{expect(uploadLimit('.pdf')).toBe(10*1024*1024);expect(()=>validateUploadBytes('.mp4',new Uint8Array(50*1024*1024+1))).toThrow();});
  it('keeps independent media config in unified mode',async()=>{const {config,model}=await modelFixture();expect(resolveAiConfig({...config.config,routingMode:'unified',unified:config.config.review}).mediaUnderstanding).toBe(model);expect(()=>validateMediaModel({...model,apiUrl:'https://other.example'})).toThrow();});
