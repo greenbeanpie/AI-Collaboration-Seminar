@@ -1,3 +1,5 @@
+import { audioStatusSchema, audioResumeSchema } from './audio-schema';
+import { resumeWaitingAudioFallback } from '../services/audio-pipeline';
 import { extOf, uploadLimit } from '../services/files';
 import { mediaSummarySchema } from '../ai/gemini-media';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -21,7 +23,7 @@ const params = z.object({
 const revision = z.number().int().min(1);
 const fromTemplateBody=z.object({templateId:z.literal('blank')}).strict();
 const fileSchema = z.object({
-  id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
+  id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaJobId:z.string().uuid().nullable().optional(),audio:audioStatusSchema.nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
 });
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
@@ -218,6 +220,15 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       offset += chunk.length;
     }
     return c.json(apiData(c, await uploadDraftFile(c.env, draftId, c.get('user')!.id, Number(q.expectedRevision), fileId, q.name, bytes)), 200);
+  });
+  app.openapi(createRoute({method:'post',path:base+'/{draftId}/files/{fileId}/media-resume',tags:['creation'],request:{params:params.extend({fileId:z.string().uuid()}),body:json(z.object({jobId:z.string().uuid()}).strict())},responses:{202:{description:'原音频任务已恢复',content:{'application/json':{schema:apiEnvelope(audioResumeSchema,'DraftAudioFallbackResumeResponse')}}}}}),async c=>{
+    const p=c.req.valid('param'),body=c.req.valid('json') as {jobId:string},userId=c.get('user')!.id;
+    const draft=await getDraft(c.env,p.draftId,userId);
+    if(draft.status!=='active')throw invalidState('草稿已取消或创建，不能继续回退');
+    const current=await c.env.DB.prepare(`SELECT j.id FROM creation_draft_files f JOIN jobs j ON json_extract(j.input_json,'$.fileId')=f.id WHERE f.id=?1 AND f.draft_id=?2 AND f.removed=0 AND json_extract(j.input_json,'$.operation')='media.draft' ORDER BY j.created_at DESC,j.id DESC LIMIT 1`).bind(p.fileId,p.draftId).first<{id:string}>();
+    if(!current || current.id!==body.jobId)throw invalidState('文件任务已变化，请刷新');
+    const result=await resumeWaitingAudioFallback(c.env,current.id,userId);
+    return c.json(apiData(c,{jobId:result.jobId,status:result.status}),202);
   });
   app.openapi(createRoute({
     method: 'post', path: base + '/{draftId}/files/{fileId}/state', tags: ['creation'], request: {

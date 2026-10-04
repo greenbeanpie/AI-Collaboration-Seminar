@@ -71,8 +71,21 @@ describe('A13 孤儿对象回收与数据保留', () => {
     expect(await env.FILES.head('misc/keepme.txt')).not.toBeNull();
   });
 
+  it('保留有引用的私有转录并回收没有引用的过期转录', async () => {
+    const owner=await seedUser(),jobId=crypto.randomUUID(),orphanId=crypto.randomUUID(),now=new Date().toISOString();
+    const config=(await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string}>())!;
+    const kept=`audio-pipeline/${jobId}/transcript.json`,orphan=`audio-pipeline/${orphanId}/transcript.json`;
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,NULL,'agent_run','succeeded','{}',?2,?3,?3)").bind(jobId,owner.userId,now).run();
+    await env.DB.prepare('INSERT INTO audio_pipeline(job_id,transcript_r2_key,config_version_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)').bind(jobId,kept,config.id,now).run();
+    await env.FILES.put(kept,'private retained transcript');await env.FILES.put(orphan,'unreferenced transcript');
+    const future=new Date(Date.now()+86400000).toISOString();const result=await gcOrphanObjects(env,future,{graceDays:0});
+    expect(result.deleted).toContain(orphan);expect(result.deleted).not.toContain(kept);expect(await env.FILES.head(kept)).not.toBeNull();
+  });
+
   it('受管键识别只接受已知命名空间与 UUID 形态', () => {
     const id = crypto.randomUUID();
+    expect(classifyManagedKey(`audio-pipeline/${id}/transcript.json`)).toEqual({kind:'audio_pipeline',id});
+    expect(classifyManagedKey(`audio-pipeline/${id}/other.json`)).toBeNull();
     expect(classifyManagedKey(`ai-calls/${id}/output.json`)).toEqual({ kind: 'ai_call', id });
     expect(classifyManagedKey(`sources/${id}/text.txt`)).toEqual({ kind: 'source_version', id });
     expect(classifyManagedKey(`${id}/${id}.pdf`)).toEqual({ kind: 'file', id });

@@ -107,6 +107,12 @@
                   "mediaEnabled": {
                     "type": "boolean"
                   },
+                  "audioTranscriptionEnabled": {
+                    "type": "boolean"
+                  },
+                  "videoSummaryEnabled": {
+                    "type": "boolean"
+                  },
                   "webFetch": {
                     "type": "boolean"
                   },
@@ -1417,6 +1423,51 @@
                         "null"
                       ]
                     },
+                    "mediaJobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "audio": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "phase": {
+                          "type": "string"
+                        },
+                        "qualityScore": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "transcriptAvailable": {
+                          "type": "boolean"
+                        },
+                        "canResumeFallback": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "qualityScore",
+                        "reasons",
+                        "transcriptAvailable",
+                        "canResumeFallback"
+                      ]
+                    },
                     "mediaSummary": {
                       "type": [
                         "object",
@@ -1555,6 +1606,51 @@
                       "type": [
                         "string",
                         "null"
+                      ]
+                    },
+                    "mediaJobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "audio": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "phase": {
+                          "type": "string"
+                        },
+                        "qualityScore": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "transcriptAvailable": {
+                          "type": "boolean"
+                        },
+                        "canResumeFallback": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "qualityScore",
+                        "reasons",
+                        "transcriptAvailable",
+                        "canResumeFallback"
                       ]
                     },
                     "mediaSummary": {
@@ -2266,6 +2362,51 @@
                               "null"
                             ]
                           },
+                          "mediaJobId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "audio": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "phase": {
+                                "type": "string"
+                              },
+                              "qualityScore": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "reasons": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "transcriptAvailable": {
+                                "type": "boolean"
+                              },
+                              "canResumeFallback": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "phase",
+                              "qualityScore",
+                              "reasons",
+                              "transcriptAvailable",
+                              "canResumeFallback"
+                            ]
+                          },
                           "mediaSummary": {
                             "type": [
                               "object",
@@ -2404,6 +2545,51 @@
                             "type": [
                               "string",
                               "null"
+                            ]
+                          },
+                          "mediaJobId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "audio": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "phase": {
+                                "type": "string"
+                              },
+                              "qualityScore": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "reasons": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "transcriptAvailable": {
+                                "type": "boolean"
+                              },
+                              "canResumeFallback": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "phase",
+                              "qualityScore",
+                              "reasons",
+                              "transcriptAvailable",
+                              "canResumeFallback"
                             ]
                           },
                           "mediaSummary": {
@@ -2558,6 +2744,35 @@
             },
             "required": [
               "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "DraftAudioFallbackResumeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId",
+              "status"
             ]
           },
           "requestId": {
@@ -8340,6 +8555,48 @@
                   "null"
                 ],
                 "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "audio": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "phase": {
+                        "type": "string"
+                      },
+                      "qualityScore": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasons": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "transcriptAvailable": {
+                        "type": "boolean"
+                      },
+                      "canResumeFallback": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "phase",
+                      "qualityScore",
+                      "reasons",
+                      "transcriptAvailable",
+                      "canResumeFallback"
+                    ]
+                  },
                   "stage": {
                     "type": "string"
                   },
@@ -8602,6 +8859,35 @@
               "summaryRevision",
               "coveredChars",
               "totalChars"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AudioFallbackResumeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId",
+              "status"
             ]
           },
           "requestId": {
@@ -19803,6 +20089,65 @@
         }
       }
     },
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/media-resume": {
+      "post": {
+        "tags": [
+          "creation"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "原音频任务已恢复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftAudioFallbackResumeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creation-drafts/{draftId}/files/{fileId}/state": {
       "post": {
         "tags": [
@@ -23189,6 +23534,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceProcessingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/media-resume": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "配置 Gemini 后继续音频回退，不重复转录",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceVersionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "原任务已恢复",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioFallbackResumeResponse"
                 }
               }
             }
@@ -29135,6 +29549,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "audioProcessingStrategy": {
+                    "type": "string",
+                    "enum": [
+                      "whisper-first",
+                      "gemini-only"
+                    ]
+                  },
                   "searchEnabled": {
                     "type": "boolean"
                   },

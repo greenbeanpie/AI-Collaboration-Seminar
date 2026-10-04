@@ -1,3 +1,4 @@
+import { readAudioPipelineStatus } from './audio-pipeline';
 import { mediaSummaryText, type MediaSummary } from '../ai/gemini-media';
 import { enqueueDraftMedia } from './media-summary';
 import { readinessStatements } from './task-readiness';
@@ -62,6 +63,7 @@ export interface DraftFile {
   text_error: string | null;
   removed: number;
   created_at: string;
+  media_job_id?:string|null;
   media_stage?:string|null;
   media_summary?:string|null;
   media_error?:string|null;
@@ -74,9 +76,10 @@ export async function getDraft(env: Env, id: string, userId: string) {
   return row;
 }
 export async function draftFiles(env: Env, id: string) {
-  return (await env.DB.prepare(`SELECT f.*, COALESCE((SELECT COALESCE(m.stage,'pending') FROM jobs j LEFT JOIN media_processing m ON m.job_id=j.id WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' AND j.status IN ('queued','running') ORDER BY j.created_at DESC LIMIT 1),(SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1)) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11`).bind(id).all<DraftFile>()).results;
+  return (await env.DB.prepare(`SELECT f.*, (SELECT j.id FROM jobs j WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' ORDER BY j.created_at DESC,j.id DESC LIMIT 1) media_job_id, COALESCE((SELECT COALESCE(m.stage,'pending') FROM jobs j LEFT JOIN media_processing m ON m.job_id=j.id WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' AND j.status IN ('queued','running') ORDER BY j.created_at DESC LIMIT 1),(SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1)) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11`).bind(id).all<DraftFile>()).results;
 }
-const fileView = (f: DraftFile) => ({
+const fileView = async (env:Env,f: DraftFile) => ({
+  mediaJobId:f.media_job_id??null,audio:f.media_job_id?await readAudioPipelineStatus(env,f.media_job_id):null,
   id: f.id, name: f.name, mediaStatus:f.media_stage??null,mediaSummary:f.media_summary?JSON.parse(f.media_summary):null,mediaError:f.media_error??null, sizeBytes: f.size_bytes, sha256: f.sha256, textReady: JSON.parse(f.pages_json).some((page: string) => hasExtractableText(page)), textError: f.text_error
 });
 export async function draftView(env: Env, row: DraftRow) {
@@ -87,7 +90,7 @@ export async function draftView(env: Env, row: DraftRow) {
       goal?:z.infer<typeof creationGoal>;
       mode: 'ai' | 'manual';
       configVersionId?: string;
-    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, previewState: row.preview_waiting_id && row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id && row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id, row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: (await draftFiles(env, row.id)).map(fileView), removedFiles: removed.results.map(fileView), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
+    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, previewState: row.preview_waiting_id && row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id && row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id, row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: await Promise.all((await draftFiles(env, row.id)).map(f=>fileView(env,f))), removedFiles: await Promise.all(removed.results.map(f=>fileView(env,f))), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
   };
 }
 function editable(row: DraftRow, revision: number) {
@@ -187,7 +190,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   return draftView(env, await getDraft(env, id, userId));
 }
 async function assertDraftMediaSettled(env:Env,id:string){
-  const pending=await env.DB.prepare("SELECT 1 FROM creation_draft_files f JOIN jobs j ON json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' WHERE f.draft_id=?1 AND f.removed=0 AND j.status IN ('queued','running') LIMIT 1").bind(id).first();
+  const pending=await env.DB.prepare("SELECT 1 FROM creation_draft_files f JOIN jobs j ON json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' WHERE f.draft_id=?1 AND f.removed=0 AND j.status IN ('queued','running','waiting_input') LIMIT 1").bind(id).first();
   if(pending)throw invalidState('音视频摘要仍在处理；请等待完成，或移出这些文件后继续。失败文件可不依赖其内容继续创建。');
 }
 /** Freeze the exact input and model version before an asynchronous dispatch. */

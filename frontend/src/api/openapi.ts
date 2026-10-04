@@ -1050,6 +1050,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creation-drafts/{draftId}/files/{fileId}/media-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        jobId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 原音频任务已恢复 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftAudioFallbackResumeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creation-drafts/{draftId}/files/{fileId}/state": {
         parameters: {
             query?: never;
@@ -3362,6 +3407,53 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/media-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 配置 Gemini 后继续音频回退，不重复转录 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    sourceId: string;
+                    sourceVersionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        jobId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 原任务已恢复 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AudioFallbackResumeResponse"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -7566,6 +7658,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @enum {string} */
+                        audioProcessingStrategy?: "whisper-first" | "gemini-only";
                         searchEnabled?: boolean;
                         /** @enum {string} */
                         routingMode?: "advanced" | "unified";
@@ -8763,6 +8857,8 @@ export interface components {
                 features: {
                     aiEnabled: boolean;
                     mediaEnabled?: boolean;
+                    audioTranscriptionEnabled?: boolean;
+                    videoSummaryEnabled?: boolean;
                     webFetch: boolean;
                     /** @enum {string} */
                     emailMode: "echo" | "resend";
@@ -9084,6 +9180,15 @@ export interface components {
                     id: string;
                     name: string;
                     mediaStatus?: string | null;
+                    /** Format: uuid */
+                    mediaJobId?: string | null;
+                    audio?: {
+                        phase: string;
+                        qualityScore: number | null;
+                        reasons: string[];
+                        transcriptAvailable: boolean;
+                        canResumeFallback: boolean;
+                    } | null;
                     mediaSummary?: {
                         title: string;
                         summary: string;
@@ -9109,6 +9214,15 @@ export interface components {
                     id: string;
                     name: string;
                     mediaStatus?: string | null;
+                    /** Format: uuid */
+                    mediaJobId?: string | null;
+                    audio?: {
+                        phase: string;
+                        qualityScore: number | null;
+                        reasons: string[];
+                        transcriptAvailable: boolean;
+                        canResumeFallback: boolean;
+                    } | null;
                     mediaSummary?: {
                         title: string;
                         summary: string;
@@ -9268,6 +9382,15 @@ export interface components {
                         id: string;
                         name: string;
                         mediaStatus?: string | null;
+                        /** Format: uuid */
+                        mediaJobId?: string | null;
+                        audio?: {
+                            phase: string;
+                            qualityScore: number | null;
+                            reasons: string[];
+                            transcriptAvailable: boolean;
+                            canResumeFallback: boolean;
+                        } | null;
                         mediaSummary?: {
                             title: string;
                             summary: string;
@@ -9293,6 +9416,15 @@ export interface components {
                         id: string;
                         name: string;
                         mediaStatus?: string | null;
+                        /** Format: uuid */
+                        mediaJobId?: string | null;
+                        audio?: {
+                            phase: string;
+                            qualityScore: number | null;
+                            reasons: string[];
+                            transcriptAvailable: boolean;
+                            canResumeFallback: boolean;
+                        } | null;
                         mediaSummary?: {
                             title: string;
                             summary: string;
@@ -9316,6 +9448,15 @@ export interface components {
                     projectId: string | null;
                     updatedAt: string;
                 }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        DraftAudioFallbackResumeResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                status: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -10649,6 +10790,15 @@ export interface components {
         SourceProcessingResponse: {
             data: {
                 media?: {
+                    /** Format: uuid */
+                    jobId?: string;
+                    audio?: {
+                        phase: string;
+                        qualityScore: number | null;
+                        reasons: string[];
+                        transcriptAvailable: boolean;
+                        canResumeFallback: boolean;
+                    } | null;
                     stage: string;
                     summary: {
                         title: string;
@@ -10694,6 +10844,15 @@ export interface components {
                 summaryRevision: number;
                 coveredChars: number | null;
                 totalChars: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AudioFallbackResumeResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                status: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

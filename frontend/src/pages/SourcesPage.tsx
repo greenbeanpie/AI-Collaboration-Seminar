@@ -510,7 +510,9 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
         if (!file) throw new Error('请先选择 PDF、TXT 或 Markdown 文件。');
         const mediaFile = /\.(mp3|wav|m4a|mp4|webm)$/i.test(file.name);
         const uploadLimit = mediaFile ? (capability.limits.maxMediaBytes ?? 50 * 1024 * 1024) : capability.limits.maxFileBytes;
-        if (mediaFile && capability.features.mediaEnabled === false) throw new Error('音视频模型尚未配置，请联系管理员配置独立 Gemini 模型。');
+        const audioFile = /\.(mp3|wav|m4a)$/i.test(file.name);
+        const mediaEnabled = audioFile ? (capability.features.audioTranscriptionEnabled ?? capability.features.mediaEnabled) : (capability.features.videoSummaryEnabled ?? capability.features.mediaEnabled);
+        if (mediaFile && mediaEnabled === false) throw new Error('该媒体的处理能力尚未启用；音频可使用 Whisper，视频需要独立 Gemini 配置。');
         if (file.size > uploadLimit) throw new Error(`文件大小超过服务端上限 ${formatBytes(uploadLimit)}。`);
         if (!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error('仅支持 PDF、TXT 或 Markdown 文件。');
         const pendingMatches = pendingUpload?.file === file;
