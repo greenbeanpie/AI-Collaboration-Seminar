@@ -1,6 +1,6 @@
 {
   "name": "@greenbeanpie/dsh-team-office-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "补位项目办公室本地 DSH 桥接器：授权接收任务并回传成果草稿",
   "type": "module",
   "main": "src/index.js",

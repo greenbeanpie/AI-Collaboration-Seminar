@@ -10,7 +10,7 @@ export function apply(ctx) {
     const button=(label,action,fields)=>React.createElement('button',{type:'button',disabled:busy||state?.compatible===false,onClick:()=>act(action,fields),style:{padding:'8px 12px',margin:'4px'}},label);
     return React.createElement('section',{style:{padding:16,display:'grid',gap:10,maxWidth:640}},
       React.createElement('h3',null,'补位 · 本地 DSH 桥接器'),
-      React.createElement('p',null,'首次连接网站并为项目选择目录。日常在网站点击“交给本地 Agent”。执行时保持 DSH 运行，审批在 DSH 中处理。'),
+      React.createElement('p',null,'首次连接网站并为项目选择目录。日常在网站的“AI 辅助 → 代实施”中点击执行。执行时保持 DSH 运行，审批在 DSH 中处理。'),
       React.createElement('p',{role:'status'},state?.paired?'已连接':state?.configured?'等待网站授权':'尚未连接'),
       state?.compatibilityMessage&&React.createElement('p',{role:'alert'},state.compatibilityMessage),
       error&&React.createElement('p',{role:'alert'},error),state?.error&&React.createElement('p',{role:'alert'},state.error),
@@ -21,5 +21,5 @@ export function apply(ctx) {
       ...(state?.runs||[]).slice(-5).map(r=>React.createElement('p',{key:r.handoffId},`${r.handoffId}: ${r.state}`)),
       React.createElement('small',null,'仅回传本次任务 outputs 内明确登记的成果；网站采纳与提交验收由用户完成。'));
   }
-  ctx.slots.inject('plugins.item',()=>ctx.slots.register({name:'plugins.item',id:'team-office-bridge',order:20,label:()=> '补位桥接器',inject:()=>({})},BridgeCard));
+  ctx.slots.inject('plugins.bundle.config',()=>ctx.slots.register({name:'plugins.bundle.config',key:'@greenbeanpie/dsh-team-office-bridge',inject:()=>({})},BridgeCard));
 }

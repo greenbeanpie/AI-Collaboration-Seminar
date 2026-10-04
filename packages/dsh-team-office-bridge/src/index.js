@@ -63,7 +63,7 @@ export async function apply(ctx) {
         const secret=randomBytes(32).toString('hex');
         await ctx.credentials.modifyRecord(KEY,()=>({kind:'grant',payload:{secret,apiBase}}));runner=null;
         const client=new CloudClient(apiBase,secret);
-        const pairing=await client.request('pairings','POST',{credentialHash:hash(secret),deviceName:hostname(),bridgeVersion:'0.1.0',dshVersion:version});
+        const pairing=await client.request('pairings','POST',{credentialHash:hash(secret),deviceName:hostname(),bridgeVersion:'0.1.1',dshVersion:version});
         const url=new URL(pairing.approvalUrl);const allowedOrigins=new Set([new URL(apiBase).origin,...(apiBase===DEFAULT_API?['https://team.greenbp.dpdns.org']:[])]);if(url.protocol!=='https:'||!allowedOrigins.has(url.origin)||url.pathname!=='/app/agent-bridges/connect'||url.searchParams.get('pairing')!==pairing.pairingId)throw new Error('Untrusted approval URL');
         journal.state.pairing=pairing;await journal.save();await ensureRunner();return Response.json(await status());
       }
