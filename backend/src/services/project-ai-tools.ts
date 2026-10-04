@@ -1,3 +1,4 @@
+import { discoverableFileSql } from './archive-policy';
 import { askUserQuestionDefinition, clarificationRule, executeClarification, UserClarificationPending } from './ai-clarifications';
 import { projectPermissionSql, projectAccess } from './project-permissions';
 import { z } from 'zod';
@@ -103,6 +104,7 @@ function safeToolArgumentErrors(error: z.ZodError) {
 }
 interface ToolFileRow {
   id: string;
+  archived_at: string | null;
   original_name: string;
   size_bytes: number;
   file_lifecycle_version: number;
@@ -131,9 +133,9 @@ function fileSnapshot(file: ToolFileRow): ToolFileInputSnapshot {
 export async function executeFileTool(env: Env, context: ProjectToolContext, name: string, input: unknown): Promise<unknown> {
   await assertToolAccess(env, context);
   if (name === 'list_project_files') {
-    const a = listArgs.parse(input), rows = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
+    const a = listArgs.parse(input), rows = await env.DB.prepare(`SELECT f.id,f.archived_at,f.original_name,f.size_bytes,
    f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.text_status,p.summary_status
-   FROM files f ${activeFileSourceJoin} WHERE f.project_id=?1 AND f.status='available' AND f.deleted_at IS NULL
+   FROM files f ${activeFileSourceJoin} WHERE f.project_id=?1 AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')}
    ORDER BY f.created_at,f.id LIMIT 21 OFFSET ?2`).bind(context.projectId, a.offset).all<ToolFileRow>();
     const visible = rows.results.slice(0, 20);
     await assertToolAccess(env, context, visible.map(fileSnapshot));
@@ -158,7 +160,7 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
   if (!file.version_id) {
     await assertToolAccess(env, context, [captured]);
     return {
-      untrustedData: true, ...captured, status: 'unavailable', reason: '文件尚无可用来源；可能尚未提取正文或关联来源已回收'
+      untrustedData: true, ...captured, archivedAt: file.archived_at, status: 'unavailable', reason: '文件尚无可用来源；可能尚未提取正文或关联来源已回收'
     };
   }
   const source = await loadActiveSourceVersion(env, file.version_id, captured.sourceLifecycleVersion);
@@ -169,7 +171,7 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
     const summary = file.summary_status === 'ready' && file.summary_json ? file.summary_json : null;
     await assertToolAccess(env, context, [captured]);
     return {
-      untrustedData: true, ...captured, resourceType: 'source_summary', derived: true,
+      untrustedData: true, ...captured, archivedAt: file.archived_at, resourceType: 'source_summary', derived: true,
       note: '这是已保存的AI派生总结，不能作为来源原文逐字引文；需要核对原文时按text模式读取。', offset: a.offset, summaryRevision: file.summary_revision,
       status: summary ? 'ready' : 'unavailable', ...(summary ? {
         text: summary.slice(a.offset, a.offset + 6000), nextOffset: summary.length > a.offset + 6000 ? a.offset + 6000 : null
@@ -203,7 +205,7 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
   await assertToolAccess(env, context, [captured]);
   const total = fragments.results[0]?.total ?? 0;
   return {
-    untrustedData: true, ...captured, status: parts.length ? 'ready' : 'unavailable', coverage: file.text_status === 'ready' ? 'complete' : 'partial', fragments: parts, nextOffset: total > a.offset + 6000 ? a.offset + 6000 : null
+    untrustedData: true, ...captured, archivedAt: file.archived_at, status: parts.length ? 'ready' : 'unavailable', coverage: file.text_status === 'ready' ? 'complete' : 'partial', fragments: parts, nextOffset: total > a.offset + 6000 ? a.offset + 6000 : null
   };
 }
 const capturedFileSchema = z.object({

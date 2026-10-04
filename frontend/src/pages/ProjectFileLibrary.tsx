@@ -1,21 +1,24 @@
 import { ContributorNames } from '../components/FileContributors';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArchiveRestore, FileText, Trash2 } from 'lucide-react';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { listAllProjectItems } from './source-workflows';
 import { useSourceLifecycle, type LifecycleChange, type LifecycleResource } from './source-lifecycle';
+import { archiveFile } from './task-files-client';
 
 type ProjectFile = DataOf<'FileListResponse'>['items'][number];
 const statusLabels: Record<ProjectFile['status'], string> = { pending: '上传未完成', available: '文件已保存', quarantined: '文件校验未通过', discarded: '文件已弃用' };
 
 export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { projectId: string; pageSize: number; onChanged: (change: LifecycleChange) => void }) {
-  const [view, setView] = useState<'active' | 'recycle'>('active');
+  const [view, setView] = useState<'active' | 'recycle' | 'archived'>('active');
+  const client = useQueryClient();
+  const [archiveBusy, setArchiveBusy] = useState(false), [archiveError, setArchiveError] = useState<unknown>();
   const deleted = view === 'recycle';
   const filesQuery = useQuery({
     queryKey: ['files', projectId, view],
-    queryFn: ({ signal }) => listAllProjectItems<'FileListResponse'>(projectId, '/files', pageSize, signal, { deleted }),
+    queryFn: ({ signal }) => listAllProjectItems<'FileListResponse'>(projectId, '/files', pageSize, signal, { deleted, ...(view === 'archived' ? { archived: true } : {}) }),
     retry: false,
   });
   const recycledSourcesQuery = useQuery({
@@ -32,10 +35,17 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
     ...recycledSources.map(source => ({ kind: 'source' as const, id: source.sourceId, name: source.title, lifecycleVersion: source.lifecycleVersion, canDelete: source.canDelete, deletedAt: source.deletedAt })),
   ];
   const lifecycle = useSourceLifecycle(projectId, view, resources, onChanged);
+  const changeArchive = async (file: ProjectFile) => {
+    setArchiveBusy(true); setArchiveError(undefined);
+    try { await archiveFile(projectId, file.fileId, file.lifecycleVersion, !!file.archivedAt); await Promise.all(['files', 'material', 'materials', 'resource-library', 'task-files'].map(key => client.invalidateQueries({ queryKey: [key, projectId] }))); }
+    catch (failure) { setArchiveError(failure); }
+    finally { setArchiveBusy(false); }
+  };
 
   return <SectionCard title="文件库与回收站" className="sources-file-library" detail="上传尚未完成的文件也会保留在文件库中。移入回收站可停止关联处理，原文件与历史仍可恢复。" action={
     <div className="sources-library-tabs" role="group" aria-label="资料视图">
-      <button type="button" className="sources-intake-tab" aria-pressed={!deleted} onClick={() => setView('active')}><FileText size={15} /> 文件库</button>
+      <button type="button" className="sources-intake-tab" aria-pressed={view === 'active'} onClick={() => setView('active')}><FileText size={15} /> 文件库</button>
+      <button type="button" className="sources-intake-tab" aria-pressed={view === 'archived'} onClick={() => setView('archived')}>已归档</button>
       <button type="button" className="sources-intake-tab" aria-pressed={deleted} onClick={() => setView('recycle')}><Trash2 size={15} /> 回收站</button>
     </div>
   }>
@@ -47,11 +57,13 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
         <div className="sources-library-copy"><h3>{file.name}</h3><ContributorNames contributors={file.contributors} /><div className="sources-record-meta"><StatusPill tone={file.status === 'available' ? 'good' : file.status === 'pending' ? 'warn' : 'neutral'}>{statusLabels[file.status]}</StatusPill><span>{file.sizeBytes === null ? '大小待上传后确认' : formatBytes(file.sizeBytes)}</span><span>{deleted && file.deletedAt ? `移入于 ${new Date(file.deletedAt).toLocaleString('zh-CN')}` : `创建于 ${new Date(file.createdAt).toLocaleString('zh-CN')}`}</span></div>
           {!deleted && <p className="sources-inline-note">{file.sourceIds.length ? `关联 ${file.sourceIds.length} 条来源；处理状态见下方来源记录` : '尚未关联来源，可直接移入回收站'}</p>}
         </div>
-        {file.canDelete && <button type="button" className={`button button-small ${deleted ? 'button-quiet' : 'button-danger'}`} disabled={lifecycle.busy} onClick={() => void lifecycle.changeLifecycle(resources.find(item => item.kind === 'file' && item.id === file.fileId)!, deleted)} aria-label={`${deleted ? '恢复文件' : '移入回收站'}：${file.name}`}>
+        {!deleted && file.status === 'available' && file.canManage && <button type="button" className="button button-quiet button-small" disabled={archiveBusy || lifecycle.busy} onClick={() => void changeArchive(file)}>{file.archivedAt ? '撤销文件归档' : '归档文件'}</button>}
+        {file.canDelete && view !== 'archived' && <button type="button" className={`button button-small ${deleted ? 'button-quiet' : 'button-danger'}`} disabled={lifecycle.busy} onClick={() => void lifecycle.changeLifecycle(resources.find(item => item.kind === 'file' && item.id === file.fileId)!, deleted)} aria-label={`${deleted ? '恢复文件' : '移入回收站'}：${file.name}`}>
           {deleted ? <ArchiveRestore size={14} /> : <Trash2 size={14} />}{lifecycle.pendingKey === `file:${file.fileId}` ? '正在确认或处理…' : deleted ? '恢复文件' : '移入回收站'}
         </button>}
       </article>)}
     </div>}
+    {archiveError != null && <ErrorNotice error={archiveError}/>}
     {deleted && (recycledSourcesQuery.isLoading ? <Spinner label="正在读取回收站文本与网页来源" /> : recycledSourcesQuery.error ? <ErrorNotice error={recycledSourcesQuery.error} onRetry={() => void recycledSourcesQuery.refetch()} /> : <div className="sources-library-list">
       {recycledSources.map(source => <article className="sources-library-record" key={source.sourceId} aria-label={`来源：${source.title}`}>
         <div className="sources-library-copy"><h3>{source.title}</h3><div className="sources-record-meta"><StatusPill>{source.kind === 'web' ? '网页' : '粘贴文本'}</StatusPill>{source.deletedAt && <span>移入于 {new Date(source.deletedAt).toLocaleString('zh-CN')}</span>}</div></div>

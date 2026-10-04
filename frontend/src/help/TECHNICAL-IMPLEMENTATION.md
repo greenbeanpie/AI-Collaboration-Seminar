@@ -664,3 +664,11 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 质询候选 SQL 仅连接直接 task_dependencies，仍要求当前执行人发起、前置任务已完成、回应者为项目成员。历史参与人快照保留，发起者按 task_id 查看，被询问者按 upstream_task_id 查看。GET /task-inquiries/unread 由现有 notification_inbox.read_at 汇总；POST /tasks/{taskId}/inquiries/read 只更新请求中已展示的 messageIds，逐项检查项目与当前任务一侧参与人。新到消息不会随旧快照标记已读。通知使用 taskAction=inquiries 和接收者对应的任务 ID，不新增表或迁移。
 
 离线工作台在项目入口、online、focus 和可见状态恢复时先 synchronizeOffline 再 prepareProject；组件和缓存准备层合并重复执行。正常联网时隐藏缓存就绪提示，失败与冲突仍可处理。
+
+### 任务文件版本与归档（0055）
+
+0055_task_files_archive.sql 为 files 增加 archived_at，为 materials 增加 task_id/archived_at，并新增 task_file_uploads 保存物理上传文件到稳定材料身份的映射。一个任务上传文件对应 kind=task-file 的材料；current_version_id 指向当前附件，替换上传新 R2 对象及不可变 material_versions，旧文件和提交快照保留。登记按 fileId 去重，替换成功响应丢失后重试同一当前 fileId 返回原结果。新文件自动产生材料，提交界面按未归档当前版本构建 materialVersionIds，原提交协议保留。
+
+任务文件管理权限在事务内重检当前执行人或 resourceManage；公共材料创建者和公共文件上传者可管理本人的内容。更换执行人后前任不再因上传身份管理任务文件。文件归档复用 lifecycle_version 乐观锁，材料归档递增 revision；审计与状态更新处于同一事务。归档和回收站分离，恢复文件不恢复整份材料。任务文件正文禁止普通编辑和 AI 采纳，通过文件替换入口更新。
+
+共享 archive-policy 过滤默认 AI 文件发现、资料搜索、任务计划和交接输入；已归档或已被新版本替换的上传不进入普通列表。显式固定版本读取、历史提交和前置任务成果快照保留，不因归档破坏历史证据。提交写入事务拒绝已归档材料或附件，避免读取列表后发生归档仍提交。未提取正文的附件沿用现有未读证据与人工验收规则，不把上传成功视为 AI 已完整读取。

@@ -3,6 +3,8 @@ import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { TaskAiAssistance } from './TaskAiAssistance';
 import { TaskAgentAction } from './TaskAgentAction';
 import { TaskSettings, type SettingsCloseGuard } from './TaskSettings';
+import { TaskFileUploads } from './TaskFileUploads';
+import { listTaskFiles, taskFilesKey } from './task-files-client';
 import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
 import { useEffect, useRef, useState } from 'react';
@@ -219,7 +221,7 @@ function ProjectCollaborationWorkspace() {
     {historyPage && ((historyType === 'submissions' && !selected && !tasks.isLoading)) && <><button className="button button-quiet" onClick={returnFromHistory}>返回任务操作</button><EmptyState title="历史记录不可用" detail="该任务不在当前项目中，或你没有查看权限。" /></>}
     {inquiryId && <Modal title="前置任务质询" onClose={() => setInquiryId('')}><TaskInquiries key={inquiryId} projectId={projectId} taskId={inquiryId} meId={me.data?.userId}/></Modal>}
     {agentTaskId && rows.find(row => row.taskId === agentTaskId) && <Modal title="AI 辅助" onClose={() => setAgentTaskId('')}><TaskAiAssistance projectId={projectId} task={rows.find(row => row.taskId === agentTaskId)!} tasks={rows}/></Modal>}
-    {selected && <Modal title={historyType === 'submissions' ? `${selected.title} · 提交与验收历史` : selectedAction === 'settings' ? `任务设置·${selected.title}` : selected.title} mode={historyType === 'submissions' ? 'page' : historyPage || !selectedId || !!inquiryId ? 'hidden' : 'dialog'} onClose={historyType === 'submissions' ? returnFromHistory : async () => { if (selectedAction !== 'settings' || !settingsClose.current || await settingsClose.current()) setSelectedId(''); }}><TaskLifecycleDetail closeGuard={settingsClose} view={selectedAction} key={selected.taskId} projectId={projectId} task={selected} tasks={rows} graphRevision={goal.data?.graphRevision} owner={owner} meId={me.data?.userId} members={members.data ?? []} onChanged={invalidate} /></Modal>}
+    {selected && <Modal title={historyType === 'submissions' ? `${selected.title} · 提交与验收历史` : selectedAction === 'settings' ? `任务设置·${selected.title}` : selected.title} mode={historyType === 'submissions' ? 'page' : historyPage || !selectedId || !!inquiryId ? 'hidden' : 'dialog'} headerActions={selectedAction === 'submit' && historyType !== 'submissions' ? <button className="button button-quiet" onClick={() => openHistory('submissions')}>查看历史记录</button> : undefined} onClose={historyType === 'submissions' ? returnFromHistory : async () => { if (selectedAction !== 'settings' || !settingsClose.current || await settingsClose.current()) setSelectedId(''); }}><TaskLifecycleDetail closeGuard={settingsClose} view={selectedAction} key={selected.taskId} projectId={projectId} task={selected} tasks={rows} graphRevision={goal.data?.graphRevision} owner={owner} meId={me.data?.userId} members={members.data ?? []} onChanged={invalidate} /></Modal>}
   </SectionCard>;
 }
 
@@ -247,22 +249,18 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   const historyPage = searchParams.get('view') === 'history' && searchParams.get('historyType') === 'submissions';
   const historyId = searchParams.get('record') ?? '';
   const setHistoryId = (id: string) => { const next = new URLSearchParams(searchParams); next.set('record', id); setSearchParams(next); };
-  const openHistory = () => { const next = new URLSearchParams(searchParams); next.set('view', 'history'); next.set('historyType', 'submissions'); if (selectedHistory) next.set('record', selectedHistory.submissionId); setSearchParams(next); };
   const [submissionBase, setSubmissionBase] = useState(task.revision);
   const [submissionConflict, setSubmissionConflict] = useState(false);
   const submissionOutdated = submissionConflict || submissionBase !== task.revision;
   const [body, setBody] = useState('');
-  const [materialId, setMaterialId] = useState('');
-  const [versions, setVersions] = useState<{ id: string; label: string }[]>([]);
+  const [filesBusy, setFilesBusy] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [evaluationNotice, setEvaluationNotice] = useState('');
   const job = useVisibleJobPoller(jobId);
   const history = useQuery({ queryKey: ['collaboration-submissions', projectId, task.taskId], queryFn: () => collaborationApi.submissions(projectId, task.taskId) });
-  const materials = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials')) });
-  const materialVersions = useQuery({ queryKey: ['materialVersions', projectId, materialId], queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(materialId)}/versions`)), enabled: !!materialId });
   const refresh = async () => { await onChanged(); await client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); } }, [job.isSettled, jobId, projectId, task.taskId, client]);
-  const submit = useMutation({ mutationFn: () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), versions.map(version => version.id)); }, onSuccess: async result => { setBody(''); setVersions([]); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
+  const submit = useMutation({ mutationFn: async () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); if (filesBusy) throw new Error('请等待文件上传或处理失败项。'); const files = await client.fetchQuery({ queryKey: taskFilesKey(projectId, task.taskId), queryFn: () => listTaskFiles(projectId, task.taskId), staleTime: 0 }); const active = files.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt); if (active.length > 10) throw new Error('每轮最多提交 10 个文件，请归档不参与本轮的文件。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), active.map(file => file.versionId)); }, onSuccess: async result => { setBody(''); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
   const current = history.data?.items.find(submission => submission.submissionId === task.currentSubmissionId);
   useEffect(() => { if (!jobId && current?.evaluationJobId && !current.decision) setJobId(current.evaluationJobId); }, [current?.evaluationJobId, current?.decision, jobId]);
   const canSubmit = task.assigneeId === meId && ['in_progress', 'improve', 'rework'].includes(task.lifecycleState);
@@ -276,7 +274,7 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   }, [historyPage, selectedHistory, historyId, searchParams, setSearchParams]);
   const renderSubmission = (submission: TaskSubmission, readOnly = false) => (<article className="collab-history" key={submission.submissionId}>
       <div className="collab-toolbar"><strong>第 {submission.round} 轮</strong><small>{new Date(submission.createdAt).toLocaleString('zh-CN')} · {members.find(member => member.userId === submission.submittedBy)?.displayName ?? '项目成员'}</small><StatusPill tone={submission.pendingHumanReview ? 'warn' : 'neutral'}>{submission.pendingHumanReview ? '已完成（待人工审核）' : submission.decision ? decisionLabels[submission.decision] : submission.aiDecision ? 'AI 已评价，待确认' : '待验收'}</StatusPill></div>
-      <p className="collab-preserve">{submission.body}</p><details><summary>本轮验收标准与绑定版本</summary><p className="collab-preserve">{submission.criteria}</p>{submission.materialVersionIds.length ? <ul>{submission.materialVersionIds.map(id => <li key={id}>{submission.materialVersions?.find(version => version.versionId === id) ? <BoundMaterialVersion projectId={projectId} version={submission.materialVersions.find(version => version.versionId === id)!} /> : <>材料固定版本：{id}</>}</li>)}</ul> : <p>未绑定材料版本</p>}</details>
+      <p className="collab-preserve">{submission.body}</p><details><summary>本轮验收标准与成果文件</summary><p className="collab-preserve">{submission.criteria}</p>{submission.materialVersionIds.length ? <ul>{submission.materialVersionIds.map(id => <li key={id}>{submission.materialVersions?.find(version => version.versionId === id) ? <BoundMaterialVersion projectId={projectId} version={submission.materialVersions.find(version => version.versionId === id)!} /> : <>材料固定版本：{id}</>}</li>)}</ul> : <p>本轮为纯文字成果</p>}</details>
       {submission.aiReport && <div className="callout"><RemovedSourceNotice payload={submission.aiReport} /><strong>{submission.aiReport.humanReview?.status === 'resolved' ? '原 AI 证据覆盖：' : 'AI 证据覆盖：'}{submission.aiReport.coverage === 'complete' ? '模型认为文本证据完整' : '需要人工核验'}</strong><ul>{submission.aiReport.evidence.map((evidence, index) => <li key={index}><span>固定版本 {evidence.materialVersionId}</span><p className="collab-preserve">{evidence.quote}</p></li>)}</ul>{submission.aiReport.manualReviewReason && <p className="notice notice-warn">{submission.aiReport.humanReview?.status === 'resolved' ? '原 AI 待审核原因：' : '待人工审核原因：'}{submission.aiReport.manualReviewReason}</p>}{submission.aiReport.limitations.length > 0 && <><strong>限制与待核验项</strong><ul>{submission.aiReport.limitations.map((limitation, index) => <li key={index}>{limitation}</li>)}</ul></>}</div>}
       <AssistiveRubricScores projectId={projectId} submission={submission} owner={owner && !readOnly} onChanged={refresh} />
       {submission.aiDecision && <div className="callout"><strong>AI 建议：{decisionLabels[submission.aiDecision]}</strong><p className="collab-preserve">{submission.aiFeedback}</p></div>}
@@ -286,21 +284,14 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   if (view === 'settings') return <TaskSettings projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} canManage={owner} meId={meId} members={members} onChanged={onChanged} closeGuard={closeGuard} stateLabel={taskStateLabel(task)} statusContent={<TaskLifecycleDetail view="submit" projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} owner={owner} meId={meId} members={members} onChanged={onChanged} />} />;
   return <div className="stack collab-detail">
     <div hidden={historyPage}>
-    <div className="collab-toolbar"><StatusPill tone={task.pendingHumanReview ? 'warn' : 'neutral'}>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span>{view === 'submit' && <button className="button button-quiet" onClick={openHistory}>查看历史记录</button>}</div>
-    {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；项目负责人或拥有任务管理权限的成员可安排分工与验收。</p>}
     <section aria-label="查看与提交" hidden={view !== 'submit'} className="stack">
     {!!task.unfinishedDependencyIds?.length && <p className="notice notice-warn">尚未完成：{task.unfinishedDependencyIds.map(id => tasks.find(item => item.taskId === id)?.title ?? id).join('、')}。你可以提前认领、执行和提交。</p>}
     {canSubmit && <section className="collab-submit"><h3>{task.currentSubmissionId ? '提交新一轮成果' : '提交成果'}</h3><form className="stack" onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
-      {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请到任务设置核对最新标准，再重新填写成果说明与绑定版本；当前草稿尚未提交。</div>}
-      {submissionOutdated && <button type="button" className="button button-quiet" onClick={() => { setBody(''); setVersions([]); setSubmissionBase(task.revision); setSubmissionConflict(false); submit.reset(); }}>已核对标准，重新填写本轮提交</button>}
+      {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请到任务设置核对最新标准，再重新填写成果说明与文件；当前草稿尚未提交。</div>}
+      {submissionOutdated && <button type="button" className="button button-quiet" onClick={() => { setBody(''); setSubmissionBase(task.revision); setSubmissionConflict(false); submit.reset(); }}>已核对标准，重新填写本轮提交</button>}
       <Field label="成果说明"><textarea className="input" required rows={4} maxLength={12000} value={body} onChange={event => setBody(event.target.value)} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
-      <Field label="绑定材料版本" hint="选择已保存的固定版本；之后编辑材料不会改变本轮提交。可跨材料选择，最多 10 个版本。"><select className="input" value={materialId} onChange={event => setMaterialId(event.target.value)}><option value="">选择材料</option>{materials.data?.map(material => <option key={material.materialId} value={material.materialId}>{material.title}</option>)}</select></Field>
-      {materials.error && <ErrorNotice error={materials.error} />}{materialVersions.isLoading && <Spinner label="读取固定版本" />}{materialVersions.error && <ErrorNotice error={materialVersions.error} />}
-      {materialId && materialVersions.data?.length === 0 && <p className="form-note">该材料还没有已保存版本，请先到材料中心保存。</p>}
-      <div className="collab-version-list">{materialVersions.data?.map(version => <label key={version.versionId} className="collab-version"><input type="checkbox" disabled={versions.length >= 10 && !versions.some(item => item.id === version.versionId)} checked={versions.some(item => item.id === version.versionId)} onChange={event => setVersions(currentVersions => event.target.checked ? [...currentVersions, { id: version.versionId, label: `${materials.data?.find(material => material.materialId === materialId)?.title ?? '材料'} · r${version.revision}` }] : currentVersions.filter(item => item.id !== version.versionId))} /><span>r{version.revision} · {new Date(version.createdAt).toLocaleString('zh-CN')}{version.attachments.length > 0 && <small>含 {version.attachments.length} 个附件，仅供人工参考</small>}</span></label>)}</div>
-      {versions.length > 0 && <div className="chip-list">{versions.map(version => <button type="button" className="chip" key={version.id} onClick={() => setVersions(items => items.filter(item => item.id !== version.id))}>{version.label} ×</button>)}</div>}
-
-      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
+      <TaskFileUploads projectId={projectId} taskId={task.taskId} disabled={submit.isPending} onBusy={setFilesBusy} />
+      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || filesBusy || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
     </form></section>}
     {!task.assigneeId && <p className="form-note">请先认领任务或由安排分工，再提交成果。</p>}
     {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由项目负责人或拥有任务管理权限的成员手动验收。</div>}

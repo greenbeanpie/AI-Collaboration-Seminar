@@ -1,0 +1,159 @@
+{
+  "completedAt": "2026-10-04T14:41:12.910Z",
+  "baseCommit": "627977b",
+  "summary": [
+    "直接上传任务成果并自动入材料库，按任务文件夹或公共文件分类",
+    "更新生成新文件和不可变版本，历史成果快照保留",
+    "文件和材料独立归档、只读与恢复，默认 AI 发现排除归档及已替换文件，固定历史读取保留",
+    "任务文件管理随当前执行人变化，公共权限保持上传者/创建者或资料管理",
+    "提交窗口历史按钮位于标题栏，状态/时间/版本移除，黄色依赖提示保留",
+    "前置任务选择由独立页面改为搜索弹窗"
+  ],
+  "modifiedFiles": [
+    "backend/migrations/0055_task_files_archive.sql",
+    "backend/openapi/openapi.json",
+    "backend/src/api/agents.ts",
+    "backend/src/api/files.ts",
+    "backend/src/api/materials.ts",
+    "backend/src/api/resources.ts",
+    "backend/src/api/sources.ts",
+    "backend/src/api/task-files.ts",
+    "backend/src/app.ts",
+    "backend/src/services/agent-bridge-context.ts",
+    "backend/src/services/collaboration-submission.ts",
+    "backend/src/services/file-lifecycle.ts",
+    "backend/src/services/project-ai-tools.ts",
+    "backend/src/services/project-context.ts",
+    "backend/src/services/task-assistance-plan.ts",
+    "backend/src/services/task-files.ts",
+    "backend/test/134-task-files.test.ts",
+    "docs/COLLABORATION-LIFECYCLE.md",
+    "frontend/src/api/openapi.ts",
+    "frontend/src/api/simplification.ts",
+    "frontend/src/help/TECHNICAL-IMPLEMENTATION.md",
+    "frontend/src/help/USER-GUIDE.md",
+    "frontend/src/pages/CollaborationWorkspace.test.tsx",
+    "frontend/src/pages/CollaborationWorkspace.tsx",
+    "frontend/src/pages/DataWorkspacePage.test.tsx",
+    "frontend/src/pages/DataWorkspacePage.tsx",
+    "frontend/src/pages/MaterialAttachments.tsx",
+    "frontend/src/pages/MaterialsPage.tsx",
+    "frontend/src/pages/ProjectFileLibrary.tsx",
+    "frontend/src/pages/ProjectWorkspace.css",
+    "frontend/src/pages/TaskSettings.test.tsx",
+    "frontend/src/pages/TaskSettings.tsx",
+    "scripts/verify-ui-regressions.mjs",
+    "backend/src/services/archive-policy.ts",
+    "backend/test/139-archive-discovery.test.ts",
+    "backend/test/task-files-migration-preservation.py",
+    "frontend/src/pages/MaterialArchiveActions.tsx",
+    "frontend/src/pages/TaskFileUploads.test.tsx",
+    "frontend/src/pages/TaskFileUploads.tsx",
+    "frontend/src/pages/task-files-client.ts",
+    "scripts/verify-task-file-backup.py",
+    "docs/evidence/task-files-archive-release.json"
+  ],
+  "verification": {
+    "backend": {
+      "files": 8,
+      "tests": 99,
+      "passed": true,
+      "log": "output/task-files-backend-tests.log",
+      "finalFocusedRerun": {
+        "files": 3,
+        "tests": 21,
+        "passed": true,
+        "log": "output/task-files-final-backend-tests.log"
+      }
+    },
+    "frontend": {
+      "files": 6,
+      "tests": 83,
+      "passed": true,
+      "log": "output/task-files-frontend-tests.log"
+    },
+    "typecheck": "output/task-files-typecheck.log",
+    "lint": "output/task-files-lint.log",
+    "build": "output/task-files-build.log",
+    "migrationPreservation": "output/task-files-migration-test.log",
+    "browser": {
+      "fixtureOnly": true,
+      "passed": true,
+      "checks": 20,
+      "screenshots": 32,
+      "errors": 0,
+      "report": "output/task-files-ui/results.json"
+    },
+    "openapiRegenerated": true,
+    "diffCheck": true
+  },
+  "backup": {
+    "businessTables": 107,
+    "privateDump": ".local-secrets/backups/task-files-before-0055-20261004.sql",
+    "privateVirtualIndexSchema": ".local-secrets/backups/task-files-virtual-indexes-before-0055.json",
+    "privateAuxiliarySchema": ".local-secrets/backups/task-files-auxiliary-schema-before-0055.json",
+    "ignored": true,
+    "virtualIndexRebuiltLocally": true,
+    "restorationLog": "output/task-files-production-backup-restore.log",
+    "verification": {
+      "backupRestored": true,
+      "migrationPreserved": true,
+      "foreignKeyViolations": 0,
+      "virtualIndexesRebuilt": true,
+      "originalTables": {
+        "files": {
+          "rows": 9,
+          "sha256": "fc513f1894ebce2f1082a452ab2d7a2ae6a164071109aac0b98dc29c97e2485e"
+        },
+        "materials": {
+          "rows": 18,
+          "sha256": "cf81e18e1d332dbc7ddba88464a32f0f4974f6097043946282a69b86ee0c77bc"
+        },
+        "material_versions": {
+          "rows": 25,
+          "sha256": "4df7b10ccb4c5480937b6f325571afd3ba0b596f7aa4ed0e084fe2edd5199af6"
+        },
+        "tasks": {
+          "rows": 40,
+          "sha256": "07dc9dded02c7dc758c28686c40a89974300580a9d53f8dfcd5427088110c6a3"
+        },
+        "task_submissions": {
+          "rows": 9,
+          "sha256": "c0d0b82b786f7934e622cc4878768c1c781eade408da2d6ecb8e83b7b777f5b7"
+        }
+      }
+    }
+  },
+  "deployment": {
+    "status": "succeeded",
+    "site": "https://team.greenbp.dpdns.org",
+    "migration": "0055_task_files_archive.sql",
+    "migrationLog": "output/task-files-production-migration.log",
+    "backendLog": "output/task-files-backend-deploy.log",
+    "frontendLog": "output/task-files-frontend-deploy.log",
+    "previousBackendVersion": "9f929110-ea6d-4567-bd78-6f4af516415e",
+    "previousFrontendVersion": "ac015e6f-31fe-4feb-87cf-67d9bf86e3e3",
+    "sourceCommit": "c80abc1",
+    "migrationApplied": true,
+    "backendVersion": "1542cfc1-1652-450f-88ba-a8c362daae7c",
+    "frontendVersion": "fce9c390-a542-4d2c-bdca-213309e1ac6b"
+  },
+  "reproduce": [
+    "npm test --prefix backend -- test/134-task-files.test.ts test/139-archive-discovery.test.ts test/85-collaboration.test.ts test/121-project-tool-contracts.test.ts test/82-agents.test.ts test/80-tasks-materials.test.ts test/134-task-assistance.test.ts test/131-agent-bridges.test.ts",
+    "npm test --prefix frontend -- src/pages/TaskFileUploads.test.tsx src/pages/CollaborationWorkspace.test.tsx src/pages/TaskSettings.test.tsx src/pages/DataWorkspacePage.test.tsx src/pages/MaterialsPage.test.tsx src/pages/ProjectFileLibrary.test.tsx",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build",
+    "node scripts/verify-ui-regressions.mjs http://127.0.0.1:5176 output/task-files-ui",
+    "python backend/test/task-files-migration-preservation.py",
+    "python scripts/verify-task-file-backup.py <private-dump.sql> <private-virtual-schema.json> backend/migrations/0055_task_files_archive.sql <private-auxiliary-schema.json>"
+  ],
+  "limitations": [
+    "按用户要求不进行在线功能测试或生产验收",
+    "本轮执行受影响的基本本地测试，没有重新运行整个项目全部测试",
+    "浏览器使用本地模拟数据，不调用真实模型",
+    "沿用现有文件类型及上传限制；未提取正文的附件继续按未读证据规则要求人工核验",
+    "旧文件不推断任务归属，保留在公共文件及原有历史引用中",
+    "D1 整库导出不支持 FTS5，因此业务表、辅助索引与触发器独立保存，全文索引由原文表重建；本地恢复验证通过"
+  ]
+}

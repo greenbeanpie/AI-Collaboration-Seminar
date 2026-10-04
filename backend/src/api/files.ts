@@ -1,3 +1,4 @@
+import { archiveFile, fileManageSql } from '../services/task-files';
 import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -80,13 +81,13 @@ const downloadRoute = createRoute({
 
 const fileListResponse = apiEnvelope(z.object({ items:z.array(z.object({
   fileId:z.string().uuid(),name:z.string(),status:z.enum(['pending','available','quarantined','discarded']),
-  sizeBytes:z.number().int().nullable(),createdAt:z.string(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),
+  archivedAt:z.string().nullable().optional(),canManage:z.boolean().optional(),sizeBytes:z.number().int().nullable(),createdAt:z.string(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),
   contributors:z.array(contributorSchema).optional(),uploaderUserId:z.string().uuid().optional(),canDelete:z.boolean(),sourceIds:z.array(z.string().uuid()),
 })),nextCursor:z.string().nullable()}),'FileListResponse');
 const lifecycleBody=z.object({expectedLifecycleVersion:z.number().int().positive()}).strict();
 const lifecycleResponse=apiEnvelope(z.object({fileId:z.string().uuid(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),affectedSourceIds:z.array(z.string().uuid())}),'FileLifecycleResponse');
 const listRoute=createRoute({method:'get',path:'/api/v1/projects/{projectId}/files',tags:['files'],summary:'文件库和回收站（含未完成上传）',
-  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),cursor:z.string().optional(),limit:z.string().optional()})},
+  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),archived:z.enum(['true','false']).optional(),cursor:z.string().optional(),limit:z.string().optional()})},
   responses:{200:{description:'文件列表',content:{'application/json':{schema:fileListResponse}}}}});
 const deleteRoute=createRoute({method:'delete',path:'/api/v1/projects/{projectId}/files/{fileId}',tags:['files'],summary:'移入回收站并取消相关来源任务，保留原文件和历史',
   request:{params:paramsFile,body:{required:true,content:{'application/json':{schema:lifecycleBody}}}},
@@ -99,19 +100,27 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/files', requireUser, requireProjectMember());
   app.use('/api/v1/projects/:projectId/files/*', requireUser, requireProjectMember());
 
+  for(const restore of [false,true]) {
+    const route=createRoute({method:'post',path:'/api/v1/projects/{projectId}/files/{fileId}/'+(restore?'unarchive':'archive'),tags:['files'],request:{params:paramsFile,body:{required:true,content:{'application/json':{schema:lifecycleBody}}}},responses:{200:{description:'文件归档状态',content:{'application/json':{schema:apiEnvelope(z.object({fileId:z.string().uuid(),archivedAt:z.string().nullable(),lifecycleVersion:z.number().int()}),'File'+(restore?'Unarchive':'Archive')+'Response')}}}}});
+    app.openapi(route,async c=>c.json(apiData(c,await archiveFile(c.env,{...c.req.valid('param'),...c.req.valid('json'),actorId:c.get('user')!.id,restore})),200));
+  }
+
   app.openapi(listRoute,async c=>{
     c.header('Cache-Control','no-store');
     const member=c.get('member')!;const query=c.req.valid('query');const {limit,cursor}=parsePaging(query);
-    const rows=await c.env.DB.prepare(`SELECT id,original_name,ext,status,size_bytes,created_at,deleted_at,lifecycle_version,uploader_user_id
+    const rows=await c.env.DB.prepare(`SELECT id,original_name,ext,status,size_bytes,created_at,deleted_at,lifecycle_version,uploader_user_id,archived_at,CASE WHEN ${fileManageSql('?1','?6')} THEN 1 ELSE 0 END allowed
       FROM files WHERE project_id=?1 AND (deleted_at IS NOT NULL)=?2
+        AND (archived_at IS NOT NULL)=?7
+        AND (?7=1 OR NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id WHERE u.file_id=files.id AND m.archived_at IS NOT NULL))
+        AND NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id JOIN material_versions v ON v.id=m.current_version_id WHERE u.file_id=files.id AND files.id!=json_extract(v.attachments_json,'$[0].fileId'))
         AND (?3 IS NULL OR created_at<?3 OR (created_at=?3 AND id<?4)) ORDER BY created_at DESC,id DESC LIMIT ?5`)
-      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1)
-      .all<{id:string;original_name:string|null;ext:string;status:'pending'|'available'|'quarantined'|'discarded';size_bytes:number|null;created_at:string;deleted_at:string|null;lifecycle_version:number;uploader_user_id:string}>();
+      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1,member.userId,query.archived==='true'?1:0)
+      .all<{id:string;original_name:string|null;ext:string;status:'pending'|'available'|'quarantined'|'discarded';size_bytes:number|null;created_at:string;deleted_at:string|null;lifecycle_version:number;uploader_user_id:string;archived_at:string|null;allowed:number}>();
     const items=await Promise.all(rows.results.slice(0,limit).map(async r=>{
       const sources=await c.env.DB.prepare(`SELECT DISTINCT v.source_id FROM source_versions v WHERE v.project_id=?1 AND
         (v.file_id=?2 OR EXISTS(SELECT 1 FROM source_pages page WHERE page.source_version_id=v.id AND page.image_file_id=?2))`).bind(member.projectId,r.id).all<{source_id:string}>();
-      return {contributors:await fileContributors(c.env,member.projectId,r.id),uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,lifecycleVersion:r.lifecycle_version,
-        canDelete:member.permissions.resourceManage||r.uploader_user_id===c.get('user')!.id,sourceIds:sources.results.map(source=>source.source_id)};
+      return {contributors:await fileContributors(c.env,member.projectId,r.id),uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,archivedAt:r.archived_at,lifecycleVersion:r.lifecycle_version,canManage:Boolean(r.allowed),
+        canDelete:Boolean(r.allowed),sourceIds:sources.results.map(source=>source.source_id)};
     }));
     const last=items.at(-1);return c.json(apiData(c,{items,nextCursor:nextCursor(rows.results.length>limit,last&&{createdAt:last.createdAt,id:last.fileId})??null}),200);
   });

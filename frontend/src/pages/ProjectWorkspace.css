@@ -44,3 +44,4 @@
 .project-overview-columns { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.15fr); align-items:start; gap:24px; }
 .project-overview-columns .overview-metrics { grid-template-columns:minmax(0,1fr); }
 @media(max-width:900px) { .project-overview-columns { grid-template-columns:minmax(0,1fr); } }
+.resource-task-folder{padding-top:10px;margin-top:8px;border-top:1px solid var(--line)}.resource-task-folder>summary{font-weight:700;cursor:pointer;margin-bottom:8px;overflow-wrap:anywhere}.resource-task-folder .resource-list-entry{width:100%}.task-file-uploads input[type=file]{max-width:100%;overflow:hidden}.task-file-uploads .callout{overflow-wrap:anywhere}

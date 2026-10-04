@@ -1,3 +1,4 @@
+import { MaterialArchiveActions } from './MaterialArchiveActions';
 import { ResourceIndexView } from './ResourceIndexView';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
@@ -417,8 +418,8 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 <div className="tm-editor-title-wrap">{!header && <h2>{material.title}</h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
                   {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
-                <div className="tm-editor-actions tm-hide-print">
-                  {!material.systemManaged && trigger}
+                <div className="tm-editor-actions tm-hide-print"><MaterialArchiveActions projectId={projectId} materialId={material.materialId} revision={material.revision} archivedAt={material.archivedAt} canArchive={material.canArchive ?? (material.canEdit !== false && !material.systemManaged)} disabled={dirty || saving || !online || Boolean(conflict) || Boolean(recoveryDraft)} />
+                  {!material.systemManaged && !material.archivedAt && material.canEdit !== false && trigger}
                   <button type="button" className="button button-quiet button-small" onClick={() => setOverlay('discussion')}><MessageCircle size={14} />讨论</button>
                   <button type="button" className="button button-quiet button-small" onClick={openHistory}><History size={14} />版本历史</button>
                   <DropdownMenu label="导出文件"><button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
@@ -459,7 +460,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
               {material.currentVersion?.versionId && <ResourceIndexView projectId={projectId} resourceType="material" versionId={material.currentVersion?.versionId} />}
-              <>{material.canEdit === false && <p className="form-note">此材料可查看；修改需创建者或资料管理权限。</p>}<MaterialAttachments material={material} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
+              <>{material.canEdit === false && <p className="form-note">此材料为只读；归档材料需先撤销归档，任务文件需当前执行人或资料管理权限。</p>}<MaterialAttachments material={material} archiveDisabled={dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
               <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>
 

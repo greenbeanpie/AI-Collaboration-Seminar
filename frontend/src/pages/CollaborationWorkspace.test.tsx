@@ -22,6 +22,7 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
   client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: submissions });
   client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }]);
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
+  client.setQueryData(['task-files', 'p1', 't1'], []);
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
   client.setQueryData(['materialVersions', 'p1', 'mat1'], [{ versionId: 'v1', revision: 4, createdAt: '2026-10-01T00:00:00Z', attachments: [] }]);
   const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: String(_url).endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: 'AI 判断任务需要真人参与或现场操作', jobId: 'j1' } : options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -195,7 +196,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.queryByRole('button', { name: '查看历史记录' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(screen.queryByRole('button', { name: /更多/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '查看历史记录' }).closest('.collab-toolbar')).not.toBeNull();
+    expect(screen.getByRole('button', { name: '查看历史记录' }).closest('.modal-head')).not.toBeNull();
     expect(screen.queryByRole('region', { name: '提交与验收历史' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '查看历史记录' }));
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -334,7 +335,7 @@ describe('collaboration lifecycle', () => {
     const selection = screen.getByLabelText('前置资料整理'); fireEvent.click(selection);
     act(() => client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', revision: 1, graphRevision: 10 }));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '前置任务·交付原型' })).getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));
     const call = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT')!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({ expectedGraphRevision: 10, dependsOnTaskIds: ['t2'] });
@@ -360,12 +361,13 @@ describe('collaboration lifecycle', () => {
     const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/claim'))!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 3 });
   });
-  it('binds an immutable version to the submission', async () => {
-    const { fetchMock } = setup();
+  it('automatically snapshots active latest task files without a material picker', async () => {
+    const { fetchMock } = setup(); const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, options) => String(url).endsWith('/tasks/t1/files') ? Response.json({ data: { items: [{ materialId: 'mat1', fileId: 'f1', name: '报告.pdf', revision: 4, versionId: 'v1', archivedAt: null, materialArchivedAt: null, canManage: true, lifecycleVersion: 1 }, { materialId: 'mat2', fileId: 'f2', versionId: 'old', archivedAt: '2026-10-04', materialArchivedAt: null }] } }) : fallback(url, options));
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '三个页面已联调' } });
-    fireEvent.change(screen.getByLabelText(/^绑定材料版本/), { target: { value: 'mat1' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: /r4/ }));
+    expect(screen.queryByLabelText(/^绑定材料版本/)).toBeNull();
+    expect(screen.getByLabelText('上传成果文件')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/submissions') && opts?.method === 'POST')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/submissions') && opts?.method === 'POST')!;

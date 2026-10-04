@@ -1,3 +1,4 @@
+import { fileManageSql } from './task-files';
 import type { Env } from '../env';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { nowIso } from '../core/db';
@@ -8,7 +9,8 @@ export const lifecycleBodyDescription = '当前生命周期版本，删除和恢
 
 /** Project membership remains mandatory. Account admin never bypasses project access. */
 function actorGuard(table: 'files'|'sources'): string {
-  const creator = table === 'files' ? 'uploader_user_id' : 'created_by';
+  if(table==='files') return fileManageSql('files.project_id','?4');
+  const creator = 'created_by';
   return `EXISTS (SELECT 1 FROM project_members actor WHERE actor.project_id=${table}.project_id AND actor.user_id=?4
     AND (${projectPermissionSql(`${table}.project_id`,'?4','resourceManage')} OR ${table}.${creator}=?4))`;
 }
@@ -52,7 +54,7 @@ async function releaseCancelledReservations(env: Env, now: string): Promise<void
 export async function changeFileLifecycle(env: Env, params: {projectId:string;fileId:string;actorId:string;expectedLifecycleVersion:number;restore:boolean}): Promise<{fileId:string;deletedAt:string|null;lifecycleVersion:number;affectedSourceIds:string[]}> {
   const row=await env.DB.prepare('SELECT uploader_user_id,deleted_at,lifecycle_version FROM files WHERE id=?1 AND project_id=?2').bind(params.fileId,params.projectId).first<{uploader_user_id:string;deleted_at:string|null;lifecycle_version:number}>();
   if(!row) throw notFound('文件不存在');
-  if(!await canManageResource(env,params.projectId,params.actorId,row.uploader_user_id)) throw permissionDenied('需要资料管理权限或为文件上传者才能删除和恢复文件');
+  if(!await env.DB.prepare(`SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND ${fileManageSql('?2','?3')}`).bind(params.fileId,params.projectId,params.actorId).first()) throw permissionDenied('需要资料管理权限或为文件上传者才能删除和恢复文件');
   if(row.lifecycle_version!==params.expectedLifecycleVersion || Boolean(row.deleted_at)!==params.restore) throw invalidState('文件生命周期已变化，请刷新后重试');
   const now=nowIso(); const next=params.expectedLifecycleVersion+1;const transitionId=crypto.randomUUID();
   const fileGuard=`EXISTS(SELECT 1 FROM files f WHERE f.id=?1 AND f.project_id=?2 AND f.lifecycle_version=?3 AND f.deleted_by IS ?4 AND f.deleted_at IS ?5 AND f.lifecycle_change_id=?6)`;

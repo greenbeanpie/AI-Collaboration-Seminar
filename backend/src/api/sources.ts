@@ -1,3 +1,4 @@
+import { discoverableFileSql } from '../services/archive-policy';
 import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -330,7 +331,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const rows = await c.env.DB.prepare(
       `SELECT id, project_id, kind, title, purpose, resource_revision, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
         (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
-       WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5
+       WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
        ORDER BY created_at DESC, id DESC LIMIT ?4`,
     )

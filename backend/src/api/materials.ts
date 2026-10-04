@@ -1,3 +1,4 @@
+import { archiveMaterial, materialManageSql, fileManageSql } from '../services/task-files';
 import { projectPermissionSql } from '../services/project-permissions';
 import { contributorSchema, fileContributors } from '../services/file-contributors';
 import { fileReferenceAvailability } from '../services/source-inputs';
@@ -9,7 +10,7 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { resourcePurposeSchema } from './resources';
 import type { ResourcePurpose } from '../services/resources';
 import { newId, nowIso } from '../core/db';
-import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
+import { invalidState, notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';import { parsePaging, nextCursor } from '../core/pagination';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -18,9 +19,11 @@ const DOC_MAX_BYTES = 200 * 1024;
 const materialParams = projectParams.extend({ materialId: z.string().uuid() });
 const versionParams = materialParams.extend({ versionId: z.string().uuid() });
 
-const attachmentSchema = z.object({ contributors:z.array(contributorSchema).optional(), fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional() });
+const attachmentSchema = z.object({ contributors:z.array(contributorSchema).optional(), fileId: z.string().uuid(), name: z.string(), availability: z.literal('unavailable').optional(), deletedAt: z.string().nullable().optional(), archivedAt:z.string().nullable().optional(),lifecycleVersion:z.number().int().optional(),canManage:z.boolean().optional() });
 const materialSchema = z.object({
   canEdit:z.boolean().optional(),
+  canArchive:z.boolean().optional(),
+  archivedAt:z.string().nullable().optional(),taskId:z.string().uuid().nullable().optional(),
   systemManaged:z.boolean().optional(),
   materialId: z.string().uuid(),
   title: z.string(),
@@ -86,7 +89,7 @@ const listRoute = createRoute({
   path: '/api/v1/projects/{projectId}/materials',
   tags: ['materials'],
   summary: '材料列表（游标分页）',
-  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), archived:z.enum(['true','false']).optional() }) },
   responses: { 200: { content: { 'application/json': { schema: materialListResponse } }, description: '列表' } },
 });
 
@@ -130,6 +133,7 @@ const getVersionRoute = createRoute({
 });
 
 interface MaterialRow {
+  allowed?:number;archived_at:string|null;task_id:string|null;
   system_managed: number;
   id: string;
   project_id: string;
@@ -158,20 +162,21 @@ interface VersionRow {
 
 type Attachment = { fileId: string; name: string; availability?: 'unavailable'; deletedAt?: string | null };
 
-async function attachmentReferences(env: AppEnv['Bindings'], projectId: string, json: string): Promise<Attachment[]> {
+async function attachmentReferences(env: AppEnv['Bindings'], projectId: string, json: string, actorId?:string): Promise<Attachment[]> {
   const attachments = JSON.parse(json ?? '[]') as Array<{ fileId: string; name: string }>;
   return Promise.all(attachments.map(async attachment => {
-    return { ...attachment, contributors:await fileContributors(env,projectId,attachment.fileId), ...await fileReferenceAvailability(env, projectId, attachment.fileId) };
+    const file=await env.DB.prepare(`SELECT archived_at,lifecycle_version,CASE WHEN ${fileManageSql('?2','?3')} THEN 1 ELSE 0 END allowed FROM files WHERE id=?1 AND project_id=?2`).bind(attachment.fileId,projectId,actorId??'').first<{archived_at:string|null;lifecycle_version:number;allowed:number}>();
+    return { ...attachment, archivedAt:file?.archived_at??null,lifecycleVersion:file?.lifecycle_version??1,canManage:Boolean(file?.allowed), contributors:await fileContributors(env,projectId,attachment.fileId), ...await fileReferenceAvailability(env, projectId, attachment.fileId) };
   }));
 }
 
-async function toVersion(env: AppEnv['Bindings'], projectId: string, r: VersionRow) {
+async function toVersion(env: AppEnv['Bindings'], projectId: string, r: VersionRow, actorId?:string) {
   return {
     versionId: r.id,
     revision: r.revision,
     doc: JSON.parse(r.doc_json) as Record<string, unknown>,
     markdown: r.markdown,
-    attachments: await attachmentReferences(env, projectId, r.attachments_json),
+    attachments: await attachmentReferences(env, projectId, r.attachments_json,actorId),
     origin: r.origin,
     aiRunId: r.ai_run_id,
     authorId: r.author_id,
@@ -203,7 +208,9 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow, ac
     : null;
   return {
     systemManaged:material.system_managed === 1,
-    canEdit:material.system_managed !== 1 && (material.created_by===actorId || Boolean(await env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(material.project_id,actorId).first())),
+    canEdit:material.system_managed !== 1 && !material.archived_at && material.kind!=='task-file' && Boolean(await env.DB.prepare(`SELECT 1 FROM materials WHERE id=?3 AND ${materialManageSql('?1','?2')}`).bind(material.project_id,actorId,material.id).first()),
+    canArchive:material.system_managed !== 1 && Boolean(await env.DB.prepare(`SELECT 1 FROM materials WHERE id=?3 AND ${materialManageSql('?1','?2')}`).bind(material.project_id,actorId,material.id).first()),
+    archivedAt:material.archived_at,taskId:material.task_id,
     materialId: material.id,
     title: material.title,
     kind: material.kind,
@@ -215,7 +222,7 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow, ac
           revision: current.revision,
           doc: JSON.parse(current.doc_json) as Record<string, unknown>,
           markdown: current.markdown,
-          attachments: await attachmentReferences(env, material.project_id, current.attachments_json),
+          attachments: await attachmentReferences(env, material.project_id, current.attachments_json,actorId),
           origin: current.origin,
           authorId: current.author_id,
           createdAt: current.created_at,
@@ -227,12 +234,19 @@ async function materialDetail(env: AppEnv['Bindings'], material: MaterialRow, ac
 }
 
 export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
+  app.use('/api/v1/projects/:projectId/materials',requireUser,requireProjectMember());
   app.use('/api/v1/projects/:projectId/materials/*', requireUser, requireProjectMember());
+
+  for(const restore of [false,true]) {
+    const route=createRoute({method:'post',path:'/api/v1/projects/{projectId}/materials/{materialId}/'+(restore?'unarchive':'archive'),tags:['materials'],request:{params:materialParams,body:{required:true,content:{'application/json':{schema:z.object({expectedRevision:z.number().int().positive()}).strict()}}}},responses:{200:{description:'材料归档状态',content:{'application/json':{schema:apiEnvelope(z.object({materialId:z.string().uuid(),archivedAt:z.string().nullable(),revision:z.number().int()}),'Material'+(restore?'Unarchive':'Archive')+'Response')}}}}});
+    app.openapi(route,async c=>c.json(apiData(c,await archiveMaterial(c.env,{...c.req.valid('param'),...c.req.valid('json'),actorId:c.get('user')!.id,restore})),200));
+  }
 
   app.openapi(materialCreateRoute, async (c) => {
     const body = c.req.valid('json');
     const member = c.get('member')!;
     const user = c.get('user')!;
+    if(body.kind==='task-file') throw validationFailed('任务文件请通过任务文件登记接口创建');
     const materialId = newId();
     const versionId = newId();
     const now = nowIso();
@@ -258,7 +272,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(listRoute, async (c) => {
     const member = c.get('member')!;
     const paging = parsePaging(c.req.valid('query'));
-    const binds: unknown[] = [member.projectId];
+    const binds: unknown[] = [member.projectId,member.userId];
+    const archived=c.req.valid('query').archived==='true';
     let cursorSql = '';
     if (paging.cursor) {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
@@ -266,7 +281,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     binds.push(paging.limit + 1);
     const rows = await c.env.DB.prepare(
-      `SELECT m.* FROM materials m WHERE m.project_id = ?1${cursorSql} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
+      `SELECT m.*,CASE WHEN ${materialManageSql('?1','?2','m')} THEN 1 ELSE 0 END allowed FROM materials m WHERE m.project_id = ?1 AND (m.archived_at IS NOT NULL)=${archived?1:0}${cursorSql} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
     )
       .bind(...binds)
       .all<MaterialRow>();
@@ -277,7 +292,9 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       apiData(c, {
         items: pageRows.map((r) => ({
           systemManaged: r.system_managed === 1,
-          canEdit: r.system_managed !== 1 && (r.created_by === c.get('user')!.id || c.get('member')!.permissions.resourceManage),
+          canEdit: r.system_managed !== 1 && !r.archived_at && r.kind!=='task-file' && Boolean(r.allowed),
+          canArchive:r.system_managed!==1 && Boolean(r.allowed),
+          archivedAt:r.archived_at,taskId:r.task_id,
           materialId: r.id,
           title: r.title,
           kind: r.kind,
@@ -304,8 +321,10 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     const materialId = c.req.valid('param').materialId;
     const material = await loadMaterial(c.env, materialId, member.projectId);
     if (material.system_managed === 1) throw permissionDenied('系统背景由项目设置自动同步，不能手动修改');
+    if(material.archived_at) throw invalidState('归档材料不可编辑，请先恢复');
+    if(material.kind==='task-file') throw invalidState('任务文件请使用文件版本替换接口');
     const actorId=c.get('user')!.id;
-    if (material.created_by!==actorId && !await c.env.DB.prepare(`SELECT 1 WHERE ${projectPermissionSql('?1','?2','resourceManage')}`).bind(member.projectId,actorId).first()) throw permissionDenied('只能编辑本人创建或有资料管理权限的材料');
+    if (!await c.env.DB.prepare(`SELECT 1 FROM materials WHERE id=?3 AND ${materialManageSql('?1','?2')}`).bind(member.projectId,actorId,materialId).first()) throw permissionDenied('只能编辑本人创建或有资料管理权限的材料');
     if (material.revision !== body.expectedRevision) throw versionConflict(material.revision);
     if (!isTiptapDoc(body.doc)) throw validationFailed('doc 必须是 Tiptap JSON（{type:"doc", content:[...]}）');
     if (JSON.stringify(body.doc).length > DOC_MAX_BYTES) throw validationFailed('doc 超过大小限制');
@@ -316,7 +335,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
     if (body.attachmentIds) {
       attachments = [];
       for (const fileId of new Set(body.attachmentIds)) {
-        const file = await c.env.DB.prepare("SELECT original_name,lifecycle_version FROM files WHERE id = ?1 AND project_id = ?2 AND status = 'available' AND deleted_at IS NULL").bind(fileId, member.projectId).first<{ original_name: string; lifecycle_version: number }>();
+        const file = await c.env.DB.prepare("SELECT original_name,lifecycle_version FROM files WHERE id = ?1 AND project_id = ?2 AND status = 'available' AND deleted_at IS NULL AND archived_at IS NULL").bind(fileId, member.projectId).first<{ original_name: string; lifecycle_version: number }>();
         if (!file) throw notFound('附件不存在或不可用');
         attachments.push({ fileId, name: file.original_name });
         attachmentSnapshots.push({ fileId, lifecycleVersion: file.lifecycle_version });
@@ -335,8 +354,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       c.env.DB.prepare(
         `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, author_id, created_at, attachments_json)
          SELECT ?1,?2,?3,?4,?5,?6,'manual',?7,?8,?9
-         WHERE EXISTS(SELECT 1 FROM materials WHERE id=?2 AND project_id=?3 AND revision=?11 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?3 AND user_id=?7) AND (created_by=?7 OR ${projectPermissionSql('?3','?7','resourceManage')}))
-           AND NOT EXISTS(SELECT 1 FROM json_each(?10) captured WHERE NOT EXISTS(SELECT 1 FROM files f WHERE f.id=json_extract(captured.value,'$.fileId') AND f.project_id=?3 AND f.status='available' AND f.deleted_at IS NULL AND f.lifecycle_version=json_extract(captured.value,'$.lifecycleVersion')))`,
+         WHERE EXISTS(SELECT 1 FROM materials WHERE id=?2 AND project_id=?3 AND revision=?11 AND archived_at IS NULL AND kind!='task-file' AND ${materialManageSql('?3','?7')})
+           AND NOT EXISTS(SELECT 1 FROM json_each(?10) captured WHERE NOT EXISTS(SELECT 1 FROM files f WHERE f.id=json_extract(captured.value,'$.fileId') AND f.project_id=?3 AND f.status='available' AND f.deleted_at IS NULL AND f.archived_at IS NULL AND f.lifecycle_version=json_extract(captured.value,'$.lifecycleVersion')))`,
       ).bind(versionId, materialId, member.projectId, newRevision, JSON.stringify(body.doc), markdown, c.get('user')!.id, now, JSON.stringify(attachments), JSON.stringify(attachmentSnapshots), body.expectedRevision),
       c.env.DB.prepare(
         'UPDATE materials SET current_version_id = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?1 AND revision = ?4 AND EXISTS(SELECT 1 FROM material_versions WHERE id=?2 AND material_id=?1)',
@@ -353,7 +372,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       throw versionConflict(material.revision);
     }
     const version = await loadVersion(c.env, versionId, member.projectId);
-    return c.json(apiData(c, await toVersion(c.env, member.projectId, version)), 201);
+    return c.json(apiData(c, await toVersion(c.env, member.projectId, version,member.userId)), 201);
   });
 
   app.openapi(listVersionsRoute, async (c) => {
@@ -381,7 +400,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
           versionId: r.id,
           revision: r.revision,
           markdown: r.markdown,
-          attachments: await attachmentReferences(c.env, c.get('member')!.projectId, r.attachments_json),
+          attachments: await attachmentReferences(c.env, c.get('member')!.projectId, r.attachments_json,c.get('user')!.id),
           origin: r.origin,
           aiRunId: r.ai_run_id,
           authorId: r.author_id,
@@ -395,6 +414,6 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(getVersionRoute, async (c) => {
     const version = await loadVersion(c.env, c.req.valid('param').versionId, c.get('member')!.projectId, c.req.valid('param').materialId);
-    return c.json(apiData(c, await toVersion(c.env, c.get('member')!.projectId, version)), 200);
+    return c.json(apiData(c, await toVersion(c.env, c.get('member')!.projectId, version,c.get('user')!.id)), 200);
   });
 }

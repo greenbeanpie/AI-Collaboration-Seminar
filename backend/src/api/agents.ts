@@ -1,3 +1,5 @@
+import { materialManageSql } from '../services/task-files';
+import { activeMaterialSql } from '../services/archive-policy';
 import { snapshotSourceInputs } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -482,11 +484,13 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
         throw invalidState('该运行没有可采纳的草稿');
       }
 
-      const material = await c.env.DB.prepare('SELECT id, revision, system_managed FROM materials WHERE id = ?1 AND project_id = ?2')
+      const material = await c.env.DB.prepare(`SELECT m.id, m.kind, m.revision, m.system_managed FROM materials m WHERE m.id = ?1 AND m.project_id = ?2 AND ${activeMaterialSql('m')}`)
         .bind(body.materialId, member.projectId)
-        .first<{ id: string; revision: number; system_managed: number }>();
+        .first<{ id: string; kind: string; revision: number; system_managed: number }>();
       if (!material) throw notFound('材料不存在');
       if (material.system_managed === 1) throw permissionDenied('系统背景不能采纳 AI 修改');
+      if (material.kind === 'task-file') throw invalidState('任务文件请通过更新文件创建新版本，不能采纳正文修改');
+      if (!await c.env.DB.prepare(`SELECT 1 FROM materials m WHERE m.id=?1 AND ${materialManageSql('?2','?3','m')}`).bind(material.id,member.projectId,user.id).first()) throw permissionDenied('没有该材料的编辑权限');
       if (material.revision !== body.expectedRevision) throw versionConflict(material.revision);
 
       const latest = await c.env.DB.prepare('SELECT MAX(revision) AS r FROM material_versions WHERE material_id = ?1')
@@ -502,7 +506,7 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
           `INSERT INTO material_versions (id, material_id, project_id, revision, doc_json, markdown, origin, ai_run_id, author_id, created_at, attachments_json)
            SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'ai_adoption', ?7, ?8, ?9,
                   COALESCE((SELECT attachments_json FROM material_versions WHERE id = m.current_version_id), '[]')
-             FROM materials m WHERE m.id = ?2 AND m.revision = ?10
+             FROM materials m WHERE m.id = ?2 AND m.revision = ?10 AND m.kind!='task-file' AND m.project_id=?3 AND ${activeMaterialSql('m')} AND ${materialManageSql('?3','?8','m')}
               AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ?7 AND status = 'succeeded')`,
         ).bind(versionId, material.id, member.projectId, newRevision, JSON.stringify(body.doc), markdown, run.id, user.id, now, body.expectedRevision),
         c.env.DB.prepare(

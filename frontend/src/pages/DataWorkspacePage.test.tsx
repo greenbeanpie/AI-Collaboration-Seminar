@@ -13,6 +13,8 @@ afterEach(cleanup);
 const entry = (id: string, type: 'source' | 'material', purpose: ResourceEntry['purpose'], title: string): ResourceEntry => ({ resourceId: id, resourceType: type, purpose, title, currentVersionId: `v-${id}`, revision: 1, lifecycleVersion: 1, deletedAt: null, fileId: null, canManage: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' });
 function show(url = '/data') {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+  client.setQueryData(['collaboration-tasks', 'p'], { items: [] });
+  client.setQueryData(['files', 'p', 'active'], []);
   client.setQueryData(['resource-library', 'p'], [entry('background', 'material', 'background', '研究背景'), entry('source', 'source', 'reference', '原文通知'), entry('result', 'material', 'output', '最终方案')]);
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><DataWorkspacePage /></MemoryRouter></QueryClientProvider>);
 }

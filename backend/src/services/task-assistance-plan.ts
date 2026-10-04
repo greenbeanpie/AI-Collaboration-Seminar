@@ -1,3 +1,4 @@
+import { activeMaterialSql, discoverableSourceSql } from './archive-policy';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
@@ -64,8 +65,8 @@ async function planInputs(env:Env,projectId:string,taskId:string){
  const project=await env.DB.prepare('SELECT name,description FROM projects WHERE id=?1').bind(projectId).first();
  const goal=await env.DB.prepare('SELECT title,detail FROM project_goals WHERE project_id=?1').bind(projectId).first();
  const standard=await effectiveStandard(env,projectId);
- const materials=(await env.DB.prepare('SELECT m.title,v.id versionId,v.markdown,v.attachments_json FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 ORDER BY m.id').bind(projectId).all()).results;
- const sources=(await env.DB.prepare(`SELECT s.title,v.id versionId,sp.text_status,(SELECT json_group_array(content) FROM (SELECT content FROM source_fragments WHERE source_version_id=v.id ORDER BY seq LIMIT 100)) fragments FROM sources s JOIN source_versions v ON v.id=s.current_version_id LEFT JOIN source_processing sp ON sp.source_version_id=v.id WHERE s.project_id=?1 AND s.deleted_at IS NULL ORDER BY s.id`).bind(projectId).all()).results;
+ const materials=(await env.DB.prepare(`SELECT m.title,v.id versionId,v.markdown,v.attachments_json FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND ${activeMaterialSql('m')} ORDER BY m.id`).bind(projectId).all()).results;
+ const sources=(await env.DB.prepare(`SELECT s.title,v.id versionId,sp.text_status,(SELECT json_group_array(content) FROM (SELECT content FROM source_fragments WHERE source_version_id=v.id ORDER BY seq LIMIT 100)) fragments FROM sources s JOIN source_versions v ON v.id=s.current_version_id LEFT JOIN source_processing sp ON sp.source_version_id=v.id WHERE s.project_id=?1 AND s.deleted_at IS NULL AND ${discoverableSourceSql('v')} ORDER BY s.id`).bind(projectId).all()).results;
  const prerequisites=(await env.DB.prepare(`WITH RECURSIVE deps(id) AS (SELECT depends_on_task_id FROM task_dependencies WHERE project_id=?1 AND task_id=?2 UNION SELECT d.depends_on_task_id FROM task_dependencies d JOIN deps ON deps.id=d.task_id WHERE d.project_id=?1)
  SELECT t.title,t.detail,t.criteria,t.status,s.body,s.material_versions_json FROM deps JOIN tasks t ON t.id=deps.id AND t.project_id=?1 LEFT JOIN task_submissions s ON s.id=t.current_submission_id AND s.project_id=?1 ORDER BY t.id`).bind(projectId,taskId).all<{material_versions_json:string|null}>()).results;
  const prerequisiteMaterials=[];

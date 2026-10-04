@@ -1,3 +1,4 @@
+import { activeMaterialSql, discoverableSourceSql } from './archive-policy';
 import { getResourceIndex, searchResource, readResourceSection } from './resource-index';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -125,8 +126,8 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
   if(name==='search_project_information') {
     if(!a.query?.trim())throw invalidState('需要非空 query');
     const rows=await env.DB.prepare(`SELECT * FROM (
-      SELECT 'source' resourceType,s.id resourceId,s.title,s.current_version_id versionId FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND (instr(lower(s.title),lower(?2))>0 OR EXISTS(SELECT 1 FROM source_fragments f WHERE f.source_version_id=v.id AND instr(lower(f.content),lower(?2))>0))
-      UNION ALL SELECT 'material',m.id,m.title,m.current_version_id FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND instr(lower(m.title||v.markdown),lower(?2))>0
+      SELECT 'source' resourceType,s.id resourceId,s.title,s.current_version_id versionId FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND ${discoverableSourceSql('v')} AND (instr(lower(s.title),lower(?2))>0 OR EXISTS(SELECT 1 FROM source_fragments f WHERE f.source_version_id=v.id AND instr(lower(f.content),lower(?2))>0))
+      UNION ALL SELECT 'material',m.id,m.title,m.current_version_id FROM materials m JOIN material_versions v ON v.id=m.current_version_id WHERE m.project_id=?1 AND ${activeMaterialSql('m')} AND instr(lower(m.title||v.markdown),lower(?2))>0
       UNION ALL SELECT 'task',id,title,NULL FROM tasks WHERE project_id=?1 AND archived_at IS NULL AND instr(lower(title||detail||criteria),lower(?2))>0)
       ORDER BY resourceType,resourceId LIMIT 21 OFFSET ?3`).bind(projectId,a.query,a.offset).all();
     return page(rows.results,a.offset);
@@ -144,8 +145,8 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const rows = await env.DB.prepare(`SELECT * FROM (
       SELECT 'source' resourceType,s.id resourceId,s.title,s.purpose,s.current_version_id versionId,s.lifecycle_version revision,p.text_status processingStatus
       FROM sources s JOIN source_versions v ON v.id=s.current_version_id LEFT JOIN source_processing p ON p.source_version_id=v.id
-      WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')}
-      UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,'ready' FROM materials m WHERE m.project_id=?1)
+      WHERE s.project_id=?1 AND ${sourceLifecycleGuard('v.id','NULL')} AND ${discoverableSourceSql('v')}
+      UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,'ready' FROM materials m WHERE m.project_id=?1 AND ${activeMaterialSql('m')})
       WHERE (?2='' OR instr(lower(title),lower(?2))>0) ORDER BY resourceType,resourceId LIMIT 21 OFFSET ?3`).bind(projectId,a.query??'',a.offset).all();
     return page(rows.results,a.offset);
   }
@@ -166,10 +167,10 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
         status:fragments.length?'ready':'unavailable',coverage:row.text_status==='ready'?'complete':'partial',fragments,offset:a.offset,
         nextOffset:(rows.results[0]?.total??0)>a.offset+CHARS?a.offset+CHARS:null};
     }
-    const row=await env.DB.prepare(`SELECT m.id,m.title,v.revision,length(v.markdown) total,substr(v.markdown,?3+1,6000) text FROM material_versions v JOIN materials m ON m.id=v.material_id
-      WHERE v.id=?1 AND v.project_id=?2 AND m.project_id=?2`).bind(a.versionId,projectId,a.offset).first<{id:string;title:string;revision:number;total:number;text:string}>();
+    const row=await env.DB.prepare(`SELECT m.id,m.title,COALESCE(m.archived_at,(SELECT f.archived_at FROM json_each(v.attachments_json) archive_att JOIN files f ON f.id=json_extract(archive_att.value,'$.fileId') WHERE f.archived_at IS NOT NULL LIMIT 1)) archivedAt,v.revision,length(v.markdown) total,substr(v.markdown,?3+1,6000) text FROM material_versions v JOIN materials m ON m.id=v.material_id
+      WHERE v.id=?1 AND v.project_id=?2 AND m.project_id=?2`).bind(a.versionId,projectId,a.offset).first<{id:string;title:string;revision:number;total:number;text:string;archivedAt:string|null}>();
     if(!row) throw notFound('材料版本不存在');
-    return {untrustedData:true,resourceType:'material',resourceId:row.id,versionId:a.versionId,title:row.title,revision:row.revision,text:row.text,status:'ready',offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null};
+    return {untrustedData:true,resourceType:'material',resourceId:row.id,versionId:a.versionId,title:row.title,revision:row.revision,archivedAt:row.archivedAt,text:row.text,status:'ready',offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null};
   }
   if(name==='list_tasks' || name==='read_task') {
     if(name==='read_task'&&!a.id) throw invalidState('缺少任务 id');

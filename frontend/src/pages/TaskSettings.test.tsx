@@ -85,11 +85,13 @@ describe('task settings autosave', () => {
     expect(screen.getByLabelText('任务名称')).toHaveValue('他人的名称');
     await idle(); expect(collaborationApi.updateTask).toHaveBeenCalledTimes(1);
   });
-  it('puts status operations in a separate window and dependencies in a searchable page', async () => {
+  it('puts status operations in a separate window and dependencies in a searchable dialog', async () => {
     setup(); fireEvent.click(screen.getByRole('button', { name: '更新' })); await idle(0);
     expect(screen.getByRole('dialog', { name: '更新任务状态·任务甲' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '修改前置任务' }));
+    expect(screen.getByRole('dialog', { name: '前置任务·任务甲' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '返回任务操作' })).toBeNull();
     expect(screen.getAllByRole('checkbox').map(item => item.parentElement?.textContent)).toEqual(['前置乙', '前置丙']);
     fireEvent.change(screen.getByLabelText('搜索任务'), { target: { value: '丙' } });
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);

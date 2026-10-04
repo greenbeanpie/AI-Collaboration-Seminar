@@ -19,7 +19,7 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
   const context=await browser.newContext({viewport:{width:1440,height:1100},serviceWorkers:'block'});
   const page=await context.newPage();page.setDefaultTimeout(8000);
   const fixtureTask={taskId:'88888888-8888-4888-8888-888888888888',title:'样本采集',detail:'记录样本日期和来源',criteria:'提交三条真实样本',effortHours:1,revision:6,assigneeId:userId,lifecycleState:'in_progress',status:'doing',dependsOnTaskIds:[],unfinishedDependencyIds:[],currentSubmissionId:null,createdAt:now,updatedAt:now};
-  const state={taskRows:name.startsWith('task-settings')?[fixtureTask,{...fixtureTask,taskId:'99999999-9999-4999-8999-999999999999',title:'来源说明',assigneeId:null,lifecycleState:'open'}]:[],feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='owner'||role==='manager'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
+  const state={taskFiles:[],uploaded:[],taskRows:(name.startsWith('task-settings')||name.startsWith('task-files'))?[fixtureTask,{...fixtureTask,taskId:'99999999-9999-4999-8999-999999999999',title:'来源说明',assigneeId:null,lifecycleState:'open'}]:[],feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='owner'||role==='manager'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
   const permissions={teamManage:role==='owner'||role==='manager',taskManage:role==='owner'||role==='manager',resourceManage:role==='owner'||role==='manager',scoreInitiate:true,scoreCorrect:role==='owner'||role==='manager'||scoreCorrect};
   const project={projectId:id,name:'浏览器验证项目',description:'仅本地 HTTP fixtures',revision:1,status:'active',myRole:role==='owner'?'owner':'member',permissions,canManagePermissions:role==='owner',createdAt:now,updatedAt:now,deadlineDate:'2026-10-30',deadlinePrecision:'date'};
   const member={memberId:'member-1',userId,displayName:role==='owner'||role==='manager'?'管理员':'普通成员',username:'fixture-user',email:null,role:project.myRole,isAdmin:accountRole!=='user',permissions,canManagePermissions:role==='owner',permissionsRevision:1};
@@ -31,7 +31,7 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     const url=new URL(route.request().url());
     if(url.origin!==new URL(origin).origin){await route.abort();return;}
     if(!url.pathname.startsWith('/api/')){await route.continue();return;}
-    const path=url.pathname,method=route.request().method(),body=route.request().postDataJSON();
+    const path=url.pathname,method=route.request().method(),body=route.request().headers()['content-type']?.includes('application/json')?route.request().postDataJSON():null;
     result.requests.push({scenario:name,path,method});
     if(method!=='GET')state.writes.push({path,method,body});
     let data={items:[],nextCursor:null};
@@ -48,6 +48,12 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     else if(path.endsWith('/members/me'))data=member;
     else if(path.endsWith('/members'))data={items:[member,{...member,userId:'77777777-7777-4777-8777-777777777777',displayName:'管理员账号成员',role:'member',isAdmin:true,permissions:{teamManage:false,taskManage:false,resourceManage:false,scoreInitiate:false,scoreCorrect:false},canManagePermissions:false}],nextCursor:null};
     else if(path.endsWith('/goal'))data={title:'验证主目标',detail:'左侧目标详细说明',revision:1,graphRevision:1};
+    else if(path.endsWith('/files')&&method==='POST'&&!path.includes('/tasks/')){const fileId=crypto.randomUUID();state.uploaded.push({fileId,name:body.fileName});data={fileId,upload:{method:'PUT',url:'/api/v1/projects/'+id+'/files/'+fileId+'/content'}};}
+    else if(path.includes('/files/')&&path.endsWith('/content')&&method==='PUT')data={fileId:path.split('/').at(-2),sizeBytes:10,sha256:'fixture-hash',mimeDetected:'text/plain'};
+    else if(path.endsWith('/tasks/'+fixtureTask.taskId+'/files')){if(method==='POST'){const raw=state.uploaded.find(file=>file.fileId===body.fileId);const file={...raw,materialId:crypto.randomUUID(),taskId:fixtureTask.taskId,revision:1,versionId:crypto.randomUUID(),archivedAt:null,materialArchivedAt:null,lifecycleVersion:1,canManage:true};state.taskFiles.push(file);data=file;}else data={items:state.taskFiles};}
+    else if(path.includes('/files/')&&(path.endsWith('/archive')||path.endsWith('/unarchive'))){const file=state.taskFiles.find(file=>path.includes(file.fileId));file.archivedAt=path.endsWith('/unarchive')?null:now;file.lifecycleVersion++;data=file;}
+    else if(path.endsWith('/resource-library'))data={items:state.taskFiles.filter(file=>url.searchParams.get('archived')==='true'?file.archivedAt:!file.archivedAt).map(file=>({...file,resourceId:file.materialId,resourceType:'material',title:file.name,purpose:'output',currentVersionId:file.versionId,createdAt:now,updatedAt:now,deletedAt:null,canManage:true})),nextCursor:null};
+    else if(path.endsWith('/files'))data={items:[],nextCursor:null};
     else if(path.endsWith('/tasks'))data={items:state.taskRows,nextCursor:null};
     else if(path.endsWith('/task-inquiries/unread'))data={items:name.startsWith('task-settings')?[{taskId:fixtureTask.taskId,unreadCount:2}]:[]};
     else if(path.endsWith('/inquiries/read'))data={readCount:1};
@@ -237,7 +243,7 @@ try{
     await page.getByLabel('搜索任务',{exact:true}).fill('来源');
     assert.equal(await page.getByRole('checkbox',{name:'来源说明',exact:true}).count(),1);
     await screenshot('dependencies');
-    await page.getByRole('button',{name:'返回任务操作',exact:true}).click();
+    await page.getByRole('dialog',{name:'前置任务·样本采集新名称',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();
     await page.getByRole('button',{name:'更新',exact:true}).click();
     await page.getByRole('dialog',{name:'更新任务状态·样本采集新名称',exact:true}).waitFor();
     await screenshot('status');
@@ -253,6 +259,32 @@ try{
     const dialog=page.getByRole('dialog',{name:'任务设置·样本采集',exact:true});
     await dialog.waitFor();assert.equal(await dialog.getByRole('button',{name:/修改/}).count(),0);
     await screenshot('readonly');
+  });
+  await scenario('task-files-upload','owner',async({page,state,screenshot})=>{
+    await page.goto(origin+base+'/tasks');
+    await page.getByRole('button',{name:'查看与提交',exact:true}).first().click();
+    const dialog=page.getByRole('dialog',{name:'样本采集',exact:true});await dialog.waitFor();
+    assert.equal(await dialog.getByLabel('绑定材料版本',{exact:false}).count(),0);
+    assert.equal(await dialog.locator('.collab-toolbar').count(),0);
+    const header=dialog.locator('.modal-head');
+    assert.equal(await header.getByRole('button',{name:'查看历史记录',exact:true}).count(),1);
+    await dialog.getByLabel('成果说明',{exact:true}).fill('上传真实成果文件');
+    await dialog.getByLabel('上传成果文件',{exact:true}).setInputFiles({name:'成果报告.txt',mimeType:'text/plain',buffer:Buffer.from('local fixture result')});
+    await dialog.getByRole('link',{name:'成果报告.txt',exact:true}).waitFor();
+    assert.equal(state.taskFiles.length,1);await screenshot('uploaded');
+    await dialog.getByRole('button',{name:'归档文件',exact:true}).click();
+    await page.waitForTimeout(150);assert.equal(await dialog.getByRole('link',{name:'成果报告.txt',exact:true}).count(),0);
+    await dialog.getByRole('button',{name:'已归档（1）',exact:true}).click();
+    await dialog.getByRole('button',{name:'撤销文件归档',exact:true}).click();
+    await page.waitForTimeout(150);assert.equal(state.taskFiles[0].archivedAt,null);
+    await dialog.getByRole('button',{name:'当前文件（1）',exact:true}).click();
+    await page.setViewportSize({width:390,height:844});await screenshot('mobile');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'submission mobile must not overflow');
+    await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+    await page.goto(origin+base+'/data');
+    await page.getByRole('complementary',{name:'项目资料列表'}).getByText('样本采集',{exact:true}).waitFor();
+    await page.getByRole('complementary',{name:'项目资料列表'}).getByText('公共文件',{exact:true}).waitFor();
+    await screenshot('task-folders');
   });
 }finally{
   await browser.close();

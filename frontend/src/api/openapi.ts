@@ -4572,6 +4572,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务文件及归档记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskFileListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        fileId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 任务文件已登记 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskFileResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/files/{materialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                    materialId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        fileId: string;
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 不可变文件版本已创建 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskFileVersionResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries": {
         parameters: {
             query?: never;
@@ -7438,6 +7552,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/materials/{materialId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    materialId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 材料归档状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaterialArchiveResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/materials/{materialId}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    materialId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 材料归档状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaterialUnarchiveResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/materials": {
         parameters: {
             query?: never;
@@ -7451,6 +7655,7 @@ export interface paths {
                 query?: {
                     cursor?: string;
                     limit?: string;
+                    archived?: "true" | "false";
                 };
                 header?: never;
                 path: {
@@ -7696,6 +7901,7 @@ export interface paths {
                     limit?: string;
                     purpose?: "background" | "reference" | "output";
                     deleted?: "true" | "false";
+                    archived?: "true" | "false";
                 };
                 header?: never;
                 path: {
@@ -8715,6 +8921,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/files/{fileId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 文件归档状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileArchiveResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/files/{fileId}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 文件归档状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileUnarchiveResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/files": {
         parameters: {
             query?: never;
@@ -8727,6 +9023,7 @@ export interface paths {
             parameters: {
                 query?: {
                     deleted?: "true" | "false";
+                    archived?: "true" | "false";
                     cursor?: string;
                     limit?: string;
                 };
@@ -13422,6 +13719,71 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        TaskFileListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    materialId: string;
+                    /** Format: uuid */
+                    taskId: string;
+                    /** Format: uuid */
+                    fileId: string;
+                    name: string;
+                    revision: number;
+                    /** Format: uuid */
+                    versionId: string;
+                    archivedAt: string | null;
+                    materialArchivedAt: string | null;
+                    deletedAt: string | null;
+                    lifecycleVersion: number;
+                    canManage: boolean;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskFileResponse: {
+            data: {
+                /** Format: uuid */
+                materialId: string;
+                /** Format: uuid */
+                taskId: string;
+                /** Format: uuid */
+                fileId: string;
+                name: string;
+                revision: number;
+                /** Format: uuid */
+                versionId: string;
+                archivedAt: string | null;
+                materialArchivedAt: string | null;
+                deletedAt: string | null;
+                lifecycleVersion: number;
+                canManage: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskFileVersionResponse: {
+            data: {
+                /** Format: uuid */
+                materialId: string;
+                /** Format: uuid */
+                taskId: string;
+                /** Format: uuid */
+                fileId: string;
+                name: string;
+                revision: number;
+                /** Format: uuid */
+                versionId: string;
+                archivedAt: string | null;
+                materialArchivedAt: string | null;
+                deletedAt: string | null;
+                lifecycleVersion: number;
+                canManage: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         TaskInquiryListResponse: {
             data: {
                 items: {
@@ -14719,9 +15081,33 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        MaterialArchiveResponse: {
+            data: {
+                /** Format: uuid */
+                materialId: string;
+                archivedAt: string | null;
+                revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        MaterialUnarchiveResponse: {
+            data: {
+                /** Format: uuid */
+                materialId: string;
+                archivedAt: string | null;
+                revision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         MaterialResponse: {
             data: {
                 canEdit?: boolean;
+                canArchive?: boolean;
+                archivedAt?: string | null;
+                /** Format: uuid */
+                taskId?: string | null;
                 systemManaged?: boolean;
                 /** Format: uuid */
                 materialId: string;
@@ -14750,6 +15136,9 @@ export interface components {
                         /** @enum {string} */
                         availability?: "unavailable";
                         deletedAt?: string | null;
+                        archivedAt?: string | null;
+                        lifecycleVersion?: number;
+                        canManage?: boolean;
                     }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
@@ -14767,6 +15156,10 @@ export interface components {
             data: {
                 items: {
                     canEdit?: boolean;
+                    canArchive?: boolean;
+                    archivedAt?: string | null;
+                    /** Format: uuid */
+                    taskId?: string | null;
                     systemManaged?: boolean;
                     /** Format: uuid */
                     materialId: string;
@@ -14806,6 +15199,9 @@ export interface components {
                     /** @enum {string} */
                     availability?: "unavailable";
                     deletedAt?: string | null;
+                    archivedAt?: string | null;
+                    lifecycleVersion?: number;
+                    canManage?: boolean;
                 }[];
                 /** @enum {string} */
                 origin: "manual" | "ai_adoption";
@@ -14837,6 +15233,9 @@ export interface components {
                         /** @enum {string} */
                         availability?: "unavailable";
                         deletedAt?: string | null;
+                        archivedAt?: string | null;
+                        lifecycleVersion?: number;
+                        canManage?: boolean;
                     }[];
                     /** @enum {string} */
                     origin: "manual" | "ai_adoption";
@@ -14864,6 +15263,9 @@ export interface components {
                     /** Format: uuid */
                     currentVersionId: string | null;
                     revision: number;
+                    archivedAt?: string | null;
+                    /** Format: uuid */
+                    taskId?: string | null;
                     createdAt: string;
                     updatedAt: string;
                     deletedAt: string | null;
@@ -14890,6 +15292,9 @@ export interface components {
                 /** Format: uuid */
                 currentVersionId: string | null;
                 revision: number;
+                archivedAt?: string | null;
+                /** Format: uuid */
+                taskId?: string | null;
                 createdAt: string;
                 updatedAt: string;
                 deletedAt: string | null;
@@ -15704,6 +16109,26 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        FileArchiveResponse: {
+            data: {
+                /** Format: uuid */
+                fileId: string;
+                archivedAt: string | null;
+                lifecycleVersion: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        FileUnarchiveResponse: {
+            data: {
+                /** Format: uuid */
+                fileId: string;
+                archivedAt: string | null;
+                lifecycleVersion: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         FileListResponse: {
             data: {
                 items: {
@@ -15712,6 +16137,8 @@ export interface components {
                     name: string;
                     /** @enum {string} */
                     status: "pending" | "available" | "quarantined" | "discarded";
+                    archivedAt?: string | null;
+                    canManage?: boolean;
                     sizeBytes: number | null;
                     createdAt: string;
                     deletedAt: string | null;
