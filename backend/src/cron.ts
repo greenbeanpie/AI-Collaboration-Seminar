@@ -1,4 +1,5 @@
 import { backfillResourceIndexes } from './services/resource-index';
+import { cleanupMediaFiles } from './services/media-summary';
 import { invalidateStaleProjectClarifications } from './services/ai-clarifications';
 import { recoverDraftPreviews } from './services/draft-preview-jobs';
 import { recoverExecutionSlices } from './services/ai-execution-slices';
@@ -17,6 +18,7 @@ import { dispatchProjectProgression } from './services/project-progression';
  * 3. 清理过期会话与验证码挑战。
  */
 export async function handleScheduled(env: Env): Promise<void> {
+  try { await cleanupMediaFiles(env); } catch { console.error('[cron] Media cleanup failed'); }
   try { await invalidateStaleProjectClarifications(env); } catch { console.error('[cron] Clarification cleanup failed'); }
   try { await dispatchProjectProgression(env); } catch(error) { console.error('[cron] progression failed',error); }
   try { await dispatchNotifications(env); } catch { console.error('[cron] Notification dispatch failed'); }

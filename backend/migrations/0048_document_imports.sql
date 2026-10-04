@@ -18,7 +18,7 @@ CREATE TABLE document_parse_sessions (
  warnings_json TEXT NOT NULL DEFAULT '[]', total_pages INTEGER, processed_pages INTEGER NOT NULL DEFAULT 0,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX document_parse_active ON document_parse_sessions(source_version_id,lifecycle_version) WHERE status='processing';
+CREATE UNIQUE INDEX document_parse_active ON document_parse_sessions(source_version_id,lifecycle_version) WHERE status IN ('processing','finalizing');
 CREATE TABLE document_parse_batches (
  session_id TEXT NOT NULL REFERENCES document_parse_sessions(id), batch_number INTEGER NOT NULL,
  digest TEXT NOT NULL, PRIMARY KEY(session_id,batch_number)

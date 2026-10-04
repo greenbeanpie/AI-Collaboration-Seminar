@@ -1,5 +1,6 @@
 import { validateDocx } from './docx-validation';
 import { readDraftDocument } from './draft-documents';
+import { enqueueDraftMedia } from './media-summary';
 import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
 import { z } from 'zod';
@@ -7,7 +8,7 @@ import type { Env } from '../env';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { AppError, invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS } from '../core/limits';
-import { extOf, validateUploadBytes } from './files';
+import { extOf, validateUploadBytes, isMediaExtension } from './files';
 import { extractPdfText, hasExtractableText } from './pdf-text';
 import { requireEnabledAiConfig, loadAiConfig } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
@@ -26,8 +27,10 @@ export const creationTask = z.object({
   }).strict()).max(8).default([])
 }).strict();
 export const creationPayload = z.object({
-  name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''),goal:creationGoal.optional(),workspace:creationWorkspace.optional(),deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), aiCollaborationEnabled: z.boolean().default(false), teamSize: z.number().int().min(1).max(100).default(1), inviteUsernames: z.array(z.string().trim().min(1).max(64)).max(99).default([]), inviteLabels: z.array(z.string().trim().min(1).max(80)).max(99).default([]), brief: z.string().max(4000).default('')
+  name: z.string().trim().min(1).max(100), description: z.string().max(2000).default(''),goal:creationGoal.optional(),workspace:creationWorkspace.optional(),planningMode:z.enum(['manual','automatic']).optional(),assignmentMode:z.enum(['manual','automatic']).optional(),evaluationMode:z.enum(['manual','automatic']).optional(),progressionMode:z.enum(['manual','automatic']).optional(),deadlineDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), aiCollaborationEnabled: z.boolean().default(false), teamSize: z.number().int().min(1).max(100).default(1), inviteUsernames: z.array(z.string().trim().min(1).max(64)).max(99).default([]), inviteLabels: z.array(z.string().trim().min(1).max(80)).max(99).default([]), brief: z.string().max(4000).default('')
 }).strict().refine(p => new Set(p.inviteLabels).size === p.inviteLabels.length, '邀请标识不能重复');
+// New creations use automatic behavior; stored drafts retain legacy defaults.
+export const newCreationPayload = creationPayload.safeExtend({aiCollaborationEnabled:z.boolean().default(true),planningMode:z.enum(['manual','automatic']).default('automatic'),assignmentMode:z.enum(['manual','automatic']).default('automatic'),evaluationMode:z.enum(['manual','automatic']).default('automatic'),progressionMode:z.enum(['manual','automatic']).default('automatic')});
 export type DraftPayload = z.infer<typeof creationPayload>;
 export interface DraftRow {
   id: string;
@@ -60,6 +63,9 @@ export interface DraftFile {
   text_error: string | null;
   removed: number;
   created_at: string;
+  media_stage?:string|null;
+  media_summary?:string|null;
+  media_error?:string|null;
 }
 export async function getDraft(env: Env, id: string, userId: string) {
   const row = await env.DB.prepare('SELECT * FROM project_creation_drafts WHERE id=?1 AND owner_id=?2').bind(id, userId).first<DraftRow>();
@@ -69,7 +75,7 @@ export async function getDraft(env: Env, id: string, userId: string) {
   return row;
 }
 export async function draftFiles(env: Env, id: string) {
-  return (await env.DB.prepare('SELECT * FROM creation_draft_files WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11').bind(id).all<DraftFile>()).results;
+  return (await env.DB.prepare('SELECT f.*, (SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11').bind(id).all<DraftFile>()).results;
 }
 const draftReadArgs=z.object({fileId:z.string().uuid(),offset:z.number().int().min(0).max(1000000).default(0),charOffset:z.number().int().min(0).max(24000).default(0)}).strict();
 const draftReadTool={name:'read_draft_document',description:'按文件ID分页读取草稿原文块。offset是块偏移；DOCX页码null，用locator引用；继续使用nextOffset与nextCharOffset。',parameters:z.toJSONSchema(draftReadArgs,{target:'draft-7',io:'input'})};
@@ -93,7 +99,7 @@ async function draftPreviewContext(env:Env,draftId:string,userId:string) {
  return context;
 }
 const fileView = (f: DraftFile) => ({
-  id: f.id, name: f.name, sizeBytes: f.size_bytes, sha256: f.sha256, textReady: JSON.parse(f.pages_json).some((page: string) => hasExtractableText(page)), textError: f.text_error
+  id: f.id, name: f.name, mediaStatus:f.media_stage??null,mediaSummary:f.media_summary?JSON.parse(f.media_summary):null,mediaError:f.media_error??null, sizeBytes: f.size_bytes, sha256: f.sha256, textReady: JSON.parse(f.pages_json).some((page: string) => hasExtractableText(page)), textError: f.text_error
 });
 export async function draftView(env: Env, row: DraftRow) {
   const removed = await env.DB.prepare('SELECT * FROM creation_draft_files WHERE draft_id=?1 AND removed=1 ORDER BY created_at DESC,id LIMIT 100').bind(row.id).all<DraftFile>();
@@ -170,7 +176,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
       pages = [new TextDecoder().decode(bytes)];
     }
     else {
-      textError = ext==='.docx'?'DOCX原文件已保留，等待浏览器正文解析':'图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
+      textError = ext==='.docx'?'DOCX原文件已保留，等待浏览器正文解析':isMediaExtension(ext)?'音视频摘要正在排队；处理完成后可用于预览':'图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
     }
 
   }
@@ -196,6 +202,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   if (!result[0]?.meta.changes) {
     throw versionConflict((await getDraft(env, id, userId)).revision);
   }
+  if(isMediaExtension(ext))await enqueueDraftMedia(env,id,fileId,userId);
   return draftView(env, await getDraft(env, id, userId));
 }
 /** Freeze the exact input and model version before an asynchronous dispatch. */
@@ -225,7 +232,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
   let payload = creationPayload.parse(JSON.parse(row.payload_json));
   if (mode === 'manual' && row.preview_json && row.preview_state === 'ready' && row.preview_revision === revision && !regenerate) {
     const previous = JSON.parse(row.preview_json);
-    const goal = requestedGoal ?? payload.goal ?? { title: payload.name, detail: payload.brief || payload.description };
+    const goal = requestedGoal ?? payload.goal ?? { title: payload.name, detail: '' };
     const normalizedTasks = tasks.map((task, index) => ({ ...creationTask.parse(task), key: task.key ?? `t${index + 1}` }));
     if (previous.mode === 'manual' && JSON.stringify(previous.goal) === JSON.stringify(goal) && JSON.stringify(previous.tasks) === JSON.stringify(normalizedTasks)) return draftView(env, row);
   }
@@ -239,14 +246,14 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
   try {
     let context = savedCheckpoint?.checkpoint.context ?? await draftPreviewContext(env,id,userId);
     let output=tasks;
-    let goal=requestedGoal??payload.goal??{title:payload.name,detail:payload.brief||payload.description};
+    let goal=requestedGoal??payload.goal??{title:payload.name,detail:''};
     let configVersionId:string|undefined;
     if(savedCheckpoint) {
       const state=savedCheckpoint.checkpoint;
       let etag=savedCheckpoint.etag;
       const save=async()=>{etag=await saveDraftCheckpoint(env,state,etag);};
       payload=state.payload;requestedGoal=state.requestedGoal;context=state.context;
-      goal=requestedGoal??payload.goal??{title:payload.name,detail:payload.brief||payload.description};
+      goal=requestedGoal??payload.goal??{title:payload.name,detail:''};
       configVersionId=state.configVersionId;
       const config=await loadAiConfig(env.DB,configVersionId);
       if(!config?.enabled)throw invalidState('预览使用的模型配置不可用，请重新预览');
@@ -373,8 +380,8 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
   const guard = "EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND commit_token=?3 AND status='committed')";
   const stmt = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(id, userId, token, ...binds);
   const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3 AND preview_attempt_id IS ?7 AND preview_json IS ?8").bind(id, userId, revision, token, encrypted, now,row.preview_attempt_id,row.preview_json),
-    stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?12 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', null, now, p.aiCollaborationEnabled ? 1 : 0, p.aiCollaborationEnabled ? 'automatic' : 'manual'),
-    stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??(p.brief||p.description),now),...guardedDescriptionStatements(stmt,guard,project,p.description,now)];
+    stmt(`INSERT INTO projects(id,name,description,competition_deadline_date,deadline_precision,team_size_limit,ai_budget_usd,status,revision,created_by,created_at,updated_at,ai_collaboration_enabled,assignment_mode,evaluation_mode,planning_mode,progression_mode) SELECT ?4,?5,?6,?7,?8,?9,NULL,'active',1,?2,?10,?10,?11,?12,?13,?14,?15 WHERE ${guard}`, project, p.name, p.description, p.deadlineDate ?? null, p.deadlineDate ? 'date' : 'unknown', null, now, p.aiCollaborationEnabled ? 1 : 0, p.assignmentMode ?? (p.aiCollaborationEnabled ? 'automatic' : 'manual'), p.evaluationMode ?? (p.aiCollaborationEnabled ? 'automatic' : 'manual'), p.planningMode ?? 'manual', p.progressionMode ?? 'manual'),
+    stmt(`INSERT INTO project_members(id,project_id,user_id,role,joined_at) SELECT ?4,?5,?2,'owner',?6 WHERE ${guard}`, newId(), project, now),stmt(`INSERT INTO project_goals(project_id,title,detail,created_at,updated_at) SELECT ?4,?5,?6,?7,?7 WHERE ${guard}`,project,preview.goal?.title??p.goal?.title??p.name,preview.goal?.detail??p.goal?.detail??'',now),...guardedDescriptionStatements(stmt,guard,project,p.description,now)];
   if(p.workspace)batch.push(...workspacePromotionStatements(stmt,guard,project,p.workspace,now));
   const versions = new Map<string, string>();
   for (const f of files) {

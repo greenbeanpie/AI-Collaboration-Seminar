@@ -1,3 +1,4 @@
+import { validateMediaModel } from '../ai/gemini-media';
 import { registerAdminAccountRoutes } from './admin-accounts';
 import { createMiddleware } from 'hono/factory';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -51,6 +52,8 @@ const configShape = z.object({
   textEconomy: editableModel,
   visionEconomy: editableModel,
   review: editableModel,
+  mediaUnderstanding: editableModel.optional(),
+  clearMediaUnderstanding:z.boolean().optional(),
   // Omitted for ordinary saves: retain an already-enabled unchanged config only.
   // Explicit true remains the separate, probe-gated activation action.
   enabled: z.boolean().optional(),
@@ -213,7 +216,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         config: {
           routingMode: loaded.config.routingMode ?? 'advanced',
           searchEnabled: loaded.config.searchEnabled === true,
-          ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified'] as const).flatMap(purpose => {
+          ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const).flatMap(purpose => {
             const entry = loaded.config[purpose];
             if (!entry) return [];
             const { apiKeyEncrypted, ...model } = entry;
@@ -234,14 +237,15 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
     const { notes } = body;
     // Legacy saves must preserve inactive drafts and must not silently switch the active route.
-    const parsed = aiConfigSchema.safeParse({ ...body, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified });
+    const parsed = aiConfigSchema.safeParse({ ...body, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
-    for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified'] as const) {
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const) {
       const input = body[purpose];
       if (!input) continue;
       const active = config.routingMode === 'unified' ? purpose === 'unified' : purpose !== 'unified';
-      const optionErrors = active ? providerOptionErrors(input) : [];
+      if(purpose==='mediaUnderstanding')validateMediaModel(input);
+      const optionErrors = active && purpose!=='mediaUnderstanding' ? providerOptionErrors(input) : [];
       if (optionErrors.length) throw validationFailed(`${purpose}: ${optionErrors.join('；')}`);
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
         throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');

@@ -37,7 +37,7 @@ export const projectListResponse = apiEnvelope(
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-const createBody = z.object({
+const legacyCreateBody = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(2000).default(''),
   deadlineDate: dateOnly.optional(),
@@ -45,6 +45,9 @@ const createBody = z.object({
   aiBudgetUsd: z.number().nonnegative().nullable().optional(),
   aiCollaborationEnabled: z.boolean().default(false),
 });
+
+
+const createBody = legacyCreateBody.extend({aiCollaborationEnabled:z.boolean().default(true),assignmentMode:z.enum(['manual','automatic']).default('automatic'),evaluationMode:z.enum(['manual','automatic']).default('automatic'),planningMode:z.enum(['manual','automatic']).default('automatic'),progressionMode:z.enum(['manual','automatic']).default('automatic')});
 
 const patchBody = z.object({
   expectedRevision: z.number().int().min(1),
@@ -144,13 +147,15 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(projectCreateRoute, async (c) => {
     const body = c.req.valid('json');
     const user = c.get('user')!;
-    const result = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: user.id, operation: 'projects.create', rawBody: JSON.stringify(body) }, async () => {
+    const original = await c.req.json();
+    const legacyRawBody = ['planningMode','assignmentMode','evaluationMode','progressionMode'].some(key => Object.hasOwn(original, key)) ? undefined : JSON.stringify(legacyCreateBody.parse(original));
+    const result = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: user.id, operation: 'projects.create', rawBody: JSON.stringify(body), legacyRawBody }, async () => {
       const projectId = newId();
       const now = nowIso();
       await c.env.DB.batch([
         c.env.DB.prepare(
-          `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9, ?10, ?11, ?11)`,
+          `INSERT INTO projects (id, name, description, competition_deadline_date, deadline_precision, team_size_limit, ai_budget_usd, status, revision, created_by, created_at, updated_at, ai_collaboration_enabled, assignment_mode, evaluation_mode,planning_mode,progression_mode)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', 1, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14)`,
         ).bind(
           projectId,
           body.name,
@@ -162,7 +167,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
           user.id,
           now,
           body.aiCollaborationEnabled ? 1 : 0,
-          body.aiCollaborationEnabled ? 'automatic' : 'manual',
+          body.assignmentMode, body.evaluationMode, body.planningMode, body.progressionMode,
         ),
         c.env.DB.prepare(
           "INSERT INTO project_members (id, project_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, 'owner', ?4)",

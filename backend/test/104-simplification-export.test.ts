@@ -25,7 +25,7 @@ describe('Simplification integration and complete export', () => {
     expect(result.response.status).toBe(200);
     expect(result.data.data.unfinishedDependencyIds).toEqual([a]);
   });
-  it('creates one goal and editable background atomically, including idempotent replay', async () => {
+  it('creates one goal and readonly system background atomically, including idempotent replay', async () => {
     const user = await seedUser();
     const cookie = authCookie(user.token), key = newId();
     const body = { name: 'One goal', description: 'Original project background' };
@@ -40,7 +40,8 @@ describe('Simplification integration and complete export', () => {
     expect(library.data.data.items).toHaveLength(1);
     expect(library.data.data.items[0]?.purpose).toBe('background');
     const version = await env.DB.prepare('SELECT markdown FROM material_versions WHERE id=?1').bind(library.data.data.items[0]!.currentVersionId).first<{ markdown: string }>();
-    expect(version?.markdown).toBe(body.description);
+    expect(version?.markdown).toContain(body.description);
+    expect(version?.markdown).toContain(body.name);
   });
 
   it('exports the graph, immutable artifact and assessment history without private profiles', async () => {

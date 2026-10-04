@@ -13,7 +13,7 @@ const params=z.object({projectId:z.string().uuid()}),session=params.extend({sess
 const envelope=apiEnvelope(z.record(z.string(),z.unknown()),'DocumentImportResponse');
 const body=<T extends z.ZodType>(schema:T)=>({content:{'application/json':{schema}},required:true as const});
 export function registerDocumentImportRoutes(app:OpenAPIHono<AppEnv>) {
- const enabled:import('hono').MiddlewareHandler<AppEnv>=async(c,next)=>{if(c.env.DOCUMENT_IMPORTS_ENABLED==='false')throw invalidState('正文导入入口暂时关闭，原文件保留');await next();};
+ const enabled:import('hono').MiddlewareHandler<AppEnv>=async(c,next)=>{c.header('Cache-Control','no-store');if(c.env.DOCUMENT_IMPORTS_ENABLED==='false')throw invalidState('正文导入入口暂时关闭，原文件保留');await next();};
  app.use('/api/v1/projects/:projectId/document-imports',enabled,requireUser,requireProjectMember());
  app.use('/api/v1/projects/:projectId/document-imports/*',enabled,requireUser,requireProjectMember());
  const responses={200:{description:'解析会话',content:{'application/json':{schema:envelope}}}};

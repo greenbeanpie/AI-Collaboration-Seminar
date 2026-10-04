@@ -11,13 +11,39 @@ vi.mock('../api/collaboration', () => ({ collaborationApi: { submissions: reads.
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 const task = { taskId: 't3', title: '制作报告', detail: '比较两个方案', criteria: '给出可复现证据', dueDate: '2026-10-10', revision: 3, effortHours: 4, lifecycleState: 'in_progress', dependsOnTaskIds: ['t2'], currentSubmissionId: null, citations: [{ sourceVersionId: 'src1', quote: '要求可复现', pageNumber: 2 }] } as unknown as CollaborationTask & { dueDate: string };
 function setup() {
-  reads.request.mockImplementation(async (_id, path) => path === '/goal' ? { title: '项目目标', detail: '分析效率', revision: 2 } : { standard: { title: '正式标准', standardsVersionId: 'std1', version: 4, status: 'confirmed', requirements: [{ title: '可复现性', detail: '保存脚本', citations: [{ sourceVersionId: 'standard-source', quote: '评分需保存证据', pageNumber: 8 }] }], rubric: { weights: [{ label: '正确性', weight: 60 }], notes: '核验结果' } } });
+  reads.request.mockImplementation(async (_id, path) => path.endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: true, reason: null, jobId: 'j1' } : path === '/goal' ? { title: '项目目标', detail: '分析效率', revision: 2 } : { standard: { title: '正式标准', standardsVersionId: 'std1', version: 4, status: 'confirmed', requirements: [{ title: '可复现性', detail: '保存脚本', citations: [{ sourceVersionId: 'standard-source', quote: '评分需保存证据', pageNumber: 8 }] }], rubric: { weights: [{ label: '正确性', weight: 60 }], notes: '核验结果' } } });
   reads.list.mockResolvedValue([{ materialId: 'm1', title: '原始数据', currentVersionId: 'v1' }]);
   reads.version.mockResolvedValue({ versionId: 'v1', revision: 5, markdown: '固定正文', attachments: [{ fileId: 'f1', name: '数据.csv' }] });
   reads.submissions.mockResolvedValue({ items: [{ submissionId: 's1', round: 1, body: '前置结论', materialVersionIds: ['v1'] }] });
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TaskAgentHandoff projectId="p1" task={task} tasks={[task, { ...task, taskId: 't2', title: '准备数据', dependsOnTaskIds: ['t1'] }, { ...task, taskId: 't1', title: '确认范围', dependsOnTaskIds: [], currentSubmissionId: 's1' }]}/></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TaskAgentHandoff projectId="p1" task={task} tasks={[task, { ...task, taskId: 't2', title: '准备数据', dependsOnTaskIds: ['t1'] }, { ...task, taskId: 't1', title: '确认范围', dependsOnTaskIds: [], currentSubmissionId: 's1' }]}/></QueryClientProvider>);
 }
 describe('portable task handoff', () => {
+  it('never fetches context for a directly opened unchecked dialog', async () => {
+    reads.request.mockResolvedValue({ status: 'missing', taskRevision: task.revision, sourceHash: 'fixture', eligible: null, reason: null, jobId: null });
+    render(<QueryClientProvider client={new QueryClient()}><TaskAgentHandoff projectId="p1" task={task} tasks={[]}/></QueryClientProvider>);
+    await screen.findByRole('button', { name: '检查 AI 适用性' });
+    expect(reads.request.mock.calls.every(call => String(call[1]).endsWith('/agent-eligibility'))).toBe(true);
+    expect(reads.list).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('任务执行提示词')).toBeNull();
+  });
+  it('removes an already generated prompt when the task revision changes', async () => {
+    const view = setup();
+    await screen.findByLabelText('任务执行提示词');
+    view.rerender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TaskAgentHandoff projectId="p1" task={{ ...task, revision: 4 }} tasks={[]}/></QueryClientProvider>);
+    await screen.findByText('任务已更新，请刷新任务列表后重新检查 AI 适用性。');
+    expect(screen.queryByLabelText('任务执行提示词')).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制提示词' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下载提示词' })).toBeNull();
+  });
+  it('rejects direct handoff rendering when the server rejects a task without fetching or exporting context', async () => {
+    reads.request.mockResolvedValue({ status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: '该任务需要真人参与或现场操作', jobId: 'j1' });
+    render(<QueryClientProvider client={new QueryClient()}><TaskAgentHandoff projectId="p1" task={{ ...task, title: '开展实地调研' }} tasks={[]}/></QueryClientProvider>);
+    expect(await screen.findByText('该任务需要真人参与或现场操作')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '复制提示词' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下载提示词' })).toBeNull();
+    expect(reads.request.mock.calls.every(call => String(call[1]).endsWith('/agent-eligibility'))).toBe(true);
+    expect(reads.list).not.toHaveBeenCalled();
+  });
   it('includes standards, goal, all prerequisites, fixed material text, links and criteria; copies without writes', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } }); setup();

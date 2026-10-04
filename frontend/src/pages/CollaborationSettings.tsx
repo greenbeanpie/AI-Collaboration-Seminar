@@ -28,7 +28,7 @@ function ProjectCollaborationSettings() {
     onSuccess: (data) => { client.setQueryData(['collaboration-settings', projectId], data); void client.invalidateQueries({ queryKey: ['project', projectId] }); setEnabled(null); setAssignment(null); setEvaluation(null); setPlanning(null); setProgression(null); setBase(null); setConflict(false); },
     onError: error => { if (error instanceof ApiError && error.status === 409) setConflict(true); void client.invalidateQueries({ queryKey: ['collaboration-settings', projectId] }); },
   });
-  return <SectionCard title="AI 智能协作" detail="项目开关默认关闭。只有当前项目负责人能启停与调整规则；全局账号权限不会替代项目授权。">
+  return <SectionCard title="AI 智能协作" detail="新项目默认启用 AI，可分别调整四项协作行为。只有当前项目负责人能启停与调整规则；全局账号权限不会替代项目授权。">
     {query.isLoading && <Spinner label="读取协作规则" />}
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {query.data && <form className="stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>

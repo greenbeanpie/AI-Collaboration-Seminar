@@ -414,23 +414,23 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
               <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} renderHeader={trigger => <>
               {header}
               <header className="tm-editor-header">
-                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}</h2>}<p>服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
+                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}</h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
                   {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
                 <div className="tm-editor-actions tm-hide-print">
-                  {trigger}
+                  {!material.systemManaged && trigger}
                   <button type="button" className="button button-quiet button-small" onClick={() => setOverlay('discussion')}><MessageCircle size={14} />讨论</button>
                   <button type="button" className="button button-quiet button-small" onClick={openHistory}><History size={14} />版本历史</button>
                   <DropdownMenu label="导出文件"><button className="button button-quiet button-small" onClick={() => downloadMarkdown(material.title, docToMarkdown(editor ? editor.getJSON() : serverDoc))} disabled={!editor}><Download size={14} />Markdown</button>
                   <button className="button button-quiet button-small" onClick={printCurrentMaterial}><Printer size={14} />打印 / PDF</button></DropdownMenu>
-                  <button className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : !online ? '保存到本机，联网同步' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
+                  <button style={{ display: material.systemManaged ? 'none' : undefined }} className="button button-primary button-small" onClick={() => void saveMaterial()} disabled={material.canEdit === false || !dirty || saving || Boolean(conflict) || Boolean(recoveryDraft) || !editor}>{saving ? '保存中…' : !online ? '保存到本机，联网同步' : reconnectConfirmation ? '确认并保存新版本' : '保存新版本'}</button>
                 </div>
               </header>
               </>} />
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
               {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
               {editNotice && <p className="tm-inline-notice" role="status">{editNotice}</p>}
-              <div className="tm-editor-toolbar tm-hide-print" role="toolbar" aria-label="材料格式">
+              <div style={{ display: material.systemManaged ? 'none' : undefined }} className="tm-editor-toolbar tm-hide-print" role="toolbar" aria-label="材料格式">
                 <button type="button" aria-label="粗体" title="粗体" onClick={() => editor?.chain().focus().toggleBold().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Bold size={15} /></button>
                 <button type="button" aria-label="斜体" title="斜体" onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Italic size={15} /></button>
                 <span className="tm-toolbar-divider" />

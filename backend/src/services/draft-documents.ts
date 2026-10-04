@@ -1,10 +1,11 @@
+import { enqueueDraftMedia } from './media-summary';
 import { validateDocx } from './docx-validation';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { getDraft,draftView,type DraftFile } from './creation-drafts';
 import { newId,nowIso } from '../core/db';
 import { invalidState,notFound,validationFailed,versionConflict } from '../core/errors';
-import { extOf,validateUploadBytes } from './files';
+import { extOf,validateUploadBytes,isMediaExtension,uploadLimit } from './files';
 export const DRAFT_PART_BYTES=8*1024*1024;
 export const draftBlockSchema=z.object({seq:z.number().int().nonnegative(),pageNumber:z.number().int().positive().nullable(),text:z.string().max(24000),headingPath:z.array(z.string().max(200)).max(6).optional(),warnings:z.array(z.string().max(1000)).max(20).optional()}).strict();
 type Upload={file_id:string;draft_id:string;upload_id:string;r2_key:string;name:string;ext:string;size_bytes:number;revision:number;status:string;operation_token:string|null;operation_expires_at:string|null};
@@ -25,7 +26,8 @@ export async function beginDraftUpload(env:Env,draftId:string,userId:string,file
  const existing=await env.DB.prepare('SELECT * FROM draft_document_uploads WHERE file_id=?1 AND draft_id=?2').bind(fileId,draftId).first<Upload>();
  if(existing){if(existing.name!==name||existing.size_bytes!==size||existing.status==='cancelled')throw invalidState('上传标识不能复用于其他文件或已取消的会话');return draftUploadStatus(env,draftId,userId,fileId);}
  const ext=extOf(name);
- if(!['.pdf','.docx','.txt','.md','.png','.jpg','.jpeg','.webp'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
+ if(!['.pdf','.docx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
+ const limit=uploadLimit(ext);if(limit!==null&&size>limit)throw validationFailed('文件超过该类型的上传限制');
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM creation_draft_files WHERE draft_id=?1 AND removed=0').bind(draftId).first<{n:number}>();if((count?.n??0)>=10)throw validationFailed('每份草稿最多10个文件');
  const key=`creation-drafts/${draftId}/${fileId}${ext}`,multipart=await env.FILES.createMultipartUpload(key,{httpMetadata:{contentType:'application/octet-stream'}});
  try{await env.DB.prepare('INSERT INTO draft_document_uploads(file_id,draft_id,upload_id,r2_key,name,ext,size_bytes,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(fileId,draftId,multipart.uploadId,key,name,ext,size,revision).run();}
@@ -81,14 +83,15 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
   await env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND status='completing' AND operation_token=?2").bind(fileId,token).run();
   throw error;
  }
- const mime=({'.pdf':'application/pdf','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.txt':'text/plain','.md':'text/markdown','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'} as Record<string,string>)[row.ext]!;
+ const mime=({'.pdf':'application/pdf','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.txt':'text/plain','.md':'text/markdown','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4','.mp4':'video/mp4','.webm':'video/webm'} as Record<string,string>)[row.ext]!;
  const time=nowIso();
  const result=await env.DB.batch([
   env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',updated_at=?4,preview_attempt_id=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND (SELECT count(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10 AND EXISTS(SELECT 1 FROM draft_document_uploads WHERE file_id=?5 AND status='completing' AND operation_token=?6)").bind(draftId,userId,row.revision,time,fileId,token),
-  env.DB.prepare("INSERT OR IGNORE INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha256,size_bytes,mime,pages_json,text_error,created_at) SELECT ?1,?2,?3,?4,?5,'',?6,?7,'[]','原文件已上传，等待浏览器正文解析',?8 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND owner_id=?9 AND revision=?10 AND preview_attempt_id=?1 AND status='active')").bind(fileId,draftId,row.name,row.ext,row.r2_key,row.size_bytes,mime,time,userId,row.revision+1),
+  env.DB.prepare("INSERT OR IGNORE INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha256,size_bytes,mime,pages_json,text_error,created_at) SELECT ?1,?2,?3,?4,?5,'',?6,?7,'[]',?11,?8 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND owner_id=?9 AND revision=?10 AND preview_attempt_id=?1 AND status='active')").bind(fileId,draftId,row.name,row.ext,row.r2_key,row.size_bytes,mime,time,userId,row.revision+1,isMediaExtension(row.ext)?'音视频摘要正在排队；处理完成后可用于预览':'原文件已上传，等待浏览器正文解析'),
   env.DB.prepare("UPDATE draft_document_uploads SET status='complete',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND operation_token=?2 AND EXISTS(SELECT 1 FROM creation_draft_files WHERE id=?1)").bind(fileId,token),
  ]);
  if(!result[0]!.meta.changes)throw versionConflict((await getDraft(env,draftId,userId)).revision);
+ if(isMediaExtension(row.ext))await enqueueDraftMedia(env,draftId,fileId,userId);
  return draftView(env,await getDraft(env,draftId,userId));
 }
 export async function cancelDraftUpload(env:Env,draftId:string,userId:string,fileId:string) {

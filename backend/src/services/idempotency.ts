@@ -8,6 +8,8 @@ export interface IdempotencyParams {
   operation: string;
   /** 原始请求体文本（未解析），用于同键不同内容的冲突判定 */
   rawBody: string;
+  /** Pre-upgrade canonical body; only used to recover an existing record. */
+  legacyRawBody?: string;
   /** 冻结写请求必须携带 Idempotency-Key（A08）；缺少时返回 400 而不是静默执行 */
   required?: boolean;
 }
@@ -48,7 +50,8 @@ export async function withIdempotency<T, S extends number>(
     .first<{ request_hash: string; status: string; response_status: number | null; response_body: string | null }>();
 
   if (existing) {
-    if (existing.request_hash !== requestHash) {
+    const legacyMatch = existing.request_hash !== requestHash && params.legacyRawBody !== undefined && existing.request_hash === await sha256Hex(params.legacyRawBody);
+    if (existing.request_hash !== requestHash && !legacyMatch) {
       throw new AppError('IDEMPOTENCY_CONFLICT', '相同 Idempotency-Key 但请求内容不同', 409, false);
     }
     if (existing.status === 'completed' && existing.response_body !== null && existing.response_status !== null) {

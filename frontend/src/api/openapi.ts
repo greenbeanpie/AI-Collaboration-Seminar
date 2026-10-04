@@ -1049,8 +1049,28 @@ export interface paths {
                                 notes?: string | null;
                             } | null;
                         };
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        planningMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        assignmentMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        evaluationMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        progressionMode?: "manual" | "automatic";
                         deadlineDate?: string;
-                        /** @default false */
+                        /** @default true */
                         aiCollaborationEnabled?: boolean;
                         /** @default 1 */
                         teamSize?: number;
@@ -1176,6 +1196,14 @@ export interface paths {
                                     notes?: string | null;
                                 } | null;
                             };
+                            /** @enum {string} */
+                            planningMode?: "manual" | "automatic";
+                            /** @enum {string} */
+                            assignmentMode?: "manual" | "automatic";
+                            /** @enum {string} */
+                            evaluationMode?: "manual" | "automatic";
+                            /** @enum {string} */
+                            progressionMode?: "manual" | "automatic";
                             deadlineDate?: string;
                             /** @default false */
                             aiCollaborationEnabled?: boolean;
@@ -1598,8 +1626,28 @@ export interface paths {
                          */
                         deadlinePrecision?: "date" | "datetime" | "unknown";
                         aiBudgetUsd?: number | null;
-                        /** @default false */
+                        /** @default true */
                         aiCollaborationEnabled?: boolean;
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        assignmentMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        evaluationMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        planningMode?: "manual" | "automatic";
+                        /**
+                         * @default automatic
+                         * @enum {string}
+                         */
+                        progressionMode?: "manual" | "automatic";
                     };
                 };
             };
@@ -2559,6 +2607,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invitations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只读邀请码预览，不占用次数或加入项目 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        code: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 项目邀请详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationPreviewResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/invitations": {
         parameters: {
             query?: never;
@@ -2953,6 +3043,44 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/inbox/{invitationId}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本人只读查看待接受邀请的项目详情 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    invitationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 项目邀请详情 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationPreviewResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5745,6 +5873,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取任务 AI 执行适用性检查 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务 AI 执行适用性检查状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAgentEligibilityResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 请求模型判断任务 AI 执行适用性 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        retry?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 任务 AI 执行适用性检查状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAgentEligibilityResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/assignment-suggestions": {
         parameters: {
             query?: never;
@@ -8388,6 +8585,40 @@ export interface paths {
                             apiKey?: string;
                             clearKey?: boolean;
                         };
+                        mediaUnderstanding?: {
+                            provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
+                            model: string;
+                            /** @default  */
+                            apiUrl?: string;
+                            timeoutMs: number;
+                            maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
+                            maxOutputTokens: number;
+                            supportsJson: boolean;
+                            supportsVision: boolean;
+                            temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
+                            /** @default null */
+                            pricePerMTokens?: [
+                                number,
+                                number
+                            ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
+                        };
+                        clearMediaUnderstanding?: boolean;
                         enabled?: boolean;
                         notes?: string;
                     };
@@ -9398,6 +9629,7 @@ export interface components {
                 };
                 limits: {
                     maxFileBytes: number | null;
+                    maxMediaBytes: number | null;
                     maxPdfPages: number | null;
                     recommendedCloudFileBytes: number;
                     recommendedCloudPdfPages: number;
@@ -9645,6 +9877,14 @@ export interface components {
                             notes?: string | null;
                         } | null;
                     };
+                    /** @enum {string} */
+                    planningMode?: "manual" | "automatic";
+                    /** @enum {string} */
+                    assignmentMode?: "manual" | "automatic";
+                    /** @enum {string} */
+                    evaluationMode?: "manual" | "automatic";
+                    /** @enum {string} */
+                    progressionMode?: "manual" | "automatic";
                     deadlineDate?: string;
                     /** @default false */
                     aiCollaborationEnabled: boolean;
@@ -9714,6 +9954,22 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     name: string;
+                    mediaStatus?: string | null;
+                    mediaSummary?: {
+                        title: string;
+                        summary: string;
+                        keyPoints: string[];
+                        conclusions: string[];
+                        actionItems: string[];
+                        timestamps: {
+                            seconds: number;
+                            description: string;
+                        }[];
+                        caveats: string[];
+                        complete: boolean;
+                        durationSeconds?: number;
+                    } | null;
+                    mediaError?: string | null;
                     sizeBytes: number;
                     sha256: string;
                     textReady: boolean;
@@ -9723,6 +9979,22 @@ export interface components {
                     /** Format: uuid */
                     id: string;
                     name: string;
+                    mediaStatus?: string | null;
+                    mediaSummary?: {
+                        title: string;
+                        summary: string;
+                        keyPoints: string[];
+                        conclusions: string[];
+                        actionItems: string[];
+                        timestamps: {
+                            seconds: number;
+                            description: string;
+                        }[];
+                        caveats: string[];
+                        complete: boolean;
+                        durationSeconds?: number;
+                    } | null;
+                    mediaError?: string | null;
                     sizeBytes: number;
                     sha256: string;
                     textReady: boolean;
@@ -9790,6 +10062,14 @@ export interface components {
                                 notes?: string | null;
                             } | null;
                         };
+                        /** @enum {string} */
+                        planningMode?: "manual" | "automatic";
+                        /** @enum {string} */
+                        assignmentMode?: "manual" | "automatic";
+                        /** @enum {string} */
+                        evaluationMode?: "manual" | "automatic";
+                        /** @enum {string} */
+                        progressionMode?: "manual" | "automatic";
                         deadlineDate?: string;
                         /** @default false */
                         aiCollaborationEnabled: boolean;
@@ -9859,6 +10139,22 @@ export interface components {
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        mediaStatus?: string | null;
+                        mediaSummary?: {
+                            title: string;
+                            summary: string;
+                            keyPoints: string[];
+                            conclusions: string[];
+                            actionItems: string[];
+                            timestamps: {
+                                seconds: number;
+                                description: string;
+                            }[];
+                            caveats: string[];
+                            complete: boolean;
+                            durationSeconds?: number;
+                        } | null;
+                        mediaError?: string | null;
                         sizeBytes: number;
                         sha256: string;
                         textReady: boolean;
@@ -9868,6 +10164,22 @@ export interface components {
                         /** Format: uuid */
                         id: string;
                         name: string;
+                        mediaStatus?: string | null;
+                        mediaSummary?: {
+                            title: string;
+                            summary: string;
+                            keyPoints: string[];
+                            conclusions: string[];
+                            actionItems: string[];
+                            timestamps: {
+                                seconds: number;
+                                description: string;
+                            }[];
+                            caveats: string[];
+                            complete: boolean;
+                            durationSeconds?: number;
+                        } | null;
+                        mediaError?: string | null;
                         sizeBytes: number;
                         sha256: string;
                         textReady: boolean;
@@ -10924,6 +11236,20 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        InvitationPreviewResponse: {
+            data: {
+                /** Format: uuid */
+                projectId: string;
+                projectName: string;
+                description: string;
+                goal: {
+                    title: string;
+                    detail: string;
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         InvitationCreateResponse: {
             data: {
                 /** Format: uuid */
@@ -11197,6 +11523,26 @@ export interface components {
         };
         SourceProcessingResponse: {
             data: {
+                media?: {
+                    stage: string;
+                    summary: {
+                        title: string;
+                        summary: string;
+                        keyPoints: string[];
+                        conclusions: string[];
+                        actionItems: string[];
+                        timestamps: {
+                            seconds: number;
+                            description: string;
+                        }[];
+                        caveats: string[];
+                        complete: boolean;
+                        durationSeconds?: number;
+                    } | null;
+                    error: string | null;
+                    durationSeconds: number | null;
+                    completedWindows: number;
+                } | null;
                 /** @enum {string} */
                 textStatus: "pending" | "processing" | "waiting_input" | "ready" | "failed";
                 /** @enum {string} */
@@ -12163,6 +12509,20 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        TaskAgentEligibilityResponse: {
+            data: {
+                /** @enum {string} */
+                status: "missing" | "queued" | "running" | "ready" | "failed" | "disabled";
+                taskRevision: number;
+                sourceHash: string;
+                eligible: boolean | null;
+                reason: string | null;
+                /** Format: uuid */
+                jobId: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AssignmentSuggestionResponse: {
             data: {
                 /** Format: uuid */
@@ -12174,6 +12534,7 @@ export interface components {
         MaterialResponse: {
             data: {
                 canEdit?: boolean;
+                systemManaged?: boolean;
                 /** Format: uuid */
                 materialId: string;
                 title: string;
@@ -12218,6 +12579,7 @@ export interface components {
             data: {
                 items: {
                     canEdit?: boolean;
+                    systemManaged?: boolean;
                     /** Format: uuid */
                     materialId: string;
                     title: string;
@@ -12321,6 +12683,7 @@ export interface components {
                     /** Format: uuid */
                     fileId: string | null;
                     canManage: boolean;
+                    systemManaged?: boolean;
                 }[];
                 nextCursor: string | null;
             };
@@ -12346,6 +12709,7 @@ export interface components {
                 /** Format: uuid */
                 fileId: string | null;
                 canManage: boolean;
+                systemManaged?: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

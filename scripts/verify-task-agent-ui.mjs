@@ -55,6 +55,7 @@ try {
       else if (p.endsWith('/members/me')) data = { userId, displayName: '测试成员', role: 'owner' };
       else if (p.endsWith('/members')) data = { items: [{ userId, displayName: '测试成员', role: 'owner' }], nextCursor: null };
       else if (p.endsWith('/goal')) data = { title: '发布可用原型', detail: '交付三个页面', revision: 2, graphRevision: 1 };
+      else if (p.endsWith('/agent-eligibility') && method === 'GET') data = { status: 'ready', taskRevision: submittedRound && p.includes('/tasks/t1/') ? 2 : 1, sourceHash: 'local-ui-fixture', eligible: true, reason: '该任务可以通过已有资料完整执行。', jobId: 'fixture-eligibility' };
       else if (p.endsWith('/tasks')) data = { items: [submittedRound ? { ...task, lifecycleState: 'submitted', currentSubmissionId: 'auto-submission', revision: 2 } : provisional || humanReviewed ? { ...task, lifecycleState: 'accepted', status: 'done', currentSubmissionId: submissions[0].submissionId, pendingHumanReview: provisional } : task, upstream], nextCursor: null };
       else if (p.endsWith('/collaboration/settings')) data = { aiCollaborationEnabled: submissionMode === 'enabled', assignmentMode: 'manual', evaluationMode: 'manual', revision: 1 };
       else if (p.endsWith('/collaboration/feedback/current')) data = { version: 0, feedback: '' };

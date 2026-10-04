@@ -2,11 +2,18 @@ import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, projectPath } from '../api/client';
 import { ErrorNotice, Field, SectionCard, Spinner } from '../components/ui';
+import { InvitationPreview } from './InvitationPreview';
+import type { DataOf } from '../api/types';
 const labels: Record<string, string> = {
   pending: '待处理', accepted: '已接受', declined: '已拒绝', revoked: '已撤销', expired: '已过期'
 };
 export function ReceivedInvitations() {
   const client = useQueryClient(), [offset, setOffset] = useState(0);
+  const [review, setReview] = useState<{id:string;project:DataOf<'InvitationPreviewResponse'>} | null>(null);
+  const preview = useMutation({
+    mutationFn: (id:string) => api.get<'InvitationPreviewResponse'>(`/api/v1/invitations/inbox/${id}/preview`),
+    onSuccess: (project,id) => setReview({id,project}),
+  });
   const query = useQuery({
     queryKey: ['username-invitations', 'inbox', offset], queryFn: () => api.get<'UsernameInvitationListResponse'>('/api/v1/invitations/inbox', {
       offset
@@ -19,6 +26,7 @@ export function ReceivedInvitations() {
     }) => api.post<'UsernameInvitationActionResponse'>(`/api/v1/invitations/inbox/${id}`, {
       action
     }), onSuccess: async () => {
+      setReview(null);
       await client.invalidateQueries({
         queryKey: ['username-invitations']
       });
@@ -30,11 +38,9 @@ export function ReceivedInvitations() {
       });
     }
   });
-  return <SectionCard title="收到的项目邀请" detail="接受后加入普通成员；待处理邀请不预占人数，名额先到先成功。">{query.isLoading && <Spinner label="正在读取项目邀请" />}{query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()}/>} {handle.error && <ErrorNotice error={handle.error}/>} {query.data?.items.length === 0 && <p>暂无项目邀请。</p>} {query.data?.items.map(invite => <article className="callout" key={invite.id}><strong>{invite.projectName}</strong><p>{invite.inviterName} 邀请你成为组员 · {labels[invite.status]} · 有效至 {new Date(invite.expiresAt).toLocaleDateString('zh-CN')}</p>{invite.status === 'pending' && <div className="form-actions"><button className="button button-primary button-small" disabled={handle.isPending} onClick={() => handle.mutate({
-    id: invite.id, action: 'accept'
-  })}>接受邀请</button><button className="button button-quiet button-small" disabled={handle.isPending} onClick={() => handle.mutate({
+  return <SectionCard title="收到的项目邀请" detail="接受后加入普通成员；待处理邀请不预占人数，名额先到先成功。">{query.isLoading && <Spinner label="正在读取项目邀请" />}{query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()}/>} {handle.error && <ErrorNotice error={handle.error}/>} {preview.error && <ErrorNotice error={preview.error}/>} {query.data?.items.length === 0 && <p>暂无项目邀请。</p>} {query.data?.items.map(invite => <article className="callout" key={invite.id}><strong>{invite.projectName}</strong><p>{invite.inviterName} 邀请你成为组员 · {labels[invite.status]} · 有效至 {new Date(invite.expiresAt).toLocaleDateString('zh-CN')}</p>{invite.status === 'pending' && <div className="form-actions"><button className="button button-primary button-small" disabled={handle.isPending || preview.isPending} onClick={() => {setReview(null); handle.reset(); preview.mutate(invite.id);}}>接受邀请</button><button className="button button-quiet button-small" disabled={handle.isPending} onClick={() => handle.mutate({
     id: invite.id, action: 'decline'
-  })}>拒绝邀请</button></div>}</article>)}<div className="form-actions">{offset > 0 && <button className="button button-quiet button-small" onClick={() => setOffset(n => Math.max(0, n - 20))}>上一页邀请</button>}{query.data?.nextOffset !== null && query.data?.nextOffset !== undefined && <button className="button button-quiet button-small" onClick={() => setOffset(query.data!.nextOffset!)}>下一页邀请</button>}</div></SectionCard>;
+  })}>拒绝邀请</button></div>}{invite.status === 'pending' && review?.id === invite.id && <InvitationPreview project={review.project} pending={handle.isPending} onCancel={() => {setReview(null); handle.reset();}} onConfirm={() => handle.mutate({id:invite.id,action:'accept'})} />}</article>)}<div className="form-actions">{offset > 0 && <button className="button button-quiet button-small" onClick={() => setOffset(n => Math.max(0, n - 20))}>上一页邀请</button>}{query.data?.nextOffset !== null && query.data?.nextOffset !== undefined && <button className="button button-quiet button-small" onClick={() => setOffset(query.data!.nextOffset!)}>下一页邀请</button>}</div></SectionCard>;
 }
 export function SentUsernameInvitations({ projectId }: {
   projectId: string;

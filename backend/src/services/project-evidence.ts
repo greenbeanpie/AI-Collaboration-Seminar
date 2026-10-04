@@ -51,9 +51,8 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
     return output.items.flatMap((item:Record<string,unknown>)=> typeof item.id==='string' ? [{id:`${output.resourceType}:${item.id}:${String(item.revision??0)}`,resourceType:String(output.resourceType),resourceId:item.id,
       ...(typeof item.revision==='number'?{revision:item.revision}:{}),title:typeof item.title==='string'?item.title:undefined,quote:JSON.stringify(item),usage:'read' as const}] : []);
   }
-  const nested=['standards','requirements','rubrics','events','comments'].flatMap(k=>output[k]&&typeof output[k]==='object'?referencesFromRead(output[k] as Record<string,unknown>):[]);
-  if(nested.length) return nested;
-  if(typeof output.resourceId!=='string') return [];
+  const nested=['standards','requirements','rubrics','events','comments','systemBackground'].flatMap(k=>output[k]&&typeof output[k]==='object'?referencesFromRead(output[k] as Record<string,unknown>):[]);
+  if(typeof output.resourceId!=='string') return nested;
   const base={resourceType:String(output.resourceType??'source'),resourceId:output.resourceId,
     ...(output.resourceType==='source_summary'&&typeof output.offset==='number'?{offset:output.offset}:{}),
     ...(output.resourceType==='source_summary'&&typeof output.summaryRevision==='number'?{summaryRevision:output.summaryRevision}:{}),
@@ -64,7 +63,7 @@ export function referencesFromRead(output: Record<string,unknown>): ProjectRefer
     id:`${base.resourceType}:${base.versionId}:${String(f.fragmentId)}:${String(output.offset??0)}`,
     fragmentId:String(f.fragmentId),pageNumber:f.pageNumber as number|null,quote:String(f.quote)}));
   const text=typeof output.text==='string'?output.text:typeof output.body==='string'?output.body:undefined;
-  return text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${base.resourceType==='source_summary'?`${String(output.summaryRevision)}:`:''}${String(output.offset??0)}`,quote:text}] : [];
+  return [...nested,...(text ? [{...base,id:`${base.resourceType}:${base.versionId??base.resourceId}:${base.resourceType==='source_summary'?`${String(output.summaryRevision)}:`:''}${String(output.offset??0)}`,quote:text}] : [])];
 }
 export async function validateReadReferences(env: Env, projectId: string, refs: ProjectReference[]) {
   if(!Array.isArray(refs))throw invalidState('引用列表格式无效');

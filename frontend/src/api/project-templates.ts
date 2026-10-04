@@ -33,7 +33,7 @@ async function importTemplateDocument(draftId:string,fileId:string,draft:Templat
  let result:{status:'complete'|'partial';blocks:number;warnings:string[]};
  if(/\.(txt|md)$/i.test(file.name)){
   const decoder=new TextDecoder(),reader=file.stream().getReader();let seq=0,buffer='';
-  try{for(;;){if(signal?.aborted)throw new DOMException('已取消','AbortError');const chunk=await reader.read();buffer+=decoder.decode(chunk.value,{stream:!chunk.done});while(buffer.length>=16000){await send([{seq:seq++,pageNumber:null,text:buffer.slice(0,16000)}]);buffer=buffer.slice(16000);}if(chunk.done)break;}if(buffer)await send([{seq:seq++,pageNumber:null,text:buffer}]);result={status:'complete',blocks:seq,warnings:[]};}finally{reader.releaseLock();}
+  try{for(;;){if(signal?.aborted)throw new DOMException('已取消','AbortError');const chunk=await reader.read();buffer+=decoder.decode(chunk.value,{stream:!chunk.done});while(buffer.length>=16000){await send([{seq:seq++,pageNumber:null,text:buffer.slice(0,/[\uD800-\uDBFF]/.test(buffer[15999]!)?15999:16000)}]);buffer=buffer.slice(/[\uD800-\uDBFF]/.test(buffer[15999]!)?15999:16000);}if(chunk.done)break;}if(buffer)await send([{seq:seq++,pageNumber:null,text:buffer}]);result={status:'complete',blocks:seq,warnings:[]};}finally{reader.releaseLock();}
  }else {const parsed=await parseBrowserDocument(file,{signal,onBatch:async({blocks})=>{await send(blocks.map(b=>({...b,warnings:b.warnings?.map(w=>w.message)})));}});result={...parsed,warnings:parsed.warnings.map(w=>w.message)};}
  if(result.blocks!==submitted)throw new Error('正文提交数量与浏览器解析结果不符，原文件已保留。');
  return templateRequest<TemplateDraft>(templateDraftPath(draftId,`/files/${fileId}/imports/complete`),{method:'POST',body:{expectedRevision,blocks:result.blocks,status:result.status,warnings:normalizeWarnings(result.warnings)},signal});
@@ -61,7 +61,7 @@ export const projectTemplateApi = {
       const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
       try{if((await task.promise).numPages>30)parsingMode='browser';}finally{await task.destroy();}
     }
-    if(file.size>10*1024*1024||/\.docx$/i.test(file.name)||parsingMode==='browser')return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
+    if(file.size>10*1024*1024||/\.docx$/i.test(file.name)||(parsingMode==='browser'&&/\.(pdf|txt|md)$/i.test(file.name)))return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
     const sha256 = await creationFileHash(file);
     const identity = { name: file.name, size: file.size, sha256 };
     const namespace = `template-upload:${userId}:${draftId}:${sha256}:${encodeURIComponent(file.name)}`;

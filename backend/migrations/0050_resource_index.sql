@@ -3,6 +3,8 @@ CREATE TABLE resource_index_state (
  resource_type TEXT NOT NULL CHECK(resource_type IN ('source','material')),
  version_id TEXT NOT NULL,
  cursor INTEGER NOT NULL DEFAULT 0,
+ source_seq INTEGER NOT NULL DEFAULT 0,
+ source_offset INTEGER NOT NULL DEFAULT 0,
  next_seq INTEGER NOT NULL DEFAULT 0,
  heading TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'building' CHECK(status IN ('building','ready')),
@@ -31,3 +33,5 @@ END;
 CREATE TRIGGER resource_index_delete AFTER DELETE ON resource_index_blocks BEGIN
  DELETE FROM resource_index_fts WHERE rowid=old.rowid;
 END;
+
+CREATE INDEX idx_source_fragments_stream ON source_fragments(source_version_id,project_id,seq,id);

@@ -1,6 +1,7 @@
 import { registerDocumentImportRoutes } from './api/document-imports';
 import { resourceIndexApi } from './api/resource-index';
 import { registerMultipartRoutes } from './api/file-multipart';
+import { registerTaskAgentEligibilityRoutes } from './api/task-agent-eligibility';
 import { registerUsernameInvitationRoutes } from './api/username-invitations';
 import { registerTaskInquiryRoutes } from './api/task-inquiries';
 import { registerProjectSimplificationRoutes } from './api/project-simplification';
@@ -97,6 +98,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerTaskRoutes(app);
   registerTaskInquiryRoutes(app);
   registerCollaborationRoutes(app);
+  registerTaskAgentEligibilityRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerResourceRoutes(app);

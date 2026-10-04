@@ -223,7 +223,7 @@ it('requests background AI preview, locks edits and adopts the polled result', a
  mocks.get.mockImplementation((path: string) => path.endsWith('/draft-1') ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({items:[]}));
  const original = mocks.post.getMockImplementation()!;
  mocks.post.mockImplementation(async (path: string, body: any) => path.endsWith('/preview') && body.mode === 'ai' ? {...draft,previewState:'running'} : original(path,body));
- mount();fireEvent.change(screen.getByLabelText('项目名称'),{target:{value:'异步项目'}});fireEvent.click(screen.getByRole('checkbox',{name:/AI 智能协作/}));await next();await next();await next();
+ mount();fireEvent.change(screen.getByLabelText('项目名称'),{target:{value:'异步项目'}});expect(screen.getByRole('checkbox',{name:/AI 智能协作/})).toBeChecked();await next();await next();await next();
  fireEvent.click(screen.getByRole('button',{name:'生成 AI 拆分预览'}));
  await screen.findByText(/AI 正在后台处理文件/);expect(screen.getByLabelText(/^主目标预览/)).toBeDisabled();
  expect(mocks.post.mock.calls.find(([path])=>String(path).endsWith('/preview'))?.[1]).toMatchObject({background:true});

@@ -188,7 +188,7 @@ export async function settleReservation(env: Env, jobId: string, outcome: 'settl
   const agg = await env.DB.prepare(
     `SELECT COALESCE(SUM(CASE WHEN cost_status = 'known' THEN cost_usd ELSE 0 END), 0) AS known_cost,
             SUM(CASE WHEN cost_status = 'unknown' THEN 1 ELSE 0 END) AS unknown_calls, COUNT(*) AS calls
-       FROM ai_calls WHERE reservation_id = ?3 OR (reservation_id IS NULL AND job_id = ?1 AND created_at >= ?2)`,
+       FROM (SELECT cost_status,cost_usd FROM ai_calls WHERE reservation_id = ?3 OR (reservation_id IS NULL AND job_id = ?1 AND created_at >= ?2) UNION ALL SELECT cost_status,cost_usd FROM media_calls WHERE job_id=?1 AND created_at>=?2)`,
   )
     .bind(jobId, active.created_at, active.id)
     .first<{ known_cost: number; unknown_calls: number | null; calls: number }>();

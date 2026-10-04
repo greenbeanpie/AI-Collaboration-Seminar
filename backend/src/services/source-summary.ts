@@ -1,8 +1,7 @@
-import { summaryBoundaryContext } from './ocr-batches';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
-import { documentChunks, renderDocumentChunk, validateChunkCitations } from './document-chunks';
+import { sourceFragmentPages, streamingDocumentChunks, documentChunkWindows, renderDocumentChunk, validateChunkCitations } from './document-chunks';
 import { nowIso, sha256Hex } from '../core/db';
 import { loadAiConfig, requireEnabledAiConfig } from '../ai/config';
 import { aiJsonCall } from './agent';
@@ -100,23 +99,23 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     const extraction = await env.DB.prepare('SELECT extraction_warnings_json,extraction_coverage FROM source_versions WHERE id=?1').bind(input.sourceVersionId).first<{extraction_warnings_json:string;extraction_coverage:string|null}>();
     const extractionWarnings = z.array(z.string()).parse(JSON.parse(extraction?.extraction_warnings_json ?? '[]'));
     if (extraction?.extraction_coverage === 'partial' && !extractionWarnings.some(w=>w.includes('部分'))) extractionWarnings.push('本机正文仅部分读取，未读取内容不能推断。');
-    const fragments = await env.DB.prepare('SELECT id, page_number, content FROM source_fragments WHERE source_version_id = ?1 ORDER BY seq').bind(input.sourceVersionId).all<{ id: string; page_number: number | null; content: string }>();
-    if(!fragments.results.length)throw new AppError('SOURCE_PARSE_FAILED','暂无可用于总结的正文片段',422,false);
+    const totals=await env.DB.prepare('SELECT COUNT(*) count,COALESCE(SUM(length(content)),0) chars FROM source_fragments WHERE source_version_id=?1 AND project_id=?2').bind(input.sourceVersionId,state.project_id).first<{count:number;chars:number}>();
+    if(!totals?.count)throw new AppError('SOURCE_PARSE_FAILED','暂无可用于总结的正文片段',422,false);
     const contextLimit = Math.min(400, Math.floor(model.maxInputChars / 20));
     const coverageContext=extractionWarnings.length?'\n解析覆盖限制（必须保留，禁止推断未读取内容）：'+JSON.stringify(extractionWarnings).slice(0,Math.min(3000,Math.floor(model.maxInputChars/10))):'';
     const contextReserve = 2 * contextLimit + 300 + coverageContext.length;
-    const chunks=documentChunks(fragments.results,model.maxInputChars,SUMMARY_SYSTEM.length + contextReserve);
+    const chunks=streamingDocumentChunks(sourceFragmentPages(env.DB,input.sourceVersionId,state.project_id,assertActive),model.maxInputChars,SUMMARY_SYSTEM.length + contextReserve);
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND ((text_status='none' AND ocr_status!='ok') OR (image_status='uploaded' AND ocr_status IN ('pending','failed')))").bind(input.sourceVersionId).first<{n:number}>();
-    const totalChars=fragments.results.reduce((n,f)=>n+f.content.length,0);const coveredChars=totalChars;
+    const totalChars=totals.chars;const coveredChars=totalChars;
     const summaries:z.infer<typeof chunkSummarySchema>[]=[];
-    for(let index=0;index<chunks.length;index++){
-      await assertActive();const chunk=chunks[index]!;const boundaries=summaryBoundaryContext(chunks,index,contextLimit);const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+coverageContext+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
+    for await(const {index,chunk,boundaries,single} of documentChunkWindows(chunks,contextLimit)){
+      await assertActive();const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+coverageContext+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
       const cacheKey='ai-document-chunks/'+jobId+'/summary/'+await sha256Hex(config.id+content);
       const cached=await env.FILES.get(cacheKey);let data:z.infer<typeof chunkSummarySchema>;
       if(cached){data=chunkSummarySchema.parse(await cached.json());}
       else {
         await reserveAiSlot(env,{projectId:state.project_id,jobId,purpose:'source_summary',configVersionId:config.id});
-        const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:chunks.length===1?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema,beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
+        const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:single?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema,beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
         data=result.data;validateChunkCitations(readFragments,data.citations);await assertActive();
         await settleReservation(env,jobId,'settled');await env.FILES.put(cacheKey,JSON.stringify(data));
       }

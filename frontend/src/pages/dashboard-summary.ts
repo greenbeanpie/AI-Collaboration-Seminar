@@ -31,7 +31,7 @@ export function pendingProjectGroups(entries: readonly { project: ProjectSummary
     const unique = uniqueProjectTasks(tasks ?? []);
     if (!unique.some(task => task.status !== 'done')) return [];
     const actionable = actionableProjectTasks(unique, members ?? []).sort((a, b) => (remainingDays(a) ?? Infinity) - (remainingDays(b) ?? Infinity) || a.taskId.localeCompare(b.taskId));
-    return [{ project, actionable }];
+    return actionable.length ? [{ project, actionable }] : [];
   }).sort((a, b) => (a.actionable[0] ? remainingDays(a.actionable[0]) ?? Infinity : Infinity) - (b.actionable[0] ? remainingDays(b.actionable[0]) ?? Infinity : Infinity) || a.project.name.localeCompare(b.project.name) || a.project.id.localeCompare(b.project.id));
 }
 

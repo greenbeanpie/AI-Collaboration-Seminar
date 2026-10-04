@@ -1,12 +1,15 @@
 import type { DataOf } from '../api/types';
 type ApiWizardDraft = DataOf<'CreationDraftResponse'>;
 export type WizardGoal = { title: string; detail: string };
-export type WizardPayload = ApiWizardDraft['payload'] & { goal?: WizardGoal };
+export type CreationMode = 'manual' | 'automatic';
+export type WizardPayload = ApiWizardDraft['payload'] & { goal?: WizardGoal; planningMode?: CreationMode; assignmentMode?: CreationMode; evaluationMode?: CreationMode; progressionMode?: CreationMode };
+export const creationBehaviors = [['planningMode','任务规划'],['assignmentMode','任务分工'],['evaluationMode','提交验收'],['progressionMode','项目推进']] as const;
+export function creationBehavior(payload: WizardPayload, key: typeof creationBehaviors[number][0]): CreationMode { return payload[key] ?? ((key === 'assignmentMode' || key === 'evaluationMode') && payload.aiCollaborationEnabled ? 'automatic' : 'manual'); }
 export type WizardTask = NonNullable<ApiWizardDraft['preview']>['tasks'][number] & { key?: string; dependsOn?: string[] };
 export type WizardDraft = Omit<ApiWizardDraft, 'payload' | 'preview'> & { payload: WizardPayload; preview: (Omit<NonNullable<ApiWizardDraft['preview']>, 'tasks'> & { goal?: WizardGoal; tasks: WizardTask[] }) | null };
 export const wizardSteps = ['基本信息', '上传文件', '人数与邀请', '目标与任务预览', '创建确认'] as const;
 export const emptyWizardPayload: WizardPayload = {
-  name: '', description: '', aiCollaborationEnabled: false, teamSize: 1, inviteUsernames: [], inviteLabels: [], brief: ''
+  name: '', description: '', aiCollaborationEnabled: true, planningMode: 'automatic', assignmentMode: 'automatic', evaluationMode: 'automatic', progressionMode: 'automatic', teamSize: 1, inviteUsernames: [], inviteLabels: [], brief: ''
 };
 export function sameWizardPayload(a: WizardPayload, b: WizardPayload) {
   return JSON.stringify(a) === JSON.stringify(b);

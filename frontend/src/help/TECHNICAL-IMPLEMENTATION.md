@@ -352,6 +352,8 @@ reservation: reserved → settled / released / pending_reconcile
 
 任务简介实际表名为 `task_summaries`，operation 为 `collaboration.summary`。`runAiJob` 优先处理此 operation，否则会误落通用协作执行器。输入冻结 `sourceHash`；`runTaskSummaryJob` 每次调用及发布都检查 task、claim、用户、配置及 hash，生成最多 60 字简介，最多一次格式修复，不提供项目工具。
 
+本地 Agent 交接的适用性由 `task-agent-eligibility.ts` 调用当前 `textEconomy` 模型判断，不使用关键词规则。`GET/POST .../collaboration/tasks/{taskId}/agent-eligibility` 分别读取状态和显式发起检查；POST 校验 `expectedRevision`。`agent_run` 的 `collaboration.agent-eligibility` operation 独立派发，最多一次格式修复、无工具调用，并复用预算与 `ai_calls` 审计。`task_agent_eligibility` 按完整标题、说明、验收标准、配置版本及提示词版本的哈希缓存；调用前后及原子发布时检查内容、成员资格、配置和作业状态。前端卡片与弹窗共享查询，仅当前任务版本的 `ready/eligible=true` 开放提示词读取和导出；失败不自动重发付费检查。本站仍通过复制或下载提示词交接，本次未接入 DSH 桥接。
+
 创建项目草稿预览走例外路径：`enqueueDraftPreview → AGENT_WORKFLOW.create({draftPreview}) → previewDraft → gatewayChat`。它尚无正式 project ID，不使用普通项目 `usage_reservations`、调查工具或执行分片。预览使用 `preview_state/preview_attempt_id/preview_revision`，只生成主目标及 1–20 个任务，不分工、不评分，验证依赖无循环及文件页逐字 citations。模型输出失败不通过 `aiJsonCall` 修复；显式重新生成可能再次计费。提交项目后通过 `draft_id` 将对应 `ai_calls.project_id` 归到新项目。
 
 自动项目推进不是新 operation：`cron.ts → dispatchProjectProgression` 消费 `events.actor_type=user`，15 秒防抖，用 `project_progression` 游标和 `pending_job_id` 限制单个在途推进，再创建 `collaboration.decompose` + `progression:true/causeEventId`。AI 写事件不会递归触发；人工修订仍待审方案优先保留；存在活跃协作或解析任务时跳过。结束游标记录观察事件，避免每分钟无变化重复付费。

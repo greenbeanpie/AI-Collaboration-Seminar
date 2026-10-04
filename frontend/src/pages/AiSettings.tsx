@@ -12,7 +12,7 @@ type ModelSlot = Purpose | 'unified';
 const modelSlots: ModelSlot[] = [...purposes, 'unified'];
 const labels = { unified: '统一模型', textEconomy: '文本与要求提取', visionEconomy: '图片与 OCR', review: '预审与答辩' };
 type Model = ProviderOptions & { model: string; apiUrl: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; maxOutputTokens: number; supportsJson: boolean; supportsVision: boolean; pricePerMTokens: [number, number] | null };
-type Config = Record<ModelSlot, Model> & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean };
+type Config = Record<ModelSlot, Model> & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean; mediaUnderstanding?:Model };
 type TokenLimits = { routingMode: Config['routingMode']; values: Partial<Record<ModelSlot, number>>; enabled: Partial<Record<ModelSlot, boolean>> };
 type Report = { passed: boolean; configVersion: number; checks: { name: string; passed: boolean; detail: string }[] };
 const blank = (): Config => ({ routingMode: 'unified', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, enabledOutputLimit: true, maxOutputTokens: 4096, supportsJson: true, supportsVision: p === 'visionEconomy', pricePerMTokens: null }])) }) as Config;
@@ -58,7 +58,7 @@ export function AiSettings() {
   function applyLoaded(data: { config: Config; version: number; enabled: boolean }, revision: number) {
     const preserveDraft = draftRevision.current !== revision;
     if (!preserveDraft) {
-      setConfig(data.version ? { searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), enabledOutputLimit: data.config[p]?.enabledOutputLimit ?? true, apiKey: '' }])) } as Config : blank());
+      setConfig(data.version ? { mediaUnderstanding:data.config.mediaUnderstanding?{...data.config.mediaUnderstanding,apiKey:''}:undefined, searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), enabledOutputLimit: data.config[p]?.enabledOutputLimit ?? true, apiKey: '' }])) } as Config : blank());
       setDirty(false); setEdited(false);
       hasSavedUnified.current = Boolean(data.config.unified);
       unifiedEdited.current = false;
@@ -105,14 +105,15 @@ export function AiSettings() {
     const slots = config.routingMode === 'unified' ? ['unified'] as const : purposes;
     const errors = slots.flatMap(p => providerOptionErrors(config[p]).map(detail => `${labels[p]}：${detail}`));
     for (const p of slots) if (!Number.isSafeInteger(config[p].maxOutputTokens) || config[p].maxOutputTokens < 1) errors.push(`${labels[p]}输出上限必须为可安全表示的正整数 token`);
+    if(config.mediaUnderstanding && (!config.mediaUnderstanding.model.trim() || config.mediaUnderstanding.apiUrl!=='https://generativelanguage.googleapis.com'))errors.push('音视频请填写 Gemini 模型，并使用官方端点');
     if (errors.length) throw new Error(`配置未保存：${errors.join('；')}`);
     // Do not materialize an untouched optional legacy slot just by opening the UI.
     const { unified, ...advanced } = config;
     const includeUnified = config.routingMode === 'unified' || hasSavedUnified.current || unifiedEdited.current;
-    const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
+    const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, clearMediaUnderstanding:!config.mediaUnderstanding, ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
     setVersion(data.version); setSavedEnabled(data.enabled); setSavedTokenLimits(tokenLimits(includeUnified ? config : advanced)); setDirty(false); setEdited(false); setReports({});
     hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
-    setConfig(c => ({ ...c, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
+    setConfig(c => ({ ...c, mediaUnderstanding:c.mediaUnderstanding?{...c.mediaUnderstanding,keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
     setMessage(activate ? 'AI 已启用，可继续真实业务测试。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
@@ -175,6 +176,18 @@ export function AiSettings() {
         <label><input type="checkbox" disabled={protocol === 'messages'} checked={config[p].supportsJson} onChange={e => edit(p, { supportsJson: e.target.checked })} /> 服务支持协议对应的 JSON 输出约束（不支持时取消，仍会校验 JSON 输出）</label>
         {providerOptionErrors(config[p]).map(detail => <p className="muted" key={detail}>{detail}</p>)}
       </fieldset>; })}
+      <fieldset disabled={!access || busy}><legend>音视频摘要 · 独立 Gemini 模型（可选）</legend>
+        <p className="muted">与图文模型分开配置，统一模型模式不会覆盖。支持 MP3、WAV、M4A、MP4、WebM，单文件 50 MiB。只生成 AI 摘要；视频同时理解画面与声音。长音频窗口处理会重复计费完整输入。</p>
+        <label><input type="checkbox" checked={Boolean(config.mediaUnderstanding)} onChange={e=>{draftRevision.current++;setConfig(c=>({...c,mediaUnderstanding:e.target.checked?{...blank().textEconomy,provider:'openai-compatible',providerPreset:'gemini',apiUrl:'https://generativelanguage.googleapis.com',model:'gemini-2.5-flash',supportsVision:true}:undefined}));setDirty(true);setEdited(true);}} /> 配置音视频摘要模型</label>
+        {config.mediaUnderstanding && <>
+          <Field label="音视频 Gemini 模型"><input className="input" value={config.mediaUnderstanding.model} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,model:e.target.value}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>
+          <Field label="音视频官方端点"><input className="input" readOnly value="https://generativelanguage.googleapis.com" /></Field>
+          <Field label="音视频 API key" hint={config.mediaUnderstanding.keyConfigured?'已加密保存，留空保留。':'尚未配置。'}><input className="input" type="password" autoComplete="off" value={config.mediaUnderstanding.apiKey??''} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,apiKey:e.target.value}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>
+          {config.mediaUnderstanding.keyConfigured && <label><input type="checkbox" checked={config.mediaUnderstanding.clearKey??false} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,clearKey:e.target.checked}}));draftRevision.current++;setDirty(true);setEdited(true);}} /> 清除音视频密钥</label>}
+          {(['timeoutMs','maxOutputTokens'] as const).map(key=><Field key={key} label={key==='timeoutMs'?'音视频超时（毫秒）':'音视频输出 token 上限'}><input className="input" type="number" min={key==='timeoutMs'?1000:1} max={key==='timeoutMs'?600000:undefined} value={config.mediaUnderstanding![key]} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,[key]:Number(e.target.value)}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>)}
+          {([0,1] as const).map(index=><Field key={index} label={index===0?'音视频输入价格（USD / 百万 token）':'音视频输出价格（USD / 百万 token）'} hint="留空时费用未知，不能据此保证预算上限。"><input className="input" type="number" min="0" step="0.01" value={config.mediaUnderstanding!.pricePerMTokens?.[index]??''} onChange={e=>{setConfig(c=>{const price: [number,number]=[...(c.mediaUnderstanding!.pricePerMTokens??[0,0])];price[index]=Number(e.target.value);return {...c,mediaUnderstanding:{...c.mediaUnderstanding!,pricePerMTokens:e.target.value===''?null:price}};});draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>)}
+        </>}
+      </fieldset>
       <div className="form-actions">{requiredProbes.map(p => <div key={p}>
         <button className="button button-quiet" disabled={!access || busy || !ready || dirty || !version} onClick={() => void run(async () => {
           const report = await call<Report>('POST', '/probe', { purpose: p });

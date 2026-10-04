@@ -1,4 +1,6 @@
 import { registerDraftDocumentRoutes } from './draft-documents';
+import { extOf, uploadLimit } from '../services/files';
+import { mediaSummarySchema } from '../ai/gemini-media';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser } from '../core/auth';
@@ -8,7 +10,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
-import { creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { newCreationPayload, creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
 import { enqueueDraftPreview, enqueueDraftContinuation } from '../services/draft-preview-jobs';
 import { answerClarification, answerSchema, cancelClarification, clarificationSchema } from '../services/ai-clarifications';
 import { loadDraftCheckpoint } from '../services/draft-preview-checkpoints';
@@ -20,7 +22,7 @@ const params = z.object({
 const revision = z.number().int().min(1);
 const fromTemplateBody=z.object({templateId:z.literal('blank')}).strict();
 const fileSchema = z.object({
-  id: z.string().uuid(), name: z.string(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
+  id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
 });
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
@@ -49,7 +51,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(createRoute({method:'post',path:base+'/from-template',tags:['creation'],request:{body:json(fromTemplateBody)},responses:{201:{description:'私有模板编辑草稿，尚未创建项目',content:{'application/json':{schema:response}}}}}),async c=>{
     const body=fromTemplateBody.parse(c.req.valid('json')),user=c.get('user')!;
     const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId:user.id,operation:'creation-draft.from-template',rawBody:JSON.stringify(body)},async()=>{
-      const payload=creationPayload.parse({name:'未命名项目',aiCollaborationEnabled:false,workspace:{templateId:body.templateId,materials:[],standards:null}});
+      const payload=newCreationPayload.parse({name:'未命名项目',workspace:{templateId:body.templateId,materials:[],standards:null}});
       const id=newId(),now=nowIso();
       await c.env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id,user.id,JSON.stringify(payload),newId(),now).run();
       return {status:201 as const,body:await draftView(c.env,await getDraft(c.env,id,user.id))};
@@ -57,7 +59,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   });
   app.openapi(createRoute({
     method: 'post', path: base, tags: ['creation'], request: {
-      body: json(creationPayload)
+      body: json(newCreationPayload)
     }, responses: {
       201: {
         content: {
@@ -69,8 +71,10 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     }
   }), async (c) => {
     const body = c.req.valid('json') as z.infer<typeof creationPayload>, user = c.get('user')!;
+    const original = await c.req.json();
+    const legacyRawBody = ['planningMode','assignmentMode','evaluationMode','progressionMode'].some(key => Object.hasOwn(original, key)) ? undefined : JSON.stringify(creationPayload.parse(original));
     const result = await withIdempotency(c.env, {
-      key: c.req.header('idempotency-key'), required: true, userId: user.id, operation: 'creation-draft.create', rawBody: JSON.stringify(body)
+      key: c.req.header('idempotency-key'), required: true, userId: user.id, operation: 'creation-draft.create', rawBody: JSON.stringify(body), legacyRawBody
     }, async () => {
       const id = newId(), now = nowIso();
       await c.env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id, user.id, JSON.stringify(body), newId(), now).run();
@@ -198,9 +202,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
             break;
           }
           size += chunk.value.length;
-          if (size > 10*1024*1024) {
+          if (size > Math.min(10*1024*1024,uploadLimit(extOf(q.name))??Infinity)) {
             await reader.cancel();
-            throw fileTooLarge(10*1024*1024);
+            throw fileTooLarge(Math.min(10*1024*1024,uploadLimit(extOf(q.name))??Infinity));
           }
           chunks.push(chunk.value);
         }

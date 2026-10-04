@@ -16,7 +16,7 @@ const resourceSchema = z.object({
   resourceType: z.enum(['source', 'material']), resourceId: z.string().uuid(), title: z.string(),
   purpose: resourcePurposeSchema, currentVersionId: z.string().uuid().nullable(), revision: z.number().int().positive(),
   createdAt: z.string(), updatedAt: z.string(), deletedAt: z.string().nullable(),
-  lifecycleVersion: z.number().int().nullable(), fileId: z.string().uuid().nullable(), canManage: z.boolean(),
+  lifecycleVersion: z.number().int().nullable(), fileId: z.string().uuid().nullable(), canManage: z.boolean(), systemManaged: z.boolean().optional(),
 });
 const resourceResponse = apiEnvelope(resourceSchema, 'ResourceLibraryItemResponse');
 const listRoute = createRoute({ method: 'get', path: '/api/v1/projects/{projectId}/resource-library', tags: ['resources'],
@@ -35,22 +35,22 @@ const patchRoute = createRoute({ method: 'patch', path: '/api/v1/projects/{proje
 interface ResourceRow {
   resource_type: ResourceType; id: string; title: string; purpose: ResourcePurpose; current_version_id: string | null;
   revision: number; created_at: string; updated_at: string; deleted_at: string | null;
-  lifecycle_version: number | null; file_id: string | null; can_manage: number; sort_key: string;
+  lifecycle_version: number | null; file_id: string | null; can_manage: number; system_managed: number; sort_key: string;
 }
 
 // The public source metadata revision also advances through recycling/restoring,
 // so a purpose request captured before a lifecycle change cannot be replayed.
 const resourceUnion = `SELECT 'source' resource_type,s.id,s.title,s.purpose,s.current_version_id,(s.resource_revision+s.lifecycle_version-1) revision,
   s.created_at,s.updated_at,s.deleted_at,s.lifecycle_version,(SELECT file_id FROM source_versions WHERE id=s.current_version_id) file_id,
-  CASE WHEN ?2=1 OR s.created_by=?3 THEN 1 ELSE 0 END can_manage,'source:'||s.id sort_key
+  CASE WHEN ?2=1 OR s.created_by=?3 THEN 1 ELSE 0 END can_manage,0 system_managed,'source:'||s.id sort_key
   FROM sources s WHERE s.project_id=?1
-  UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,m.created_at,m.updated_at,NULL,NULL,NULL,CASE WHEN ?2=1 OR m.created_by=?3 THEN 1 ELSE 0 END,'material:'||m.id
+  UNION ALL SELECT 'material',m.id,m.title,m.purpose,m.current_version_id,m.revision,m.created_at,m.updated_at,NULL,NULL,NULL,CASE WHEN m.system_managed=0 AND (?2=1 OR m.created_by=?3) THEN 1 ELSE 0 END,m.system_managed,'material:'||m.id
   FROM materials m WHERE m.project_id=?1`;
 
 function toResource(row: ResourceRow) {
   return { resourceType: row.resource_type, resourceId: row.id, title: row.title, purpose: row.purpose,
     currentVersionId: row.current_version_id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at,
-    deletedAt: row.deleted_at, lifecycleVersion: row.lifecycle_version, fileId: row.file_id, canManage: row.can_manage === 1 };
+    deletedAt: row.deleted_at, lifecycleVersion: row.lifecycle_version, fileId: row.file_id, systemManaged: row.system_managed === 1, canManage: row.can_manage === 1 };
 }
 
 async function readResource(env: Env, projectId: string, type: ResourceType, id: string, actorId: string, owner: boolean): Promise<ResourceRow> {

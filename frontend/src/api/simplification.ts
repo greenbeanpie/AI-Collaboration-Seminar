@@ -10,7 +10,7 @@ export async function accountRequest<T>(path: string, options: RequestOptions = 
 }
 export type ProjectGoal = { projectId: string; title: string; detail: string; revision: number; graphRevision: number };
 export type ResourcePurpose = 'background' | 'reference' | 'output';
-export type ResourceEntry = { resourceType: 'source' | 'material'; resourceId: string; title: string; purpose: ResourcePurpose; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null; lifecycleVersion: number; fileId: string | null; canManage: boolean };
+export type ResourceEntry = { resourceType: 'source' | 'material'; resourceId: string; title: string; purpose: ResourcePurpose; currentVersionId: string | null; revision: number; createdAt: string; updatedAt: string; deletedAt: string | null; lifecycleVersion: number; fileId: string | null; canManage: boolean; systemManaged?: boolean };
 export const resourcePurposeLabels: Record<ResourcePurpose, string> = { background: '背景', reference: '参考', output: '成果' };
 export type ProfileImportCandidate = { candidateId: string; sourceProjectId: string; sourceProjectName: string; major: string; skills: string[]; weeklyAvailableHours: number | null; importedAt: string | null; createdAt: string };
 export type PersonalProfile = DataOf<'PersonalProfileResponse'> & { weeklyAvailableHours?: number | null };

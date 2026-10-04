@@ -15,7 +15,7 @@ const indexResponse=apiEnvelope(base.extend({directoryOnly:z.literal(true),index
 const searchResponse=apiEnvelope(base.extend({directoryOnly:z.literal(true),indexStatus:z.string(),items:z.array(indexEntry.omit({seq:true,endOffset:true}).extend({excerpt:z.string()})),nextOffset:z.number().nullable()}),'ResourceIndexSearchResponse');
 const readResponse=apiEnvelope(base.extend({sectionId:z.string(),offset:z.number(),nextOffset:z.number().nullable(),text:z.string().optional(),fragments:z.array(z.object({fragmentId:z.string(),pageNumber:z.number().nullable(),quote:z.string()})).optional()}),'ResourceSectionResponse');
 export const resourceIndexApi=new OpenAPIHono<AppEnv>();
-resourceIndexApi.use('/projects/:projectId/resource-index/*',async(c,next)=>{if(c.env.RESOURCE_INDEX_ENABLED==='false')throw invalidState('材料索引入口暂时关闭');await next();});
+resourceIndexApi.use('/projects/:projectId/resource-index/*',async(c,next)=>{c.header('Cache-Control','no-store');if(c.env.RESOURCE_INDEX_ENABLED==='false')throw invalidState('材料索引入口暂时关闭');await next();});
 resourceIndexApi.use('/projects/:projectId/resource-index/*',requireUser,requireProjectMember());
 const path='/projects/{projectId}/resource-index/{resourceType}/{versionId}';
 resourceIndexApi.openapi(createRoute({method:'get',path,request:{params,query:paging},responses:{200:{description:'固定版本内部目录及覆盖状态',content:{'application/json':{schema:indexResponse}}}}}),async c=>{

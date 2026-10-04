@@ -5,9 +5,14 @@ import { sourceLifecycleGuard } from './source-lifecycle';
 export type ResourceIndexType = 'source' | 'material';
 export interface ResourceIndexTarget { resourceType: ResourceIndexType; versionId: string }
 interface Resource { resourceId:string; title:string; revision:number; coverage:string; textStatus?:string }
-interface State { cursor:number; next_seq:number; heading:string; status:string }
+interface State { cursor:number; next_seq:number; source_seq:number; source_offset:number; heading:string; status:string }
 interface Block { id:string; seq:number; fragment_id:string|null; page_number:number|null; heading:string; start_offset:number; end_offset:number; content:string }
 const BLOCK=1800, PAGE=20;
+/** The existing UNIQUE(source_version_id,seq) index performs a keyset seek. */
+export const sourceIndexChunkSql=`SELECT id fragmentId,seq sourceSeq,page_number pageNumber,
+ heading_path headingJson,length(content) totalChars,
+ substr(content,CASE WHEN seq=?3 THEN ?4 ELSE 0 END+1,2000) text
+ FROM source_fragments WHERE source_version_id=?1 AND project_id=?2 AND seq>=?3 ORDER BY seq LIMIT 1`;
 
 export async function assertIndexedResource(env:Env, projectId:string, target:ResourceIndexTarget):Promise<Resource> {
  if(env.RESOURCE_INDEX_ENABLED==='false')throw invalidState('材料索引功能暂时关闭');
@@ -33,13 +38,22 @@ export async function buildResourceIndexBatch(env:Env,projectId:string,target:Re
  const state=(await env.DB.prepare('SELECT * FROM resource_index_state WHERE project_id=?1 AND resource_type=?2 AND version_id=?3').bind(projectId,target.resourceType,target.versionId).first<State>())!;
  if(state.status==='ready')return state;
  let cursor=state.cursor,seq=state.next_seq,heading=state.heading,done=false;
+ let sourceSeq=state.source_seq,sourceOffset=state.source_offset;
  let headingLevels:string[]=[];
  try { headingLevels=JSON.parse(heading||'[]') as string[]; } catch { headingLevels=[heading]; }
  const blocks:Array<{text:string;searchText:string;fragmentId:string|null;pageNumber:number|null;start:number;heading:string;seq:number}>=[];
  for(let i=0;i<PAGE;i++) {
-  const row=target.resourceType==='material'
-   ? await env.DB.prepare('SELECT substr(markdown,?3+1,2000) text,NULL fragmentId,NULL pageNumber,?3 start FROM material_versions WHERE id=?1 AND project_id=?2').bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null}>()
-   : await env.DB.prepare(`SELECT substr(content,MAX(1,?3-start+1),2000) text,id fragmentId,page_number pageNumber,MAX(?3,start) start,headingJson FROM (SELECT id,page_number,seq,content,heading_path headingJson,COALESCE(SUM(length(content)+1) OVER(ORDER BY seq,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start FROM source_fragments WHERE source_version_id=?1 AND project_id=?2) WHERE start+length(content)>?3 ORDER BY seq,id LIMIT 1`).bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null}>();
+  type Chunk={text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null;sourceSeq?:number;totalChars?:number};
+  let row:Chunk|null;
+  if(target.resourceType==='material'){
+   row=   await env.DB.prepare('SELECT substr(markdown,?3+1,2000) text,NULL fragmentId,NULL pageNumber,?3 start FROM material_versions WHERE id=?1 AND project_id=?2').bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null}>()
+   ;
+  } else {
+   const next=await env.DB.prepare(sourceIndexChunkSql).bind(target.versionId,projectId,sourceSeq,sourceOffset).first<Omit<Chunk,'start'>>();
+   if(next&&next.sourceSeq!==sourceSeq)sourceOffset=0;
+   row=next?{...next,start:cursor}:null;
+   if(row&&(!row.text||sourceOffset===row.totalChars)){sourceSeq=row.sourceSeq!+1;sourceOffset=0;cursor++;continue;}
+  }
   if(!row?.text){done=true;break;}
   if(row.headingJson){headingLevels=JSON.parse(row.headingJson) as string[];heading=JSON.stringify(headingLevels);}
   const chars=Array.from(row.text);let length=Math.min(BLOCK,chars.length);
@@ -54,14 +68,19 @@ export async function buildResourceIndexBatch(env:Env,projectId:string,target:Re
   if(title){const level=title[1]!.length;headingLevels=headingLevels.slice(0,level-1);headingLevels[level-1]=title[2]!;heading=JSON.stringify(headingLevels);}
   blocks.push({text,searchText:chars.slice(0,length+199).join(''),fragmentId:row.fragmentId,pageNumber:row.pageNumber,start:row.start,heading:headingLevels.filter(Boolean).join(' / '),seq:seq++});
   cursor=row.start+length;
+  if(target.resourceType==='source'){
+   sourceSeq=row.sourceSeq!;
+   sourceOffset+=length;
+   if(sourceOffset>=row.totalChars!){sourceSeq++;sourceOffset=0;cursor++;}
+  }
  }
  await assertIndexedResource(env,projectId,target);
  const statements=blocks.map(b=>env.DB.prepare(`INSERT OR IGNORE INTO resource_index_blocks(id,project_id,resource_type,version_id,seq,fragment_id,page_number,heading,start_offset,end_offset,content,search_content) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?13 WHERE EXISTS(SELECT 1 FROM resource_index_state WHERE project_id=?2 AND resource_type=?3 AND version_id=?4 AND cursor=?12)`)
   .bind(`${target.resourceType}:${target.versionId}:${b.seq}`,projectId,target.resourceType,target.versionId,b.seq,b.fragmentId,b.pageNumber,b.heading,b.start,b.start+Array.from(b.text).length,b.text,state.cursor,b.searchText));
- statements.push(env.DB.prepare(`UPDATE resource_index_state SET cursor=?4,next_seq=?5,heading=?6,status=?7 WHERE project_id=?1 AND resource_type=?2 AND version_id=?3 AND cursor=?8`).bind(projectId,target.resourceType,target.versionId,cursor,seq,heading,done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building',state.cursor));
+ statements.push(env.DB.prepare(`UPDATE resource_index_state SET cursor=?4,next_seq=?5,heading=?6,status=?7,source_seq=?9,source_offset=?10 WHERE project_id=?1 AND resource_type=?2 AND version_id=?3 AND cursor=?8`).bind(projectId,target.resourceType,target.versionId,cursor,seq,heading,done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building',state.cursor,sourceSeq,sourceOffset));
  await env.DB.batch(statements);
  await assertIndexedResource(env,projectId,target);
- return {cursor,next_seq:seq,heading,status:done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building'};
+ return {cursor,next_seq:seq,source_seq:sourceSeq,source_offset:sourceOffset,heading,status:done&&(resource.textStatus??resource.coverage)==='ready'?'ready':'building'};
 }
 
 export async function getResourceIndex(env:Env,projectId:string,target:ResourceIndexTarget,offset=0) {

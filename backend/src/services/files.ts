@@ -1,6 +1,6 @@
 import { validateDocx, DOCX_MIME } from './docx-validation';
 import { nowIso, newId, sha256Hex } from '../core/db';
-import { invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
+import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS, LIMITS } from '../core/limits';
 import type { Env } from '../env';
 
@@ -26,6 +26,11 @@ const startsWith = (b: Uint8Array, bytes: number[]): boolean =>
   bytes.every((v, i) => b[i] === v);
 
 const MAGIC_SPECS: MagicSpec[] = [
+  { exts: ['.mp3'], mime: 'audio/mpeg', detect: b => startsWith(b,[0x49,0x44,0x33]) || (b[0]===0xff && ((b[1] ?? 0)&0xe0)===0xe0) },
+  { exts: ['.wav'], mime: 'audio/wav', detect: b => startsWith(b,[0x52,0x49,0x46,0x46]) && startsWith(b.subarray(8),[0x57,0x41,0x56,0x45]) },
+  { exts: ['.m4a'], mime: 'audio/mp4', detect: b => startsWith(b.subarray(4),[0x66,0x74,0x79,0x70]) },
+  { exts: ['.mp4'], mime: 'video/mp4', detect: b => startsWith(b.subarray(4),[0x66,0x74,0x79,0x70]) },
+  { exts: ['.webm'], mime: 'video/webm', detect: b => startsWith(b,[0x1a,0x45,0xdf,0xa3]) },
   { exts: ['.pdf'], mime: 'application/pdf', detect: (b) => startsWith(b, [0x25, 0x50, 0x44, 0x46, 0x2d]) },
   {
     exts: ['.png'],
@@ -45,11 +50,14 @@ export function extOf(fileName: string): string {
   if (idx <= 0 || idx === fileName.length - 1) return '';
   return fileName.slice(idx).toLowerCase();
 }
+export const isMediaExtension = (ext: string) => ['.mp3','.wav','.m4a','.mp4','.webm'].includes(ext);
+export const uploadLimit = (ext: string) => isMediaExtension(ext) ? LIMITS.maxMediaBytes : LIMITS.maxFileBytes;
 
 /** Shared validation for project and private draft uploads; no network or model calls. */
 export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
   if (!bytes.length) throw validationFailed('文件不能为空');
-
+  const limit = uploadLimit(ext);
+  if (limit !== null && bytes.byteLength > limit) throw fileTooLarge(limit);
   if (ext === '.docx' && startsWith(bytes,[0x50,0x4b,0x03,0x04])) return DOCX_MIME;
   const spec = MAGIC_SPECS.find(m => m.exts.includes(ext) && m.detect(bytes));
   if (spec) return spec.mime;
@@ -133,6 +141,11 @@ export async function storeFileContent(
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
   if(!params.bytes.length)throw validationFailed('文件不能为空');
+  const limit = uploadLimit(row.ext);
+  if (limit !== null && params.bytes.byteLength > limit) {
+    // Media limits remain independent of nullable document upload limits.
+    throw fileTooLarge(limit);
+  }
 
   const spec = MAGIC_SPECS.find((m) => m.exts.includes(row.ext) && m.detect(params.bytes));
   let mimeDetected: string;

@@ -85,12 +85,12 @@ describe('dashboard interactions',()=>{
   for (const text of ['待分配任务','已提交任务','受阻任务','已完成任务','已完成项目甲','已归档项目甲']) expect(within(attention).queryByText(text)).not.toBeInTheDocument();
   expect(document.querySelector('.dashboard-deadline .dashboard-metric-value')).toHaveTextContent('2项');
  });
- it('keeps a project entry with zero actionable tasks and a clear waiting hint',()=>{
+ it('hides projects with zero actionable tasks from the attention panel',()=>{
   setup({pendingTasks:[task('等待前置','doing',{dependsOnTaskIds:['未完成前置'],unfinishedDependencyIds:['未完成前置']}),task('未完成前置','todo',{assigneeId:null})]});
-  const group = within(screen.getByRole('complementary',{name:'待响应事项'})).getByRole('region',{name:'待确认项目'});
-  expect(within(group).getByRole('link',{name:/待确认项目.*0 项可完成/})).toBeInTheDocument();
-  expect(within(group).getByText('暂无可完成任务')).toBeInTheDocument();
-  expect(within(group).queryByRole('list')).not.toBeInTheDocument();
+  const attention = within(screen.getByRole('complementary',{name:'待响应事项'}));
+  expect(attention.queryByRole('region',{name:'待确认项目'})).not.toBeInTheDocument();
+  expect(attention.queryByText('暂无可完成任务')).not.toBeInTheDocument();
+  expect(screen.getByRole('link',{name:/待确认项目.*进入项目/})).toBeInTheDocument();
  });
  it('does not truncate currently actionable tasks to the old five-item list',()=>{
   setup({pendingTasks:Array.from({length:7},(_,i)=>task(`可执行${i+1}`))});
