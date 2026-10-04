@@ -32,6 +32,24 @@ export async function requireBridgeDeviceScope(env:Env,device:DeviceRow,projectI
  const scope=await env.DB.prepare('SELECT workspace_label FROM agent_bridge_scopes WHERE device_id=?1 AND project_id=?2').bind(device.id,projectId).first<{workspace_label:string|null}>();if(!scope)throw permissionDenied('设备没有本项目授权');return scope;
 }
 export async function bridgeDeviceDto(env:Env,d:DeviceRow){const projects=d.owner_id&&!d.revoked_at?(await env.DB.prepare(`SELECT s.project_id projectId,p.name,s.workspace_label workspaceLabel FROM agent_bridge_scopes s JOIN projects p ON p.id=s.project_id JOIN project_members m ON m.project_id=p.id AND m.user_id=?2 WHERE s.device_id=?1 ORDER BY p.name,p.id`).bind(d.id,d.owner_id).all()).results:[];return{paired:!!d.owner_id,deviceId:d.id,deviceName:d.device_name,bridgeVersion:d.bridge_version,dshVersion:d.dsh_version,projects,revoked:!!d.revoked_at,lastSeenAt:d.last_seen_at,protocolVersion:1};}
+/** Settings may change only this owner's current project memberships. Removal cancels work before dropping scope. */
+export async function bridgeScopeOptions(env:Env,deviceId:string,userId:string){
+ const d=await env.DB.prepare('SELECT * FROM agent_bridge_devices WHERE id=?1 AND owner_id=?2 AND revoked_at IS NULL').bind(deviceId,userId).first<DeviceRow>();if(!d)throw notFound();
+ const items=(await env.DB.prepare('SELECT p.id projectId,p.name,EXISTS(SELECT 1 FROM agent_bridge_scopes s WHERE s.device_id=?2 AND s.project_id=p.id) authorized FROM projects p JOIN project_members m ON m.project_id=p.id WHERE m.user_id=?1 ORDER BY p.name,p.id').bind(userId,deviceId).all<{projectId:string;name:string;authorized:number}>()).results;
+ return {items:items.map(p=>({...p,authorized:!!p.authorized}))};
+}
+export async function updateBridgeScopes(env:Env,deviceId:string,userId:string,projectIds:string[]){
+ if(new Set(projectIds).size!==projectIds.length)throw validationFailed('请选择不同项目');
+ await bridgeScopeOptions(env,deviceId,userId);for(const id of projectIds)await bridgeMember(env,id,userId);
+ const selected=JSON.stringify(projectIds),guard=`EXISTS(SELECT 1 FROM agent_bridge_devices WHERE id=?1 AND owner_id=?2 AND revoked_at IS NULL) AND NOT EXISTS(SELECT 1 FROM json_each(?3) j WHERE NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=j.value AND user_id=?2))`;
+ const results=await env.DB.batch([
+  env.DB.prepare(`UPDATE agent_bridge_devices SET last_seen_at=last_seen_at WHERE id=?1 AND ${guard}`).bind(deviceId,userId,selected),
+  env.DB.prepare(`UPDATE agent_bridge_handoffs SET state=CASE WHEN state IN ('checking','waiting_device') THEN 'blocked' ELSE 'cancel_requested' END,reason='项目授权已撤销',updated_at=?4 WHERE device_id=?1 AND project_id NOT IN (SELECT value FROM json_each(?3)) AND state IN ('checking','waiting_device','claimed','running','waiting_input','uploading','dispatch_uncertain') AND ${guard}`).bind(deviceId,userId,selected,nowIso()),
+  env.DB.prepare(`DELETE FROM agent_bridge_scopes WHERE device_id=?1 AND project_id NOT IN (SELECT value FROM json_each(?3)) AND ${guard}`).bind(deviceId,userId,selected),
+  env.DB.prepare(`INSERT OR IGNORE INTO agent_bridge_scopes(device_id,project_id) SELECT ?1,value FROM json_each(?3) WHERE ${guard}`).bind(deviceId,userId,selected),
+ ]);if(!results[0]!.meta.changes)throw invalidState('设备授权或项目成员权限已变化');
+ return bridgeDeviceDto(env,(await env.DB.prepare('SELECT * FROM agent_bridge_devices WHERE id=?1').bind(deviceId).first<DeviceRow>())!);
+}
 export async function createBridgePairing(env:Env,input:{credentialHash:string;deviceName:string;bridgeVersion:string;dshVersion:string},origin:string){
  const id=newId(),now=nowIso(),expiresAt=new Date(Date.now()+600_000).toISOString();
  // Hash generation is device-owned; the cloud never receives the raw secret.

@@ -8,17 +8,21 @@ export const bridgeDevicesKey = ['agent-bridge-devices'] as const;
 export const bridgeHandoffsKey = (projectId: string, taskId: string) => ['agent-bridge-handoffs', projectId, taskId] as const;
 export const bridgeActive = (item: BridgeHandoff) => !['blocked', 'failed', 'cancelled', 'ready_for_review'].includes(item.state);
 const devicePreferences = new Map<string, string>();
-export function preferredBridgeDevice(projectId: string) {
-  try { return localStorage.getItem(`agent-bridge-device:${projectId}`) ?? devicePreferences.get(projectId) ?? ''; }
-  catch { return devicePreferences.get(projectId) ?? ''; }
+export function preferredBridgeDevice(projectId: string, actorId?: string) {
+  if (!actorId) return '';
+  const key = `agent-bridge-device:${actorId}:${projectId}`;
+  try { return localStorage.getItem(key) ?? devicePreferences.get(key) ?? ''; }
+  catch { return devicePreferences.get(key) ?? ''; }
 }
-export function rememberBridgeDevice(projectId: string, deviceId: string) {
-  devicePreferences.set(projectId, deviceId);
-  try { localStorage.setItem(`agent-bridge-device:${projectId}`, deviceId); } catch { /* A disabled storage API still allows this session's choice. */ }
+export function rememberBridgeDevice(projectId: string, deviceId: string, actorId?: string) {
+  if (!actorId) return;
+  const key = `agent-bridge-device:${actorId}:${projectId}`;
+  devicePreferences.set(key, deviceId);
+  try { localStorage.setItem(key, deviceId); } catch { /* Session choice remains available without storage. */ }
 }
 export function useBridgeDevices() {
   const session = useSession();
-  return useQuery({ queryKey: [...bridgeDevicesKey, session.data?.id], enabled: Boolean(session.data?.id), queryFn: ({ signal }) => bridgeApi.devices(signal), retry: false, staleTime: 10_000, networkMode: 'always' });
+  return useQuery({ queryKey: [...bridgeDevicesKey, session.data?.id], enabled: Boolean(session.data?.id), queryFn: ({ signal }) => bridgeApi.devices(signal), retry: false, staleTime: 10_000, refetchInterval: 30_000, refetchIntervalInBackground: false, networkMode: 'always' });
 }
 export function boundBridgeDevices(devices: BridgeDevice[] | undefined, projectId: string) {
   return devices?.filter(device => device.paired && !device.revoked && device.protocolVersion === 1 && device.projects.some(project => project.projectId === projectId && project.workspaceLabel)) ?? [];

@@ -16,3 +16,11 @@ test('host pairing stores origin-pinned credential and exposes only approval inf
 });
 
 test('cancellation removes owned pending prompt and waits for actual idle',async()=>{const calls=[];const adapter=new DshAdapter({agents:{get(){return{inbox:{nextTurn:[{id:'m',source:{rpcId:'id'}}],nextStep:[]},async whenIdle(){calls.push('idle');}};}},sessionController:{async updateQueue(){calls.push('remove');},async cancel(){calls.push('cancel');}}});await adapter.cancel('bridge-id');assert.deepEqual(calls,['remove','cancel','idle']);});
+
+test('DSH startup automatically connects saved credential without pairing or dispatch',async()=>{
+ const previousHome=process.env.DSH_HOME,previousFetch=globalThis.fetch;process.env.DSH_HOME=await mkdtemp(join(tmpdir(),'bridge-startup-'));let cleanup;const calls=[];
+ const record={payload:{secret:'saved-secret',apiBase:DEFAULT_API}};
+ const ctx={credentials:{async readRecord(){return record;},async modifyRecord(){throw new Error('Unexpected pairing');},async deleteRecord(){throw new Error('Unexpected disconnect');}},sessionController:Object.fromEntries(['create','prompt','follow','control','inspect','resolveAgent','cancel','updateQueue'].map(k=>[k,()=>{throw new Error('Unexpected execution');}])),agents:{get(){}},tools:{},directoryPicker:{capability(){return{kind:'native',async pick(){return undefined;}};}},connection:{fetch:{register(){}}},effect(fn){cleanup=fn();}};
+ globalThis.fetch=async(url,init)=>{calls.push(url);assert.equal(init.headers.Authorization,'Bearer saved-secret');return Response.json(url.endsWith('/device')?{paired:true,protocolVersion:1,projects:[]}:{ok:true});};
+ try{await apply(ctx);for(let n=0;n<30&&!calls.some(url=>url.endsWith('/device/heartbeat'));n++)await new Promise(resolve=>setTimeout(resolve,10));assert.ok(calls.some(url=>url.endsWith('/device/heartbeat')));assert.ok(!calls.some(url=>url.endsWith('/pairings')||url.endsWith('/device/claim')));}finally{await cleanup?.();globalThis.fetch=previousFetch;if(previousHome===undefined)delete process.env.DSH_HOME;else process.env.DSH_HOME=previousHome;}
+});
