@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-04",
+  "implementationCommit": "74c0698",
+  "backendVersion": "73a7c5d1-80f5-44a4-a384-ea30016242a5",
+  "frontendVersion": "eca8b8e8-181a-4f05-9396-16ec785e1471",
+  "site": "https://team.greenbp.dpdns.org",
+  "verificationOrigin": "https://greenbp-team-office.hddhp.workers.dev",
+  "tests": {
+    "backendFull": 962,
+    "frontendFull": 640,
+    "postReleaseIndexRegression": 8,
+    "typecheck": true,
+    "lint": true,
+    "build": true
+  },
+  "productionChecks": [
+    "health/dependencies/null-capabilities",
+    "private-multipart/docx-package/range",
+    "docx-text/null-pages/headings/search/original-citations",
+    "scan-detection-without-model",
+    "live-ocr",
+    "temporary-project-archived",
+    "deployed browser original-text search after archival"
+  ],
+  "ocr": {
+    "pages": 3,
+    "calls": 1,
+    "model": "deepseek-v4.1-flash",
+    "promptTokens": 866,
+    "completionTokens": 166,
+    "labelsVerified": true,
+    "costStatus": "unknown"
+  },
+  "cpuSamplesMs": [
+    34,
+    42,
+    8,
+    9
+  ],
+  "limits": [
+    "Custom domain automated requests encountered a Cloudflare challenge; same application workers.dev verification passed.",
+    "Sampled index CPU includes 34ms and 42ms, exceeding Workers Free 10ms; the release does not guarantee every operation fits Free CPU.",
+    "Actual model cost is unavailable because configured pricing is unknown.",
+    "Device, R2, Worker, D1 and provider limits remain; raw originals and partial results are preserved."
+  ]
+}
