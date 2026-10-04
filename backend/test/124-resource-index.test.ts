@@ -14,6 +14,13 @@ async function material(text:string) {
  ]);return {projectId,id,target:{resourceType:'material' as const,versionId},user};
 }
 describe('version bound internal resource index',()=>{
+ it('finds text spanning block boundaries without counting overlap as duplicate matches',async()=>{
+  const f=await material('x'.repeat(1798)+'跨块中文检索'+ 'z'.repeat(1900));
+  const found=await searchResource(env,f.projectId,f.target,'跨块中文检索');expect(found.items).toHaveLength(1);
+  const read=await readResourceSection(env,f.projectId,f.target,String(found.items[0]!.sectionId),1798,true);
+  expect('text' in read&&read.text.startsWith('跨块中文检索')).toBe(true);
+  expect((await searchResource(env,f.projectId,f.target,'中文检索')).items).toHaveLength(1);
+ });
  it('uses real FTS trigram for Chinese/English and literal short searches; search alone creates no evidence',async()=>{
   const f=await material('# 第一章\n这是完整中文检索。Alpha beta。特殊"字符 %_ 不作为通配符。');
   for(const query of ['完整中文','中文','检','ALPHA','特殊"字符','%_']){
