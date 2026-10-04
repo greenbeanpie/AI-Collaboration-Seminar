@@ -155,3 +155,9 @@ npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopb
 ## 项目文件回收站
 
 项目资料的文件库支持删除与恢复，包括尚未上传完成的文件。移入回收站停止关联解析、OCR、要求提取和总结，保留原文件、正文、附件和引用历史。恢复不自动调用 AI。项目负责人可管理项目文件，成员只能管理自己的上传；账户管理员等级不扩大项目访问范围。完整接口、并发保护及后续文件工具接入契约见 [项目资料生命周期](docs/FILE-RECYCLE-LIFECYCLE.md)。
+
+## AI 失败恢复与语音接入评估
+
+业务 AI 失败后每隔至少一分钟自动排队恢复，连续三次恢复失败即停止。账户管理页面提供超级管理员一键批量重试，展示批次与跳过原因。行为、接口和恢复边界见 [AI 重试说明](docs/AI-RETRIES.md)。
+
+语音功能本次仅交付 [Gemini 接入评估与计划](docs/GEMINI-VOICE-PLAN.md)：保留 Whisper 默认路径，未来设置提供 Whisper/Gemini 二选一；Google 转录及独立 TTS 限定经 Cloudflare AI Gateway。现有文字模型继续负责答辩，两方轮流。尚未启用 Gemini 语音或完成真实 Gateway 模型验收。

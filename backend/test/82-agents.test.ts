@@ -186,8 +186,9 @@ describe('三档 AI 补位', () => {
     const created = (await create.json()) as { data: { sessionId: string; runId: string; jobId: string } };
     // 该分支 mock 返回不存在的引文 → 任务失败
     const done = await ensureJobDone(authCookie(owner.token), created.data.jobId, 'agent');
-    expect(done.status).toBe('failed');
+    expect(done.status).toBe('queued'); // Invalid evidence remains a failed attempt with pending recovery.
     expect((done.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
+    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(created.data.jobId).first<{status:string}>())?.status).toBe('failed');
 
     // 伪造引文关闭后（默认 mock 引文存在）→ 成功产生 review_result 回合
     vi.stubGlobal('fetch', mockGatewayFetch());

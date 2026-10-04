@@ -111,8 +111,9 @@ describe('来源解析流水线', () => {
     });
     const jobId = await startParse(authCookie(owner.token), pid, sourceId);
     const done = await ensureJobDone(authCookie(owner.token), jobId);
-    expect(done.status).toBe('failed');
+    expect(done.status).toBe('queued'); // Failed attempt is retained while durable recovery waits.
     expect((done.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
+    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first<{status:string}>())?.status).toBe('failed');
   });
 
   it('非法 JSON 触发一次修复重试后成功', async () => {
@@ -294,7 +295,7 @@ describe('来源解析流水线', () => {
 
     const ocrDone = await ensureJobDone(authCookie(owner.token), upBody.jobId!);
     // 识别失败的页面不得被当作整册识别完成
-    expect(ocrDone.status).toBe('failed');
+    expect(ocrDone.status).toBe('queued'); // OCR failure is queued for bounded recovery, never reported as complete.
     expect((ocrDone.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
 
     const page = await env.DB.prepare("SELECT ocr_status FROM source_pages WHERE source_version_id = ?1 AND page_number = 1")

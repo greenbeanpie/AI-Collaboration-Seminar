@@ -407,7 +407,7 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 OpenCode Go 额外要求稳定 opaque session ID，生成 `x-opencode-session` 和已验证 user-agent；不能把用户输入直接当 header。模型 JSON 能力不足时不强行发送不支持字段，仍通过明确 JSON 提示和 Zod 验证。业务最终 JSON 错误由 `aiJsonCall` 至多增加一次修复请求；工具调查结束的修复关闭工具，保留完整输出和已读 ID，提示只纠正字段，且重复原权限/配置/授权检查。输入过大直接拒绝，不静默截掉报告末尾。评分评价可指定 `maxAttempts:1` 禁止修复改变判断。
 
-供应商恢复与 JSON 修复是两个预算维度。`gatewayChat` 仅对已收到的 HTTP 429/500/502/503/504、且 AppError 为 retryable 的 `AI_UNAVAILABLE`，按 1 秒、5 秒、15 秒额外最多三次恢复；从首次明确拒绝开始共享 60 秒窗口，下一次 timeout 取配置 timeout 与窗口剩余时间较小值。调查作业通过 `onProviderRetry` 保存 `attempt/deadline/nextAttemptAt` 后抛 continuation，在独立实例等待后恢复；窗口跨分片不能重置。每次再次调用都执行 beforeFetch 和 prepareMessages。网络失败、超时、重定向、配置/预算/权限错误、解析失败、10034 不属于该恢复列表。调用方不得在 JSON 修复循环中重新启动供应商恢复窗口；`AI_UNAVAILABLE` 直接终止，不重放未知受理状态。存在 `withSingleRetry` helper 也不代表核心链路应重复套用它。
+供应商恢复与 JSON 修复是两个预算维度。`gatewayChat` 仅对已收到的 HTTP 429/500/502/503/504、且 AppError 为 retryable 的 `AI_UNAVAILABLE`，按 1 秒、5 秒、15 秒额外最多三次恢复；从首次明确拒绝开始共享 60 秒窗口，下一次 timeout 取配置 timeout 与窗口剩余时间较小值。调查作业通过 `onProviderRetry` 保存 `attempt/deadline/nextAttemptAt` 后抛 continuation，在独立实例等待后恢复；窗口跨分片不能重置。每次再次调用都执行 beforeFetch 和 prepareMessages。网络失败、超时、重定向、配置/预算/权限错误、解析失败、10034 不属于该恢复列表。调用方不得在 JSON 修复循环中重新启动供应商恢复窗口；`AI_UNAVAILABLE` 终止当前调用内恢复；业务失败另由 D1 持久重试链在至少60秒后排队新作业，最多追加3次，旧未知费用保留待核对。配置、预算和权限拒绝会停止恢复，不能把业务恢复计数与调用内计数混为一谈。存在 `withSingleRetry` helper 也不代表核心链路应重复套用它。
 
 原生搜索由 `nativeSearchCapability` 按 preset/protocol/model 白名单判断，不等于所有兼容模型都能搜索。只有 `allowSearch=true`、公开 `searchQuery`、模型能力支持，才暴露 web_search；工具查询必须与授权查询逐字一致，本轮最多一次。有限金额预算禁原生搜索，因为附加费用不能由 token 上界保证。搜索单独请求只带公开查询，不带项目正文；必须返回 performed 与实际 citations 才可声称联网。Responses 使用 web_search，Messages 使用 web_search_20250305，Gemini 用 google_search，OpenRouter 强制 native 引擎；不可用不回落第三方。供应商真实兼容性仍应逐项验证，尤其 DeepSeek Anthropic 搜索不是仅凭模拟响应即可证明。
 
@@ -678,3 +678,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 评分分区导航由 ProjectSectionNavigation 统一提供，保留 assessment 的 section 查询参数与旧 requirements/reviews/rehearsals 路由。StandardsEditor 保留完整编辑与历史入口，StandardSummary 只遍历 rubric.weights，并按 mappings 从对应 requirements.citations 生成引用编号；不会从 rubric.notes 猜测来源。编号按首次出现顺序分配，以固定 fileId 优先去重，文件名仅在底部引用列表展示。固定文件采用带成员权限的文件内容链接，避免当前来源版本的归档状态影响旧引用定位。
 
 standardView 批量读取项目范围内的引用元数据与可用状态，源版本引用每份标准仅增加一次批量查询，fragmentId 历史引用另加一次解析查询。输出补充可选文件名和定位信息，不修改 snapshot_json 或评分规则；2000 条重复引用的测试验证仅执行两次读取（版本状态及引用元数据）。SubmissionBody 使用默认关闭的原生 details，仅折叠成果正文，完整文本和验收控件保留。此变更不需要数据库迁移。
+
+### AI 失败请求批量重试
+
+`0056/0057` 新增管理员批次、失败快照、后继映射和自动恢复队列。`cron` 分批执行 `recoverAdminAiRetries` 与 `recoverAutomaticAiRetries`，调用共同的业务恢复校验；并发槽位不足继续排队，预算/权限/输入失效则停止。管理员读取统计，超级管理员才能一键入队。`GET /jobs/{id}` 跟随后继，待自动恢复的失败尝试对逻辑请求呈现 queued 并附 retry 元数据，保留原始错误；数据库旧失败作业仍保持终态。详见仓库 `docs/AI-RETRIES.md` 与 `docs/GEMINI-VOICE-PLAN.md`，语音模型仅完成评估，Whisper仍保留。

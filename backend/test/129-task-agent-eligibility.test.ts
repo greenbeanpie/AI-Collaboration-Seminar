@@ -106,7 +106,7 @@ describe('model based task Agent eligibility',()=>{
   });
   it('atomically rejects task edits between final read and result UPDATE',async()=>{
     const f=await fixture(),a=await f.start();model();
-    const guarded = {...env,DB:{prepare:(sql:string)=>{
+    const guarded = {...env,DB:{batch:env.DB.batch.bind(env.DB),prepare:(sql:string)=>{
       const statement=env.DB.prepare(sql);
       if(!sql.startsWith('UPDATE task_agent_eligibility SET eligible='))return statement;
       return {bind:(...args:unknown[])=>({run:async()=>{

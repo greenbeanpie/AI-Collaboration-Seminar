@@ -51,3 +51,17 @@ it('does not spend a recovery round while waiting for project concurrency', asyn
   const row=await env.DB.prepare('SELECT status,attempts FROM ai_automatic_retries WHERE id=?1').bind(`job:${id}`).first<{status:string;attempts:number}>();
   expect(row).toMatchObject({status:'pending',attempts:0});
 });
+
+it('retries failed source analysis while an independent summary of the same source is running', async () => {
+  await configureGoFixture();
+  const owner=await seedUser(), projectId=await seedProject(owner.userId), sourceId=newId(), versionId=newId(), id=newId(), now=nowIso();
+  const config=await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string}>();
+  await env.DB.prepare("INSERT INTO sources(id,project_id,kind,title,created_by,created_at,updated_at) VALUES(?1,?2,'paste','source',?3,?4,?4)").bind(sourceId,projectId,owner.userId,now).run();
+  await env.DB.prepare("INSERT INTO source_versions(id,source_id,project_id,revision,origin,status,created_at) VALUES(?1,?2,?3,1,'paste','failed',?4)").bind(versionId,sourceId,projectId,now).run();
+  await env.DB.prepare('UPDATE sources SET current_version_id=?2 WHERE id=?1').bind(sourceId,versionId).run();
+  const input={projectId,sourceId,sourceVersionId:versionId,sourceLifecycleVersion:1,phase:'extract',configVersionId:config!.id};
+  for(const [jobId,status,operation] of [[id,'failed','source.analyze'],[newId(),'running','source.summary']]){
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source',?3,?4,?5,?6,?6)").bind(jobId,projectId,status,JSON.stringify({...input,operation}),owner.userId,now).run();
+  }
+  expect((await retryFailedAiJob(env,id)).status).toBe('queued');
+});
