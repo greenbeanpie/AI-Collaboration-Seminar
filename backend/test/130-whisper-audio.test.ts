@@ -31,6 +31,13 @@ describe('Whisper conservative gates',()=>{
  it('requires every quality block and 0.85 inclusive',()=>{expect(allQualityPassed([{...q,score:0.85}],1)).toBe(true);expect(allQualityPassed([q],2)).toBe(false);expect(allQualityPassed([{...q,score:0.849}],1)).toBe(false);});
 });
 describe('durable native audio path',()=>{
+ it('processes draft audio independently of Gemini and keeps the intermediate transcript private',async()=>{
+  const f=await fixture(),draftId=newId(),fileId=newId(),jobId=newId(),now=nowIso(),key='draft-audio/'+fileId;await env.FILES.put(key,new Uint8Array([82,73,70,70]));await env.DB.batch([
+   env.DB.prepare("INSERT INTO project_creation_drafts(id,owner_id,revision,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,1,?3,?4,?5,?5)").bind(draftId,f.owner.userId,JSON.stringify({name:'音频草稿',aiCollaborationEnabled:true}),newId(),now),
+   env.DB.prepare("INSERT INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha256,size_bytes,mime,text_error,created_at) VALUES(?1,?2,'会议.wav','.wav',?3,'fixture',4,'audio/wav','处理中',?4)").bind(fileId,draftId,key,now),
+   env.DB.prepare("INSERT INTO jobs(id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES(?1,'agent_run','running',?2,0,?3,?4,?4)").bind(jobId,JSON.stringify({operation:'media.draft',draftId,fileId,configVersionId:f.config.id}),f.owner.userId,now)]);
+  const request=llm([q,summary]);expect(await runMediaJob(f.local,jobId)).toEqual({status:'succeeded'});expect(f.run).toHaveBeenCalledOnce();expect(request).toHaveBeenCalledTimes(2);const file=await env.DB.prepare('SELECT pages_json,text_error FROM creation_draft_files WHERE id=?1').bind(fileId).first<{pages_json:string;text_error:string|null}>();expect(file?.text_error).toBeNull();expect(file!.pages_json).toContain('AI 摘要');expect(file!.pages_json).not.toContain(transcript.text);expect(await readAudioPipelineStatus(f.local,jobId)).toMatchObject({phase:'ready',transcriptAvailable:true});
+ });
  it('real Agent Workflow resumes a waiting source without rerunning Whisper',async()=>{
   const f=await fixture();llm([{...q,critical:true}]);await runMediaJob(f.local,f.jobId,f.versionId);
   const model={...f.config.config.textEconomy,provider:'google-gemini',providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com',apiKeyEncrypted:await seal('fixture-media',env.AUTH_SECRET)};

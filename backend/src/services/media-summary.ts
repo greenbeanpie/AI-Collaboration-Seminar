@@ -12,7 +12,8 @@ import { reserveAiSlot, markAiCallStarted, settleReservation } from './budget';
 interface State {id:string;job_id:string;source_version_id:string|null;draft_file_id:string|null;config_version_id:string;stage:string;provider_name:string|null;provider_uri:string|null;windows_json:string;summary_json:string|null;duration_seconds:number|null;}
 export async function enqueueDraftMedia(env:Env,draftId:string,fileId:string,userId:string):Promise<void> {
   const config=await loadAiConfig(env.DB);
-  if(!config?.enabled || (!env.AI && !config.config.mediaUnderstanding?.apiKeyEncrypted)) {
+  const file=await env.DB.prepare('SELECT mime FROM creation_draft_files WHERE id=?1 AND draft_id=?2 AND removed=0').bind(fileId,draftId).first<{mime:string}>();
+  if(!config?.enabled || (!config.config.mediaUnderstanding?.apiKeyEncrypted && (!file || !whisperEnabled(env,config,file.mime)))) {
     await env.DB.prepare("UPDATE creation_draft_files SET text_error='音视频模型尚未配置；原文件已保留，可创建后处理' WHERE id=?1 AND draft_id=?2").bind(fileId,draftId).run();return;
   }
   await createJobAndDispatch(env,{projectId:null,kind:'agent_run',createdBy:userId,input:{operation:'media.draft',draftId,fileId,configVersionId:config.id}});
