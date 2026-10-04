@@ -23,7 +23,9 @@ async function importTemplateDocument(draftId:string,fileId:string,draft:Templat
  const expectedRevision=draft.revision;
  const {parseBrowserDocument}=await import('../pages/browser-document');
  let submitted=0;
+ const normalizeWarnings=(warnings:string[])=>{const unique=[...new Set(warnings)].map(w=>w.slice(0,1000));return unique.length>100?[...unique.slice(0,99),`共有${unique.length}条解析警告；此处列出前99条，材料覆盖仍为部分`]:unique;};
  const send=async(blocks:Array<{seq:number;pageNumber:number|null;text:string;headingPath?:string[];warnings?:string[]}>)=>{
+  blocks=blocks.map(b=>({...b,headingPath:b.headingPath?.slice(0,6).map(h=>h.slice(0,200)),warnings:b.warnings?.slice(0,20).map(w=>w.slice(0,1000))}));
   let pending:typeof blocks=[];let chars=0;
   const flush=async()=>{if(!pending.length)return;await templateRequest(templateDraftPath(draftId,`/files/${fileId}/imports`),{method:'POST',body:{expectedRevision,blocks:pending},signal});submitted+=pending.length;pending=[];chars=0;};
   for(const block of blocks){if(pending.length===10||chars+block.text.length>24000)await flush();pending.push(block);chars+=block.text.length;}await flush();
@@ -34,13 +36,13 @@ async function importTemplateDocument(draftId:string,fileId:string,draft:Templat
   try{for(;;){if(signal?.aborted)throw new DOMException('已取消','AbortError');const chunk=await reader.read();buffer+=decoder.decode(chunk.value,{stream:!chunk.done});while(buffer.length>=16000){await send([{seq:seq++,pageNumber:null,text:buffer.slice(0,16000)}]);buffer=buffer.slice(16000);}if(chunk.done)break;}if(buffer)await send([{seq:seq++,pageNumber:null,text:buffer}]);result={status:'complete',blocks:seq,warnings:[]};}finally{reader.releaseLock();}
  }else {const parsed=await parseBrowserDocument(file,{signal,onBatch:async({blocks})=>{await send(blocks.map(b=>({...b,warnings:b.warnings?.map(w=>w.message)})));}});result={...parsed,warnings:parsed.warnings.map(w=>w.message)};}
  if(result.blocks!==submitted)throw new Error('正文提交数量与浏览器解析结果不符，原文件已保留。');
- return templateRequest<TemplateDraft>(templateDraftPath(draftId,`/files/${fileId}/imports/complete`),{method:'POST',body:{expectedRevision,blocks:result.blocks,status:result.status,warnings:result.warnings},signal});
+ return templateRequest<TemplateDraft>(templateDraftPath(draftId,`/files/${fileId}/imports/complete`),{method:'POST',body:{expectedRevision,blocks:result.blocks,status:result.status,warnings:normalizeWarnings(result.warnings)},signal});
 }
 async function uploadTemplateMultipart(userId:string,draftId:string,expectedRevision:number,file:File,signal?:AbortSignal) {
  const identity={name:file.name,size:file.size,lastModified:file.lastModified},namespace=`template-multipart:${userId}:${draftId}:${file.name}:${file.size}:${file.lastModified}`;
  const fileId=await idempotencyKeyForIntent(namespace,identity),tail=`/files/${fileId}/multipart`;
- const session=await templateRequest<{partBytes:number;status:string}>(templateDraftPath(draftId,tail),{method:'POST',body:{expectedRevision,name:file.name,sizeBytes:file.size},signal});
- if(session.status==='uploading')for(let offset=0,part=1;offset<file.size;offset+=session.partBytes,part++)await templateRequest(templateDraftPath(draftId,`${tail}/${part}`),{method:'PUT',rawBody:file.slice(offset,offset+session.partBytes),signal});
+ const session=await templateRequest<{partBytes:number;status:string;parts?:Array<{partNumber:number;sizeBytes:number}>}>(templateDraftPath(draftId,tail),{method:'POST',body:{expectedRevision,name:file.name,sizeBytes:file.size},signal});
+ if(session.status==='uploading')for(let offset=0,part=1;offset<file.size;offset+=session.partBytes,part++){const size=Math.min(session.partBytes,file.size-offset);if(session.parts?.some(p=>p.partNumber===part&&p.sizeBytes===size))continue;await templateRequest(templateDraftPath(draftId,`${tail}/${part}`),{method:'PUT',rawBody:file.slice(offset,offset+session.partBytes),signal});}
  const draft=await templateRequest<TemplateDraft>(templateDraftPath(draftId,`${tail}/complete`),{method:'POST',signal});
  const result=/\.(pdf|docx|txt|md)$/i.test(file.name)?await importTemplateDocument(draftId,fileId,draft,file,signal):draft;
  completeIntent(namespace);return result;
