@@ -1,4 +1,6 @@
 import { registerInvitationRequestRoutes } from './invitation-requests';
+import { invitationPreviewResponse } from './invitations';
+import { readInvitationProject } from '../services/invitation-preview';
 import { requireProjectPermission, projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -65,6 +67,23 @@ export function registerUsernameInvitationRoutes(app: OpenAPIHono<AppEnv>) {
         })), nextOffset: rows.results.length > 20 ? offset + 20 : null
       }), 200);
     });
+  app.openapi(createRoute({
+    method: 'get', path: inbox + '/{invitationId}/preview', tags: ['invitations'],
+    summary: '本人只读查看待接受邀请的项目详情',
+    request: { params: z.object({ invitationId: z.string().uuid() }) },
+    responses: { 200: { description: '项目邀请详情', content: { 'application/json': { schema: invitationPreviewResponse } } } },
+  }), async (c) => {
+    const invite = await c.env.DB.prepare('SELECT project_id,status,expires_at,invited_by FROM project_username_invitations WHERE id=?1 AND recipient_id=?2')
+      .bind(c.req.valid('param').invitationId, c.get('user')!.id)
+      .first<{ project_id: string; status: string; expires_at: string; invited_by: string }>();
+    if (!invite) throw notFound('邀请不存在');
+    if (invite.status !== 'pending') throw invalidState('邀请已处理或已撤销');
+    if (invite.expires_at <= nowIso()) throw invalidState('邀请已过期');
+    const inviter = await c.env.DB.prepare(`SELECT 1 FROM projects p WHERE p.id=?1 AND ${projectPermissionSql('p.id','?2','grant')}`)
+      .bind(invite.project_id, invite.invited_by).first();
+    if (!inviter) throw invalidState('邀请发起人已不再是项目负责人');
+    return c.json(apiData(c, await readInvitationProject(c.env, invite.project_id, c.get('user')!.id)), 200);
+  });
   app.openapi(createRoute({
     method: 'post', path: outbox, tags: ['invitations'], request: {
       params: projectParams, body: json(z.object({

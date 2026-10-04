@@ -8,6 +8,7 @@ import { LIMITS } from '../core/limits';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { invalidState, notFound, quotaExceeded } from '../core/errors';
 import { projectParams } from './projects';
+import { readInvitationProject } from '../services/invitation-preview';
 
 const inviteCodeBytes = 24;
 
@@ -83,6 +84,10 @@ const invitationRevokeRoute = createRoute({
   },
 });
 
+export const invitationPreviewResponse = apiEnvelope(z.object({
+  projectId: z.string().uuid(), projectName: z.string(), description: z.string(),
+  goal: z.object({ title: z.string(), detail: z.string() }),
+}), 'InvitationPreviewResponse');
 const acceptBody = z.object({ code: z.string().min(10).max(200) });
 const acceptResponse = apiEnvelope(
   z.object({ projectId: z.string().uuid(), projectName: z.string() }),
@@ -118,6 +123,22 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/projects/:projectId/invitations', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
   app.use('/api/v1/projects/:projectId/invitations/:invitationId', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
   app.use('/api/v1/invitations/accept', requireUser);
+  app.use('/api/v1/invitations/preview', requireUser);
+
+  app.openapi(createRoute({
+    method: 'post', path: '/api/v1/invitations/preview', tags: ['invitations'],
+    summary: '只读邀请码预览，不占用次数或加入项目',
+    request: { body: { content: { 'application/json': { schema: acceptBody } }, required: true } },
+    responses: { 200: { content: { 'application/json': { schema: invitationPreviewResponse } }, description: '项目邀请详情' } },
+  }), async (c) => {
+    const invitation = await c.env.DB.prepare('SELECT * FROM invitations WHERE code_hash=?1')
+      .bind(await sha256Hex(c.req.valid('json').code)).first<InvitationRow>();
+    if (!invitation) throw invalidState('邀请无效');
+    if (invitation.revoked_at !== null) throw invalidState('邀请码已被撤销');
+    if (invitation.expires_at <= nowIso()) throw invalidState('邀请码已过期');
+    if (invitation.max_uses !== null && invitation.used_count >= invitation.max_uses) throw invalidState('邀请码已达到使用次数上限');
+    return c.json(apiData(c, await readInvitationProject(c.env, invitation.project_id, c.get('user')!.id)), 200);
+  });
 
   app.openapi(invitationCreateRoute, async (c) => {
     const body = c.req.valid('json');
