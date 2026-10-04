@@ -16,6 +16,8 @@ const preview = { projectId:'ready', projectName:'测试项目 ready', descripti
 const task = (taskId, changes={}) => ({taskId,title:taskId,detail:'',criteria:'测试完成条件',effortHours:1,status:'doing',lifecycleState:'in_progress',assigneeId:user.id,revision:1,dueDate:null,duePrecision:'unknown',dependsOnTaskIds:[],unfinishedDependencyIds:[],currentSubmissionId:null,citations:[],createdAt:now,updatedAt:now,...changes});
 const bgVersion = {versionId:'bg-version',revision:1,doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'合成系统背景正文'}]}]},markdown:'合成系统背景正文',attachments:[],origin:'system',authorId:user.id,createdAt:now};
 const background = {materialId:'background',title:'系统背景',kind:'background',purpose:'background',systemManaged:true,canEdit:false,revision:1,currentVersionId:'bg-version',currentVersion:bgVersion,createdAt:now,updatedAt:now};
+const mediaSource={sourceId:'media',kind:'file',title:'会议录像.mp4',purpose:'reference',revision:1,currentVersionId:'media-version',fileId:'media-file',lifecycleVersion:1,canDelete:true,deletedAt:null,createdAt:now};
+const mediaSummary={title:'会议摘要',summary:'已读取的会议重点',keyPoints:[],conclusions:[],actionItems:[],timestamps:[{seconds:30,description:'讨论交付范围'}],caveats:['第二个窗口尚未完成'],complete:false};
 const capabilities = {environment:'local-fixture',apiVersion:'v1',features:{aiEnabled:false,webFetch:false,emailMode:'disabled'},limits:{maxFileBytes:10485760,maxMediaFileBytes:52428800,maxPdfPages:30,pageImageMaxEdge:2000,pageImageMaxBytes:2097152,listDefaultPageSize:20,listMaxPageSize:100,concurrentAiTasksPerProject:2},competitionTemplate:{teamSizeLimit:null}};
 
 async function installFixture(context, requests) {
@@ -40,7 +42,10 @@ async function installFixture(context, requests) {
     else if (p.endsWith('/tasks')) data={items:p.includes('/ready/')?[task('可完成任务')]:p.includes('/blocked/')?[task('受阻任务',{status:'blocked'})]:[],nextCursor:null};
     else if (p.endsWith('/goal')) {if(method==='PATCH')currentGoal={...currentGoal,...req.postDataJSON(),revision:currentGoal.revision+1};data=currentGoal;}
     else if (p.endsWith('/collaboration/settings')) data={revision:1,aiCollaborationEnabled:true,planningMode:'automatic',assignmentMode:'automatic',evaluationMode:'automatic',progressionMode:'automatic'};
-    else if (p.endsWith('/resource-library')) data={items:[{resourceType:'material',resourceId:'background',title:'系统背景',purpose:'background',systemManaged:true,canManage:false,canEdit:false,revision:1,currentVersionId:'bg-version',createdAt:now,updatedAt:now}],nextCursor:null};
+    else if (p.endsWith('/resource-library')) data={items:[{resourceType:'material',resourceId:'background',title:'系统背景',purpose:'background',systemManaged:true,canManage:false,canEdit:false,revision:1,currentVersionId:'bg-version',createdAt:now,updatedAt:now},{resourceType:'source',resourceId:'media',title:'会议录像.mp4',purpose:'reference',currentVersionId:'media-version',revision:1,createdAt:now,updatedAt:now,lifecycleVersion:1,fileId:'media-file',deletedAt:null,canManage:true}],nextCursor:null};
+    else if (p.endsWith('/sources')) data={items:[mediaSource],nextCursor:null};
+    else if (p.endsWith('/versions/media-version')) data={sourceVersionId:'media-version',sourceId:'media',revision:1,origin:'file',fileId:'media-file',status:'failed',parseError:null,pageCount:null,charCount:null,pages:[],processingJob:null};
+    else if (p.endsWith('/media-version/processing')) data={textStatus:'failed',requirementsStatus:'pending',requirementsError:null,summaryStatus:'failed',summary:null,summaryError:'第二个窗口尚未完成',summaryRevision:0,coveredChars:null,totalChars:null,media:{stage:'failed',summary:mediaSummary,error:'第二个窗口尚未完成',durationSeconds:1200,completedWindows:1}};
     else if (p.endsWith('/materials')) data={items:[background],nextCursor:null};
     else if (p.endsWith('/materials/background')) data=background;
     else if (p.endsWith('/materials/background/versions')) data={items:[bgVersion],nextCursor:null};
@@ -135,6 +140,12 @@ async function verify() {
       assert.equal(await page.locator('[contenteditable=true]').count(),0);
       await page.screenshot({path:path.join(output,`system-background-${width}.png`),fullPage:true});
       report.checks.push({width,name:'System background has no editor or purpose mutation controls',passed:true});
+      await page.goto(origin+'/app/projects/ready/data?resourceType=source&resourceId=media');
+      await page.getByText('音视频 AI 摘要（非逐字原文）',{exact:true}).waitFor();
+      await page.getByText('部分摘要，尚未完整覆盖：',{exact:true}).waitFor();
+      await page.getByText('[30s] 讨论交付范围',{exact:true}).waitFor();
+      await page.screenshot({path:path.join(output,`media-summary-${width}.png`),fullPage:true});
+      report.checks.push({width,name:'Media partial summary and timestamp are labelled, failure retained',passed:true});
       assert.equal(await page.locator('vite-error-overlay').count(),0);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Horizontal overflow');
       report.requests.push(...requests.map(request=>({...request,width})));

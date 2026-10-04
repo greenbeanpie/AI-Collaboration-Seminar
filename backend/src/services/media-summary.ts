@@ -38,8 +38,11 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     if(!state)throw invalidState('媒体任务状态缺失');
     const lease=await env.DB.prepare("UPDATE media_processing SET lease_token=?2,lease_expires_at=?3 WHERE id=?1 AND (lease_token IS NULL OR lease_expires_at<?4) AND (?5 IS NOT NULL OR (SELECT COUNT(*) FROM media_processing m JOIN creation_draft_files f ON f.id=m.draft_file_id JOIN project_creation_drafts d ON d.id=f.draft_id WHERE d.owner_id=(SELECT owner_id FROM project_creation_drafts WHERE id=?6) AND m.lease_token IS NOT NULL AND m.lease_expires_at>=?4 AND m.id!=?1)<2)").bind(state.id,leaseToken,new Date(Date.now()+900000).toISOString(),nowIso(),sourceVersionId??null,input.draftId??null).run();
     if(!lease.meta.changes){continuing=true;return {status:'busy'};}ownsLease=true;
+    // The previous owner may have completed a window between our read and lease claim.
+    state=await env.DB.prepare('SELECT * FROM media_processing WHERE job_id=?1').bind(jobId).first<State>();
+    if(!state)throw invalidState('媒体任务状态缺失');
     if(state.stage==='uploading' || state.stage==='generating')throw invalidState('上次媒体请求受理状态未知，不会自动重放；请核对后主动重试');
-    if(state.stage==='ready'){await succeedJob(env,jobId,{mediaSummary:true});return {status:(await getJob(env,jobId)).status};}
+    if(state.stage==='ready'){await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{mediaSummary:true});return {status:(await getJob(env,jobId)).status};}
     if(state.stage==='failed')throw invalidState('媒体处理已失败，请主动重新处理');
     if(!state.provider_name){
       const claim=await env.DB.prepare("UPDATE media_processing SET stage='uploading',updated_at=?2 WHERE id=?1 AND stage='pending'").bind(state.id,nowIso()).run();if(!claim.meta.changes)throw invalidState('媒体上传已在运行');
@@ -54,6 +57,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     if(remote.state!=='ACTIVE')throw new AppError('AI_UNAVAILABLE','Google 媒体文件尚未可用或处理失败；请稍后主动重试',503,false);
     if(file.mime.startsWith('video/')&&!remote.videoMetadata?.videoDuration&&!state.duration_seconds)throw new AppError('AI_OUTPUT_INVALID','无法确认视频时长，拒绝声称完整处理',422,false);
     const duration=remote.videoMetadata?.videoDuration?Number.parseFloat(remote.videoMetadata.videoDuration):state.duration_seconds??undefined;
+    if(duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) throw new AppError('AI_OUTPUT_INVALID','媒体时长无效，无法确认完整覆盖',422,false);
     let windows=duration?Array.from({length:Math.ceil(duration/600)},(_,i)=>({start:i*600,end:Math.min(duration,(i+1)*600)})):[{start:0,end:file.mime.startsWith('audio/')?600:undefined}];
     if(windows.length>24)throw invalidState('视频超过四小时处理上限；请拆分为较短文件');
     await env.DB.prepare('UPDATE media_processing SET duration_seconds=?2 WHERE id=?1').bind(state.id,duration??null).run();

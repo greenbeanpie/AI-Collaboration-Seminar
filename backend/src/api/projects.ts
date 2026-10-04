@@ -43,11 +43,7 @@ const legacyCreateBody = z.object({
   deadlineDate: dateOnly.optional(),
   deadlinePrecision: z.enum(['date', 'datetime', 'unknown']).default('unknown'),
   aiBudgetUsd: z.number().nonnegative().nullable().optional(),
-  aiCollaborationEnabled: z.boolean().default(true),
-  assignmentMode: z.enum(['manual','automatic']).default('automatic'),
-  evaluationMode: z.enum(['manual','automatic']).default('automatic'),
-  planningMode: z.enum(['manual','automatic']).default('automatic'),
-  progressionMode: z.enum(['manual','automatic']).default('automatic'),
+  aiCollaborationEnabled: z.boolean().default(false),
 });
 
 const createBody = legacyCreateBody.extend({aiCollaborationEnabled:z.boolean().default(true),assignmentMode:z.enum(['manual','automatic']).default('automatic'),evaluationMode:z.enum(['manual','automatic']).default('automatic'),planningMode:z.enum(['manual','automatic']).default('automatic'),progressionMode:z.enum(['manual','automatic']).default('automatic')});

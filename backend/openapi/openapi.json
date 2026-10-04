@@ -104,6 +104,9 @@
                   "aiEnabled": {
                     "type": "boolean"
                   },
+                  "mediaEnabled": {
+                    "type": "boolean"
+                  },
                   "webFetch": {
                     "type": "boolean"
                   },
@@ -155,7 +158,6 @@
                 },
                 "required": [
                   "maxFileBytes",
-                  "maxMediaBytes",
                   "maxPdfPages",
                   "pageImageMaxEdge",
                   "pageImageMaxBytes",
@@ -1429,7 +1431,7 @@
                         "summary": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 24000
+                          "maxLength": 600000
                         },
                         "keyPoints": {
                           "type": "array",
@@ -1569,7 +1571,7 @@
                         "summary": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 24000
+                          "maxLength": 600000
                         },
                         "keyPoints": {
                           "type": "array",
@@ -2278,7 +2280,7 @@
                               "summary": {
                                 "type": "string",
                                 "minLength": 1,
-                                "maxLength": 24000
+                                "maxLength": 600000
                               },
                               "keyPoints": {
                                 "type": "array",
@@ -2418,7 +2420,7 @@
                               "summary": {
                                 "type": "string",
                                 "minLength": 1,
-                                "maxLength": 24000
+                                "maxLength": 600000
                               },
                               "keyPoints": {
                                 "type": "array",
@@ -8355,7 +8357,7 @@
                       "summary": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 24000
+                        "maxLength": 600000
                       },
                       "keyPoints": {
                         "type": "array",
@@ -16848,6 +16850,42 @@
               "sizeBytes",
               "sha256",
               "mimeDetected"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "MediaProbeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "type": "boolean"
+              },
+              "model": {
+                "type": "string"
+              },
+              "configVersion": {
+                "type": "integer"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "passed",
+              "model",
+              "configVersion",
+              "detail"
             ]
           },
           "requestId": {
@@ -28763,7 +28801,7 @@
         "tags": [
           "files"
         ],
-        "summary": "上传文件内容（二进制，≤10MiB，按实际上传字节校验）",
+        "summary": "上传文件内容（二进制，文档≤10MiB，音视频≤50MiB，按实际字节校验）",
         "parameters": [
           {
             "schema": {
@@ -28854,6 +28892,26 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-config/media-probe": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用）",
+        "responses": {
+          "200": {
+            "description": "模型元数据检查，不等同真实媒体质量验证",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaProbeResponse"
                 }
               }
             }
@@ -29186,6 +29244,23 @@
                         },
                         "additionalProperties": false
                       },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -29325,6 +29400,23 @@
                         },
                         "additionalProperties": false
                       },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -29459,6 +29551,23 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
                       },
                       "pricePerMTokens": {
                         "type": [
@@ -29595,6 +29704,23 @@
                         },
                         "additionalProperties": false
                       },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -29729,6 +29855,23 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
                       },
                       "pricePerMTokens": {
                         "type": [
