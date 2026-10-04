@@ -14,7 +14,7 @@ const report = { origin, checks: [], limitations: [], draftId: null, fileId: nul
 let cookie = '';
 async function request(path, method = 'GET', body, raw = false) {
   const response = await fetch(origin + '/api/v1' + path, {
-    method, headers: { ...(cookie ? { cookie } : {}), ...(body !== undefined ? { 'content-type': raw ? 'audio/wav' : 'application/json' } : {}) },
+    method, headers: { ...(method === 'POST' ? { 'idempotency-key': randomUUID() } : {}), ...(cookie ? { cookie } : {}), ...(body !== undefined ? { 'content-type': raw ? 'audio/wav' : 'application/json' } : {}) },
     body: body === undefined ? undefined : raw ? body : JSON.stringify(body), signal: AbortSignal.timeout(30000),
   });
   const envelope = await response.json();
