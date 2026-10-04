@@ -16,7 +16,8 @@ export const taskAgentEligibilitySchema = z.object({
 type Eligibility = z.infer<typeof taskAgentEligibilitySchema>;
 type Cache = { eligible: number | null; reason: string | null; status: 'queued'|'running'|'ready'|'failed'; job_id: string; job_status: string | null; updated_at: string };
 const promptVersion = 'task-agent-eligibility-v1';
-const hash = (task: CollaborationTask, configId: string | null) => sha256Hex(JSON.stringify([task.title,task.detail,task.criteria,configId,promptVersion]));
+const hash = (task: Pick<CollaborationTask,'title'|'detail'|'criteria'>, configId: string | null, epoch:number) => sha256Hex(JSON.stringify([task.title,task.detail,task.criteria,configId,promptVersion,epoch]));
+async function activationEpoch(env:Env,taskId:string){return (await env.DB.prepare('SELECT activation_epoch FROM task_agent_auto_checks WHERE task_id=?1').bind(taskId).first<{activation_epoch:number}>())?.activation_epoch??0;}
 async function enabled(env: Env, projectId: string) {
   const project = await env.DB.prepare('SELECT ai_collaboration_enabled,status FROM projects WHERE id=?1').bind(projectId).first<{ai_collaboration_enabled:number;status:string}>();
   const config = await loadAiConfig(env.DB);
@@ -30,7 +31,7 @@ async function accessibleTask(env: Env, projectId: string, taskId: string, userI
 }
 export async function readTaskAgentEligibility(env: Env, projectId: string, taskId: string, userId: string): Promise<Eligibility> {
   const task = await accessibleTask(env,projectId,taskId,userId), config = await enabled(env,projectId);
-  const sourceHash = await hash(task,config?.id ?? null);
+  const sourceHash = await hash(task,config?.id ?? null,await activationEpoch(env,taskId));
   const base = {taskRevision:task.revision,sourceHash,eligible:null,reason:null,jobId:null};
   if (!config) return {...base,status:'disabled'};
   const cached = await env.DB.prepare(`SELECT s.*,j.status AS job_status FROM task_agent_eligibility s LEFT JOIN jobs j ON j.id=s.job_id WHERE s.project_id=?1 AND s.task_id=?2 AND s.source_hash=?3`).bind(projectId,taskId,sourceHash).first<Cache>();
@@ -50,21 +51,23 @@ export async function enqueueTaskAgentEligibility(env: Env, projectId: string, t
   if (!['missing','failed'].includes(current.status) || (current.status === 'failed' && !retry)) return current;
   const config = await enabled(env,projectId);
   if (!config) return readTaskAgentEligibility(env,projectId,taskId,userId);
-  if (await hash(task,config.id) !== current.sourceHash) throw invalidState('任务内容或 AI 配置已变化，请刷新');
+  const epoch=await activationEpoch(env,taskId);
+  if (await hash(task,config.id,epoch) !== current.sourceHash) throw invalidState('任务内容或 AI 配置已变化，请刷新');
   const jobId = newId();
   // Claim only the exact task/config/member snapshot before reserving paid calls.
   const claim = await env.DB.prepare(`INSERT INTO task_agent_eligibility(project_id,task_id,source_hash,status,job_id,updated_at)
     SELECT ?1,?2,?3,'queued',?4,?5
     WHERE EXISTS(SELECT 1 FROM tasks WHERE id=?2 AND project_id=?1 AND revision=?8 AND title=?9 AND detail=?10 AND criteria=?11 AND archived_at IS NULL)
     AND EXISTS(SELECT 1 FROM projects JOIN project_members ON project_members.project_id=projects.id WHERE projects.id=?1 AND ai_collaboration_enabled=1 AND status='active' AND project_members.user_id=?12)
+    AND EXISTS(SELECT 1 FROM task_agent_auto_checks WHERE task_id=?2 AND activation_epoch=?14)
     AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?13 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))
     ON CONFLICT(project_id,task_id,source_hash) DO UPDATE SET status='queued',eligible=NULL,reason=NULL,job_id=excluded.job_id,updated_at=excluded.updated_at
     WHERE ?6=1 AND (task_agent_eligibility.status='failed' OR (task_agent_eligibility.status='ready' AND (eligible IS NULL OR reason IS NULL OR length(trim(reason))=0 OR length(reason)>800)) OR EXISTS(SELECT 1 FROM jobs WHERE id=task_agent_eligibility.job_id AND status IN ('failed','cancelled','succeeded')) OR (task_agent_eligibility.updated_at<?7 AND NOT EXISTS(SELECT 1 FROM jobs WHERE id=task_agent_eligibility.job_id)))`)
-    .bind(projectId,taskId,current.sourceHash,jobId,nowIso(),retry?1:0,new Date(Date.now()-300_000).toISOString(),expectedRevision,task.title,task.detail,task.criteria,userId,config.id).run();
+    .bind(projectId,taskId,current.sourceHash,jobId,nowIso(),retry?1:0,new Date(Date.now()-300_000).toISOString(),expectedRevision,task.title,task.detail,task.criteria,userId,config.id,epoch).run();
   if (!claim.meta.changes) return readTaskAgentEligibility(env,projectId,taskId,userId);
   try {
     await reserveAiSlot(env,{projectId,jobId,purpose:'agent_run',maxCalls:2,configVersionId:config.id});
-    await createJobAndDispatch(env,{projectId,jobId,kind:'agent_run',createdBy:userId,input:{operation:'collaboration.agent-eligibility',projectId,taskId,requestedBy:userId,sourceHash:current.sourceHash,configVersionId:config.id}});
+    await createJobAndDispatch(env,{projectId,jobId,kind:'agent_run',createdBy:userId,input:{operation:'collaboration.agent-eligibility',projectId,taskId,requestedBy:userId,sourceHash:current.sourceHash,activationEpoch:epoch,configVersionId:config.id}});
   } catch (error) {
     if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()) {
       await settleReservation(env,jobId,'released');
@@ -78,12 +81,12 @@ export async function runTaskAgentEligibilityJob(env: Env, jobId: string): Promi
   const job = await getJob(env,jobId);
   if (!['queued','running'].includes(job.status)) return;
   try {
-    const input = JSON.parse(job.input_json) as {operation:string;projectId:string;taskId:string;requestedBy:string;sourceHash:string;configVersionId:string};
+    const input = JSON.parse(job.input_json) as {operation:string;projectId:string;taskId:string;requestedBy:string;sourceHash:string;activationEpoch:number;configVersionId:string};
     if (job.kind !== 'agent_run' || job.project_id !== input.projectId || input.operation !== 'collaboration.agent-eligibility') throw invalidState('适用性检查输入不匹配');
     const assertActive = async () => {
       const currentJob = await getJob(env,jobId), task = await accessibleTask(env,input.projectId,input.taskId,input.requestedBy), config = await enabled(env,input.projectId);
       const claim = await env.DB.prepare('SELECT 1 FROM task_agent_eligibility WHERE project_id=?1 AND task_id=?2 AND source_hash=?3 AND job_id=?4').bind(input.projectId,input.taskId,input.sourceHash,jobId).first();
-      if (!claim || !['queued','running'].includes(currentJob.status) || config?.id !== input.configVersionId || await hash(task,config.id) !== input.sourceHash) throw invalidState('任务内容、成员权限或 AI 配置已变化，请重新检查');
+      if (!claim || !['queued','running'].includes(currentJob.status) || config?.id !== input.configVersionId || await hash(task,config.id,await activationEpoch(env,input.taskId)) !== input.sourceHash) throw invalidState('任务内容、成员权限或 AI 配置已变化，请重新检查');
       return {task,config};
     };
     const {task,config} = await assertActive();
@@ -98,8 +101,9 @@ export async function runTaskAgentEligibilityJob(env: Env, jobId: string): Promi
       AND EXISTS(SELECT 1 FROM tasks WHERE id=?5 AND project_id=?6 AND title=?7 AND detail=?8 AND criteria=?9 AND archived_at IS NULL)
       AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status IN ('queued','running'))
       AND EXISTS(SELECT 1 FROM projects JOIN project_members ON project_members.project_id=projects.id WHERE projects.id=?6 AND ai_collaboration_enabled=1 AND status='active' AND project_members.user_id=?10)
+      AND EXISTS(SELECT 1 FROM task_agent_auto_checks WHERE task_id=?5 AND activation_epoch=?13)
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?11 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`)
-      .bind(jobId,output.data.eligible?1:0,output.data.reason,nowIso(),task.id,task.project_id,task.title,task.detail,task.criteria,input.requestedBy,config.id,input.sourceHash).run();
+      .bind(jobId,output.data.eligible?1:0,output.data.reason,nowIso(),task.id,task.project_id,task.title,task.detail,task.criteria,input.requestedBy,config.id,input.sourceHash,input.activationEpoch).run();
     if (!saved.meta.changes) throw invalidState('适用性检查结果已过期');
     await settleReservation(env,jobId,'settled');
     await succeedJob(env,jobId,{taskId:task.id,sourceHash:input.sourceHash,...output.data});
@@ -108,4 +112,21 @@ export async function runTaskAgentEligibilityJob(env: Env, jobId: string): Promi
     await settleReservation(env,jobId,'released');
     await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof Error?error.message:String(error)});
   }
+}
+
+/** Background semantic checks never replay a terminal attempt for the same input. */
+export async function checkTaskAgentEligibilityAutomatically(env:Env,projectId:string,taskId:string,userId?:string):Promise<void> {
+ const task=await env.DB.prepare('SELECT revision,title,detail,criteria FROM tasks WHERE id=?1 AND project_id=?2 AND archived_at IS NULL').bind(taskId,projectId).first<{revision:number;title:string;detail:string;criteria:string}>();
+ const config=await enabled(env,projectId);if(!task||!config)return;
+ const actor=userId??(await env.DB.prepare("SELECT user_id FROM project_members WHERE project_id=?1 ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END,joined_at,user_id LIMIT 1").bind(projectId).first<{user_id:string}>())?.user_id;if(!actor)return;
+ try {await enqueueTaskAgentEligibility(env,projectId,taskId,actor,task.revision,false);} catch(error) {console.error('[task eligibility] automatic enqueue failed',taskId,error instanceof AppError?error.code:'INTERNAL');}
+ await env.DB.prepare(`UPDATE task_agent_auto_checks SET pending=CASE WHEN EXISTS(SELECT 1 FROM task_agent_eligibility WHERE task_id=?1 AND source_hash=?6) THEN 0 ELSE 1 END,config_version_id=?2,updated_at=?7 WHERE task_id=?1 AND EXISTS(SELECT 1 FROM tasks WHERE id=?1 AND title=?3 AND detail=?4 AND criteria=?5 AND archived_at IS NULL)`)
+ .bind(taskId,config.id,task.title,task.detail,task.criteria,await hash(task,config.id,await activationEpoch(env,taskId)),nowIso()).run();
+}
+export async function backfillTaskAgentEligibility(env:Env,limit=10):Promise<void> {
+ const config=await loadAiConfig(env.DB);if(!config?.enabled||!config.config.textEconomy.model.trim())return;
+ const rows=await env.DB.prepare(`SELECT t.id,t.project_id FROM task_agent_auto_checks q JOIN tasks t ON t.id=q.task_id JOIN projects p ON p.id=t.project_id
+ WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=t.project_id) AND t.archived_at IS NULL AND p.status='active' AND p.ai_collaboration_enabled=1 AND (q.pending=1 OR q.config_version_id IS NOT ?1)
+ ORDER BY q.updated_at,t.id LIMIT ?2`).bind(config.id,Math.min(25,Math.max(1,limit))).all<{id:string;project_id:string}>();
+ for(const row of rows.results)await checkTaskAgentEligibilityAutomatically(env,row.project_id,row.id);
 }

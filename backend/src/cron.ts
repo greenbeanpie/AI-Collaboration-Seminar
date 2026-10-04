@@ -1,3 +1,4 @@
+import { backfillTaskAgentEligibility } from './services/task-agent-eligibility';
 import { backfillResourceIndexes } from './services/resource-index';
 import { cleanupMediaFiles } from './services/media-summary';
 import { invalidateStaleProjectClarifications } from './services/ai-clarifications';
@@ -18,6 +19,7 @@ import { dispatchProjectProgression } from './services/project-progression';
  * 3. 清理过期会话与验证码挑战。
  */
 export async function handleScheduled(env: Env): Promise<void> {
+  try { await backfillTaskAgentEligibility(env); } catch { console.error('[cron] task eligibility backfill failed'); }
   try { await cleanupMediaFiles(env); } catch { console.error('[cron] Media cleanup failed'); }
   try { await invalidateStaleProjectClarifications(env); } catch { console.error('[cron] Clarification cleanup failed'); }
   try { await dispatchProjectProgression(env); } catch(error) { console.error('[cron] progression failed',error); }

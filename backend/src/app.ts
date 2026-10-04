@@ -1,3 +1,4 @@
+import { registerTaskAssistancePlanRoutes } from './api/task-assistance-plan';
 import { registerAgentBridgeRoutes } from './api/agent-bridges';
 import { registerDocumentImportRoutes } from './api/document-imports';
 import { resourceIndexApi } from './api/resource-index';
@@ -100,6 +101,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerTaskInquiryRoutes(app);
   registerCollaborationRoutes(app);
   registerTaskAgentEligibilityRoutes(app);
+  registerTaskAssistancePlanRoutes(app);
   registerAgentBridgeRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
