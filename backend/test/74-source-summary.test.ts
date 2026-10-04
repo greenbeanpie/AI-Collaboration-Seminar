@@ -125,4 +125,15 @@ describe('independent source summaries', () => {
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM requirements WHERE project_id=?1').bind(f.projectId).first<{n:number}>())?.n).toBe(0);
     expect((await env.DB.prepare('SELECT result_json FROM jobs WHERE id=?1').bind(jobId).first<{result_json:string}>())?.result_json).toContain('"count":0');
   });
+  it('preserves browser extraction warnings and partial coverage in both prompt and saved caveats', async () => {
+    const f=await fixture();const jobId=await summaryJob(f);
+    await env.DB.prepare("UPDATE source_versions SET extraction_coverage='partial',extraction_warnings_json=?2 WHERE id=?1").bind(f.sourceVersionId,JSON.stringify(['内嵌图片未识别','复杂公式未读取'])).run();
+    const fetch=mockGatewayFetch();vi.stubGlobal('fetch',fetch);
+    expect((await runSourceSummary(env,jobId)).status).toBe('succeeded');
+    const body=JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(JSON.stringify(body)).toContain('内嵌图片未识别');
+    const saved=await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string}>();
+    expect(JSON.parse(saved!.summary_json).caveats).toEqual(expect.arrayContaining(['内嵌图片未识别','复杂公式未读取','本机正文仅部分读取，未读取内容不能推断。']));
+  });
+
 });

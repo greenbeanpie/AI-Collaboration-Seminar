@@ -97,16 +97,20 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     const config = await loadAiConfig(env.DB, input.configVersionId);
     if (!config?.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用；正文已保留', 503, false);
     const model = config.config.textEconomy;
+    const extraction = await env.DB.prepare('SELECT extraction_warnings_json,extraction_coverage FROM source_versions WHERE id=?1').bind(input.sourceVersionId).first<{extraction_warnings_json:string;extraction_coverage:string|null}>();
+    const extractionWarnings = z.array(z.string()).parse(JSON.parse(extraction?.extraction_warnings_json ?? '[]'));
+    if (extraction?.extraction_coverage === 'partial' && !extractionWarnings.some(w=>w.includes('部分'))) extractionWarnings.push('本机正文仅部分读取，未读取内容不能推断。');
     const fragments = await env.DB.prepare('SELECT id, page_number, content FROM source_fragments WHERE source_version_id = ?1 ORDER BY seq').bind(input.sourceVersionId).all<{ id: string; page_number: number | null; content: string }>();
     if(!fragments.results.length)throw new AppError('SOURCE_PARSE_FAILED','暂无可用于总结的正文片段',422,false);
     const contextLimit = Math.min(400, Math.floor(model.maxInputChars / 20));
-    const contextReserve = 2 * contextLimit + 300;
+    const coverageContext=extractionWarnings.length?'\n解析覆盖限制（必须保留，禁止推断未读取内容）：'+JSON.stringify(extractionWarnings).slice(0,Math.min(3000,Math.floor(model.maxInputChars/10))):'';
+    const contextReserve = 2 * contextLimit + 300 + coverageContext.length;
     const chunks=documentChunks(fragments.results,model.maxInputChars,SUMMARY_SYSTEM.length + contextReserve);
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND ((text_status='none' AND ocr_status!='ok') OR (image_status='uploaded' AND ocr_status IN ('pending','failed')))").bind(input.sourceVersionId).first<{n:number}>();
     const totalChars=fragments.results.reduce((n,f)=>n+f.content.length,0);const coveredChars=totalChars;
     const summaries:z.infer<typeof chunkSummarySchema>[]=[];
     for(let index=0;index<chunks.length;index++){
-      await assertActive();const chunk=chunks[index]!;const boundaries=summaryBoundaryContext(chunks,index,contextLimit);const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
+      await assertActive();const chunk=chunks[index]!;const boundaries=summaryBoundaryContext(chunks,index,contextLimit);const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+coverageContext+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
       const cacheKey='ai-document-chunks/'+jobId+'/summary/'+await sha256Hex(config.id+content);
       const cached=await env.FILES.get(cacheKey);let data:z.infer<typeof chunkSummarySchema>;
       if(cached){data=chunkSummarySchema.parse(await cached.json());}
@@ -120,6 +124,7 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     }
     const unique=<T,>(rows:T[])=>Array.from(new Map(rows.map(row=>[JSON.stringify(row),row])).values());
     const data=summaries.length===1?summaries[0]!:documentSummarySchema.parse({title:summaries[0]!.title,summary:summaries.map((part,index)=>'第 '+(index+1)+' 部分：'+part.summary).join('\n\n'),keyPoints:unique(summaries.flatMap(part=>part.keyPoints)),citations:unique(summaries.flatMap(part=>part.citations)),caveats:unique(summaries.flatMap(part=>part.caveats))});
+    data.caveats=unique([...data.caveats,...extractionWarnings]);
     if (incomplete?.n) data.caveats.push(`有 ${incomplete.n} 页尚未读取或补充识别未完成，本总结仅覆盖成功提取的正文；缺页不得推断。`);
     await assertActive();
     const saved = await env.DB.prepare(`UPDATE source_processing SET summary_status = 'ready', summary_json = ?4, summary_error = NULL, covered_chars = ?5, total_chars = ?6, updated_at = ?7 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'running' AND ${processingGuard("?1", "?8", "?2")}`).bind(input.sourceVersionId, jobId, input.summaryRevision, JSON.stringify(data), coveredChars, totalChars, nowIso(), expectedLifecycleVersion).run();
