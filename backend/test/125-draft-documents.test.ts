@@ -34,11 +34,12 @@ describe('draft streamed original and client text import',()=>{
    expect(source!.extraction_coverage).toBe('partial');expect(source!.extraction_warnings_json).toContain('图片未读取');expect(source!.text_status).toBe(interrupted?'waiting_input':'ready');
   }
  });
- it('validates later legacy text against the original and rejects invented non-PDF page numbers',async()=>{
+ it('validates later legacy text and normalizes historical page-one aliases',async()=>{
   const f=await fixture();await uploadDraftFile(env,f.id,f.userId,1,f.fileId,'文本.txt',new TextEncoder().encode('前段'.repeat(1000)+'确切尾段引用'));
   const task={title:'核对尾段',detail:'核查',criteria:'原文可见',effortHours:1,dependsOn:[],citations:[{fileId:f.fileId,pageNumber:null,quote:'确切尾段引用'}]};
   const preview=await previewDraft(env,f.id,f.userId,2,'manual',[task],true);expect(preview.previewState).toBe('ready');
-  await expect(previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{...task.citations[0]!,pageNumber:1}]}],true)).rejects.toThrow('原文不符');
+  const legacy=await previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{...task.citations[0]!,pageNumber:1}]}],true);expect(legacy.preview!.tasks[0]!.citations[0]!.pageNumber).toBeNull();
+  await expect(previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{...task.citations[0]!,pageNumber:2}]}],true)).rejects.toThrow('原文不符');
  });
  it('retains long text and nullable page locators through promotion, with idempotent completion',async()=>{
   const f=await fixture(),bytes=new TextEncoder().encode('original');
@@ -51,6 +52,7 @@ describe('draft streamed original and client text import',()=>{
   draft=await finishDraftImport(env,f.id,f.userId,f.fileId,2,10,'complete',[]);expect(draft.revision).toBe(3);expect(draft.files[0]?.textReady).toBe(true);
   expect((await finishDraftImport(env,f.id,f.userId,f.fileId,2,10,'complete',[])).revision).toBe(3);
   const read=await readDraftDocument(env,f.id,f.userId,f.fileId,0);expect(read.blocks[0]).toMatchObject({locator:'block:0',pageNumber:null});expect(read.nextOffset).toBe(0);expect(read.nextCharOffset).toBe(6000);
+  await expect(previewDraft(env,f.id,f.userId,3,'manual',[{title:'读取材料',detail:'有依据',criteria:'可核查',effortHours:1,dependsOn:[],citations:[{fileId:f.fileId,pageNumber:1,locator:'block:0',quote:'第0节'}]}],true)).rejects.toThrow('原文不符');
   const ready=await previewDraft(env,f.id,f.userId,3,'manual',[{title:'读取材料',detail:'有依据',criteria:'可核查',effortHours:1,dependsOn:[],citations:[{fileId:f.fileId,pageNumber:null,locator:'block:0',quote:'第0节'}]}],true);
   const project=await commitDraft(env,f.id,f.userId,ready.revision);
   const fragments=await env.DB.prepare('SELECT page_number,count(*) n,sum(length(content)) chars FROM source_fragments WHERE project_id=?1').bind(project.projectId).first<{page_number:number|null;n:number;chars:number}>();expect(fragments!.page_number).toBeNull();expect(fragments!.n).toBe(10);expect(fragments!.chars).toBeGreaterThan(120000);

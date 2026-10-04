@@ -311,10 +311,14 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
       } else {
         // Validate against immutable actual draft text, including tool-read later pages;
         // the initial prompt contains only a bounded preview and cannot validate all quotes.
-        const valid=await env.DB.prepare(`SELECT 1 FROM creation_draft_files f WHERE f.id=?1 AND f.draft_id=?2 AND f.removed=0 AND
-          ((?3 IS NULL AND f.ext!='.pdf' AND EXISTS(SELECT 1 FROM json_each(f.pages_json) WHERE instr(value,?4)>0))
-          OR (?3 IS NOT NULL AND f.ext='.pdf' AND instr(json_extract(f.pages_json,'$['||(?3-1)||']'),?4)>0))`).bind(c.fileId,id,c.pageNumber,c.quote).first();
+        const valid=await env.DB.prepare(`SELECT f.ext FROM creation_draft_files f WHERE f.id=?1 AND f.draft_id=?2 AND f.removed=0 AND
+          (((?3 IS NULL OR ?3=1) AND f.ext!='.pdf' AND NOT EXISTS(SELECT 1 FROM draft_document_blocks b WHERE b.file_id=f.id)
+            AND EXISTS(SELECT 1 FROM json_each(f.pages_json) WHERE instr(value,?4)>0))
+          OR (?3 IS NOT NULL AND f.ext='.pdf' AND instr(json_extract(f.pages_json,'$['||(?3-1)||']'),?4)>0))`).bind(c.fileId,id,c.pageNumber,c.quote).first<{ext:string}>();
         if(!valid)throw invalidState('预览的来源引用与原文不符');
+        // Legacy text uploads used page 1 as an array position. Accept that input
+        // alias, then persist semantic null rather than claiming a real page.
+        if(valid.ext!=='.pdf')c.pageNumber=null;
       }
     }
     const preview={goal,tasks:output,mode,...(configVersionId?{configVersionId}:{})};
