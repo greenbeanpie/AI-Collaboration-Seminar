@@ -10590,6 +10590,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/ai-retries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取失败 AI 请求与批量重试排队状态 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 无业务内容的重试统计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAiRetries"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 快照并排队所有当前失败 AI 请求 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        idempotencyKey: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 快照批次已持久排队 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAiRetryBatch"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/ai-diagnostics": {
         parameters: {
             query?: never;
@@ -13589,6 +13652,13 @@ export interface components {
                 };
                 attempts: number;
                 createdAt: string;
+                retry?: {
+                    status: string;
+                    attempts: number;
+                    nextAttemptAt: string;
+                    /** Format: uuid */
+                    originalJobId: string;
+                };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -16413,6 +16483,68 @@ export interface components {
         IdempotencyReleaseResponse: {
             data: {
                 released: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AdminAiRetries: {
+            data: {
+                failedCount: number;
+                activeBatch: {
+                    /** Format: uuid */
+                    batchId: string;
+                    /** @enum {string} */
+                    status: "queued" | "running" | "completed";
+                    total: number;
+                    pending: number;
+                    queued: number;
+                    skipped: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    skipReasons: {
+                        reason: string;
+                        count: number;
+                    }[];
+                } | null;
+                latestBatch: {
+                    /** Format: uuid */
+                    batchId: string;
+                    /** @enum {string} */
+                    status: "queued" | "running" | "completed";
+                    total: number;
+                    pending: number;
+                    queued: number;
+                    skipped: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    skipReasons: {
+                        reason: string;
+                        count: number;
+                    }[];
+                } | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AdminAiRetryBatch: {
+            data: {
+                batch: {
+                    /** Format: uuid */
+                    batchId: string;
+                    /** @enum {string} */
+                    status: "queued" | "running" | "completed";
+                    total: number;
+                    pending: number;
+                    queued: number;
+                    skipped: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    skipReasons: {
+                        reason: string;
+                        count: number;
+                    }[];
+                };
+                replayed: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

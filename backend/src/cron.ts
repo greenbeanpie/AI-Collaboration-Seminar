@@ -3,6 +3,8 @@ import { backfillResourceIndexes } from './services/resource-index';
 import { cleanupMediaFiles } from './services/media-summary';
 import { invalidateStaleProjectClarifications } from './services/ai-clarifications';
 import { recoverDraftPreviews } from './services/draft-preview-jobs';
+import { recoverAutomaticAiRetries } from './services/ai-automatic-retries';
+import { recoverAdminAiRetries, retryFailedAiJob } from './services/admin-ai-retries';
 import { recoverExecutionSlices } from './services/ai-execution-slices';
 import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
@@ -25,6 +27,8 @@ export async function handleScheduled(env: Env): Promise<void> {
   try { await dispatchProjectProgression(env); } catch(error) { console.error('[cron] progression failed',error); }
   try { await dispatchNotifications(env); } catch { console.error('[cron] Notification dispatch failed'); }
   const now = nowIso();
+  try { await recoverAdminAiRetries(env); } catch { console.error('[cron] Admin AI retry recovery failed'); }
+  try { await recoverAutomaticAiRetries(env, (retryEnv, jobId, rootId) => retryFailedAiJob(retryEnv, jobId, undefined, rootId)); } catch { console.error('[cron] Automatic AI retry recovery failed'); }
   const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
   for (const job of staleRunning.results) {
     try { await reconcileWorkflowJob(env, job.id); } catch (error) { console.error('[cron] Workflow 状态核对失败', job.id, error); }

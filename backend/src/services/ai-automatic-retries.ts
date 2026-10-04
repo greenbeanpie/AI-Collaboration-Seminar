@@ -109,6 +109,11 @@ export async function recoverAutomaticAiRetries(env:Env,retryJob:AutomaticJobRet
       await env.DB.prepare("UPDATE ai_automatic_retries SET target_id=?3,status='dispatched',lease_token=NULL,lease_until=NULL,updated_at=?4 WHERE id=?1 AND lease_token=?2").bind(row.id,token,result.jobId,nowIso()).run();
       dispatched++;
     } catch(error) {
+      if(error instanceof AppError && error.code==='QUOTA_EXCEEDED' && error.details?.limit){
+        // Waiting for another job's slot is not a failed model recovery attempt.
+        await env.DB.prepare("UPDATE ai_automatic_retries SET attempts=MAX(0,attempts-1),status='pending',next_attempt_at=?3,lease_token=NULL,lease_until=NULL,updated_at=?4 WHERE id=?1 AND lease_token=?2").bind(row.id,token,new Date(Date.now()+AUTOMATIC_AI_RETRY_DELAY_MS).toISOString(),nowIso()).run();
+        continue;
+      }
       const stop=error instanceof AppError && !isAutomaticAiFailure(error.code);
       await env.DB.prepare("UPDATE ai_automatic_retries SET status=CASE WHEN ?3=1 THEN 'cancelled' WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,next_attempt_at=?4,last_error=?5,lease_token=NULL,lease_until=NULL,updated_at=?6 WHERE id=?1 AND lease_token=?2").bind(row.id,token,stop?1:0,new Date(Date.now()+AUTOMATIC_AI_RETRY_DELAY_MS).toISOString(),error instanceof Error?error.message.slice(0,500):'重试派发失败',nowIso()).run();
     }

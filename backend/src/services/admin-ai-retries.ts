@@ -113,7 +113,13 @@ export async function recoverAdminAiRetries(env:Env,limit=10):Promise<void>{
  let result:RetryResult;
  try{if(row.target_type==='job')result=await retryFailedAiJob(env,row.target_id,row.failed_at);else{
  const draftResult=await retryFailedDraftPreview(env,row.target_id,row.failed_at);result={status:draftResult.status==='retried'?'queued':'skipped',jobId:draftResult.jobId,reason:draftResult.reason};
- }}catch(error){result={status:'skipped',reason:error instanceof AppError&&error.code==='QUOTA_EXCEEDED'?'预算或并发额度不足':'权限、版本或配置已变化'};}
+ }}catch(error){
+   if(error instanceof AppError && error.code==='QUOTA_EXCEEDED' && error.details?.limit){
+     await env.DB.prepare("UPDATE admin_ai_retry_items SET status='pending',reason='等待项目 AI 并发槽位',updated_at=?2 WHERE id=?1 AND status='running'").bind(row.id,nowIso()).run();
+     continue;
+   }
+   result={status:'skipped',reason:error instanceof AppError&&error.code==='QUOTA_EXCEEDED'?'预算额度不足':'权限、版本或配置已变化'};
+ }
  await env.DB.prepare('UPDATE admin_ai_retry_items SET status=?2,reason=?3,retry_job_id=?4,updated_at=?5 WHERE id=?1 AND status=\'running\'').bind(row.id,result.status,result.reason??null,result.jobId??null,nowIso()).run();
  }
  await env.DB.prepare("UPDATE admin_ai_retry_batches SET status='completed',updated_at=?1 WHERE status!='completed' AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_items WHERE batch_id=admin_ai_retry_batches.id AND status IN ('pending','running'))").bind(nowIso()).run();

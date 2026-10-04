@@ -9741,6 +9741,30 @@
               },
               "createdAt": {
                 "type": "string"
+              },
+              "retry": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "attempts": {
+                    "type": "integer"
+                  },
+                  "nextAttemptAt": {
+                    "type": "string"
+                  },
+                  "originalJobId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "status",
+                  "attempts",
+                  "nextAttemptAt",
+                  "originalJobId"
+                ]
               }
             },
             "required": [
@@ -21229,6 +21253,255 @@
             },
             "required": [
               "released"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AdminAiRetries": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "failedCount": {
+                "type": "number"
+              },
+              "activeBatch": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "batchId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed"
+                    ]
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "pending": {
+                    "type": "number"
+                  },
+                  "queued": {
+                    "type": "number"
+                  },
+                  "skipped": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "skipReasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "reason",
+                        "count"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "batchId",
+                  "status",
+                  "total",
+                  "pending",
+                  "queued",
+                  "skipped",
+                  "createdAt",
+                  "updatedAt",
+                  "skipReasons"
+                ]
+              },
+              "latestBatch": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "batchId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed"
+                    ]
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "pending": {
+                    "type": "number"
+                  },
+                  "queued": {
+                    "type": "number"
+                  },
+                  "skipped": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "skipReasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "reason",
+                        "count"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "batchId",
+                  "status",
+                  "total",
+                  "pending",
+                  "queued",
+                  "skipped",
+                  "createdAt",
+                  "updatedAt",
+                  "skipReasons"
+                ]
+              }
+            },
+            "required": [
+              "failedCount",
+              "activeBatch",
+              "latestBatch"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AdminAiRetryBatch": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "batch": {
+                "type": "object",
+                "properties": {
+                  "batchId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed"
+                    ]
+                  },
+                  "total": {
+                    "type": "number"
+                  },
+                  "pending": {
+                    "type": "number"
+                  },
+                  "queued": {
+                    "type": "number"
+                  },
+                  "skipped": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "skipReasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "reason",
+                        "count"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "batchId",
+                  "status",
+                  "total",
+                  "pending",
+                  "queued",
+                  "skipped",
+                  "createdAt",
+                  "updatedAt",
+                  "skipReasons"
+                ]
+              },
+              "replayed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "batch",
+              "replayed"
             ]
           },
           "requestId": {
@@ -37398,6 +37671,63 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-retries": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "读取失败 AI 请求与批量重试排队状态",
+        "responses": {
+          "200": {
+            "description": "无业务内容的重试统计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiRetries"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "快照并排队所有当前失败 AI 请求",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "idempotencyKey"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "快照批次已持久排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiRetryBatch"
                 }
               }
             }

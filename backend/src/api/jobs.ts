@@ -24,6 +24,7 @@ const jobResponse = apiEnvelope(
     feedbackSnapshot: z.object({versionId:z.string().nullable(),version:z.number(),feedback:z.string(),actorId:z.string().nullable(),createdAt:z.string().nullable()}).optional(),
     attempts: z.number().int(),
     createdAt: z.string(),
+    retry: z.object({ status: z.string(), attempts: z.number().int(), nextAttemptAt: z.string(), originalJobId: z.string().uuid() }).optional(),
   }),
   'JobResponse',
 );
@@ -56,7 +57,11 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/jobs/:jobId/*', requireUser);
 
   app.openapi(getRoute, async (c) => {
-    const job = await getJob(c.env, c.req.valid('param').jobId);
+    const originalJobId = c.req.valid('param').jobId;
+    const successor = await c.env.DB.prepare(`WITH RECURSIVE chain(id,depth) AS (
+      SELECT ?1,0 UNION ALL SELECT l.retry_job_id,chain.depth+1 FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id WHERE chain.depth<128
+    ) SELECT id FROM chain ORDER BY depth DESC LIMIT 1`).bind(originalJobId).first<{id:string}>();
+    const job = await getJob(c.env, successor?.id ?? originalJobId);
     // 项目任务仅项目成员可见
     if (job.project_id) {
       const member = await c.env.DB.prepare('SELECT role FROM project_members WHERE project_id = ?1 AND user_id = ?2')
@@ -69,16 +74,21 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
       await assertProfileStamp(c.env,job.project_id,input.profileStamp);
     }
     const clarification=job.status==='waiting_input'?await currentJobClarification(c.env,job.id,c.get('user')!.id):null;
+    const retry = await c.env.DB.prepare("SELECT status,attempts,next_attempt_at FROM ai_automatic_retries WHERE target_kind='job' AND target_id=?1 ORDER BY updated_at DESC LIMIT 1").bind(job.id).first<{status:string;attempts:number;next_attempt_at:string}>();
+    // A failed attempt with durable recovery pending is still an active logical request.
+    // Existing pollers keep following it; the immutable failed attempt remains in D1.
+    const status = job.status==='failed' && retry && ['pending','dispatching'].includes(retry.status) ? 'queued' : job.status;
     return c.json(
       apiData(c, {
         jobId: job.id,
         kind: job.kind,
-        status: job.status,
+        status,
         result: clarification ? {...(job.result_json?JSON.parse(job.result_json):{}),clarification} : job.result_json ? (JSON.parse(job.result_json) as unknown) : null,
         error: job.error_json ? (JSON.parse(job.error_json) as unknown) : null,
         feedbackSnapshot: input.feedbackSnapshot,
         attempts: job.attempts,
         createdAt: job.created_at,
+        ...(retry ? {retry:{status:retry.status,attempts:retry.attempts,nextAttemptAt:retry.next_attempt_at,originalJobId}} : {}),
       }),
       200,
     );
@@ -94,6 +104,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     if (job.status !== 'failed') throw invalidState('仅失败任务可重试');
     const input = JSON.parse(job.input_json) as Record<string, unknown>;
+    delete input.autoRetryRootId; // An explicit manual retry starts a fresh bounded recovery chain.
     if (input.operation === 'source.summary') throw invalidState('请在文件总结状态中单独重试，以核对最新总结版本');
     if (input.operation === 'standards.generate') throw invalidState('请从项目标准重新生成，以核对当前目标和权限');
     if (input.operation === 'collaboration.evaluate') throw invalidState('每轮提交仅评价一次，请负责人验收或提交新的成果轮次');
@@ -134,8 +145,9 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     try {
       const written=await c.env.DB.batch([
         c.env.DB.prepare(
-          `INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE (?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5))) AND ${retryStandardGuard}`,
+          `INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) SELECT ?1, ?2, ?3, 'queued', ?4, 0, ?5, ?6, ?6 WHERE NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?7) AND (?3!='rehearsal_turn' OR EXISTS(SELECT 1 FROM rehearsals WHERE id=json_extract(?4,'$.rehearsalId') AND project_id=?2 AND created_by=?5 AND processing_job_id=?7 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?5))) AND ${retryStandardGuard}`,
         ).bind(newJobId, job.project_id, job.kind, JSON.stringify(input), c.get('user')!.id, now, job.id,retryStandardId??null),
+        c.env.DB.prepare('INSERT INTO admin_ai_retry_links(parent_job_id,retry_job_id,created_at) SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2)').bind(job.id,newJobId,now),
         c.env.DB.prepare(
           "INSERT INTO job_outbox (id, job_id, status, available_at, attempts, created_at, updated_at) SELECT ?1, ?2, 'pending', ?3, 0, ?4, ?4 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2)",
         ).bind(newId(), newJobId, now, now),
