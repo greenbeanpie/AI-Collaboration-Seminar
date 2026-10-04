@@ -6,7 +6,7 @@ export type AudioPipelineInfo = {
   canResumeFallback: boolean;
 };
 const phases: Record<string, string> = {
-  pending: '等待转录', transcribing: 'Whisper 转录中', checking: '检查转录质量',
+  cancelled:'任务已取消', pending: '等待转录', transcribing: 'Whisper 转录中', checking: '检查转录质量',
   transcribed:'转录完成，等待质量检查', checked:'质量检查通过，等待摘要', summarized:'摘要分段完成', merging:'合并摘要', unknown:'请求状态待核对',
   quality_check: '检查转录质量', summarizing: '生成文本摘要', fallback: 'Gemini 回退',
   gemini_fallback: 'Gemini 回退', waiting_config: '等待 Gemini 配置', ready: '摘要完成', failed: '处理失败',

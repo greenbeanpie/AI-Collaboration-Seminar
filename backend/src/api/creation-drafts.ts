@@ -1,3 +1,4 @@
+import { cancelDraftMediaStatements } from '../services/draft-media-lifecycle';
 import { audioStatusSchema, audioResumeSchema } from './audio-schema';
 import { resumeWaitingAudioFallback } from '../services/audio-pipeline';
 import { extOf, uploadLimit } from '../services/files';
@@ -166,7 +167,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       throw versionConflict(row.revision);
     }
     const changes = await c.env.DB.batch([c.env.DB.prepare("UPDATE project_creation_drafts SET status=?4,revision=revision+1,preview_state='none',preview_waiting_id=NULL,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status!='committed'").bind(id, user, body.expectedRevision, body.status, nowIso()),
-      c.env.DB.prepare("UPDATE ai_clarifications SET status='cancelled',revision=revision+1,updated_at=?5 WHERE draft_id=?1 AND owner_id=?2 AND status='pending' AND context_revision=?3 AND EXISTS(SELECT 1 FROM project_creation_drafts d WHERE d.id=?1 AND d.owner_id=?2 AND d.revision=?3+1 AND d.status=?4 AND d.preview_waiting_id IS NULL)").bind(id,user,body.expectedRevision,body.status,nowIso())]);
+      c.env.DB.prepare("UPDATE ai_clarifications SET status='cancelled',revision=revision+1,updated_at=?5 WHERE draft_id=?1 AND owner_id=?2 AND status='pending' AND context_revision=?3 AND EXISTS(SELECT 1 FROM project_creation_drafts d WHERE d.id=?1 AND d.owner_id=?2 AND d.revision=?3+1 AND d.status=?4 AND d.preview_waiting_id IS NULL)").bind(id,user,body.expectedRevision,body.status,nowIso()),...(body.status==='cancelled'?cancelDraftMediaStatements(c.env,{draftId:id,ownerId:user,revision:body.expectedRevision+1,status:'cancelled'}):[])]);
     if (!changes[0]?.meta.changes) {
       throw invalidState('草稿已变化');
     }
@@ -255,7 +256,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       throw invalidState('草稿状态已变化');
     }
     const token = newId();
-    const result = await c.env.DB.batch([c.env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',preview_attempt_id=?4,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND EXISTS(SELECT 1 FROM creation_draft_files WHERE id=?6 AND draft_id=?1) AND (?7=1 OR (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10)").bind(draftId, user, b.expectedRevision, token, nowIso(), fileId, b.removed ? 1 : 0), c.env.DB.prepare('UPDATE creation_draft_files SET removed=?3 WHERE id=?1 AND draft_id=?2 AND EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND preview_attempt_id=?4)').bind(fileId, draftId, b.removed ? 1 : 0, token)]);
+    const result = await c.env.DB.batch([c.env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',preview_attempt_id=?4,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND EXISTS(SELECT 1 FROM creation_draft_files WHERE id=?6 AND draft_id=?1) AND (?7=1 OR (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10)").bind(draftId, user, b.expectedRevision, token, nowIso(), fileId, b.removed ? 1 : 0), c.env.DB.prepare('UPDATE creation_draft_files SET removed=?3 WHERE id=?1 AND draft_id=?2 AND EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND preview_attempt_id=?4)').bind(fileId, draftId, b.removed ? 1 : 0, token),...(b.removed?cancelDraftMediaStatements(c.env,{draftId,ownerId:user,revision:b.expectedRevision+1,status:'active',token,fileId}):[])]);
     if (!result[0]?.meta.changes) {
       throw invalidState('草稿已变化或文件不存在');
     }
