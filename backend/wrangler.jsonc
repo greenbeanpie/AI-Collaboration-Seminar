@@ -62,7 +62,7 @@
           "migrations_dir": "migrations"
         }
       ],
-      "ai": { "binding": "AI" },
+      "ai": { "binding": "AI", "remote": true },
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-staging" }],
       "workflows": [
         {
@@ -99,7 +99,7 @@
           "migrations_dir": "migrations"
         }
       ],
-      "ai": { "binding": "AI" },
+      "ai": { "binding": "AI", "remote": true },
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-production" }],
       "workflows": [
         {
@@ -116,3 +116,4 @@
     }
   }
 }
+
