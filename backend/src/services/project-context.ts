@@ -1,3 +1,4 @@
+import { getResourceIndex, searchResource, readResourceSection } from './resource-index';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { notFound, invalidState } from '../core/errors';
@@ -14,6 +15,9 @@ export const discoveryDefinitions = [
   ['list_project_resources', '分页列出全部项目来源与材料；query 可按标题过滤'],
   ['search_project_information', '按 query 在项目资料正文与任务中检索定位；返回摘要，原文需继续读取'],
   ['list_resource_versions', '按 id 与 resourceType 分页列出资料历史版本'],
+  ['get_resource_index', '分页读取固定版本内部目录；不代表已读正文'],
+  ['search_resource', '固定版本内字面检索；使用read_resource_section核查原文'],
+  ['read_resource_section', '读取固定版本章节原文，最多6000字符，可附相邻块'],
   ['read_resource', '按固定版本分页读取来源正文或材料正文'],
   ['list_tasks', '分页读取任务说明、验收标准、归属、进度和依赖'],
   ['read_task', '读取指定任务及其相关提交、反馈、依赖'],
@@ -27,6 +31,8 @@ const discoveryArgs = z.object({
   offset: z.number().int().nonnegative().default(0).describe('首屏为0；后续使用返回的nextOffset。nextOffset为null时停止分页。'),
   query: z.string().max(200).optional().describe('可选检索条件；不用时省略，不传null。'),
   id: z.string().uuid().optional().describe('指定对象的UUID，取自相应目录；不是项目ID。'),
+  sectionId: z.string().min(1).max(200).optional(),
+  neighbors: z.boolean().optional(),
   resourceType: z.enum(['source','material']).optional().describe('资料类型，取自资料目录。'),
   versionId: z.string().uuid().optional().describe('资料版本UUID，取自目录的versionId；不是资料或项目ID。'),
 }).strict();
@@ -40,6 +46,9 @@ const discoverySchemas = {
   list_project_resources: discoveryArgs.pick({ offset: true, query: true }),
   search_project_information: discoveryArgs.pick({ offset: true }).extend({ query: z.string().trim().min(1).max(200) }),
   list_resource_versions: discoveryArgs.pick({ offset: true, id: true, resourceType: true }).required({ id: true, resourceType: true }),
+  get_resource_index: discoveryArgs.pick({ offset: true, resourceType: true, versionId: true }).required({ resourceType: true, versionId: true }),
+  search_resource: discoveryArgs.pick({ offset: true, resourceType: true, versionId: true }).required({ resourceType: true, versionId: true }).extend({query:z.string().trim().min(1).max(200)}),
+  read_resource_section: discoveryArgs.pick({ offset: true, resourceType: true, versionId: true, sectionId: true, neighbors: true }).required({ resourceType: true, versionId: true, sectionId: true }),
   read_resource: discoveryArgs.pick({ offset: true, resourceType: true, versionId: true }).required({ resourceType: true, versionId: true }),
   list_tasks: discoveryArgs.pick({ offset: true, query: true }),
   read_task: discoveryArgs.pick({ offset: true, id: true }).required({ id: true }),
@@ -80,6 +89,12 @@ const page = (rows: unknown[], offset: number) => ({ untrustedData: true, items:
 /** Caller enforces membership before and after each read. Queries never accept project identity from the model. */
 export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown): Promise<Record<string,unknown>> {
   const a = parseDiscoveryArgs(name, input, projectId);
+  if (['get_resource_index','search_resource','read_resource_section'].includes(name)) {
+    const target={resourceType:a.resourceType!,versionId:a.versionId!};
+    if(name==='get_resource_index')return getResourceIndex(env,projectId,target,a.offset);
+    if(name==='search_resource')return searchResource(env,projectId,target,a.query!,a.offset);
+    return readResourceSection(env,projectId,target,a.sectionId!,a.offset,a.neighbors);
+  }
   if(name==='list_project_plans') {
     const rows=await env.DB.prepare(`SELECT id,kind,status,revision,created_at,updated_at,
       (SELECT reason FROM collaboration_proposal_revisions history WHERE history.proposal_id=record.id AND history.project_id=record.project_id ORDER BY revision DESC LIMIT 1) latestReason
