@@ -7,7 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
-import { creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { newCreationPayload, creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
 import { enqueueDraftPreview, enqueueDraftContinuation } from '../services/draft-preview-jobs';
 import { answerClarification, answerSchema, cancelClarification, clarificationSchema } from '../services/ai-clarifications';
 import { loadDraftCheckpoint } from '../services/draft-preview-checkpoints';
@@ -47,7 +47,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   app.openapi(createRoute({method:'post',path:base+'/from-template',tags:['creation'],request:{body:json(fromTemplateBody)},responses:{201:{description:'私有模板编辑草稿，尚未创建项目',content:{'application/json':{schema:response}}}}}),async c=>{
     const body=fromTemplateBody.parse(c.req.valid('json')),user=c.get('user')!;
     const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId:user.id,operation:'creation-draft.from-template',rawBody:JSON.stringify(body)},async()=>{
-      const payload=creationPayload.parse({name:'未命名项目',aiCollaborationEnabled:false,workspace:{templateId:body.templateId,materials:[],standards:null}});
+      const payload=newCreationPayload.parse({name:'未命名项目',workspace:{templateId:body.templateId,materials:[],standards:null}});
       const id=newId(),now=nowIso();
       await c.env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id,user.id,JSON.stringify(payload),newId(),now).run();
       return {status:201 as const,body:await draftView(c.env,await getDraft(c.env,id,user.id))};
@@ -55,7 +55,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
   });
   app.openapi(createRoute({
     method: 'post', path: base, tags: ['creation'], request: {
-      body: json(creationPayload)
+      body: json(newCreationPayload)
     }, responses: {
       201: {
         content: {

@@ -1,3 +1,5 @@
+import { CreationBehaviorFields } from './CreationBehaviorFields';
+import { type WizardPayload, type CreationMode, creationBehaviors } from './project-wizard';
 import { DateInput } from '../components/DateInput';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -28,7 +30,8 @@ function ProjectCreationForm({ userId }: { userId: string }) {
   const [name, setName] = useState(restored?.payload.name ?? '');
   const [description, setDescription] = useState(restored?.payload.description ?? '');
   const [deadlineDate, setDeadlineDate] = useState(restored?.payload.deadlineDate ?? '');
-  const [aiCollaborationEnabled, setAiCollaborationEnabled] = useState(restored?.payload.aiCollaborationEnabled ?? false);
+  const [aiCollaborationEnabled, setAiCollaborationEnabled] = useState(restored?.payload.aiCollaborationEnabled ?? true);
+  const [modes, setModes] = useState<Partial<Record<typeof creationBehaviors[number][0], CreationMode>>>(() => restored ? Object.fromEntries(creationBehaviors.filter(([key]) => restored.payload[key]).map(([key]) => [key, restored.payload[key]])) : { planningMode:'automatic', assignmentMode:'automatic', evaluationMode:'automatic', progressionMode:'automatic' });
   const [files, setFiles] = useState<CreationFile[]>(restored?.files ?? []);
   const originals = useRef(new Map<string, File>());
   const [pending, setPending] = useState(false);
@@ -123,7 +126,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
     pendingRef.current = true; stopped.current = false; setPending(true); setError(null); setSelectionError(null);
     commit(existing ? { ...existing, interrupted: false } : {
       version: 1, userId, createKey: createIntentKey(), createAttempted: true, interrupted: false, project: null, files,
-      payload: { name: name.trim(), description: description.trim(), aiCollaborationEnabled,
+      payload: { name: name.trim(), description: description.trim(), aiCollaborationEnabled, ...modes,
         ...(deadlineDate ? { deadlineDate, deadlinePrecision: 'date' as const } : { deadlinePrecision: 'unknown' as const }) },
     });
     try {
@@ -202,10 +205,11 @@ function ProjectCreationForm({ userId }: { userId: string }) {
     <PageHeading eyebrow="新建项目" title="建立协作空间" detail="项目由真实账户创建，创建者将成为负责人。" />
     <form className="card form-card" aria-label="新建项目" onSubmit={event => { event.preventDefault(); void run(); }}>
       <Field label="项目名称"><input className="input" required maxLength={100} disabled={frozen || pending} value={name} onChange={event => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
-      <Field label="项目说明" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
-      <Field label="截止日期" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
+      <Field label="项目说明（可选）" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
+      <Field label="截止日期（可选）" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
 
-      <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>默认关闭。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
+      <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>新项目默认开启。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
+      <CreationBehaviorFields payload={{ name, description, aiCollaborationEnabled, teamSize:1, inviteLabels:[], inviteUsernames:[], brief:'', ...modes } as WizardPayload} disabled={frozen || pending} onChange={(key,value) => setModes(previous => ({ ...previous, [key]:value }))} />
       {aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="form-note">{capabilities.data ? '系统 AI 当前未启用。项目开关可保存，但模型不可用时不会执行 AI 协作。' : '正在确认系统 AI 能力；开关不代表模型已可用。'}</div>}
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
       <Field label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `每个不超过 ${(capabilities.data.limits.maxFileBytes / (1024 * 1024)).toFixed(1)} MiB。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>

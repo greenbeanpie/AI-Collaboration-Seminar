@@ -195,4 +195,30 @@ describe('private creation drafts', () => {
     const created=await data(await req(owner.token,`/${draft.id}/commit`,{expectedRevision:1,confirmed:true}));
     expect(await env.DB.prepare('SELECT title,detail FROM project_goals WHERE project_id=?1').bind(created.projectId).first()).toEqual(secondGoal);
   });
+  it('creates name-only drafts with automatic settings and commits empty manual preview without a model call', async () => {
+    const owner = await seedUser();
+    const fetchSpy = vi.fn(() => { throw new Error('No model should be called'); });
+    vi.stubGlobal('fetch', fetchSpy);
+    const draft = await data(await req(owner.token, '', {name:'名称即目标'}));
+    expect(draft.payload).toMatchObject({aiCollaborationEnabled:true, planningMode:'automatic',assignmentMode:'automatic',evaluationMode:'automatic',progressionMode:'automatic'});
+    const preview = await data(await req(owner.token, `/${draft.id}/preview`, {expectedRevision:1,mode:'manual',tasks:[]}));
+    expect(preview.preview).toMatchObject({goal:{title:'名称即目标',detail:''},tasks:[],mode:'manual'});
+    const created = await data(await req(owner.token, `/${draft.id}/commit`, {expectedRevision:preview.revision,confirmed:true}));
+    expect(await env.DB.prepare('SELECT ai_collaboration_enabled,planning_mode,assignment_mode,evaluation_mode,progression_mode FROM projects WHERE id=?1').bind(created.projectId).first()).toEqual({ai_collaboration_enabled:1,planning_mode:'automatic',assignment_mode:'automatic',evaluation_mode:'automatic',progression_mode:'automatic'});
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('retains legacy modes for existing drafts and saves each new behavior independently while AI is disabled', async () => {
+    const owner = await seedUser(), draft = await data(await req(owner.token, '', {name:'行为配置'}));
+    await env.DB.prepare('UPDATE project_creation_drafts SET payload_json=?2 WHERE id=?1').bind(draft.id,JSON.stringify({name:'旧草稿',aiCollaborationEnabled:true})).run();
+    const legacy = await data(await req(owner.token, '/'+draft.id));
+    expect(legacy.payload.aiCollaborationEnabled).toBe(true);
+    expect(legacy.payload.planningMode).toBeUndefined();
+    const modes = {planningMode:'automatic',assignmentMode:'manual',evaluationMode:'automatic',progressionMode:'manual'};
+    const updated = await data(await req(owner.token, '/'+draft.id, {expectedRevision:1,payload:{...legacy.payload,aiCollaborationEnabled:false,...modes}},'PATCH'));
+    expect(updated.payload).toMatchObject({...modes,aiCollaborationEnabled:false});
+    const preview = await data(await req(owner.token, `/${draft.id}/preview`, {expectedRevision:updated.revision,mode:'manual',tasks:[]}));
+    const created = await data(await req(owner.token, `/${draft.id}/commit`, {expectedRevision:preview.revision,confirmed:true}));
+    expect(await env.DB.prepare('SELECT ai_collaboration_enabled,planning_mode,assignment_mode,evaluation_mode,progression_mode FROM projects WHERE id=?1').bind(created.projectId).first()).toEqual({ai_collaboration_enabled:0,planning_mode:'automatic',assignment_mode:'manual',evaluation_mode:'automatic',progression_mode:'manual'});
+  });
+
 });

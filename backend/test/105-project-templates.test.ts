@@ -23,7 +23,7 @@ describe('blank project template private workspace',()=>{
     const owner=await seedUser(),key=newId(),fetch=vi.fn(()=>{throw new Error('template must not call a provider');});vi.stubGlobal('fetch',fetch);
     const catalog=await json(await request(owner.token,'/project-templates'));expect(catalog.items).toHaveLength(1);expect(catalog.items[0]).toMatchObject({templateId:'blank',name:'空项目'});
     const first=await json(await request(owner.token,'/creation-drafts/from-template',{templateId:'blank'},'POST',key));const replay=await json(await request(owner.token,'/creation-drafts/from-template',{templateId:'blank'},'POST',key));
-    expect(replay.id).toBe(first.id);expect(first).toMatchObject({status:'active',revision:1,preview:null,projectId:null,files:[],payload:{name:'未命名项目',aiCollaborationEnabled:false,workspace:{templateId:'blank',materials:[],standards:null}}});
+    expect(replay.id).toBe(first.id);expect(first).toMatchObject({status:'active',revision:1,preview:null,projectId:null,files:[],payload:{name:'未命名项目',aiCollaborationEnabled:true,planningMode:'automatic',assignmentMode:'automatic',evaluationMode:'automatic',progressionMode:'automatic',workspace:{templateId:'blank',materials:[],standards:null}}});
     expect((await json(await request(owner.token,'/projects'))).items).toEqual([]);await assertNoFormalEntities();expect(fetch).not.toHaveBeenCalled();
     expect((await request(owner.token,'/creation-drafts/from-template',{templateId:'research'})).status).toBe(400);
   });

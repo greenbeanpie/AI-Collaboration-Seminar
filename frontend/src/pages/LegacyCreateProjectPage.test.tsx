@@ -26,7 +26,7 @@ function setup(accountId = user.id) {
   const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
   return { ...view, client, router };
 }
-function fill() { fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '测试项目' } }); }
+function fill(aiEnabled = false) { fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '测试项目' } }); const checkbox = screen.getByRole('checkbox', {name:/AI 智能协作/}) as HTMLInputElement; if (checkbox.checked !== aiEnabled) fireEvent.click(checkbox); }
 function select(files: File[], recovery = false) {
   fireEvent.change(screen.getByLabelText(recovery ? /重新选择未完成的原文件/ : /项目文件（可选）/), { target: { files } });
 }
@@ -58,13 +58,13 @@ beforeEach(() => { sessionStorage.clear(); vi.stubGlobal('crypto', webcrypto); }
 afterEach(async () => { await act(async () => { cancelPageDialog(); }); cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 describe('project creation', () => {
-  it('defaults AI off and suppresses repeated submits before the first response', async () => {
+  it('defaults AI on and suppresses repeated submits before the first response', async () => {
     const pending = deferred<Response>(); const fetch = fixtureFetch((url, init) => url === '/api/v1/projects' && init?.method === 'POST' ? pending.promise : undefined);
-    vi.stubGlobal('fetch', fetch); setup(); fill();
-    expect(screen.getByRole('checkbox', { name: /AI 智能协作/ })).not.toBeChecked();
+    vi.stubGlobal('fetch', fetch); setup(); fill(true);
+    expect(screen.getByRole('checkbox', { name: /AI 智能协作/ })).toBeChecked();
     expect(fetch).not.toHaveBeenCalled(); submit(); submit();
     expect(writes(fetch, '/projects')).toHaveLength(1);
-    expect(JSON.parse(String(writes(fetch, '/projects')[0][1]?.body))).toMatchObject({ aiCollaborationEnabled: false });
+    expect(JSON.parse(String(writes(fetch, '/projects')[0][1]?.body))).toMatchObject({ aiCollaborationEnabled: true, planningMode:'automatic',assignmentMode:'automatic',evaluationMode:'automatic',progressionMode:'automatic' });
     expect(new Headers(writes(fetch, '/projects')[0][1]?.headers).get('Idempotency-Key')).toBeTruthy();
     expect(screen.getByLabelText('项目名称')).toBeDisabled();
     await act(async () => pending.resolve(response(project))); await screen.findByText('已有项目目的地');

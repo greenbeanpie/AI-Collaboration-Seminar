@@ -10,6 +10,10 @@ export type CreationPayload = {
   deadlineDate?: string;
   deadlinePrecision: 'date' | 'unknown';
   aiCollaborationEnabled: boolean;
+  planningMode?: 'manual' | 'automatic';
+  assignmentMode?: 'manual' | 'automatic';
+  evaluationMode?: 'manual' | 'automatic';
+  progressionMode?: 'manual' | 'automatic';
 };
 export type CreationFile = {
   localId: string;
