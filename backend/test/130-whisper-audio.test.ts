@@ -5,6 +5,7 @@ import {newId,nowIso} from '../src/core/db';
 import {loadAiConfig} from '../src/ai/config';
 import {configureGoFixture} from './helpers/provider-config';
 import {transcriptGate,chunkTranscript,allQualityPassed,WHISPER_MODEL,type Transcript} from '../src/ai/whisper';
+import {enqueueSourceSummary} from '../src/services/source-summary';
 import {runMediaJob} from '../src/services/media-summary';
 import {readAudioPipelineStatus,resumeWaitingAudioFallback} from '../src/services/audio-pipeline';
 import {getJob} from '../src/services/jobs';
@@ -26,11 +27,14 @@ describe('Whisper conservative gates',()=>{
  it('accepts inclusive logprob and compression thresholds',()=>expect(transcriptGate({...transcript,segments:[{...transcript.segments![0],avg_logprob:-1,compression_ratio:2.4}]})).toEqual([]));
  it('rejects empty/silent transcripts',()=>expect(transcriptGate({text:'',segments:[]})).not.toEqual([]));
  it('rejects mismatched full text and segments',()=>expect(transcriptGate({...transcript,text:'different'})).not.toEqual([]));
+ it('rejects a first segment whose combined text and metrics exceed model input',()=>{const text='字'.repeat(6000);expect(()=>chunkTranscript({...transcript,segments:[{...transcript.segments![0],text}]},12000)).toThrow('质量指标');});
  it('preserves whole segments and timestamps',()=>expect(chunkTranscript(transcript,16000)[0]).toMatchObject({start:0,end:20,segments:transcript.segments}));
  it('rejects oversized complete segments instead of truncating',()=>expect(()=>chunkTranscript({...transcript,segments:[{...transcript.segments![0],text:'a'.repeat(12001)}]},16000)).toThrow());
  it('requires every quality block and 0.85 inclusive',()=>{expect(allQualityPassed([{...q,score:0.85}],1)).toBe(true);expect(allQualityPassed([q],2)).toBe(false);expect(allQualityPassed([{...q,score:0.849}],1)).toBe(false);});
 });
 describe('durable native audio path',()=>{
+ it('enqueues source audio with native AI and no Gemini while videos retain Gemini requirement',async()=>{const f=await fixture();const create=vi.fn(async()=>({}));const local={...f.local,PARSE_WORKFLOW:{create}} as unknown as typeof env;await env.DB.prepare("UPDATE jobs SET status='cancelled' WHERE id=?1").bind(f.jobId).run();const queued=await enqueueSourceSummary(local,f.versionId,f.owner.userId);expect(queued.jobId).toBeTruthy();expect(create).toHaveBeenCalledOnce();expect(f.run).not.toHaveBeenCalled();const video=await fixture();await env.DB.prepare("UPDATE files SET ext='.mp4',mime_detected='video/mp4' WHERE id=(SELECT file_id FROM source_versions WHERE id=?1)").bind(video.versionId).run();await expect(enqueueSourceSummary({...video.local,PARSE_WORKFLOW:{create}} as unknown as typeof env,video.versionId,video.owner.userId)).rejects.toThrow('Gemini');});
+ it('rejects combined first-chunk input before claiming a quality model call',async()=>{const text=Array.from({length:6000},(_,i)=>String.fromCharCode(0x4e00+i)).join(''),f=await fixture({...transcript,text,segments:[{...transcript.segments![0],text}]});f.config.config.visionEconomy.maxInputChars=12000;f.config.config.textEconomy.maxInputChars=12000;await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(f.config.id,JSON.stringify(f.config.config)).run();const request=llm([]);expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'waiting_input'});expect(request).not.toHaveBeenCalled();expect(await env.DB.prepare("SELECT COUNT(*) n FROM audio_pipeline_calls WHERE job_id=?1 AND stage!='transcribing'").bind(f.jobId).first()).toEqual({n:0});});
  it('processes draft audio independently of Gemini and keeps the intermediate transcript private',async()=>{
   const f=await fixture(),draftId=newId(),fileId=newId(),jobId=newId(),now=nowIso(),key='draft-audio/'+fileId;await env.FILES.put(key,new Uint8Array([82,73,70,70]));await env.DB.batch([
    env.DB.prepare("INSERT INTO project_creation_drafts(id,owner_id,revision,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,1,?3,?4,?5,?5)").bind(draftId,f.owner.userId,JSON.stringify({name:'音频草稿',aiCollaborationEnabled:true}),newId(),now),

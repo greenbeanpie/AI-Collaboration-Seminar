@@ -35,7 +35,7 @@ export function chunkTranscript(t:Transcript,maxInputChars:number):AudioChunk[] 
   const line=`[${s.start}s-${s.end}s] ${s.text}`;
   if(line.length>cap || JSON.stringify(s).length>cap)throw new Error('完整分段超过模型输入上限');
   let current=chunks[chunks.length-1];
-  if(!current || current.text.length+line.length+1>cap || JSON.stringify({...current,text:current.text+'\n'+line,segments:[...current.segments,s]}).length>maxInputChars-2048){current={start:s.start!,end:s.end!,text:'',segments:[]};chunks.push(current);}
+  if(!current || current.text.length+line.length+1>cap || JSON.stringify({...current,text:current.text+'\n'+line,segments:[...current.segments,s]}).length>maxInputChars-2048){const candidate={start:s.start!,end:s.end!,text:line,segments:[s]};if(JSON.stringify(candidate).length>maxInputChars-2048)throw new Error('完整分段连同质量指标超过模型输入上限');current={start:s.start!,end:s.end!,text:'',segments:[]};chunks.push(current);}
   current.text+=(current.text?'\n':'')+line;current.segments.push(s);current.end=s.end!;
  }
  if(!chunks.length || chunks.length>LIMITS.audioTranscriptMaxChunks)throw new Error('转录超出分块处理范围');

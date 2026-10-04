@@ -1,3 +1,4 @@
+import { whisperEnabled } from './audio-pipeline';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
@@ -39,10 +40,10 @@ export async function setSourceStage(env: Env, versionId: string, stage: 'text' 
 export async function enqueueSourceSummary(env: Env, versionId: string, createdBy: string | null, expectedRevision?: number, expectedLifecycleVersion?: number, originatingJobId?: string): Promise<{ jobId: string; revision: number }> {
   const active = await loadActiveSourceVersion(env, versionId, expectedLifecycleVersion);
   if (originatingJobId) await assertSourceJobActive(env, originatingJobId);
-  const mediaFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(versionId).first<{ext:string}>();
+  const mediaFile=await env.DB.prepare('SELECT f.ext,f.mime_detected AS mime FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(versionId).first<{ext:string;mime:string}>();
   if(mediaFile&&isMediaExtension(mediaFile.ext)){
     const config=await requireEnabledAiConfig(env.DB);
-    if(!config.config.mediaUnderstanding?.apiKeyEncrypted)throw invalidState('音视频 Gemini 模型尚未配置');
+    if(!config.config.mediaUnderstanding?.apiKeyEncrypted&&!whisperEnabled(env,config,mediaFile.mime))throw invalidState('音视频 Gemini 模型尚未配置');
     const jobId=crypto.randomUUID(),now=nowIso();
     const claim=await env.DB.batch([
       env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,updated_at) SELECT ?1,?2,?3 WHERE ${sourceLifecycleGuard('?1','?4')} ON CONFLICT(source_version_id) DO NOTHING`).bind(versionId,active.projectId,now,active.lifecycleVersion),
