@@ -79,7 +79,7 @@ try {
       });
       await check(`${role} invitation controls`, async () => {
         await page.goto(origin + base + '/team');
-        if (project.myRole === 'member' && !project.canGrantPermissions) {
+        if (project.myRole === 'member' && !project.canManagePermissions) {
           await page.getByRole('button', { name: '报请管理员批准', exact: true }).waitFor();
           assert.equal(await page.getByRole('button', { name: '创建邀请码', exact: true }).count(), 0);
         }

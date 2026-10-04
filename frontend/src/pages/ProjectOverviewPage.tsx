@@ -7,6 +7,7 @@ import { ArrowRight } from 'lucide-react';
 import { listAllItems, projectPath } from '../api/client';
 import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
+import { projectPermission } from '../project-permissions';
 import './ProjectWorkspace.css';
 import { ErrorNotice, EmptyState, SectionCard, Spinner } from '../components/ui';
 
@@ -14,7 +15,8 @@ export function ProjectOverviewPage() {
   const session = useSession();
   const { projectId, project } = useProject();
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
-  const invitationRequests = useQuery({ queryKey: ['invitation-requests', projectId], queryFn: () => projectRequest<{ items: { status: string }[] }>(projectId, '/invitation-requests'), enabled: (project.myRole === 'owner' || project.canGrantPermissions === true) && navigator.onLine !== false });
+  // 审批队列由 teamManage 决定；无该权限时列表接口只返回本人申请，故无需请求。
+  const invitationRequests = useQuery({ queryKey: ['invitation-requests', projectId], queryFn: () => projectRequest<{ items: { status: string }[] }>(projectId, '/invitation-requests'), enabled: projectPermission(project, 'teamManage') && navigator.onLine !== false });
   const pendingInvitations = invitationRequests.data?.items.filter(item => item.status === 'pending').length ?? 0;
   const queries = useQueries({ queries: [
     { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },

@@ -3,3 +3,10 @@
 @media(max-width:600px){.compact-team-grid .invite-form{grid-template-columns:minmax(0,1fr)}.compact-team-grid .invite-form>button{justify-self:stretch}}
 .compact-team-invites{display:grid;gap:20px;min-width:0}
 .compact-team-grid>.section-card:only-child{grid-column:1/-1}
+/* 成员卡：权限摘要与操作按钮换行而不是横向撑破卡片 */
+.compact-team-grid .team-member{flex-wrap:wrap}
+.compact-team-grid .team-member-permissions{color:var(--ink);font-size:12px;font-weight:500;overflow-wrap:anywhere}
+.compact-team-grid .team-member-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto}
+.compact-team-grid .team-member-lock{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;white-space:nowrap}
+.compact-team-grid .team-member-actions .button{white-space:nowrap}
+@media(max-width:600px){.compact-team-grid .team-member-actions{width:100%;margin-left:0;justify-content:flex-start}}

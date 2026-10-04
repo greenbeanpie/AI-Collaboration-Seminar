@@ -2604,7 +2604,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 移除成员（owner；负责人不可移除自己） */
+        /** 移除成员（teamManage；负责人不可被移除） */
         delete: {
             parameters: {
                 query?: never;
@@ -2627,7 +2627,7 @@ export interface paths {
                         "application/json": components["schemas"]["MemberRemoveResponse"];
                     };
                 };
-                /** @description 需要负责人权限 */
+                /** @description 需要团队管理权限 */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -2701,7 +2701,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 邀请列表（owner） */
+        /** 邀请列表（teamManage） */
         get: {
             parameters: {
                 query?: never;
@@ -2726,7 +2726,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** 创建邀请（owner；邀请码仅返回一次） */
+        /** 创建邀请（teamManage；邀请码仅返回一次） */
         post: {
             parameters: {
                 query?: never;
@@ -2757,7 +2757,7 @@ export interface paths {
                         "application/json": components["schemas"]["InvitationCreateResponse"];
                     };
                 };
-                /** @description 需要负责人权限 */
+                /** @description 需要团队管理权限 */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -2784,7 +2784,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 撤销邀请（owner） */
+        /** 撤销邀请（teamManage） */
         delete: {
             parameters: {
                 query?: never;
@@ -11667,7 +11667,7 @@ export interface components {
                     /** @default false */
                     scoreCorrect: boolean;
                 };
-                canGrantPermissions?: boolean;
+                canManagePermissions?: boolean;
                 createdAt: string;
                 updatedAt: string;
             };
@@ -11702,7 +11702,7 @@ export interface components {
                         /** @default false */
                         scoreCorrect: boolean;
                     };
-                    canGrantPermissions?: boolean;
+                    canManagePermissions?: boolean;
                     createdAt: string;
                     updatedAt: string;
                 }[];
@@ -12625,7 +12625,7 @@ export interface components {
                         scoreCorrect: boolean;
                     };
                     permissionsRevision: number;
-                    canGrantPermissions: boolean;
+                    canManagePermissions: boolean;
                 }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -12651,7 +12651,7 @@ export interface components {
                     scoreCorrect: boolean;
                 };
                 permissionsRevision: number;
-                canGrantPermissions: boolean;
+                canManagePermissions: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

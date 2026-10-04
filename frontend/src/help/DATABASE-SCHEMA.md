@@ -1707,6 +1707,8 @@ CREATE TABLE project_members (
 CREATE UNIQUE INDEX uq_project_members ON project_members (project_id, user_id);
 ```
 
+`permissions_json` 的当前载荷键为 `teamManage`、`taskManage`、`resourceManage`、`scoreInitiate`、`scoreCorrect`：0042 为存量行回填 `scoreCorrect:false`，普通成员默认 `scoreInitiate:true`、`scoreCorrect:false`，其余三项 `false`。`role` 是项目身份（owner/member），`permissions_json` 是项目操作能力，二者不可互相推导；账户角色（super_admin/admin/user）来自 `auth_accounts`，也不写入本表。「协作管理员」只是前端 preset，不落库为 role。
+
 ## `project_progression`
 
 | 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |

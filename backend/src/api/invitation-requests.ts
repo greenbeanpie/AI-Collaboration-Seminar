@@ -17,7 +17,7 @@ export function registerInvitationRequestRoutes(app:OpenAPIHono<AppEnv>){
  app.use('/api/v1/projects/:projectId/invitation-requests/*',requireUser,requireProjectMember());
  app.openapi(createRoute({method:'get',path,tags:['invitations'],request:{params:projectParams},responses:{200:{description:'本人的申请或管理员审批队列',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(item)}),'InvitationRequestListResponse')}}}}}),async c=>{
   const p=c.get('member')!.projectId,u=c.get('user')!.id;
-  const rows=await c.env.DB.prepare(`SELECT id,username,requested_by requestedBy,status,revision,created_at createdAt FROM project_invitation_requests WHERE project_id=?1 AND (requested_by=?2 OR ${projectPermissionSql('?1','?2','grant')}) ORDER BY created_at DESC LIMIT 100`).bind(p,u).all<RequestItem>();
+  const rows=await c.env.DB.prepare(`SELECT id,username,requested_by requestedBy,status,revision,created_at createdAt FROM project_invitation_requests WHERE project_id=?1 AND (requested_by=?2 OR ${projectPermissionSql('?1','?2','teamManage')}) ORDER BY created_at DESC LIMIT 100`).bind(p,u).all<RequestItem>();
   return c.json(apiData(c,{items:rows.results}),200);
  });
  app.openapi(createRoute({method:'post',path,tags:['invitations'],request:{params:projectParams,body:{required:true,content:{'application/json':{schema:z.object({username:z.string().trim().min(1).max(64)}).strict()}}}},responses:{201:{description:'等待管理员批准',content:{'application/json':{schema:response}}}}}),async c=>{
@@ -31,12 +31,12 @@ export function registerInvitationRequestRoutes(app:OpenAPIHono<AppEnv>){
  });
  app.openapi(createRoute({method:'post',path:path+'/{requestId}/decide',tags:['invitations'],request:{params:projectParams.extend({requestId:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:z.object({expectedRevision:z.number().int().min(1),action:z.enum(['approve','reject'])}).strict()}}}},responses:{200:{description:'审批结果',content:{'application/json':{schema:response}}}}}),async c=>{
   const p=c.get('member')!.projectId,u=c.get('user')!.id,id=c.req.valid('param').requestId,b=c.req.valid('json');
-  await requireProjectPermission(c.env,p,u,'grant');
+  await requireProjectPermission(c.env,p,u,'teamManage');
   const row=await c.env.DB.prepare('SELECT * FROM project_invitation_requests WHERE id=?1 AND project_id=?2').bind(id,p).first<{username:string;status:string;revision:number;expires_in_days:number}>();
   if(!row)throw notFound('申请不存在');
   if(row.status!=='pending'||row.revision!==b.expectedRevision)throw invalidState('申请已被处理，请刷新');
   if(b.action==='approve')await sendUsernameInvite(c.env,p,u,row.username,row.expires_in_days,id);
-  else {const r=await c.env.DB.prepare(`UPDATE project_invitation_requests SET status='rejected',revision=revision+1,decided_by=?3,decided_at=?4 WHERE id=?1 AND project_id=?2 AND status='pending' AND revision=?5 AND ${projectPermissionSql('?2','?3','grant')}`).bind(id,p,u,nowIso(),b.expectedRevision).run();if(!r.meta.changes)throw invalidState('申请已变化');}
+  else {const r=await c.env.DB.prepare(`UPDATE project_invitation_requests SET status='rejected',revision=revision+1,decided_by=?3,decided_at=?4 WHERE id=?1 AND project_id=?2 AND status='pending' AND revision=?5 AND ${projectPermissionSql('?2','?3','teamManage')}`).bind(id,p,u,nowIso(),b.expectedRevision).run();if(!r.meta.changes)throw invalidState('申请已变化');}
   const latest=await c.env.DB.prepare('SELECT id,username,requested_by requestedBy,status,revision,created_at createdAt FROM project_invitation_requests WHERE id=?1').bind(id).first<RequestItem>();
   if((latest as {status:string}).status!== (b.action==='approve'?'approved':'rejected'))throw invalidState('审批已变化');
   return c.json(apiData(c,latest!),200);

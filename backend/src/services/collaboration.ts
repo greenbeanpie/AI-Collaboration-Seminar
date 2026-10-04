@@ -1,14 +1,14 @@
 import { effectiveStandardCaptureGuardSql } from './effective-standard';
 import { assertCanRegenerate, pristineTasksSql } from './task-planning-policy';
 import { readinessStatements } from './task-readiness';
-import { projectPermissionSql, requireProjectPermission } from './project-permissions';
+import { projectPermissionSql, requireProjectOwner, requireProjectPermission } from './project-permissions';
 import type { Env } from '../env';
 import { projectReferenceGuard } from './project-reference-guard';
 import { validateReadReferences,type ProjectReference } from './project-evidence';
 import { projectSourceContextGuard } from './collaboration-context';
 import { profileSnapshotGuard } from './personal-profiles';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, permissionDenied, validationFailed,versionConflict } from '../core/errors';
+import { invalidState, notFound, validationFailed,versionConflict } from '../core/errors';
 import { projectGoal, graphSnapshot, validateTaskGraph } from './project-simplification';
 export interface CollaborationTask {
     id: string;
@@ -71,7 +71,7 @@ export interface Proposal {
 export const toProposal = (r: Proposal) => ({ proposalId: r.id, kind: r.kind, payload: JSON.parse(r.payload_json), status: r.status, revision: r.revision, createdAt: r.created_at });
 export async function owner(env: Env, projectId: string, userId: string, scope: 'taskManage' | 'owner' = 'taskManage') {
     if (scope === 'taskManage') return requireProjectPermission(env,projectId,userId,'taskManage');
-    if (!await env.DB.prepare("SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2 AND role='owner'").bind(projectId, userId).first()) throw permissionDenied('需要项目负责人权限');
+    return requireProjectOwner(env,projectId,userId);
 }
 export function audit(env: Env, projectId: string, userId: string, type: string, id: string, payload: unknown, onlyAfterChange = false) { return env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?1,?2,'user',?3,?4,'collaboration',?5,?1,?6,?7 ${onlyAfterChange ? 'WHERE changes()=1' : ''}`).bind(newId(), projectId, userId, type, id, JSON.stringify(payload), nowIso()); }
 export async function applyProposal(env: Env, projectId: string, proposalId: string, expectedRevision: number, actorId: string, automatic = false, configVersionId?: string, selection?: {selectedTaskKeys?:string[];selectedUpdateTaskIds?:string[];selectedAssignmentTaskIds?:string[]}): Promise<{
@@ -116,7 +116,8 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     if(automatic||!correction)await validateReadReferences(env,projectId,payload.references??[]);
     if(p.kind==='decompose'){
       if(automatic)throw invalidState('任务方案须由项目管理员明确批准');
-      await requireProjectPermission(env,projectId,actorId,'grant');
+      // 批准/应用 AI 任务方案属于任务管理型操作，与前端 taskManage 门控一致。
+      await requireProjectPermission(env,projectId,actorId,'taskManage');
       if(payload.planningAction==='regenerate'){
         if(!payload.tasks?.length || payload.updates?.length)throw validationFailed('整套重新生成需要新的任务清单，不能清空计划或同时修改即将归档的旧任务');
         await assertCanRegenerate(env,projectId);
@@ -125,7 +126,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     const nonce = newId();
     const taskIds: string[] = [];
     const batch: D1PreparedStatement[] = [];
-    const planningGuard=p.kind==='decompose'?`AND ${projectPermissionSql('?2','?4','grant')} AND (?6=0) ${payload.planningAction==='regenerate'?`AND ${pristineTasksSql('?2')}`:''}`:'';
+    const planningGuard=p.kind==='decompose'?`AND ${projectPermissionSql('?2','?4','taskManage')} AND (?6=0) ${payload.planningAction==='regenerate'?`AND ${pristineTasksSql('?2')}`:''}`:'';
     const validProfiles = p.kind === 'assign' ? `AND ${profileSnapshotGuard("(SELECT json_extract(input_json,'$.profileStamp') FROM jobs WHERE id=collaboration_proposals.job_id)",'?2')} AND NOT EXISTS(SELECT 1 FROM jobs j,json_each(j.input_json,'$.members') snapshot WHERE j.id=collaboration_proposals.job_id AND NOT EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=?2 AND pm.user_id=json_extract(snapshot.value,'$.userId') AND COALESCE((SELECT SUM(effort_hours) FROM tasks WHERE project_id=?2 AND assignee_id=pm.user_id AND status!='done'),0)=json_extract(snapshot.value,'$.loadHours')))` : '';
     const goal=await projectGoal(env,projectId);
     const validGoal=p.kind==='decompose'?`AND EXISTS(SELECT 1 FROM project_goals g JOIN jobs j ON j.id=collaboration_proposals.job_id WHERE g.project_id=?2 AND g.revision=COALESCE(json_extract(j.input_json,'$.goalRevision'),g.revision) AND g.graph_revision=COALESCE(json_extract(j.input_json,'$.graphRevision'),g.graph_revision))`:'';

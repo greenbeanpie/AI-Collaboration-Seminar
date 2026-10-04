@@ -120,7 +120,7 @@ notification_events ── notification_inbox ── users
 | `users` | `id TEXT PK`；`email TEXT NOT NULL UNIQUE`；`display_name TEXT`；`created_at`、`last_login_at TEXT` | 保留历史身份 ID；迁移登录方式不能重新建用户或重绑项目 FK。 |
 | `auth_accounts` | `user_id TEXT PK/FK users`；`username`、`username_norm UNIQUE`、`contact_email`、`contact_email_norm UNIQUE`；`password_hash TEXT`；`email_verified`、`is_admin INTEGER CHECK 0/1`；`account_role TEXT CHECK super_admin/admin/user` 可为 NULL | `accounts.ts`、`password.ts`、`auth-policy.ts`。用户名/联系邮箱的规范化字段与展示字段分开；旧用户可能没有密码，角色兼容逻辑不能仅看旧 is_admin。 |
 | `sessions` | `id TEXT PK`；`user_id FK users ON DELETE CASCADE`；`token_hash TEXT UNIQUE NOT NULL`；`expires_at`、`revoked_at`、`last_seen_at`、`created_at TEXT`；`auth_method CHECK legacy/password` | 保存令牌哈希而非明文令牌；读用户信息前需检查会话到期、撤销与登录方式。 |
-| `project_members` | `id TEXT PK`；`project_id`、`user_id FK`；唯一 `(project_id,user_id)`；`role CHECK owner/member`；`permissions_json TEXT NOT NULL CHECK json_valid`；`permissions_revision INTEGER`；保留旧 `major`、`skills_json`、`hours_per_week` | `project-permissions.ts`。权限载荷键为 `teamManage`、`taskManage`、`resourceManage`、`scoreInitiate`；有效权限应调用服务计算。负责人权限与成员权限预设不是新的成员角色。 |
+| `project_members` | `id TEXT PK`；`project_id`、`user_id FK`；唯一 `(project_id,user_id)`；`role CHECK owner/member`；`permissions_json TEXT NOT NULL CHECK json_valid`；`permissions_revision INTEGER`；保留旧 `major`、`skills_json`、`hours_per_week` | `project-permissions.ts`。权限载荷键为 `teamManage`、`taskManage`、`resourceManage`、`scoreInitiate`、`scoreCorrect`（0042 起存在，普通成员默认 `false`）；有效权限应调用服务计算。`role` 是项目身份，`permissions_json` 是项目操作能力，两者不能互相推导。 |
 | `personal_profiles` | `user_id PK/FK`；`searchable`；`bio`、`major`、`specialties`、`preferred_roles` 及各自 `_public`；`ai_use_allowed INTEGER CHECK 0/1`；`revision`；`weekly_available_hours REAL CHECK NULL 或 0..168` | `personal-profiles.ts`。搜索公开性、字段公开性、AI 同意分别控制，不能从“是成员”推断允许发送其私人档案给模型。 |
 | `personal_profile_import_candidates` | `id PK`、`user_id FK`；`source_project_id/name`；旧 `major`、`skills_json`、`hours_per_week`；`created_at`、`imported_at` | 0026 在清空项目域旧档案前保留用户可导入候选，来源项目 ID 刻意是文本快照而非 FK。 |
 
@@ -246,7 +246,15 @@ reservation: reserved → settled / released / pending_reconcile
 
 `api/auth.ts` 的 POST sessions 调用 `loginPasswordAccount`，用户名或联系邮箱加密码建立会话；register 使用一次性注册码。`services/password.ts` 使用 scrypt 并以 timingSafeEqual 核对；`core/auth.ts.loadSessionUser()` 只接受有效、未撤销、未到期且 auth_method=password 的会话，且账户必须存在 password_hash。Cookie 名为 ai_office_session，带 HttpOnly、Secure、SameSite=Lax、Path=/；数据库查找 token 的 SHA-256 哈希，不存明文 token。会话固定期限由 accounts.ts 的 SESSION_TTL_SECONDS 决定，不采用滑动续期。
 
-账户角色来自 `core/account-role.ts` 和 auth_accounts；项目身份来自 project_members。`requireProjectMember()` 先核实项目存在，再查成员，再核对 owner 或指定权限，不信任前端角色。管理员也必须是该项目成员，不能因账户 admin 绕过成员检查。`project-permissions.ts` 定义 teamManage、taskManage、resourceManage、scoreInitiate：普通成员前三项默认 false、scoreInitiate 默认 true；项目 owner 和已入项目的 admin/super_admin 获完整操作权限。`canGrantPermissions` 与 `permissionsRevision` 用于权限授予与并发变更。
+### 账户角色、项目身份与项目权限是三层，不要混用
+
+`core/account-role.ts` 与 `auth_accounts` 决定账户角色（`super_admin` / `admin` / `user`）；`project_members.role` 决定项目身份（`owner` / `member`）；`project_members.permissions_json` 决定项目操作能力（`teamManage`、`taskManage`、`resourceManage`、`scoreInitiate`、`scoreCorrect`）。三者不能互相推导：账户 `admin` 也必须先加入项目，才能获得该项目的成员记录与项目权限。
+
+`requireProjectMember()` 先核实项目存在，再查成员，再核对 owner 或指定权限，不信任前端角色。项目 owner 与已加入该项目的 `admin` / `super_admin` 获得完整项目权限；普通成员默认 `teamManage=false`、`taskManage=false`、`resourceManage=false`、`scoreInitiate=true`、`scoreCorrect=false`。
+
+权限管理的入口是 `requireProjectAdministrator()` / `canManageProjectPermissions()`：**项目 owner 或本项目内的平台管理员**。`teamManage` 只覆盖团队管理（邀请、撤销邀请、用户名邀请、审批加入申请、移除普通成员），**不允许**修改任何成员的 `permissions_json`，因此不存在 `teamManage` 自我提权路径。严格 owner-only 的动作（转让 owner、核心项目配置、AI 自动协作规则、标准版本）使用 `requireProjectOwner()`，不再借用历史 `'grant'` 语义。
+
+「协作管理员」只是前端权限 preset（`administratorPermissions`），一键填入五项权限，不是数据库 `role`，也不产生新的权限表。前端 `projectPermission()` / `useProjectPermissions()` 与后端 `projectPermissionSql()` 使用同一组键；`canManagePermissions` 表示该成员是否可以管理他人项目权限，`permissionsRevision` 与 `expectedRevision` 提供乐观并发控制（冲突返回 409）。
 
 关键写 SQL 再次包含 `projectPermissionSql()`，让权限撤回与正在执行的请求竞争时，最终数据库判断生效。新增管理接口应同时做到入口校验、业务对象属于当前项目、SQL 提交时仍具权限；仅隐藏按钮不能形成权限边界。
 

@@ -2,7 +2,7 @@ import { submitCollaborationTask } from '../services/collaboration-submission';
 import { pendingTaskHumanReview } from '../services/collaboration';
 import { currentProjectFeedback, projectFeedbackHistory, saveProjectFeedback } from '../services/project-feedback';
 import { assertCanRegenerate } from '../services/task-planning-policy';
-import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
+import { projectOwnerSql, projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { taskSummarySchema, readTaskSummary, enqueueTaskSummary } from '../services/task-summary';
 import { sourceReferenceAvailability } from '../services/source-inputs';
 import { readProjectSourceContext } from '../services/collaboration-context';
@@ -91,7 +91,7 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         await owner(c.env, projectId, userId, 'owner');
         const b = await c.req.json();
         const mark = newId();
-        const results = await c.env.DB.batch([c.env.DB.prepare(`UPDATE projects SET ai_collaboration_enabled=COALESCE(?8,ai_collaboration_enabled),assignment_mode=COALESCE(?3,assignment_mode),evaluation_mode=COALESCE(?4,evaluation_mode),planning_mode=COALESCE(?9,planning_mode),progression_mode=COALESCE(?10,progression_mode),collaboration_revision=collaboration_revision+1,collaboration_mutation_token=?5,updated_at=?7 WHERE id=?1 AND collaboration_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6 AND role='owner')`).bind(projectId, b.expectedRevision, b.assignmentMode ?? null, b.evaluationMode ?? null, mark, userId, nowIso(), b.aiCollaborationEnabled === undefined ? null : b.aiCollaborationEnabled ? 1 : 0,b.planningMode??null,b.progressionMode??null), c.env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?6,?2,'user',?3,'collaboration.settings_changed','project',?2,?1,?4,?5 WHERE EXISTS(SELECT 1 FROM projects WHERE id=?2 AND collaboration_mutation_token=?1)`).bind(mark, projectId, userId, JSON.stringify(b), nowIso(), newId())]);
+        const results = await c.env.DB.batch([c.env.DB.prepare(`UPDATE projects SET ai_collaboration_enabled=COALESCE(?8,ai_collaboration_enabled),assignment_mode=COALESCE(?3,assignment_mode),evaluation_mode=COALESCE(?4,evaluation_mode),planning_mode=COALESCE(?9,planning_mode),progression_mode=COALESCE(?10,progression_mode),collaboration_revision=collaboration_revision+1,collaboration_mutation_token=?5,updated_at=?7 WHERE id=?1 AND collaboration_revision=?2 AND ${projectOwnerSql('?1','?6')}`).bind(projectId, b.expectedRevision, b.assignmentMode ?? null, b.evaluationMode ?? null, mark, userId, nowIso(), b.aiCollaborationEnabled === undefined ? null : b.aiCollaborationEnabled ? 1 : 0,b.planningMode??null,b.progressionMode??null), c.env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?6,?2,'user',?3,'collaboration.settings_changed','project',?2,?1,?4,?5 WHERE EXISTS(SELECT 1 FROM projects WHERE id=?2 AND collaboration_mutation_token=?1)`).bind(mark, projectId, userId, JSON.stringify(b), nowIso(), newId())]);
         if (!results[0]!.meta.changes)
             throw invalidState('设置已变化');
         return c.json(apiData(c, await settings(c)));

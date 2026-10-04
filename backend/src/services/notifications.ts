@@ -2,8 +2,9 @@ import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { isPushConfigured, sendWebPush } from './web-push';
 
-export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status' | 'task_inquiry' | 'task_ready';
+export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status' | 'task_inquiry' | 'task_ready' | 'member_permissions_updated';
 const content: Record<NotificationKind, [string, string]> = {
+  member_permissions_updated: ['你的项目权限已更新', '项目管理员调整了你的项目权限，请进入项目查看。'],
   task_ready: ['领取的任务可以开始了','你领取的任务的所有前置任务均已完成，请进入任务查看。'],
   task_inquiry: ['任务质询有新消息', '与你有关的任务质询有新消息，请进入任务查看。'],
   project_invitation: ['你有新的项目邀请','负责人邀请你加入项目，请到首页查看并接受或拒绝。'],
@@ -27,15 +28,18 @@ export const notificationVisibleSql = (userExpression: string) => `(
 interface EventInput {
   key: string; kind: NotificationKind; scope: 'project' | 'ticket'; resourceId: string;
   actorId?: string | null; url: string; now?: string;
+  /** Optional copy override for events whose text depends on the business payload. */
+  title?: string; body?: string;
   recipientIds?: string[];
   /** Internal SQL condition using the event insert's existing ?10 timestamp / ?11 record ID bindings. */
   guardSql?: string;
-  record: { table: 'sources' | 'requirement_sets' | 'requirements' | 'support_ticket_messages' | 'project_username_invitations' | 'task_inquiry_messages'; id: string };
+  record: { table: 'sources' | 'requirement_sets' | 'requirements' | 'support_ticket_messages' | 'project_username_invitations' | 'task_inquiry_messages' | 'project_members'; id: string };
 }
 /** Append these statements to the same D1 batch as the business change: durable, deduplicated and atomic. */
 export function notificationStatements(env: Env, input: EventInput): D1PreparedStatement[] {
-  const now = input.now ?? nowIso(); const [title, body] = content[input.kind];
-  if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements|tasks(?:\?task=[0-9a-f-]+)?)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
+  const now = input.now ?? nowIso(); const [defaultTitle, defaultBody] = content[input.kind];
+  const title = input.title ?? defaultTitle, body = input.body ?? defaultBody;
+  if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements|tasks(?:\?task=[0-9a-f-]+)?|team)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
   const statements = [
     env.DB.prepare(`INSERT OR IGNORE INTO notification_events(id,event_key,kind,scope,resource_id,actor_id,title,body,url,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS (SELECT 1 FROM ${input.record.table} WHERE id = ?11) AND (${input.guardSql ?? '1=1'})`)

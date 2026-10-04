@@ -31,9 +31,10 @@ describe('project operation permissions',()=>{
     expect(b.data.items.find(m=>m.userId===f.member.userId)).toMatchObject({permissions:memberPermissions,permissionsRevision:1});
     expect((await f.req(f.member.token,'/invitations')).status).toBe(403);
     const grant=await f.req(f.owner.token,`/members/${f.member.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions});expect(grant.status).toBe(200);
-    expect((await f.req(f.member.token,'/invitations')).status).toBe(403);
+    // teamManage 授权后前端可见的邀请功能在后端同样可用；权限管理仍需 owner/项目内平台管理员。
+    expect((await f.req(f.member.token,'/invitations')).status).toBe(200);
     expect((await f.req(f.member.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions})).status).toBe(403);
-    expect((await f.req(f.member.token,`/members/${f.owner.userId}`,'DELETE')).status).toBe(404);
+    expect((await f.req(f.member.token,`/members/${f.owner.userId}`,'DELETE')).status).toBe(403);
     expect((await env.DB.prepare("SELECT COUNT(*) n FROM events WHERE project_id=?1 AND type='member.permissions_changed'").bind(f.projectId).first<{n:number}>())?.n).toBe(1);
   });
   it('stale writes conflict; revocation and membership removal prevent transaction writes',async()=>{

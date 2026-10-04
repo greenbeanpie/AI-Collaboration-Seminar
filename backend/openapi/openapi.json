@@ -2989,7 +2989,7 @@
                 ],
                 "additionalProperties": false
               },
-              "canGrantPermissions": {
+              "canManagePermissions": {
                 "type": "boolean"
               },
               "createdAt": {
@@ -3116,7 +3116,7 @@
                       ],
                       "additionalProperties": false
                     },
-                    "canGrantPermissions": {
+                    "canManagePermissions": {
                       "type": "boolean"
                     },
                     "createdAt": {
@@ -7343,7 +7343,7 @@
                     "permissionsRevision": {
                       "type": "integer"
                     },
-                    "canGrantPermissions": {
+                    "canManagePermissions": {
                       "type": "boolean"
                     }
                   },
@@ -7357,7 +7357,7 @@
                     "joinedAt",
                     "permissions",
                     "permissionsRevision",
-                    "canGrantPermissions"
+                    "canManagePermissions"
                   ]
                 }
               }
@@ -7445,7 +7445,7 @@
               "permissionsRevision": {
                 "type": "integer"
               },
-              "canGrantPermissions": {
+              "canManagePermissions": {
                 "type": "boolean"
               }
             },
@@ -7459,7 +7459,7 @@
               "joinedAt",
               "permissions",
               "permissionsRevision",
-              "canGrantPermissions"
+              "canManagePermissions"
             ]
           },
           "requestId": {
@@ -25634,7 +25634,7 @@
         "tags": [
           "members"
         ],
-        "summary": "移除成员（owner；负责人不可移除自己）",
+        "summary": "移除成员（teamManage；负责人不可被移除）",
         "parameters": [
           {
             "schema": {
@@ -25669,7 +25669,7 @@
             }
           },
           "403": {
-            "description": "需要负责人权限",
+            "description": "需要团队管理权限",
             "content": {
               "application/json": {
                 "schema": {
@@ -25736,7 +25736,7 @@
         "tags": [
           "invitations"
         ],
-        "summary": "创建邀请（owner；邀请码仅返回一次）",
+        "summary": "创建邀请（teamManage；邀请码仅返回一次）",
         "parameters": [
           {
             "schema": {
@@ -25789,7 +25789,7 @@
             }
           },
           "403": {
-            "description": "需要负责人权限",
+            "description": "需要团队管理权限",
             "content": {
               "application/json": {
                 "schema": {
@@ -25804,7 +25804,7 @@
         "tags": [
           "invitations"
         ],
-        "summary": "邀请列表（owner）",
+        "summary": "邀请列表（teamManage）",
         "parameters": [
           {
             "schema": {
@@ -25837,7 +25837,7 @@
         "tags": [
           "invitations"
         ],
-        "summary": "撤销邀请（owner）",
+        "summary": "撤销邀请（teamManage）",
         "parameters": [
           {
             "schema": {

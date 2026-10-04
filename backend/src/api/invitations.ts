@@ -1,4 +1,4 @@
-import { requireProjectPermission, projectPermissionSql } from '../services/project-permissions';
+import { projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -49,11 +49,11 @@ const invitationCreateRoute = createRoute({
   method: 'post',
   path: '/api/v1/projects/{projectId}/invitations',
   tags: ['invitations'],
-  summary: '创建邀请（owner；邀请码仅返回一次）',
+  summary: '创建邀请（teamManage；邀请码仅返回一次）',
   request: { params: projectParams, body: { content: { 'application/json': { schema: createBody } }, required: true } },
   responses: {
     201: { content: { 'application/json': { schema: createResponse } }, description: '已创建' },
-    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要负责人权限' },
+    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要团队管理权限' },
   },
 });
 
@@ -61,7 +61,7 @@ const invitationListRoute = createRoute({
   method: 'get',
   path: '/api/v1/projects/{projectId}/invitations',
   tags: ['invitations'],
-  summary: '邀请列表（owner）',
+  summary: '邀请列表（teamManage）',
   request: { params: projectParams },
   responses: { 200: { content: { 'application/json': { schema: invitationListResponse } }, description: '列表' } },
 });
@@ -70,7 +70,7 @@ const invitationRevokeRoute = createRoute({
   method: 'delete',
   path: '/api/v1/projects/{projectId}/invitations/{invitationId}',
   tags: ['invitations'],
-  summary: '撤销邀请（owner）',
+  summary: '撤销邀请（teamManage）',
   request: { params: projectParams.extend({ invitationId: z.string().uuid() }) },
   responses: {
     200: {
@@ -118,10 +118,10 @@ interface InvitationRow {
 }
 
 export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
+  // 邀请、撤销邀请、用户名邀请与加入申请审批统一由 teamManage 决定；
+  // 不再叠加历史 'grant' 语义，避免前端可见、后端 403。
   app.use('/api/v1/projects/:projectId/invitations', requireUser, requireProjectMember({ permission: 'teamManage' }));
   app.use('/api/v1/projects/:projectId/invitations/:invitationId', requireUser, requireProjectMember({ permission: 'teamManage' }));
-  app.use('/api/v1/projects/:projectId/invitations', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
-  app.use('/api/v1/projects/:projectId/invitations/:invitationId', async (c,next) => { await requireProjectPermission(c.env,c.req.param('projectId')!,c.get('user')!.id,'grant'); await next(); });
   app.use('/api/v1/invitations/accept', requireUser);
   app.use('/api/v1/invitations/preview', requireUser);
 
@@ -149,7 +149,7 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
     const expiresAt = new Date(Date.now() + body.expiresInDays * 86_400_000).toISOString();
     const inserted = await c.env.DB.prepare(
       `INSERT INTO invitations (id, project_id, code_hash, created_by, expires_at, max_uses, used_count, created_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0, ?7 WHERE ${projectPermissionSql('?2','?4','grant')}`,
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0, ?7 WHERE ${projectPermissionSql('?2','?4','teamManage')}`,
     )
       .bind(invitationId, member.projectId, await sha256Hex(code), c.get('user')!.id, expiresAt, body.maxUses, createdAt)
       .run();
@@ -192,7 +192,7 @@ export function registerInvitationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(invitationRevokeRoute, async (c) => {
     const { invitationId } = c.req.valid('param');
     const result = await c.env.DB.prepare(
-      `UPDATE invitations SET revoked_at = ?2 WHERE id = ?1 AND project_id = ?3 AND revoked_at IS NULL AND ${projectPermissionSql('?3','?4','grant')}`,
+      `UPDATE invitations SET revoked_at = ?2 WHERE id = ?1 AND project_id = ?3 AND revoked_at IS NULL AND ${projectPermissionSql('?3','?4','teamManage')}`,
     )
       .bind(invitationId, nowIso(), c.get('member')!.projectId, c.get('user')!.id)
       .run();

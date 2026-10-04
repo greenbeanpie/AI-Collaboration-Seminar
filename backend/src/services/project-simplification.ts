@@ -1,5 +1,5 @@
 import { readinessStatements } from './task-readiness';
-import { projectPermissionSql } from './project-permissions';
+import { projectOwnerSql, projectPermissionSql } from './project-permissions';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
@@ -14,7 +14,7 @@ export async function projectGoal(env: Env, projectId: string): Promise<Goal> {
 }
 export async function updateGoal(env: Env, projectId:string, actorId:string, input:{expectedRevision:number;title?:string;detail?:string}) {
   await owner(env,projectId,actorId,'owner'); await projectGoal(env,projectId);
-  const changed=await env.DB.prepare(`UPDATE project_goals SET title=COALESCE(?3,title),detail=COALESCE(?4,detail),revision=revision+1,updated_at=?5 WHERE project_id=?1 AND revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6 AND role='owner')`).bind(projectId,input.expectedRevision,input.title??null,input.detail??null,nowIso(),actorId).run();
+  const changed=await env.DB.prepare(`UPDATE project_goals SET title=COALESCE(?3,title),detail=COALESCE(?4,detail),revision=revision+1,updated_at=?5 WHERE project_id=?1 AND revision=?2 AND ${projectOwnerSql('?1','?6')}`).bind(projectId,input.expectedRevision,input.title??null,input.detail??null,nowIso(),actorId).run();
   if(!changed.meta.changes) {
     await owner(env,projectId,actorId,'owner');
     throw versionConflict((await projectGoal(env,projectId)).revision);
@@ -82,7 +82,7 @@ export async function saveStandard(env:Env,projectId:string,actorId:string,input
   if(id&&(!current||current.revision!==expectedRevision||await env.DB.prepare('SELECT 1 FROM standards_versions WHERE project_id=?1 AND version>?2').bind(projectId,current.version).first()))throw invalidState('项目标准已更新，请刷新后保存');
   // A full combined edit creates new draft components; confirmed historical components stay immutable.
   const baseVersion=(await env.DB.prepare('SELECT MAX(version) version FROM standards_versions WHERE project_id=?1').bind(projectId).first<{version:number|null}>())?.version??0;
-  const gate="EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3 AND role='owner') AND COALESCE((SELECT MAX(version) FROM standards_versions WHERE project_id=?2),0)="+baseVersion;
+  const gate=projectOwnerSql('?2','?3')+" AND COALESCE((SELECT MAX(version) FROM standards_versions WHERE project_id=?2),0)="+baseVersion;
   const gateArgs=[newStandardId,projectId,actorId];
   if(input.requirements!==undefined&&input.weights!==undefined){
     const setId=newId();rubricId=newId();setIds=[setId];mappings=[];

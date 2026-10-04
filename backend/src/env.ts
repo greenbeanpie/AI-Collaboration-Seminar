@@ -50,7 +50,8 @@ export interface ProjectMember {
   role: 'owner' | 'member';
   permissions: import('./services/project-permissions').ProjectPermissions;
   permissionsRevision: number;
-  canGrantPermissions: boolean;
+  /** owner 或本项目内的平台管理员：可以调整其他成员的 project permissions。 */
+  canManagePermissions: boolean;
 }
 
 export interface AppVars {

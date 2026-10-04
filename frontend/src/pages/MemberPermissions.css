@@ -1,0 +1,7 @@
+.permission-form .permission-template{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.permission-form .permission-group{display:grid;gap:8px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.permission-form .permission-group legend{padding:0 6px;font-size:12px;color:var(--muted)}
+.permission-form .permission-option{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.permission-form .permission-option>span{display:grid;gap:2px;min-width:0}
+.permission-form .permission-option strong{font-size:13px;color:var(--ink)}
+.permission-form .permission-option small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}

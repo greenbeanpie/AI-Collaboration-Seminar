@@ -1,19 +1,83 @@
 import { useState } from 'react';
+import './MemberPermissions.css';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, projectPath } from '../api/client';
+import { ApiError, api, projectPath } from '../api/client';
 import type { Member } from '../api/types';
-import { administratorPermissions, ordinaryPermissions, type ProjectPermissions } from '../project-permissions';
 import { ErrorNotice } from '../components/ui';
+import { Modal } from '../dialogs/Modal';
+import {
+  ordinaryPermissions,
+  permissionOptions,
+  permissionTemplate,
+  permissionTemplates,
+  withTemplate,
+  type PermissionKey,
+  type PermissionTemplate,
+  type ProjectPermissions,
+} from '../project-permissions';
 
-const labels: Record<keyof ProjectPermissions,string> = { teamManage:'团队管理',taskManage:'任务管理',resourceManage:'资料管理',scoreInitiate:'评分与答辩发起',scoreCorrect:'历史评分修正' };
-export function MemberPermissions({ projectId, member }: { projectId:string; member:Member }) {
+const groups = Array.from(new Set(permissionOptions.map(option => option.group)));
+
+/** 权限编辑入口只对普通成员开放；owner 与平台管理员的项目权限由身份决定。 */
+export function MemberPermissionsDialog({ projectId, member, onClose }: { projectId: string; member: Member; onClose: () => void }) {
   const client = useQueryClient();
-  const [draft,setDraft] = useState<ProjectPermissions>(member.permissions ?? ordinaryPermissions);
-  const save = useMutation({mutationFn: () => api.patch<'MemberResponse'>(projectPath(projectId,`/members/${encodeURIComponent(member.userId)}/permissions`),{expectedRevision:member.permissionsRevision ?? 1,permissions:draft}),onSuccess:async()=>{await Promise.all([client.invalidateQueries({queryKey:['members',projectId]}),client.invalidateQueries({queryKey:['member-me',projectId]}),client.invalidateQueries({queryKey:['project',projectId]})]);}});
-  if (member.role === 'owner' || member.canGrantPermissions) return null;
-  return <details><summary>调整 {member.displayName} 的权限</summary><form onSubmit={e=>{e.preventDefault();save.mutate();}} className="stack">
-    <label>权限模板<select className="input" value="custom" onChange={e=>setDraft({...(e.target.value==='ordinary'?ordinaryPermissions:administratorPermissions)})}><option value="custom">逐项设置</option><option value="ordinary">普通成员</option><option value="manager">协作管理员</option></select></label>
-    <fieldset disabled={save.isPending}>{Object.entries(labels).map(([key,label])=><label key={key} style={{display:'block'}}><input type="checkbox" checked={draft[key as keyof ProjectPermissions]} onChange={e=>setDraft(d=>({...d,[key]:e.target.checked}))}/>{label}</label>)}</fieldset>
-    <button className="button button-primary button-small" disabled={save.isPending}>保存权限</button>{save.error && <ErrorNotice error={save.error}/>}
-  </form></details>;
+  const initial = { ...ordinaryPermissions, ...(member.permissions ?? {}) };
+  const [draft, setDraft] = useState<ProjectPermissions>(initial);
+  const [template, setTemplate] = useState<PermissionTemplate>(() => permissionTemplate(initial));
+  const [conflict, setConflict] = useState(false);
+  const save = useMutation({
+    mutationFn: () => api.patch<'MemberResponse'>(projectPath(projectId, `/members/${encodeURIComponent(member.userId)}/permissions`), {
+      expectedRevision: member.permissionsRevision ?? 1,
+      permissions: {
+        teamManage: Boolean(draft.teamManage), taskManage: Boolean(draft.taskManage), resourceManage: Boolean(draft.resourceManage),
+        scoreInitiate: Boolean(draft.scoreInitiate), scoreCorrect: Boolean(draft.scoreCorrect),
+      },
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['members', projectId] }),
+        client.invalidateQueries({ queryKey: ['member-me', projectId] }),
+        client.invalidateQueries({ queryKey: ['project', projectId] }),
+      ]);
+      onClose();
+    },
+    onError: error => {
+      if (error instanceof ApiError && (error.status === 409 || error.code === 'VERSION_CONFLICT')) {
+        setConflict(true);
+        void client.invalidateQueries({ queryKey: ['members', projectId] });
+      }
+    },
+  });
+  function applyTemplate(value: PermissionTemplate) {
+    setTemplate(value);
+    if (value !== 'custom') setDraft(withTemplate(value));
+  }
+  function toggle(key: PermissionKey, checked: boolean) {
+    const next = { ...draft, [key]: checked };
+    setDraft(next);
+    setTemplate(permissionTemplate(next));
+  }
+  return <Modal title={`${member.displayName} 的项目权限`} onClose={onClose}>
+    <form className="stack permission-form" onSubmit={event => { event.preventDefault(); setConflict(false); save.mutate(); }}>
+      <label className="permission-template">权限模板
+        <select className="input" aria-label="权限模板" value={template} disabled={save.isPending} onChange={event => applyTemplate(event.target.value as PermissionTemplate)}>
+          {permissionTemplates.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </label>
+      <p className="form-note">模板只是快速填写权限的方式，不是账户角色；保存后以逐项权限为准。</p>
+      {conflict && <div className="notice notice-warn" role="alert">该成员的权限已被其他管理员修改，请刷新后重新确认。</div>}
+      {groups.map(group => <fieldset className="permission-group" key={group} disabled={save.isPending}>
+        <legend>{group}</legend>
+        {permissionOptions.filter(option => option.group === group).map(option => <label className="permission-option" key={option.key}>
+          <input type="checkbox" checked={Boolean(draft[option.key])} onChange={event => toggle(option.key, event.target.checked)} />
+          <span><strong>{option.label}</strong><small>{option.detail}</small></span>
+        </label>)}
+      </fieldset>)}
+      {save.error && !conflict && <ErrorNotice error={save.error} />}
+      <div className="form-actions">
+        <button type="button" className="button button-quiet" disabled={save.isPending} onClick={onClose}>取消</button>
+        <button type="submit" className="button button-primary" disabled={save.isPending}>{save.isPending ? '保存中…' : conflict ? '刷新后重新保存' : '保存'}</button>
+      </div>
+    </form>
+  </Modal>;
 }

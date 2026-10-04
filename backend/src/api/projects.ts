@@ -25,7 +25,8 @@ export const projectSchema = z.object({
   revision: z.number().int(),
   myRole: z.enum(['owner', 'member']),
   permissions: permissionSchema.optional(),
-  canGrantPermissions: z.boolean().optional(),
+  /** owner 或本项目内的平台管理员：可以调整其他成员的 project permissions。 */
+  canManagePermissions: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -226,7 +227,7 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .bind(member.projectId)
       .first<ProjectRow>();
     if (!row) throw notFound('项目不存在');
-    return c.json(apiData(c, { ...toProject(row, member.role), permissions: member.permissions, canGrantPermissions: member.canGrantPermissions }), 200);
+    return c.json(apiData(c, { ...toProject(row, member.role), permissions: member.permissions, canManagePermissions: member.canManagePermissions }), 200);
   });
 
   app.openapi(projectPatchRoute, async (c) => {

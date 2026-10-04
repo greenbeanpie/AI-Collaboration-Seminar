@@ -4,10 +4,10 @@ const list=items=>({items,nextCursor:null,nextOffset:null});
 function fixture(path, searchParams=new URLSearchParams(), options={}) {
  const accountRole=options.accountRole||'user',projectRole=options.projectRole||'owner';
  const user={id:'fixture-user',username:'local_fixture',displayName:'入口审查成员',email:null,role:accountRole,isAdmin:accountRole!=='user'};
- const permissions={teamManage:projectRole==='owner',taskManage:projectRole==='owner',resourceManage:projectRole==='owner',scoreInitiate:true};
- const project={id:'fixture',name:'入口审查项目',description:'仅用于手机入口检查的假数据',deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',aiBudgetUsd:20,aiBudgetUsedUsd:0,revision:1,myRole:projectRole,permissions,permissionsRevision:1,createdAt:date,updatedAt:date};
+ const permissions={teamManage:projectRole==='owner',taskManage:projectRole==='owner',resourceManage:projectRole==='owner',scoreInitiate:true,scoreCorrect:projectRole==='owner'};
+ const project={id:'fixture',name:'入口审查项目',description:'仅用于手机入口检查的假数据',deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',aiBudgetUsd:20,aiBudgetUsedUsd:0,revision:1,myRole:projectRole,permissions,canManagePermissions:projectRole==='owner',permissionsRevision:1,createdAt:date,updatedAt:date};
  const archived={...project,id:'archived-fixture',name:'已归档审查项目',status:'archived'};
- const member={...user,userId:user.id,role:projectRole,skills:['研究','整理'],hoursPerWeek:8,weeklyAvailableHours:8,joinedAt:date,permissions,permissionsRevision:1};
+ const member={...user,userId:user.id,role:projectRole,skills:['研究','整理'],hoursPerWeek:8,weeklyAvailableHours:8,joinedAt:date,permissions,canManagePermissions:projectRole==='owner',permissionsRevision:1};
  const contributor={userId:user.id,displayName:user.displayName,username:user.username};
  const file={fileId:'file1',name:'入口附件.txt',contentType:'text/plain',sizeBytes:20,status:'available',sourceIds:[],canDelete:permissions.resourceManage,revision:1,lifecycleVersion:1,deletedAt:null,createdAt:date,updatedAt:date,contributors:[contributor]};
  const source={sourceId:'source1',kind:'paste',title:'入口审查来源',currentVersionId:'source-version1',fileId:null,revision:1,lifecycleVersion:1,deletedAt:null,createdAt:date,updatedAt:date,canManage:permissions.resourceManage,contributors:[contributor]};
