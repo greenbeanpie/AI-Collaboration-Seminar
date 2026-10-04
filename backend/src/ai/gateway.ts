@@ -231,11 +231,17 @@ async function gatewayChatAttempt(
   }
 
   if (!res.ok) {
-    await res.body?.cancel();
+    let multipleImagesRejected = false;
+    if ([400, 422].includes(res.status)) {
+      try {
+        const reason = JSON.stringify(await readProviderJson(res)).slice(0, 12000);
+        multipleImagesRejected = /(?:only|maximum|max(?:imum)?|at most)\s+(?:one|1)\s+image|multiple\s+images?\s+(?:(?:are|is)\s+)?(?:not\s+supported|unsupported)|不支持多(?:张|个)图|最多.{0,3}(?:1|一)张/u.test(reason.toLowerCase());
+      } catch { /* Invalid provider rejection bodies do not enable replay. */ }
+    } else await res.body?.cancel();
     const retryable = res.status === 429 || res.status >= 500;
     throw new AppError('AI_UNAVAILABLE', `模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
       status: res.status,
-
+      ...(multipleImagesRejected ? { multipleImagesRejected: true } : {}),
     });
   }
 

@@ -1,3 +1,4 @@
+import { summaryBoundaryContext } from './ocr-batches';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
@@ -40,7 +41,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
   if (originatingJobId) await assertSourceJobActive(env, originatingJobId);
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(versionId).first<{ n: number }>();
   const fragments = await env.DB.prepare('SELECT COUNT(*) AS n FROM source_fragments WHERE source_version_id = ?1').bind(versionId).first<{ n: number }>();
-  if (missing?.n || !fragments?.n) throw invalidState('正文尚未完整提取；请先补齐缺页或重新读取文本层');
+  if (!fragments?.n) throw invalidState('暂无已提取正文；请先读取文本层或识别页面');
   const config = await requireEnabledAiConfig(env.DB);
   const jobId = crypto.randomUUID(); const now = nowIso();
   const claims = await env.DB.batch([
@@ -98,24 +99,28 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     const model = config.config.textEconomy;
     const fragments = await env.DB.prepare('SELECT id, page_number, content FROM source_fragments WHERE source_version_id = ?1 ORDER BY seq').bind(input.sourceVersionId).all<{ id: string; page_number: number | null; content: string }>();
     if(!fragments.results.length)throw new AppError('SOURCE_PARSE_FAILED','暂无可用于总结的正文片段',422,false);
-    const chunks=documentChunks(fragments.results,model.maxInputChars,SUMMARY_SYSTEM.length);
+    const contextLimit = Math.min(400, Math.floor(model.maxInputChars / 20));
+    const contextReserve = 2 * contextLimit + 300;
+    const chunks=documentChunks(fragments.results,model.maxInputChars,SUMMARY_SYSTEM.length + contextReserve);
+    const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND ((text_status='none' AND ocr_status!='ok') OR (image_status='uploaded' AND ocr_status IN ('pending','failed')))").bind(input.sourceVersionId).first<{n:number}>();
     const totalChars=fragments.results.reduce((n,f)=>n+f.content.length,0);const coveredChars=totalChars;
     const summaries:z.infer<typeof chunkSummarySchema>[]=[];
     for(let index=0;index<chunks.length;index++){
-      await assertActive();const chunk=chunks[index]!;const content=renderDocumentChunk(chunk);
+      await assertActive();const chunk=chunks[index]!;const boundaries=summaryBoundaryContext(chunks,index,contextLimit);const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
       const cacheKey='ai-document-chunks/'+jobId+'/summary/'+await sha256Hex(config.id+content);
       const cached=await env.FILES.get(cacheKey);let data:z.infer<typeof chunkSummarySchema>;
       if(cached){data=chunkSummarySchema.parse(await cached.json());}
       else {
         await reserveAiSlot(env,{projectId:state.project_id,jobId,purpose:'source_summary',configVersionId:config.id});
         const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:chunks.length===1?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema,beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
-        data=result.data;validateChunkCitations(chunk,data.citations);await assertActive();
+        data=result.data;validateChunkCitations(readFragments,data.citations);await assertActive();
         await settleReservation(env,jobId,'settled');await env.FILES.put(cacheKey,JSON.stringify(data));
       }
-      validateChunkCitations(chunk,data.citations);summaries.push(data);
+      validateChunkCitations(readFragments,data.citations);summaries.push(data);
     }
     const unique=<T,>(rows:T[])=>Array.from(new Map(rows.map(row=>[JSON.stringify(row),row])).values());
     const data=summaries.length===1?summaries[0]!:documentSummarySchema.parse({title:summaries[0]!.title,summary:summaries.map((part,index)=>'第 '+(index+1)+' 部分：'+part.summary).join('\n\n'),keyPoints:unique(summaries.flatMap(part=>part.keyPoints)),citations:unique(summaries.flatMap(part=>part.citations)),caveats:unique(summaries.flatMap(part=>part.caveats))});
+    if (incomplete?.n) data.caveats.push(`有 ${incomplete.n} 页尚未读取或补充识别未完成，本总结仅覆盖成功提取的正文；缺页不得推断。`);
     await assertActive();
     const saved = await env.DB.prepare(`UPDATE source_processing SET summary_status = 'ready', summary_json = ?4, summary_error = NULL, covered_chars = ?5, total_chars = ?6, updated_at = ?7 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'running' AND ${processingGuard("?1", "?8", "?2")}`).bind(input.sourceVersionId, jobId, input.summaryRevision, JSON.stringify(data), coveredChars, totalChars, nowIso(), expectedLifecycleVersion).run();
     await settleReservation(env, jobId, 'settled');

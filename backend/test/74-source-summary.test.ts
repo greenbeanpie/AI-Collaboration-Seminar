@@ -82,14 +82,18 @@ describe('independent source summaries', () => {
     resolve(new Response()); expect((await running).status).toBe('succeeded');
   });
 
-  it('validates project access and rejects stale revisions and incomplete text without model calls', async () => {
+  it('validates project access and rejects stale revisions and permits explicitly partial summaries', async () => {
     const f = await fixture(); const outsider = await seedUser();
     expect((await SELF.fetch(f.path,{headers:{cookie:authCookie(outsider.token)}})).status).toBe(403);
     const fetch = vi.fn(); vi.stubGlobal('fetch',fetch);
     const stale = await SELF.fetch(`${f.path}/summary`,{method:'POST',headers:{cookie:f.cookie,'content-type':'application/json'},body:JSON.stringify({expectedSummaryRevision:9})});
     expect(stale.status).toBe(409); expect(fetch).not.toHaveBeenCalled();
     await env.DB.prepare("UPDATE source_pages SET text_status='none' WHERE source_version_id=?1 AND page_number=1").bind(f.sourceVersionId).run();
-    expect((await SELF.fetch(`${f.path}/summary`,{method:'POST',headers:{cookie:f.cookie,'content-type':'application/json'},body:JSON.stringify({expectedSummaryRevision:0})})).status).toBe(409); expect(fetch).not.toHaveBeenCalled();
+    vi.stubGlobal('fetch',mockGatewayFetch());
+    const partial=await enqueueSourceSummary({...env,PARSE_WORKFLOW:{create:vi.fn(async()=>({id:crypto.randomUUID()}))}} as unknown as Env,f.sourceVersionId,f.owner.userId,0);
+    expect((await runSourceSummary(env,partial.jobId)).status).toBe('succeeded');
+    const summary=await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string}>();
+    expect(JSON.parse(summary!.summary_json).caveats.join('')).toContain('1 页尚未读取');
   });
 
   it('does not save fabricated summary citations', async () => {
