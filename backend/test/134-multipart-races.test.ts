@@ -92,4 +92,15 @@ describe('multipart lifetime and concurrency',()=>{
   expect(await (await env.FILES.get(row!.r2_key))!.text()).toBe('def');
  });
 
+ it('does not complete using an older ETag when a replacement transfer lease expires',async()=>{
+  const f=await fixture();await upload(f,'old');const entered=gate(),release=gate();
+  const target=wrappedFiles({resumeMultipartUpload:(key:string,id:string)=>{const original=env.FILES.resumeMultipartUpload(key,id);return {uploadPart:async(n:number,b:ReadableStream)=>{entered.open();await release.promise;return original.uploadPart(n,b);}};}});
+  const replacing=upload(f,'new',target);await entered.promise;
+  await env.DB.prepare("UPDATE file_upload_part_leases SET expires_at='2000-01-01T00:00:00.000Z' WHERE session_id=?1").bind(f.id).run();
+  await expect(completeMultipart(env,f.project,f.file,f.user,f.id)).rejects.toMatchObject({code:'INVALID_STATE'});
+  release.open();await replacing;await completeMultipart(env,f.project,f.file,f.user,f.id);
+  const row=await env.DB.prepare('SELECT r2_key FROM files WHERE id=?1').bind(f.file).first<{r2_key:string}>();
+  expect(await (await env.FILES.get(row!.r2_key))!.text()).toBe('new');
+ });
+
 });
