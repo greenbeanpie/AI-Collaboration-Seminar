@@ -35,6 +35,9 @@ describe('recoverable project file lifecycle',()=>{
     const pid=await seedProject(owner.userId);await member(pid,uploader.userId);await member(pid,peer.userId);
     const id=await init(uploader.token,pid);
     await env.DB.prepare("UPDATE auth_accounts SET account_role='admin',is_admin=1 WHERE user_id=?1").bind(peer.userId).run();
+    expect((await list(peer.token,pid))[0]?.canDelete).toBe(false);
+    expect((await change(peer.token,pid,id,1)).status).toBe(403);
+    await env.DB.prepare('UPDATE project_members SET permissions_json=?3 WHERE project_id=?1 AND user_id=?2').bind(pid,peer.userId,JSON.stringify({resourceManage:true})).run();
     expect((await list(peer.token,pid))[0]?.canDelete).toBe(true);
     expect((await change(peer.token,pid,id,1)).status).toBe(200);
     expect((await change(peer.token,pid,id,2,true)).status).toBe(200);

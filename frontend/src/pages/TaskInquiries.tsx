@@ -8,7 +8,7 @@ type Message={messageId:string;authorId:string;authorName:string;body:string;cre
 type Inquiry={inquiryId:string;taskId:string;upstreamTaskId:string;taskTitle:string;upstreamTitle:string;requesterId:string;requesterName:string;recipientId:string;recipientName:string;recipientSource:string;messages:Message[]};
 type Candidate={taskId:string;title:string;recipientName:string;recipientSource:string};
 type Inbox={items:Inquiry[];candidates:Candidate[]};
-const sourceLabel=(source:string)=>source==='substitute'?'当前负责人代答':source==='completion'?'完成时负责人':'验收成果提交者';
+const sourceLabel=(source:string)=>source==='substitute'?'当前执行人代答':source==='completion'?'完成时执行人':'验收成果提交者';
 async function send(projectId:string,path:string,body:unknown){
  const namespace=`inquiry:${projectId}:${path}`;
  const idempotencyKey=await idempotencyKeyForIntent(namespace,body);

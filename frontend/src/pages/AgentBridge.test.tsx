@@ -100,7 +100,7 @@ describe('DSH bridge review', () => {
   });
   it('blocks a different actor from submitting without hiding the draft', async () => {
     state.actor = 'u2'; progress(row('ready_for_review', { result }));
-    await screen.findByText(/仅任务负责人/); expect(screen.getByRole('checkbox')).toBeDisabled(); expect(bridgeApi.adopt).not.toHaveBeenCalled();
+    await screen.findByText(/仅任务执行人/); expect(screen.getByRole('checkbox')).toBeDisabled(); expect(bridgeApi.adopt).not.toHaveBeenCalled();
   });
   it('keeps cancellation pending until device acknowledgment', async () => {
     vi.mocked(bridgeApi.cancel).mockResolvedValue(row('cancel_requested'));

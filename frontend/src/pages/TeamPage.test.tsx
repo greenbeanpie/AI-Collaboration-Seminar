@@ -24,7 +24,7 @@ const all = { teamManage: true, taskManage: true, resourceManage: true, scoreIni
 const ordinary = { teamManage: false, taskManage: false, resourceManage: false, scoreInitiate: true, scoreCorrect: false };
 const plainMember = { userId: 'u1', displayName: '普通成员甲', role: 'member', email: 'a@example.com', isAdmin: false, joinedAt: '2026-10-01', permissions: ordinary, permissionsRevision: 1, canManagePermissions: false };
 const managerMember = { userId: 'u2', displayName: '协作管理员乙', role: 'member', email: 'b@example.com', isAdmin: false, joinedAt: '2026-10-01', permissions: all, permissionsRevision: 3, canManagePermissions: false };
-const platformAdmin = { userId: 'u3', displayName: '平台管理员丙', role: 'member', email: 'c@example.com', isAdmin: true, joinedAt: '2026-10-01', permissions: all, permissionsRevision: 2, canManagePermissions: true };
+const platformAdmin = { userId: 'u3', displayName: '平台管理员丙', role: 'member', email: 'c@example.com', isAdmin: true, joinedAt: '2026-10-01', permissions: ordinary, permissionsRevision: 2, canManagePermissions: false };
 const ownerMember = { userId: 'u4', displayName: '负责人丁', role: 'owner', email: 'd@example.com', isAdmin: false, joinedAt: '2026-10-01', permissions: all, permissionsRevision: 1, canManagePermissions: true };
 
 function renderTeam(members: unknown[], options: { role?: string; permissions?: Record<string, boolean>; canManagePermissions?: boolean } = {}) {
@@ -76,32 +76,32 @@ it('teamManage members manage invitations and removals but cannot edit permissio
   expect(screen.getByRole('button', { name: '创建邀请码' })).toBeInTheDocument();
   expect(screen.getByText('账号邀请')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '移除成员 普通成员甲' })).toBeInTheDocument();
-  // teamManage 不等于权限管理：修改他人权限仍需 owner 或本项目内的平台管理员。
+  // teamManage 不等于权限管理：修改他人权限仍需 owner。
   expect(screen.queryByRole('button', { name: '调整 普通成员甲 的权限' })).toBeNull();
 });
 
-it('project-member platform admins can edit permissions while teamManage-only members cannot', () => {
+it('non-owners cannot edit permissions even with stale canManagePermissions flags', () => {
   renderTeam([plainMember], { role: 'member', permissions: all, canManagePermissions: true });
-  expect(screen.getByRole('button', { name: '调整 普通成员甲 的权限' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '调整 普通成员甲 的权限' })).toBeNull();
   cleanup();
   renderTeam([plainMember], { role: 'member', permissions: { ...ordinary, teamManage: true }, canManagePermissions: false });
   expect(screen.queryByRole('button', { name: '调整 普通成员甲 的权限' })).toBeNull();
 });
 
-it('owner and platform admins show a locked permission state instead of an editable entry', () => {
+it('only the owner is locked and platform-admin members remain editable', () => {
   renderTeam([platformAdmin, ownerMember], { role: 'owner' });
-  expect(screen.getAllByText('权限锁定')).toHaveLength(2);
-  expect(screen.queryByRole('button', { name: '调整 平台管理员丙 的权限' })).toBeNull();
+  expect(screen.getAllByText('权限锁定')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '调整 平台管理员丙 的权限' })).toBeInTheDocument();
   // owner 属项目管理员，可以移除平台管理员成员（与后端 DELETE 校验一致）。
   expect(screen.getByRole('button', { name: '移除成员 平台管理员丙' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '移除成员 负责人丁' })).toBeNull();
 });
 
-it('removing a platform-admin member is limited to project administrators', () => {
-  // teamManage-only：普通成员可移除，平台管理员成员不可移除。
+it('teamManage removes non-owners regardless of account identity', () => {
+  // teamManage 同样允许移除管理员账号。
   renderTeam([plainMember, platformAdmin], { role: 'member', permissions: { ...ordinary, teamManage: true } });
   expect(screen.getByRole('button', { name: '移除成员 普通成员甲' })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: '移除成员 平台管理员丙' })).toBeNull();
+  expect(screen.getByRole('button', { name: '移除成员 平台管理员丙' })).toBeInTheDocument();
   cleanup();
   // 本项目内的平台管理员：两类成员都可移除。
   renderTeam([plainMember, platformAdmin], { role: 'member', permissions: all, canManagePermissions: true });
@@ -116,9 +116,9 @@ it('removing a platform-admin member is limited to project administrators', () =
 
 it('summarises member permissions without listing five checkboxes', () => {
   renderTeam([plainMember, managerMember, platformAdmin, ownerMember], { role: 'owner' });
-  expect(screen.getByText('普通成员 · 评分发起')).toBeInTheDocument();
+  expect(screen.getAllByText('普通成员 · 评分发起')).toHaveLength(2);
   expect(screen.getByText('协作管理员 · 全部权限')).toBeInTheDocument();
-  expect(screen.getByText('平台管理员 · 全部权限 · 权限由平台身份决定')).toBeInTheDocument();
+  expect(screen.queryByText('平台管理员')).toBeNull();
   expect(screen.getByText('负责人 · 全部权限')).toBeInTheDocument();
   expect(screen.queryByRole('checkbox')).toBeNull();
 });
@@ -130,4 +130,11 @@ it('keeps the mobile member card wrap-capable so new permission controls cannot 
   expect(css).toMatch(/\.compact-team-grid \.team-member\{[^}]*flex-wrap:wrap/);
   expect(css).toMatch(/\.compact-team-grid \.team-member-actions\{[^}]*flex-wrap:wrap/);
   expect(css).toMatch(/@media\(max-width:600px\)\{[^}]*\.compact-team-grid \.team-member-actions\{width:100%/);
+});
+
+it('shows actual permissions when scoring is revoked or combined with management', () => {
+  renderTeam([{...plainMember, permissions: {...ordinary, scoreInitiate:false}}, {...platformAdmin, permissions:{...ordinary, taskManage:true}}], {role:'owner'});
+  expect(screen.getByText('未授予项目操作权限')).toBeInTheDocument();
+  expect(screen.getByText('任务管理 · 评分发起')).toBeInTheDocument();
+  expect(screen.queryByText('普通成员 · 评分发起')).toBeNull();
 });

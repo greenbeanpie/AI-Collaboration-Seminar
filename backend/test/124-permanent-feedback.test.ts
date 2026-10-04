@@ -44,3 +44,15 @@ it('freezes full job feedback and gateway transmits that version after later edi
  await expect(gatewayChat(endpoint,{config:{...config,maxInputChars:100},projectId,jobId,messages:[{role:'user',content:'请求'}]},blocked)).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
  expect(blocked).not.toHaveBeenCalled();
 });
+
+it.each(['admin', 'super_admin'] as const)('%s project members cannot write feedback even with all operation permissions', async accountRole => {
+ const {owner,projectId}=await fixture(), member=await seedUser();
+ await env.DB.prepare("INSERT INTO project_members(project_id,user_id,role,joined_at,permissions_json) VALUES(?1,?2,'member',?3,?4)").bind(projectId,member.userId,nowIso(),JSON.stringify({teamManage:true,taskManage:true,resourceManage:true,scoreInitiate:true,scoreCorrect:true})).run();
+ await env.DB.prepare('UPDATE auth_accounts SET account_role=?2,is_admin=1 WHERE user_id=?1').bind(member.userId,accountRole).run();
+ await expect(saveProjectFeedback(env,projectId,member.userId,'越权',0)).rejects.toMatchObject({code:'PERMISSION_DENIED'});
+ const response=await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/collaboration/feedback/current`,{method:'POST',headers:{cookie:authCookie(member.token),'content-type':'application/json'},body:JSON.stringify({feedback:'越权',expectedVersion:0})});
+ expect(response.status).toBe(403);
+ expect((await currentProjectFeedback(env,projectId)).version).toBe(0);
+ await saveProjectFeedback(env,projectId,owner.userId,'负责人反馈',0);
+ expect((await currentProjectFeedback(env,projectId)).feedback).toBe('负责人反馈');
+});

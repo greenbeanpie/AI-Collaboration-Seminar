@@ -115,7 +115,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
     const correction=await env.DB.prepare('SELECT 1 FROM collaboration_proposal_revisions WHERE proposal_id=?1 AND project_id=?2 AND length(trim(reason))>0 LIMIT 1').bind(proposalId,projectId).first();
     if(automatic||!correction)await validateReadReferences(env,projectId,payload.references??[]);
     if(p.kind==='decompose'){
-      if(automatic)throw invalidState('任务方案须由项目管理员明确批准');
+      if(automatic)throw invalidState('任务方案须由项目负责人或拥有任务管理权限的成员明确确认');
       // 批准/应用 AI 任务方案属于任务管理型操作，与前端 taskManage 门控一致。
       await requireProjectPermission(env,projectId,actorId,'taskManage');
       if(payload.planningAction==='regenerate'){
@@ -183,7 +183,7 @@ export async function decideSubmission(env: Env, projectId: string, submissionId
         env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?3,?2,?4,?5,'collaboration.submission_decided','submission',?1,?6,?7,?8 WHERE EXISTS(SELECT 1 FROM task_submissions WHERE id=?1 AND mutation_token=?6)`).bind(submissionId, projectId, newId(), automatic ? 'ai' : 'user', automatic ? `project-ai:${projectId}` : actorId, nonce, JSON.stringify({ decision, feedback, pendingHumanReview: !!provisionalReview }), nowIso()),
     ]);
     if (!result[0]!.meta.changes)
-        throw invalidState('提交、负责人或设置已变化，请刷新');
+        throw invalidState('提交、任务执行人或设置已变化，请刷新');
 }
 
 /** Owner edits remain possible after automatic application. Preserve original proposal revisions. */

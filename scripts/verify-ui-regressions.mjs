@@ -15,13 +15,13 @@ const id='11111111-1111-4111-8111-111111111111', userId='22222222-2222-4222-8222
 const base=`/app/projects/${id}`;
 const result={preview:origin,fixtureOnly:true,startedAt:new Date().toISOString(),checks:[],screenshots:[],errors:[],requests:[]};
 const browser=await chromium.launch({headless:true,executablePath:process.env.EDGE_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
-async function scenario(name,role,run,scoreCorrect=false){
+async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='admin'?'super_admin':'user'){
   const context=await browser.newContext({viewport:{width:1440,height:1100},serviceWorkers:'block'});
   const page=await context.newPage();page.setDefaultTimeout(8000);
-  const state={feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='admin'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
-  const permissions={teamManage:role==='admin',taskManage:role==='admin',resourceManage:role==='admin',scoreInitiate:true,scoreCorrect:role==='admin'||scoreCorrect};
-  const project={projectId:id,name:'浏览器验证项目',description:'仅本地 HTTP fixtures',revision:1,status:'active',myRole:role==='admin'?'owner':'member',permissions,canManagePermissions:role==='admin',createdAt:now,updatedAt:now,deadlineDate:'2026-10-30',deadlinePrecision:'date'};
-  const member={memberId:'member-1',userId,displayName:role==='admin'?'管理员':'普通成员',username:'fixture-user',email:null,role:project.myRole,isAdmin:role==='admin',permissions,canManagePermissions:role==='admin',permissionsRevision:1};
+  const state={feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='owner'||role==='manager'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
+  const permissions={teamManage:role==='owner'||role==='manager',taskManage:role==='owner'||role==='manager',resourceManage:role==='owner'||role==='manager',scoreInitiate:true,scoreCorrect:role==='owner'||role==='manager'||scoreCorrect};
+  const project={projectId:id,name:'浏览器验证项目',description:'仅本地 HTTP fixtures',revision:1,status:'active',myRole:role==='owner'?'owner':'member',permissions,canManagePermissions:role==='owner',createdAt:now,updatedAt:now,deadlineDate:'2026-10-30',deadlinePrecision:'date'};
+  const member={memberId:'member-1',userId,displayName:role==='owner'||role==='manager'?'管理员':'普通成员',username:'fixture-user',email:null,role:project.myRole,isAdmin:accountRole!=='user',permissions,canManagePermissions:role==='owner',permissionsRevision:1};
   const rubric={weights:[{key:'quality',label:'质量',weight:100}]};
   const standard={standardsVersionId:standardId,title:'已确认标准',version:1,revision:1,status:'confirmed',rubric,requirements:[],createdAt:now};
   const assessment={assessmentId,kind:'material_review',status:'succeeded',historical:false,revision:1,origin:'ai',standardsVersionId:standardId,standardsVersion:1,goalRevision:1,goal:{title:'验证主目标',detail:'左侧目标详细说明'},materialVersionIds:[],rehearsalId:null,createdAt:now,report:{kind:'assistive',status:'scored',scores:[{key:'quality',label:'质量',score:80,comment:'已有真实评分',confidence:0.8,evidence:[]}],weightedTotal:80,summary:'已有评分记录',requirementChecks:[],limitations:[]}};
@@ -34,7 +34,7 @@ async function scenario(name,role,run,scoreCorrect=false){
     result.requests.push({scenario:name,path,method});
     if(method!=='GET')state.writes.push({path,method,body});
     let data={items:[],nextCursor:null};
-    if(path==='/api/v1/auth/session')data={user:{id:userId,username:'fixture-user',displayName:member.displayName,email:null,isAdmin:role==='admin',role:role==='admin'?'super_admin':'user'}};
+    if(path==='/api/v1/auth/session')data={user:{id:userId,username:'fixture-user',displayName:member.displayName,email:null,isAdmin:accountRole!=='user',role:accountRole}};
     else if(path==='/api/v1/capabilities')data={features:{aiEnabled:true,uploadsEnabled:true},competitionTemplate:{teamSizeLimit:10},authentication:{mode:'password'}};
     else if(path==='/api/v1/notifications/settings')data={inAppEnabled:false,pushEnabled:false};
     else if(path==='/api/v1/notifications/push/status')data={configured:false};
@@ -45,7 +45,7 @@ async function scenario(name,role,run,scoreCorrect=false){
     }
     else if(path===`/api/v1/projects/${id}`)data=project;
     else if(path.endsWith('/members/me'))data=member;
-    else if(path.endsWith('/members'))data={items:[member],nextCursor:null};
+    else if(path.endsWith('/members'))data={items:[member,{...member,userId:'77777777-7777-4777-8777-777777777777',displayName:'管理员账号成员',role:'member',isAdmin:true,permissions:{teamManage:false,taskManage:false,resourceManage:false,scoreInitiate:false,scoreCorrect:false},canManagePermissions:false}],nextCursor:null};
     else if(path.endsWith('/goal'))data={title:'验证主目标',detail:'左侧目标详细说明',revision:1,graphRevision:1};
     else if(path.endsWith('/tasks'))data={items:[],nextCursor:null};
     else if(path.endsWith('/collaboration/settings'))data={revision:1,aiCollaborationEnabled:true,assignmentMode:'manual',acceptanceMode:'manual',rubricMode:'manual'};
@@ -87,7 +87,7 @@ try{
     assert(!state.writes.some(item=>item.path.endsWith('/invitations')));
     await screenshot('pending');
   });
-  await scenario('administrator-invitation','admin',async({page,state,screenshot})=>{
+  await scenario('team-manager-invitation','manager',async({page,state,screenshot})=>{
     await page.goto(origin+base+'/team');
     await page.getByRole('button',{name:'创建邀请码'}).waitFor();
     await page.getByRole('heading',{name:'成员邀请申请'}).waitFor();
@@ -96,7 +96,7 @@ try{
     assert(state.writes.some(item=>item.path.endsWith('/decide')&&item.body.action==='approve'));
     await screenshot('cards');
   });
-  await scenario('feedback-reference-history','admin',async({page,state,screenshot})=>{
+  await scenario('feedback-reference-history','owner',async({page,state,screenshot})=>{
     await page.goto(origin+base+'/tasks');
     await page.getByRole('button',{name:/AI 拆解/}).click();
     const dialog=page.getByRole('dialog',{name:'AI 拆解、调整与分工'});
@@ -144,15 +144,40 @@ try{
     await page.getByRole('heading',{name:'持续反馈版本历史'}).waitFor();
     await screenshot('history');
   });
-  for(const [role,grant] of [['member',false],['member',true],['admin',false]])await scenario(`scoring-${role}-${grant?'granted':'default'}`,role,async({page,screenshot})=>{
+  for(const [role,grant] of [['member',false],['member',true],['admin',false],['admin',true],['owner',false]])await scenario(`scoring-${role}-${grant?'granted':'default'}`,role,async({page,screenshot})=>{
     await page.goto(origin+base+'/assessment?section=checks');
     await page.getByRole('heading',{name:'独立评分记录'}).waitFor();
     const correction=page.getByRole('heading',{name:'修正本轮评分',exact:true});
-    if(role==='admin'||grant){await correction.waitFor();assert(await correction.evaluate(node=>Boolean(node.closest('.assessment-layout'))));}
+    if(role==='owner'||grant){await correction.waitFor();assert(await correction.evaluate(node=>Boolean(node.closest('.assessment-layout'))));}
     else assert.equal(await correction.count(),0);
     assert.equal(await page.getByRole('heading',{name:'独立人工评分',exact:true}).count(),0);
     await screenshot('history');
   },grant);
+  for(const role of ['owner','manager','admin'])await scenario(`permission-team-${role}`,role,async({page,screenshot})=>{
+    await page.goto(origin+base+'/team');
+    await page.getByRole('heading',{name:'团队成员',exact:true}).waitFor();
+    const edit=page.getByRole('button',{name:'调整 管理员账号成员 的权限'});
+    const remove=page.getByRole('button',{name:'移除成员 管理员账号成员'});
+    assert.equal(await edit.count(),role==='owner'?1:0);
+    assert.equal(await remove.count(),role==='owner'||role==='manager'?1:0);
+    assert.equal(await page.getByText('平台管理员',{exact:true}).count(),0);
+    assert.equal(await page.locator('.team-member').filter({hasText:'管理员账号成员'}).getByText('权限锁定',{exact:true}).count(),0);
+    await screenshot('desktop');
+    if(role==='owner'){
+      await edit.click();
+      await page.getByRole('dialog',{name:'管理员账号成员 的项目权限'}).waitFor();
+      await screenshot('editable-admin');
+      await page.getByRole('button',{name:'取消',exact:true}).click();
+    }
+    await page.setViewportSize({width:390,height:844});
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    await screenshot('mobile');
+    await page.goto(origin+base+'/tasks');
+    await page.getByRole('button',{name:'AI 拆解、调整与分工',exact:true}).click();
+    const feedback=page.getByLabel('持续项目反馈');
+    assert.equal(await feedback.evaluate(node=>node.readOnly),role!=='owner');
+    await screenshot('feedback');
+  });
   await scenario('overview-layout','member',async({page,screenshot})=>{
     await page.goto(origin+base);
     await page.getByRole('heading',{name:'项目主目标',exact:true}).waitFor();

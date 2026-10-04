@@ -132,58 +132,70 @@ describe('project permission matrix', () => {
     expect(await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, secondOwner.userId).first()).not.toBeNull();
   });
 
-  it('K. removing a platform-admin member needs project administration, not teamManage', async () => {
-    const f = await fixture(), adminA = await seedUser(), adminB = await seedUser(), adminC = await seedUser();
-    for (const user of [adminA, adminB, adminC]) await addMember(f.projectId, user.userId);
-    await setAccountRole(adminA.userId, 'admin');
-    await setAccountRole(adminB.userId, 'super_admin');
-    await setAccountRole(adminC.userId, 'admin');
-    const stillMember = async (userId: string) => env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, userId).first();
-    // teamManage 只覆盖“移除普通项目成员”。
-    await f.grant(f.member.userId, withPermissions({ teamManage: true }));
-    expect((await f.req(f.member.token, `/members/${adminA.userId}`, 'DELETE')).status).toBe(403);
-    expect(await stillMember(adminA.userId)).not.toBeNull();
-    expect((await f.req(f.member.token, `/members/${f.other.userId}`, 'DELETE')).status).toBe(200);
-    expect(await stillMember(f.other.userId)).toBeNull();
-    // 项目 owner 可以移除平台管理员成员。
-    expect((await f.req(f.owner.token, `/members/${adminA.userId}`, 'DELETE')).status).toBe(200);
-    expect(await stillMember(adminA.userId)).toBeNull();
-    // 本项目内的平台管理员也可以移除另一名平台管理员成员，但不能移除自己。
-    expect((await f.req(adminB.token, `/members/${adminC.userId}`, 'DELETE')).status).toBe(200);
-    expect(await stillMember(adminC.userId)).toBeNull();
-    expect((await f.req(adminB.token, `/members/${adminB.userId}`, 'DELETE')).status).toBe(409);
-    expect(await stillMember(adminB.userId)).not.toBeNull();
-    // 移除平台管理员时同样以项目管理员谓词做事务内二次校验：请求过程中平台身份被撤销则写入失败。
-    const adminBMember = (await env.DB.prepare('SELECT id FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, adminB.userId).first<{ id: string }>())!;
-    const guarded = await env.DB.batch([
-      env.DB.prepare("UPDATE auth_accounts SET account_role='user',is_admin=0 WHERE user_id=?1").bind(adminB.userId),
-      env.DB.prepare(`DELETE FROM project_members WHERE id=?1 AND role!='owner' AND ${projectAdministratorSql('project_members.project_id','?2')}`).bind(adminBMember.id, adminB.userId),
-    ]);
-    expect(guarded[1]!.meta.changes).toBe(0);
-    expect(await stillMember(adminB.userId)).not.toBeNull();
-  });
-
-  it('G. platform admins get full project permissions only while they belong to the project', async () => {
-    const f = await fixture(), admin = await seedUser(), superAdmin = await seedUser(), external = await seedUser();
-    await addMember(f.projectId, admin.userId);
-    await addMember(f.projectId, superAdmin.userId);
+  it('K. teamManage removes any non-owner regardless of account role and revocation blocks the transaction', async () => {
+    const f = await fixture(), admin = await seedUser(), superAdmin = await seedUser();
+    for (const user of [admin, superAdmin]) await addMember(f.projectId, user.userId);
     await setAccountRole(admin.userId, 'admin');
     await setAccountRole(superAdmin.userId, 'super_admin');
-    await setAccountRole(external.userId, 'admin');
+    expect((await f.req(admin.token, `/members/${f.other.userId}`, 'DELETE')).status).toBe(403);
+    await f.grant(f.member.userId, withPermissions({ teamManage: true }));
+    expect((await f.req(f.member.token, `/members/${admin.userId}`, 'DELETE')).status).toBe(200);
+    expect((await f.req(f.member.token, `/members/${f.owner.userId}`, 'DELETE')).status).toBe(403);
+    await f.grant(superAdmin.userId, withPermissions({ teamManage: true }));
+    expect((await f.req(superAdmin.token, `/members/${superAdmin.userId}`, 'DELETE')).status).toBe(409);
+    expect((await f.req(superAdmin.token, `/members/${f.other.userId}`, 'DELETE')).status).toBe(200);
+    const guarded = await env.DB.batch([
+      env.DB.prepare('UPDATE project_members SET permissions_json=?3,permissions_revision=permissions_revision+1 WHERE project_id=?1 AND user_id=?2').bind(f.projectId, f.member.userId, JSON.stringify(memberPermissions)),
+      env.DB.prepare(`DELETE FROM project_members WHERE project_id=?1 AND user_id=?3 AND role!='owner' AND ${projectPermissionSql('?1','?2','teamManage')}`).bind(f.projectId, f.member.userId, superAdmin.userId),
+    ]);
+    expect(guarded[1]!.meta.changes).toBe(0);
+    expect((await f.req(f.member.token, `/members/${superAdmin.userId}`, 'DELETE')).status).toBe(403);
+    expect((await f.req(f.owner.token, `/members/${superAdmin.userId}`, 'DELETE')).status).toBe(200);
+  });
+
+  it.each(['admin', 'super_admin'] as const)('G. %s has only explicit project permissions and account changes never grant or revoke them', async accountRole => {
+    const f = await fixture(), admin = await seedUser(), external = await seedUser();
+    await addMember(f.projectId, admin.userId);
+    await setAccountRole(admin.userId, accountRole);
+    await setAccountRole(external.userId, accountRole);
+    const access = async () => (await (await f.req(admin.token, '')).json() as { data: { permissions: ProjectPermissions; canManagePermissions: boolean } }).data;
+    expect(await access()).toMatchObject({ permissions: memberPermissions, canManagePermissions: false });
+    expect((await f.req(admin.token, '/invitations', 'POST', {})).status).toBe(403);
+    expect((await f.req(admin.token, '/collaboration/tasks', 'POST', taskBody)).status).toBe(403);
+    expect((await f.setPermissions(f.member.userId, managerPermissions, admin.token)).status).toBe(403);
+    expect((await f.setPermissions(admin.userId, managerPermissions, admin.token)).status).toBe(403);
+    const material = await f.createMaterial(f.other.token);
+    expect((await f.saveMaterial(admin.token, material.materialId, material.revision)).status).toBe(403);
+    expect((await f.req(admin.token, `/assessments/${newId()}/scores`, 'PATCH', { expectedRevision: 1, scores: [{ key: 'quality', score: 60 }], reason: '越权' })).status).toBe(403);
+    const listed = await (await f.req(admin.token, '/members')).json() as { data: { items: Array<{ userId: string; isAdmin: boolean; canManagePermissions: boolean; permissions: ProjectPermissions }> } };
+    expect(listed.data.items.find(item => item.userId === admin.userId)).toMatchObject({ isAdmin: true, canManagePermissions: false, permissions: memberPermissions });
+    expect((await f.req(external.token, '/members')).status).toBe(403);
+    expect((await f.setPermissions(f.member.userId, managerPermissions, external.token)).status).toBe(403);
+    await f.grant(admin.userId, managerPermissions);
     expect((await f.req(admin.token, '/invitations', 'POST', {})).status).toBe(201);
     expect((await f.req(admin.token, '/collaboration/tasks', 'POST', taskBody)).status).toBe(201);
-    expect((await f.setPermissions(f.member.userId, managerPermissions, admin.token)).status).toBe(200);
-    expect((await f.setPermissions(f.other.userId, managerPermissions, superAdmin.token)).status).toBe(200);
-    // 成员列表暴露的 isAdmin 必须与平台管理员谓词一致，前端据此决定是否显示“移除平台管理员”入口。
-    const listed = await (await f.req(admin.token, '/members')).json() as { data: { items: Array<{ userId: string; isAdmin: boolean; canManagePermissions: boolean }> } };
-    expect(listed.data.items.find(item => item.userId === admin.userId)).toMatchObject({ isAdmin: true, canManagePermissions: true });
-    expect(listed.data.items.find(item => item.userId === superAdmin.userId)).toMatchObject({ isAdmin: true, canManagePermissions: true });
-    expect(listed.data.items.find(item => item.userId === f.member.userId)).toMatchObject({ isAdmin: false, canManagePermissions: false });
-    // 平台管理员身份不能替代项目成员资格。
-    expect((await f.req(external.token, '/members')).status).toBe(403);
-    expect((await f.setPermissions(f.member.userId, memberPermissions, external.token)).status).toBe(403);
-    // 平台管理员的项目权限由平台身份决定，不能通过接口降级。
-    expect((await f.setPermissions(admin.userId, memberPermissions)).status).toBe(403);
+    expect((await f.saveMaterial(admin.token, material.materialId, material.revision)).status).toBe(201);
+    expect((await f.setPermissions(f.other.userId, managerPermissions, admin.token)).status).toBe(403);
+    await env.DB.prepare("UPDATE auth_accounts SET account_role='user',is_admin=0 WHERE user_id=?1").bind(admin.userId).run();
+    expect(await access()).toMatchObject({ permissions: managerPermissions, canManagePermissions: false });
+    expect((await f.req(admin.token, '/invitations', 'POST', {})).status).toBe(201);
+    await setAccountRole(admin.userId, accountRole);
+    expect(await access()).toMatchObject({ permissions: managerPermissions, canManagePermissions: false });
+    await f.grant(admin.userId, { ...memberPermissions, scoreInitiate: false });
+    expect(await access()).toMatchObject({ permissions: { ...memberPermissions, scoreInitiate: false }, canManagePermissions: false });
+    expect((await f.req(admin.token, '/invitations', 'POST', {})).status).toBe(403);
+    expect((await f.req(admin.token, '/collaboration/tasks', 'POST', taskBody)).status).toBe(403);
+    expect((await f.saveMaterial(admin.token, material.materialId, material.revision + 1)).status).toBe(403);
+  });
+
+  it('owner changes during a permission request block the final write', async () => {
+    const f = await fixture();
+    const guarded = await env.DB.batch([
+      env.DB.prepare("UPDATE project_members SET role='member' WHERE project_id=?1 AND user_id=?2").bind(f.projectId, f.owner.userId),
+      env.DB.prepare(`UPDATE project_members SET permissions_json=?3 WHERE project_id=?1 AND user_id=?2 AND ${projectAdministratorSql('?1','?4')}`).bind(f.projectId, f.member.userId, JSON.stringify(managerPermissions), f.owner.userId),
+    ]);
+    expect(guarded[1]!.meta.changes).toBe(0);
+    expect((await f.setPermissions(f.member.userId, managerPermissions)).status).toBe(403);
   });
 
   it('H. project isolation: an owner of project A cannot change project B members', async () => {

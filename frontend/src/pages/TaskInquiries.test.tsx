@@ -10,7 +10,7 @@ afterEach(()=>{cleanup();vi.clearAllMocks();});
 function show(){render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}})}><TaskInquiries projectId="p" taskId="down" meId="me"/></QueryClientProvider>);}
 it('labels substitute responders and sends upstream inquiry',async()=>{
  request.mockResolvedValue({items:[],candidates:[{taskId:'up',title:'接口规范',recipientName:'同学甲',recipientSource:'substitute'}]});show();
- expect(await screen.findByRole('option',{name:'接口规范 · 同学甲（当前负责人代答）'})).toBeInTheDocument();
+ expect(await screen.findByRole('option',{name:'接口规范 · 同学甲（当前执行人代答）'})).toBeInTheDocument();
  fireEvent.change(screen.getByLabelText('询问哪项前置任务'),{target:{value:'up'}});fireEvent.change(screen.getByLabelText('对当前任务的影响与问题'),{target:{value:'字段格式是什么？'}});fireEvent.click(screen.getByRole('button',{name:'发起质询'}));
  await waitFor(()=>expect(request).toHaveBeenCalledWith('p','/tasks/down/inquiries',{method:'POST',body:{upstreamTaskId:'up',body:'字段格式是什么？'},idempotencyKey:'intent-key'}));
 });

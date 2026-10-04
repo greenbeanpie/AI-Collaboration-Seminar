@@ -4,10 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { CollaborationWorkspace } from './CollaborationWorkspace';
 import { CollaborationSettings } from './CollaborationSettings';
-const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId: 'p1' }));
-vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role } }) }));
+const identity = vi.hoisted(() => ({ role: 'owner', aiEnabled: false, projectId: 'p1', canManagePermissions: false, permissions: undefined as Record<string, boolean> | undefined }));
+vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: identity.projectId, project: { myRole: identity.role, canManagePermissions: identity.canManagePermissions, permissions: identity.permissions } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: identity.aiEnabled } } }), useSession: () => ({ data: null, isPending: false }) }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); identity.role = 'owner'; identity.aiEnabled = false; identity.projectId = 'p1'; identity.canManagePermissions = false; identity.permissions = undefined; });
 const task = { pendingHumanReview: false, startedAt: null as string | null, dependsOnTaskIds: [] as string[], unfinishedDependencyIds: [] as string[], status: 'doing' as 'todo' | 'doing' | 'blocked' | 'done', citations: [] as Array<{ sourceVersionId: string; fragmentId: string; pageNumber: number | null; quote: string }>, taskId: 't1', title: '交付原型', detail: '完成交互', criteria: '完成三个可操作页面', effortHours: 4, revision: 3, assigneeId: 'm1' as string | null, lifecycleState: 'in_progress', currentSubmissionId: null as string | null };
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
@@ -383,7 +383,7 @@ describe('collaboration lifecycle', () => {
     identity.role = 'member';
     setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    expect(screen.queryByText('负责人分工')).not.toBeInTheDocument();
+    expect(screen.queryByText('安排分工')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '确认验收决定' })).not.toBeInTheDocument();
   });
   it('shows fixed-source provenance directly in a grounded task detail', () => {
@@ -545,4 +545,14 @@ it('does not regenerate a task that was started and returned to the open state',
  fireEvent.click(screen.getByRole('button',{name:'AI 拆解、调整与分工'}));
  expect(screen.getByRole('button',{name:'重新生成整套任务建议'})).toBeDisabled();
  expect(screen.getByRole('button',{name:'按要求调整现有任务'})).toBeEnabled();
+});
+
+it('keeps feedback read-only for an explicitly authorized task manager with a stale administrator flag', () => {
+  identity.role = 'member'; identity.canManagePermissions = true;
+  identity.permissions = {teamManage:true,taskManage:true,resourceManage:true,scoreInitiate:true,scoreCorrect:true};
+  setup();
+  expect(screen.getByRole('button', {name:'新建任务'})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', {name:'AI 拆解、调整与分工'}));
+  expect(screen.getByLabelText('持续项目反馈')).toHaveAttribute('readonly');
+  expect(screen.queryByRole('button', {name:'保存反馈'})).toBeNull();
 });

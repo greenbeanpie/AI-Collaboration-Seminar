@@ -43,7 +43,7 @@ function ProjectCollaborationWorkspace() {
   const { projectId, project } = useProject();
   const client = useQueryClient();
   const owner = projectPermission(project,'taskManage');
-  // 项目反馈属于项目管理员动作，与后端 requireProjectAdministrator 保持一致。
+  // 项目持续反馈仅负责人可修改，与后端 requireProjectAdministrator 保持一致。
   const feedbackAdmin = canManageProjectPermissions(project);
   const feedback = useQuery({queryKey:['project-feedback',projectId],queryFn:()=>projectRequest<FeedbackSnapshot>(projectId,'/collaboration/feedback/current')});
   const feedbackHistory = useQuery({queryKey:['project-feedback-history',projectId],queryFn:()=>projectRequest<{items:FeedbackSnapshot[]}>(projectId,'/collaboration/feedback/history')});
@@ -322,7 +322,7 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, owne
   return <div className="stack collab-detail">
     <div hidden={historyPage}>
     <div className="collab-toolbar"><StatusPill tone={task.pendingHumanReview ? 'warn' : 'neutral'}>{taskStateLabel(task)}</StatusPill><span>预计 {task.effortHours} 小时 · r{task.revision}</span>{view === 'submit' && <button className="button button-quiet" onClick={openHistory}>查看历史记录</button>}</div>
-    {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；负责人可安排分工与验收。</p>}
+    {!owner && task.assigneeId !== meId && <p className="form-note">仅任务执行人可提交成果；项目负责人或拥有任务管理权限的成员可安排分工与验收。</p>}
     <section aria-label="任务设置" hidden={view !== 'settings'} className="stack">
     <DependencyEditor projectId={projectId} task={task} tasks={tasks} graphRevision={graphRevision} owner={owner} onChanged={onChanged} />
     <h3>任务介绍</h3><p className="collab-preserve">{task.detail || '暂无任务介绍'}</p><div className="callout"><strong>验收标准</strong><p className="collab-preserve">{task.criteria}</p></div>
@@ -337,7 +337,7 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, owne
       {editOutdated && <button type="button" className="button button-quiet" onClick={() => { setEditDraft({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours) }); setEditBaseRevision(task.revision); setEditConflicted(false); setEditSaved(false); edit.reset(); }}>重新载入最新任务</button>}
       {edit.error && <ErrorNotice error={edit.error} />}{editSaved && <p role="status">任务调整已保存</p>}<button className="button" disabled={edit.isPending || editOutdated || !editDraft.title.trim() || !editDraft.criteria.trim()}>{edit.isPending ? '保存中…' : '保存任务调整'}</button>
     </form></details>}
-    {owner && <details><summary>负责人分工</summary><form className="stack" onSubmit={event => { event.preventDefault(); assign.mutate(); }}>
+    {owner && <details><summary>安排分工</summary><form className="stack" onSubmit={event => { event.preventDefault(); assign.mutate(); }}>
       {task.lifecycleState === 'submitted' && <p className="notice notice-warn">重新分配会撤回当前提交并使待处理评价失效，历史保留。请确认后填写调整理由。</p>}
       <Field label="任务执行人"><select className="input" value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">暂不分配</option>{members.map(member => <option key={member.userId} value={member.userId}>{member.displayName}</option>)}</select></Field>
       <Field label="分工理由"><textarea className="input" required maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明匹配的技能、投入时间及调整原因" /></Field>
@@ -361,8 +361,8 @@ function TaskLifecycleDetail({ view, projectId, task, tasks, graphRevision, owne
 
       {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
     </form></section>}
-    {!task.assigneeId && <p className="form-note">请先认领任务或由负责人分工，再提交成果。</p>}
-    {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由负责人手动验收。</div>}
+    {!task.assigneeId && <p className="form-note">请先认领任务或由安排分工，再提交成果。</p>}
+    {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由项目负责人或拥有任务管理权限的成员手动验收。</div>}
     {history.isLoading && <Spinner label="读取提交历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
     {history.data?.items.length === 0 && <p className="muted">{task.lifecycleState === 'accepted' && !task.currentSubmissionId ? '历史完成状态已保留，未补造提交与验收记录。' : '尚未提交成果。'}</p>}
     {current && renderSubmission(current)}
@@ -383,7 +383,7 @@ function SubmissionDecisionForm({ projectId, submission, onChanged }: { projectI
   const [decisionConflict, setDecisionConflict] = useState(false);
   const decisionOutdated = decisionConflict || decisionBase !== submission.revision;
   const decide = useMutation({ mutationFn: () => { if (decisionOutdated) throw new Error('评价记录已变化，请先重新核对。'); return collaborationApi.decide(projectId, { ...submission, revision: decisionBase }, decision, feedback.trim()); }, onSuccess: onChanged, onError: async error => { if (error instanceof ApiError && error.status === 409) setDecisionConflict(true); await onChanged(); } });
-  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate(); }}><h4>{submission.pendingHumanReview ? '人工审核' : '负责人明确验收'}</h4><Field label={`第 ${submission.round} 轮验收结论`}><select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label={`第 ${submission.round} 轮验收理由`}><textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" /></Field>{decisionOutdated && <div className="notice notice-warn">本轮评价已更新，请核对新记录后重新填写验收决定。</div>}{decisionOutdated && <button type="button" className="button button-quiet" onClick={() => { setDecisionBase(submission.revision); setDecisionConflict(false); setFeedback(''); setDecision('accept'); decide.reset(); }}>已核对最新评价，重新填写决定</button>}{decide.error && <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending || decisionOutdated || !feedback.trim()}>{decide.isPending ? '记录中…' : submission.pendingHumanReview ? '确认人工审核' : '确认验收决定'}</button></form>;
+  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate(); }}><h4>{submission.pendingHumanReview ? '人工审核' : '人工验收'}</h4><Field label={`第 ${submission.round} 轮验收结论`}><select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label={`第 ${submission.round} 轮验收理由`}><textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" /></Field>{decisionOutdated && <div className="notice notice-warn">本轮评价已更新，请核对新记录后重新填写验收决定。</div>}{decisionOutdated && <button type="button" className="button button-quiet" onClick={() => { setDecisionBase(submission.revision); setDecisionConflict(false); setFeedback(''); setDecision('accept'); decide.reset(); }}>已核对最新评价，重新填写决定</button>}{decide.error && <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending || decisionOutdated || !feedback.trim()}>{decide.isPending ? '记录中…' : submission.pendingHumanReview ? '确认人工审核' : '确认验收决定'}</button></form>;
 }
 
 function BoundMaterialVersion({ projectId, version }: { projectId: string; version: NonNullable<TaskSubmission['materialVersions']>[number] }) {

@@ -19,7 +19,7 @@ const memberSchema = z.object({
   joinedAt: z.string(),
   permissions: permissionSchema,
   permissionsRevision: z.number().int(),
-  /** 该成员是否是本项目内的权限管理员（owner 或平台管理员），与权限管理入口的可用性一致。 */
+  /** 该成员是否是本项目内的权限管理员（仅 owner），与权限管理入口的可用性一致。 */
   canManagePermissions: z.boolean(),
 });
 const memberListResponse = apiEnvelope(z.object({ items: z.array(memberSchema) }), 'MemberListResponse');
@@ -28,7 +28,7 @@ const memberRemoveResponse = apiEnvelope(z.object({ removed: z.boolean() }), 'Me
 const memberLeaveResponse = apiEnvelope(z.object({ left: z.boolean() }), 'MemberLeaveResponse');
 const permissionRoute = createRoute({
   method: 'patch', path: '/api/v1/projects/{projectId}/members/{userId}/permissions', tags: ['members'],
-  summary: '负责人或项目内平台管理员调整组员权限',
+  summary: '项目负责人调整组员权限',
   request: { params: projectParams.extend({ userId: z.string().uuid() }), body: { required: true, content: { 'application/json': { schema: z.object({ expectedRevision: z.number().int().positive(), permissions: permissionSchema }).strict() } } } },
   responses: { 200: { description: '已保存', content: { 'application/json': { schema: memberResponse } } }, 403: { description: '权限不足', content: { 'application/json': { schema: apiErrorEnvelope } } }, 409: { description: '权限版本变化', content: { 'application/json': { schema: apiErrorEnvelope } } } },
 });
@@ -68,11 +68,11 @@ const memberRemoveRoute = createRoute({
   method: 'delete',
   path: '/api/v1/projects/{projectId}/members/{userId}',
   tags: ['members'],
-  summary: '移除成员（teamManage 移除普通成员；平台管理员成员需项目管理员；负责人不可被移除）',
+  summary: '移除非负责人成员（需要团队管理权限）',
   request: { params: projectParams.extend({ userId: z.string().uuid() }) },
   responses: {
     200: { content: { 'application/json': { schema: memberRemoveResponse } }, description: '已移除' },
-    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要团队管理权限，或移除平台管理员成员需要项目管理员' },
+    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要团队管理权限；负责人不可被移除' },
     409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '不允许的移除操作' },
   },
 });
@@ -112,14 +112,13 @@ function toMember(row: MemberRow) {
     displayName: row.display_name,
     role: row.role,
     joinedAt: row.joined_at,
-    permissions: effectivePermissions(row.role, ['admin','super_admin'].includes(row.account_role), row.permissions_json),
+    permissions: effectivePermissions(row.role, row.permissions_json),
     permissionsRevision: row.permissions_revision,
-    canManagePermissions: row.role === 'owner' || ['admin','super_admin'].includes(row.account_role),
+    canManagePermissions: row.role === 'owner',
   };
 }
 
-// isAdmin 由 account_role 推导（旧数据回落到 is_admin），与 requireProjectAdministrator 的平台管理员谓词完全一致，
-// 前端据它决定是否显示“移除平台管理员”入口，避免两侧判断出现差异。
+// isAdmin 仅表示账号身份，不参与项目权限或成员移除判断。
 const memberSelect = `SELECT pm.id AS member_id, pm.user_id, a.contact_email AS email, a.username, CASE WHEN COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) IN ('admin','super_admin') THEN 1 ELSE 0 END AS is_admin, u.display_name, pm.role, pm.joined_at, pm.permissions_json, pm.permissions_revision, COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) AS account_role
   FROM project_members pm JOIN users u ON u.id = pm.user_id LEFT JOIN auth_accounts a ON a.user_id = u.id`;
 
@@ -136,7 +135,7 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
         await next();
         return;
       }
-      // 该模式其余情况仅有 DELETE（移除成员），属 owner 权限
+      // 该模式其余情况仅有 DELETE（移除成员），需要 teamManage。
       return requireProjectMember({ permission: 'teamManage' })(c, next);
     },
   );
@@ -159,13 +158,12 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(permissionRoute, async c => {
     const { projectId, userId } = c.req.valid('param');
     const actorId = c.get('user')!.id;
-    // 权限管理本身不来自 permissions_json：owner 或本项目内的平台管理员。
+    // 权限管理本身不来自 permissions_json：仅项目负责人可授权。
     // teamManage 只管理团队成员，不能修改任何人的权限。
     await requireProjectAdministrator(c.env,projectId,actorId);
     const target = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id=?1 AND pm.user_id=?2`).bind(projectId,userId).first<MemberRow>();
     if (!target) throw notFound('成员不存在');
     if (target.role === 'owner') throw permissionDenied('项目负责人权限不可降级');
-    if (['admin','super_admin'].includes(target.account_role)) throw permissionDenied('平台管理员的项目权限由平台身份决定');
     const body = c.req.valid('json'), token = newId(), at = nowIso();
     const previous = storedPermissions(target.permissions_json);
     const granted = grantedPermissionLabels(previous, body.permissions);
@@ -210,22 +208,15 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
     const { userId } = c.req.valid('param');
     if (userId === member.userId) throw invalidState(member.role === 'owner' ? '负责人不可移除自己（应先转让负责人）' : '本人退出项目请使用「退出项目」');
     const target = await c.env.DB.prepare(
-      `SELECT pm.id, pm.role, COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) AS account_role
-         FROM project_members pm LEFT JOIN auth_accounts a ON a.user_id = pm.user_id
+      `SELECT pm.id, pm.role FROM project_members pm
         WHERE pm.project_id = ?1 AND pm.user_id = ?2`,
     )
       .bind(member.projectId, userId)
-      .first<{ id: string; role: 'owner' | 'member'; account_role: string }>();
+      .first<{ id: string; role: 'owner' | 'member' }>();
     if (!target) throw notFound('成员不存在');
     if (target.role === 'owner') throw permissionDenied('项目负责人不可被移除（应先转让负责人）');
-    // teamManage 只覆盖“移除普通项目成员”；移除平台管理员成员需要项目管理员（owner 或本项目内的平台管理员），
-    // 与前端只对普通成员显示移除入口保持一致。
-    const platformAdminTarget = ['admin','super_admin'].includes(target.account_role);
-    if (platformAdminTarget) await requireProjectAdministrator(c.env, member.projectId, member.userId, '只有项目负责人或本项目内的平台管理员可以移除平台管理员成员');
-    // 事务内二次校验：请求开始后被撤销的权限无法完成删除。
-    const guard = platformAdminTarget
-      ? projectAdministratorSql('project_members.project_id','?2')
-      : projectPermissionSql('project_members.project_id','?2','teamManage');
+    // 账号身份不提供移除保护；事务内二次校验确保撤权后不能完成删除。
+    const guard = projectPermissionSql('project_members.project_id','?2','teamManage');
     const removed = await c.env.DB.prepare(`DELETE FROM project_members WHERE id=?1 AND role!='owner' AND ${guard}`).bind(target.id,member.userId).run();
     if (!removed.meta.changes) throw permissionDenied('成员或权限已变化，请刷新');
     return c.json(apiData(c, { removed: true }), 200);

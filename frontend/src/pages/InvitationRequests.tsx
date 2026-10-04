@@ -3,7 +3,7 @@ import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
 import { projectRequest } from '../api/simplification';
 import { ErrorNotice,Field,SectionCard } from '../components/ui';
 type Item={id:string;username:string;requestedBy:string;status:'pending'|'approved'|'rejected';revision:number;createdAt:string};
-/** canApprove 对应 teamManage：邀请与审批同属团队管理，权限管理仍只属于 owner 或平台管理员。 */
+/** canApprove 对应 teamManage：邀请与审批同属团队管理，权限管理仍只属于 owner。 */
 export function InvitationRequests({projectId,canApprove}:{projectId:string;canApprove:boolean}){
  const client=useQueryClient(),[username,setUsername]=useState('');
  const refresh=()=>client.invalidateQueries({queryKey:['invitation-requests',projectId]});

@@ -52,7 +52,7 @@ async function releaseCancelledReservations(env: Env, now: string): Promise<void
 export async function changeFileLifecycle(env: Env, params: {projectId:string;fileId:string;actorId:string;expectedLifecycleVersion:number;restore:boolean}): Promise<{fileId:string;deletedAt:string|null;lifecycleVersion:number;affectedSourceIds:string[]}> {
   const row=await env.DB.prepare('SELECT uploader_user_id,deleted_at,lifecycle_version FROM files WHERE id=?1 AND project_id=?2').bind(params.fileId,params.projectId).first<{uploader_user_id:string;deleted_at:string|null;lifecycle_version:number}>();
   if(!row) throw notFound('文件不存在');
-  if(!await canManageResource(env,params.projectId,params.actorId,row.uploader_user_id)) throw permissionDenied('只有项目负责人或上传者可删除和恢复文件');
+  if(!await canManageResource(env,params.projectId,params.actorId,row.uploader_user_id)) throw permissionDenied('需要资料管理权限或为文件上传者才能删除和恢复文件');
   if(row.lifecycle_version!==params.expectedLifecycleVersion || Boolean(row.deleted_at)!==params.restore) throw invalidState('文件生命周期已变化，请刷新后重试');
   const now=nowIso(); const next=params.expectedLifecycleVersion+1;const transitionId=crypto.randomUUID();
   const fileGuard=`EXISTS(SELECT 1 FROM files f WHERE f.id=?1 AND f.project_id=?2 AND f.lifecycle_version=?3 AND f.deleted_by IS ?4 AND f.deleted_at IS ?5 AND f.lifecycle_change_id=?6)`;
@@ -86,7 +86,7 @@ export async function changeFileLifecycle(env: Env, params: {projectId:string;fi
 export async function changeSourceLifecycle(env:Env,params:{projectId:string;sourceId:string;actorId:string;expectedLifecycleVersion:number;restore:boolean}):Promise<{sourceId:string;deletedAt:string|null;lifecycleVersion:number}> {
   const row=await env.DB.prepare('SELECT created_by,kind,deleted_at,deleted_via_file_id,lifecycle_version FROM sources WHERE id=?1 AND project_id=?2').bind(params.sourceId,params.projectId).first<{created_by:string;kind:string;deleted_at:string|null;deleted_via_file_id:string|null;lifecycle_version:number}>();
   if(!row) throw notFound('来源不存在');
-  if(!await canManageResource(env,params.projectId,params.actorId,row.created_by)) throw permissionDenied('只有项目负责人或来源创建者可删除和恢复来源');
+  if(!await canManageResource(env,params.projectId,params.actorId,row.created_by)) throw permissionDenied('需要资料管理权限或为来源创建者才能删除和恢复来源');
   if(row.kind==='file'||row.deleted_via_file_id) throw invalidState('文件来源请通过文件库删除或恢复原文件');
   if(row.lifecycle_version!==params.expectedLifecycleVersion||Boolean(row.deleted_at)!==params.restore) throw invalidState('来源生命周期已变化，请刷新后重试');
   const now=nowIso();const next=params.expectedLifecycleVersion+1;const transitionId=crypto.randomUUID();

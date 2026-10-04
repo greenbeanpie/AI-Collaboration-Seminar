@@ -14,7 +14,7 @@ export async function projectFeedbackHistory(env:Env,projectId:string){
  const rows=await env.DB.prepare('SELECT * FROM project_feedback_versions WHERE project_id=?1 ORDER BY version DESC').bind(projectId).all<Row>();return rows.results.map(snapshot);
 }
 export async function saveProjectFeedback(env:Env,projectId:string,actorId:string,feedback:string,expectedVersion:number){
- // 项目级 AI 协作反馈属于项目管理员动作（owner 或本项目内的平台管理员），不是 owner-only 也不是 teamManage。
+ // 项目持续反馈仅项目负责人可修改，不受账号角色与操作权限影响。
  await requireProjectAdministrator(env,projectId,actorId);
  const id=newId();
  const now=nowIso();

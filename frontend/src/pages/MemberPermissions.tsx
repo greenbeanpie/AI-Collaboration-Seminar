@@ -18,7 +18,7 @@ import {
 
 const groups = Array.from(new Set(permissionOptions.map(option => option.group)));
 
-/** 权限编辑入口只对普通成员开放；owner 与平台管理员的项目权限由身份决定。 */
+/** 负责人可编辑所有非负责人成员权限，账号角色不影响编辑。 */
 export function MemberPermissionsDialog({ projectId, member, onClose }: { projectId: string; member: Member; onClose: () => void }) {
   const client = useQueryClient();
   const initial = { ...ordinaryPermissions, ...(member.permissions ?? {}) };
@@ -65,7 +65,7 @@ export function MemberPermissionsDialog({ projectId, member, onClose }: { projec
         </select>
       </label>
       <p className="form-note">模板只是快速填写权限的方式，不是账户角色；保存后以逐项权限为准。</p>
-      {conflict && <div className="notice notice-warn" role="alert">该成员的权限已被其他管理员修改，请刷新后重新确认。</div>}
+      {conflict && <div className="notice notice-warn" role="alert">权限已发生变化，请刷新后重新确认。</div>}
       {groups.map(group => <fieldset className="permission-group" key={group} disabled={save.isPending}>
         <legend>{group}</legend>
         {permissionOptions.filter(option => option.group === group).map(option => <label className="permission-option" key={option.key}>

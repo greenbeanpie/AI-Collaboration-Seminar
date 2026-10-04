@@ -31,7 +31,7 @@ describe('project operation permissions',()=>{
     expect(b.data.items.find(m=>m.userId===f.member.userId)).toMatchObject({permissions:memberPermissions,permissionsRevision:1});
     expect((await f.req(f.member.token,'/invitations')).status).toBe(403);
     const grant=await f.req(f.owner.token,`/members/${f.member.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions});expect(grant.status).toBe(200);
-    // teamManage 授权后前端可见的邀请功能在后端同样可用；权限管理仍需 owner/项目内平台管理员。
+    // teamManage 授权后前端可见的邀请功能在后端同样可用；权限管理仍需 owner。
     expect((await f.req(f.member.token,'/invitations')).status).toBe(200);
     expect((await f.req(f.member.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions})).status).toBe(403);
     expect((await f.req(f.member.token,`/members/${f.owner.userId}`,'DELETE')).status).toBe(403);
@@ -45,12 +45,12 @@ describe('project operation permissions',()=>{
     expect((await f.req(f.member.token,'/invitations','POST',{})).status).toBe(403);
     const check=()=>env.DB.prepare(`SELECT 1 allowed WHERE ${projectPermissionSql('?1','?2','taskManage')}`).bind(f.projectId,f.member.userId).first();
     expect(await check()).toBeNull();
-    await env.DB.prepare("UPDATE auth_accounts SET account_role='admin' WHERE user_id=?1").bind(f.member.userId).run();expect(await check()).not.toBeNull();
+    await env.DB.prepare("UPDATE auth_accounts SET account_role='admin' WHERE user_id=?1").bind(f.member.userId).run();expect(await check()).toBeNull();
     await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId,f.member.userId).run();expect(await check()).toBeNull();
   });
-  it('project-member platform admins grant permissions, external admins cannot',async()=>{
+  it('neither project-member nor external platform admins can grant permissions',async()=>{
     const f=await fixture();await env.DB.prepare("UPDATE auth_accounts SET account_role='admin' WHERE user_id=?1").bind(f.member.userId).run();
-    expect((await f.req(f.member.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions})).status).toBe(200);
+    expect((await f.req(f.member.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:1,permissions:managerPermissions})).status).toBe(403);
     const external=await seedUser();await env.DB.prepare("UPDATE auth_accounts SET account_role='admin' WHERE user_id=?1").bind(external.userId).run();
     expect((await f.req(external.token,`/members/${f.third.userId}/permissions`,'PATCH',{expectedRevision:2,permissions:memberPermissions})).status).toBe(403);
   });

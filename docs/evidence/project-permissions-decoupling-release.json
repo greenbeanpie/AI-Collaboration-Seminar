@@ -1,0 +1,129 @@
+{
+  "completedAt": "2026-10-04T12:30:14.659Z",
+  "baseCommit": "dbcb51d65a1775414a5ac9c200395d61d83e1870",
+  "behavior": {
+    "authority": "Project owner and explicit project permissions only",
+    "permissionManagement": "owner-only",
+    "permanentFeedback": "owner-only",
+    "removal": "teamManage may remove any other non-owner; account roles give no protection",
+    "accountRoles": "admin and super_admin give no project privileges",
+    "existingExplicitGrantsPreserved": true,
+    "databaseMigration": false
+  },
+  "verification": {
+    "backend": {
+      "files": 116,
+      "tests": 1063,
+      "passed": true,
+      "log": "output/project-permissions-backend-tests.log"
+    },
+    "frontend": {
+      "files": 113,
+      "tests": 678,
+      "passed": true,
+      "log": "output/project-permissions-frontend-tests.log"
+    },
+    "typecheck": {
+      "passed": true,
+      "log": "output/project-permissions-typecheck.log"
+    },
+    "lint": {
+      "passed": true,
+      "log": "output/project-permissions-lint.log"
+    },
+    "build": {
+      "passed": true,
+      "log": "output/project-permissions-build.log"
+    },
+    "browser": {
+      "fixtureOnly": true,
+      "passed": true,
+      "checks": 17,
+      "screenshots": 24,
+      "consoleErrors": 0,
+      "report": "output/project-permissions-ui/results.json"
+    },
+    "review": {
+      "readOnlyIndependentReviewPassed": true,
+      "reactHooksAndAccessibilityReviewed": true
+    },
+    "backendRuntimeDiagnostics": "Existing Workers RPC disposal / canceled-request teardown diagnostics remain visible; final exit code was 0 and all 1063 tests passed."
+  },
+  "deployment": {
+    "backend": {
+      "worker": "greenbp-team-office-backend",
+      "version": "69acf153-4acb-438a-88dc-7c2a81bf7c4c",
+      "previousVersion": [
+        {
+          "version_id": "fe29153d-43f9-4b53-ab18-eae1e9677def",
+          "percentage": 100
+        }
+      ],
+      "log": "output/project-permissions-backend-deploy.log"
+    },
+    "frontend": {
+      "worker": "greenbp-team-office",
+      "version": "a2b06179-98ef-453c-8fdb-29681a2542c0",
+      "previousVersion": [
+        {
+          "version_id": "84827c4d-98b5-4271-9d4f-a9271641ce19",
+          "percentage": 100
+        }
+      ],
+      "log": "output/project-permissions-frontend-deploy.log"
+    },
+    "url": "https://team.greenbp.dpdns.org",
+    "productionPermissionSmoke": "Skipped at user request",
+    "loginPrecheckSessionRevoked": true,
+    "temporaryProductionAccountsCreated": 0,
+    "temporaryProductionProjectsCreated": 0
+  },
+  "modifiedFiles": [
+    "backend/openapi/openapi.json",
+    "backend/src/api/members.ts",
+    "backend/src/api/projects.ts",
+    "backend/src/env.ts",
+    "backend/src/services/collaboration-submission.ts",
+    "backend/src/services/collaboration.ts",
+    "backend/src/services/file-lifecycle.ts",
+    "backend/src/services/notifications.ts",
+    "backend/src/services/project-feedback.ts",
+    "backend/src/services/project-permissions.ts",
+    "backend/src/services/task-planning-policy.ts",
+    "backend/test/121-member-permissions.test.ts",
+    "backend/test/124-invitation-task-approval.test.ts",
+    "backend/test/124-permanent-feedback.test.ts",
+    "backend/test/137-project-permission-matrix.test.ts",
+    "backend/test/85-collaboration.test.ts",
+    "backend/test/97-file-recycle.test.ts",
+    "docs/COLLABORATION-LIFECYCLE.md",
+    "frontend/src/api/openapi.ts",
+    "frontend/src/help/TECHNICAL-IMPLEMENTATION.md",
+    "frontend/src/help/USER-GUIDE.md",
+    "frontend/src/pages/AgentBridge.test.tsx",
+    "frontend/src/pages/CollaborationWorkspace.test.tsx",
+    "frontend/src/pages/CollaborationWorkspace.tsx",
+    "frontend/src/pages/InvitationRequests.tsx",
+    "frontend/src/pages/MemberPermissions.test.tsx",
+    "frontend/src/pages/MemberPermissions.tsx",
+    "frontend/src/pages/ProposalCorrection.tsx",
+    "frontend/src/pages/TaskBridgeHandoff.tsx",
+    "frontend/src/pages/TaskInquiries.test.tsx",
+    "frontend/src/pages/TaskInquiries.tsx",
+    "frontend/src/pages/TeamPage.test.tsx",
+    "frontend/src/pages/TeamPage.tsx",
+    "frontend/src/project-permissions.ts",
+    "scripts/verify-ui-regressions.mjs"
+  ],
+  "reproduce": [
+    "npm test --prefix backend",
+    "npm test --prefix frontend",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build",
+    "npm run export:openapi --prefix backend",
+    "npm run typegen --prefix frontend",
+    "npm run preview --prefix frontend -- --port 5175",
+    "node scripts/verify-ui-regressions.mjs http://127.0.0.1:5175 output/project-permissions-ui"
+  ]
+}

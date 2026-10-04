@@ -197,7 +197,7 @@ notification_events ── notification_inbox ── users
 
 项目使用 D1 `batch` 将相关 SQL 作为事务执行。例如 `createJobAndDispatch` 同批写 jobs 与 job_outbox；依赖图修改先 CAS 更新 `project_goals.graph_revision/graph_token`，后续删除/插入边带相同 token 门禁；应用协作建议先 CAS 更新 proposal 的状态和 mutation_token，后续任务/目标/事件写入必须带该 token。
 
-需要保留 SQL 的 `WHERE revision=?`、当前成员权限、来源生命周期、AI 配置版本、项目开关、目标/图版本与当前作业状态条件。`meta.changes=0` 是前置条件失败，必须返回版本冲突或状态错误，不能当作操作成功。路由先检查权限只减少无效请求，SQL 中再次检查才能防止请求读完权限后管理员立刻撤权的竞争。
+需要保留 SQL 的 `WHERE revision=?`、当前成员权限、来源生命周期、AI 配置版本、项目开关、目标/图版本与当前作业状态条件。`meta.changes=0` 是前置条件失败，必须返回版本冲突或状态错误，不能当作操作成功。路由先检查权限只减少无效请求，SQL 中再次检查才能防止请求读完权限后项目负责人立刻撤权的竞争。
 
 R2 写入、D1 批处理、Workflow 创建和 Web Push HTTP 请求不构成一个跨服务事务。正确性来自冻结快照、幂等键、确定性实例 ID、状态门禁和恢复机制；新功能需要说明“数据库已提交但网络派发失败”“对象已上传但数据库没写入”如何处理，不应假定一个 try/catch 能回滚所有外部资源。
 
@@ -228,9 +228,9 @@ reservation: reserved → settled / released / pending_reconcile
 
 ### 图依赖与通知触发器
 
-0037 的 `task_readiness_current` 视图和5个触发器是 schema 的执行逻辑，不只是查询优化：任务创建建立 baseline，任务状态/负责人变更更新 readiness，完成时记录实际提交者或旧负责人，0→1 readiness 写去重通知与 Push outbox，成员离开清 readiness。涉及 tasks、提交状态或成员退出的变更，必须同时检视触发器及 `task-readiness.ts`。
+0037 的 `task_readiness_current` 视图和5个触发器是 schema 的执行逻辑，不只是查询优化：任务创建建立 baseline，任务状态/执行人变更更新 readiness，完成时记录实际提交者或旧执行人，0→1 readiness 写去重通知与 Push outbox，成员离开清 readiness。涉及 tasks、提交状态或成员退出的变更，必须同时检视触发器及 `task-readiness.ts`。
 
-`generation` 使同任务下一次 readiness 转换有独立事件键。切换负责人建立新基线而不通知“领取后立即可开始”。旧任务迁移仅建立基线，不重放历史通知。改变依赖关系时还需服务刷新 readiness；数据库触发器不是对所有表变化自动覆盖的万能订阅器。
+`generation` 使同任务下一次 readiness 转换有独立事件键。切换执行人建立新基线而不通知“领取后立即可开始”。旧任务迁移仅建立基线，不重放历史通知。改变依赖关系时还需服务刷新 readiness；数据库触发器不是对所有表变化自动覆盖的万能订阅器。
 
 ## 6. 后端入口、鉴权与写入约束
 
@@ -250,11 +250,11 @@ reservation: reserved → settled / released / pending_reconcile
 
 `core/account-role.ts` 与 `auth_accounts` 决定账户角色（`super_admin` / `admin` / `user`）；`project_members.role` 决定项目身份（`owner` / `member`）；`project_members.permissions_json` 决定项目操作能力（`teamManage`、`taskManage`、`resourceManage`、`scoreInitiate`、`scoreCorrect`）。三者不能互相推导：账户 `admin` 也必须先加入项目，才能获得该项目的成员记录与项目权限。
 
-`requireProjectMember()` 先核实项目存在，再查成员，再核对 owner 或指定权限，不信任前端角色。项目 owner 与已加入该项目的 `admin` / `super_admin` 获得完整项目权限；普通成员默认 `teamManage=false`、`taskManage=false`、`resourceManage=false`、`scoreInitiate=true`、`scoreCorrect=false`。
+`requireProjectMember()` 先核实项目存在，再查成员，再核对 owner 或指定权限，不信任前端角色。仅项目 owner 获得完整项目权限；其他成员（包括 `admin` / `super_admin` 账号）按显式授权操作，未授权时默认 `teamManage=false`、`taskManage=false`、`resourceManage=false`、`scoreInitiate=true`、`scoreCorrect=false`。
 
-权限管理的入口是 `requireProjectAdministrator()` / `canManageProjectPermissions()`：**项目 owner 或本项目内的平台管理员**。`teamManage` 只覆盖团队管理（邀请、撤销邀请、用户名邀请、审批加入申请、移除普通成员），**不允许**修改任何成员的 `permissions_json`，因此不存在 `teamManage` 自我提权路径。`DELETE /members/{userId}` 的目标若是平台管理员成员（`account_role` 为 `admin`/`super_admin`），额外要求 `requireProjectAdministrator()`，且事务内以 `projectAdministratorSql()` 二次校验；移除 owner 一律拒绝。前端成员卡与后端使用同一判断，避免出现“按钮隐藏但接口允许”的不对称。严格 owner-only 的动作（转让 owner、核心项目配置、AI 自动协作规则、标准版本）使用 `requireProjectOwner()`，不再借用历史 `'grant'` 语义。
+权限管理的入口是 `requireProjectAdministrator()` / `canManageProjectPermissions()`：**仅项目 owner**。系统账号的 `admin` / `super_admin` 身份不参与项目授权。`teamManage` 覆盖邀请、撤销邀请、用户名邀请、审批加入申请和移除其他非负责人成员，不允许修改任何成员的 `permissions_json`。管理员账号作为非负责人成员时同样可被负责人调整权限或由团队管理者移除。`DELETE /members/{userId}` 统一使用 `projectPermissionSql()` 在事务内二次校验，移除 owner 一律拒绝。项目持续反馈仅 owner 可写；转让 owner、核心项目配置、AI 自动协作规则、标准版本也保持 owner-only。
 
-「协作管理员」只是前端权限 preset（`administratorPermissions`），一键填入五项权限，不是数据库 `role`，也不产生新的权限表。前端 `projectPermission()` / `useProjectPermissions()` 与后端 `projectPermissionSql()` 使用同一组键；`canManagePermissions` 表示该成员是否可以管理他人项目权限，`permissionsRevision` 与 `expectedRevision` 提供乐观并发控制（冲突返回 409）。
+「协作管理员」只是前端权限 preset（`administratorPermissions`），一键填入五项权限，不是数据库 `role`，也不产生新的权限表。前端 `projectPermission()` / `useProjectPermissions()` 与后端 `projectPermissionSql()` 使用同一组键；`canManagePermissions` 仅在该成员为项目负责人时为 true，`permissionsRevision` 与 `expectedRevision` 提供乐观并发控制（冲突返回 409）。
 
 关键写 SQL 再次包含 `projectPermissionSql()`，让权限撤回与正在执行的请求竞争时，最终数据库判断生效。新增管理接口应同时做到入口校验、业务对象属于当前项目、SQL 提交时仍具权限；仅隐藏按钮不能形成权限边界。
 

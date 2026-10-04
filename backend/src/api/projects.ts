@@ -25,7 +25,7 @@ export const projectSchema = z.object({
   revision: z.number().int(),
   myRole: z.enum(['owner', 'member']),
   permissions: permissionSchema.optional(),
-  /** owner 或本项目内的平台管理员：可以调整其他成员的 project permissions。 */
+  /** 仅项目 owner 可以调整其他成员的 project permissions。 */
   canManagePermissions: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),

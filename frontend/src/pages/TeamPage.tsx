@@ -13,7 +13,7 @@ import { MemberPermissionsDialog } from './MemberPermissions';
 
 function displayDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString('zh-CN'); }
 export function TeamPage() {
-  // 统一权限入口：teamManage 负责邀请与成员移除；成员权限管理只属于 owner 或本项目内的平台管理员。
+  // 统一权限入口：teamManage 负责邀请与成员移除；成员权限管理只属于 owner。
   const { projectId, project, can, canManagePermissions } = useProjectPermissions();
   const client = useQueryClient();
   const capabilities = useCapabilities();
@@ -41,14 +41,14 @@ export function TeamPage() {
       {members.data?.length ? <div className="team-member-list">{members.data.map(member => {
         const assigned = tasks.data?.filter(task => task.assigneeId === member.userId && task.status !== 'done') ?? [];
         const hours = assigned.reduce((total, task) => total + ((task as { effortHours?: number }).effortHours ?? 0), 0);
-        // owner 与平台管理员的项目权限由身份决定，不提供可编辑入口。
-        const permissionEditable = canManagePermissions && member.role !== 'owner' && member.isAdmin !== true;
-        // teamManage 只能移除普通成员；移除平台管理员成员需要项目管理员，与后端 DELETE 校验一致。
-        const removable = member.role !== 'owner' && member.userId !== session.data?.id && (member.isAdmin === true ? canManagePermissions : teamManage);
+        // 只有负责人权限由项目身份决定；其他成员均可由负责人授权。
+        const permissionEditable = canManagePermissions && member.role !== 'owner';
+        // teamManage 可移除其他非负责人成员，账号身份不提供保护。
+        const removable = member.role !== 'owner' && member.userId !== session.data?.id && teamManage;
         return <div className="team-member" key={member.userId}>
           <span className="avatar">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>
           <div className="team-member-main">
-            <div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : member.isAdmin ? 'warn' : 'neutral'}>{memberRoleLabel(member)}</StatusPill></div>
+            <div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{memberRoleLabel(member)}</StatusPill></div>
             <small>{member.username ?? member.email}</small>
             <small>{tasks.data ? `${assigned.length} 项未完成任务 · 预计 ${hours} 小时` : '任务负荷暂不可用'}</small>
             <small className="team-member-permissions">{memberPermissionSummary(member)}</small>
@@ -56,13 +56,12 @@ export function TeamPage() {
           <div className="team-member-actions">
             {permissionEditable && <button type="button" className="button button-quiet button-small" aria-label={`调整 ${member.displayName} 的权限`} onClick={() => setEditingMemberId(member.userId)}>权限</button>}
             {member.role === 'owner' && <span className="team-member-lock" title="负责人始终拥有全部项目权限"><ShieldCheck size={15} />权限锁定</span>}
-            {member.isAdmin === true && member.role !== 'owner' && <span className="team-member-lock" title="平台管理员的项目权限由平台身份决定"><ShieldCheck size={15} />权限锁定</span>}
             {removable && <ConfirmButton className="icon-button" aria-label={`移除成员 ${member.displayName}`} disabled={remove.isPending} onClick={() => remove.mutate(member.userId)}><UserMinus size={17} /></ConfirmButton>}
           </div>
         </div>;
       })}</div> : !members.isLoading && !members.error && <EmptyState title="暂无成员" detail="项目成员数据尚未返回记录。" />}
       {remove.error && <ErrorNotice error={remove.error} />}
-      {!canManagePermissions && <p className="form-note">只有项目负责人或本项目内的平台管理员可以调整成员的项目权限。</p>}
+      {!canManagePermissions && <p className="form-note">只有项目负责人可以调整成员的项目权限。系统管理员身份不影响项目权限。</p>}
       {project.myRole !== 'owner' && <div className="form-actions"><ConfirmButton disabled={leave.isPending} onClick={() => leave.mutate()}>退出项目</ConfirmButton>{leave.error && <ErrorNotice error={leave.error} />}</div>}
     </SectionCard>
     <div className="compact-team-invites"><InvitationRequests projectId={projectId} canApprove={teamManage} />{teamManage && <><SentUsernameInvitations projectId={projectId} /><SectionCard title="邀请新成员" detail="邀请码只在创建时显示一次，请复制后发送给受邀者。">

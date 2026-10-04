@@ -9,9 +9,9 @@ export const ordinaryPermissions: ProjectPermissions = { teamManage: false, task
 export const administratorPermissions: ProjectPermissions = { teamManage: true, taskManage: true, resourceManage: true, scoreInitiate: true, scoreCorrect: true };
 export const permissionLabels: Record<PermissionKey, string> = { teamManage: '团队管理', taskManage: '任务管理', resourceManage: '资料管理', scoreInitiate: '评分发起', scoreCorrect: '历史评分修正' };
 export const permissionOptions: Array<{ key: PermissionKey; group: string; label: string; detail: string }> = [
-  { key: 'teamManage', group: '团队', label: '管理团队成员', detail: '可以邀请、移除项目成员' },
+  { key: 'teamManage', group: '团队', label: '管理团队成员', detail: '可以邀请成员、移除其他非负责人成员；不能调整成员权限' },
   { key: 'taskManage', group: '任务', label: '管理所有任务', detail: '可以创建、修改、分配任务和处理管理型操作' },
-  { key: 'resourceManage', group: '资料', label: '管理所有资料', detail: '可以修改或删除其他成员创建的项目资料' },
+  { key: 'resourceManage', group: '资料', label: '管理所有资料', detail: '可以修改或删除其他成员创建的项目资料，并删除或恢复文件与来源' },
   { key: 'scoreInitiate', group: '评分', label: '发起评分与答辩', detail: '可以发起评分、检查与演练' },
   { key: 'scoreCorrect', group: '评分', label: '修正历史评分', detail: '可以人工修改已有评分结果' },
 ];
@@ -43,13 +43,13 @@ export function hasAllPermissions(permissions: ProjectPermissions): boolean {
   return permissionKeys.every(key => Boolean(permissions[key]));
 }
 
-/** owner 是项目身份，不是项目权限；平台管理员身份来自账户角色。 */
+/** owner 是项目身份；系统账号角色不参与项目权限判断。 */
 export function isProjectOwner(project: { myRole: string }): boolean {
   return project.myRole === 'owner';
 }
-/** 成员权限管理入口：owner 或本项目内的平台管理员（后端 canManagePermissions 由平台身份与成员资格共同决定）。 */
+/** 成员权限管理仅属于项目 owner；忽略旧缓存中的管理员标志。 */
 export function canManageProjectPermissions(project: { myRole: string; canManagePermissions?: boolean }): boolean {
-  return isProjectOwner(project) || project.canManagePermissions === true;
+  return isProjectOwner(project);
 }
 export function projectPermission(project: { myRole: string; permissions?: ProjectPermissions }, key: PermissionKey): boolean {
   return isProjectOwner(project) || Boolean(project.permissions?.[key] ?? ordinaryPermissions[key] ?? false);
@@ -61,19 +61,17 @@ export function effectiveProjectPermissions(project: { myRole: string; permissio
 /** 成员卡权限摘要：避免在列表中铺开五个 checkbox 状态。 */
 export function permissionSummary(permissions: ProjectPermissions): string {
   if (hasAllPermissions(permissions)) return '协作管理员 · 全部权限';
-  const granted = grantedPermissionKeys(permissions);
-  if (!granted.length) return '普通成员 · 评分发起';
-  return granted.map(key => permissionLabels[key]).join(' · ');
+  if (permissionsEqual(permissions, ordinaryPermissions)) return '普通成员 · 评分发起';
+  const enabled = permissionKeys.filter(key => Boolean(permissions[key]));
+  return enabled.length ? enabled.map(key => permissionLabels[key]).join(' · ') : '未授予项目操作权限';
 }
 export function memberRoleLabel(member: { role: string; isAdmin?: boolean; permissions?: ProjectPermissions }): string {
   if (member.role === 'owner') return '负责人';
-  if (member.isAdmin) return '平台管理员';
   if (member.permissions && hasAllPermissions(member.permissions)) return '协作管理员';
   return '成员';
 }
 export function memberPermissionSummary(member: { role: string; isAdmin?: boolean; permissions?: ProjectPermissions }): string {
   if (member.role === 'owner') return '负责人 · 全部权限';
-  if (member.isAdmin) return '平台管理员 · 全部权限 · 权限由平台身份决定';
   return permissionSummary(member.permissions ?? ordinaryPermissions);
 }
 
