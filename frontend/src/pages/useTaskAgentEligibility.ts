@@ -23,7 +23,7 @@ export function useTaskAgentEligibility(projectId: string, task: CollaborationTa
     queryFn: ({ signal }) => projectRequest<TaskAgentEligibility>(projectId, path, { signal, networkOnly: true }),
     retry: false,
     staleTime: 0,
-    refetchInterval: state => visible && ['queued', 'running'].includes(state.state.data?.status ?? '') ? 1500 : false,
+    refetchInterval: state => visible && ['missing', 'queued', 'running'].includes(state.state.data?.status ?? '') ? 1500 : false,
     refetchIntervalInBackground: false,
   });
   const check = useMutation({
@@ -52,11 +52,11 @@ export function useTaskAgentEligibility(projectId: string, task: CollaborationTa
   const eligible = !query.error && !query.isFetching && !check.isPending && revisionMatches && result?.status === 'ready' && result.eligible === true && Boolean(result.sourceHash);
   const pending = check.isPending || (revisionMatches && (result?.status === 'queued' || result?.status === 'running'));
   const reason = query.error ? '无法读取 AI 适用性判断，请重试读取。'
-    : result && !revisionMatches ? '任务已更新，请刷新任务列表后重新检查 AI 适用性。'
+    : result && !revisionMatches ? '任务已更新，正在等待最新适用性判断。'
     : result?.status === 'disabled' ? (result.reason || '当前 AI 服务不可用，暂不能检查任务适用性。')
     : pending ? 'AI 正在判断任务能否完整执行，请稍候。'
     : result?.status === 'failed' ? (result.reason || 'AI 适用性检查失败，请重试检查。')
     : result?.status === 'ready' && result.eligible === false ? (result.reason || 'AI 判断此任务需要真人参与，不能整项交给 AI。')
-    : !eligible ? '请先检查 AI 适用性，通过后可交给本地 Agent。' : result?.reason;
-  return { eligible, pending, reason, result, loading: query.isPending || query.isFetching, check: () => void check.mutateAsync().catch(() => {}), reload: () => void query.refetch(), readError: Boolean(query.error), canCheck: !query.isPending && !query.error && !query.isFetching && !pending && revisionMatches && result?.status !== 'disabled' && result?.status !== 'ready', retry: result?.status === 'failed' };
+    : !eligible ? 'AI 正在自动检查适用性，完成后可代实施。' : result?.reason;
+  return { eligible, pending, reason, result, loading: query.isPending || query.isFetching, check: () => void check.mutateAsync().catch(() => {}), reload: () => void query.refetch(), readError: Boolean(query.error), canCheck: !query.isPending && !query.error && !query.isFetching && !pending && revisionMatches && result?.status === 'failed', retry: result?.status === 'failed' };
 }

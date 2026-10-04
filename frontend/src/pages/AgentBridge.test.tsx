@@ -31,48 +31,53 @@ beforeEach(() => {
   vi.mocked(bridgeApi.dispatch).mockResolvedValue(row('checking'));
 });
 afterEach(cleanup);
-describe('DSH bridge card', () => {
-  it('does no paid work on mount and one click checks and dispatches with the task revision', async () => {
+describe('DSH assistance delegation', () => {
+  it('opens the assistance card without dispatching even with a bound device', () => {
     const open = vi.fn(); mount(<TaskAgentAction projectId="p1" task={task} onHandoff={open} />);
-    const button = await screen.findByRole('button', { name: '交给本地 Agent' });
+    fireEvent.click(screen.getByRole('button', { name: 'AI 辅助' }));
+    expect(open).toHaveBeenCalledOnce(); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
+  });
+  it('requires a fresh eligible judgment, then dispatches once from the explicit execution button', async () => {
+    state.eligibility = { ...state.eligibility, eligible: true, result: { status: 'ready', taskRevision: 3, eligible: true } };
+    progress(row('cancelled'));
+    const button = await screen.findByRole('button', { name: '重新代实施' });
     await waitFor(() => expect(button).toBeEnabled()); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
     fireEvent.click(button); fireEvent.click(button);
-    await waitFor(() => expect(open).toHaveBeenCalledOnce());
-    expect(bridgeApi.dispatch).toHaveBeenCalledExactlyOnceWith('p1', 't1', 3, 'd1', 'u1');
+    await waitFor(() => expect(bridgeApi.dispatch).toHaveBeenCalledExactlyOnceWith('p1', 't1', 3, 'd1', 'u1'));
     expect(state.eligibility.check).not.toHaveBeenCalled();
   });
-  it('disables model refusal with its reason, even with a bound device', async () => {
-    state.eligibility = { ...state.eligibility, result: { status: 'ready', taskRevision: 3, eligible: false }, reason: '必须现场访谈', canCheck: false };
-    mount(<TaskAgentAction projectId="p1" task={task} onHandoff={vi.fn()} />);
-    await screen.findByText('必须现场访谈'); expect(screen.getByRole('button', { name: '交给本地 Agent' })).toBeDisabled(); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
+  it.each(['missing', 'queued', 'running', 'failed', 'disabled'])('blocks delegation while eligibility is %s', async status => {
+    state.eligibility = { ...state.eligibility, result: { status, taskRevision: 3 } };
+    progress(row('cancelled')); const button = await screen.findByRole('button', { name: '重新代实施' });
+    expect(button).toBeDisabled(); fireEvent.click(button); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
+  });
+  it('preserves the human task refusal within delegation', async () => {
+    state.eligibility = { ...state.eligibility, result: { status: 'ready', taskRevision: 3, eligible: false }, reason: '必须现场访谈' };
+    progress(row('cancelled')); await screen.findByText('必须现场访谈');
+    expect(screen.getByRole('button', { name: '重新代实施' })).toBeDisabled();
   });
   it('resumes an existing session without another dispatch', async () => {
-    vi.mocked(bridgeApi.handoffs).mockResolvedValue({ items: [row('running')] });
-    const open = vi.fn(); mount(<TaskAgentAction projectId="p1" task={task} onHandoff={open} />);
-    fireEvent.click(await screen.findByRole('button', { name: '查看 Agent 进度' })); expect(open).toHaveBeenCalledOnce(); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
+    progress(row('running')); await screen.findByText('Agent 正在执行');
+    expect(bridgeApi.dispatch).not.toHaveBeenCalled();
   });
-  it('does not pretend success on a network error', async () => {
+  it('reports a dispatch network failure without showing false progress', async () => {
+    state.eligibility = { ...state.eligibility, eligible: true, result: { status: 'ready', taskRevision: 3, eligible: true } };
     vi.mocked(bridgeApi.dispatch).mockRejectedValue(new Error('连接中断'));
-    const open = vi.fn(); mount(<TaskAgentAction projectId="p1" task={task} onHandoff={open} />);
-    const button = screen.getByRole('button', { name: '交给本地 Agent' }); await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
-    await screen.findByText('连接中断'); expect(open).not.toHaveBeenCalled(); expect(bridgeApi.dispatch).toHaveBeenCalledOnce();
+    progress(row('cancelled')); const button = await screen.findByRole('button', { name: '重新代实施' });
+    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+    await screen.findByText('连接中断'); expect(bridgeApi.dispatch).toHaveBeenCalledOnce();
   });
-  it('ignores a pending dispatch success after the logged-in actor changes', async () => {
+  it('ignores a late dispatch after the logged-in actor changes', async () => {
+    state.eligibility = { ...state.eligibility, eligible: true, result: { status: 'ready', taskRevision: 3, eligible: true } };
     let finish!: (item: BridgeHandoff) => void;
     vi.mocked(bridgeApi.dispatch).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    const open = vi.fn();
-    const content = <TaskAgentAction projectId="p1" task={task} onHandoff={open} />;
-    const view = mount(content);
-    const button = screen.getByRole('button', { name: '交给本地 Agent' });
-    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
-    await waitFor(() => expect(finish).toBeDefined());
-    state.actor = 'u2';
-    view.rerender(<QueryClientProvider client={view.client}><MemoryRouter><TaskAgentAction projectId="p1" task={task} onHandoff={open} /></MemoryRouter></QueryClientProvider>);
+    const view = progress(row('cancelled')); const button = await screen.findByRole('button', { name: '重新代实施' });
+    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button); await waitFor(() => expect(finish).toBeDefined());
+    state.actor = 'u2'; vi.mocked(bridgeApi.handoffs).mockResolvedValue({ items: [] });
+    view.rerender(<QueryClientProvider client={view.client}><MemoryRouter><TaskBridgeHandoff projectId="p1" task={task}><p>手动导出</p></TaskBridgeHandoff></MemoryRouter></QueryClientProvider>);
     finish(row('checking'));
-    await waitFor(() => expect(screen.getByRole('button', { name: '交给本地 Agent' })).toBeEnabled());
-    expect(open).not.toHaveBeenCalled();
-    expect(view.client.getQueryData(['agent-bridge-handoffs', 'p1', 't1', 'u2'])).toEqual({ items: [] });
-    expect(view.client.getQueryData(['agent-bridge-handoffs', 'p1', 't1', 'u1'])).toEqual({ items: [] });
+    await waitFor(() => expect(view.client.getQueryData(['agent-bridge-handoffs', 'p1', 't1', 'u2'])).toEqual({ items: [] }));
+    expect(view.client.getQueryData(['agent-bridge-handoffs', 'p1', 't1', 'u1'])).toEqual({ items: [row('cancelled')] });
   });
 });
 describe('DSH bridge review', () => {

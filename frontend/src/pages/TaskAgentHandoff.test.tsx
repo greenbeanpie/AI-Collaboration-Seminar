@@ -21,7 +21,7 @@ describe('portable task handoff', () => {
   it('never fetches context for a directly opened unchecked dialog', async () => {
     reads.request.mockResolvedValue({ status: 'missing', taskRevision: task.revision, sourceHash: 'fixture', eligible: null, reason: null, jobId: null });
     render(<QueryClientProvider client={new QueryClient()}><TaskAgentHandoff projectId="p1" task={task} tasks={[]}/></QueryClientProvider>);
-    await screen.findByRole('button', { name: '检查 AI 适用性' });
+    await screen.findByText('AI 正在自动检查适用性，完成后可代实施。');
     expect(reads.request.mock.calls.every(call => String(call[1]).endsWith('/agent-eligibility'))).toBe(true);
     expect(reads.list).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('任务执行提示词')).toBeNull();
@@ -30,7 +30,7 @@ describe('portable task handoff', () => {
     const view = setup();
     await screen.findByLabelText('任务执行提示词');
     view.rerender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TaskAgentHandoff projectId="p1" task={{ ...task, revision: 4 }} tasks={[]}/></QueryClientProvider>);
-    await screen.findByText('任务已更新，请刷新任务列表后重新检查 AI 适用性。');
+    await screen.findByText('任务已更新，正在等待最新适用性判断。');
     expect(screen.queryByLabelText('任务执行提示词')).toBeNull();
     expect(screen.queryByRole('button', { name: '复制提示词' })).toBeNull();
     expect(screen.queryByRole('button', { name: '下载提示词' })).toBeNull();

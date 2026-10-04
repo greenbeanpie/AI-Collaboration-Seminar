@@ -8,3 +8,4 @@
 .collab-agent-reason { flex-basis: 100%; order: 1; }
 .workspace-subpage { min-width: 0; }
 @media(max-width:600px){.collab-task-footer>.button{flex:1 1 calc(50% - 4px);min-width:0;white-space:nowrap}}
+.task-assistance-plan { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }

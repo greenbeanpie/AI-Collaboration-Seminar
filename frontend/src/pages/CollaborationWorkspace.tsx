@@ -1,6 +1,6 @@
 import { projectPermission } from '../project-permissions';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
-import { TaskAgentHandoff } from './TaskAgentHandoff';
+import { TaskAiAssistance } from './TaskAiAssistance';
 import { TaskAgentAction } from './TaskAgentAction';
 import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
@@ -213,7 +213,7 @@ function ProjectCollaborationWorkspace() {
     </div>
     {historyPage && ((historyType === 'submissions' && !selected && !tasks.isLoading)) && <><button className="button button-quiet" onClick={returnFromHistory}>返回任务操作</button><EmptyState title="历史记录不可用" detail="该任务不在当前项目中，或你没有查看权限。" /></>}
     {inquiryId && <Modal title="前置任务质询" onClose={() => setInquiryId('')}><TaskInquiries key={inquiryId} projectId={projectId} taskId={inquiryId} meId={me.data?.userId}/></Modal>}
-    {agentTaskId && rows.find(row => row.taskId === agentTaskId) && <Modal title="交给本地 Agent" onClose={() => setAgentTaskId('')}><TaskAgentHandoff projectId={projectId} task={rows.find(row => row.taskId === agentTaskId)!} tasks={rows}/></Modal>}
+    {agentTaskId && rows.find(row => row.taskId === agentTaskId) && <Modal title="AI 辅助" onClose={() => setAgentTaskId('')}><TaskAiAssistance projectId={projectId} task={rows.find(row => row.taskId === agentTaskId)!} tasks={rows}/></Modal>}
     {selected && <Modal title={historyType === 'submissions' ? `${selected.title} · 提交与验收历史` : selectedAction === 'settings' ? `${selected.title} · 任务设置` : selected.title} mode={historyType === 'submissions' ? 'page' : historyPage || !selectedId ? 'hidden' : 'dialog'} onClose={historyType === 'submissions' ? returnFromHistory : () => setSelectedId('')}><TaskLifecycleDetail view={selectedAction} key={selected.taskId} projectId={projectId} task={selected} tasks={rows} graphRevision={goal.data?.graphRevision} owner={owner} meId={me.data?.userId} members={members.data ?? []} onChanged={invalidate} /></Modal>}
   </SectionCard>;
 }

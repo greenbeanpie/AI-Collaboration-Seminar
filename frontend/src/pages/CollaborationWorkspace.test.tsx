@@ -31,16 +31,18 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
-  it('disables local agent handoff with a visible reason for fieldwork and updates after an edit', async () => {
-    const { client } = setup({ tasks: [{ ...task, title: '开展实地调研' }] });
-    const action = screen.getByRole('button', { name: '交给本地 Agent' });
-    expect(action).toBeDisabled();
-    await waitFor(() => expect(action).toHaveAccessibleDescription(/需要真人参与或现场操作/));
+  it('permits planning for human tasks and restricts delegation inside assistance', async () => {
+    setup({ tasks: [{ ...task, title: '开展实地调研' }] });
+    const action = screen.getByRole('button', { name: 'AI 辅助' });
+    expect(action).toBeEnabled();
+    expect(screen.queryByText(/AI 判断任务需要真人/)).toBeNull();
     fireEvent.click(action);
-    expect(screen.queryByRole('dialog', { name: '交给本地 Agent' })).toBeNull();
-    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, title: '分析已有实地调研记录', revision: 4 }] }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '交给本地 Agent' })).toBeDisabled());
-    expect(screen.getByRole('button', { name: '交给本地 Agent' })).not.toHaveAccessibleDescription(/需要真人参与或现场操作/);
+    const dialog = screen.getByRole('dialog', { name: 'AI 辅助' });
+    expect(within(dialog).getByRole('heading', { name: '辅助计划' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: '代实施' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('tablist')).toBeNull();
+    await within(dialog).findByText('AI 判断任务需要真人参与或现场操作');
+    expect(within(dialog).queryByRole('button', { name: '复制提示词' })).toBeNull();
   });
   it('submits once and follows the server-created evaluation without any manual evaluation request', async () => {
     identity.aiEnabled = true;
@@ -108,7 +110,7 @@ describe('collaboration lifecycle', () => {
   it('opens inquiries as a sibling action without embedding inquiries or tabs in task dialogs', async () => {
     const { fetchMock } = setup();
     expect(screen.getByRole('button', { name: '前置任务质询' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
-    expect(screen.getByRole('button', { name: '交给本地 Agent' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
+    expect(screen.getByRole('button', { name: 'AI 辅助' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(within(screen.getByRole('dialog')).queryByRole('region', { name: '前置任务质询' })).toBeNull();
     expect(within(screen.getByRole('dialog')).queryByRole('tablist')).toBeNull();
