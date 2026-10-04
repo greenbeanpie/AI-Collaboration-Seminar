@@ -58,7 +58,7 @@ try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data, requestId: 'fixture' }) });
     });
     const capture = async name => { const path = resolve(out, `${width}-${name}.png`); await page.screenshot({ path, fullPage: true }); report.screenshots.push(path); };
-    const card = page.locator('.collab-task').filter({ has: page.getByRole('heading', { name: task.title, exact: true }) });
+    const card = page.locator('.collab-task').filter({ has: page.getByRole('button', { name: task.title, exact: true }) });
     const close = async () => page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     const open = async () => { await card.getByRole('button', { name: 'AI 辅助', exact: true }).click(); await page.getByRole('dialog').getByRole('heading', { name: '辅助计划', exact: true }).waitFor(); };
     await page.goto(origin + base + '/tasks'); await card.getByRole('button', { name: 'AI 辅助', exact: true }).waitFor();
@@ -68,9 +68,9 @@ try {
     assert.equal(planPosts, 0); assert.equal(dispatches, 0); assert.equal(await page.getByRole('dialog').getByRole('tab').count(), 0);
     await page.getByRole('button', { name: '生成辅助计划', exact: true }).click(); await page.getByText('核对项目资料。', { exact: false }).waitFor(); assert.equal(planPosts, 1); await capture('saved-plan');
     await close(); await open(); await page.getByText('核对项目资料。', { exact: false }).waitFor(); assert.equal(planPosts, 1);
-    failRegeneration = true; await page.getByRole('button', { name: /重新生成.*计划/ }).click(); await page.getByText('模拟计划生成失败', { exact: false }).waitFor(); assert.equal(planPosts, 2); assert.equal(await page.getByText('核对项目资料。', { exact: false }).count(), 1); await capture('failed-regeneration');
+    failRegeneration = true; await page.getByRole('button', { name: /重新生成.*计划/ }).click(); await page.getByText(/服务器内部错误/).waitFor(); assert.equal(planPosts, 2); assert.equal(await page.getByText('核对项目资料。', { exact: false }).count(), 1); await capture('failed-regeneration');
     await close(); stale = true; await open(); await page.getByText(/已变化|已过期/).first().waitFor(); assert.equal(planPosts, 2); await capture('stale-plan'); await close();
-    const humanCard = page.locator('.collab-task').filter({ has: page.getByRole('heading', { name: human.title, exact: true }) }); await humanCard.getByRole('button', { name: 'AI 辅助', exact: true }).click();
+    const humanCard = page.locator('.collab-task').filter({ has: page.getByRole('button', { name: human.title, exact: true }) }); await humanCard.getByRole('button', { name: 'AI 辅助', exact: true }).click();
     await page.getByText('现场采样需要真人参与。', { exact: false }).waitFor(); failRegeneration = false; await page.getByRole('button', { name: '生成辅助计划', exact: true }).click(); await page.getByText('由真人到现场采样。', { exact: false }).waitFor(); assert.equal(dispatches, 0); await capture('human-task-plan'); await close();
     connected = true; stale = false; await page.goto(origin + base + '/tasks'); await open(); assert.equal(dispatches, 0);
     await page.getByRole('button', { name: '交给 DSH 代实施', exact: true }).click(); await page.getByText('等待 DSH 接收', { exact: true }).waitFor(); assert.equal(dispatches, 1); await capture('dsh-explicit-dispatch');

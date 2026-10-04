@@ -20,7 +20,7 @@ const quote=value=>"'"+String(value).replaceAll("'","''")+"'";
 const userId=randomUUID(),projectId=randomUUID(),taskId=randomUUID(),session=randomBytes(32).toString('hex'),now=new Date().toISOString();
 const task={title:'Bridge local contract',detail:'分析已有资料并输出文本报告',criteria:'交付报告文件'};
 const config=query('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1')[0];assert(config);
-const sourceHash=sha(JSON.stringify([task.title,task.detail,task.criteria,config.id,'task-agent-eligibility-v1'])),jobId=randomUUID();
+const sourceHash=sha(JSON.stringify([task.title,task.detail,task.criteria,config.id,'task-agent-eligibility-v1',0])),jobId=randomUUID();
 query(`UPDATE ai_config_versions SET enabled=1;
 INSERT INTO users(id,email,display_name,created_at)VALUES(${quote(userId)},${quote(userId+'@fixture.invalid')},'Bridge fixture',${quote(now)});
 INSERT INTO auth_accounts(user_id,username,username_norm,password_hash,created_at)VALUES(${quote(userId)},${quote('bridge-'+userId)},${quote('bridge-'+userId)},'fixture-non-null-password-hash',${quote(now)});

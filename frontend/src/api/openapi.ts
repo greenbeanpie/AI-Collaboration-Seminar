@@ -6034,6 +6034,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assistance-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取任务辅助计划 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务辅助计划及生成状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAssistancePlanResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 手动生成任务辅助计划 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        regenerate?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 任务辅助计划及生成状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAssistancePlanResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-bridges/pairings": {
         parameters: {
             query?: never;
@@ -6272,6 +6341,90 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-bridges/devices/{deviceId}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** DSH bridge get /devices/{deviceId}/projects */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    deviceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevicesdeviceIdprojects"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgegetdevicesdeviceIdprojects"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** DSH bridge post /devices/{deviceId}/projects */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    deviceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        projectIds: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdevicesdeviceIdprojects"];
+                    };
+                };
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentBridgepostdevicesdeviceIdprojects"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -13822,6 +13975,25 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        TaskAssistancePlanResponse: {
+            data: {
+                /** @enum {string} */
+                status: "missing" | "queued" | "running" | "ready" | "failed" | "disabled";
+                taskRevision: number;
+                sourceHash: string;
+                plan: {
+                    markdown: string;
+                    generatedAt: string;
+                    sourceHash: string;
+                    stale: boolean;
+                } | null;
+                /** Format: uuid */
+                jobId: string | null;
+                error: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AgentBridgepostpairings: {
             data: {
                 /** Format: uuid */
@@ -13913,6 +14085,40 @@ export interface components {
                     /** @enum {number} */
                     protocolVersion: 1;
                 }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgegetdevicesdeviceIdprojects: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                    authorized: boolean;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AgentBridgepostdevicesdeviceIdprojects: {
+            data: {
+                paired: boolean;
+                /** Format: uuid */
+                deviceId: string;
+                deviceName: string;
+                bridgeVersion: string;
+                dshVersion: string;
+                projects: {
+                    /** Format: uuid */
+                    projectId: string;
+                    name: string;
+                    workspaceLabel: string | null;
+                }[];
+                revoked: boolean;
+                lastSeenAt: string | null;
+                /** @enum {number} */
+                protocolVersion: 1;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

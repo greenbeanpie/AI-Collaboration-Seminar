@@ -12911,6 +12911,89 @@
           "requestId"
         ]
       },
+      "TaskAssistancePlanResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "missing",
+                  "queued",
+                  "running",
+                  "ready",
+                  "failed",
+                  "disabled"
+                ]
+              },
+              "taskRevision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "sourceHash": {
+                "type": "string"
+              },
+              "plan": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "markdown": {
+                    "type": "string"
+                  },
+                  "generatedAt": {
+                    "type": "string"
+                  },
+                  "sourceHash": {
+                    "type": "string"
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "markdown",
+                  "generatedAt",
+                  "sourceHash",
+                  "stale"
+                ]
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "taskRevision",
+              "sourceHash",
+              "plan",
+              "jobId",
+              "error"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AgentBridgepostpairings": {
         "type": "object",
         "properties": {
@@ -13263,6 +13346,136 @@
             },
             "required": [
               "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgegetdevicesdeviceIdprojects": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "authorized": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name",
+                    "authorized"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AgentBridgepostdevicesdeviceIdprojects": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "paired": {
+                "type": "boolean"
+              },
+              "deviceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "deviceName": {
+                "type": "string"
+              },
+              "bridgeVersion": {
+                "type": "string"
+              },
+              "dshVersion": {
+                "type": "string"
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "workspaceLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "name",
+                    "workspaceLabel"
+                  ]
+                }
+              },
+              "revoked": {
+                "type": "boolean"
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "protocolVersion": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            },
+            "required": [
+              "paired",
+              "deviceId",
+              "deviceName",
+              "bridgeVersion",
+              "dshVersion",
+              "projects",
+              "revoked",
+              "lastSeenAt",
+              "protocolVersion"
             ]
           },
           "requestId": {
@@ -30315,6 +30528,107 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assistance-plan": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "读取任务辅助计划",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务辅助计划及生成状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAssistancePlanResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "手动生成任务辅助计划",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "regenerate": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "任务辅助计划及生成状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAssistancePlanResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent-bridges/pairings": {
       "post": {
         "tags": [
@@ -30543,6 +30857,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentBridgegetdevices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-bridges/devices/{deviceId}/projects": {
+      "get": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge get /devices/{deviceId}/projects",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "deviceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevicesdeviceIdprojects"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgegetdevicesdeviceIdprojects"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent-bridges"
+        ],
+        "summary": "DSH bridge post /devices/{deviceId}/projects",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "deviceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "projectIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdevicesdeviceIdprojects"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBridgepostdevicesdeviceIdprojects"
                 }
               }
             }
