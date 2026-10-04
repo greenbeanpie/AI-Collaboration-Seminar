@@ -37,9 +37,10 @@ export async function buildResourceIndexBatch(env:Env,projectId:string,target:Re
  const blocks:Array<{text:string;searchText:string;fragmentId:string|null;pageNumber:number|null;start:number;heading:string;seq:number}>=[];
  for(let i=0;i<PAGE;i++) {
   const row=target.resourceType==='material'
-   ? await env.DB.prepare('SELECT substr(markdown,?3+1,2000) text,NULL fragmentId,NULL pageNumber,?3 start FROM material_versions WHERE id=?1 AND project_id=?2').bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number}>()
-   : await env.DB.prepare(`SELECT substr(content,MAX(1,?3-start+1),2000) text,id fragmentId,page_number pageNumber,MAX(?3,start) start FROM (SELECT id,page_number,seq,content,COALESCE(SUM(length(content)+1) OVER(ORDER BY seq,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start FROM source_fragments WHERE source_version_id=?1 AND project_id=?2) WHERE start+length(content)>?3 ORDER BY seq,id LIMIT 1`).bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number}>();
+   ? await env.DB.prepare('SELECT substr(markdown,?3+1,2000) text,NULL fragmentId,NULL pageNumber,?3 start FROM material_versions WHERE id=?1 AND project_id=?2').bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null}>()
+   : await env.DB.prepare(`SELECT substr(content,MAX(1,?3-start+1),2000) text,id fragmentId,page_number pageNumber,MAX(?3,start) start,headingJson FROM (SELECT id,page_number,seq,content,heading_path headingJson,COALESCE(SUM(length(content)+1) OVER(ORDER BY seq,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start FROM source_fragments WHERE source_version_id=?1 AND project_id=?2) WHERE start+length(content)>?3 ORDER BY seq,id LIMIT 1`).bind(target.versionId,projectId,cursor).first<{text:string;fragmentId:string|null;pageNumber:number|null;start:number;headingJson?:string|null}>();
   if(!row?.text){done=true;break;}
+  if(row.headingJson){headingLevels=JSON.parse(row.headingJson) as string[];heading=JSON.stringify(headingLevels);}
   const chars=Array.from(row.text);let length=Math.min(BLOCK,chars.length);
   // Preserve paragraph boundaries when possible; offsets always count Unicode code points.
   if(chars.length>BLOCK){const newline=chars.slice(0,BLOCK).lastIndexOf('\n');if(newline>BLOCK/2)length=newline+1;}
