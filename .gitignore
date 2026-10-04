@@ -50,3 +50,6 @@ output/*
 .dev.vars*
 .env*
 !.env.example
+
+# Wrangler dry-run output relative to backend config
+/backend/output/
