@@ -1,0 +1,115 @@
+{
+  "date": "2026-10-04",
+  "codeCommit": "10cde523efcfdafa5006eb078946b6534788599e",
+  "mergedInto": "main",
+  "implementationWorktree": "whisper-audio-pipeline",
+  "filesModified": [
+    ".gitignore",
+    "backend/cloudflare-bindings.d.ts",
+    "backend/migrations/0052_whisper_audio_pipeline.sql",
+    "backend/openapi/openapi.json",
+    "backend/src/ai/config.ts",
+    "backend/src/ai/whisper.ts",
+    "backend/src/api/admin.ts",
+    "backend/src/api/audio-schema.ts",
+    "backend/src/api/capabilities.ts",
+    "backend/src/api/creation-drafts.ts",
+    "backend/src/api/source-processing.ts",
+    "backend/src/core/limits.ts",
+    "backend/src/env.ts",
+    "backend/src/services/ai-jobs.ts",
+    "backend/src/services/audio-pipeline.ts",
+    "backend/src/services/budget.ts",
+    "backend/src/services/creation-drafts.ts",
+    "backend/src/services/draft-media-lifecycle.ts",
+    "backend/src/services/gc.ts",
+    "backend/src/services/media-summary.ts",
+    "backend/src/services/resource-preparation.ts",
+    "backend/src/services/source-summary.ts",
+    "backend/src/workflows/ai-job.ts",
+    "backend/test/125-whisper-settings.test.ts",
+    "backend/test/128-media-summary.test.ts",
+    "backend/test/130-whisper-audio.test.ts",
+    "backend/test/132-audio-resume-api.test.ts",
+    "backend/test/25-gc-retention.test.ts",
+    "backend/test/whisper-migration-preservation.py",
+    "backend/wrangler.jsonc",
+    "frontend/src/api/openapi.ts",
+    "frontend/src/pages/AiSettings.test.tsx",
+    "frontend/src/pages/AiSettings.tsx",
+    "frontend/src/pages/AudioPipelineStatus.test.tsx",
+    "frontend/src/pages/AudioPipelineStatus.tsx",
+    "frontend/src/pages/CreateProjectPage.tsx",
+    "frontend/src/pages/SourceProcessingCard.tsx",
+    "frontend/src/pages/SourcesPage.tsx",
+    "frontend/src/pages/TemplateDraftWorkspace.tsx",
+    "scripts/verify-whisper-production.mjs",
+    "scripts/verify-whisper-ui.cjs"
+  ],
+  "deployment": {
+    "backendVersion": "97a4551d-ecb0-4645-84d4-e03107f14f93",
+    "frontendVersion": "ac0d2a97-5a6f-49ed-b106-bdc63c7a2d2a",
+    "verifiedUrl": "https://greenbp-team-office.hddhp.workers.dev",
+    "migration": "0052_whisper_audio_pipeline.sql",
+    "backgroundBackfillExecuted": false
+  },
+  "verification": {
+    "backendFullSuitePassed": 996,
+    "whisperFinalFocusedPassed": 29,
+    "resourceIndexArchiveFocusedPassed": 7,
+    "frontendFullSuitePassed": 644,
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "migrationPreservation": "passed",
+    "browserDesktopAndMobile": "passed; waiting configuration, no automatic paid continuation, exactly one explicit resume; legacy14 checks passed",
+    "productionUi": "passed; authenticated new wizard and completed audio API; no page errors",
+    "productionSmoke": {
+      "origin": "https://greenbp-team-office.hddhp.workers.dev",
+      "checks": [
+        "Existing account login",
+        "Whisper audio capability enabled",
+        "Real Whisper transcript saved",
+        "Quality gate accepted before text summary",
+        "Complete summary reused in draft",
+        "Synthetic private draft cancelled; no real project created"
+      ],
+      "limitations": [],
+      "draftId": "f6c46f29-7a47-4724-9647-b076a53c8784",
+      "fileId": "83839c7e-fe1a-4168-a2c3-459ff62ca87a",
+      "jobId": "536fdd35-3b4f-418f-b898-176ebc6facd8",
+      "finalPhase": "ready",
+      "result": "PASS"
+    },
+    "productionQualityScore": 0.96,
+    "productionProviderCalls": {
+      "whisper": 1,
+      "qualityAndSummary": [
+        "visionEconomy",
+        "textEconomy"
+      ],
+      "gemini": 0
+    },
+    "whisperDurationSeconds": 19.6033125,
+    "whisperRecordedCostUsd": 0.00016760832187499999
+  },
+  "backup": {
+    "privateDataFile": ".local-backups/whisper-data-before-20261004.json",
+    "regularTables": 98,
+    "rows": 3044,
+    "logicalRestoreVerified": true,
+    "completeFtsRestore": "D1 Time Travel bookmark recorded in ignored .local-backups/whisper-pre-migration-20261004.json",
+    "note": "Full SQL export rejected FTS5. No virtual tables removed. Regular data/unique indexes/foreign keys verified locally; FTS protected by native Time Travel."
+  },
+  "limitations": [
+    "Real Gemini fallback waits for administrator configuration and remains untested online; mocked Workflow resume verified.",
+    "Custom domain machine requests receive Cloudflare challenge; workers.dev production path and authenticated UI passed.",
+    "An existing unrelated waiting-input job was preserved; no credential resets or real project creation.",
+    "Passing Workers tests include existing teardown/cancel diagnostics."
+  ],
+  "rollback": {
+    "backendPreviousVersion": "73a7c5d1-80f5-44a4-a384-ea30016242a5",
+    "frontendPreviousVersion": "eca8b8e8-181a-4f05-9396-16ec785e1471",
+    "procedure": "Use wrangler rollback with the corresponding config/env. Keep additive tables. D1 Time Travel restore is destructive and only for an explicitly authorized recovery."
+  }
+}
