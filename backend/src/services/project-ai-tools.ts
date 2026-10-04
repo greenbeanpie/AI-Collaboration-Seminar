@@ -87,7 +87,7 @@ const readArgs = z.object({
   fileId: z.string().uuid(), mode: z.enum(['text', 'summary']), offset: z.number().int().min(0).max(1000000)
 }).strict();
 function safeToolArgumentErrors(error: z.ZodError) {
-  const fields = new Set(['offset', 'query', 'id', 'resourceType', 'versionId', 'fileId', 'mode', 'turnId', 'question', 'reason', 'options', 'allowUndecided']);
+  const fields = new Set(['offset', 'query', 'sectionId', 'neighbors', 'id', 'resourceType', 'versionId', 'fileId', 'mode', 'turnId', 'question', 'reason', 'options', 'allowUndecided']);
   return error.issues.slice(0, 10).map(issue => {
     const field = issue.path[0];
     const path = typeof field === 'string' && fields.has(field) ? field : '参数对象';
@@ -421,7 +421,7 @@ export async function projectToolConversation(env: Env, params: {
       const reduced=compactExchanges(exchanges,Math.max(6000,config.maxInputChars/4));
       compacted=(compacted+'\n'+reduced.summary).slice(-Math.max(3000,config.maxInputChars/4));exchanges=reduced.exchanges;
     }
-    const discoveryRule:ChatMessage={role:'system',content:'先了解项目概况、资料目录和任务情况，再自主选择相关内容读取。可不断分页，不要求用户预选文件。最终JSON增加referenceIds数组和decisionReferences:[{decisionPath:"tasks[0]等结果字段",referenceIds:["实际读取ID"]}]，标明各项决策依据；仅列目录不算读取正文。'+(compacted?'已读历史元数据，正文可重新读取：'+compacted:'')};
+    const discoveryRule:ChatMessage={role:'system',content:'先了解项目概况、资料目录和任务情况，再自主选择相关内容读取。总结含糊、冲突或缺少依据时，使用get_resource_index/search_resource定位，再调用read_resource_section核对原文；检索摘录不算已读正文。可不断分页，不要求用户预选文件。最终JSON增加referenceIds数组和decisionReferences:[{decisionPath:"tasks[0]等结果字段",referenceIds:["实际读取ID"]}]，标明各项决策依据；仅列目录不算读取正文。'+(compacted?'已读历史元数据，正文可重新读取：'+compacted:'')};
     if(!context.jobId && step>=24) throw invalidState('本轮达到24次模型调用资源预算，不会自动追加付费调用');
     const resumingResponse=!!pendingOutput;
     const out = await call([...params.messages, rule,projectOverviewMessage,discoveryRule], {
