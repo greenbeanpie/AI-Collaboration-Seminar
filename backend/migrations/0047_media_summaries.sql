@@ -11,6 +11,8 @@ CREATE TABLE media_processing (
   windows_json TEXT NOT NULL DEFAULT '[]',
   summary_json TEXT,
   error TEXT,
+  lease_token TEXT,
+  lease_expires_at TEXT,
   cleanup_pending INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

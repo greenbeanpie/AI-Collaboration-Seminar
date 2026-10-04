@@ -51,6 +51,13 @@ export function extOf(fileName: string): string {
 }
 export const isMediaExtension = (ext: string) => ['.mp3','.wav','.m4a','.mp4','.webm'].includes(ext);
 export const uploadLimit = (ext: string) => isMediaExtension(ext) ? LIMITS.maxMediaBytes : LIMITS.maxFileBytes;
+/** Reject unbounded request bodies before allocating a full upload buffer. */
+export async function readBoundedUpload(body:ReadableStream<Uint8Array>|null,limit:number):Promise<Uint8Array>{
+  if(!body)return new Uint8Array();
+  const reader=body.getReader(),chunks:Uint8Array[]=[];let size=0;
+  try{for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>limit){await reader.cancel();throw fileTooLarge(limit);}chunks.push(chunk.value);}}finally{reader.releaseLock();}
+  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}return bytes;
+}
 
 /** Shared validation for project and private draft uploads; no network or model calls. */
 export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
