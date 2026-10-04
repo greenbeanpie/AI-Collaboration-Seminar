@@ -114,7 +114,7 @@ export async function reserveAiSlot(
 
   const config = await loadAiConfig(env.DB, params.configVersionId ?? await frozenConfigVersionIdFor(env, params.jobId));
   const aiPurpose = KIND_TO_AI_PURPOSE[params.purpose];
-  const maxCalls = Math.max(2, Math.min(24, params.maxCalls ?? 2));
+  const maxCalls = Math.max(2, Math.min(params.purpose === 'audio_pipeline' ? 64 : 24, params.maxCalls ?? 2));
   const estimatedCost = (aiPurpose ? estimateCostUsd(config, aiPurpose, maxCalls > 2) : 0) * (maxCalls / 2);
   const project = await env.DB.prepare('SELECT ai_budget_usd FROM projects WHERE id = ?1').bind(params.projectId).first<{ ai_budget_usd: number | null }>();
   if (project?.ai_budget_usd !== null && project?.ai_budget_usd !== undefined) {

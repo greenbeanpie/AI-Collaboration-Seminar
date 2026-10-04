@@ -3,6 +3,9 @@ export const LIMITS = {
   /** 单文件上传上限（按实际上传字节计） */
   maxFileBytes: 10 * 1024 * 1024,
   maxMediaBytes: 50 * 1024 * 1024,
+  audioTranscriptChunkChars: 12000,
+  audioTranscriptMaxChunks: 24,
+  audioPipelineMaxCalls: 64,
   /** 单个 PDF 最大页数 */
   maxPdfPages: 30,
   /** 页面图片长边上限（像素） */
