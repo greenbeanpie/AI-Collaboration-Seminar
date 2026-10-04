@@ -94,4 +94,3 @@ describe('one automatic evaluation per submitted round', () => {
         expect(await f.counts()).toEqual({ submissions: 1, jobs: 1, reservations: 1 });
     });
 });
-
