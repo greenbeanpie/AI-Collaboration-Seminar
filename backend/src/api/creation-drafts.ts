@@ -69,8 +69,10 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     }
   }), async (c) => {
     const body = c.req.valid('json') as z.infer<typeof creationPayload>, user = c.get('user')!;
+    const original = await c.req.json();
+    const legacyRawBody = ['planningMode','assignmentMode','evaluationMode','progressionMode'].some(key => Object.hasOwn(original, key)) ? undefined : JSON.stringify(creationPayload.parse(original));
     const result = await withIdempotency(c.env, {
-      key: c.req.header('idempotency-key'), required: true, userId: user.id, operation: 'creation-draft.create', rawBody: JSON.stringify(body)
+      key: c.req.header('idempotency-key'), required: true, userId: user.id, operation: 'creation-draft.create', rawBody: JSON.stringify(body), legacyRawBody
     }, async () => {
       const id = newId(), now = nowIso();
       await c.env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id, user.id, JSON.stringify(body), newId(), now).run();
