@@ -1,3 +1,4 @@
+import { uploadMultipartFile } from './document-import-client';
 import { ApiError, api, apiUrl, projectPath, request, type RequestOptions } from '../api/client';
 import type { DataOf, SchemaName } from '../api/types';
 
@@ -10,7 +11,7 @@ export type TrackedSourceJob = {
   status?: 'queued' | 'running' | 'waiting_input' | 'succeeded' | 'failed' | 'cancelled';
 };
 
-export type PageRenderLimits = { pageImageMaxEdge: number; pageImageMaxBytes: number; maxPdfPages: number };
+export type PageRenderLimits = { pageImageMaxEdge: number; pageImageMaxBytes: number; maxPdfPages: number | null };
 
 type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Items } ? Items : never;
 
@@ -116,6 +117,7 @@ export function rememberSourceFile(projectId: string, sourceVersionId: string, f
 function contentTypeFor(file: File): string {
   if (file.type) return file.type;
   const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if (extension === 'pdf') return 'application/pdf';
   if (extension === 'md') return 'text/markdown';
   if (extension === 'txt') return 'text/plain';
@@ -138,6 +140,7 @@ export async function uploadProjectFile(
     ...attribution,
   }, { idempotencyKey: initIntentKey });
   onInitialized?.(init.fileId);
+  if (file.size > 8 * 1024 * 1024 || /\.docx$/i.test(file.name)) { await uploadMultipartFile(projectId,init.fileId,file); return init.fileId; }
   await request<'FileStoredResponse'>(init.upload.url, {
     method: 'PUT',
     rawBody: file,

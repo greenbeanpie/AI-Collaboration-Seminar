@@ -1,5 +1,6 @@
+import { validateDocx, DOCX_MIME } from './docx-validation';
 import { nowIso, newId, sha256Hex } from '../core/db';
-import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
+import { invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS, LIMITS } from '../core/limits';
 import type { Env } from '../env';
 
@@ -48,7 +49,8 @@ export function extOf(fileName: string): string {
 /** Shared validation for project and private draft uploads; no network or model calls. */
 export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
   if (!bytes.length) throw validationFailed('文件不能为空');
-  if (bytes.byteLength > LIMITS.maxFileBytes) throw fileTooLarge(LIMITS.maxFileBytes);
+
+  if (ext === '.docx' && startsWith(bytes,[0x50,0x4b,0x03,0x04])) return DOCX_MIME;
   const spec = MAGIC_SPECS.find(m => m.exts.includes(ext) && m.detect(bytes));
   if (spec) return spec.mime;
   if (ext === '.txt' || ext === '.md') {
@@ -131,14 +133,12 @@ export async function storeFileContent(
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
 
-  if (params.bytes.byteLength > LIMITS.maxFileBytes) {
-    // 超限内容不落 R2；记录保留 pending，允许换更小文件重试
-    throw fileTooLarge(LIMITS.maxFileBytes);
-  }
-
   const spec = MAGIC_SPECS.find((m) => m.exts.includes(row.ext) && m.detect(params.bytes));
   let mimeDetected: string;
-  if (spec) {
+  if (row.ext === '.docx') {
+    try { mimeDetected = await validateDocx(params.bytes.length, async (offset,length)=>params.bytes.slice(offset,offset+length)); }
+    catch { return await quarantine(env,row,params.bytes,'DOCX 包结构无效'); }
+  } else if (spec) {
     mimeDetected = spec.mime;
   } else if (row.ext === '.txt' || row.ext === '.md') {
     try {
@@ -166,8 +166,8 @@ export async function storeFileContent(
 /** 下载：调用方已完成项目成员校验；仅 available 状态可读 */
 export async function readFileContent(
   env: Env,
-  params: { projectId: string; fileId: string },
-): Promise<{ body: ArrayBuffer; mime: string }> {
+  params: { projectId: string; fileId: string; range?: string },
+): Promise<{ body: ReadableStream<Uint8Array>; mime: string; headers: Record<string,string>; status: 200 | 206 }> {
   const row = await env.DB.prepare(
     'SELECT id, project_id, r2_key, status, mime_detected, deleted_at, lifecycle_version FROM files WHERE id = ?1',
   )
@@ -175,10 +175,15 @@ export async function readFileContent(
     .first<{ id: string; project_id: string; r2_key: string; status: FileStatus; mime_detected: string | null; deleted_at: string|null; lifecycle_version:number }>();
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'available') throw notFound('文件不可用');
-  const obj = await env.FILES.get(row.r2_key);
+  const rangeHeaders = new Headers(); if(params.range) rangeHeaders.set('range',params.range);
+  const obj = await env.FILES.get(row.r2_key, params.range ? {range:rangeHeaders} : undefined);
   if (!obj) throw notFound('文件内容缺失');
-  const body = await obj.arrayBuffer();
+  const body = obj.body;
   const active=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL AND lifecycle_version=?3 AND status='available'").bind(row.id,params.projectId,row.lifecycle_version).first();
   if(!active) throw notFound('文件已移入回收站或生命周期已变化');
-  return { body, mime: row.mime_detected ?? 'application/octet-stream' };
+  const headers:Record<string,string>={'accept-ranges':'bytes','etag':obj.httpEtag};
+  const range=obj.range;
+  if(range && 'offset' in range && 'length' in range) {headers['content-range']=`bytes ${range.offset}-${range.offset!+range.length!-1}/${obj.size}`;headers['content-length']=String(range.length);}
+  else headers['content-length']=String(obj.size);
+  return { body, mime: row.mime_detected ?? 'application/octet-stream',headers,status:range?206:200 };
 }

@@ -17,8 +17,11 @@ const capabilitiesResponse = apiEnvelope(
         })
         .openapi({ description: 'AI 是否启用由 ai_config_versions 决定；不暴露任何密钥' }),
       limits: z.object({
-        maxFileBytes: z.number().int(),
-        maxPdfPages: z.number().int(),
+        maxFileBytes: z.number().int().nullable(),
+        maxPdfPages: z.number().int().nullable(),
+        recommendedCloudFileBytes: z.number().int(),
+        recommendedCloudPdfPages: z.number().int(),
+        uploadPartBytes: z.number().int(),
         pageImageMaxEdge: z.number().int(),
         pageImageMaxBytes: z.number().int(),
         listDefaultPageSize: z.number().int(),
@@ -100,6 +103,9 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         limits: {
           maxFileBytes: LIMITS.maxFileBytes,
           maxPdfPages: LIMITS.maxPdfPages,
+          recommendedCloudFileBytes: LIMITS.recommendedCloudFileBytes,
+          recommendedCloudPdfPages: LIMITS.recommendedCloudPdfPages,
+          uploadPartBytes: LIMITS.uploadPartBytes,
           pageImageMaxEdge: LIMITS.pageImageMaxEdge,
           pageImageMaxBytes: LIMITS.pageImageMaxBytes,
           listDefaultPageSize: LIMITS.listDefaultPageSize,

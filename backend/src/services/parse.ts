@@ -1,3 +1,4 @@
+import { invalidateResourceIndex } from './resource-index';
 import { ocrBatchSize, ocrContext, parseOcrBatch, removeOcrDuplicates } from './ocr-batches';
 import { notificationStatements } from './notifications';
 import type { Env } from '../env';
@@ -114,6 +115,7 @@ async function insertFragments(
     }
   }
   if (inserts.length > 0) await env.DB.batch(inserts);
+  if(inserts.length)await invalidateResourceIndex(env,version.project_id,{resourceType:'source',versionId:version.id});
   return inserts.length;
 }
 

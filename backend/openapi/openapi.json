@@ -126,9 +126,24 @@
                 "type": "object",
                 "properties": {
                   "maxFileBytes": {
-                    "type": "integer"
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   },
                   "maxPdfPages": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "recommendedCloudFileBytes": {
+                    "type": "integer"
+                  },
+                  "recommendedCloudPdfPages": {
+                    "type": "integer"
+                  },
+                  "uploadPartBytes": {
                     "type": "integer"
                   },
                   "pageImageMaxEdge": {
@@ -153,6 +168,9 @@
                 "required": [
                   "maxFileBytes",
                   "maxPdfPages",
+                  "recommendedCloudFileBytes",
+                  "recommendedCloudPdfPages",
+                  "uploadPartBytes",
                   "pageImageMaxEdge",
                   "pageImageMaxBytes",
                   "listDefaultPageSize",
@@ -7614,7 +7632,8 @@
                     "type": "string",
                     "enum": [
                       "extract",
-                      "ocr"
+                      "ocr",
+                      "analyze"
                     ]
                   }
                 },
@@ -16145,6 +16164,384 @@
           "requestId"
         ]
       },
+      "MultipartInitResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string"
+              },
+              "partBytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "sessionId",
+              "partBytes"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "MultipartOperationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "DocumentImportResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceIndexResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "untrustedData": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "resourceType": {
+                "type": "string",
+                "enum": [
+                  "source",
+                  "material"
+                ]
+              },
+              "versionId": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "number"
+              },
+              "coverage": {
+                "type": "string"
+              },
+              "directoryOnly": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "indexStatus": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sectionId": {
+                      "type": "string"
+                    },
+                    "seq": {
+                      "type": "number"
+                    },
+                    "heading": {
+                      "type": "string"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "startOffset": {
+                      "type": "number"
+                    },
+                    "endOffset": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "sectionId",
+                    "seq",
+                    "heading",
+                    "pageNumber",
+                    "startOffset",
+                    "endOffset"
+                  ]
+                }
+              },
+              "nextOffset": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "untrustedData",
+              "resourceType",
+              "versionId",
+              "resourceId",
+              "title",
+              "revision",
+              "coverage",
+              "directoryOnly",
+              "indexStatus",
+              "items",
+              "nextOffset"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceIndexSearchResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "untrustedData": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "resourceType": {
+                "type": "string",
+                "enum": [
+                  "source",
+                  "material"
+                ]
+              },
+              "versionId": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "number"
+              },
+              "coverage": {
+                "type": "string"
+              },
+              "directoryOnly": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "indexStatus": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sectionId": {
+                      "type": "string"
+                    },
+                    "heading": {
+                      "type": "string"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "startOffset": {
+                      "type": "number"
+                    },
+                    "excerpt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sectionId",
+                    "heading",
+                    "pageNumber",
+                    "startOffset",
+                    "excerpt"
+                  ]
+                }
+              },
+              "nextOffset": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "untrustedData",
+              "resourceType",
+              "versionId",
+              "resourceId",
+              "title",
+              "revision",
+              "coverage",
+              "directoryOnly",
+              "indexStatus",
+              "items",
+              "nextOffset"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceSectionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "untrustedData": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "resourceType": {
+                "type": "string",
+                "enum": [
+                  "source",
+                  "material"
+                ]
+              },
+              "versionId": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "number"
+              },
+              "coverage": {
+                "type": "string"
+              },
+              "sectionId": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "number"
+              },
+              "nextOffset": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "fragments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fragmentId": {
+                      "type": "string"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fragmentId",
+                    "pageNumber",
+                    "quote"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "untrustedData",
+              "resourceType",
+              "versionId",
+              "resourceId",
+              "title",
+              "revision",
+              "coverage",
+              "sectionId",
+              "offset",
+              "nextOffset"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AdminAccountListResponse": {
         "type": "object",
         "properties": {
@@ -22182,8 +22579,7 @@
                       "properties": {
                         "pageNumber": {
                           "type": "integer",
-                          "minimum": 1,
-                          "maximum": 30
+                          "minimum": 1
                         },
                         "fileId": {
                           "type": "string",
@@ -22196,7 +22592,7 @@
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 30
+                    "maxItems": 100
                   }
                 },
                 "required": [
@@ -27875,6 +28271,883 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "sizeBytes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "开始或恢复分片上传",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartInitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "上传状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/parts/{partNumber}": {
+      "put": {
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9]\\d*$"
+            },
+            "required": true,
+            "name": "partNumber",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "required": true,
+            "name": "x-part-size",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "分片已接收",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/complete": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/abort": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "abort",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultipartOperationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "browser-pdf",
+                      "browser-docx"
+                    ]
+                  }
+                },
+                "required": [
+                  "sourceVersionId",
+                  "method"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}/batches": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "batchNumber": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "blocks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "pageNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 24000
+                        },
+                        "headingPath": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "maxItems": 10
+                        },
+                        "warnings": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 1000
+                          },
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "pageNumber",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 10
+                  }
+                },
+                "required": [
+                  "batchNumber",
+                  "blocks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/{sessionId}/complete": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "totalPages": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "warnings": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 1000
+                    },
+                    "maxItems": 100,
+                    "default": []
+                  },
+                  "partial": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "totalPages"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/analyze": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "sourceVersionId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/document-imports/blank-pages": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "pages": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "sourceVersionId",
+                  "pages"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解析会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentImportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "source",
+                "material"
+              ]
+            },
+            "required": true,
+            "name": "resourceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "versionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定版本内部目录及覆盖状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceIndexResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/search": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "source",
+                "material"
+              ]
+            },
+            "required": true,
+            "name": "resourceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "versionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "query",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "资料内部检索，摘录不算读取原文",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceIndexSearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/section": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "source",
+                "material"
+              ]
+            },
+            "required": true,
+            "name": "resourceType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "versionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "sectionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            },
+            "required": false,
+            "name": "neighbors",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "读取实际原文供引用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSectionResponse"
                 }
               }
             }
