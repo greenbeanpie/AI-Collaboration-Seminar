@@ -1,3 +1,4 @@
+import { registerAdminAiRetryRoutes } from './api/admin-ai-retries';
 import { registerTaskFileRoutes } from './api/task-files';
 import { registerTaskAssistancePlanRoutes } from './api/task-assistance-plan';
 import { registerAgentBridgeRoutes } from './api/agent-bridges';
@@ -118,6 +119,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerDocumentImportRoutes(app);
   app.route('/api/v1',resourceIndexApi);
   registerAdminRoutes(app);
+  registerAdminAiRetryRoutes(app);
   registerAiDiagnosticsRoutes(app);
   registerSupportTicketRoutes(app);
   registerNotificationRoutes(app);
