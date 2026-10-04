@@ -3,6 +3,7 @@ export type EnvName = 'local' | 'staging' | 'production';
 export interface Env {
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
+  AI?: Ai;
   DB: D1Database;
   FILES: R2Bucket;
   PARSE_WORKFLOW: Workflow;
