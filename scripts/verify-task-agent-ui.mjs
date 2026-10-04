@@ -42,7 +42,8 @@ try {
       const p = url.pathname, method = route.request().method();
       if (method !== 'GET') writes.push({ p, method, body: route.request().postDataJSON() });
       let data = { items: [], nextCursor: null };
-      if (p.endsWith('/auth/session')) data = { user: { id: userId, username: 'fixture', displayName: '测试成员', role: 'user', isAdmin: false } };
+      if (p.endsWith('/agent-eligibility')) data = { status: 'ready', taskRevision: 1, sourceHash: 'fixture-model-verdict', eligible: true, reason: '模型已判断此数字任务可以完整执行。', jobId: 'fixture-eligibility-job' };
+      else if (p.endsWith('/auth/session')) data = { user: { id: userId, username: 'fixture', displayName: '测试成员', role: 'user', isAdmin: false } };
       else if (p.endsWith('/capabilities')) data = { features: { aiEnabled: false }, limits: { maxFileBytes: 20000000 }, competitionTemplate: {} };
       else if (p === `/api/v1/projects/${projectId}`) data = { projectId, name: '任务交接验证', description: '本地浏览器固定数据', status: 'active', myRole: 'owner', revision: 1 };
       else if (p.endsWith('/members/me')) data = { userId, displayName: '测试成员', role: 'owner' };

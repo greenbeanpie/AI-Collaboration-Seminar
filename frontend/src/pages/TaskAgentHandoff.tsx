@@ -5,12 +5,16 @@ import { collaborationApi, type CollaborationTask } from '../api/collaboration';
 import { projectRequest, type ProjectGoal, type StandardVersion } from '../api/simplification';
 import { ErrorNotice, Field, Spinner } from '../components/ui';
 import { buildTaskAgentPrompt, type AgentMaterial } from './task-agent-prompt';
+import { useTaskAgentEligibility } from './useTaskAgentEligibility';
+import { TaskAgentEligibilityNotice } from './TaskAgentEligibilityNotice';
 
 export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string; task: CollaborationTask; tasks: CollaborationTask[] }) {
+  const eligibility = useTaskAgentEligibility(projectId, task);
   const [status, setStatus] = useState('');
   const [transferError, setTransferError] = useState<Error | null>(null);
   const context = useQuery({
-    queryKey: ['task-agent-handoff', projectId, task.taskId, task.revision],
+    enabled: eligibility.eligible,
+    queryKey: ['task-agent-handoff', projectId, task.taskId, task.revision, eligibility.result?.sourceHash],
     staleTime: 0,
     retry: false,
     queryFn: async () => {
@@ -60,11 +64,13 @@ export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string
     },
   });
   const copy = async () => {
+    if (!eligibility.eligible || !context.data || context.isFetching || context.error) return;
     setTransferError(null); setStatus('');
     try { await navigator.clipboard.writeText(context.data!); setStatus('提示词已复制，可粘贴给本地 Agent 执行。'); }
     catch { setTransferError(new Error('复制失败，请选择下方提示词手动复制，或下载提示词文件。')); }
   };
   const download = () => {
+    if (!eligibility.eligible || !context.data || context.isFetching || context.error) return;
     setTransferError(null); setStatus('');
     let url: string | undefined;
     try {
@@ -73,5 +79,6 @@ export function TaskAgentHandoff({ projectId, task, tasks }: { projectId: string
     } catch { setTransferError(new Error('下载失败，请选择下方提示词手动复制。')); }
     finally { if (url) { const exportedUrl = url; window.setTimeout(() => URL.revokeObjectURL(exportedUrl), 1000); } }
   };
-  return <div className="stack"><p>复制提示词或下载文件，然后交给本地 Agent 执行。</p>{context.isPending && <Spinner label="生成任务提示词" />}{context.error && <ErrorNotice error={context.error} onRetry={() => void context.refetch()} />}{context.data && !context.error && <><Field label="任务执行提示词"><textarea className="input" rows={14} readOnly value={context.data} onFocus={event => event.currentTarget.select()} /></Field><div className="collab-toolbar"><button className="button button-primary" disabled={context.isFetching} onClick={() => void copy()}>复制提示词</button><button className="button" disabled={context.isFetching} onClick={download}>下载提示词</button><button className="button button-quiet" disabled={context.isFetching} onClick={() => { setStatus(''); setTransferError(null); void context.refetch(); }}>重新生成</button></div></>}{transferError && <ErrorNotice error={transferError}/>}<p role="status">{status}</p></div>;
+  if (!eligibility.eligible) return <div className="stack"><TaskAgentEligibilityNotice eligibility={eligibility} /></div>;
+  return <div className="stack"><p>复制提示词或下载文件，然后交给本地 Agent 执行。</p>{context.isPending && <Spinner label="生成任务提示词" />}{context.error && <ErrorNotice error={context.error} onRetry={() => void context.refetch()} />}{context.data && !context.error && !context.isFetching && <><Field label="任务执行提示词"><textarea className="input" rows={14} readOnly value={context.data} onFocus={event => event.currentTarget.select()} /></Field><div className="collab-toolbar"><button className="button button-primary" disabled={context.isFetching} onClick={() => void copy()}>复制提示词</button><button className="button" disabled={context.isFetching} onClick={download}>下载提示词</button><button className="button button-quiet" disabled={context.isFetching} onClick={() => { setStatus(''); setTransferError(null); void context.refetch(); }}>重新生成</button></div></>}{transferError && <ErrorNotice error={transferError}/>}<p role="status">{status}</p></div>;
 }

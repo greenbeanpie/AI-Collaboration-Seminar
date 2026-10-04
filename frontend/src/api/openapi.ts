@@ -5524,6 +5524,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取任务 AI 执行适用性检查 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务 AI 执行适用性检查状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAgentEligibilityResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 请求模型判断任务 AI 执行适用性 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        retry?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 任务 AI 执行适用性检查状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAgentEligibilityResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/assignment-suggestions": {
         parameters: {
             query?: never;
@@ -11212,6 +11281,20 @@ export interface components {
             data: {
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskAgentEligibilityResponse: {
+            data: {
+                /** @enum {string} */
+                status: "missing" | "queued" | "running" | "ready" | "failed" | "disabled";
+                taskRevision: number;
+                sourceHash: string;
+                eligible: boolean | null;
+                reason: string | null;
+                /** Format: uuid */
+                jobId: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

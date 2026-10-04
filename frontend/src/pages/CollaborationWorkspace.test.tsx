@@ -24,13 +24,24 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
   client.setQueryData(['materialVersions', 'p1', 'mat1'], [{ versionId: 'v1', revision: 4, createdAt: '2026-10-01T00:00:00Z', attachments: [] }]);
-  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: String(_url).endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: 'AI 判断任务需要真人参与或现场操作', jobId: 'j1' } : options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}><NavigationProbe />{component === 'settings' ? <CollaborationSettings /> : <CollaborationWorkspace />}</MemoryRouter></QueryClientProvider>);
   return { client, fetchMock, view };
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('disables local agent handoff with a visible reason for fieldwork and updates after an edit', async () => {
+    const { client } = setup({ tasks: [{ ...task, title: '开展实地调研' }] });
+    const action = screen.getByRole('button', { name: '交给本地 Agent' });
+    expect(action).toBeDisabled();
+    await waitFor(() => expect(action).toHaveAccessibleDescription(/需要真人参与或现场操作/));
+    fireEvent.click(action);
+    expect(screen.queryByRole('dialog', { name: '交给本地 Agent' })).toBeNull();
+    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, title: '分析已有实地调研记录', revision: 4 }] }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '交给本地 Agent' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: '交给本地 Agent' })).not.toHaveAccessibleDescription(/需要真人参与或现场操作/);
+  });
   it('uses task terminology and keeps task settings free of retired hierarchy controls', () => {
     setup({ tasks: [task, { ...task, taskId: 't2', title: '整理依据', dependsOnTaskIds: ['t1'] }] });
     expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();

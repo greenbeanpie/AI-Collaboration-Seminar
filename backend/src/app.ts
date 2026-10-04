@@ -1,3 +1,4 @@
+import { registerTaskAgentEligibilityRoutes } from './api/task-agent-eligibility';
 import { registerUsernameInvitationRoutes } from './api/username-invitations';
 import { registerTaskInquiryRoutes } from './api/task-inquiries';
 import { registerProjectSimplificationRoutes } from './api/project-simplification';
@@ -94,6 +95,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerTaskRoutes(app);
   registerTaskInquiryRoutes(app);
   registerCollaborationRoutes(app);
+  registerTaskAgentEligibilityRoutes(app);
   registerAssignmentRoutes(app);
   registerMaterialRoutes(app);
   registerResourceRoutes(app);

@@ -1,3 +1,4 @@
+import { runTaskAgentEligibilityJob } from './task-agent-eligibility';
 import { runTaskSummaryJob } from './task-summary';
 import { runStandardsGeneration } from './standards-generation';
 import type { Env } from '../env';
@@ -14,6 +15,9 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
+      if (JSON.parse(job.input_json).operation === 'collaboration.agent-eligibility') {
+        await runTaskAgentEligibilityJob(env,jobId); return;
+      }
       if (JSON.parse(job.input_json).operation === 'standards.generate') {
         await runStandardsGeneration(env,jobId); return;
       }
