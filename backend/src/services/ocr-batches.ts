@@ -1,3 +1,4 @@
+import { MULTIMODAL_LIMITS } from '../ai/multimodal-limits';
 import { z } from 'zod';
 import { AppError } from '../core/errors';
 import type { DocumentFragment } from './document-chunks';
@@ -24,12 +25,14 @@ export function ocrContext(previous: string, maxInputChars: number): string {
   return text;
 }
 /** Batch only consecutive pages. Bound serialized images and output budget. */
-export function ocrBatchSize(pages: Array<{ page_number: number; size_bytes?: number }>, maxInputChars: number, maxOutputTokens: number): number {
-  const bodyBudget = Math.max(0, maxInputChars * 6 + 32000 - 12000);
+export function ocrBatchSize(pages: Array<{ page_number: number; size_bytes?: number | null }>, _maxInputChars: number, maxOutputTokens: number): number {
+  const bodyBudget = MULTIMODAL_LIMITS.imagePayloadBytes;
   let bytes = 0; let count = 0;
   for (const page of pages.slice(0, Math.min(3, Math.max(1, Math.floor(maxOutputTokens / 2000))))) {
     if (count && page.page_number !== pages[count - 1]!.page_number + 1) break;
-    const next = Math.ceil((page.size_bytes ?? 2 * 1024 * 1024) * 4 / 3) + 256;
+    const size = page.size_bytes ?? MULTIMODAL_LIMITS.imageBytes;
+    if (size > MULTIMODAL_LIMITS.imageBytes) { if (!count) throw new AppError('QUOTA_EXCEEDED','单张页面图超过2 MiB处理边界，请降低图片大小',422,false); break; }
+    const next = Math.ceil(size / 3) * 4 + 256;
     if (bytes + next > bodyBudget) break;
     bytes += next; count++;
   }

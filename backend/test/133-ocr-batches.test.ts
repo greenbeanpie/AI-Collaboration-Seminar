@@ -34,7 +34,8 @@ describe('bounded OCR batches',()=>{
     expect(ocrBatchSize([1,2,3,4].map(page_number=>({page_number,size_bytes:100})),48000,6000)).toBe(3);
     expect(ocrBatchSize([{page_number:1,size_bytes:100},{page_number:3,size_bytes:100}],48000,6000)).toBe(1);
     expect(ocrBatchSize([1,2,3].map(page_number=>({page_number,size_bytes:100})),48000,2000)).toBe(1);
-    expect(()=>ocrBatchSize([{page_number:1,size_bytes:2000000}],1000,6000)).toThrow();
+    expect(ocrBatchSize([{page_number:1,size_bytes:2000000}],1000,6000)).toBe(1);
+    expect(()=>ocrBatchSize([{page_number:1,size_bytes:3*1024*1024}],1000,6000)).toThrow();
     expect(ocrContext('文'.repeat(3000),10000)).toHaveLength(1000);
     expect(ocrContext('全文',1)).toBe('');
     expect(ocrContext('文😀',10)).toBe('');
@@ -74,4 +75,14 @@ describe('bounded OCR batches',()=>{
     await expect(gatewayChat({accountId:'x',apiToken:'x',gatewayId:'x'},{config,messages:[{role:'user',content:'test'}]},fetch)).rejects.toMatchObject({details:{status:400}});
     expect(fetch).toHaveBeenCalledOnce();
   });
+  it('reads actual R2 image sizes for legacy rows with missing size metadata',async()=>{
+    await env.DB.prepare('DELETE FROM ocr_model_capabilities').run();
+    const f=await fixture();await env.DB.prepare('UPDATE files SET size_bytes=NULL WHERE id IN (SELECT image_file_id FROM source_pages WHERE source_version_id=?1)').bind(f.sourceVersionId).run();
+    const row=await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();
+    const config=JSON.parse(row!.config_json);config.visionEconomy.maxInputChars=12000;
+    await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(row!.id,JSON.stringify(config)).run();
+    const fetch=vi.fn(async()=>response({pages:[2,3,4].map(pageNumber=>({pageNumber,text:'有效正文'}))}));vi.stubGlobal('fetch',fetch);
+    expect(await ocrPendingPages(env,f.sourceVersionId)).toMatchObject({ocred:3,failed:0});expect(fetch).toHaveBeenCalledOnce();
+  });
+
 });
