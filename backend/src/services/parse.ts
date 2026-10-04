@@ -1,3 +1,5 @@
+import { runMediaJob } from './media-summary';
+import { isMediaExtension } from './files';
 import { notificationStatements } from './notifications';
 import type { Env } from '../env';
 import { documentChunks, renderDocumentChunk, validateChunkCitations } from './document-chunks';
@@ -555,6 +557,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
   if ((JSON.parse(job.input_json) as { operation?: string }).operation === 'source.summary') return runSourceSummary(env, jobId);
   const input = JSON.parse(job.input_json) as ParseJobInput;
+  if(input.phase==='extract'){const mediaFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(input.sourceVersionId).first<{ext:string}>();if(mediaFile&&isMediaExtension(mediaFile.ext))return runMediaJob(env,jobId,input.sourceVersionId);}
   const expectedLifecycleVersion = input.sourceLifecycleVersion ?? 1;
   try {
     await loadActiveSourceVersion(env, input.sourceVersionId, expectedLifecycleVersion);

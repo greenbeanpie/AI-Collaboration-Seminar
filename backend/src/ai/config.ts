@@ -36,6 +36,8 @@ export const aiConfigSchema = z.object({
   textEconomy: aiModelConfigSchema,
   visionEconomy: aiModelConfigSchema,
   review: aiModelConfigSchema,
+  // Native Google media processing is independent of text/image routing.
+  mediaUnderstanding: aiModelConfigSchema.optional(),
 }).refine(c => c.routingMode !== 'unified' || Boolean(c.unified), { message: 'Unified mode requires a model', path: ['unified'] });
 
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;

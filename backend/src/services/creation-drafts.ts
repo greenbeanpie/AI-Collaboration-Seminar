@@ -1,3 +1,4 @@
+import { enqueueDraftMedia } from './media-summary';
 import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
 import { z } from 'zod';
@@ -5,7 +6,7 @@ import type { Env } from '../env';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { AppError, invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS } from '../core/limits';
-import { extOf, validateUploadBytes } from './files';
+import { extOf, validateUploadBytes, isMediaExtension } from './files';
 import { extractPdfText, hasExtractableText } from './pdf-text';
 import { requireEnabledAiConfig, loadAiConfig } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
@@ -60,6 +61,9 @@ export interface DraftFile {
   text_error: string | null;
   removed: number;
   created_at: string;
+  media_stage?:string|null;
+  media_summary?:string|null;
+  media_error?:string|null;
 }
 export async function getDraft(env: Env, id: string, userId: string) {
   const row = await env.DB.prepare('SELECT * FROM project_creation_drafts WHERE id=?1 AND owner_id=?2').bind(id, userId).first<DraftRow>();
@@ -69,10 +73,10 @@ export async function getDraft(env: Env, id: string, userId: string) {
   return row;
 }
 export async function draftFiles(env: Env, id: string) {
-  return (await env.DB.prepare('SELECT * FROM creation_draft_files WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11').bind(id).all<DraftFile>()).results;
+  return (await env.DB.prepare('SELECT f.*, (SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11').bind(id).all<DraftFile>()).results;
 }
 const fileView = (f: DraftFile) => ({
-  id: f.id, name: f.name, sizeBytes: f.size_bytes, sha256: f.sha256, textReady: JSON.parse(f.pages_json).some((page: string) => hasExtractableText(page)), textError: f.text_error
+  id: f.id, name: f.name, mediaStatus:f.media_stage??null,mediaSummary:f.media_summary?JSON.parse(f.media_summary):null,mediaError:f.media_error??null, sizeBytes: f.size_bytes, sha256: f.sha256, textReady: JSON.parse(f.pages_json).some((page: string) => hasExtractableText(page)), textError: f.text_error
 });
 export async function draftView(env: Env, row: DraftRow) {
   const removed = await env.DB.prepare('SELECT * FROM creation_draft_files WHERE draft_id=?1 AND removed=1 ORDER BY created_at DESC,id LIMIT 100').bind(row.id).all<DraftFile>();
@@ -149,7 +153,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
       pages = [new TextDecoder().decode(bytes)];
     }
     else {
-      textError = '图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
+      textError = isMediaExtension(ext) ? '音视频摘要正在排队；处理完成后可用于预览' : '图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
     }
     if (pages.join('').length > 120000) {
       pages = [];
@@ -178,6 +182,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   if (!result[0]?.meta.changes) {
     throw versionConflict((await getDraft(env, id, userId)).revision);
   }
+  if(isMediaExtension(ext))await enqueueDraftMedia(env,id,fileId,userId);
   return draftView(env, await getDraft(env, id, userId));
 }
 /** Freeze the exact input and model version before an asynchronous dispatch. */

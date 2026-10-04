@@ -1,7 +1,7 @@
 import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
 import { createIntentKey } from './source-workflows';
 
-export const creationFileExtensions = '.pdf,.png,.jpg,.jpeg,.webp,.txt,.md';
+export const creationFileExtensions = '.pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm';
 export const creationFileLimit = 10;
 
 export type CreationPayload = {
@@ -58,7 +58,8 @@ export function validateCreationFiles(files: readonly Pick<File, 'name' | 'size'
     if (!creationFileExtensions.split(',').includes(extension)) return `不支持「${file.name}」的文件类型。`;
     if (file.name.length > 255) return '文件名不能超过 255 个字符。';
     if (file.size === 0) return `「${file.name}」为空文件，请重新选择。`;
-    if (file.size > maxFileBytes) return `「${file.name}」超过单文件 ${(maxFileBytes / (1024 * 1024)).toFixed(1)} MiB 上限。`;
+    const limit=['.mp3','.wav','.m4a','.mp4','.webm'].includes(extension)?50*1024*1024:maxFileBytes;
+    if (file.size > limit) return `「${file.name}」超过单文件 ${(limit / (1024 * 1024)).toFixed(1)} MiB 上限。`;
   }
   return null;
 }

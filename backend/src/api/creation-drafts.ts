@@ -1,3 +1,5 @@
+import { extOf, uploadLimit } from '../services/files';
+import { mediaSummarySchema } from '../ai/gemini-media';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { requireUser } from '../core/auth';
@@ -19,7 +21,7 @@ const params = z.object({
 const revision = z.number().int().min(1);
 const fromTemplateBody=z.object({templateId:z.literal('blank')}).strict();
 const fileSchema = z.object({
-  id: z.string().uuid(), name: z.string(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
+  id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
 });
 const schema = z.object({
   id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
@@ -196,9 +198,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
             break;
           }
           size += chunk.value.length;
-          if (size > LIMITS.maxFileBytes) {
+          if (size > uploadLimit(extOf(q.name))) {
             await reader.cancel();
-            throw fileTooLarge(LIMITS.maxFileBytes);
+            throw fileTooLarge(uploadLimit(extOf(q.name)));
           }
           chunks.push(chunk.value);
         }
