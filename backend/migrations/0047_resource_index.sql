@@ -24,6 +24,10 @@ CREATE TABLE resource_index_blocks (
  UNIQUE(project_id,resource_type,version_id,seq)
 );
 CREATE INDEX idx_resource_blocks_version ON resource_index_blocks(project_id,resource_type,version_id,seq);
+CREATE TABLE resource_fragment_locations (
+ fragment_id TEXT PRIMARY KEY REFERENCES source_fragments(id) ON DELETE CASCADE,
+ heading_json TEXT NOT NULL DEFAULT '[]'
+);
 CREATE VIRTUAL TABLE resource_index_fts USING fts5(content, block_id UNINDEXED, tokenize='trigram');
 CREATE TRIGGER resource_index_insert AFTER INSERT ON resource_index_blocks BEGIN
  INSERT INTO resource_index_fts(rowid,content,block_id) VALUES(new.rowid,new.search_content,new.id);
