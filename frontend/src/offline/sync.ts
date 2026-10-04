@@ -92,7 +92,7 @@ export async function resolveOperation(row: PendingOperation, choice: 'server' |
   await removeOperation(row.key);
   window.dispatchEvent(new Event('offline-sync-completed'));
 }
-export async function prepareProject(projectId: string): Promise<void> {
+async function performPrepareProject(projectId: string): Promise<void> {
   const base = `/api/v1/projects/${projectId}`;
   const load = (url: string, query?: Record<string, string | number | null>) => request<'ProjectResponse'>(url, { query, networkOnly: true, requireOfflinePersistence: true });
   const list = async (tail: string, query: Record<string, string | number> = {}) => {
@@ -138,4 +138,14 @@ export async function prepareProject(projectId: string): Promise<void> {
 export async function preparedAt(projectId: string): Promise<string | null> {
   const marker = await readSnapshot(`/api/v1/projects/${projectId}/offline-ready`);
   return typeof object(marker?.data).preparedAt === 'string' ? object(marker?.data).preparedAt as string : null;
+}
+
+const preparations = new Map<string, Promise<void>>();
+export function prepareProject(projectId: string): Promise<void> {
+  const key = (offlineAccount()?.id ?? '') + ':' + projectId;
+  const existing = preparations.get(key);
+  if (existing) return existing;
+  const pending = performPrepareProject(projectId).finally(() => preparations.delete(key));
+  preparations.set(key, pending);
+  return pending;
 }

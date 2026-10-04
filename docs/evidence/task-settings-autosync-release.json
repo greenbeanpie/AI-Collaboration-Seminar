@@ -1,0 +1,90 @@
+{
+  "completedAt": "2026-10-04T13:29:31.951Z",
+  "permissionCommit": "d9f73ee",
+  "summary": [
+    "自动刷新离线缓存并隐藏正常联网横幅",
+    "任务设置默认展开、顶部状态更新窗口、独立依赖搜索页",
+    "三秒停止输入、区域失焦与关闭前串行自动保存；同字段冲突保留草稿并要求选择",
+    "质询只允许直接已完成前置任务，按双方各自任务展示，红色未读提示与精确消息已读"
+  ],
+  "modifiedFiles": [
+    "backend/openapi/openapi.json",
+    "backend/src/api/task-inquiries.ts",
+    "backend/src/services/notifications.ts",
+    "backend/test/121-task-messaging.test.ts",
+    "frontend/src/api/openapi.ts",
+    "frontend/src/help/TECHNICAL-IMPLEMENTATION.md",
+    "frontend/src/help/USER-GUIDE.md",
+    "frontend/src/offline/OfflineWorkspaceStatus.tsx",
+    "frontend/src/offline/sync.ts",
+    "frontend/src/pages/CollaborationWorkspace.css",
+    "frontend/src/pages/CollaborationWorkspace.test.tsx",
+    "frontend/src/pages/CollaborationWorkspace.tsx",
+    "frontend/src/pages/TaskInquiries.test.tsx",
+    "frontend/src/pages/TaskInquiries.tsx",
+    "scripts/verify-ui-regressions.mjs",
+    "frontend/src/offline/OfflineWorkspaceStatus.test.tsx",
+    "frontend/src/pages/TaskSettings.test.tsx",
+    "frontend/src/pages/TaskSettings.tsx",
+    "frontend/src/pages/task-settings-merge.ts",
+    "docs/evidence/task-settings-autosync-release.json"
+  ],
+  "verification": {
+    "backend": {
+      "files": 3,
+      "tests": 30,
+      "passed": true,
+      "log": "output/task-settings-backend-tests.log"
+    },
+    "frontend": {
+      "files": 5,
+      "tests": 63,
+      "passed": true,
+      "log": "output/task-settings-local-tests.log",
+      "finalAutosaveRerun": "output/task-settings-final-autosave-tests.log"
+    },
+    "typecheck": "output/task-settings-typecheck.log",
+    "lint": "output/task-settings-lint.log",
+    "build": "output/task-settings-build.log",
+    "openapiRegenerated": true,
+    "diffCheck": true,
+    "browser": {
+      "fixtureOnly": true,
+      "passed": true,
+      "checks": 19,
+      "screenshots": 29,
+      "errors": 0,
+      "report": "output/task-settings-ui/results.json"
+    },
+    "preflight": "output/task-settings-preflight.log",
+    "dryRun": "output/task-settings-backend-dry-run.log"
+  },
+  "reproduce": [
+    "npm test --prefix backend -- test/121-task-messaging.test.ts test/47-notifications.test.ts test/85-collaboration.test.ts",
+    "npm test --prefix frontend -- src/pages/TaskSettings.test.tsx src/offline/OfflineWorkspaceStatus.test.tsx src/pages/CollaborationWorkspace.test.tsx src/pages/TaskInquiries.test.tsx src/offline/offline.test.ts",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build",
+    "npm run preview --prefix frontend -- --port 5176",
+    "node scripts/verify-ui-regressions.mjs http://127.0.0.1:5176 output/task-settings-ui"
+  ],
+  "deployment": {
+    "status": "succeeded",
+    "site": "https://team.greenbp.dpdns.org",
+    "backendLog": "output/task-settings-backend-deploy.log",
+    "frontendLog": "output/task-settings-frontend-deploy.log",
+    "migration": false,
+    "sourceCommit": "db15278",
+    "backendVersion": "9f929110-ea6d-4567-bd78-6f4af516415e",
+    "frontendVersion": "ac015e6f-31fe-4feb-87cf-67d9bf86e3e3",
+    "previousBackendVersion": "69acf153-4acb-438a-88dc-7c2a81bf7c4c",
+    "previousFrontendVersion": "a2b06179-98ef-453c-8fdb-29681a2542c0"
+  },
+  "limitations": [
+    "按用户要求未进行在线测试或生产权限验收",
+    "本轮执行受影响的基本本地测试，没有重新执行整个项目的全部测试",
+    "浏览器验收使用本地 HTTP 模拟数据，不调用真实模型",
+    "自动保存覆盖设置内容、依赖和分工；认领、提交、验收和重新打开保留现有显式操作及理由要求",
+    "关闭窗口指应用内任务设置窗口；浏览器标签页强制关闭无法等待异步请求"
+  ]
+}

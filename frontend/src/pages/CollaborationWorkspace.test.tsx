@@ -31,6 +31,15 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('opens inquiry notification links on the corresponding task and shows red unread counts', async () => {
+    const { client } = setup({ entries: ['/tasks?task=t1&taskAction=inquiries'] });
+    expect(screen.getByRole('dialog', { name: '前置任务质询' })).toBeInTheDocument();
+    await waitFor(() => expect(client.getQueryState(['task-inquiries-unread', 'p1'])?.fetchStatus).toBe('idle'));
+    act(() => client.setQueryData(['task-inquiries-unread', 'p1'], { items: [{ taskId: 't1', unreadCount: 2 }] }));
+    await screen.findByLabelText('有未读质询');
+    expect(screen.getByLabelText('有未读质询')).toHaveTextContent('2');
+    expect(screen.getByLabelText('有未读质询')).toHaveClass('task-inquiry-unread');
+  });
   it('permits planning for human tasks and restricts delegation inside assistance', async () => {
     setup({ tasks: [{ ...task, title: '开展实地调研' }] });
     const action = screen.getByRole('button', { name: 'AI 辅助' });
@@ -79,7 +88,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByRole('option', { name: '全部任务' })).toBeInTheDocument();
     expect(screen.queryByText(/历史父任务|子任务/)).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]!);
-    expect(screen.getByRole('dialog', { name: '交付原型 · 任务设置' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '任务设置·交付原型' })).toBeInTheDocument();
     expect(screen.queryByText('任务进度')).toBeNull();
     expect(within(screen.getByRole('dialog')).getByRole('heading', { name: '前置依赖' })).toBeInTheDocument();
   });
@@ -122,7 +131,7 @@ describe('collaboration lifecycle', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/tasks/t1/inquiries'))).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
-    expect(screen.getByRole('dialog', { name: '交付原型 · 任务设置' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '任务设置·交付原型' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
@@ -154,16 +163,17 @@ describe('collaboration lifecycle', () => {
     expect(screen.queryByRole('button', { name: '交付原型' })).toBeNull();
     expect(screen.getByRole('button', { name: '待采集' })).toBeInTheDocument();
   });
-  it('labels the task introduction and places the dependency editor before its heading', () => {
-    setup(); fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
-    expect(screen.getByRole('heading', { name: '任务介绍' })).toBeInTheDocument();
-    expect(screen.queryByText(/执行人：/)).toBeNull();
-    const toggle = screen.getByRole('button', { name: '调整前置任务' });
-    expect(toggle.nextElementSibling).toBe(screen.getByRole('heading', { name: '前置依赖' }));
-    expect(screen.queryByRole('button', { name: '保存前置依赖' })).toBeNull();
+  it('shows task settings sections and puts the prerequisite action after its heading', () => {
+    setup(); fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
+    expect(screen.queryByRole('heading', { name: '任务介绍' })).toBeNull();
+    expect(screen.getByText('任务状态：')).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: '修改前置任务' });
+    expect(toggle.previousElementSibling).toBe(screen.getByRole('heading', { name: '前置依赖' }));
+    expect(screen.queryByRole('button', { name: /保存/ })).toBeNull();
+    expect(screen.getByRole('heading', { name: '安排分工' })).toBeVisible();
     fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: '保存前置依赖' })).toBeInTheDocument();
+    expect(screen.getByLabelText('搜索任务')).toBeVisible();
+    expect(screen.queryByText('本地修改基于')).toBeNull();
   });
   it('keeps AI and task creation controls unavailable to ordinary members', () => {
     identity.role = 'member'; const { fetchMock } = setup();
@@ -317,21 +327,14 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) => String(url).endsWith('/tasks/t1/submissions') && options?.method === 'POST')).toBe(true));
   });
-  it('holds dependency changes against their graph revision until a conflicting graph is reloaded', async () => {
+  it('opens dependency search in task order and uses the latest graph revision', async () => {
     const { client, fetchMock } = setup({ tasks: [task, { ...task, taskId: 't2', title: '前置资料整理', assigneeId: null, lifecycleState: 'open' }] });
-    fireEvent.click(screen.getAllByRole('button', { name: '查看与提交' })[0]!);
-    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: '调整前置任务' }));
-    const selection = screen.getByLabelText('前置资料整理');
-    fireEvent.click(selection);
+    fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '修改前置任务' }));
+    const selection = screen.getByLabelText('前置资料整理'); fireEvent.click(selection);
     act(() => client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', revision: 1, graphRevision: 10 }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '保存前置依赖' })).toBeDisabled());
-    expect(selection).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: '保存前置依赖' }));
-    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: '载入最新依赖' }));
-    expect(selection).not.toBeChecked();
-    fireEvent.click(selection); fireEvent.click(screen.getByRole('button', { name: '保存前置依赖' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(true));
     const call = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT')!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({ expectedGraphRevision: 10, dependsOnTaskIds: ['t2'] });
@@ -424,46 +427,40 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回前页' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
-  it('lets the owner correct actionable task criteria with its current revision', async () => {
+  it('saves task criteria on close using its current revision', async () => {
     const { fetchMock } = setup();
-    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
-    fireEvent.change(screen.getByLabelText('调整验收标准'), { target: { value: '增加键盘操作验收' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存任务调整' }));
+    fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '修改任务内容' }));
+    fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '增加键盘操作验收' } });
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/tasks/t1') && opts?.method === 'PATCH')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/tasks/t1') && opts?.method === 'PATCH')!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 3, title: '交付原型', detail: '完成交互', criteria: '增加键盘操作验收', effortHours: 4 });
   });
-  it('pins task edits to their base revision until explicitly reloaded', async () => {
+  it('preserves conflicting task edits until a content choice is made', async () => {
     const { client, fetchMock } = setup();
-    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
-    fireEvent.change(screen.getByLabelText('调整验收标准'), { target: { value: '旧版草稿' } });
-    act(() => { client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
-  client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '另一成员的新标准' }] }); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '保存任务调整' })).toBeDisabled());
-    expect(screen.getByLabelText('调整验收标准')).toHaveValue('旧版草稿');
-    fireEvent.click(screen.getByRole('button', { name: '保存任务调整' }));
+    fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '修改任务内容' }));
+    fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '旧版草稿' } });
+    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '另一成员的新标准' }] }));
+    await screen.findByRole('button', { name: '使用最新内容' });
+    expect(screen.getByLabelText('验收标准')).toHaveValue('旧版草稿');
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'PATCH')).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: '重新载入最新任务' }));
-    expect(screen.getByLabelText('调整验收标准')).toHaveValue('另一成员的新标准');
-    fireEvent.click(screen.getByRole('button', { name: '保存任务调整' }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === 'PATCH')).toBe(true));
-    const call = fetchMock.mock.calls.find(([, opts]) => opts?.method === 'PATCH')!;
-    expect(JSON.parse(call[1]!.body as string)).toMatchObject({ expectedRevision: 4, criteria: '另一成员的新标准' });
+    fireEvent.click(screen.getByRole('button', { name: '使用最新内容' }));
+    expect(screen.getByLabelText('验收标准')).toHaveValue('另一成员的新标准');
   });
-  it('does not silently rebase an owner assignment over a newer claim', async () => {
+  it('preserves conflicting assignment choices instead of overwriting a newer claim', async () => {
     const { client, fetchMock } = setup();
-    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    fireEvent.click(screen.getByRole('button', { name: '关闭' })); fireEvent.click(screen.getAllByRole('button', { name: '任务设置' })[0]);
-    fireEvent.change(screen.getByLabelText('分工理由'), { target: { value: '旧分工理由' } });
-    act(() => { client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
-  client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, assigneeId: 'someone-else' }] }); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '确认分工' })).toBeDisabled());
-    fireEvent.click(screen.getByRole('button', { name: '确认分工' }));
+    fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '修改分工' }));
+    fireEvent.change(screen.getByLabelText('任务执行人'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('分工理由'), { target: { value: '原分工理由' } });
+    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, assigneeId: 'someone-else' }] }));
+    await screen.findByRole('button', { name: '使用最新内容' });
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/assign'))).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: '重新载入当前分工' }));
-    expect(screen.getByLabelText('分工理由')).toHaveValue('');
+    expect(screen.getByLabelText('分工理由')).toHaveValue('原分工理由');
   });
   it('requires fresh review before submitting a draft against changed criteria', async () => {
     const { client, fetchMock } = setup();

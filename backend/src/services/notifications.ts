@@ -39,7 +39,7 @@ interface EventInput {
 export function notificationStatements(env: Env, input: EventInput): D1PreparedStatement[] {
   const now = input.now ?? nowIso(); const [defaultTitle, defaultBody] = content[input.kind];
   const title = input.title ?? defaultTitle, body = input.body ?? defaultBody;
-  if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements|tasks(?:\?task=[0-9a-f-]+)?|team)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
+  if (input.url !== '/app' && !/^\/app\/(?:projects\/[0-9a-f-]+\/(?:sources|requirements|tasks(?:\?task=[0-9a-f-]+(?:&taskAction=inquiries)?)?|team)|support\/[0-9a-f-]+)$/.test(input.url)) throw new Error('Unsafe notification URL');
   const statements = [
     env.DB.prepare(`INSERT OR IGNORE INTO notification_events(id,event_key,kind,scope,resource_id,actor_id,title,body,url,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS (SELECT 1 FROM ${input.record.table} WHERE id = ?11) AND (${input.guardSql ?? '1=1'})`)

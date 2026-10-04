@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectRequest } from '../api/simplification';
 import { ErrorNotice, Spinner } from '../components/ui';
@@ -18,10 +18,23 @@ async function send(projectId:string,path:string,body:unknown){
 export function TaskInquiries({projectId,taskId,meId}:{projectId:string;taskId:string;meId?:string}) {
  const client=useQueryClient(),key=['task-inquiries',projectId,taskId,meId];
  const query=useQuery({queryKey:key,queryFn:()=>projectRequest<Inbox>(projectId,`/tasks/${taskId}/inquiries`),refetchInterval:30_000});
+ const [readError,setReadError]=useState<unknown>(null);
+ useEffect(()=>{
+  if(!query.data) return;
+  let active=true;
+  const messageIds=query.data.items.flatMap(thread=>thread.messages.map(message=>message.messageId));
+  if(!messageIds.length) return;
+  const markRead=async()=>{
+   for(let index=0;index<messageIds.length;index+=200) await projectRequest(projectId,`/tasks/${taskId}/inquiries/read`,{method:'POST',body:{messageIds:messageIds.slice(index,index+200)}});
+   if(active){setReadError(null);await client.invalidateQueries({queryKey:['task-inquiries-unread',projectId]});await client.invalidateQueries({queryKey:['notifications']});}
+  };
+  void markRead().catch(error=>{if(active)setReadError(error);});
+  return()=>{active=false;};
+ },[query.data,projectId,taskId,client]);
  const [upstream,setUpstream]=useState(''),[body,setBody]=useState('');
  const create=useMutation({mutationFn:()=>send(projectId,`/tasks/${taskId}/inquiries`,{upstreamTaskId:upstream,body}),onSuccess:async()=>{setBody('');await client.invalidateQueries({queryKey:key});}});
  return <section className="stack" aria-label="前置任务质询"><h3>前置任务质询</h3>
- {query.isPending&&<Spinner/>}{query.error&&<ErrorNotice error={query.error}/>}
+ {query.isPending&&<Spinner/>}{query.error&&<ErrorNotice error={query.error}/>}{readError!=null&&<ErrorNotice error={readError}/>}
  {!!query.data?.candidates?.length&&<form className="stack" onSubmit={e=>{e.preventDefault();create.mutate();}}><label>询问哪项前置任务<select className="input" required value={upstream} onChange={e=>setUpstream(e.target.value)}><option value="">请选择前置任务</option>{query.data.candidates.map(t=><option key={t.taskId} value={t.taskId}>{t.title} · {t.recipientName}（{sourceLabel(t.recipientSource)}）</option>)}</select></label><label>对当前任务的影响与问题<textarea className="input" required maxLength={4000} value={body} onChange={e=>setBody(e.target.value)}/></label><button className="button" disabled={!upstream||!body.trim()||create.isPending}>发起质询</button>{create.error&&<ErrorNotice error={create.error}/>}</form>}
  {query.data&&!query.data.items.length&&<p className="form-note">暂无与你有关的质询。</p>}
  {query.data?.items.map(thread=><InquiryThread key={thread.inquiryId} projectId={projectId} thread={thread} refresh={()=>client.invalidateQueries({queryKey:key})}/>)}

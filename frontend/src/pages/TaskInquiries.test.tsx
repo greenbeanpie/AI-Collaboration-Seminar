@@ -20,3 +20,9 @@ it('renders participant history and preserves failed reply draft',async()=>{
  request.mockRejectedValueOnce(new Error('网络失败'));fireEvent.change(screen.getByLabelText('回复或追问'),{target:{value:'请提供示例'}});fireEvent.click(screen.getByRole('button',{name:'发送消息'}));
  expect(await screen.findByText('网络失败')).toBeInTheDocument();expect(screen.getByLabelText('回复或追问')).toHaveValue('请提供示例');
 });
+it('marks only messages from the displayed snapshot read',async()=>{
+ request.mockImplementation(async(_project,path)=>path.endsWith('/read')?{readCount:1}:{candidates:[],items:[{inquiryId:'thread',taskId:'down',upstreamTaskId:'up',taskTitle:'实现',upstreamTitle:'规范',requesterName:'乙',recipientName:'甲',recipientSource:'submission',messages:[{messageId:'displayed-message',authorName:'甲',body:'已显示消息',createdAt:'2026-10-03T00:00:00Z'}]}]});
+ show();await screen.findByText('已显示消息');
+ await waitFor(()=>expect(request).toHaveBeenCalledWith('p','/tasks/down/inquiries/read',{method:'POST',body:{messageIds:['displayed-message']}}));
+ expect(request.mock.calls.some(([,path,options])=>path.endsWith('/read')&&JSON.stringify(options?.body).includes('unseen-message'))).toBe(false);
+});

@@ -656,3 +656,11 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 | 反馈工单 | `support_tickets`, `support_ticket_messages`, `support_ticket_images` | 私人工单→回复/状态记录/图片；ticket归owner，message归author；图片先reserve pending再R2上传ready，限制类型与1..5MB。 |
 
 当前标准由 `backend/src/services/effective-standard.ts` 统一解析：最高保存版本立即生效，新保存和修订均创建不可变版本。`GET /standards/current` 提供使用入口；不再注册标准确认接口。新评分、演练、任务评价和 AI 资料工具自动绑定此版本；模型调用、发布、应用及重试均核对版本，旧版本只可作为历史依据读取。`0044_saved_standard_activation.sql` 冻结旧保存草稿及引用组件，不改写已有报告。
+
+### 任务设置自动保存与质询入口
+
+任务设置由 TaskSettings 串行保存内容、依赖、分工，停止输入三秒和区域失焦触发保存，窗口关闭调用异步保存守卫。任务写入采用响应中的 revision；依赖采用最新 graphRevision，提交依赖后重新读取任务版本。409 后重新读取任务和依赖图，三方字段合并仅自动处理无冲突字段；同字段冲突保留草稿并要求选择。前端版本提示隐藏，后端事务守卫和审计保留。
+
+质询候选 SQL 仅连接直接 task_dependencies，仍要求当前执行人发起、前置任务已完成、回应者为项目成员。历史参与人快照保留，发起者按 task_id 查看，被询问者按 upstream_task_id 查看。GET /task-inquiries/unread 由现有 notification_inbox.read_at 汇总；POST /tasks/{taskId}/inquiries/read 只更新请求中已展示的 messageIds，逐项检查项目与当前任务一侧参与人。新到消息不会随旧快照标记已读。通知使用 taskAction=inquiries 和接收者对应的任务 ID，不新增表或迁移。
+
+离线工作台在项目入口、online、focus 和可见状态恢复时先 synchronizeOffline 再 prepareProject；组件和缓存准备层合并重复执行。正常联网时隐藏缓存就绪提示，失败与冲突仍可处理。
