@@ -45,3 +45,5 @@
 .project-overview-columns .overview-metrics { grid-template-columns:minmax(0,1fr); }
 @media(max-width:900px) { .project-overview-columns { grid-template-columns:minmax(0,1fr); } }
 .resource-task-folder{padding-top:10px;margin-top:8px;border-top:1px solid var(--line)}.resource-task-folder>summary{font-weight:700;cursor:pointer;margin-bottom:8px;overflow-wrap:anywhere}.resource-task-folder .resource-list-entry{width:100%}.task-file-uploads input[type=file]{max-width:100%;overflow:hidden}.task-file-uploads .callout{overflow-wrap:anywhere}
+
+.standard-summary>p{margin:0;padding:16px 0;line-height:1.6}.standard-summary sup{margin-left:4px}.standard-references{list-style:none;margin:12px 0 0;padding:0;border-top:1px solid var(--line)}.standard-references li{padding-top:12px;overflow-wrap:anywhere}.submission-body>summary{cursor:pointer;font-weight:600}.submission-body[open]>summary{margin-bottom:12px}

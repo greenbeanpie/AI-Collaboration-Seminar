@@ -19,12 +19,13 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
   const context=await browser.newContext({viewport:{width:1440,height:1100},serviceWorkers:'block'});
   const page=await context.newPage();page.setDefaultTimeout(8000);
   const fixtureTask={taskId:'88888888-8888-4888-8888-888888888888',title:'样本采集',detail:'记录样本日期和来源',criteria:'提交三条真实样本',effortHours:1,revision:6,assigneeId:userId,lifecycleState:'in_progress',status:'doing',dependsOnTaskIds:[],unfinishedDependencyIds:[],currentSubmissionId:null,createdAt:now,updatedAt:now};
-  const state={taskFiles:[],uploaded:[],taskRows:(name.startsWith('task-settings')||name.startsWith('task-files'))?[fixtureTask,{...fixtureTask,taskId:'99999999-9999-4999-8999-999999999999',title:'来源说明',assigneeId:null,lifecycleState:'open'}]:[],feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='owner'||role==='manager'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
+  const state={taskFiles:[],uploaded:[],taskRows:(name.startsWith('task-settings')||name.startsWith('task-files')||name.startsWith('submission-'))?[fixtureTask,{...fixtureTask,taskId:'99999999-9999-4999-8999-999999999999',title:'来源说明',assigneeId:null,lifecycleState:'open'}]:[],feedback:{version:1,versionId:'feedback-1',feedback:'已保存的持续反馈',createdAt:now},invitations:role==='owner'||role==='manager'?[{id:'invite-1',username:'pending-member',requestedBy:userId,status:'pending',revision:1,createdAt:now}]:[],writes:[],config:null};
   const permissions={teamManage:role==='owner'||role==='manager',taskManage:role==='owner'||role==='manager',resourceManage:role==='owner'||role==='manager',scoreInitiate:true,scoreCorrect:role==='owner'||role==='manager'||scoreCorrect};
   const project={projectId:id,name:'浏览器验证项目',description:'仅本地 HTTP fixtures',revision:1,status:'active',myRole:role==='owner'?'owner':'member',permissions,canManagePermissions:role==='owner',createdAt:now,updatedAt:now,deadlineDate:'2026-10-30',deadlinePrecision:'date'};
   const member={memberId:'member-1',userId,displayName:role==='owner'||role==='manager'?'管理员':'普通成员',username:'fixture-user',email:null,role:project.myRole,isAdmin:accountRole!=='user',permissions,canManagePermissions:role==='owner',permissionsRevision:1};
   const rubric={weights:[{key:'quality',label:'质量',weight:100}]};
-  const standard={standardsVersionId:standardId,title:'已确认标准',version:1,revision:1,status:'confirmed',rubric,requirements:[],createdAt:now};
+  const standard={standardsVersionId:standardId,title:'已确认标准',version:1,revision:1,status:'confirmed',rubric:{...rubric,notes:'不应显示的长说明'},mappings:name==='standards-compact'?[{requirementId:'r1',dimensionKey:'quality'}]:[],requirements:name==='standards-compact'?[{requirementId:'r1',title:'不应显示的要求',detail:'不应显示的详情',dueDate:'2026-12-07',citations:[{sourceVersionId:'66666666-6666-4666-8666-666666666666',fragmentId:'fragment',fileId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',fileName:'标准通知.pdf',sourceId:'source-1',quote:'不应显示的原文'}]}]:[],createdAt:now};
+  if(name.startsWith('submission-'))Object.assign(state.taskRows[0],{lifecycleState:'accepted',status:'done',currentSubmissionId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'});
   const assessment={assessmentId,kind:'material_review',status:'succeeded',historical:false,revision:1,origin:'ai',standardsVersionId:standardId,standardsVersion:1,goalRevision:1,goal:{title:'验证主目标',detail:'左侧目标详细说明'},materialVersionIds:[],rehearsalId:null,createdAt:now,report:{kind:'assistive',status:'scored',scores:[{key:'quality',label:'质量',score:80,comment:'已有真实评分',confidence:0.8,evidence:[]}],weightedTotal:80,summary:'已有评分记录',requirementChecks:[],limitations:[]}};
   page.on('pageerror',error=>result.errors.push({scenario:name,message:error.message}));
   await context.route('**/*',async route=>{
@@ -77,7 +78,9 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     }
     else if(path.endsWith('/invitation-requests/invite-1/decide')){state.invitations[0].status=body.action==='approve'?'approved':'rejected';data=state.invitations[0];}
     else if(path.endsWith('/sources'))data={items:[{sourceId:'source-1',title:'本地参考通知',currentVersionId:'66666666-6666-4666-8666-666666666666'}],nextCursor:null};
+    else if(path.endsWith('/standards/current'))data={standard};
     else if(path.endsWith('/standards'))data={items:[standard]};
+    else if(path.endsWith('/submissions'))data={items:name.startsWith('submission-')?[{submissionId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',taskId:fixtureTask.taskId,round:1,submittedBy:userId,body:'完整成果正文'+ '内容'.repeat(1000)+'末尾完整文本',materialVersionIds:[],criteria:'固定标准',status:'accept',decision:'accept',feedback:'通过理由',aiDecision:null,aiReport:null,revision:1,createdAt:now}]:[]};
     else if(path.endsWith('/assessments'))data={items:[assessment],nextCursor:null};
     else if(path.endsWith(`/assessments/${assessmentId}`))data=assessment;
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({data,requestId:'fixture-only'})});
@@ -285,6 +288,27 @@ try{
     await page.getByRole('complementary',{name:'项目资料列表'}).getByText('样本采集',{exact:true}).waitFor();
     await page.getByRole('complementary',{name:'项目资料列表'}).getByText('公共文件',{exact:true}).waitFor();
     await screenshot('task-folders');
+  });
+  await scenario('standards-compact','owner',async({page,screenshot})=>{
+    await page.goto(origin+base+'/assessment');
+    const menu=page.getByRole('navigation',{name:'评分分区'});await menu.waitFor();
+    assert.deepEqual(await menu.getByRole('link').allTextContents(),['项目标准','材料检查','答辩演练']);
+    const panel=page.getByRole('region',{name:'评分比例与参考资料'});await panel.waitFor();
+    assert.equal(await panel.getByText('质量 · 权重 100%',{exact:false}).count(),1);
+    assert.equal(await panel.getByText(/不应显示/).count(),0);
+    assert.equal(await panel.getByRole('link',{name:'[1] 标准通知.pdf',exact:true}).getAttribute('href'),'/api/v1/projects/'+id+'/files/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/content');
+    assert.equal(await page.locator('.notice.notice-warn').filter({hasText:'该页面标准为项目级标准'}).getByRole('link',{name:'任务',exact:true}).getAttribute('href'),base+'/tasks');
+    await page.getByRole('button',{name:'修订生效标准',exact:true}).waitFor();
+    await screenshot('desktop');await page.setViewportSize({width:390,height:844});await screenshot('mobile');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'standard mobile must not overflow');
+  });
+  await scenario('submission-collapse','owner',async({page,screenshot})=>{
+    await page.goto(origin+base+'/tasks');await page.getByRole('button',{name:'查看与提交',exact:true}).first().click();
+    const body=page.locator('.submission-body');await body.waitFor();
+    assert.equal(await body.getAttribute('open'),null);assert.equal(await body.locator('p').isVisible(),false);
+    await screenshot('collapsed');await body.getByText('展开提交内容',{exact:true}).click();
+    await body.getByText('收起提交内容',{exact:true}).waitFor();assert((await body.locator('p').textContent()).endsWith('末尾完整文本'));
+    await screenshot('expanded');await page.setViewportSize({width:390,height:844});await screenshot('mobile');
   });
 }finally{
   await browser.close();

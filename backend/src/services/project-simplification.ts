@@ -1,3 +1,4 @@
+import { sourceLifecycleGuard } from './source-lifecycle';
 import { readinessStatements } from './task-readiness';
 import { projectOwnerSql, projectPermissionSql } from './project-permissions';
 import type { Env } from '../env';
@@ -73,7 +74,27 @@ export async function buildStandardsSnapshot(env:Env,row:StandardRow):Promise<St
   if(new Set(mappings.map(m=>m.requirementId)).size!==mappings.length||mappings.some(m=>!requirements.results.some(r=>r.id===m.requirementId)||!weights.some(w=>w.key===m.dimensionKey)))throw validationFailed('要求与评分维度关联无效');
   return {standardsVersionId:row.id,projectId:row.project_id,version:row.version,title:row.title,requirementSetIds:ids,rubricVersionId:rubric.id,mappings,requirements:requirements.results.map(r=>({requirementId:r.id,requirementSetId:r.requirement_set_id,title:r.title,detail:r.detail,category:r.category,dueDate:r.due_date,duePrecision:r.due_precision,citations:JSON.parse(r.citations_json)})),rubric:{rubricVersionId:rubric.id,version:rubric.version,weights,notes:rubric.notes}};
 }
-export async function standardView(env:Env,row:StandardRow){const latest=await env.DB.prepare('SELECT MAX(version) version FROM standards_versions WHERE project_id=?1').bind(row.project_id).first<{version:number}>();return {active:row.version===latest?.version,...(row.snapshot_json?JSON.parse(row.snapshot_json) as StandardSnapshot:await buildStandardsSnapshot(env,row)),status:row.status,revision:row.revision,confirmedAt:row.confirmed_at,createdAt:row.created_at};}
+export async function standardView(env:Env,row:StandardRow){
+  const latest=await env.DB.prepare('SELECT MAX(version) version FROM standards_versions WHERE project_id=?1').bind(row.project_id).first<{version:number}>();
+  const snapshot=row.snapshot_json?JSON.parse(row.snapshot_json) as StandardSnapshot:await buildStandardsSnapshot(env,row);
+  type Citation={sourceVersionId?:string;fragmentId?:string};
+  const citations=snapshot.requirements.flatMap(requirement=>requirement.citations).filter((value):value is Citation=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)));
+  const fragments=[...new Set(citations.filter(citation=>!citation.sourceVersionId&&citation.fragmentId).map(citation=>citation.fragmentId!))];
+  const legacy=fragments.length?(await env.DB.prepare('SELECT id,source_version_id FROM source_fragments WHERE project_id=?1 AND id IN(SELECT value FROM json_each(?2))').bind(row.project_id,JSON.stringify(fragments)).all<{id:string;source_version_id:string}>()).results:[];
+  const versions=[...new Set(citations.map(citation=>citation.sourceVersionId??legacy.find(fragment=>fragment.id===citation.fragmentId)?.source_version_id).filter((id):id is string=>Boolean(id)))];
+  const resolved=versions.length?(await env.DB.prepare(`SELECT v.id sourceVersionId,s.id sourceId,s.title sourceTitle,f.id fileId,f.original_name fileName,f.archived_at archivedAt,COALESCE(s.deleted_at,f.deleted_at) deletedAt,${sourceLifecycleGuard('v.id','NULL')} available FROM source_versions v JOIN sources s ON s.id=v.source_id LEFT JOIN files f ON f.id=v.file_id AND f.project_id=?1 WHERE v.project_id=?1 AND s.project_id=?1 AND v.id IN(SELECT value FROM json_each(?2))`).bind(row.project_id,JSON.stringify(versions)).all<{sourceVersionId:string;sourceId:string;sourceTitle:string;fileId:string|null;fileName:string|null;archivedAt:string|null;deletedAt:string|null;available:number}>()).results:[];
+  const metadata=new Map(resolved.map(value=>[value.sourceVersionId,value]));
+  const requirements=snapshot.requirements.map(requirement=>({...requirement,citations:requirement.citations.map(value=>{
+    if(!value||typeof value!=='object'||Array.isArray(value))return value;
+    const citation=value as Citation;
+    const info=metadata.get(citation.sourceVersionId??legacy.find(fragment=>fragment.id===citation.fragmentId)?.source_version_id??'');
+    if(!info)return {...citation,availability:'unavailable' as const,deletedAt:null};
+    const {available,deletedAt,...location}=info;
+    return {...citation,...location,fileName:info.fileName||info.sourceTitle,...(!available?{availability:'unavailable' as const,deletedAt}:{} )};
+  })}));
+  return {active:row.version===latest?.version,...snapshot,requirements,status:row.status,revision:row.revision,confirmedAt:row.confirmed_at,createdAt:row.created_at};
+}
+
 export type StandardsInput={title?:string;requirementSetIds?:string[];rubricVersionId?:string;mappings?:StandardSnapshot['mappings'];requirements?:Array<{title:string;detail:string;category?:string;dimensionKey?:string;dueDate?:string|null;duePrecision?:string;citations?:Array<{sourceVersionId:string;fragmentId:string;pageNumber:number|null;quote:string}>}>;weights?:StandardSnapshot['rubric']['weights'];notes?:string|null};
 export async function saveStandard(env:Env,projectId:string,actorId:string,input:StandardsInput,id?:string,expectedRevision?:number){
   await owner(env,projectId,actorId,'owner');const now=nowIso(),newStandardId=newId(),batch:D1PreparedStatement[]=[];

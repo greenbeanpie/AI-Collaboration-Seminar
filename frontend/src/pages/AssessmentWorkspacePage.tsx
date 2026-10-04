@@ -27,11 +27,9 @@ async function assessmentHistory(projectId: string, signal?: AbortSignal) {
 }
 export function AssessmentWorkspacePage() {
   const { projectId } = useProject();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const section = params.get('section') ?? 'standards';
-  const chooseSection = (value: string) => { const next = new URLSearchParams(params); next.set('section', value); for (const key of selectionParameters) next.delete(key); next.delete('referencePicker'); setParams(next); };
   return <div className="page-stack assessment-workspace">
-    <nav className="assessment-sections" aria-label="评分形式">{[['standards', '项目标准'], ['checks', '材料检查'], ['rehearsals', '答辩演练']].map(([key, label]) => <button className={`button ${section === key ? 'button-primary' : 'button-quiet'}`} key={key} onClick={() => chooseSection(key)} aria-current={section === key ? 'page' : undefined}>{label}</button>)}</nav>
     {section === 'standards' ? <StandardsEditor /> : <AssessmentRunner key={`${projectId}:${section}`} kind={section === 'rehearsals' ? 'rehearsal' : 'material_review'} />}
   </div>;
 }

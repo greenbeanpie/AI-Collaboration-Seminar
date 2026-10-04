@@ -1,0 +1,103 @@
+{
+  "completedAt": "2026-10-04T15:47:35.667Z",
+  "baseCommit": "c9e63cd",
+  "worktree": "C:/Users/hmz/.codex/worktrees/standards-display/AI-Colleboration-Seminar",
+  "summary": [
+    "评分形式移入项目评分子菜单，黄色提示链接到任务页",
+    "标准阅读区域只显示维度权重和编号引用，完整编辑与历史入口保留",
+    "引用元数据批量读取并限定当前项目，不改写保存快照；文件链接定位固定原文件",
+    "当前与历史提交正文默认折叠，展开完整显示，元数据与验收操作保留"
+  ],
+  "modifiedFiles": [
+    "backend/openapi/openapi.json",
+    "backend/src/api/project-simplification.ts",
+    "backend/src/services/project-simplification.ts",
+    "frontend/src/api/simplification.ts",
+    "frontend/src/components/ProjectNavigation.test.tsx",
+    "frontend/src/components/ProjectNavigation.tsx",
+    "frontend/src/help/TECHNICAL-IMPLEMENTATION.md",
+    "frontend/src/help/USER-GUIDE.md",
+    "frontend/src/pages/AssessmentWorkspacePage.test.tsx",
+    "frontend/src/pages/AssessmentWorkspacePage.tsx",
+    "frontend/src/pages/CollaborationWorkspace.tsx",
+    "frontend/src/pages/ProjectWorkspace.css",
+    "frontend/src/pages/StandardsEditor.test.tsx",
+    "frontend/src/pages/StandardsEditor.tsx",
+    "scripts/verify-ui-regressions.mjs",
+    "backend/test/140-standard-citation-display.test.ts",
+    "frontend/src/pages/StandardSummary.test.tsx",
+    "frontend/src/pages/StandardSummary.tsx",
+    "frontend/src/pages/SubmissionBody.test.tsx",
+    "frontend/src/pages/SubmissionBody.tsx",
+    "docs/evidence/standards-display-release.json"
+  ],
+  "verification": {
+    "frontend": {
+      "files": 6,
+      "tests": 76,
+      "passed": true,
+      "log": "output/standards-display-logs/standards-frontend-tests.log"
+    },
+    "backend": {
+      "files": 3,
+      "tests": 31,
+      "passed": true,
+      "log": "output/standards-display-logs/standards-backend-tests.log"
+    },
+    "browser": {
+      "fixtureOnly": true,
+      "checks": 22,
+      "screenshots": 37,
+      "errors": 0,
+      "passed": true,
+      "report": "output/standards-display-ui/results.json"
+    },
+    "typecheck": "output/standards-display-logs/standards-typecheck.log",
+    "lint": "output/standards-display-logs/standards-lint.log",
+    "build": "output/standards-display-logs/standards-build.log",
+    "preflight": "output/standards-display-logs/standards-preflight.log",
+    "dryRun": "output/standards-display-logs/standards-backend-dry-run.log",
+    "independentReview": {
+      "readOnly": true,
+      "resolved": [
+        "对每条引用逐个查询改为批量查询；2000条重复引用只需2次D1读取",
+        "归档状态不同的历史引用直接连接固定文件，避免资料列表过滤造成链接失效"
+      ]
+    },
+    "openapiRegenerated": true,
+    "diffCheck": true
+  },
+  "merge": {
+    "status": "squashed into main",
+    "strategy": "local git merge --squash into main",
+    "worktreeRemoval": "deleted; recoverable app archive retained",
+    "worktreeCommit": "233b7debaf7ecf9db5e32afe6098f0904f467bdb",
+    "sourceMainCommit": "3fe8eb7",
+    "treeEquivalenceVerified": true
+  },
+  "deployment": {
+    "status": "succeeded",
+    "site": "https://team.greenbp.dpdns.org",
+    "migration": false,
+    "frontendAssets": "output/standards-display-dist",
+    "backendLog": "output/standards-display-backend-deploy.log",
+    "frontendLog": "output/standards-display-frontend-deploy.log",
+    "backendVersion": "8e31df59-688d-428a-aad5-7981b27d722f",
+    "frontendVersion": "ac6d09ca-770b-42eb-a6d1-0ff123b35ac0",
+    "previousBackendVersion": "1542cfc1-1652-450f-88ba-a8c362daae7c",
+    "previousFrontendVersion": "fce9c390-a542-4d2c-bdca-213309e1ac6b"
+  },
+  "reproduce": [
+    "npm test --prefix frontend -- src/pages/StandardSummary.test.tsx src/pages/SubmissionBody.test.tsx src/pages/StandardsEditor.test.tsx src/components/ProjectNavigation.test.tsx src/pages/AssessmentWorkspacePage.test.tsx src/pages/CollaborationWorkspace.test.tsx",
+    "npm test --prefix backend -- test/140-standard-citation-display.test.ts test/102-project-simplification.test.ts test/125-effective-standard-core.test.ts",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run build",
+    "node scripts/verify-ui-regressions.mjs http://127.0.0.1:5177 <evidence-directory>"
+  ],
+  "limitations": [
+    "按要求未进行在线功能测试或生产验收",
+    "执行受影响的本地测试，未重新运行整个项目全部测试",
+    "引用编号来自现有结构化引用；缺少结构化引用时不会从长说明猜测文件或维度关联"
+  ]
+}

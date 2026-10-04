@@ -1,3 +1,4 @@
+import { ProjectSectionNavigation } from '../components/ProjectNavigation';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -26,12 +27,12 @@ it('routes an old rehearsal ID to its historical feedback and offers both scorin
   client.setQueryData(['standards', 'p'], { items: [] }); client.setQueryData(['current-standard', 'p'], { standard: null });
   client.setQueryData(['assessments', 'p'], [{ assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, createdAt: '2026-10-01', rehearsalId: 'old', standardsVersion: null }]);
   client.setQueryData(['assessment', 'p', 'old'], { assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, rehearsalId: 'old', goal: null, standardsVersion: null, report: null, materialVersionIds: [] });
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/assessment?section=rehearsals&rehearsalId=old']}><AssessmentWorkspacePage /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/app/projects/p/assessment?section=rehearsals&rehearsalId=old']}><ProjectSectionNavigation projectId="p" canManage/><AssessmentWorkspacePage /></MemoryRouter></QueryClientProvider>);
   expect(await screen.findByText('保留真实问答 old')).toBeInTheDocument();
   expect(screen.getByText(/历史反馈：本记录未绑定/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '开始本轮答辩演练' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: '材料检查' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '项目标准' }));
+  expect(screen.getByRole('link', { name: '材料检查' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: '项目标准' }));
   await waitFor(() => expect(screen.getByRole('heading', { name: '项目标准' })).toBeInTheDocument());
 });
 
@@ -67,14 +68,14 @@ function showRecords(records: Assessment[], entry: string) {
   client.setQueryData(['standards','p'],{items:[]});client.setQueryData(['current-standard','p'],{standard:{standardsVersionId:'s',title:'生效规则',version:1,rubric:{weights:[]}}});
   client.setQueryData(['assessments','p'],records);
   for (const item of records) client.setQueryData(['assessment','p',item.assessmentId],item);
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry.replace(/^\/assessment/, '/app/projects/p/assessment')]}><ProjectSectionNavigation projectId="p" canManage/><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
   return client;
 }
 it('clears every selection alias when switching kind and renders only the matching scoring form',async()=>{
   const material=record('material','material_review'), rehearsal=record('rehearsal','rehearsal');
   showRecords([material,rehearsal],'/assessment?section=checks&assessmentId=material&reviewId=old&rehearsalId=other&review=legacy&rehearsal=legacy-session');
   expect(await screen.findByText('material-summary',{selector:'p'})).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'答辩演练'}));
+  fireEvent.click(screen.getByRole('link',{name:'答辩演练'}));
   expect(await screen.findByText('rehearsal-summary',{selector:'p'})).toBeInTheDocument();
   expect(screen.queryByText('material-summary')).toBeNull();
   const query=new URLSearchParams(screen.getByTestId('location').textContent!);

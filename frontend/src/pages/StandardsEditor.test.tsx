@@ -60,7 +60,7 @@ it('keeps existing standards visible and blocks editing them while generation ru
   show([version]);
   fireEvent.click(screen.getByRole('button', { name: 'AI 生成标准' }));
   await waitFor(() => expect(screen.getByRole('button', { name: '修订生效标准' })).toBeDisabled());
-  expect(screen.getByText('提供来源', { exact: true })).toBeInTheDocument();
+  expect(screen.queryByText('提供来源', { exact: true })).toBeNull();
   expect(screen.getByRole('button', { name: '新建标准' })).toBeDisabled();
 });
 

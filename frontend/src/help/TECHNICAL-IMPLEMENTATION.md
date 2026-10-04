@@ -672,3 +672,9 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 任务文件管理权限在事务内重检当前执行人或 resourceManage；公共材料创建者和公共文件上传者可管理本人的内容。更换执行人后前任不再因上传身份管理任务文件。文件归档复用 lifecycle_version 乐观锁，材料归档递增 revision；审计与状态更新处于同一事务。归档和回收站分离，恢复文件不恢复整份材料。任务文件正文禁止普通编辑和 AI 采纳，通过文件替换入口更新。
 
 共享 archive-policy 过滤默认 AI 文件发现、资料搜索、任务计划和交接输入；已归档或已被新版本替换的上传不进入普通列表。显式固定版本读取、历史提交和前置任务成果快照保留，不因归档破坏历史证据。提交写入事务拒绝已归档材料或附件，避免读取列表后发生归档仍提交。未提取正文的附件沿用现有未读证据与人工验收规则，不把上传成功视为 AI 已完整读取。
+
+### 标准摘要展示与提交正文折叠
+
+评分分区导航由 ProjectSectionNavigation 统一提供，保留 assessment 的 section 查询参数与旧 requirements/reviews/rehearsals 路由。StandardsEditor 保留完整编辑与历史入口，StandardSummary 只遍历 rubric.weights，并按 mappings 从对应 requirements.citations 生成引用编号；不会从 rubric.notes 猜测来源。编号按首次出现顺序分配，以固定 fileId 优先去重，文件名仅在底部引用列表展示。固定文件采用带成员权限的文件内容链接，避免当前来源版本的归档状态影响旧引用定位。
+
+standardView 批量读取项目范围内的引用元数据与可用状态，源版本引用每份标准仅增加一次批量查询，fragmentId 历史引用另加一次解析查询。输出补充可选文件名和定位信息，不修改 snapshot_json 或评分规则；2000 条重复引用的测试验证仅执行两次读取（版本状态及引用元数据）。SubmissionBody 使用默认关闭的原生 details，仅折叠成果正文，完整文本和验收控件保留。此变更不需要数据库迁移。

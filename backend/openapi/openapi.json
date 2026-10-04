@@ -3356,7 +3356,9 @@
                         },
                         "citations": {
                           "type": "array",
-                          "items": {}
+                          "items": {
+                            "description": "固定原文引用；读取时附带可选 sourceId、fileId、fileName、sourceTitle 和归档/不可用状态，不修改历史快照。"
+                          }
                         }
                       },
                       "required": [
@@ -3570,7 +3572,9 @@
                           },
                           "citations": {
                             "type": "array",
-                            "items": {}
+                            "items": {
+                              "description": "固定原文引用；读取时附带可选 sourceId、fileId、fileName、sourceTitle 和归档/不可用状态，不修改历史快照。"
+                            }
                           }
                         },
                         "required": [
@@ -3780,7 +3784,9 @@
                     },
                     "citations": {
                       "type": "array",
-                      "items": {}
+                      "items": {
+                        "description": "固定原文引用；读取时附带可选 sourceId、fileId、fileName、sourceTitle 和归档/不可用状态，不修改历史快照。"
+                      }
                     }
                   },
                   "required": [
@@ -18019,7 +18025,9 @@
                           },
                           "citations": {
                             "type": "array",
-                            "items": {}
+                            "items": {
+                              "description": "固定原文引用；读取时附带可选 sourceId、fileId、fileName、sourceTitle 和归档/不可用状态，不修改历史快照。"
+                            }
                           }
                         },
                         "required": [

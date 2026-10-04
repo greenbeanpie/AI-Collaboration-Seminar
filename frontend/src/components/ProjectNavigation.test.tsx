@@ -59,6 +59,9 @@ it('mobile switching and browser Back retain group state without changing existi
     if (group === 'overview' || group === 'team') {
       expect(within(navigation!).getByRole('link', { name: section })).toHaveAttribute('aria-current', 'page');
       expect(within(navigation!).getByRole('combobox')).toHaveDisplayValue(section);
+    } else if (group === 'assessment') {
+      const label = path === 'reviews' ? '材料检查' : path === 'rehearsals' ? '答辩演练' : '项目标准';
+      expect(within(navigation!).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     } else {
       expect(navigation).toBeUndefined();
     }

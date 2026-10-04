@@ -1,0 +1,27 @@
+import { expect, it } from 'vitest';
+import { env } from './helpers/env';
+import { seedProject, seedUser } from './helpers/seed';
+import { newId, nowIso } from '../src/core/db';
+import { saveStandard, standardView, type StandardRow } from '../src/services/project-simplification';
+it('resolves fixed citation filenames in project scope without changing the saved snapshot', async () => {
+  const owner = await seedUser(), project = await seedProject(owner.userId), file = newId(), source = newId(), version = newId(), fragment = newId(), now = nowIso();
+  await env.DB.prepare("INSERT INTO files(id,project_id,uploader_user_id,r2_key,ext,status,original_name,created_at) VALUES(?1,?2,?3,?1,'.pdf','available','原始通知.pdf',?4)").bind(file,project,owner.userId,now).run();
+  await env.DB.prepare("INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,'file','来源标题',?3,?4,?5,?5)").bind(source,project,version,owner.userId,now).run();
+  await env.DB.prepare("INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,status,created_at) VALUES(?1,?2,?3,1,'file',?4,'ready',?5)").bind(version,source,project,file,now).run();
+  await env.DB.prepare("INSERT INTO source_fragments(id,source_version_id,project_id,seq,kind,content,created_at) VALUES(?1,?2,?3,1,'text','原文证据',?4)").bind(fragment,version,project,now).run();
+  const saved = await saveStandard(env, project, owner.userId, { title: '标准', requirements: [{ title: '要求', detail: '细节', dimensionKey: 'quality', citations: [{ sourceVersionId: version, fragmentId: fragment, pageNumber: null, quote: '原文证据' }] }], weights: [{ key: 'quality', label: '质量', weight: 100 }] });
+  const row = (await env.DB.prepare('SELECT * FROM standards_versions WHERE id=?1').bind(saved.standardsVersionId).first<StandardRow>())!;
+  const before = row.snapshot_json;
+  const view = await standardView(env, row);
+  expect(view.requirements[0]?.citations[0]).toMatchObject({ fileName: '原始通知.pdf', fileId: file, sourceId: source, sourceVersionId: version });
+  const snapshot = JSON.parse(before!);
+  const repeated = { ...row, snapshot_json: JSON.stringify({ ...snapshot, requirements: Array.from({ length: 100 }, () => ({ ...snapshot.requirements[0], citations: Array.from({ length: 20 }, () => snapshot.requirements[0].citations[0]) })) }) };
+  let reads = 0;
+  const counted = { ...env, DB: { prepare: (sql: string) => { reads++; return env.DB.prepare(sql); } } } as unknown as typeof env;
+  expect((await standardView(counted, repeated)).requirements).toHaveLength(100);
+  expect(reads).toBe(2);
+  await env.DB.prepare('UPDATE files SET deleted_at=?2 WHERE id=?1').bind(file,now).run();
+  const unavailable = await standardView(env, row);
+  expect(unavailable.requirements[0]?.citations[0]).toMatchObject({ fileName: '原始通知.pdf', availability: 'unavailable' });
+  expect((await env.DB.prepare('SELECT snapshot_json FROM standards_versions WHERE id=?1').bind(row.id).first<{snapshot_json:string}>())!.snapshot_json).toBe(before);
+});
