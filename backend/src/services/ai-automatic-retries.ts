@@ -12,14 +12,26 @@ export function isAutomaticAiFailure(code:string):boolean {
   return code === 'AI_UNAVAILABLE' || code === 'AI_OUTPUT_INVALID' || code === 'ASSESSMENT_FAILED';
 }
 
-/** Provider failures are new attempts, not replay of the failed Workflow instance. */
-export async function scheduleAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string}):Promise<void> {
+/** Prepared insert belongs in the same transaction as the exact failed transition. */
+export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string;details?:unknown},failedAt:string):D1PreparedStatement|null {
+  if(!isAutomaticAiFailure(error.code)) return null;
+  const due=new Date(Date.parse(failedAt)+AUTOMATIC_AI_RETRY_DELAY_MS).toISOString();
+  return env.DB.prepare(`INSERT INTO ai_automatic_retries(id,target_kind,target_id,status,next_attempt_at,last_error,created_at,updated_at)
+    SELECT COALESCE(json_extract(input_json,'$.autoRetryRootId'),'job:'||id),'job',id,'pending',?3,?4,?2,?2
+    FROM jobs WHERE id=?1 AND status='failed' AND updated_at=?2 AND error_json=?5
+      AND kind IN ('agent_run','review_run','rehearsal_turn','assignment_suggest','requirement_extract','parse_source','ocr_pages')
+    ON CONFLICT(id) DO UPDATE SET target_id=excluded.target_id,
+      status=CASE WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,
+      next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,lease_token=NULL,lease_until=NULL,updated_at=excluded.updated_at
+    WHERE ai_automatic_retries.status IN ('dispatching','dispatched')`)
+    .bind(jobId,failedAt,due,error.message.slice(0,500),JSON.stringify(error));
+}
+/** Standalone scheduling verifies the stored failure before inserting. */
+export async function scheduleAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string;details?:unknown}):Promise<void> {
   if(!isAutomaticAiFailure(error.code)) return;
-  const job=await env.DB.prepare("SELECT input_json FROM jobs WHERE id=?1 AND status='failed' AND kind IN ('agent_run','review_run','rehearsal_turn','assignment_suggest','requirement_extract','parse_source','ocr_pages')").bind(jobId).first<{input_json:string}>();
+  const job=await env.DB.prepare("SELECT updated_at FROM jobs WHERE id=?1 AND status='failed'").bind(jobId).first<{updated_at:string}>();
   if(!job) return;
-  const input=JSON.parse(job.input_json) as {autoRetryRootId?:string};
-  const root=input.autoRetryRootId ?? `job:${jobId}`;
-  await schedule(env,{id:root,kind:'job',target:jobId},error.message);
+  await prepareAutomaticJobRetry(env,jobId,error,job.updated_at)?.run();
 }
 export async function scheduleAutomaticDraftRetry(env:Env,draftId:string,attemptId:string,error:unknown):Promise<void> {
   if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code)) return;

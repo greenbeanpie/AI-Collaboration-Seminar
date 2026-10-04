@@ -7,7 +7,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { creationPayload } from '../src/services/creation-drafts';
 import { loadDraftCheckpoint, saveDraftCheckpoint } from '../src/services/draft-preview-checkpoints';
 import { failJob } from '../src/services/jobs';
-import { retryFailedDraftPreview, recoverAutomaticAiRetries, scheduleAutomaticJobRetry, isAutomaticAiFailure, AUTOMATIC_AI_RETRY_DELAY_MS } from '../src/services/ai-automatic-retries';
+import { prepareAutomaticJobRetry, retryFailedDraftPreview, recoverAutomaticAiRetries, scheduleAutomaticJobRetry, isAutomaticAiFailure, AUTOMATIC_AI_RETRY_DELAY_MS } from '../src/services/ai-automatic-retries';
 
 async function job(input:unknown={}) {
   const id=newId(),now=nowIso();
@@ -39,6 +39,29 @@ describe('durable 60-second AI recovery',()=>{
     expect((await retryRow(`job:${id}`))?.next_attempt_at).toBe(row.next_attempt_at);
     const blocked=await job();await failJob(env,blocked,{code:'QUOTA_EXCEEDED',message:'预算不足'});
     expect(await retryRow(`job:${blocked}`)).toBeNull();
+  });
+  it('commits failure, outbox and retry intent atomically or rolls all three back',async()=>{
+    const id=await job(),now=nowIso();
+    await env.DB.prepare("INSERT INTO job_outbox(id,job_id,status,available_at,created_at,updated_at) VALUES(?1,?2,'pending',?3,?3,?3)").bind(newId(),id,now).run();
+    await env.DB.exec("CREATE TRIGGER reject_automatic_retry BEFORE INSERT ON ai_automatic_retries BEGIN SELECT RAISE(ABORT,'retry queue unavailable'); END");
+    try {
+      await expect(failJob(env,id,providerFailure)).rejects.toThrow('retry queue unavailable');
+      expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(id).first<{status:string}>())?.status).toBe('running');
+      expect((await env.DB.prepare('SELECT status FROM job_outbox WHERE job_id=?1').bind(id).first<{status:string}>())?.status).toBe('pending');
+      expect(await retryRow(`job:${id}`)).toBeNull();
+    } finally { await env.DB.exec('DROP TRIGGER reject_automatic_retry'); }
+    expect(await failJob(env,id,providerFailure)).toBe(true);
+    expect((await env.DB.prepare('SELECT status FROM job_outbox WHERE job_id=?1').bind(id).first<{status:string}>())?.status).toBe('failed');
+    expect((await retryRow(`job:${id}`))?.status).toBe('pending');
+  });
+  it('cannot enqueue a stale or mismatched failure',async()=>{
+    const id=await job();
+    expect(await failJob(env,id,providerFailure,'2000-01-01T00:00:00.000Z')).toBe(false);
+    expect(await retryRow(`job:${id}`)).toBeNull();
+    await failJob(env,id,{code:'INVALID_STATE',message:'已取消'});
+    const failedAt=(await env.DB.prepare('SELECT updated_at FROM jobs WHERE id=?1').bind(id).first<{updated_at:string}>())!.updated_at;
+    await prepareAutomaticJobRetry(env,id,providerFailure,failedAt)!.run();
+    expect(await retryRow(`job:${id}`)).toBeNull();
   });
   it('inherits the original chain across new jobs and stops after three failed recoveries',async()=>{
     let id=await job();const root=`job:${id}`;

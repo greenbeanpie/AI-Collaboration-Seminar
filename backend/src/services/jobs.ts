@@ -1,4 +1,4 @@
-import { scheduleAutomaticJobRetry } from './ai-automatic-retries';
+import { prepareAutomaticJobRetry } from './ai-automatic-retries';
 import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
@@ -146,17 +146,17 @@ export async function getJob(env: Env, jobId: string): Promise<JobRow> {
 }
 
 export async function failJob(env: Env, jobId: string, error: { code: string; message: string; details?: unknown }, expectedUpdatedAt?: string, expectedInstanceId?: string): Promise<boolean> {
-  const transition = await env.DB.prepare(
-    "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued', 'waiting_input') AND (?4 IS NULL OR updated_at = ?4) AND (?5 IS NULL OR ?5 = (SELECT instance_id FROM ai_execution_slices WHERE job_id=?1 ORDER BY slice DESC LIMIT 1))",
-  )
-    .bind(jobId, JSON.stringify(error), nowIso(), expectedUpdatedAt ?? null, expectedInstanceId ?? null)
-    .run();
-  if ((transition.meta?.changes ?? 0) === 0) return false;
-  await env.DB.prepare("UPDATE job_outbox SET status = 'failed', last_error = ?2, updated_at = ?3 WHERE job_id = ?1")
-    .bind(jobId, error.code, nowIso())
-    .run();
-  await scheduleAutomaticJobRetry(env, jobId, error);
-  return true;
+  const failedAt=nowIso(),serializedError=JSON.stringify(error);
+  const writes=[
+    env.DB.prepare(
+      "UPDATE jobs SET status = 'failed', error_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued', 'waiting_input') AND (?4 IS NULL OR updated_at = ?4) AND (?5 IS NULL OR ?5 = (SELECT instance_id FROM ai_execution_slices WHERE job_id=?1 ORDER BY slice DESC LIMIT 1))",
+    ).bind(jobId,serializedError,failedAt,expectedUpdatedAt??null,expectedInstanceId??null),
+    env.DB.prepare("UPDATE job_outbox SET status='failed',last_error=?2,updated_at=?3 WHERE job_id=?1 AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status='failed' AND updated_at=?3 AND error_json=?4)").bind(jobId,error.code,failedAt,serializedError),
+  ];
+  const retry=prepareAutomaticJobRetry(env,jobId,error,failedAt);
+  if(retry)writes.push(retry);
+  const results=await env.DB.batch(writes);
+  return (results[0]?.meta.changes ?? 0)>0;
 }
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
