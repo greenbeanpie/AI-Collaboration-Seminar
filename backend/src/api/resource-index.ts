@@ -4,7 +4,7 @@ import { requireUser, requireProjectMember } from '../core/auth';
 import { invalidState } from '../core/errors';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
-import { assertToolAccess } from '../services/project-ai-tools';
+import { projectAccess } from '../services/project-permissions';
 import { getResourceIndex, searchResource, readResourceSection } from '../services/resource-index';
 
 const params=z.object({projectId:z.string().uuid(),resourceType:z.enum(['source','material']),versionId:z.string().uuid()});
@@ -19,14 +19,14 @@ resourceIndexApi.use('/projects/:projectId/resource-index/*',async(c,next)=>{c.h
 resourceIndexApi.use('/projects/:projectId/resource-index/*',requireUser,requireProjectMember());
 const path='/projects/{projectId}/resource-index/{resourceType}/{versionId}';
 resourceIndexApi.openapi(createRoute({method:'get',path,request:{params,query:paging},responses:{200:{description:'固定版本内部目录及覆盖状态',content:{'application/json':{schema:indexResponse}}}}}),async c=>{
- const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await assertToolAccess(c.env,context);
- const result=await getResourceIndex(c.env,p.projectId,p,q.offset);await assertToolAccess(c.env,context);return c.json(apiData(c,indexResponse.shape.data.parse(result)),200);
+ const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await projectAccess(c.env,context.projectId,context.userId);
+ const result=await getResourceIndex(c.env,p.projectId,p,q.offset);await projectAccess(c.env,context.projectId,context.userId);return c.json(apiData(c,indexResponse.shape.data.parse(result)),200);
 });
 resourceIndexApi.openapi(createRoute({method:'get',path:path+'/search',request:{params,query:paging.extend({query:z.string().trim().min(1).max(200)})},responses:{200:{description:'资料内部检索，摘录不算读取原文',content:{'application/json':{schema:searchResponse}}}}}),async c=>{
- const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await assertToolAccess(c.env,context);
- const result=await searchResource(c.env,p.projectId,p,q.query,q.offset);await assertToolAccess(c.env,context);return c.json(apiData(c,searchResponse.shape.data.parse(result)),200);
+ const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await projectAccess(c.env,context.projectId,context.userId);
+ const result=await searchResource(c.env,p.projectId,p,q.query,q.offset);await projectAccess(c.env,context.projectId,context.userId);return c.json(apiData(c,searchResponse.shape.data.parse(result)),200);
 });
 resourceIndexApi.openapi(createRoute({method:'get',path:path+'/section',request:{params,query:paging.extend({sectionId:z.string().min(1).max(200),neighbors:z.enum(['true','false']).default('false')})},responses:{200:{description:'读取实际原文供引用',content:{'application/json':{schema:readResponse}}}}}),async c=>{
- const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await assertToolAccess(c.env,context);
- const result=await readResourceSection(c.env,p.projectId,p,q.sectionId,q.offset,q.neighbors==='true');await assertToolAccess(c.env,context);return c.json(apiData(c,readResponse.shape.data.parse(result)),200);
+ const p=c.req.valid('param'),q=c.req.valid('query'),context={projectId:p.projectId,userId:c.get('user')!.id};await projectAccess(c.env,context.projectId,context.userId);
+ const result=await readResourceSection(c.env,p.projectId,p,q.sectionId,q.offset,q.neighbors==='true');await projectAccess(c.env,context.projectId,context.userId);return c.json(apiData(c,readResponse.shape.data.parse(result)),200);
 });

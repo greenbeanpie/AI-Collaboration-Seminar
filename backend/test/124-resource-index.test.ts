@@ -1,3 +1,6 @@
+import { SELF } from 'cloudflare:test';
+import { authCookie } from './helpers/seed';
+import { assertToolAccess } from '../src/services/project-ai-tools';
 import { describe,it,expect } from 'vitest';
 import { env } from './helpers/env';
 import { seedUser,seedProject } from './helpers/seed';
@@ -14,6 +17,13 @@ async function material(text:string) {
  ]);return {projectId,id,target:{resourceType:'material' as const,versionId},user};
 }
 describe('version bound internal resource index',()=>{
+ it('allows members to read archived material indexes without permitting archived AI execution',async()=>{
+  const f=await material('# 归档资料\n保留的原文');await env.DB.prepare("UPDATE projects SET status='archived' WHERE id=?1").bind(f.projectId).run();
+  const url=`https://example.com/api/v1/projects/${f.projectId}/resource-index/material/${f.target.versionId}`;
+  const response=await SELF.fetch(url,{headers:{cookie:authCookie(f.user.token)}});expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');
+  await expect(assertToolAccess(env,{projectId:f.projectId,userId:f.user.userId})).rejects.toThrow();
+ });
+
  it('finds text spanning block boundaries without counting overlap as duplicate matches',async()=>{
   const f=await material('x'.repeat(1798)+'跨块中文检索'+ 'z'.repeat(1900));
   const found=await searchResource(env,f.projectId,f.target,'跨块中文检索');expect(found.items).toHaveLength(1);
