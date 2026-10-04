@@ -68,11 +68,11 @@ const memberRemoveRoute = createRoute({
   method: 'delete',
   path: '/api/v1/projects/{projectId}/members/{userId}',
   tags: ['members'],
-  summary: '移除成员（teamManage；负责人不可被移除）',
+  summary: '移除成员（teamManage 移除普通成员；平台管理员成员需项目管理员；负责人不可被移除）',
   request: { params: projectParams.extend({ userId: z.string().uuid() }) },
   responses: {
     200: { content: { 'application/json': { schema: memberRemoveResponse } }, description: '已移除' },
-    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要团队管理权限' },
+    403: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '需要团队管理权限，或移除平台管理员成员需要项目管理员' },
     409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '不允许的移除操作' },
   },
 });
@@ -118,7 +118,9 @@ function toMember(row: MemberRow) {
   };
 }
 
-const memberSelect = `SELECT pm.id AS member_id, pm.user_id, a.contact_email AS email, a.username, COALESCE(a.is_admin, 0) AS is_admin, u.display_name, pm.role, pm.joined_at, pm.permissions_json, pm.permissions_revision, COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) AS account_role
+// isAdmin 由 account_role 推导（旧数据回落到 is_admin），与 requireProjectAdministrator 的平台管理员谓词完全一致，
+// 前端据它决定是否显示“移除平台管理员”入口，避免两侧判断出现差异。
+const memberSelect = `SELECT pm.id AS member_id, pm.user_id, a.contact_email AS email, a.username, CASE WHEN COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) IN ('admin','super_admin') THEN 1 ELSE 0 END AS is_admin, u.display_name, pm.role, pm.joined_at, pm.permissions_json, pm.permissions_revision, COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) AS account_role
   FROM project_members pm JOIN users u ON u.id = pm.user_id LEFT JOIN auth_accounts a ON a.user_id = u.id`;
 
 export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
@@ -208,14 +210,23 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
     const { userId } = c.req.valid('param');
     if (userId === member.userId) throw invalidState(member.role === 'owner' ? '负责人不可移除自己（应先转让负责人）' : '本人退出项目请使用「退出项目」');
     const target = await c.env.DB.prepare(
-      'SELECT id,role FROM project_members WHERE project_id = ?1 AND user_id = ?2',
+      `SELECT pm.id, pm.role, COALESCE(a.account_role,CASE WHEN a.is_admin=1 THEN 'admin' ELSE 'user' END) AS account_role
+         FROM project_members pm LEFT JOIN auth_accounts a ON a.user_id = pm.user_id
+        WHERE pm.project_id = ?1 AND pm.user_id = ?2`,
     )
       .bind(member.projectId, userId)
-      .first<{ id: string; role: 'owner' | 'member' }>();
+      .first<{ id: string; role: 'owner' | 'member'; account_role: string }>();
     if (!target) throw notFound('成员不存在');
     if (target.role === 'owner') throw permissionDenied('项目负责人不可被移除（应先转让负责人）');
-    // 事务内二次校验 teamManage：请求开始后被撤销的权限无法完成删除。
-    const removed = await c.env.DB.prepare(`DELETE FROM project_members WHERE id=?1 AND role!='owner' AND ${projectPermissionSql('project_members.project_id','?2','teamManage')}`).bind(target.id,member.userId).run();
+    // teamManage 只覆盖“移除普通项目成员”；移除平台管理员成员需要项目管理员（owner 或本项目内的平台管理员），
+    // 与前端只对普通成员显示移除入口保持一致。
+    const platformAdminTarget = ['admin','super_admin'].includes(target.account_role);
+    if (platformAdminTarget) await requireProjectAdministrator(c.env, member.projectId, member.userId, '只有项目负责人或本项目内的平台管理员可以移除平台管理员成员');
+    // 事务内二次校验：请求开始后被撤销的权限无法完成删除。
+    const guard = platformAdminTarget
+      ? projectAdministratorSql('project_members.project_id','?2')
+      : projectPermissionSql('project_members.project_id','?2','teamManage');
+    const removed = await c.env.DB.prepare(`DELETE FROM project_members WHERE id=?1 AND role!='owner' AND ${guard}`).bind(target.id,member.userId).run();
     if (!removed.meta.changes) throw permissionDenied('成员或权限已变化，请刷新');
     return c.json(apiData(c, { removed: true }), 200);
   });

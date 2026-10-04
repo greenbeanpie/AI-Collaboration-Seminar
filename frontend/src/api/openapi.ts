@@ -2604,7 +2604,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 移除成员（teamManage；负责人不可被移除） */
+        /** 移除成员（teamManage 移除普通成员；平台管理员成员需项目管理员；负责人不可被移除） */
         delete: {
             parameters: {
                 query?: never;
@@ -2627,7 +2627,7 @@ export interface paths {
                         "application/json": components["schemas"]["MemberRemoveResponse"];
                     };
                 };
-                /** @description 需要团队管理权限 */
+                /** @description 需要团队管理权限，或移除平台管理员成员需要项目管理员 */
                 403: {
                     headers: {
                         [name: string]: unknown;

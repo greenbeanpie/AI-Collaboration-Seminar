@@ -43,7 +43,8 @@ export function TeamPage() {
         const hours = assigned.reduce((total, task) => total + ((task as { effortHours?: number }).effortHours ?? 0), 0);
         // owner 与平台管理员的项目权限由身份决定，不提供可编辑入口。
         const permissionEditable = canManagePermissions && member.role !== 'owner' && member.isAdmin !== true;
-        const removable = teamManage && member.role !== 'owner' && member.isAdmin !== true && member.userId !== session.data?.id;
+        // teamManage 只能移除普通成员；移除平台管理员成员需要项目管理员，与后端 DELETE 校验一致。
+        const removable = member.role !== 'owner' && member.userId !== session.data?.id && (member.isAdmin === true ? canManagePermissions : teamManage);
         return <div className="team-member" key={member.userId}>
           <span className="avatar">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>
           <div className="team-member-main">

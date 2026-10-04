@@ -252,7 +252,7 @@ reservation: reserved → settled / released / pending_reconcile
 
 `requireProjectMember()` 先核实项目存在，再查成员，再核对 owner 或指定权限，不信任前端角色。项目 owner 与已加入该项目的 `admin` / `super_admin` 获得完整项目权限；普通成员默认 `teamManage=false`、`taskManage=false`、`resourceManage=false`、`scoreInitiate=true`、`scoreCorrect=false`。
 
-权限管理的入口是 `requireProjectAdministrator()` / `canManageProjectPermissions()`：**项目 owner 或本项目内的平台管理员**。`teamManage` 只覆盖团队管理（邀请、撤销邀请、用户名邀请、审批加入申请、移除普通成员），**不允许**修改任何成员的 `permissions_json`，因此不存在 `teamManage` 自我提权路径。严格 owner-only 的动作（转让 owner、核心项目配置、AI 自动协作规则、标准版本）使用 `requireProjectOwner()`，不再借用历史 `'grant'` 语义。
+权限管理的入口是 `requireProjectAdministrator()` / `canManageProjectPermissions()`：**项目 owner 或本项目内的平台管理员**。`teamManage` 只覆盖团队管理（邀请、撤销邀请、用户名邀请、审批加入申请、移除普通成员），**不允许**修改任何成员的 `permissions_json`，因此不存在 `teamManage` 自我提权路径。`DELETE /members/{userId}` 的目标若是平台管理员成员（`account_role` 为 `admin`/`super_admin`），额外要求 `requireProjectAdministrator()`，且事务内以 `projectAdministratorSql()` 二次校验；移除 owner 一律拒绝。前端成员卡与后端使用同一判断，避免出现“按钮隐藏但接口允许”的不对称。严格 owner-only 的动作（转让 owner、核心项目配置、AI 自动协作规则、标准版本）使用 `requireProjectOwner()`，不再借用历史 `'grant'` 语义。
 
 「协作管理员」只是前端权限 preset（`administratorPermissions`），一键填入五项权限，不是数据库 `role`，也不产生新的权限表。前端 `projectPermission()` / `useProjectPermissions()` 与后端 `projectPermissionSql()` 使用同一组键；`canManagePermissions` 表示该成员是否可以管理他人项目权限，`permissionsRevision` 与 `expectedRevision` 提供乐观并发控制（冲突返回 409）。
 

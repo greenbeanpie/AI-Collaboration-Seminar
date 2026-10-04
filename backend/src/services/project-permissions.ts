@@ -56,8 +56,8 @@ export async function requireProjectPermission(env: Env, projectId: string, user
 export async function canManageProjectPermissions(env: Env, projectId: string, userId: string): Promise<boolean> {
   return Boolean(await env.DB.prepare(`SELECT 1 WHERE ${projectAdministratorSql('?1','?2')}`).bind(projectId,userId).first());
 }
-export async function requireProjectAdministrator(env: Env, projectId: string, userId: string) {
-  if (!await canManageProjectPermissions(env,projectId,userId)) throw permissionDenied('只有项目负责人或本项目内的平台管理员可以调整成员权限');
+export async function requireProjectAdministrator(env: Env, projectId: string, userId: string, message = '只有项目负责人或本项目内的平台管理员可以调整成员权限') {
+  if (!await canManageProjectPermissions(env,projectId,userId)) throw permissionDenied(message);
 }
 export async function requireProjectOwner(env: Env, projectId: string, userId: string) {
   if (!await env.DB.prepare(`SELECT 1 WHERE ${projectOwnerSql('?1','?2')}`).bind(projectId,userId).first()) throw permissionDenied('需要项目负责人权限');

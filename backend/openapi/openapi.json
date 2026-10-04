@@ -25634,7 +25634,7 @@
         "tags": [
           "members"
         ],
-        "summary": "移除成员（teamManage；负责人不可被移除）",
+        "summary": "移除成员（teamManage 移除普通成员；平台管理员成员需项目管理员；负责人不可被移除）",
         "parameters": [
           {
             "schema": {
@@ -25669,7 +25669,7 @@
             }
           },
           "403": {
-            "description": "需要团队管理权限",
+            "description": "需要团队管理权限，或移除平台管理员成员需要项目管理员",
             "content": {
               "application/json": {
                 "schema": {

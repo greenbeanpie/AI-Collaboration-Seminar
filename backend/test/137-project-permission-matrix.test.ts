@@ -3,10 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { authCookie, seedProject, seedUser, type SeededUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
-import { managerPermissions, memberPermissions, projectPermissionSql, type ProjectPermissions } from '../src/services/project-permissions';
+import { managerPermissions, memberPermissions, projectAdministratorSql, projectPermissionSql, type ProjectPermissions } from '../src/services/project-permissions';
 import { projectGoal, replaceTaskDependencies, saveStandard } from '../src/services/project-simplification';
 import { createManualAssessment } from '../src/services/assessment-corrections';
-
 const withPermissions = (overrides: Partial<ProjectPermissions>): ProjectPermissions => ({ ...memberPermissions, ...overrides });
 const taskBody = { title: '权限矩阵任务', detail: '由任务管理权限创建', criteria: '可验收', effortHours: 1 };
 
@@ -133,6 +132,37 @@ describe('project permission matrix', () => {
     expect(await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, secondOwner.userId).first()).not.toBeNull();
   });
 
+  it('K. removing a platform-admin member needs project administration, not teamManage', async () => {
+    const f = await fixture(), adminA = await seedUser(), adminB = await seedUser(), adminC = await seedUser();
+    for (const user of [adminA, adminB, adminC]) await addMember(f.projectId, user.userId);
+    await setAccountRole(adminA.userId, 'admin');
+    await setAccountRole(adminB.userId, 'super_admin');
+    await setAccountRole(adminC.userId, 'admin');
+    const stillMember = async (userId: string) => env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, userId).first();
+    // teamManage 只覆盖“移除普通项目成员”。
+    await f.grant(f.member.userId, withPermissions({ teamManage: true }));
+    expect((await f.req(f.member.token, `/members/${adminA.userId}`, 'DELETE')).status).toBe(403);
+    expect(await stillMember(adminA.userId)).not.toBeNull();
+    expect((await f.req(f.member.token, `/members/${f.other.userId}`, 'DELETE')).status).toBe(200);
+    expect(await stillMember(f.other.userId)).toBeNull();
+    // 项目 owner 可以移除平台管理员成员。
+    expect((await f.req(f.owner.token, `/members/${adminA.userId}`, 'DELETE')).status).toBe(200);
+    expect(await stillMember(adminA.userId)).toBeNull();
+    // 本项目内的平台管理员也可以移除另一名平台管理员成员，但不能移除自己。
+    expect((await f.req(adminB.token, `/members/${adminC.userId}`, 'DELETE')).status).toBe(200);
+    expect(await stillMember(adminC.userId)).toBeNull();
+    expect((await f.req(adminB.token, `/members/${adminB.userId}`, 'DELETE')).status).toBe(409);
+    expect(await stillMember(adminB.userId)).not.toBeNull();
+    // 移除平台管理员时同样以项目管理员谓词做事务内二次校验：请求过程中平台身份被撤销则写入失败。
+    const adminBMember = (await env.DB.prepare('SELECT id FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, adminB.userId).first<{ id: string }>())!;
+    const guarded = await env.DB.batch([
+      env.DB.prepare("UPDATE auth_accounts SET account_role='user',is_admin=0 WHERE user_id=?1").bind(adminB.userId),
+      env.DB.prepare(`DELETE FROM project_members WHERE id=?1 AND role!='owner' AND ${projectAdministratorSql('project_members.project_id','?2')}`).bind(adminBMember.id, adminB.userId),
+    ]);
+    expect(guarded[1]!.meta.changes).toBe(0);
+    expect(await stillMember(adminB.userId)).not.toBeNull();
+  });
+
   it('G. platform admins get full project permissions only while they belong to the project', async () => {
     const f = await fixture(), admin = await seedUser(), superAdmin = await seedUser(), external = await seedUser();
     await addMember(f.projectId, admin.userId);
@@ -144,6 +174,11 @@ describe('project permission matrix', () => {
     expect((await f.req(admin.token, '/collaboration/tasks', 'POST', taskBody)).status).toBe(201);
     expect((await f.setPermissions(f.member.userId, managerPermissions, admin.token)).status).toBe(200);
     expect((await f.setPermissions(f.other.userId, managerPermissions, superAdmin.token)).status).toBe(200);
+    // 成员列表暴露的 isAdmin 必须与平台管理员谓词一致，前端据此决定是否显示“移除平台管理员”入口。
+    const listed = await (await f.req(admin.token, '/members')).json() as { data: { items: Array<{ userId: string; isAdmin: boolean; canManagePermissions: boolean }> } };
+    expect(listed.data.items.find(item => item.userId === admin.userId)).toMatchObject({ isAdmin: true, canManagePermissions: true });
+    expect(listed.data.items.find(item => item.userId === superAdmin.userId)).toMatchObject({ isAdmin: true, canManagePermissions: true });
+    expect(listed.data.items.find(item => item.userId === f.member.userId)).toMatchObject({ isAdmin: false, canManagePermissions: false });
     // 平台管理员身份不能替代项目成员资格。
     expect((await f.req(external.token, '/members')).status).toBe(403);
     expect((await f.setPermissions(f.member.userId, memberPermissions, external.token)).status).toBe(403);

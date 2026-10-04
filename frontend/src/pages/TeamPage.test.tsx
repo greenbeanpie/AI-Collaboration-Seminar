@@ -92,6 +92,25 @@ it('owner and platform admins show a locked permission state instead of an edita
   renderTeam([platformAdmin, ownerMember], { role: 'owner' });
   expect(screen.getAllByText('权限锁定')).toHaveLength(2);
   expect(screen.queryByRole('button', { name: '调整 平台管理员丙 的权限' })).toBeNull();
+  // owner 属项目管理员，可以移除平台管理员成员（与后端 DELETE 校验一致）。
+  expect(screen.getByRole('button', { name: '移除成员 平台管理员丙' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '移除成员 负责人丁' })).toBeNull();
+});
+
+it('removing a platform-admin member is limited to project administrators', () => {
+  // teamManage-only：普通成员可移除，平台管理员成员不可移除。
+  renderTeam([plainMember, platformAdmin], { role: 'member', permissions: { ...ordinary, teamManage: true } });
+  expect(screen.getByRole('button', { name: '移除成员 普通成员甲' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '移除成员 平台管理员丙' })).toBeNull();
+  cleanup();
+  // 本项目内的平台管理员：两类成员都可移除。
+  renderTeam([plainMember, platformAdmin], { role: 'member', permissions: all, canManagePermissions: true });
+  expect(screen.getByRole('button', { name: '移除成员 普通成员甲' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '移除成员 平台管理员丙' })).toBeInTheDocument();
+  cleanup();
+  // 无 teamManage 的普通成员：都不能移除。
+  renderTeam([plainMember, platformAdmin], { role: 'member', permissions: ordinary });
+  expect(screen.queryByRole('button', { name: '移除成员 普通成员甲' })).toBeNull();
   expect(screen.queryByRole('button', { name: '移除成员 平台管理员丙' })).toBeNull();
 });
 
