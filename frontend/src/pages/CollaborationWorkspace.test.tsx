@@ -41,7 +41,8 @@ describe('collaboration lifecycle', () => {
     expect(within(dialog).getByRole('heading', { name: '辅助计划' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: '代实施' })).toBeInTheDocument();
     expect(within(dialog).queryByRole('tablist')).toBeNull();
-    await within(dialog).findByText('AI 判断任务需要真人参与或现场操作');
+    await within(dialog).findByText('此任务暂不支持代实施。');
+    expect(within(dialog).queryByText('AI 判断任务需要真人参与或现场操作')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '复制提示词' })).toBeNull();
   });
   it('submits once and follows the server-created evaluation without any manual evaluation request', async () => {

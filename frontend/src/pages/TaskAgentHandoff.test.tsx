@@ -8,6 +8,7 @@ const reads = vi.hoisted(() => ({ request: vi.fn(), list: vi.fn(), version: vi.f
 vi.mock('../api/simplification', () => ({ projectRequest: reads.request }));
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), api: { get: reads.version }, listAllItems: reads.list, projectPath: (id: string, path: string) => `/api/v1/projects/${id}${path}` }));
 vi.mock('../api/collaboration', () => ({ collaborationApi: { submissions: reads.submissions } }));
+vi.mock('../auth', () => ({ useSession: () => ({ data: null, isPending: false }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 const task = { taskId: 't3', title: '制作报告', detail: '比较两个方案', criteria: '给出可复现证据', dueDate: '2026-10-10', revision: 3, effortHours: 4, lifecycleState: 'in_progress', dependsOnTaskIds: ['t2'], currentSubmissionId: null, citations: [{ sourceVersionId: 'src1', quote: '要求可复现', pageNumber: 2 }] } as unknown as CollaborationTask & { dueDate: string };
 function setup() {
@@ -38,7 +39,8 @@ describe('portable task handoff', () => {
   it('rejects direct handoff rendering when the server rejects a task without fetching or exporting context', async () => {
     reads.request.mockResolvedValue({ status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: '该任务需要真人参与或现场操作', jobId: 'j1' });
     render(<QueryClientProvider client={new QueryClient()}><TaskAgentHandoff projectId="p1" task={{ ...task, title: '开展实地调研' }} tasks={[]}/></QueryClientProvider>);
-    expect(await screen.findByText('该任务需要真人参与或现场操作')).toBeInTheDocument();
+    expect(await screen.findByText('此任务暂不支持代实施。')).toBeInTheDocument();
+    expect(screen.queryByText('该任务需要真人参与或现场操作')).toBeNull();
     expect(screen.queryByRole('button', { name: '复制提示词' })).toBeNull();
     expect(screen.queryByRole('button', { name: '下载提示词' })).toBeNull();
     expect(reads.request.mock.calls.every(call => String(call[1]).endsWith('/agent-eligibility'))).toBe(true);

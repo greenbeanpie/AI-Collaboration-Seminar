@@ -36,3 +36,10 @@ it('rejects stale judgments after editing and never automatically retries failed
   expect(screen.getByRole('button')).toBeDisabled();
   expect(request.mock.calls.every(call => !call[2]?.method)).toBe(true);
 });
+it('hides model eligibility conclusions while preserving the execution restriction', async () => {
+  request.mockResolvedValue({ ...verdict('ready'), eligible: false, reason: '任务需核对在读身份、学院归属等要求，AI无法独立核验。' });
+  setup();
+  await screen.findByText('此任务暂不支持代实施。');
+  expect(screen.queryByText(/任务需核对在读身份/)).toBeNull();
+  expect(screen.getByRole('button')).toBeDisabled();
+});

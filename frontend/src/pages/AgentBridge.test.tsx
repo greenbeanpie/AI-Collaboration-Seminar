@@ -52,9 +52,14 @@ describe('DSH assistance delegation', () => {
     expect(button).toBeDisabled(); fireEvent.click(button); expect(bridgeApi.dispatch).not.toHaveBeenCalled();
   });
   it('preserves the human task refusal within delegation', async () => {
-    state.eligibility = { ...state.eligibility, result: { status: 'ready', taskRevision: 3, eligible: false }, reason: '必须现场访谈' };
-    progress(row('cancelled')); await screen.findByText('必须现场访谈');
+    state.eligibility = { ...state.eligibility, result: { status: 'ready', taskRevision: 3, eligible: false }, reason: '此任务暂不支持代实施。' };
+    progress(row('cancelled')); await screen.findByText('此任务暂不支持代实施。');
     expect(screen.getByRole('button', { name: '重新代实施' })).toBeDisabled();
+  });
+  it('does not render eligibility conclusions from a blocked bridge handoff', async () => {
+    progress(row('blocked', { reason: '任务需核对在读身份及作者学院归属，AI无法独立核验。' }));
+    await screen.findByText('无法交给 AI 执行');
+    expect(screen.queryByText(/任务需核对在读身份/)).toBeNull();
   });
   it('resumes an existing session without another dispatch', async () => {
     progress(row('running')); await screen.findByText('Agent 正在执行');
