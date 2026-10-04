@@ -4,7 +4,7 @@ import type { Env } from '../env';
 import { getDraft,draftView,type DraftFile } from './creation-drafts';
 import { newId,nowIso } from '../core/db';
 import { invalidState,notFound,validationFailed,versionConflict } from '../core/errors';
-import { extOf } from './files';
+import { extOf,validateUploadBytes } from './files';
 export const DRAFT_PART_BYTES=8*1024*1024;
 export const draftBlockSchema=z.object({seq:z.number().int().nonnegative(),pageNumber:z.number().int().positive().nullable(),text:z.string().max(24000),headingPath:z.array(z.string().max(200)).max(6).optional(),warnings:z.array(z.string().max(1000)).max(20).optional()}).strict();
 type Upload={file_id:string;draft_id:string;upload_id:string;r2_key:string;name:string;ext:string;size_bytes:number;revision:number;status:string;operation_token:string|null;operation_expires_at:string|null};
@@ -17,7 +17,7 @@ async function active(env:Env,draftId:string,userId:string,revision?:number) {
 async function upload(env:Env,draftId:string,fileId:string,userId:string) {
  const draft=await active(env,draftId,userId);
  const row=await env.DB.prepare('SELECT * FROM draft_document_uploads WHERE file_id=?1 AND draft_id=?2').bind(fileId,draftId).first<Upload>();
- if(!row||row.status==='cancelled')throw notFound('上传会话不存在或已取消');
+ if(!row)throw notFound('上传会话不存在或已取消');
  return {draft,row};
 }
 export async function beginDraftUpload(env:Env,draftId:string,userId:string,fileId:string,name:string,size:number,revision:number) {
@@ -70,8 +70,17 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
  if(!stored)stored=await env.FILES.resumeMultipartUpload(row.r2_key,row.upload_id).complete(parts.results.map(({partNumber,etag})=>({partNumber,etag})));
  if(stored.size!==row.size_bytes)throw invalidState('原文件长度校验失败');
  const first=await env.FILES.get(row.r2_key,{range:{offset:0,length:16}}),head=new Uint8Array(await first!.arrayBuffer());
- if(row.ext==='.pdf'&&new TextDecoder().decode(head).indexOf('%PDF-')!==0)throw validationFailed('PDF文件头不合法');
- if(row.ext==='.docx')await validateDocx(stored.size,async(offset,length)=>{const object=await env.FILES.get(row.r2_key,{range:{offset,length}});if(!object)throw notFound('DOCX对象不存在');return new Uint8Array(await object.arrayBuffer());});
+ try {
+  if(row.ext==='.docx')await validateDocx(stored.size,async(offset,length)=>{const object=await env.FILES.get(row.r2_key,{range:{offset,length}});if(!object)throw notFound('DOCX对象不存在');return new Uint8Array(await object.arrayBuffer());});
+  else if(row.ext==='.txt'||row.ext==='.md'){
+   const object=await env.FILES.get(row.r2_key);if(!object)throw notFound('原文件不存在');
+   const reader=object.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true,ignoreBOM:false});
+   try {for(;;){const chunk=await reader.read();if(chunk.done)break;decoder.decode(chunk.value,{stream:true});}decoder.decode();}catch{throw validationFailed('文本文件不是有效UTF-8');}finally{reader.releaseLock();}
+  }else validateUploadBytes(row.ext,head);
+ } catch(error){
+  await env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND status='completing' AND operation_token=?2").bind(fileId,token).run();
+  throw error;
+ }
  const mime=({'.pdf':'application/pdf','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.txt':'text/plain','.md':'text/markdown','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'} as Record<string,string>)[row.ext]!;
  const time=nowIso();
  const result=await env.DB.batch([
@@ -84,6 +93,7 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
 }
 export async function cancelDraftUpload(env:Env,draftId:string,userId:string,fileId:string) {
  const {row}=await upload(env,draftId,fileId,userId);if(row.status==='complete')throw invalidState('已完成原文件请使用移除文件操作');
+ if(row.status==='cancelled')return {fileId,status:'cancelled' as const};
  const token=newId(),now=nowIso(),expires=new Date(Date.now()+300000).toISOString();
  const claimed=await env.DB.prepare(`UPDATE draft_document_uploads SET status='aborting',operation_token=?2,operation_expires_at=?3 WHERE file_id=?1 AND (status='uploading' OR (status='aborting' AND operation_expires_at<=?4)) AND NOT EXISTS(SELECT 1 FROM draft_document_part_leases WHERE file_id=?1 AND expires_at>?4)`).bind(fileId,token,expires,now).run();if(!claimed.meta.changes)throw invalidState('上传正在完成或分片正在写入，不能并发取消');
  await env.FILES.resumeMultipartUpload(row.r2_key,row.upload_id).abort();await env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND operation_token=?2").bind(fileId,token).run();return {fileId,status:'cancelled' as const};
