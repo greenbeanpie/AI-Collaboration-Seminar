@@ -36,6 +36,8 @@ describe('bounded OCR batches',()=>{
     expect(ocrBatchSize([1,2,3].map(page_number=>({page_number,size_bytes:100})),48000,2000)).toBe(1);
     expect(()=>ocrBatchSize([{page_number:1,size_bytes:2000000}],1000,6000)).toThrow();
     expect(ocrContext('文'.repeat(3000),10000)).toHaveLength(1000);
+    expect(ocrContext('全文',1)).toBe('');
+    expect(ocrContext('文😀',10)).toBe('');
   });
   it('rejects duplicate, foreign and malformed pages without discarding valid neighbours',()=>{
     expect(parseOcrBatch({pages:[{pageNumber:1,text:'甲'},{pageNumber:1,text:'乙'},{pageNumber:2,text:'有效'},{pageNumber:3,text:''},{pageNumber:8,text:'外部'}]},[1,2,3])).toEqual([{pageNumber:2,text:'有效',confidence:null,unrecognizedRegions:[]}]);
