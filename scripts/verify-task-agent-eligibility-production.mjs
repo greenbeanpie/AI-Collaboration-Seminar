@@ -62,7 +62,7 @@ try {
     ];
     for (const sample of cases) {
       const goal = await api(base + '/goal');
-      const task = await api(base + '/collaboration/tasks', 'POST', { title: sample.title, detail: sample.detail, criteria: sample.criteria, effortHours: 1, dependsOnTaskIds: [], expectedGraphRevision: goal.graphRevision }, 201);
+      const task = await api(base + '/tasks', 'POST', { title: sample.title, detail: sample.detail, criteria: sample.criteria, effortHours: 1, dependsOnTaskIds: [], expectedGraphRevision: goal.graphRevision }, 201);
       const path = base + `/collaboration/tasks/${task.taskId}/agent-eligibility`;
       const initial = await api(path); assert.equal(initial.status, 'missing'); assert.equal(initial.eligible, null);
       const started = await api(path, 'POST', { expectedRevision: task.revision });
