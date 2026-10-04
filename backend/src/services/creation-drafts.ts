@@ -1,3 +1,4 @@
+import { scheduleAutomaticDraftRetry } from './ai-automatic-retries';
 import { readAudioPipelineStatus } from './audio-pipeline';
 import { validateDocx } from './docx-validation';
 import { readDraftDocument } from './draft-documents';
@@ -345,6 +346,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
   } catch(e) {
     if(e instanceof UserClarificationPending||e instanceof DraftCheckpointBusy)return draftView(env,await getDraft(env,id,userId));
     await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error=?3,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND revision=?5 AND preview_state='running' AND preview_waiting_id IS NULL AND owner_id=?6").bind(id,attempt,dispatched?'本次调用已发出，可能产生用量；结果未能确认。主动重新生成可能再次计费。':e instanceof AppError?e.message:'预览失败，请重试',nowIso(),revision,userId).run();
+    await scheduleAutomaticDraftRetry(env,id,attempt,e instanceof z.ZodError || (e instanceof SyntaxError && savedCheckpoint) ? new AppError('AI_OUTPUT_INVALID','预览模型输出未通过校验',502,false) : e);
     throw e;
   }
 }

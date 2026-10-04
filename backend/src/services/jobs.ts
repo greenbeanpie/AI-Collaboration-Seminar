@@ -1,3 +1,4 @@
+import { scheduleAutomaticJobRetry } from './ai-automatic-retries';
 import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
@@ -154,6 +155,7 @@ export async function failJob(env: Env, jobId: string, error: { code: string; me
   await env.DB.prepare("UPDATE job_outbox SET status = 'failed', last_error = ?2, updated_at = ?3 WHERE job_id = ?1")
     .bind(jobId, error.code, nowIso())
     .run();
+  await scheduleAutomaticJobRetry(env, jobId, error);
   return true;
 }
 
