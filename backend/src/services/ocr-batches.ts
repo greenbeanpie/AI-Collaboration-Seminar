@@ -19,6 +19,7 @@ export function parseOcrBatch(raw: unknown, expected: number[]): OcrPageOutput[]
 }
 export function ocrContext(previous: string, maxInputChars: number): string {
   const limit = Math.min(1500, Math.floor(maxInputChars / 10));
+  if (!limit) return '';
   let text = previous.slice(-limit); if (/^[\uDC00-\uDFFF]/u.test(text)) text = text.slice(1);
   return text;
 }
@@ -44,6 +45,8 @@ export function removeOcrDuplicates(text: string, existing: string[]): string {
 export function summaryBoundaryContext<T extends DocumentFragment>(chunks: T[][], index: number, limit: number): T[] {
   if (!limit) return [];
   const previous = chunks[index - 1]?.at(-1); const next = chunks[index + 1]?.[0];
-  return [previous ? { ...previous, content: previous.content.slice(-limit) } : null,
-    next ? { ...next, content: next.content.slice(0, limit) } : null].filter((f): f is T => f !== null);
+  const tail = previous?.content.slice(-limit).replace(/^[\uDC00-\uDFFF]/u, '');
+  const head = next?.content.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, '');
+  return [previous ? { ...previous, content: tail! } : null,
+    next ? { ...next, content: head! } : null].filter((f): f is T => f !== null);
 }
