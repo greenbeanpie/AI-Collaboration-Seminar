@@ -46,7 +46,7 @@ export async function createRehearsalVoiceSession(env:Env,binding:VoiceBinding,i
   let root=id,retry=0;
   if(input.retryOfSessionId) {
     const previous=await env.DB.prepare("SELECT * FROM rehearsal_voice_sessions WHERE id=?1 AND project_id=?2 AND rehearsal_id=?3 AND actor_id=?4 AND question_sequence=?5 AND status='failed'").bind(input.retryOfSessionId,binding.projectId,binding.rehearsalId,binding.actorId,input.sequence).first<VoiceSession>();
-    if(!previous || !previous.finished_at)throw invalidState('原语音请求不能自动重建');
+    if(!previous || !previous.finished_at || previous.config_version_id!==cfg.id)throw invalidState('原语音请求不能自动重建或模型配置已变化');
     if(Date.now()-Date.parse(previous.finished_at)<60_000)throw new AppError('RATE_LIMITED','请在一分钟后重新连接',429,true,{retryAfterSeconds:60});
     if(previous.retry_number>=3)throw invalidState('语音已连续重试三次，请主动重新开始或使用文字回答');
     root=previous.root_session_id;retry=previous.retry_number+1;
@@ -57,6 +57,7 @@ export async function createRehearsalVoiceSession(env:Env,binding:VoiceBinding,i
     env.DB.prepare(`INSERT INTO rehearsal_voice_sessions(id,project_id,rehearsal_id,question_sequence,actor_id,config_version_id,model,status,root_session_id,retry_number,expires_at,created_at,updated_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,'reserved',?8,?9,?10,?11,?11
       WHERE ${activeGuard('?3','?2','?5','?4')}
+      AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?6 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions) AND json_extract(config_json,'$.processingStrategies.rehearsal')='voice-with-text-fallback')
       AND (SELECT ai_budget_usd FROM projects WHERE id=?2) IS NULL
       AND NOT EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE rehearsal_id=?3 AND status IN ('reserved','connecting','open'))
       AND NOT EXISTS(SELECT 1 FROM jobs WHERE project_id=?2 AND status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.operation')='rehearsal.tts' AND json_extract(input_json,'$.rehearsalId')=?3)

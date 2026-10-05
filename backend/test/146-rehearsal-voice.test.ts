@@ -1,11 +1,15 @@
+import { OpenAPIHono } from '@hono/zod-openapi';
+import type { AppEnv } from '../src/env';
+import { AppError } from '../src/core/errors';
+import { registerRehearsalVoiceRoutes } from '../src/api/rehearsal-voice';
 import { describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
-import { seedUser, seedProject } from './helpers/seed';
+import { seedUser, seedProject, authCookie } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
 import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
 import { connectTranscribeGateway, parseTranscriptionEvent, parseVoiceClientEvent, transcribeLiveSetup, TRANSCRIBE_LIVE_MODEL } from '../src/ai/gemini-live';
-import { assertVoiceSessionActive, cleanupExpiredRehearsalVoiceSessions, closeRehearsalVoiceSession, createRehearsalVoiceSession, openRehearsalVoiceStream, readRehearsalVoice } from '../src/services/rehearsal-voice';
+import { assertVoiceSessionActive, cleanupExpiredRehearsalVoiceSessions, closeRehearsalVoiceSession, finishRehearsalVoiceSession, createRehearsalVoiceSession, openRehearsalVoiceStream, readRehearsalVoice } from '../src/services/rehearsal-voice';
 
 async function fixture() {
   const owner=await seedUser(),projectId=await seedProject(owner.userId),rehearsalId=newId(),now=nowIso();
@@ -94,4 +98,48 @@ describe('private Gemini Transcribe Live rehearsal ASR',()=>{
     f.browser.send(JSON.stringify(audio));await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('failed'));
     expect(f.messages).toHaveLength(2);expect(f.events.some(e=>e.type==='error'&&e.retryAfterSeconds===60)).toBe(true);f.browser.close();
   });
+  it('enforces a full-minute retry cooldown, three rebuilds, and an explicit new manual root',async()=>{
+    const f=await fixture();let session=await createRehearsalVoiceSession(env,f.binding,{sequence:1});const root=session.sessionId;
+    await finishRehearsalVoiceSession(env,session.sessionId,'failed','AI_UNAVAILABLE');
+    await expect(createRehearsalVoiceSession(env,f.binding,{sequence:1,retryOfSessionId:session.sessionId})).rejects.toThrow('一分钟');
+    for(let retry=1;retry<=3;retry++) {
+      await env.DB.prepare("UPDATE rehearsal_voice_sessions SET finished_at='2000-01-01T00:00:00.000Z' WHERE id=?1").bind(session.sessionId).run();
+      session=await createRehearsalVoiceSession(env,f.binding,{sequence:1,retryOfSessionId:session.sessionId});
+      expect((await row(session.sessionId))?.retry_number).toBe(retry);
+      await finishRehearsalVoiceSession(env,session.sessionId,'failed','AI_UNAVAILABLE');
+    }
+    await env.DB.prepare("UPDATE rehearsal_voice_sessions SET finished_at='2000-01-01T00:00:00.000Z' WHERE id=?1").bind(session.sessionId).run();
+    await expect(createRehearsalVoiceSession(env,f.binding,{sequence:1,retryOfSessionId:session.sessionId})).rejects.toThrow('三次');
+    const manual=await createRehearsalVoiceSession(env,f.binding,{sequence:1});
+    expect(manual.sessionId).not.toBe(root);expect((await row(manual.sessionId))?.retry_number).toBe(0);
+    await closeRehearsalVoiceSession(env,f.binding,manual.sessionId);
+  });
+  it('limits queued audio to five seconds even when the per-frame count remains below 64',async()=>{
+    const f=await socketFixture();f.browser.send(JSON.stringify({type:'start'}));
+    const block=btoa('\x01\x00'.repeat(16000));
+    for(let sequence=1;sequence<=6;sequence++)f.browser.send(JSON.stringify({type:'audio',sequence,data:block}));
+    await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('failed'));
+    expect(f.events.some(e=>e.type==='error'&&e.code==='QUOTA_EXCEEDED')).toBe(true);f.browser.close();
+  });
+
+  it('authenticates API routes, enforces Origin on upgrades, and rejects browser-supplied model fields',async()=>{
+    const f=await fixture(),app=new OpenAPIHono<AppEnv>();
+    app.use('*',async(c,next)=>{c.set('requestId','voice-api-fixture');await next();});
+    app.onError((error)=>new Response(JSON.stringify({error:error.message}),{status:error instanceof AppError?error.status:500,headers:{'content-type':'application/json'}}));
+    registerRehearsalVoiceRoutes(app);
+    const testEnv={...env,ALLOWED_ORIGINS:'https://voice.test'},prefix=`https://voice.test/api/v1/projects/${f.binding.projectId}/rehearsals/${f.binding.rehearsalId}`;
+    expect((await app.request(prefix+'/voice',{},testEnv)).status).toBe(401);
+    const headers={cookie:authCookie(f.owner.token),'content-type':'application/json',origin:'https://voice.test'};
+    const readiness=await app.request(prefix+'/voice',{headers},testEnv);
+    expect(readiness.status).toBe(200);expect(await readiness.json()).toMatchObject({data:{configured:true,ready:true}});
+    const invalid=await app.request(prefix+'/voice-sessions',{method:'POST',headers,body:JSON.stringify({sequence:1,model:'unsafe'})},testEnv);expect(invalid.status).toBe(400);
+    const blocked=await app.request(prefix+'/voice-sessions',{method:'POST',headers:{...headers,origin:'https://evil.test'},body:'{"sequence":1}'},testEnv);expect(blocked.status).toBe(403);
+    const create=await app.request(prefix+'/voice-sessions',{method:'POST',headers,body:'{"sequence":1}'},testEnv);expect(create.status).toBe(201);
+    const body=await create.json() as {data:{sessionId:string;webSocketPath:string}};expect(JSON.stringify(body)).not.toMatch(/api_key|secret|gatewayId/);
+    const stream=prefix+`/voice-sessions/${body.data.sessionId}/stream`;
+    expect((await app.request(stream,{headers:{cookie:headers.cookie,upgrade:'websocket',origin:'https://evil.test'}},testEnv)).status).toBe(403);
+    expect((await app.request(stream,{headers:{cookie:headers.cookie,upgrade:'websocket'}},testEnv)).status).toBe(403);
+    expect((await app.request(prefix+`/voice-sessions/${body.data.sessionId}/close`,{method:'POST',headers,body:'{}'},testEnv)).status).toBe(200);
+  });
+
 });
