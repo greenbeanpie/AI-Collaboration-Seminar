@@ -79,6 +79,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, question
     release(); const token = generation.current, controller = new AbortController(); resources.current.controller = controller;
     let audioSequence = 0, started = false, gotAudio = false;
     setNotice(''); setPartial(''); setPhase('connecting');
+    lastBusy.current = true; callbacks.current.onBusyChange(true);
     try {
       // Permission is only requested in direct response to this button; audio is buffered nowhere before provider readiness.
       const capture = await captureMicrophone(frame => {
@@ -137,6 +138,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, question
     if (!enabled || phase !== 'idle' || synthesizing || speaking || !questionText.trim()) return;
     const token = generation.current;
     setSynthesizing(true); setNotice('');
+    lastBusy.current = true; callbacks.current.onBusyChange(true);
     // Older cloud-shaped settings are ignored: local speech has safe local defaults.
     const settings = config?.speech?.provider === 'system-local' ? config.speech : defaultLocalSpeech;
     const playback = speakLocal(questionText, settings, () => {
