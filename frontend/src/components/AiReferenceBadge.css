@@ -1,0 +1,22 @@
+.ai-reference-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: fit-content;
+  min-height: 24px;
+  margin-inline-start: 8px;
+  padding: 3px 10px;
+  border: 1px solid #b9d4fc;
+  border-radius: 999px;
+  background: #e5f0ff;
+  color: #2358a5;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+:root[data-theme="dark"] .ai-reference-badge { border-color: #426a9d; background: #213c61; color: #b6d5ff; }
+.ai-reference-badge[aria-hidden="true"]::before { content: 'AI 会引用'; }
+.field-label:has(.ai-reference-badge) { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; }
+@media print { .ai-reference-badge { display: none; } }

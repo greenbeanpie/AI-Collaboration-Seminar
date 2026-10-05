@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -15,9 +16,9 @@ type Profile = PersonalProfile;
 type PublicProfile = NonNullable<DataOf<'PublicProfileResponse'>['profile']>;
 const names = { bio: '自我介绍', major: '专业', specialties: '技能与特长', preferredRoles: '倾向项目职位' } as const;
 const limits = { bio: 4000, major: 160, specialties: 800, preferredRoles: 400 };
-function ProfileView({ profile }: { profile: PublicProfile }) {
+function ProfileView({ profile, aiUseAllowed = false }: { profile: PublicProfile; aiUseAllowed?: boolean }) {
   return <article className="section-card profile-card"><h2>{profile.displayName}</h2><p>@{profile.username}</p>
-    {Object.entries(names).map(([key,label]) => { const value = profile[key as keyof typeof names]; return value !== undefined && <section key={key}><h3>{label}</h3>{key === 'bio' ? <ProfileMarkdown value={value} /> : <p>{value || '暂未填写'}</p>}</section>; })}
+    {Object.entries(names).map(([key,label]) => { const value = profile[key as keyof typeof names]; return value !== undefined && <section key={key}><h3>{label}{aiUseAllowed && <AiReferenceBadge ariaHidden />}</h3>{key === 'bio' ? <ProfileMarkdown value={value} /> : <p>{value || '暂未填写'}</p>}</section>; })}
   </article>;
 }
 export function PersonalProfilePage() {
@@ -134,7 +135,7 @@ export function PersonalProfilePage() {
         <p><strong>搜索与公开展示</strong><span>{saved.searchable ? '允许已登录用户通过用户名搜索，并查看勾选公开的字段' : '搜索已关闭，其他用户无法查看个人主页'}</span></p>
         <p><strong>AI 任务推荐</strong><span>{saved.aiUseAllowed ? '已授权项目配置的 AI 提供商使用资料进行任务推荐' : '未授权，个人资料不会用于模型请求'}</span></p>
       </section>
-      <section aria-label="我的个人主页"><ProfileView profile={viewProfile(saved)}/></section>
+      <section aria-label="我的个人主页"><ProfileView profile={viewProfile(saved)} aiUseAllowed={saved.aiUseAllowed}/></section>
       <section className="section-card"><h3>每周总可用时间</h3><p>{saved.weeklyAvailableHours == null ? '尚未填写' : `${saved.weeklyAvailableHours} 小时`}</p><p className="muted">仅本人可见，不公开，也不发送给 AI。</p></section>
       <p className="muted">以上是仅供你查看的完整资料。其他已登录用户只能看到你勾选公开的字段，且需允许搜索。</p>
     </>}
@@ -146,7 +147,7 @@ export function PersonalProfilePage() {
             {Object.entries(names).map(([field, label]) => {
               const key = field as keyof typeof names;
               return <section key={key} className="profile-field">
-                <label className="field" htmlFor={`profile-${key}`}><span className="field-label">{label}{key === 'bio' ? '（Markdown）' : ''}</span></label>
+                <label className="field" htmlFor={`profile-${key}`}><span className="field-label">{label}{key === 'bio' ? '（Markdown）' : ''}{draft.aiUseAllowed && <AiReferenceBadge ariaHidden />}</span></label>
                 <textarea className="input textarea" id={`profile-${key}`} rows={key === 'bio' ? 12 : 2} maxLength={limits[key]} value={draft[key]} onChange={event => setDraft({ ...draft, [key]: event.target.value })}/>
                 <label className="profile-toggle"><input type="checkbox" disabled={imports.some(item => item.fields.includes(key as ImportField))} checked={draft.visibility[key]} onChange={event => setDraft({ ...draft, visibility: { ...draft.visibility, [key]: event.target.checked } })}/>公开{label}</label>
               </section>;
@@ -175,8 +176,8 @@ export function PersonalProfilePage() {
         </fieldset>
       </form>
       <aside className="profile-preview-column" aria-label="个人资料预览">
-        <section aria-label="内容预览，仅自己可见"><h2>内容预览</h2><p className="muted">仅自己可见，包含未勾选公开的字段。</p><ProfileView profile={viewProfile(draft)}/></section>
-        <section aria-label="公开展示预览"><h2>公开展示预览</h2><p className="muted">草稿预览；保存后才生效。{!draft.searchable && '当前不允许搜索，其他用户无法查看个人主页。'}</p><ProfileView profile={viewProfile(draft, true)}/></section>
+        <section aria-label="内容预览，仅自己可见"><h2>内容预览</h2><p className="muted">仅自己可见，包含未勾选公开的字段。</p><ProfileView profile={viewProfile(draft)} aiUseAllowed={draft.aiUseAllowed}/></section>
+        <section aria-label="公开展示预览"><h2>公开展示预览</h2><p className="muted">草稿预览；保存后才生效。{!draft.searchable && '当前不允许搜索，其他用户无法查看个人主页。'}</p><ProfileView profile={viewProfile(draft, true)} aiUseAllowed={draft.aiUseAllowed}/></section>
       </aside>
     </div>}
   </div>;

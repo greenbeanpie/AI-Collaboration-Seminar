@@ -5,7 +5,7 @@ import { NotificationSettings } from './notifications/NotificationSettings';
 import { InstallationSettings } from './notifications/InstallationSettings';
 import { SettingsLayout } from './pages/SettingsLayout';
 import { SettingsEditGuard } from './pages/SettingsEditGuard';
-import { ThemeSelector } from './components/ThemeSelector';
+import { AppearanceSettings } from './pages/AppearanceSettings';
 import { Suspense, useEffect } from 'react';
 import { resilientLazy as lazy } from './resilient-lazy';
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -128,7 +128,7 @@ export default function App() {
           <Route path="installation" element={<InstallationSettings/>} />
           <Route path="agent-bridges" element={<AgentBridgesPage />} />
           <Route path="notifications" element={<AccountNotifications/>} />
-          <Route path="appearance" element={<ThemeSelector variant="field" />} />
+          <Route path="appearance" element={<AppearanceSettings />} />
           <Route element={<SystemAdminOnly />}>
             <Route path="accounts" element={<AdminAccountsPage />} />
             <Route path="system" element={<SystemOverviewPage />} />

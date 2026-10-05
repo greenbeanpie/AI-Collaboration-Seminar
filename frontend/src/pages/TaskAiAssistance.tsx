@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CollaborationTask } from '../api/collaboration';
@@ -38,7 +39,7 @@ export function TaskAssistancePlan({ projectId, task }: { projectId: string; tas
   return <div className="stack">
     {query.isPending && <Spinner label="读取辅助计划" />}
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
-    {data?.plan && <><div className="task-assistance-plan">{data.plan.markdown}</div><small>生成于 {new Date(data.plan.generatedAt).toLocaleString()}</small></>}
+    {data?.plan && <><AiReferenceBadge /><div className="task-assistance-plan">{data.plan.markdown}</div><small>生成于 {new Date(data.plan.generatedAt).toLocaleString()}</small></>}
     {stale && <p role="status">任务或项目资料已变化，当前计划需要更新。</p>}
     {pending && <Spinner label="正在生成辅助计划" />}
     {data?.error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{data.error}</p>}

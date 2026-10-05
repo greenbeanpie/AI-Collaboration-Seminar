@@ -80,7 +80,6 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   const preset = config.providerPreset ?? 'custom';
   if (config.provider === 'workers-ai' && config.apiProtocol && config.apiProtocol !== 'chat-completions') errors.push('Workers AI 固定使用 Chat Completions 协议');
   if (config.provider === 'workers-ai' && preset !== 'custom') errors.push('Workers AI 不能同时使用第三方供应商预设');
-  if (preset !== 'custom' && config.apiUrl !== presetEndpoint(preset, config.model, config.apiProtocol)) errors.push('预设必须使用对应模型的完整官方 API URL；代理地址请选择自定义');
   if ((preset === 'opencode-go' || preset === 'opencode-zen') && config.apiProtocol === 'gemini') errors.push('此 OpenCode 预设仅支持已接入的 Chat、Responses 和 Messages 协议');
   const knownModel = preset !== 'custom' && providerPresets[preset].models.includes(config.model);
   if (config.apiProtocol && config.apiProtocol !== protocolForConfig({ ...config, apiProtocol: undefined }) && preset !== 'custom' && preset !== 'openai' && (knownModel || ['anthropic', 'deepseek-anthropic', 'gemini', 'deepseek', 'openrouter'].includes(preset))) errors.push('协议与已核实的供应商/模型不匹配；代理接口请选择自定义');

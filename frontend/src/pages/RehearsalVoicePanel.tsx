@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useRef, useState } from 'react';
 import { Mic, Square, Volume2 } from 'lucide-react';
 import { projectPath } from '../api/client';
@@ -172,7 +173,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, question
       </div>
       {partial && <p role="status">临时字幕（尚未写入回答）：{partial}</p>}
     </div>}
-    {finalText && <p style={{ whiteSpace: 'pre-wrap' }}>已确认字幕：{finalText}</p>}
+    {finalText && <p style={{ whiteSpace: 'pre-wrap' }}>已确认字幕：<AiReferenceBadge />{finalText}</p>}
     {(voice || finalText) && <p>停止录音并完成转录后，请核对下方回答；不会自动提交。回答最多 8000 字，超出部分保留在字幕中供整理。</p>}
     {notice && <p role="status" style={{whiteSpace:'pre-wrap'}}>{notice}</p>}
   </div>;

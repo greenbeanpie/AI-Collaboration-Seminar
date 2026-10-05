@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useState } from 'react';
 import { useQuery,useQueryClient } from '@tanstack/react-query';
 import { projectPath, responseError } from '../api/client';
@@ -17,9 +18,9 @@ export function ResourceIndexView({projectId,resourceType,versionId,fileId}:{pro
   {directory.error&&<ErrorNotice error={directory.error} onRetry={()=>void directory.refetch()}/>}
   {directory.data&&<p className="form-note">索引：{directory.data.indexStatus} · 正文覆盖：{directory.data.coverage}。搜索摘录不等于完整读取。</p>}
   {directory.data?.indexStatus==='building'&&<button className="button button-quiet" onClick={()=>void directory.refetch()}>继续建立目录</button>}
-  <div className="stack">{directory.data?.items.map(item=><button className="button button-quiet" key={item.sectionId} onClick={()=>{setSection(item);setReadOffset(0);}}>{item.pageNumber!==null?`第 ${item.pageNumber} 页 · `:''}{item.heading||'原文段落'}{item.excerpt&&<small>{item.excerpt}</small>}</button>)}</div>
+  <div className="stack">{directory.data?.items.map(item=><button className="button button-quiet" key={item.sectionId} onClick={()=>{setSection(item);setReadOffset(0);}}>{item.pageNumber!==null?`第 ${item.pageNumber} 页 · `:''}{item.heading||'原文段落'}<AiReferenceBadge ariaHidden />{item.excerpt&&<small>{item.excerpt}</small>}</button>)}</div>
   {offset>0&&<button className="button button-quiet" onClick={()=>setOffset(Math.max(0,offset-20))}>上一批</button>}{directory.data?.nextOffset!=null&&<button className="button button-quiet" onClick={()=>setOffset(directory.data!.nextOffset!)}>下一批</button>}
-  {section&&<section><h4>{section.heading||'原文'}</h4>{fileId&&section.pageNumber!==null&&<a href={projectPath(projectId,`/files/${fileId}/content`)+`#page=${section.pageNumber}`} target="_blank" rel="noopener noreferrer">打开原文件对应页</a>}{detail.error&&<ErrorNotice error={detail.error}/>}<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{detail.data?.text??detail.data?.fragments?.map(f=>f.quote).join('\n\n')}</pre>{detail.data?.nextOffset!=null&&<button className="button button-quiet" onClick={()=>setReadOffset(detail.data!.nextOffset!)}>继续读取原文</button>}</section>}
+  {section&&<section><h4>{section.heading||'原文'}<AiReferenceBadge ariaHidden /></h4>{fileId&&section.pageNumber!==null&&<a href={projectPath(projectId,`/files/${fileId}/content`)+`#page=${section.pageNumber}`} target="_blank" rel="noopener noreferrer">打开原文件对应页</a>}{detail.error&&<ErrorNotice error={detail.error}/>}<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{detail.data?.text??detail.data?.fragments?.map(f=>f.quote).join('\n\n')}</pre>{detail.data?.nextOffset!=null&&<button className="button button-quiet" onClick={()=>setReadOffset(detail.data!.nextOffset!)}>继续读取原文</button>}</section>}
  </div>}</details>;
 }
 export function BrowserSourceRecovery({projectId,versionId,fileId}:{projectId:string;versionId:string;fileId:string}) {
@@ -33,7 +34,7 @@ export function BrowserSourceRecovery({projectId,versionId,fileId}:{projectId:st
    setNotice((result.textReady?'本机正文已保存，可以生成总结或提取要求。':result.needsImages?`正文已保存；${result.needsImages} 页仍待识别或确认空白。`:'本机解析未完整完成，保留了已提交正文。')+(result.warnings.length?' '+result.warnings.join('；'):''));await queryClient.invalidateQueries({predicate:q=>['sourceVersion','resourceIndex','resourceSection','sourceFragments','sourceProcessing'].includes(String(q.queryKey[0]))});
   }catch(e){setError(e);}finally{setBusy(false);setController(undefined);}
  }
- return <details className="card"><summary>本机读取原文、云端失败回退</summary><p className="form-note">依赖本机内存与性能，复杂对象可能无法读取；中断时保留已提交正文。客户端提取结果尚未经服务器独立核对。</p><button className="button button-quiet" disabled={busy} onClick={()=>void recover()}>读取服务器保留的原文件</button><label className="field">选择同一份 PDF / DOCX<input type="file" accept=".pdf,.docx" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void recover(f);}}/></label>{busy&&<button className="button button-quiet" onClick={()=>controller?.abort()}>停止本机解析</button>}{notice&&<p role="status">{notice}</p>}{error!=null&&<ErrorNotice error={error}/>}</details>;
+ return <details className="card"><summary>本机读取原文、云端失败回退</summary><p className="form-note">依赖本机内存与性能，复杂对象可能无法读取；中断时保留已提交正文。客户端提取结果尚未经服务器独立核对。</p><button className="button button-quiet" disabled={busy} onClick={()=>void recover()}>读取服务器保留的原文件</button><label className="field">选择同一份 PDF / DOCX<AiReferenceBadge ariaHidden /><input type="file" accept=".pdf,.docx" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void recover(f);}}/></label>{busy&&<button className="button button-quiet" onClick={()=>controller?.abort()}>停止本机解析</button>}{notice&&<p role="status">{notice}</p>}{error!=null&&<ErrorNotice error={error}/>}</details>;
 }
 export function PageReviewActions({projectId,sourceId,versionId,fileId,aiEnabled}:{projectId:string;sourceId:string;versionId:string;fileId:string;aiEnabled:boolean}) {
  const queryClient=useQueryClient(),[pages,setPages]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState<unknown>();

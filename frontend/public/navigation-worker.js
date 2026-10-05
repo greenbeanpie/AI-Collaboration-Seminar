@@ -1,4 +1,4 @@
-// Network-first navigation is deliberately separate from Workbox's precache handler.
+// Open the installed static shell immediately; business data revalidates in the app.
 // A missing/corrupt shell entry must never turn a healthy server response into ERR_FAILED.
 // API requests and account/document responses are neither intercepted nor cached here.
 function appNavigation(request) {
@@ -26,6 +26,9 @@ async function cachedAppShell() {
   return null;
 }
 async function serveAppNavigation(request) {
+  const cached = await cachedAppShell();
+  const path = new URL(request.url).pathname;
+  if (cached && (path === '/' || path === '/login' || path === '/index.html' || /^\/app(?:\/|$)/.test(path))) return cached;
   try {
     const response = await fetch(new Request(request, { cache: 'no-store', redirect: 'follow' }));
     if (response.status < 500) return navigationResponse(response);

@@ -557,7 +557,7 @@ it('explains the required Messages cap and rejects an off switch without saving 
   expect(mock).toHaveBeenCalledOnce();
 });
 
-it('editing an OpenCode preset URL converts to custom and preserves explicit key, model and inferred protocol', async () => {
+it('editing an OpenCode preset URL preserves its provider, explicit key, model and inferred protocol', async () => {
   const requests: Record<string, unknown>[] = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
@@ -568,11 +568,12 @@ it('editing an OpenCode preset URL converts to custom and preserves explicit key
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-zen' } });
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'explicit-draft-key' } });
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API URL/), { target: { value: 'https://proxy.example/v1/chat/completions' } });
-  expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('custom');
+  expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('opencode-zen');
+  expect(screen.getByLabelText(/文本与要求提取 API 协议/)).toHaveValue('chat-completions');
   expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('explicit-draft-key');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
-  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'custom', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions', apiProtocol: 'chat-completions' } });
+  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-zen', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions' } });
 });
 
  it('preserves independent media config in unified mode and probes only free metadata',async()=>{
@@ -643,4 +644,32 @@ it('normalizes legacy cloud TTS to local defaults and sends only local speech fi
   fireEvent.change(screen.getByLabelText(/^朗读语言/),{target:{value:'en-US'}});fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await screen.findByText('配置已保存，AI 保持启用。');
   expect(writes[0].rehearsalSpeech).toEqual({provider:'system-local',lang:'en-US',rate:1,volume:1});expect(writes[0]).not.toHaveProperty('fileTranscriptionRuntime');expect(writes[0]).not.toHaveProperty('enabled');
+});
+
+it('editing the Go URL preserves acknowledgement, headers, protocol and model when saved', async () => {
+  const requests: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 0, enabled: false, config: {} } });
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({ data: { version: 1, enabled: false } });
+  }));
+  await setup();
+  fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-go' } });
+  fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'minimax-m3' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API 协议/), { target: { value: 'messages' } });
+  fireEvent.click(screen.getByLabelText('我已确认套餐适用于本应用用途'));
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 Go User-Agent/), { target: { value: 'MyOffice/1.2' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 Go 会话前缀/), { target: { value: 'office' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'new-endpoint-key' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API URL/), { target: { value: ' https://proxy.example/v1/messages ' } });
+  expect(screen.getByLabelText(/文本与要求提取 API URL/)).toHaveValue('https://proxy.example/v1/messages');
+  expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('opencode-go');
+  expect(screen.getByLabelText(/文本与要求提取 API 协议/)).toHaveValue('messages');
+  expect(screen.getByLabelText('文本与要求提取模型名称')).toHaveValue('minimax-m3');
+  expect(screen.getByLabelText('我已确认套餐适用于本应用用途')).toBeChecked();
+  expect(screen.getByLabelText(/文本与要求提取 Go User-Agent/)).toHaveValue('MyOffice/1.2');
+  expect(screen.getByLabelText(/文本与要求提取 Go 会话前缀/)).toHaveValue('office');
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', apiUrl: 'https://proxy.example/v1/messages', apiKey: 'new-endpoint-key', goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } } });
 });

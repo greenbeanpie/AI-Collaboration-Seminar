@@ -44,6 +44,29 @@ function makeRequestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const revalidations = new Map<string, Promise<void>>();
+function revalidate(url: string, accountId: string): void {
+  const key = `${accountId}:${url}`;
+  if (revalidations.has(key)) return;
+  const refresh = async () => {
+    try {
+      const previous = await readSnapshot(url, accountId);
+      if (offlineAccount()?.id !== accountId) return;
+      const data = await request(url, { networkOnly: true, signal: AbortSignal.timeout(15_000) });
+      const sessionId = (data as { user?: { id?: string } }).user?.id;
+      if (url === '/api/v1/auth/session' && sessionId && sessionId !== accountId && offlineAccount()?.id === sessionId) {
+        window.dispatchEvent(new Event('auth-expired'));
+        return;
+      }
+      if (offlineAccount()?.id === accountId && JSON.stringify(previous?.data) !== JSON.stringify(data)) {
+        window.dispatchEvent(new CustomEvent('offline-snapshot-updated', { detail: { accountId } }));
+      }
+    } catch { /* Keep the visible snapshot when background refresh is unavailable. */ }
+  };
+  const pending = refresh().finally(() => { revalidations.delete(key); });
+  revalidations.set(key, pending);
+}
+
 export function apiUrl(path: string, query?: RequestOptions['query']): string {
   const url = new URL(path.startsWith('/api') ? path : `/api/v1${path}`, window.location.origin);
   for (const [key, value] of Object.entries(query ?? {})) {
@@ -66,6 +89,15 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     if (entity) return entity as DataOf<Name>;
     throw new ApiError(0, { requestId, error: { code: 'OFFLINE_NOT_CACHED', message: '此内容尚未保存到本机，请联网打开后再离线使用。', retryable: false } });
   };
+  if (method === 'GET' && !options.networkOnly && accountAtStart && cacheable(url)) {
+    try {
+      const cached = await local();
+      if (offlineAccount()?.id === accountAtStart) {
+        if (navigator.onLine !== false) revalidate(url, accountAtStart);
+        return cached;
+      }
+    } catch { /* A cache miss/storage failure must not prevent an online request. */ }
+  }
   if (!options.networkOnly && navigator.onLine === false) {
     if (method === 'GET') return local();
     try { return await queueOffline(url, method, options.body, options.idempotencyKey) as DataOf<Name>; }
@@ -121,6 +153,8 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     });
   }
   const data = (payload as ApiEnvelope<DataOf<Name>>).data;
+  // A late session response must not restore the previous identity after a switch/logout.
+  if (method === 'GET' && url === '/api/v1/auth/session' && accountAtStart && offlineAccount()?.id !== accountAtStart) return data;
   if (/^\/api\/v1\/auth\/(?:session|sessions|register)$/.test(url)) {
     const user = (data as { user?: unknown }).user;
     if (user && typeof user === 'object' && 'id' in user) {

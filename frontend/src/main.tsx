@@ -27,6 +27,13 @@ const queryClient = new QueryClient({
 
 const router = createBrowserRouter([{ path: '*', element: <App />, errorElement: <RouteErrorPage /> }]);
 
+// Re-run active queries against the updated snapshots without replacing the page.
+let snapshotRefresh: ReturnType<typeof setTimeout> | undefined;
+window.addEventListener('offline-snapshot-updated', () => {
+  clearTimeout(snapshotRefresh);
+  snapshotRefresh = setTimeout(() => { void queryClient.invalidateQueries(); }, 50);
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

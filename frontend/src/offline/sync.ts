@@ -94,7 +94,11 @@ export async function resolveOperation(row: PendingOperation, choice: 'server' |
 }
 async function performPrepareProject(projectId: string): Promise<void> {
   const base = `/api/v1/projects/${projectId}`;
-  const load = (url: string, query?: Record<string, string | number | null>) => request<'ProjectResponse'>(url, { query, networkOnly: true, requireOfflinePersistence: true });
+  const accountId = offlineAccount()?.id;
+  const load = (url: string, query?: Record<string, string | number | null>) => {
+    if (!accountId || offlineAccount()?.id !== accountId) throw new Error('账户已切换，停止缓存准备');
+    return request<'ProjectResponse'>(url, { query, networkOnly: true, requireOfflinePersistence: true });
+  };
   const list = async (tail: string, query: Record<string, string | number> = {}) => {
     const all: Record<string, unknown>[] = [];
     let cursor: string | null = null;
@@ -108,31 +112,45 @@ async function performPrepareProject(projectId: string): Promise<void> {
     } while (cursor);
     return all;
   };
-  await load(base);
-  await load('/capabilities');
-  await list('/api/v1/projects');
-  await load(`${base}/goal`);
-  await load(`${base}/collaboration/settings`);
-  await list('/members');
-  await load(`${base}/members/me`);
-  await list('/resource-library');
-  await list('/sources');
-  await list('/requirement-sets');
-  await load(`${base}/collaboration/feedback/current`);
-  await load(`${base}/collaboration/feedback/history`);
-  const tasks = await list('/tasks');
-  const materials = await list('/materials');
+  const failures: unknown[] = [];
+  const attempt = async <T>(work: () => Promise<T>, optional = false): Promise<T | undefined> => {
+    try { return await work(); }
+    catch (error) {
+      if (!(optional && error instanceof ApiError && error.status === 403)) failures.push(error);
+      return undefined;
+    }
+  };
+  const pages: Array<() => Promise<unknown>> = [
+    () => load(base), () => load('/capabilities'), () => list('/api/v1/projects'),
+    () => load(`${base}/goal`), () => load(`${base}/collaboration/settings`),
+    () => list('/members'), () => load(`${base}/members/me`),
+    () => list('/resource-library'), () => list('/sources'), () => list('/requirement-sets'),
+    () => load(`${base}/collaboration/feedback/current`), () => load(`${base}/collaboration/feedback/history`),
+    () => attempt(() => load(`${base}/ai/clarifications`), true),
+    () => attempt(() => list('/collaboration/proposals'), true),
+    () => load(`${base}/task-inquiries/unread`),
+  ];
+  // Prioritize tasks; a denied/unavailable supporting endpoint must not block them.
+  const tasks = await attempt(() => list('/tasks')) ?? [];
+  const materials = await attempt(() => list('/materials')) ?? [];
   for (const task of tasks) {
-    await list('/comments', { targetType: 'task', targetId: String(task.taskId) });
-    await load(`${base}/tasks/${String(task.taskId)}/submissions`);
+    const id = String(task.taskId);
+    pages.push(() => load(`${base}/tasks/${id}`),
+      () => list('/comments', { targetType: 'task', targetId: id }),
+      () => load(`${base}/tasks/${id}/submissions`));
   }
   for (const material of materials) {
     const id = String(material.materialId);
-    await load(`${base}/materials/${id}`);
-    await list('/materials/' + id + '/versions');
-    await list('/comments', { targetType: 'material', targetId: id });
+    pages.push(() => load(`${base}/materials/${id}`),
+      () => list('/materials/' + id + '/versions'),
+      () => list('/comments', { targetType: 'material', targetId: id }));
   }
-  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString() });
+  for (let i = 0; i < pages.length; i += 4) {
+    await Promise.all(pages.slice(i, i + 4).map(work => attempt(work)));
+  }
+  if (failures.length) throw failures[0];
+  if (offlineAccount()?.id !== accountId) return;
+  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString() }, accountId);
   window.dispatchEvent(new Event('offline-data-changed'));
 }
 export async function preparedAt(projectId: string): Promise<string | null> {

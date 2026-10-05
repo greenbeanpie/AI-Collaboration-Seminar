@@ -18,8 +18,15 @@ it('serves healthy navigation without touching corrupt caches or storing account
   caches.keys.mockRejectedValue(new Error('cache storage unavailable'));
   fetch.mockResolvedValue(new Response('network page', { headers: { 'Content-Type': 'text/html' } }));
   const result = dispatch(); expect(await (await result.response).text()).toBe('network page');
-  expect(result.stop).toHaveBeenCalledOnce(); expect(caches.keys).not.toHaveBeenCalled();
+  expect(result.stop).toHaveBeenCalledOnce(); expect(caches.keys).toHaveBeenCalled();
   const request = fetch.mock.calls[0][0]; expect(request.url).toBe('https://app.example/app/projects/one'); expect(request.redirect).toBe('follow'); expect(request.cache).toBe('no-store');
+});
+it('opens the precached shell without waiting for a hanging network', async () => {
+  fetch.mockImplementation(() => new Promise(() => {}));
+  caches.keys.mockResolvedValue(['workbox-precache-v2-app']);
+  caches.open.mockResolvedValue({ keys: async () => [new Request('https://app.example/index.html')], match: async () => new Response('instant shell', { headers: { 'Content-Type': 'text/html' } }) });
+  expect(await (await dispatch().response).text()).toBe('instant shell');
+  expect(fetch).not.toHaveBeenCalled();
 });
 it('normalizes a canonical redirect response before returning it to manual navigation', async () => {
   const redirected = new Response('redirected server shell', { headers: { 'Content-Type': 'text/html', 'X-Test': 'preserved' } });

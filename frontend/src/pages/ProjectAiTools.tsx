@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useQuery } from '@tanstack/react-query';
 import { api, projectPath } from '../api/client';
 import { ErrorNotice } from '../components/ui';
@@ -20,7 +21,7 @@ export function ProjectSearchOption({ projectId, onChange, query, onQuery }: {
   const caps = useQuery({
     queryKey: ['project-ai-tools', projectId], queryFn: () => api.get<'ProjectAiToolsResponse'>(projectPath(projectId, '/ai-tools/capabilities'))
   });
-  return <div className="field">{caps.data?.search?.supported && <label>公开搜索查询<input className="input" maxLength={500} value={query} onChange={e => { onQuery(e.target.value); onChange(Boolean(e.target.value.trim())); }} placeholder="可选：输入可公开的搜索查询"/></label>}<small>{caps.data?.search?.reason ?? '搜索能力尚未确认'}。搜索由管理员配置。</small>{caps.error && <ErrorNotice error={caps.error}/>}</div>;
+  return <div className="field">{caps.data?.search?.supported && <label>公开搜索查询<AiReferenceBadge ariaHidden /><input className="input" maxLength={500} value={query} onChange={e => { onQuery(e.target.value); onChange(Boolean(e.target.value.trim())); }} placeholder="可选：输入可公开的搜索查询"/></label>}<small>{caps.data?.search?.reason ?? '搜索能力尚未确认'}。搜索由管理员配置。</small>{caps.error && <ErrorNotice error={caps.error}/>}</div>;
 }
 export function ProjectToolCalls({ projectId, jobId }: {
   projectId: string;
@@ -48,6 +49,6 @@ export function ProjectSearchCitations({ payload }: {
         return null;
       }
       const c = item as Record<string, unknown>, url = typeof c.url === 'string' ? safeExternalUrl(c.url) : null;
-      return url ? <p key={index}><a href={url} target="_blank" rel="noreferrer">{typeof c.title === 'string' ? c.title : url}</a></p> : null;
+      return url ? <p key={index}><AiReferenceBadge /><a href={url} target="_blank" rel="noreferrer">{typeof c.title === 'string' ? c.title : url}</a></p> : null;
     })}</div>;
 }

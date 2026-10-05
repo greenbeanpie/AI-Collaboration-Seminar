@@ -9,6 +9,18 @@ import { SettingsDirtyContext } from './settings-dirty';
 const user={id:'fixture',username:'alice',displayName:'Alice',email:null,isAdmin:false,role:'user'};
 const profile={revision:0,searchable:false,aiUseAllowed:false,bio:'',major:'',specialties:'',preferredRoles:'',visibility:{bio:false,major:false,specialties:false,preferredRoles:false}};
 const response=(data:unknown)=>Response.json({data,requestId:'test'});
+it('marks only AI-authorized profile content and excludes private weekly availability',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>response({...profile,aiUseAllowed:true,weeklyAvailableHours:7,major:'计算机'})));
+ setup(); await screen.findByRole('button',{name:'编辑资料'});
+ const homepage=screen.getByRole('region',{name:'我的个人主页'});
+ expect(homepage.querySelectorAll('[data-ai-reference-badge]')).toHaveLength(4);
+ expect(screen.getByText('每周总可用时间').parentElement?.querySelector('[data-ai-reference-badge]')).toBeNull();
+});
+it('does not mark unauthorized profile content as available to AI',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>response({...profile,major:'私密专业'})));
+ setup(); await screen.findByRole('button',{name:'编辑资料'});
+ expect(screen.getByRole('region',{name:'我的个人主页'}).querySelector('[data-ai-reference-badge]')).toBeNull();
+});
 afterEach(async()=>{await act(async()=>{cancelPageDialog();});cleanup();vi.unstubAllGlobals();});
 async function answer(name: '确定' | '取消') { const dialog=await screen.findByRole('dialog'); await act(async()=>{fireEvent.click(within(dialog).getByRole('button', { name }));}); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); }
 function setup(path='/app/profile',dirty=vi.fn()) {const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});client.setQueryData(['session'],user);render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><SettingsDirtyContext.Provider value={dirty}><Routes><Route path="/app/profile" element={<PersonalProfilePage/>}/><Route path="/app/people" element={<ProfileSearchPage/>}/><Route path="/app/people/:username" element={<PublicProfilePage/>}/></Routes></SettingsDirtyContext.Provider></MemoryRouter></QueryClientProvider>);return dirty;}

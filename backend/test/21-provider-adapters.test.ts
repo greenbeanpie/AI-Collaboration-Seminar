@@ -11,7 +11,7 @@ import { probeModel } from '../src/ai/probe';
 import { classifyFetchFailure, readAiDiagnostics, safeDiagnosticTarget } from '../src/ai/diagnostics';
 import { reserveAiSlot } from '../src/services/budget';
 import { seedProject, seedUser } from './helpers/seed';
-import { presetEndpoint, protocolForConfig, providerPresets, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
+import { presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
 import { z } from 'zod';
 
 const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: env.AUTH_SECRET, envName: 'local' };
@@ -139,12 +139,36 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
   it.each([
     ['openai', 'gpt-5', { temperature: 0.2 }], ['openai', 'gpt-5.4', { reasoningEffort: 'high', topP: 0.8 }], ['openai', 'gpt-4.1-mini', { reasoningEffort: 'low' }],
     ['openrouter', 'openai/o3', { reasoningEffort: 'low' }], ['deepseek', 'deepseek-flash', { reasoningEffort: 'medium' }], ['deepseek', 'deepseek-flash', { topP: 0.5 }],
-    ['opencode-go', 'glm-5.2', { goUsageAcknowledged: false }], ['opencode-go', 'not-verified-model', {}], ['opencode-go', 'minimax-m3', { supportsJson: true }], ['opencode-go', 'glm-5.2', { apiUrl: 'https://evil.example/api' }],
+    ['opencode-go', 'glm-5.2', { goUsageAcknowledged: false }], ['opencode-go', 'not-verified-model', {}], ['opencode-go', 'minimax-m3', { supportsJson: true }],
     ['gemini', 'gemini-3.8-flash', { reasoningEffort: 'minimal' }], ['anthropic', 'claude-sonnet-5-5', { temperature: 0.7 }],
   ] as const)('%s %s invalid options fail before reservation attempt/fetch', async (preset, model, options) => {
     const fetchMock = vi.fn(); const beforeFetch = vi.fn(async () => {});
     await expect(gatewayChat(endpoint, { config: config(preset, model, options), messages, sessionId: 'job', beforeFetch }, fetchMock)).rejects.toThrow();
     expect(beforeFetch).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires new credentials for manually changed preset destinations', () => {
+    const original = config('opencode-go', 'minimax-m3');
+    const proxy = { ...original, apiUrl: 'https://proxy.example/v1/messages' };
+    expect(sameCredentialDestination(proxy, original)).toBe(false);
+    expect(sameCredentialDestination(proxy, { ...proxy, apiUrl: 'https://other.example/v1/messages' })).toBe(false);
+    expect(sameCredentialDestination(proxy, proxy)).toBe(true);
+  });
+
+  it('uses a manually configured preset URL while retaining Go protocol and headers', async () => {
+    const cfg = config('opencode-go', 'minimax-m3', { apiUrl: 'https://proxy.example/v1/messages', apiProtocol: 'messages', goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe(cfg.apiUrl);
+      const headers = new Headers(init?.headers);
+      expect(headers.get('user-agent')).toBe('MyOffice/1.2');
+      expect(headers.get('x-opencode-session')).toBe('office:job');
+      const body = JSON.parse(String(init?.body));
+      expect(body.model).toBe('minimax-m3');
+      expect(body.max_tokens).toBe(2048);
+      return Response.json(response('messages'));
+    });
+    await gatewayChat(endpoint, { config: cfg, messages, sessionId: 'job' }, fetchMock);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('legacy worker/custom configs keep exact Chat behavior and omit all new options', async () => {

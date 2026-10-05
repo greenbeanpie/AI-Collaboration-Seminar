@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { MaterialArchiveActions } from './MaterialArchiveActions';
 import { ResourceIndexView } from './ResourceIndexView';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
@@ -386,14 +387,14 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
             {materialsQuery.isLoading && <Spinner label="正在读取材料" />}
             {!!materialsQuery.data?.length && <div className="tm-material-list">
               {materialsQuery.data.map((item) => <button key={item.materialId} className={`tm-material-list-item ${activeMaterialId === item.materialId ? 'active' : ''}`} onClick={() => selectMaterial(item.materialId)} aria-current={activeMaterialId === item.materialId ? 'page' : undefined}>
-                <strong>{item.title}</strong><span>{item.currentVersionId ? `当前版本 r${item.revision}` : '尚无正文版本'} · {formatDate(item.updatedAt)}</span>
+                <strong>{item.title}<AiReferenceBadge ariaHidden /></strong><span>{item.currentVersionId ? `当前版本 r${item.revision}` : '尚无正文版本'} · {formatDate(item.updatedAt)}</span>
               </button>)}
             </div>}
             {!materialsQuery.isLoading && !materialsQuery.error && !materialsQuery.data?.length && <EmptyState title="还没有材料" detail="创建一份材料后开始协作编辑。" />}
             <select className="input" aria-label="材料模板" value={newKind} onChange={e => setNewKind(e.target.value)}><option value="document">空白材料</option><option value="work-introduction">作品介绍模板</option></select>
             <form className="tm-create-material" onSubmit={(event) => { event.preventDefault(); if (newTitle.trim()) createMaterial.mutate(newTitle); }}>
               <label className="tm-sr-only" htmlFor="new-material-title">材料标题</label>
-              <input id="new-material-title" maxLength={200} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="新材料名称" />
+              <div className="stack"><AiReferenceBadge /><input id="new-material-title" maxLength={200} value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="新材料名称" /></div>
               <button className="button button-primary button-small" type="submit" disabled={!newTitle.trim() || createMaterial.isPending}><Plus size={14} />{createMaterial.isPending ? '创建中' : '创建'}</button>
             </form>
           </section>
@@ -415,7 +416,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
               <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} renderHeader={trigger => <>
               {header}
               <header className="tm-editor-header">
-                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}</h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
+                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}<AiReferenceBadge ariaHidden /></h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
                   {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
                 <div className="tm-editor-actions tm-hide-print"><MaterialArchiveActions projectId={projectId} materialId={material.materialId} revision={material.revision} archivedAt={material.archivedAt} canArchive={material.canArchive ?? (material.canEdit !== false && !material.systemManaged)} disabled={dirty || saving || !online || Boolean(conflict) || Boolean(recoveryDraft)} />
@@ -455,7 +456,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                   else editor.chain().focus().setTextSelection(selection).setLink({ href }).run();
                 }} disabled={material.canEdit === false || !editor || Boolean(recoveryDraft) || Boolean(conflict)}><Link2 size={15} /></button>
               </div>
-              <div className="tm-editor-content">
+              <div className="tm-hide-print"><AiReferenceBadge /></div><div className="tm-editor-content">
                 {editor && <EditorContent editor={editor} />}
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
@@ -500,7 +501,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                       <header><strong>不可变快照 · r{versionQuery.data.revision}</strong><time>{formatDate(versionQuery.data.createdAt)}</time></header>
                       <p className="muted">{versionQuery.data.origin === 'ai_adoption' ? '人工采纳的 AI 草稿' : '人工编辑'}</p>
                       <MaterialDocumentView doc={versionQuery.data.doc} className="tm-document-preview" />
-                      <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}>{a.availability === 'unavailable' ? <span>{a.name} · 原文件不可用{a.deletedAt ? '（已移入回收站，可恢复）' : ''}；历史关联保留</span> : <a href={projectPath(projectId, `/files/${encodeURIComponent(a.fileId)}/content`)} download={a.name}>{a.name}</a>}</li>)}</ul>
+                      <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}><AiReferenceBadge />{a.availability === 'unavailable' ? <span>{a.name} · 原文件不可用{a.deletedAt ? '（已移入回收站，可恢复）' : ''}；历史关联保留</span> : <a href={projectPath(projectId, `/files/${encodeURIComponent(a.fileId)}/content`)} download={a.name}>{a.name}</a>}</li>)}</ul>
                     </>}
                   </div>}
                 </section>

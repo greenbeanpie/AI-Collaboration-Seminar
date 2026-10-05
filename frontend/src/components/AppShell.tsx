@@ -15,6 +15,7 @@ import { ErrorNotice } from './ui';
 import { ThemeSelector } from './ThemeSelector';
 import { OfflineWorkspaceStatus } from '../offline/OfflineWorkspaceStatus';
 import { forgetAccount } from '../offline/store';
+import { AiReferencePreferencesProvider } from './AiReferencePreferencesProvider';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const logoutLock = useRef(false);
@@ -63,7 +64,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     finally { logoutLock.current = false; setBusy(false); }
   }
 
-  return <div className="app-frame office-shell">
+  return <AiReferencePreferencesProvider accountId={user.id}><div className="app-frame office-shell">
     <aside className="sidebar">
       <div className="sidebar-brand"><Link to="/app" className="brand"><span className="brand-mark"><BrandMark/></span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link></div>
       <div className="sidebar-navigation">
@@ -100,5 +101,5 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       </header>
       <main className="main-shell">{(pathname === '/app' || pathname.startsWith('/app/projects/')) && <OfflineWorkspaceStatus key={user.id} accountId={user.id}/>} {children}</main>
     </div>
-  </div>;
+  </div></AiReferencePreferencesProvider>;
 }

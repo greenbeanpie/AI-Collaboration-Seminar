@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -23,9 +24,9 @@ function ProjectCard({ project, tasks, error, status }: { project: ProjectSummar
   const progress = tasks?.length ? Math.round(done / tasks.length * 100) : 0;
   return <Link className={`project-card card dashboard-project is-${status}`} to={`/app/projects/${encodeURIComponent(project.id)}`}>
     <div className="project-card-top"><StatusPill tone={status === 'pending' ? 'warn' : status === 'done' ? 'good' : status === 'active' ? 'blue' : 'neutral'}>{statusLabels[status]}</StatusPill><span className="dashboard-role"><UsersRound size={13} />{project.myRole === 'owner' ? '负责人' : '成员'}</span></div>
-    <div className="dashboard-project-copy"><h2>{project.name}</h2><p className="project-card-description">{project.description || '尚未添加项目说明。'}</p></div>
-    <div className="project-card-meta"><span><CalendarDays size={14} />{dateLabel(project.deadlineDate, project.deadlinePrecision)}</span></div>
-    {error ? <div className="card-inline-error">任务进度暂不可用</div> : tasks ? <div className="progress-block"><div className="progress-label"><span>{done} / {tasks.length} 项任务完成</span><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div></div> : <div className="progress-loading">读取项目任务进度…</div>}
+    <div className="dashboard-project-copy"><h2>{project.name} <AiReferenceBadge ariaHidden /></h2><p className="project-card-description">{project.description || '尚未添加项目说明。'} <AiReferenceBadge /></p></div>
+    <div className="project-card-meta"><span><CalendarDays size={14} />{dateLabel(project.deadlineDate, project.deadlinePrecision)} <AiReferenceBadge ariaHidden /></span></div>
+    {error ? <div className="card-inline-error">任务进度暂不可用</div> : tasks ? <div className="progress-block"><div className="progress-label"><span>{done} / {tasks.length} 项任务完成 <AiReferenceBadge ariaHidden /></span><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div></div> : <div className="progress-loading">读取项目任务进度…</div>}
     <span className="project-card-link">进入项目 <ArrowUpRight size={14} /></span>
   </Link>;
 }
@@ -34,7 +35,7 @@ function DeadlineMetric({ tasks, available }: { tasks: readonly Task[]; availabl
   const summary = deadlineSummary(tasks);
   const max = Math.max(1, ...summary.bins);
   return <div className="dashboard-metric dashboard-deadline">
-    <span className="dashboard-metric-label"><CheckCheck size={16} />待响应任务</span>
+    <span className="dashboard-metric-label"><CheckCheck size={16} />待响应任务 <AiReferenceBadge ariaHidden /></span>
     <div className="dashboard-deadline-main"><strong className="dashboard-metric-value">{available ? tasks.length : '—'}<small>项</small></strong>
       {available && <div className="dashboard-deadline-chart" role="img" aria-label={`待响应任务截止分布，从14日及以上至今日：${summary.bins.map((count, index) => `${14 - index}日${count}项`).join('，')}`}>
         {summary.bins.map((count, index) => <div className="dashboard-deadline-bin" key={index} title={`截止还有 ${index === 0 ? '14 日及以上' : `${14 - index} 日`}：${count} 项`}><span style={{ ...deadlineBarStyle(14 - index), height: `${count / max * 100}%` }} /></div>)}
@@ -92,15 +93,15 @@ export function DashboardPage() {
       </section>
       <aside className="dashboard-attention card" aria-label="待响应事项"><div className="dashboard-section-head"><h2><Clock3 size={16} />待响应事项</h2><small>{actionableAvailable ? pending.length : '—'} 项可完成</small></div><p className="dashboard-attention-intro">按项目查看已分配、前置任务已完成的未完成任务。</p>
         {!actionableAvailable ? <p className="dashboard-attention-empty">{projectsQuery.error || attentionError ? '任务暂不可用，请重试。' : '正在读取待响应事项…'}</p> : pendingProjects.length === 0 ? <EmptyState title="暂时没有待响应事项" detail="当前没有可完成任务。" /> : <div className="dashboard-attention-list">{pendingProjects.map(({ project, actionable }) => <section className="dashboard-attention-project" key={project.id} aria-label={project.name}>
-          <Link className="dashboard-attention-project-link" to={`/app/projects/${encodeURIComponent(project.id)}`}><strong>{project.name}</strong><span>{actionable.length} 项可完成</span><ArrowUpRight size={14} /></Link>
+          <Link className="dashboard-attention-project-link" to={`/app/projects/${encodeURIComponent(project.id)}`}><strong>{project.name} <AiReferenceBadge ariaHidden /></strong><span>{actionable.length} 项可完成</span><ArrowUpRight size={14} /></Link>
           {actionable.length === 0 ? <p className="dashboard-project-waiting">暂无可完成任务</p> : <ul className="dashboard-project-tasks">{actionable.map(task => {
             const days = remainingDays(task);
-            return <li key={task.taskId}><Link className="dashboard-task" to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span className={`dashboard-task-dot ${days !== null && days <= 0 ? 'urgent' : ''}`} /><span><strong>{task.title}</strong><span className={`dashboard-task-due ${days !== null && days <= 0 ? 'urgent' : ''}`}>{days === null ? '截止待确认' : days < 0 ? `已逾期 ${-days} 日` : days === 0 ? '今日截止' : `截止还有 ${days} 日`}</span></span></Link></li>;
+            return <li key={task.taskId}><Link className="dashboard-task" to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span className={`dashboard-task-dot ${days !== null && days <= 0 ? 'urgent' : ''}`} /><span><strong>{task.title} <AiReferenceBadge ariaHidden /></strong><span className={`dashboard-task-due ${days !== null && days <= 0 ? 'urgent' : ''}`}>{days === null ? '截止待确认' : days < 0 ? `已逾期 ${-days} 日` : days === 0 ? '今日截止' : `截止还有 ${days} 日`} <AiReferenceBadge ariaHidden /></span></span></Link></li>;
           })}</ul>}
         </section>)}</div>}
         {actionableAvailable && (summary.overdue > 0 || summary.undated > 0) && <p className="dashboard-attention-note">{summary.overdue} 项已逾期 · {summary.undated} 项截止待确认（未计入柱状图）</p>}
       </aside>
     </div>
-    {archiveOpen && <Modal title="归档任务" onClose={closeArchive}><p className="dashboard-archive-note">已归档项目及其任务，仅供回顾。归档与完成状态分别记录。</p>{projectsQuery.error ? <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : archived.length === 0 ? <EmptyState title="暂无归档任务" /> : <div className="dashboard-archive-list">{archived.map(({ project, tasks, error }) => <section key={project.id}><Link className="dashboard-archive-project" to={`/app/projects/${encodeURIComponent(project.id)}`}>{project.name}<ArrowUpRight size={14} /></Link>{error ? <ErrorNotice error={error} onRetry={() => void taskQueries[projects.findIndex(item => item.id === project.id)].refetch()} /> : !tasks ? <Spinner label="正在读取归档任务" /> : tasks.length === 0 ? <p>此项目暂无任务。</p> : tasks.map(task => <Link className="dashboard-archive-task" key={task.taskId} to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span>{task.title}</span><StatusPill tone="neutral">{taskLabels[task.status]}</StatusPill></Link>)}</section>)}</div>}</Modal>}
+    {archiveOpen && <Modal title="归档任务" onClose={closeArchive}><p className="dashboard-archive-note">已归档项目及其任务，仅供回顾。归档与完成状态分别记录。</p>{projectsQuery.error ? <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} /> : archived.length === 0 ? <EmptyState title="暂无归档任务" /> : <div className="dashboard-archive-list">{archived.map(({ project, tasks, error }) => <section key={project.id}><Link className="dashboard-archive-project" to={`/app/projects/${encodeURIComponent(project.id)}`}>{project.name} <AiReferenceBadge ariaHidden /><ArrowUpRight size={14} /></Link>{error ? <ErrorNotice error={error} onRetry={() => void taskQueries[projects.findIndex(item => item.id === project.id)].refetch()} /> : !tasks ? <Spinner label="正在读取归档任务" /> : tasks.length === 0 ? <p>此项目暂无任务。</p> : tasks.map(task => <Link className="dashboard-archive-task" key={task.taskId} to={`/app/projects/${encodeURIComponent(project.id)}/tasks?task=${encodeURIComponent(task.taskId)}`}><span>{task.title} <AiReferenceBadge ariaHidden /></span><StatusPill tone="neutral">{taskLabels[task.status]}</StatusPill></Link>)}</section>)}</div>}</Modal>}
   </div>;
 }

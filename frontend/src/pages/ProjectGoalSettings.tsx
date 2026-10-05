@@ -33,8 +33,8 @@ function GoalSettings() {
     {query.isLoading && <Spinner label="读取项目主目标" />}
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {displayed && <form className="stack" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
-      <Field label="主目标"><input className="input" maxLength={200} required value={displayed.title} disabled={!owner || save.isPending} onChange={event => setEdit({ ...displayed, title: event.target.value })} /></Field>
-      <Field label="目标说明（可选）"><textarea className="input textarea" rows={4} maxLength={12000} value={displayed.detail} disabled={!owner || save.isPending} onChange={event => setEdit({ ...displayed, detail: event.target.value })} /></Field>
+      <Field aiReference label="主目标"><input className="input" maxLength={200} required value={displayed.title} disabled={!owner || save.isPending} onChange={event => setEdit({ ...displayed, title: event.target.value })} /></Field>
+      <Field aiReference label="目标说明（可选）"><textarea className="input textarea" rows={4} maxLength={12000} value={displayed.detail} disabled={!owner || save.isPending} onChange={event => setEdit({ ...displayed, detail: event.target.value })} /></Field>
       {outdated && <div className="notice notice-warn">主目标已有新版本。本地修改仍保留，请核对最新内容后重新编辑。<p>最新目标：{query.data?.title}</p><p style={{ whiteSpace: 'pre-wrap' }}>{query.data?.detail}</p><button type="button" className="button button-quiet" onClick={() => { setEdit(null); save.reset(); }}>载入最新目标</button></div>}
       {save.error && <ErrorNotice error={save.error} />}
       {owner && <button className="button button-primary" disabled={!edit || !edit.title.trim() || outdated || save.isPending}>{save.isPending ? '保存中…' : '保存项目目标'}</button>}

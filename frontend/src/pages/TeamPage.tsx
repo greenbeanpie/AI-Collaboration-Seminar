@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import './CompactSettings.css';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,9 +49,9 @@ export function TeamPage() {
         return <div className="team-member" key={member.userId}>
           <span className="avatar">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>
           <div className="team-member-main">
-            <div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{memberRoleLabel(member)}</StatusPill></div>
+            <div className="team-member-name"><strong>{member.displayName}</strong><StatusPill tone={member.role === 'owner' ? 'blue' : 'neutral'}>{memberRoleLabel(member)}</StatusPill><AiReferenceBadge /></div>
             <small>{member.username ?? member.email}</small>
-            <small>{tasks.data ? `${assigned.length} 项未完成任务 · 预计 ${hours} 小时` : '任务负荷暂不可用'}</small>
+            <small>{tasks.data ? `${assigned.length} 项未完成任务 · 预计 ${hours} 小时` : '任务负荷暂不可用'} <AiReferenceBadge /></small>
             <small className="team-member-permissions">{memberPermissionSummary(member)}</small>
           </div>
           <div className="team-member-actions">

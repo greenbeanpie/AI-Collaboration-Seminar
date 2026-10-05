@@ -2,6 +2,7 @@ import { errorMessage } from '../api/error-info';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { useRef, type ReactNode } from 'react';
 import { AlertCircle, ArrowRight, LoaderCircle } from 'lucide-react';
+import { AiReferenceBadge } from './AiReferenceBadge';
 
 export function Spinner({ label = '正在加载' }: { label?: string }) {
   return <div className="loading"><LoaderCircle className="spin" size={18} aria-hidden="true" /><span>{label}</span></div>;
@@ -28,8 +29,8 @@ export function PageHeading({ eyebrow, title, detail, action }: { eyebrow?: stri
   return <div className="page-heading"><div>{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h1>{title}</h1>{detail && <p>{detail}</p>}</div>{action && <div className="heading-action">{action}</div>}</div>;
 }
 
-export function SectionCard({ title, detail, action, children, className = '' }: { title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string }) {
-  return <section className={`card section-card ${className}`}><div className="section-head"><div><h2>{title}</h2>{detail && <p>{detail}</p>}</div>{action}</div>{children}</section>;
+export function SectionCard({ title, detail, action, children, className = '', aiReference = false }: { title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string; aiReference?: boolean }) {
+  return <section className={`card section-card ${className}`}><div className="section-head"><div><h2>{title}{aiReference && <AiReferenceBadge ariaHidden />}</h2>{detail && <p>{detail}</p>}</div>{action}</div>{children}</section>;
 }
 
 export { Modal } from '../dialogs/Modal';
@@ -42,8 +43,8 @@ export function StatusPill({ children, tone = 'neutral' }: { children: ReactNode
   return <span className={`status-pill status-${tone}`}>{children}</span>;
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return <label className="field"><span className="field-label">{label}</span>{children}{hint && <small>{hint}</small>}</label>;
+export function Field({ label, hint, children, aiReference = false }: { label: string; hint?: string; children: ReactNode; aiReference?: boolean }) {
+  return <label className="field"><span className="field-label">{label}{aiReference && <AiReferenceBadge ariaHidden />}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
 export function ConfirmButton({ children, onClick, disabled, className = 'button button-danger', 'aria-label': ariaLabel }: { children: ReactNode; onClick: () => void; disabled?: boolean; className?: string; 'aria-label'?: string }) {

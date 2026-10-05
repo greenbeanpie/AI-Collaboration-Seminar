@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -168,7 +169,7 @@ function DocumentNode({ node }: { node: TiptapNode }) {
 export function MaterialDocumentView({ doc, className = '' }: { doc: unknown; className?: string }) {
   const root = asNode(doc);
   if (root?.type !== 'doc' || !Array.isArray(root.content)) return <p>此版本没有可预览的正文。</p>;
-  return <div className={className}>{root.content.map((node, index) => <DocumentNode key={index} node={node} />)}</div>;
+  return <div className={className}><span className="tm-hide-print"><AiReferenceBadge /></span>{root.content.map((node, index) => <DocumentNode key={index} node={node} />)}</div>;
 }
 
 type CommentsPanelProps = { projectId: string; targetType: CommentTarget; targetId: string; presentation?: 'disclosure' | 'content' };
@@ -213,13 +214,13 @@ function CommentsPanelContent({ projectId, targetType, targetId, presentation }:
       {!!commentsQuery.data?.length && <ol className="tm-comment-list">{commentsQuery.data.slice(currentPage * 5, (currentPage + 1) * 5).map((comment) => (
         <li key={comment.commentId} className="tm-comment">
           <div className="tm-comment-meta"><strong>{comment.authorName}</strong><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time></div>
-          <p>{comment.body}</p>
+          <AiReferenceBadge /><p>{comment.body}</p>
         </li>
       ))}</ol>}
       {!!commentsQuery.data?.length && <nav className="tm-list-pagination" aria-label="讨论分页"><button type="button" className="button button-quiet button-small" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {pageCount}</span><button type="button" className="button button-quiet button-small" disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}>下一页</button></nav>}
       <form className="tm-comment-form" onSubmit={(event) => { event.preventDefault(); if (body.trim()) createComment.mutate(body); }}>
         <label className="tm-sr-only" htmlFor={`comment-${targetType}-${targetId}`}>发表评论</label>
-        <textarea id={`comment-${targetType}-${targetId}`} value={body} onChange={(event) => setBody(event.target.value)} maxLength={4000} rows={3} placeholder="写下评论…" />
+        <AiReferenceBadge /><textarea id={`comment-${targetType}-${targetId}`} value={body} onChange={(event) => setBody(event.target.value)} maxLength={4000} rows={3} placeholder="写下评论…" />
         <button className="button button-primary button-small" type="submit" disabled={!body.trim() || createComment.isPending}><Send size={14} />{createComment.isPending ? '发送中' : '发送'}</button>
       </form>
       {createComment.error && <ErrorNotice error={createComment.error} />}

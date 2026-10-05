@@ -663,9 +663,11 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 
 任务质询按一对一工单组织。项目成员可在对应任务中选另一位项目成员创建工单，不要求是任务执行人，也不受依赖关系或任务状态限制。新记录将 `task_id` 与 `upstream_task_id` 都设为该对应任务；创建与回复通知均跳转到该任务。列表、回复和已读接口仍逐项校验发起者/接收者与当前项目成员资格，只有工单双方可见。旧记录的两个任务 ID 保持不变，并继续分别显示在历史发起任务和接收任务。GET /task-inquiries/unread 复用 `notification_inbox.read_at` 汇总；POST /tasks/{taskId}/inquiries/read 只更新已展示的 `messageIds`。无需数据库迁移。
 
-离线工作台在项目入口、online、focus 和可见状态恢复时先 synchronizeOffline 再 prepareProject；组件和缓存准备层合并重复执行。正常联网时隐藏缓存就绪提示，失败与冲突仍可处理。
+离线工作台在项目入口、online、focus 和可见状态恢复时先 synchronizeOffline 再 prepareProject；组件和缓存准备层合并重复执行。正常联网时隐藏缓存就绪提示，失败与冲突仍可处理。可缓存 GET 优先读取当前账户的 IndexedDB 快照（含待同步操作叠加），再合并重复请求、后台静默更新；后台请求限时 15 秒，失败保留当前内容，快照变化后失效活动查询以刷新视图。任务页的澄清、建议历史及质询未读列表也纳入缓存；项目准备先保存任务与材料，再分批读取独立页面，单项失败不阻止其他页面保存，仅完整成功后写入就绪标记。Service Worker 对工作台导航优先返回构建时预缓存的静态入口，API 数据仍由账户隔离的应用缓存负责。
 
 ### 任务文件版本与归档（0055）
+
+项目可供 AI 引用的业务输入和内容节点由 `AiReferenceBadge` 标记，`Field` / `SectionCard` 通过显式 `aiReference` 开启；标识为蓝色胶囊，不向用户正文写入告知文字。AppShell 内的 `AiReferencePreferencesProvider` 按账户读取本浏览器偏好，用户在“设置 → 外观”控制显示，默认开启，跨标签页通过 storage 事件同步。隐藏标识不改变个人资料授权或服务器读取权限；个人资料只有 aiUseAllowed 为真时标记，私密任务质询和安全凭据不标记。
 
 0055_task_files_archive.sql 为 files 增加 archived_at，为 materials 增加 task_id/archived_at，并新增 task_file_uploads 保存物理上传文件到稳定材料身份的映射。一个任务上传文件对应 kind=task-file 的材料；current_version_id 指向当前附件，替换上传新 R2 对象及不可变 material_versions，旧文件和提交快照保留。登记按 fileId 去重，替换成功响应丢失后重试同一当前 fileId 返回原结果。新文件自动产生材料，提交界面按未归档当前版本构建 materialVersionIds，原提交协议保留。
 

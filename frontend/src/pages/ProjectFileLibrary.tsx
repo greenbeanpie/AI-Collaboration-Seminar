@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { ContributorNames } from '../components/FileContributors';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -54,7 +55,7 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
     {deleted && <p className="sources-inline-note">恢复只恢复资料的可用状态，不会启动解析、OCR、要求提取或总结。已取消的任务不会自动重启。</p>}
     {filesQuery.isLoading ? <Spinner label={deleted ? '正在读取回收站文件' : '正在读取项目文件'} /> : filesQuery.error ? <ErrorNotice error={filesQuery.error} onRetry={() => void filesQuery.refetch()} /> : <div className="sources-library-list">
       {files.map(file => <article className="sources-library-record" key={file.fileId} aria-label={`文件：${file.name}`}>
-        <div className="sources-library-copy"><h3>{file.name}</h3><ContributorNames contributors={file.contributors} /><div className="sources-record-meta"><StatusPill tone={file.status === 'available' ? 'good' : file.status === 'pending' ? 'warn' : 'neutral'}>{statusLabels[file.status]}</StatusPill><span>{file.sizeBytes === null ? '大小待上传后确认' : formatBytes(file.sizeBytes)}</span><span>{deleted && file.deletedAt ? `移入于 ${new Date(file.deletedAt).toLocaleString('zh-CN')}` : `创建于 ${new Date(file.createdAt).toLocaleString('zh-CN')}`}</span></div>
+        <div className="sources-library-copy"><h3>{file.name}<AiReferenceBadge ariaHidden /></h3><ContributorNames contributors={file.contributors} /><div className="sources-record-meta"><StatusPill tone={file.status === 'available' ? 'good' : file.status === 'pending' ? 'warn' : 'neutral'}>{statusLabels[file.status]}</StatusPill><span>{file.sizeBytes === null ? '大小待上传后确认' : formatBytes(file.sizeBytes)}</span><span>{deleted && file.deletedAt ? `移入于 ${new Date(file.deletedAt).toLocaleString('zh-CN')}` : `创建于 ${new Date(file.createdAt).toLocaleString('zh-CN')}`}</span></div>
           {!deleted && <p className="sources-inline-note">{file.sourceIds.length ? `关联 ${file.sourceIds.length} 条来源；处理状态见下方来源记录` : '尚未关联来源，可直接移入回收站'}</p>}
         </div>
         {!deleted && file.status === 'available' && file.canManage && <button type="button" className="button button-quiet button-small" disabled={archiveBusy || lifecycle.busy} onClick={() => void changeArchive(file)}>{file.archivedAt ? '撤销文件归档' : '归档文件'}</button>}
@@ -66,7 +67,7 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
     {archiveError != null && <ErrorNotice error={archiveError}/>}
     {deleted && (recycledSourcesQuery.isLoading ? <Spinner label="正在读取回收站文本与网页来源" /> : recycledSourcesQuery.error ? <ErrorNotice error={recycledSourcesQuery.error} onRetry={() => void recycledSourcesQuery.refetch()} /> : <div className="sources-library-list">
       {recycledSources.map(source => <article className="sources-library-record" key={source.sourceId} aria-label={`来源：${source.title}`}>
-        <div className="sources-library-copy"><h3>{source.title}</h3><div className="sources-record-meta"><StatusPill>{source.kind === 'web' ? '网页' : '粘贴文本'}</StatusPill>{source.deletedAt && <span>移入于 {new Date(source.deletedAt).toLocaleString('zh-CN')}</span>}</div></div>
+        <div className="sources-library-copy"><h3>{source.title}<AiReferenceBadge ariaHidden /></h3><div className="sources-record-meta"><StatusPill>{source.kind === 'web' ? '网页' : '粘贴文本'}</StatusPill>{source.deletedAt && <span>移入于 {new Date(source.deletedAt).toLocaleString('zh-CN')}</span>}</div></div>
         {source.canDelete && <button type="button" className="button button-quiet button-small" disabled={lifecycle.busy} aria-label={`恢复来源：${source.title}`} onClick={() => void lifecycle.changeLifecycle(resources.find(item => item.kind === 'source' && item.id === source.sourceId)!, true)}><ArchiveRestore size={14} />{lifecycle.pendingKey === `source:${source.sourceId}` ? '正在确认或处理…' : '恢复来源'}</button>}
       </article>)}
     </div>)}

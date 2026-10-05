@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -193,13 +194,13 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     <div className={embedded ? 'page-stack' : 'ai-workflow-grid'}>
       {!embedded && <SectionCard title="开始一场新演练" detail="选择演练范围和优先参考文件；本轮实际成果与真实问答会保留为固定依据。">
         {materialQuery.isLoading || memberQuery.isLoading ? <Spinner label="正在读取项目成员和材料" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleCreate(event)}>
-          <Field label="演练范围">
+          <Field aiReference label="演练范围">
             <select className="ai-workflow-select" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}>
               <option value="all">全项目答辩</option>
               <option value="member">按成员负责部分</option>
             </select>
           </Field>
-          {scope === 'member' && <Field label="练习成员">
+          {scope === 'member' && <Field aiReference label="练习成员">
             <select className="ai-workflow-select" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
               <option value="">选择项目成员</option>
               {members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName} · {member.role === 'owner' ? '负责人' : '成员'}</option>)}
@@ -223,19 +224,19 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
             <button className="button button-quiet button-small" onClick={removeRecent} disabled={!selectedRehearsalId}>从本机最近列表移除</button>
           </div>}
           {rehearsalQuery.isLoading ? <Spinner label="正在恢复答辩演练" /> : rehearsalQuery.error ? <ErrorNotice error={rehearsalQuery.error} onRetry={() => void rehearsalQuery.refetch()} /> : rehearsal ? <>
-            <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>发起及答辩：{members.find(member=>member.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
+            <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><AiReferenceBadge /><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>发起及答辩：{members.find(member=>member.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
             {visiblePending && <JobPanel jobId={visiblePending.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={rehearsal.canOperate && aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={visiblePending.action} onRetry={() => void handleRetryJob()} />}
             {job.job?.status === 'waiting_input' && <div className="ai-workflow-note is-warning">后端任务正在等待补充信息，当前页面不会补造问题或回答。</div>}
             {rehearsal.turns.length === 0 && <div className="ai-workflow-note">第一问由后端生成中。问题到达后会出现在下方对话记录中。</div>}
             {rehearsal.turns.length > 0 && <div className="ai-workflow-transcript" aria-live="polite">{rehearsal.turns.map((turn) => <article className={`ai-workflow-transcript-turn ${turn.role === 'user' ? 'is-user' : ''} ${turn.kind === 'summary' ? 'is-summary' : ''}`} key={`${rehearsal.rehearsalId}-${turn.sequence}`}>
-              <header><strong>{turn.role === 'user' ? '答辩人回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><span>{formatWorkflowDate(turn.createdAt)}</span></header>
+              <header><strong>{turn.role === 'user' ? '答辩人回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><AiReferenceBadge /><span>{formatWorkflowDate(turn.createdAt)}</span></header>
               <p>{turn.content}</p>
             </article>)}</div>}
             {rehearsal.status === 'finished' && <div className="ai-workflow-note"><strong>演练结果已保存。</strong> 下方总结来自后端已保存的 summary 回合。</div>}
             {!rehearsal.canOperate && <div className="notice">本轮由 {members.find(m=>m.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId} 发起并答辩，其他成员只读，进展会自动刷新。</div>}
             {rehearsal.status === 'active' && rehearsal.canOperate && <form className="stack" onSubmit={(event) => void handleAnswer(event)}>
               <RehearsalVoicePanel key={`${rehearsal.rehearsalId}:${latestTurn?.sequence}:${rehearsal.respondentId}`} projectId={projectId} rehearsalId={rehearsal.rehearsalId} sequence={latestTurn?.sequence ?? 1} questionText={latestTurn?.content ?? ''} enabled={canAnswer && aiEnabled && !sendingAnswer && !finishing} initialVoiceMode={voiceMode} onModeChange={setVoiceMode} onBusyChange={setVoiceBusy} onTranscriptFinal={text => setAnswerText(current => `${current}${current ? '\n' : ''}${text}`.slice(0, 8000))} />
-              <Field label="回答当前问题" hint={answerJobFailed ? '上一轮回答已保存，但后端处理失败。请重试任务后再提交下一轮。' : '每次提交会保存一轮回答，并等待后端生成追问或反馈。'}>
+              <Field aiReference label="回答当前问题" hint={answerJobFailed ? '上一轮回答已保存，但后端处理失败。请重试任务后再提交下一轮。' : '每次提交会保存一轮回答，并等待后端生成追问或反馈。'}>
                 <textarea className="input textarea ai-workflow-textarea" maxLength={8000} value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={canAnswer ? '围绕项目方案、证据和实施细节作答。' : '等待后端生成下一道问题后才能作答。'} disabled={!canAnswer || !aiEnabled || sendingAnswer || isFinishPending} />
               </Field>
               {Boolean(answerError) && <ErrorNotice error={answerError} onRetry={() => void rehearsalQuery.refetch()} />}

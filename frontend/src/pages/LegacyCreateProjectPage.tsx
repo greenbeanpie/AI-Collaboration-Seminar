@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { CreationBehaviorFields } from './CreationBehaviorFields';
 import { type WizardPayload, type CreationMode, creationBehaviors } from './project-wizard';
 import { DateInput } from '../components/DateInput';
@@ -204,18 +205,18 @@ function ProjectCreationForm({ userId }: { userId: string }) {
     <Link className="back-link" to="/app"><ArrowLeft size={16} />返回项目列表</Link>
     <PageHeading eyebrow="新建项目" title="建立协作空间" detail="项目由真实账户创建，创建者将成为负责人。" />
     <form className="card form-card" aria-label="新建项目" onSubmit={event => { event.preventDefault(); void run(); }}>
-      <Field label="项目名称"><input className="input" required maxLength={100} disabled={frozen || pending} value={name} onChange={event => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
-      <Field label="项目说明（可选）" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
-      <Field label="截止日期（可选）" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
+      <Field aiReference label="项目名称"><input className="input" required maxLength={100} disabled={frozen || pending} value={name} onChange={event => setName(event.target.value)} placeholder="例如：校园创新项目" /></Field>
+      <Field aiReference label="项目说明（可选）" hint="可描述目标、背景或团队约定。"><textarea className="input textarea" maxLength={2000} rows={4} disabled={frozen || pending} value={description} onChange={event => setDescription(event.target.value)} placeholder="写下团队需要共同推进的目标……" /></Field>
+      <Field aiReference label="截止日期（可选）" hint="仅填写通知中明确给出的日期；当前页面不录入具体时刻。"><DateInput className="input" type="date" disabled={frozen || pending} value={deadlineDate} onChange={event => setDeadlineDate(event.target.value)} /></Field>
 
-      <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作</span><small>新项目默认开启。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
+      <label className="field"><span className="field-label"><input type="checkbox" checked={aiCollaborationEnabled} disabled={frozen || pending} onChange={event => setAiCollaborationEnabled(event.target.checked)} /> AI 智能协作<AiReferenceBadge ariaHidden /></span><small>新项目默认开启。开启后启用本项目的自动任务分配与提交后的 AI 评价；受现有模型配置、可用性和预算限制，可能产生 AI 用量。上传只保存原文件并建立来源，不会自动解析或调用模型；可到“通知与来源”另行处理。</small></label>
       <CreationBehaviorFields payload={{ name, description, aiCollaborationEnabled, teamSize:1, inviteLabels:[], inviteUsernames:[], brief:'', ...modes } as WizardPayload} disabled={frozen || pending} onChange={(key,value) => setModes(previous => ({ ...previous, [key]:value }))} />
       {aiCollaborationEnabled && !capabilities.data?.features.aiEnabled && <div className="form-note">{capabilities.data ? '系统 AI 当前未启用。项目开关可保存，但模型不可用时不会执行 AI 协作。' : '正在确认系统 AI 能力；开关不代表模型已可用。'}</div>}
       {capabilities.error && <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} />}
-      <Field label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、DOCX、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `建议10 MiB以上PDF使用本地解析。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>
+      <Field aiReference label={frozen ? '重新选择未完成的原文件' : '项目文件（可选）'} hint={`最多 ${creationFileLimit} 个文件；支持 PDF、DOCX、PNG、JPG、WebP、TXT、Markdown。${capabilities.data ? `建议10 MiB以上PDF使用本地解析。` : '正在读取单文件大小限制。'} 原文件只存入本项目私有存储。`}><input className="input" type="file" multiple accept={creationFileExtensions} disabled={pending || !capabilities.data || (frozen && files.every(file => Boolean(file.sourceId) || file.uploadConfirmed))} onChange={event => { selectFiles(event.target.files); event.target.value = ''; }} /></Field>
       {selectionError && <div className="notice notice-error" role="alert">{selectionError}</div>}
       {files.length > 0 && <ul className="page-stack" aria-label="文件上传进度">{files.map(file => <li key={file.localId}>
-        <strong>{file.name}</strong> · {(file.size / 1024).toFixed(1)} KiB · {file.sourceId ? '已保存原文件并建立来源' : pending && file.status === 'uploading' ? '正在上传或核对原文件' : pending && file.status === 'linking' ? '正在建立来源' : file.uploadConfirmed ? '原文件已上传，来源尚未确认' : file.status === 'failed' ? '上传未完成' : file.status === 'needs_file' ? '需要重新选择原文件' : '等待上传'}
+        <strong>{file.name}<AiReferenceBadge ariaHidden /></strong> · {(file.size / 1024).toFixed(1)} KiB · {file.sourceId ? '已保存原文件并建立来源' : pending && file.status === 'uploading' ? '正在上传或核对原文件' : pending && file.status === 'linking' ? '正在建立来源' : file.uploadConfirmed ? '原文件已上传，来源尚未确认' : file.status === 'failed' ? '上传未完成' : file.status === 'needs_file' ? '需要重新选择原文件' : '等待上传'}
         {file.error && <div role="status" style={{whiteSpace:'pre-wrap'}}>{file.error}</div>}
         {!frozen && <button className="button button-quiet button-small" type="button" disabled={pending} aria-label={`移除 ${file.name}`} onClick={() => { originals.current.delete(file.localId); setFiles(items => items.filter(item => item.localId !== file.localId)); }}>移除</button>}
       </li>)}</ul>}

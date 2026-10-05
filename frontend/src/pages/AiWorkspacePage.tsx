@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { ProjectSearchOption,ProjectToolCalls,ProjectSearchCitations } from './ProjectAiTools';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -233,22 +234,22 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
     <div className="ai-workflow-grid">
       <SectionCard title="发起 AI 补位" detail="输入会发送至项目服务端，并由当前后端模型能力处理。">
         {isLoadingInputs ? <Spinner label="正在读取项目任务、材料和来源" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleCreateSession(event)}>
-          <Field label="协作方式" hint="代做和带做产出草稿；只审只给出审阅意见。">
+          <Field aiReference label="协作方式" hint="代做和带做产出草稿；只审只给出审阅意见。">
             <select className="ai-workflow-select" value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
               {modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.detail}</option>)}
             </select>
           </Field>
           <ProjectSearchOption projectId={projectId} enabled={allowSearch} onChange={setAllowSearch} query={searchQuery} onQuery={setSearchQuery}/>
-          <Field label="AI 扮演角色" hint="作为项目上下文的一部分传给后端。">
+          <Field aiReference label="AI 扮演角色" hint="作为项目上下文的一部分传给后端。">
             <input className="input" maxLength={200} value={roleTemplate} onChange={(event) => setRoleTemplate(event.target.value)} placeholder="例如：竞赛方案撰写协作者" />
           </Field>
-          <Field label="关联任务" hint="可留空；选择后 AI 会依据该任务补位。">
+          <Field aiReference label="关联任务" hint="可留空；选择后 AI 会依据该任务补位。">
             <select className="ai-workflow-select" value={taskId} onChange={(event) => setTaskId(event.target.value)}>
               <option value="">不关联任务</option>
               {(taskQuery.data ?? []).map((task) => <option key={task.taskId} value={task.taskId}>{task.title} · {task.status === 'done' ? '已完成' : task.status === 'doing' ? '进行中' : task.status === 'blocked' ? '受阻' : '待处理'}</option>)}
             </select>
           </Field>
-          <Field label="补充说明" hint="最多 4,000 个字符。请勿提供密钥或不应发送给 AI 的内容。">
+          <Field aiReference label="补充说明" hint="最多 4,000 个字符。请勿提供密钥或不应发送给 AI 的内容。">
             <textarea className="input textarea ai-workflow-textarea" maxLength={4000} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="说明目标、约束、已有结论或需要重点核对的地方。" />
           </Field>
           <div className="ai-workflow-field ai-workflow-field-wide">
@@ -258,7 +259,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
             <div className="ai-workflow-choice-list">
               {selectedMaterials.length === 0 ? <EmptyState title="没有可选的材料版本" detail="先到材料中心创建材料并保存一个正式版本。" /> : selectedMaterials.map((version) => {
                 const checked = selectedMaterialVersionIds.includes(version.versionId);
-                return <label className="ai-workflow-choice" key={version.versionId}>
+                return <label className="ai-workflow-choice" key={version.versionId}><AiReferenceBadge ariaHidden />
                   <input type="checkbox" checked={checked} disabled={!checked && selectedMaterialVersionIds.length >= 10} onChange={() => setSelectedMaterialVersionIds((current) => checked ? current.filter((id) => id !== version.versionId) : [...current, version.versionId])} />
                   <span className="ai-workflow-choice-copy"><strong>{version.title} · v{version.revision}{version.current ? '（当前）' : ''}</strong><small>{version.origin === 'ai_adoption' ? 'AI 草稿采纳' : '人工版本'} · {formatWorkflowDate(version.createdAt)} · {version.versionId}</small></span>
                 </label>;
@@ -274,7 +275,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
                 const versionId = source.currentVersionId!;
                 const checked = selectedSourceVersionIds.includes(versionId);
                 const version = source.version;
-                return <label className="ai-workflow-choice" key={versionId}>
+                return <label className="ai-workflow-choice" key={versionId}><AiReferenceBadge ariaHidden />
                   <input type="checkbox" checked={checked} disabled={!checked && (selectedSourceVersionIds.length >= 10 || version?.status !== 'ready')} onChange={() => setSelectedSourceVersionIds((current) => checked ? current.filter((id) => id !== versionId) : [...current, versionId])} />
                   <span className="ai-workflow-choice-copy"><strong>{source.title} · 当前版本</strong><small>{version ? `第 ${version.revision} 版 · ${version.status === 'ready' ? '已就绪' : version.status === 'failed' ? '解析失败' : '处理中'} · ${version.charCount ?? '—'} 字符` : '正在读取来源版本'} · {versionId}</small></span>
                 </label>;
@@ -306,7 +307,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
             {jobIsWaitingForInput && <div className="ai-workflow-note is-warning">此任务需要后端补充输入才能继续；请根据后端任务状态处理后再重新载入会话。</div>}
             <div className="ai-workflow-chat">
               {session.turns.map((turn) => <div className={`ai-workflow-turn ${turn.role === 'user' ? 'is-user' : 'is-assistant'}`} key={`${session.sessionId}-${turn.sequence}`}>
-                <div className="ai-workflow-turn-head"><strong>{turn.role === 'user' ? '项目成员' : 'AI 助手'} · {turnLabel(turn.kind)}</strong><span>{formatWorkflowDate(turn.createdAt)}</span></div>
+                <div className="ai-workflow-turn-head"><AiReferenceBadge /><strong>{turn.role === 'user' ? '项目成员' : 'AI 助手'} · {turnLabel(turn.kind)}</strong><span>{formatWorkflowDate(turn.createdAt)}</span></div>
                 {turn.kind === 'draft' && turn.runId ? <DraftReviewCard key={turn.runId} projectId={projectId} runId={turn.runId} runStatus={session.runs.find((run) => run.runId === turn.runId)?.status} payload={turn.payload} materials={materials} adoptionMaterialId={adoptionMaterialId} onTargetChange={setAdoptionMaterialId} onAdopted={() => {
                   void queryClient.invalidateQueries({ queryKey: ['agentSession', projectId, session.sessionId] });
                   void queryClient.invalidateQueries({ queryKey: ['materials', projectId] });
@@ -316,7 +317,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
               {session.turns.length === 0 && <EmptyState title="会话尚无对话回合" detail="服务端尚未返回会话内容。" />}
             </div>
             {session.capability === 'guide' && session.status === 'active' && canAnswerGuide && <form className="stack" onSubmit={(event) => void handleGuideAnswer(event)}>
-              <Field label="回答 AI 的问题" hint="回答保存到服务端后，AI 会生成下一步问题或阶段草稿。">
+              <Field aiReference label="回答 AI 的问题" hint="回答保存到服务端后，AI 会生成下一步问题或阶段草稿。">
                 <textarea className="input textarea ai-workflow-textarea" maxLength={8000} value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder="结合团队实际情况回答，不确定的内容可以注明待确认。" disabled={activeJobPending || !aiEnabled} />
               </Field>
               {Boolean(answerError) && <ErrorNotice error={answerError} />}
@@ -395,10 +396,10 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
   return <div className="ai-workflow-draft">
 
     <div className="ai-workflow-meta"><StatusPill tone={runStatus === 'adopted' ? 'good' : 'blue'}>{runStatus === 'adopted' ? '已采纳' : '待人工复核'}</StatusPill><span>运行 ID {runId}</span>{typeof payload.title === 'string' && <strong>{payload.title}</strong>}</div>
-    <Field label="草稿 Markdown" hint="编辑这里的内容会按段落、标题、列表和引用转换为 Tiptap 文档。">
+    <Field aiReference label="草稿 Markdown" hint="编辑这里的内容会按段落、标题、列表和引用转换为 Tiptap 文档。">
       <textarea className="input textarea" maxLength={200000} value={markdown} onChange={(event) => { setMarkdown(event.target.value); setEdited(true); }} disabled={Boolean(adopted)} />
     </Field>
-    <Field label="采纳到材料">
+    <Field aiReference label="采纳到材料">
       <select className="ai-workflow-select" value={adopted ? '' : adoptionMaterialId} disabled={Boolean(adopted) || materials.length === 0} onChange={(event) => onTargetChange(event.target.value)}>
         <option value="">选择目标材料</option>
         {materials.map((material) => <option key={material.materialId} value={material.materialId}>{material.title} · 当前修订 {material.revision}</option>)}

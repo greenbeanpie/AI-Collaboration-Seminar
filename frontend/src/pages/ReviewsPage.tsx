@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, RefreshCw, ShieldAlert } from 'lucide-react';
@@ -197,7 +198,7 @@ export function ReviewsPage() {
       </SectionCard>
     </div>
 
-    {selectedReviewId && <SectionCard title="报告详情" detail="分数、问题和建议都来自所选预审记录。">
+    {selectedReviewId && <SectionCard aiReference title="报告详情" detail="分数、问题和建议都来自所选预审记录。">
       {selectedReviewQuery.isLoading ? <Spinner label="正在读取预审报告" /> : selectedReviewQuery.error ? <ErrorNotice error={selectedReviewQuery.error} onRetry={() => void selectedReviewQuery.refetch()} /> : review ? <>
         <div className="ai-workflow-meta"><StatusPill tone={review.status === 'succeeded' ? 'good' : review.status === 'failed' ? 'bad' : 'blue'}>{reviewStatusLabel(review.status)}</StatusPill><span>创建于 {formatWorkflowDate(review.createdAt)}</span><span>评分版本 {review.rubricVersionId}</span><span>要求集 {review.requirementSetId}</span></div>
         <div className="ai-workflow-meta"><ShieldAlert size={15} /><span>绑定材料版本：{review.materialVersionIds.join(' · ')}</span><FreshnessStatus state={freshness(review.materialVersionIds)} /></div>
@@ -232,11 +233,11 @@ function ReportView({ report }: { report: unknown }) {
   if (!isRecord(report)) return <EmptyState title="后端尚未返回报告内容" detail="此条记录没有 report 字段，页面不会补造评分或意见。" />;
   const scores = Array.isArray(report.scores) ? report.scores.filter(isRecord) : [];
   const overall = isRecord(report.overall) ? report.overall : null;
-  if (scores.length === 0 && !overall) return <pre className="ai-workflow-turn-body">{JSON.stringify(report, null, 2)}</pre>;
+  if (scores.length === 0 && !overall) return <><AiReferenceBadge /><pre className="ai-workflow-turn-body">{JSON.stringify(report, null, 2)}</pre></>;
   return <div className="ai-workflow-report">
-    {overall && <div className="ai-workflow-note"><strong>AI 预审总分：{typeof overall.score === 'number' ? overall.score : '—'}</strong>{typeof overall.summary === 'string' && <span> · {overall.summary}</span>}</div>}
+    {overall && <div className="ai-workflow-note"><AiReferenceBadge /><strong>AI 预审总分：{typeof overall.score === 'number' ? overall.score : '—'}</strong>{typeof overall.summary === 'string' && <span> · {overall.summary}</span>}</div>}
     {scores.length > 0 && <div className="ai-workflow-score-list">{scores.map((score, index) => <div className="ai-workflow-score" key={`${String(score.key ?? index)}-${index}`}>
-      <strong>{typeof score.key === 'string' ? score.key : `评分项 ${index + 1}`}</strong>
+      <AiReferenceBadge /><strong>{typeof score.key === 'string' ? score.key : `评分项 ${index + 1}`}</strong>
       <span>{typeof score.score === 'number' ? score.score : '—'}</span>
       {typeof score.comment === 'string' && <p>{score.comment}</p>}
       {Array.isArray(score.suggestions) && score.suggestions.length > 0 && <p>建议：{score.suggestions.filter((item): item is string => typeof item === 'string').join('；')}</p>}

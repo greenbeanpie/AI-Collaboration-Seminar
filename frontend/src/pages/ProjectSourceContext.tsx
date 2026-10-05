@@ -1,3 +1,4 @@
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -51,7 +52,7 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
   const waitingForPages = serverJob?.status === 'waiting_input' || processing.data?.textStatus === 'waiting_input';
   const running = parse.isPending || Boolean(serverJob || jobId && !job.isSettled);
   return <article className="collab-proposal stack">
-    <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : waitingForPages ? '等待缺页识别' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
+    <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><AiReferenceBadge ariaHidden /><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : waitingForPages ? '等待缺页识别' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
     {!ready && <p className="form-note">原文件或来源已保留，此来源尚未完整读取。AI会说明信息缺口，可在来源页面补齐识别后继续。</p>}
     {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{waitingForPages ? '请到来源页面补齐缺页' : running ? '资料处理进行中…' : '读取资料正文'}</button>}
     {version.data?.parseError && <p className="notice notice-warn">资料处理提示：{version.data.parseError}。可在来源页面独立核对正文、重试要求提取或生成总结。</p>}
