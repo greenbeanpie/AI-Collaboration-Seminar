@@ -41,11 +41,28 @@ it('saves an incomplete MiMo draft, probes metadata only after saving, and expli
   expect(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await screen.findByText('配置已保存，AI 保持启用。');
   expect(writes[0]).toMatchObject({ mimoMediaUnderstanding: { provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiKey: '' }, processingStrategies: { audioFiles: 'whisper-first' } });
+  expect(writes[0].mimoMediaUnderstanding).not.toHaveProperty('apiUrl');
   fireEvent.click(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })); await screen.findByText('MiMo 元数据通过');
   expect(urls.filter(url => url.endsWith('/mimo-media-probe'))).toHaveLength(1);
   expect(screen.getByText(/不代表音频识别质量或视频理解已验证/)).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型')); fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(writes).toHaveLength(2)); expect(writes[1]).toMatchObject({ clearMimoMediaUnderstanding: true }); expect(writes[1]).not.toHaveProperty('mimoMediaUnderstanding');
+});
+
+it('enabling separate Gemini and MiMo media models does not set either API URL', async () => {
+  let saved: Record<string, unknown> | undefined;
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: false, config: savedConfig } });
+    saved = JSON.parse(String(init?.body));
+    return Response.json({ data: { version: 9, enabled: false } });
+  }));
+  await setup(true, false);
+  fireEvent.click(screen.getByLabelText('配置音视频摘要模型'));
+  fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型'));
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(saved?.mediaUnderstanding).not.toHaveProperty('apiUrl');
+  expect(saved?.mimoMediaUnderstanding).not.toHaveProperty('apiUrl');
 });
 
 it('defaults legacy audio strategy to Whisper and saves strategy independently without paid probes', async () => {
@@ -133,6 +150,9 @@ it('Go has independent manual protocol and bounded headers, never automatically 
   });
   vi.stubGlobal('fetch', mock); await setup();
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-go' } });
+  const url = screen.getByLabelText(/文本与要求提取 API URL/);
+  expect(url).toHaveValue('');
+  fireEvent.change(url, { target: { value: 'https://opencode.ai/zen/go/v1/messages' } });
   expect(mock).toHaveBeenCalledOnce(); // Initial sanitized configuration load only.
   expect(screen.getByText(/本应用含项目写作、分工和验收/)).toBeInTheDocument();
   const save = screen.getByRole('button', { name: '保存配置' }); expect(save).toBeEnabled();
@@ -163,7 +183,7 @@ it('OpenAI options follow model capability and explicit protocol; invalid hidden
   fireEvent.change(screen.getByLabelText(/文本与要求提取思考强度/), { target: { value: 'none' } });
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API 协议/), { target: { value: 'chat-completions' } });
-  expect(screen.getByLabelText(/文本与要求提取 API URL/)).toHaveValue('https://api.openai.com/v1/chat/completions');
+  expect(screen.getByLabelText(/文本与要求提取 API URL/)).toHaveValue('');
   fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'gpt-4.1-mini' } });
   expect(screen.getByLabelText(/文本与要求提取思考强度/)).toHaveValue('');
 });
@@ -255,6 +275,46 @@ it('loads sanitized unified config and retains draft on optimistic version confl
 
 const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
+
+it('only changing the unified supplier updates its API URL; model and protocol changes preserve it', async () => {
+  const unified = { ...savedModel, providerPreset: 'openai', model: 'gpt-4.1-mini', apiProtocol: 'chat-completions', apiUrl: 'https://api.openai.com/v1/chat/completions' };
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'GET'
+    ? Response.json({ data: { version: 8, enabled: false, config: { ...savedConfig, unified } } })
+    : Response.json({ data: { version: 9, enabled: false } })));
+  await setup(true, false);
+
+  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'anthropic' } });
+  const url = screen.getByLabelText(/统一模型 API URL/);
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'claude-opus-5-5' } });
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+  fireEvent.change(screen.getByLabelText(/统一模型 API 协议/), { target: { value: 'messages' } });
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+  fireEvent.change(url, { target: { value: 'https://proxy.example/v1/messages' } });
+  expect(url).toHaveValue('https://proxy.example/v1/messages');
+});
+
+it('changing an advanced supplier, model or protocol leaves its API URL unchanged', async () => {
+  const advanced = {
+    ...savedConfig,
+    routingMode: 'advanced' as const,
+    textEconomy: { ...savedModel, providerPreset: 'openai', model: 'gpt-4.1-mini', apiProtocol: 'chat-completions', apiUrl: 'https://proxy.example/text' },
+  };
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'GET'
+    ? Response.json({ data: { version: 8, enabled: false, config: advanced } })
+    : Response.json({ data: { version: 9, enabled: false } })));
+  await setup(true, true);
+  const url = screen.getByLabelText(/文本与要求提取 API URL/);
+  expect(url).toHaveValue('https://proxy.example/text');
+
+  fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'deepseek' } });
+  expect(url).toHaveValue('https://proxy.example/text');
+  fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'deepseek-v4-pro' } });
+  expect(url).toHaveValue('https://proxy.example/text');
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API 协议/), { target: { value: 'messages' } });
+  expect(url).toHaveValue('https://proxy.example/text');
+});
 
 it('saves the explicit off switch while retaining a value above the former maximum and makes no model call', async () => {
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {

@@ -13,12 +13,17 @@ type Purpose = typeof purposes[number];
 type ModelSlot = Purpose | 'unified';
 const modelSlots: ModelSlot[] = [...purposes, 'unified'];
 const labels = { unified: '统一模型', textEconomy: '文本与要求提取', visionEconomy: '图片与 OCR', review: '预审与答辩' };
-type Model = ProviderOptions & { model: string; apiUrl: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; maxOutputTokens: number; supportsJson: boolean; supportsVision: boolean; cachedInputPricePerMTokens?: number; mediaInputPricePerMTokens?:{audio?:number;video?:number;text?:number}; pricePerMTokens: [number, number] | null };
+type Model = ProviderOptions & { model: string; apiUrl?: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; maxOutputTokens: number; supportsJson: boolean; supportsVision: boolean; cachedInputPricePerMTokens?: number; mediaInputPricePerMTokens?:{audio?:number;video?:number;text?:number}; pricePerMTokens: [number, number] | null };
 type Config = Record<ModelSlot, Model> & AudioSettingsView & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean; audioProcessingStrategy?: 'whisper-first' | 'gemini-only'; mediaUnderstanding?:Model; mimoMediaUnderstanding?:Model };
 type TokenLimits = { routingMode: Config['routingMode']; values: Partial<Record<ModelSlot, number>>; enabled: Partial<Record<ModelSlot, boolean>> };
 type Report = { passed: boolean; configVersion: number; checks: { name: string; passed: boolean; detail: string }[] };
 const blank = (): Config => ({ ...blankAudioSettings(), routingMode: 'unified', audioProcessingStrategy: 'whisper-first', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, enabledOutputLimit: true, maxOutputTokens: 4096, supportsJson: true, supportsVision: p === 'visionEconomy', pricePerMTokens: null }])) }) as Config;
 const tokenLimits = (config: Partial<Config>): TokenLimits => ({ routingMode: config.routingMode ?? 'advanced', values: Object.fromEntries(modelSlots.flatMap(p => typeof config[p]?.maxOutputTokens === 'number' ? [[p, config[p]!.maxOutputTokens]] : [])), enabled: Object.fromEntries(modelSlots.map(p => [p, config[p]?.enabledOutputLimit !== false])) });
+function withoutApiUrl(model: Model): Model {
+  const { apiUrl, ...rest } = model;
+  void apiUrl;
+  return rest;
+}
 
 export function AiSettings() {
   const qc = useQueryClient();
@@ -98,16 +103,16 @@ export function AiSettings() {
     const preset = value === 'workers-ai' ? 'custom' : value as ProviderPreset;
     const spec = providerPresets[preset];
     const model = spec.models[0] ?? config[p].model;
-    const apiUrl = preset === 'custom' ? config[p].apiUrl : presetEndpoint(preset, model);
-    const changedDestination = apiUrl !== config[p].apiUrl || (value === 'workers-ai') !== (config[p].provider === 'workers-ai');
-    edit(p, { provider: value === 'workers-ai' ? 'workers-ai' : 'openai-compatible', providerPreset: preset, model, apiUrl, apiProtocol: undefined, reasoningEffort: undefined, temperature: undefined, topP: undefined, goUsageAcknowledged: false, goHeaders: undefined, supportsJson: spec.supportsJson, ...(changedDestination ? { apiKey: '', clearKey: true } : {}) });
-    if (changedDestination) setMessage('已切换预设。请为新地址重新输入 key；旧 key 不会转发到新供应商。');
+    const apiUrl = p === 'unified' && preset !== 'custom' ? presetEndpoint(preset, model) : config[p].apiUrl;
+    const changedDestination = apiUrl !== config[p].apiUrl;
+    const changedSupplier = preset !== (config[p].providerPreset ?? 'custom') || (value === 'workers-ai') !== (config[p].provider === 'workers-ai');
+    edit(p, { provider: value === 'workers-ai' ? 'workers-ai' : 'openai-compatible', providerPreset: preset, model, apiUrl, apiProtocol: undefined, reasoningEffort: undefined, temperature: undefined, topP: undefined, goUsageAcknowledged: false, goHeaders: undefined, supportsJson: spec.supportsJson, ...(changedSupplier || changedDestination ? { apiKey: '', clearKey: true } : {}) });
+    if (changedSupplier || changedDestination) setMessage(changedDestination ? '统一模型供应商已切换 API 地址。请为新地址重新输入 key；旧 key 不会转发到新供应商。' : '供应商已切换。请为新供应商重新输入 key；原 key 不会转发。');
   }
   function chooseModel(p: ModelSlot, model: string) {
-    const preset = config[p].providerPreset ?? 'custom';
     const next = { ...config[p], model };
     const caps = modelCapabilities(next);
-    edit(p, { model, ...(preset !== 'custom' ? { apiUrl: presetEndpoint(preset, model, config[p].apiProtocol) } : {}), reasoningEffort: next.reasoningEffort && caps.reasoning.includes(next.reasoningEffort) ? next.reasoningEffort : undefined, temperature: caps.temperature ? next.temperature : undefined, topP: caps.topP ? next.topP : undefined, ...(protocolForConfig(next) === 'messages' ? { supportsJson: false } : {}) });
+    edit(p, { model, reasoningEffort: next.reasoningEffort && caps.reasoning.includes(next.reasoningEffort) ? next.reasoningEffort : undefined, temperature: caps.temperature ? next.temperature : undefined, topP: caps.topP ? next.topP : undefined, ...(protocolForConfig(next) === 'messages' ? { supportsJson: false } : {}) });
   }
   function changeEffort(p: ModelSlot, effort: Model['reasoningEffort'] | '') {
     const reasoningEffort = effort || undefined;
@@ -119,7 +124,7 @@ export function AiSettings() {
     const slots = config.routingMode === 'unified' ? ['unified'] as const : purposes;
     const errors = slots.flatMap(p => providerOptionErrors(config[p]).map(detail => `${labels[p]}：${detail}`));
     for (const p of slots) if (!Number.isSafeInteger(config[p].maxOutputTokens) || config[p].maxOutputTokens < 1) errors.push(`${labels[p]}输出上限必须为可安全表示的正整数 token`);
-    if(config.mediaUnderstanding && (!config.mediaUnderstanding.model.trim() || config.mediaUnderstanding.apiUrl!=='https://generativelanguage.googleapis.com'))errors.push('音视频请填写 Gemini 模型，并使用官方端点');
+    if(config.mediaUnderstanding && (!config.mediaUnderstanding.model.trim() || (config.mediaUnderstanding.apiUrl && config.mediaUnderstanding.apiUrl!=='https://generativelanguage.googleapis.com')))errors.push('音视频请填写 Gemini 模型，并使用官方端点');
     if (errors.length) throw new Error(`配置未保存：${errors.join('；')}`);
     // Do not materialize an untouched optional legacy slot just by opening the UI.
     const { unified, ...advanced } = config;
@@ -170,11 +175,11 @@ export function AiSettings() {
       </fieldset>
       {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；文本功能可在文本与评价测试通过后启用。</p>}
       {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready || !access}><legend>{labels[p]}</legend>
-        <Field label={`${labels[p]}供应商`} hint="选择预设只填入建议地址和模型；不会启用 AI 或发出请求。自定义保留现有兼容接口。"><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
+        <Field label={`${labels[p]}供应商`} hint={p === 'unified' ? '切换统一模型供应商会应用其建议 API URL 和模型；不会启用 AI 或发出请求。' : '切换供应商只改变供应商和模型预设，API URL 保持不变；不会启用 AI 或发出请求。'}><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
 
         {preset === 'opencode-go' && <div role="note"><p>{GO_USAGE_NOTICE} <a href="https://opencode.ai/docs/go/#where-can-i-use-it" target="_blank" rel="noreferrer">官方使用说明</a></p><label><input type="checkbox" checked={config[p].goUsageAcknowledged ?? false} onChange={e => edit(p, { goUsageAcknowledged: e.target.checked })} /> 我已确认套餐适用于本应用用途</label><p className="muted">使用本应用真实 User-Agent 和稳定会话 ID；不模拟官方客户端，不绕过服务限制。</p><fieldset><legend>OpenCode Go 专用请求头</legend><Field label={`${labels[p]} Go User-Agent`} hint="仅填写你实际应用的名称/版本；不能填写官方客户端身份或密钥。"><input className="input" value={config[p].goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, userAgent: e.target.value } })} /></Field><Field label={`${labels[p]} Go 会话前缀`} hint="x-opencode-session 默认自动按会话/任务生成，重试保持一致。可选非敏感前缀；不填 key、姓名或用户资料。"><input className="input" maxLength={32} value={config[p].goHeaders?.sessionPrefix ?? ''} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, sessionPrefix: e.target.value } })} /></Field><p className="muted">鉴权头由后端密钥生成，不允许编辑 Authorization、x-api-key、Cookie、Host 或任意请求头。</p></fieldset></div>}
-        <Field label={`${labels[p]} API 协议`} hint="协议可手动选择；预设给出推荐值，已核实不兼容的组合会明确拒绝。"><select className="input" value={protocol} disabled={config[p].provider === 'workers-ai'} onChange={e => { const apiProtocol = e.target.value as ApiProtocol; edit(p, { apiProtocol, ...(preset !== 'custom' ? { apiUrl: presetEndpoint(preset, config[p].model, apiProtocol) } : {}), supportsJson: apiProtocol === 'messages' ? false : config[p].supportsJson }); }}>{API_PROTOCOLS.map(style => <option key={style} value={style}>{style}</option>)}</select></Field>
-        <Field label={`${labels[p]} API URL`} hint="完整 HTTPS 请求地址，不能含密钥或查询参数；修改地址需重新输入 key 或清除旧 key。"><input className="input" type="url" autoComplete="off" value={config[p].apiUrl ?? ''} onChange={e => edit(p, { apiUrl: e.target.value.trim() })} /></Field>
+        <Field label={`${labels[p]} API 协议`} hint="切换协议不会更改 API URL；请确认当前地址支持所选协议。"><select className="input" value={protocol} disabled={config[p].provider === 'workers-ai'} onChange={e => { const apiProtocol = e.target.value as ApiProtocol; edit(p, { apiProtocol, supportsJson: apiProtocol === 'messages' ? false : config[p].supportsJson }); }}>{API_PROTOCOLS.map(style => <option key={style} value={style}>{style}</option>)}</select></Field>
+        <Field label={`${labels[p]} API URL`} hint="模型或协议变化不会自动更改此地址；修改地址需重新输入 key 或清除旧 key。切换供应商时是否应用预设地址，取决于模型路由模式。"><input className="input" type="url" autoComplete="off" value={config[p].apiUrl ?? ''} onChange={e => edit(p, { apiUrl: e.target.value.trim() })} /></Field>
         <Field label={`${labels[p]} API key`} hint={config[p].keyConfigured ? '已保存密钥，留空保留；不会回显。' : '尚未填写密钥。'}><input className="input" type="password" autoComplete="off" value={config[p].apiKey ?? ''} onChange={e => edit(p, { apiKey: e.target.value })} /></Field>
         {config[p].keyConfigured && <label><input type="checkbox" checked={config[p].clearKey ?? false} onChange={e => edit(p, { clearKey: e.target.checked })} /> 清除已保存的 key</label>}
         <Field label={`${labels[p]}模型名称`}><input className="input" value={config[p].model} list={`models-${p}`} onChange={e => chooseModel(p, e.target.value.trim())} /></Field>
@@ -194,7 +199,7 @@ export function AiSettings() {
       <SectionCard title="音视频理解模型" detail="现有 Gemini 音视频理解与摘要配置，与文件转录和实时语音转录独立。"><fieldset disabled={!access || busy || !ready}><legend>音视频摘要模型（可选）</legend>
         <p className="muted">与图文模型分开配置，统一模型模式不会覆盖。支持 MP3、WAV、M4A、MP4、WebM，单文件 50 MiB。只生成 AI 摘要；视频同时理解画面与声音。长音频窗口处理会重复计费完整输入。</p>
         <p className="muted">此现有音视频接口使用下方 Google 官方端点；它与仅经 Cloudflare AI Gateway 转发的新语音配置独立。</p>
-        <label><input type="checkbox" checked={Boolean(config.mediaUnderstanding)} onChange={e=>{draftRevision.current++;setConfig(c=>({...c,mediaUnderstanding:e.target.checked?{...blank().textEconomy,provider:'openai-compatible',providerPreset:'gemini',apiUrl:'https://generativelanguage.googleapis.com',model:'gemini-2.5-flash',supportsVision:true}:undefined}));setDirty(true);setEdited(true);}} /> 配置音视频摘要模型</label>
+        <label><input type="checkbox" checked={Boolean(config.mediaUnderstanding)} onChange={e=>{draftRevision.current++;setConfig(c=>({...c,mediaUnderstanding:e.target.checked?{...withoutApiUrl(blank().textEconomy),provider:'openai-compatible',providerPreset:'gemini',model:'gemini-2.5-flash',supportsVision:true}:undefined}));setDirty(true);setEdited(true);}} /> 配置音视频摘要模型</label>
         {config.mediaUnderstanding && <>
           <button className="button button-quiet" type="button" disabled={busy||dirty||!version} onClick={()=>void run(async()=>{const result=await call<{passed:boolean;detail:string}>('POST','/media-probe');setMessage(result.detail);if(!result.passed)throw new Error(result.detail);})}>测试音视频模型元数据（不生成）</button>
           <Field label="音视频 Gemini 模型"><input className="input" value={config.mediaUnderstanding.model} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,model:e.target.value}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>
@@ -208,7 +213,7 @@ export function AiSettings() {
       </fieldset></SectionCard>
       <SectionCard title="MiMo 音视频理解模型" detail="小米官方独立配置；保存草稿不会切换策略，也不影响 Gemini。"><fieldset disabled={!access || busy || !ready}><legend>MiMo 摘要模型（可选）</legend>
         <p className="muted">上传资料和草稿使用 AI 摘要，非逐字原文。支持 MP3、WAV、M4A、MP4，单文件 50 MiB；WebM 请使用现有路径。整文件处理，视频默认每秒 2 帧；不用于实时答辩或语音合成。</p>
-        <label><input type="checkbox" checked={Boolean(config.mimoMediaUnderstanding)} onChange={event => { draftRevision.current++; setConfig(current => ({ ...current, mimoMediaUnderstanding: event.target.checked ? { ...blank().textEconomy, provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiUrl: 'https://api.xiaomimimo.com/v1', supportsVision: true, pricePerMTokens: null } : undefined })); setDirty(true); setEdited(true); setReports({}); }} /> 配置 MiMo 音视频摘要模型</label>
+        <label><input type="checkbox" checked={Boolean(config.mimoMediaUnderstanding)} onChange={event => { draftRevision.current++; setConfig(current => ({ ...current, mimoMediaUnderstanding: event.target.checked ? { ...withoutApiUrl(blank().textEconomy), provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', supportsVision: true, pricePerMTokens: null } : undefined })); setDirty(true); setEdited(true); setReports({}); }} /> 配置 MiMo 音视频摘要模型</label>
         {config.mimoMediaUnderstanding && <>
           <button className="button button-quiet" type="button" disabled={busy || dirty || !version} onClick={() => void run(async () => { const result = await call<{ passed: boolean; detail: string }>('POST', '/mimo-media-probe'); setMessage(result.detail); if (!result.passed) throw new Error(result.detail); })}>测试 MiMo 模型元数据（不生成）</button>
           <p className="muted">元数据测试仅检查访问权限，不代表音频识别质量或视频理解已验证。真实音频识别需上传样本验证。</p>
