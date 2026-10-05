@@ -1,7 +1,8 @@
+import { rehearsalSpeechSchema } from '../ai/config';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
-import { apiEnvelope } from '../core/openapi';
+import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { requireUser, requireProjectMember, loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { requireAllowedOrigin } from '../core/origin';
 import { permissionDenied, unauthenticated, validationFailed } from '../core/errors';
@@ -12,10 +13,10 @@ const params=z.object({projectId:z.string().uuid(),rehearsalId:z.string().uuid()
 const sessionParams=params.extend({sessionId:z.string().uuid()});
 const speechParams=params.extend({speechId:z.string().uuid()});
 const prefix='/api/v1/projects/{projectId}/rehearsals/{rehearsalId}';
-const voiceRoute=createRoute({method:'get',path:prefix+'/voice',tags:['rehearsals'],summary:'语音答辩准备状态（配置与权限，不代表已付费连通验证）',request:{params},responses:{200:{description:'语音准备状态',content:{'application/json':{schema:apiEnvelope(z.object({configured:z.boolean(),ready:z.boolean(),mode:z.enum(['text','voice-with-text-fallback']),reason:z.string().nullable(),speech:z.object({model:z.string(),voice:z.string()})}),'RehearsalVoiceReadiness')}}}}});
+const voiceRoute=createRoute({method:'get',path:prefix+'/voice',tags:['rehearsals'],summary:'语音答辩准备状态（配置与权限，不代表已付费连通验证）',request:{params},responses:{200:{description:'语音准备状态',content:{'application/json':{schema:apiEnvelope(z.object({configured:z.boolean(),ready:z.boolean(),mode:z.enum(['text','voice-with-text-fallback']),reason:z.string().nullable(),speech:rehearsalSpeechSchema}),'RehearsalVoiceReadiness')}}}}});
 const createVoiceRoute=createRoute({method:'post',path:prefix+'/voice-sessions',tags:['rehearsals'],summary:'创建逐题转录会话（原答案仍由用户提交）',request:{params,body:{required:true,content:{'application/json':{schema:z.object({sequence:z.number().int().min(1),retryOfSessionId:z.string().uuid().optional()}).strict()}}}},responses:{201:{description:'语音会话',content:{'application/json':{schema:apiEnvelope(z.object({sessionId:z.string().uuid(),webSocketPath:z.string(),expiresAt:z.string()}),'RehearsalVoiceSession')}}}}});
 const closeVoiceRoute=createRoute({method:'post',path:prefix+'/voice-sessions/{sessionId}/close',tags:['rehearsals'],summary:'幂等关闭语音会话',request:{params:sessionParams,body:{required:true,content:{'application/json':{schema:z.object({}).strict()}}}},responses:{200:{description:'已关闭',content:{'application/json':{schema:apiEnvelope(z.object({sessionId:z.string().uuid(),status:z.literal('closed')}),'RehearsalVoiceClosed')}}}}});
-const speechCreateRoute=createRoute({method:'post',path:prefix+'/turns/{sequence}/speech',tags:['rehearsals'],summary:'朗读已生成的评委文字（仅语音合成）',request:{params:params.extend({sequence:z.coerce.number().int().min(1)}),body:{required:true,content:{'application/json':{schema:z.object({}).strict()}}}},responses:{202:{description:'朗读已排队',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid(),speechId:z.string().uuid(),status:z.string()}),'RehearsalSpeechQueued')}}}}});
+const speechCreateRoute=createRoute({method:'post',path:prefix+'/turns/{sequence}/speech',tags:['rehearsals'],summary:'云端朗读已退役，请使用系统本地朗读',request:{params:params.extend({sequence:z.coerce.number().int().min(1)}),body:{required:true,content:{'application/json':{schema:z.object({}).strict()}}}},responses:{410:{description:'系统本地朗读不使用云端 API',content:{'application/json':{schema:apiErrorEnvelope}}}}});
 const speechGetRoute=createRoute({method:'get',path:prefix+'/speech/{speechId}',tags:['rehearsals'],summary:'查询私有评委朗读',request:{params:speechParams},responses:{200:{description:'朗读状态',content:{'application/json':{schema:apiEnvelope(z.object({speechId:z.string().uuid(),status:z.string(),audioPath:z.string().optional(),error:z.string().optional()}),'RehearsalSpeechState')}}}}});
 
 export function registerRehearsalVoiceRoutes(app:OpenAPIHono<AppEnv>):void {
@@ -31,7 +32,7 @@ export function registerRehearsalVoiceRoutes(app:OpenAPIHono<AppEnv>):void {
     const {sessionId,...binding}=parsed.data,actorId=c.get('user')!.id,token=parseCookies(c.req.header('cookie'))[SESSION_COOKIE];
     return openRehearsalVoiceStream(c.env,{...binding,actorId},sessionId,{authenticate:async()=>{if((await loadSessionUser(c.env,token))?.id!==actorId)throw unauthenticated('语音登录已失效');},waitUntil:promise=>c.executionCtx.waitUntil(promise)});
   });
-  app.openapi(speechCreateRoute,async c=>c.json(apiData(c,await enqueueRehearsalSpeech(c.env,{...c.req.valid('param'),actorId:c.get('user')!.id})),202));
+  app.openapi(speechCreateRoute,async c=>await enqueueRehearsalSpeech(c.env,{...c.req.valid('param'),actorId:c.get('user')!.id}));
   app.openapi(speechGetRoute,async c=>c.json(apiData(c,await readRehearsalSpeech(c.env,{...c.req.valid('param'),actorId:c.get('user')!.id})),200));
   app.get('/api/v1/projects/:projectId/rehearsals/:rehearsalId/speech/:speechId/audio',async c=>{
     const parsed=speechParams.safeParse(c.req.param());if(!parsed.success)throw validationFailed('朗读音频路径无效');

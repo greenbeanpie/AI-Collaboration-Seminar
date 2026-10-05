@@ -3,11 +3,13 @@ import type { D1Database } from '@cloudflare/workers-types';
 import { AppError, aiUnavailable } from '../core/errors';
 import { API_PROTOCOLS, PROVIDER_PRESETS, REASONING_EFFORTS } from '../../../shared/ai-providers';
 
-import { FILE_TRANSCRIPTION_PROVIDER, FILE_TRANSCRIPTION_MODEL, REALTIME_TRANSCRIPTION_PROVIDER, REALTIME_TRANSCRIPTION_MODEL, normalizeProcessingStrategies, DEFAULT_AUDIO_FILE_TRANSCRIPTION, DEFAULT_REHEARSAL_SPEECH, REHEARSAL_TTS_MODELS, REHEARSAL_TTS_VOICES } from '../../../shared/audio-settings';
+import { FILE_TRANSCRIPTION_PROVIDER, FILE_TRANSCRIPTION_MODEL, REALTIME_TRANSCRIPTION_PROVIDER, REALTIME_TRANSCRIPTION_MODEL, normalizeProcessingStrategies, DEFAULT_AUDIO_FILE_TRANSCRIPTION, DEFAULT_REHEARSAL_SPEECH } from '../../../shared/audio-settings';
 
 export const audioFileTranscriptionSchema = z.object({provider:z.literal(FILE_TRANSCRIPTION_PROVIDER),model:z.literal(FILE_TRANSCRIPTION_MODEL)}).strict();
 export const realtimeAudioTranscriptionSchema = z.object({provider:z.literal(REALTIME_TRANSCRIPTION_PROVIDER),model:z.literal(REALTIME_TRANSCRIPTION_MODEL),gatewayId:z.string().max(64).refine(value=>value===''||/^[a-z0-9-]+$/.test(value),'Gateway ID must use lowercase letters, digits and hyphens'),apiKeyEncrypted:z.string().optional(),gatewayTokenEncrypted:z.string().optional(),languageCodes:z.array(z.string().max(64).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)).max(8).optional()}).strict();
-export const rehearsalSpeechSchema = z.object({model:z.enum(REHEARSAL_TTS_MODELS),voice:z.enum(REHEARSAL_TTS_VOICES)}).strict();
+export const rehearsalSpeechSchema = z.object({provider:z.literal('system-local'),lang:z.string().max(64).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/).default('zh-CN'),rate:z.number().min(0.5).max(2).default(1),volume:z.number().min(0).max(1).default(1)}).strict();
+// Frozen cloud configuration remains readable for accounting and historical artifacts.
+const historicalRehearsalSpeechSchema=z.object({model:z.enum(['gemini-3.8-flash-lite-tts','gemini-3.8-flash-tts']),voice:z.enum(['Kore','Aoede','Puck'])}).strict().transform(()=>({...DEFAULT_REHEARSAL_SPEECH}));
 export const processingStrategiesSchema = z.object({audioFiles:z.enum(['whisper-first','media-only']),rehearsal:z.enum(['text','voice-with-text-fallback'])}).strict();
 
 export type AiPurpose = 'textEconomy' | 'visionEconomy' | 'review';
@@ -38,7 +40,7 @@ export const aiModelConfigSchema = z.object({
 });
 
 export const aiConfigSchema = z.object({
-  rehearsalSpeech:rehearsalSpeechSchema.default(DEFAULT_REHEARSAL_SPEECH),
+  rehearsalSpeech:z.union([rehearsalSpeechSchema,historicalRehearsalSpeechSchema]).default(DEFAULT_REHEARSAL_SPEECH),
   audioFileTranscription: audioFileTranscriptionSchema.default(DEFAULT_AUDIO_FILE_TRANSCRIPTION),
   realtimeAudioTranscription: realtimeAudioTranscriptionSchema.optional(),
   processingStrategies: processingStrategiesSchema.optional(),

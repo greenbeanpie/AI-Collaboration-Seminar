@@ -1,3 +1,4 @@
+import { DEFAULT_REHEARSAL_SPEECH, type RehearsalSpeechConfig } from '../../../shared/audio-settings';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
 import { connectTranscribeGateway, TRANSCRIBE_LIVE_MODEL, parseTranscriptionEvent, parseVoiceClientEvent, transcribeLiveSetup, upstreamAudioEvent, type RealtimeTranscriptionConfig, type VoiceServerEvent } from '../ai/gemini-live';
@@ -6,7 +7,7 @@ import { newId, nowIso } from '../core/db';
 import { projectPermissionSql } from './project-permissions';
 
 export const REHEARSAL_VOICE_TTL_MS=600_000;
-interface VoiceConfig {realtimeAudioTranscription?:RealtimeTranscriptionConfig;processingStrategies?:{rehearsal?:'text'|'voice-with-text-fallback'};rehearsalSpeech?:{model:string;voice:string}}
+interface VoiceConfig {realtimeAudioTranscription?:RealtimeTranscriptionConfig;processingStrategies?:{rehearsal?:'text'|'voice-with-text-fallback'};rehearsalSpeech?:RehearsalSpeechConfig}
 export interface VoiceBinding {projectId:string;rehearsalId:string;actorId:string}
 export interface VoiceSession extends VoiceBinding {id:string;question_sequence:number;config_version_id:string;status:string;expires_at:string;transcript_text:string;root_session_id:string;retry_number:number;started_at:string|null;finished_at:string|null}
 function activeGuard(rehearsal:string,project:string,actor:string,sequence:string):string {
@@ -35,7 +36,7 @@ export async function readRehearsalVoice(env:Env,binding:VoiceBinding) {
     const valid=await env.DB.prepare(`SELECT 1 WHERE ${activeGuard('?1','?2','?3',"(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=?1)")}`).bind(binding.rehearsalId,binding.projectId,binding.actorId).first();
     if(!valid)reason='当前轮次不可录音，请等待评委问题或使用文字回答';
   }
-  return {configured,ready:reason===null,mode,reason,speech:voice?.rehearsalSpeech??{model:'gemini-3.8-flash-lite-tts',voice:'Kore'}};
+  return {configured,ready:reason===null,mode,reason,speech:voice?.rehearsalSpeech??DEFAULT_REHEARSAL_SPEECH};
 }
 export async function createRehearsalVoiceSession(env:Env,binding:VoiceBinding,input:{sequence:number;retryOfSessionId?:string}) {
   const rehearsal=await ownedRehearsal(env,binding);
