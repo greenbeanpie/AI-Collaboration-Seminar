@@ -1,7 +1,7 @@
+import type { LocalSpeechSettings } from './localSpeech';
 import { ApiError, isApiFailure } from '../api/client';
-export type VoiceConfig = { configured: boolean; ready: boolean; mode: 'text' | 'voice-with-text-fallback'; reason: string | null; speech: { model: string; voice: string } };
+export type VoiceConfig = { configured: boolean; ready: boolean; mode: 'text' | 'voice-with-text-fallback'; reason: string | null; speech: LocalSpeechSettings };
 export type VoiceSession = { sessionId: string; webSocketPath: string; expiresAt: string };
-export type Speech = { speechId: string; jobId?: string; status: 'queued' | 'running' | 'ready' | 'failed'; audioPath?: string; error?: string };
 /** Voice operations always use the authenticated network; never enqueue offline audio. */
 export async function voiceRequest<T>(path: string, signal?: AbortSignal, body?: unknown): Promise<T> {
   const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'include', cache: 'no-store', signal,

@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Mic, Square, Volume2 } from 'lucide-react';
 import { projectPath } from '../api/client';
 import { captureMicrophone, pcmBase64, type MicrophoneCapture } from './rehearsalPcm';
-import { authenticatedVoicePath, voiceRequest, type VoiceConfig, type VoiceSession, type Speech } from './rehearsalVoiceApi';
+import { speakLocal, defaultLocalSpeech, type LocalSpeechPlayback } from './localSpeech';
+import { authenticatedVoicePath, voiceRequest, type VoiceConfig, type VoiceSession } from './rehearsalVoiceApi';
 
 type Phase = 'idle' | 'connecting' | 'recording' | 'finalizing';
-export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled, initialVoiceMode = false, onModeChange, onTranscriptFinal, onBusyChange }: {
-  projectId: string; rehearsalId: string; sequence: number; enabled: boolean; initialVoiceMode?: boolean; onModeChange?: (voice: boolean) => void; onTranscriptFinal: (text: string) => void; onBusyChange: (busy: boolean) => void;
+export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, questionText = '', enabled, initialVoiceMode = false, onModeChange, onTranscriptFinal, onBusyChange }: {
+  projectId: string; rehearsalId: string; sequence: number; questionText?: string; enabled: boolean; initialVoiceMode?: boolean; onModeChange?: (voice: boolean) => void; onTranscriptFinal: (text: string) => void; onBusyChange: (busy: boolean) => void;
 }) {
   const prefix = projectPath(projectId, `/rehearsals/${encodeURIComponent(rehearsalId)}`);
   const [config, setConfig] = useState<VoiceConfig | null>(null);
@@ -20,8 +21,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
   const [retryAt, setRetryAt] = useState(0);
   const [clock, setClock] = useState(Date.now());
   const resources = useRef<{ controller?: AbortController; socket?: WebSocket; capture?: MicrophoneCapture; timeout?: ReturnType<typeof setTimeout>; sessionId?: string }>({});
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const audioController = useRef<AbortController | null>(null);
+  const localPlayback = useRef<LocalSpeechPlayback | null>(null);
   const generation = useRef(0), failures = useRef(0), previousSession = useRef<string | undefined>(undefined);
   const callbacks = useRef({ onTranscriptFinal, onBusyChange, onModeChange });
   const lastBusy = useRef(false);
@@ -36,8 +36,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     const current = resources.current; resources.current = {};
     clearTimeout(current.timeout); current.capture?.stop(); current.controller?.abort(); current.socket?.close();
     if (current.sessionId) void voiceRequest(`${prefix}/voice-sessions/${encodeURIComponent(current.sessionId)}/close`, undefined, {}).catch(() => undefined);
-    audioController.current?.abort(); audioController.current = null;
-    if (audio.current) { audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null; }
+    localPlayback.current?.cancel(); localPlayback.current = null;
     lastBusy.current = false; callbacks.current.onBusyChange(false);
   };
   const releaseRef = useRef(release);
@@ -55,10 +54,18 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     return () => clearInterval(timer);
   }, [retryAt]);
   useEffect(() => {
-    if (!enabled || (config && (!config.ready || config.mode === 'text'))) {
+    if (!enabled) {
       releaseRef.current(); setVoice(false); callbacks.current.onModeChange?.(false); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial('');
     }
-  }, [enabled, config]);
+  }, [enabled]);
+  useEffect(() => {
+    if (config && (!config.ready || config.mode === 'text')) { setVoice(false); callbacks.current.onModeChange?.(false); }
+  }, [config]);
+  useEffect(() => {
+    setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial(''); setFinalText('');
+    previousSession.current = undefined; failures.current = 0; setRetryAt(0);
+    return () => { releaseRef.current(); };
+  }, [questionText, sequence]);
 
   const fallback = (message: string, countFailure = true) => {
     if (countFailure) failures.current++;
@@ -127,41 +134,37 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     } catch { if (token === generation.current) fallback('停止音频采集失败。'); }
   };
   const play = async () => {
-    if (!enabled || phase !== 'idle' || synthesizing || speaking) return;
-    if (audio.current) {
-      setNotice(''); setSpeaking(true);
-      try { await audio.current.play(); } catch { setSpeaking(false); setNotice('朗读已生成，浏览器未开始播放；请再次点击“播放问题”。'); }
-      return;
-    }
-    const controller = new AbortController(); audioController.current = controller; setSynthesizing(true); setNotice('');
-    try {
-      let speech = await voiceRequest<Speech>(`${prefix}/turns/${sequence}/speech`, controller.signal, {});
-      const deadline = Date.now() + 180000;
-      while (speech.status !== 'ready' && speech.status !== 'failed' && Date.now() < deadline) {
-        await new Promise<void>((resolve, reject) => { const abort = () => { clearTimeout(timer); reject(new DOMException('Cancelled', 'AbortError')); }; const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve(); }, 2000); controller.signal.addEventListener('abort', abort, { once: true }); });
-        speech = await voiceRequest<Speech>(`${prefix}/speech/${encodeURIComponent(speech.speechId)}`, controller.signal);
+    if (!enabled || phase !== 'idle' || synthesizing || speaking || !questionText.trim()) return;
+    const token = generation.current;
+    setSynthesizing(true); setNotice('');
+    // Older cloud-shaped settings are ignored: local speech has safe local defaults.
+    const settings = config?.speech?.provider === 'system-local' ? config.speech : defaultLocalSpeech;
+    const playback = speakLocal(questionText, settings, () => {
+      if (token === generation.current) { setSynthesizing(false); setSpeaking(true); }
+    });
+    localPlayback.current = playback;
+    try { await playback.finished; }
+    catch (error) {
+      if (token === generation.current) {
+        release(); setVoice(false); callbacks.current.onModeChange?.(false); setSynthesizing(false); setSpeaking(false);
+        setNotice(error instanceof Error ? error.message : '系统本地朗读失败，可继续文字回答。');
       }
-      if (controller.signal.aborted) return;
-      if (speech.status !== 'ready' || !speech.audioPath) throw new Error(speech.error || '朗读生成尚未完成，请稍后重试。');
-      const element = new Audio(authenticatedVoicePath(speech.audioPath, prefix)); audio.current = element;
-      element.onended = () => { setSpeaking(false); }; element.onerror = () => { fallback('朗读播放失败。', false); };
-      setSynthesizing(false); setSpeaking(true);
-      await element.play();
-    } catch (error) { if (!controller.signal.aborted) {
-      if (audio.current) { setNotice('朗读已生成，浏览器未开始播放；请再次点击“播放问题”。'); setSpeaking(false); }
-      else fallback(error instanceof Error ? error.message : '朗读生成失败。', false);
-    } }
-    finally { if (!controller.signal.aborted) setSynthesizing(false); }
+    } finally {
+      if (token === generation.current) { localPlayback.current = null; setSynthesizing(false); setSpeaking(false); }
+    }
   };
+  const stopSpeech = () => { release(); setSynthesizing(false); setSpeaking(false); };
   const switchMode = (next: boolean) => { release(); setVoice(next); onModeChange?.(next); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial(''); };
   const cooldown = Math.max(0, Math.ceil((retryAt - clock) / 1000));
   return <div className="ai-workflow-note" aria-label="语音答辩控制">
     <div className="ai-workflow-actions"><button type="button" className="button button-quiet button-small" aria-pressed={!voice} onClick={() => switchMode(false)}>文字回答</button><button type="button" className="button button-quiet button-small" aria-pressed={voice} disabled={!enabled || !config?.ready || config.mode !== 'voice-with-text-fallback'} onClick={() => switchMode(true)}>语音回答</button></div>
-    <p>两方轮流答辩：实时转录 → 核对文字 → 现有文字模型处理；问题由独立 TTS 朗读。语音失败可继续文字对话。</p>
+    <p>两方轮流答辩：实时转录 → 核对文字 → 现有文字模型处理；问题由系统本地 TTS 朗读。语音失败可继续文字对话。</p>
     {(!config?.ready || config.mode === 'text') && <p role="status">{config?.reason || '当前未启用实时语音策略，请使用文字回答。'}</p>}
+    <div className="ai-workflow-actions"><button type="button" className="button button-quiet button-small" onClick={() => void play()} disabled={!enabled || !questionText.trim() || phase !== 'idle' || speaking || synthesizing}><Volume2 size={14}/>{synthesizing ? '正在加载系统声音' : speaking ? '正在朗读问题' : '播放问题'}</button>
+      {(speaking || synthesizing) && <button type="button" className="button button-quiet button-small" onClick={stopSpeech}>停止朗读</button>}
+    </div>
     {voice && <div className="stack">
-      <div className="ai-workflow-actions"><button type="button" className="button button-quiet button-small" onClick={() => void play()} disabled={!enabled || phase !== 'idle' || speaking || synthesizing}><Volume2 size={14}/>{synthesizing ? '正在生成朗读' : speaking ? '正在朗读问题' : '播放问题'}</button>
-        {speaking && <button type="button" className="button button-quiet button-small" onClick={() => { audio.current?.pause(); setSpeaking(false); }}>停止朗读</button>}
+      <div className="ai-workflow-actions">
         {phase === 'recording' ? <button type="button" className="button button-quiet button-small" onClick={() => void stop()}><Square size={14}/>停止并完成转录</button> : <button type="button" className="button button-primary button-small" onClick={() => void start()} disabled={!enabled || !config?.ready || config.mode !== 'voice-with-text-fallback' || phase !== 'idle' || speaking || synthesizing || cooldown > 0}><Mic size={14}/>{phase === 'connecting' ? '正在连接语音' : phase === 'finalizing' ? '等待最终字幕' : cooldown ? `${cooldown} 秒后可继续` : previousSession.current ? '手动继续语音' : '开始录音'}</button>}
         {phase === 'connecting' || phase === 'finalizing' ? <button type="button" className="button button-quiet button-small" onClick={() => switchMode(false)}>取消并转文字</button> : null}
       </div>
