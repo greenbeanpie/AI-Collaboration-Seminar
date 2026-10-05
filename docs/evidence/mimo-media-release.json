@@ -15,9 +15,33 @@
     "browserFixture": {"desktopWidth": 1440, "mobileWidth": 390, "passed": true}
   },
   "productionBackup": {"timeTravelBookmarkSaved": true, "criticalTables": 9, "privateSqlBytes": 628061},
+  "deployment": {
+    "codeCommit": "552d3c7bcaf2bee7de5b19336a1672fd09050627",
+    "backendVersion": "2a2e5e21-ad5b-48c2-a30a-f4f2576f6ac1",
+    "frontendVersion": "eddf5774-5157-4a2b-b0d7-8b5011d03e38",
+    "migration": "0060_mimo_media.sql",
+    "remainingMigrations": 0,
+    "backendCapabilitiesHttp": 200,
+    "unsignedMediaGrantHttp": 404,
+    "unsignedMediaGrantCacheControl": "no-store",
+    "audioTranscriptionEnabled": true,
+    "videoSummaryEnabled": true,
+    "mimoKeyConfiguredAtDeployment": false,
+    "configurationModifiedByRelease": false
+  },
+  "productionLegacyAudioSmoke": {
+    "result": "PASS",
+    "jobId": "51f4f082-c6d0-4146-8805-cd97b7b6720d",
+    "whisperTranscription": true,
+    "qualityGateAccepted": true,
+    "summarySaved": true,
+    "syntheticDraftCancelled": true,
+    "realProjectCreated": false
+  },
   "limitations": [
     "Real audio inference awaits the administrator configuring the official pay-as-you-go MiMo key after deployment.",
     "No real video inference is performed, following the user's audio-only test request.",
+    "Deployed super-admin settings verification is pending: stored production administrator login was rejected. The existing acceptance account can log in and correctly receives HTTP 403 on administrator configuration; no account or password was changed.",
     "Long-audio coverage is not verified by short synthetic audio.",
     "Full backend tests exited successfully with existing Workflow RPC disposal/cancellation teardown diagnostics; focused final media regressions passed without these diagnostics."
   ]
