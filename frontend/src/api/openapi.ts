@@ -11004,7 +11004,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 超级管理员读取最后1000条、最多1MB的无内容AI诊断记录 */
+        /** 超级管理员读取最后1000条、最多1MB的AI诊断记录 */
         get: {
             parameters: {
                 query?: never;
@@ -11014,7 +11014,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 固定状态和阶段；无业务内容或密钥 */
+                /** @description 固定状态、阶段和错误原因；不包含请求内容或密钥 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -11027,7 +11027,27 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** 超级管理员清空AI诊断记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 记录已清空 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiDiagnosticsClearedResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -16960,6 +16980,7 @@ export interface components {
                     durationMs: number;
                     /** @enum {string} */
                     errorCode: "NONE" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "VALIDATION_FAILED" | "VERSION_CONFLICT" | "INVALID_STATE" | "AI_UNAVAILABLE" | "AI_OUTPUT_INVALID" | "QUOTA_EXCEEDED" | "TIMEOUT" | "PROBE_FAILED" | "PROVIDER_FAILED" | "REDIRECT_BLOCKED" | "FETCH_FAILED" | "INTERNAL";
+                    errorReason?: string;
                     httpStatus?: number;
                     configVersion?: number;
                     expectedVersion?: number;
@@ -16992,6 +17013,13 @@ export interface components {
                     retainedEntries: number;
                     retainedBytes: number;
                 };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiDiagnosticsClearedResponse: {
+            data: {
+                deleted: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

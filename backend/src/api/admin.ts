@@ -208,7 +208,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/media-probe',tags:['admin'],summary:'只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用）',responses:{200:{description:'模型元数据检查，不等同真实媒体质量验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MediaProbeResponse')}}}}}),async c=>{
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mediaUnderstanding;
     if(!loaded||!model?.apiKeyEncrypted)throw invalidState('请先保存音视频模型及密钥');
-    const passed=await new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET)).probe();
+    const passed=await new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'官方模型元数据可访问，支持 generateContent；音视频摘要质量需真实样本核对':'官方模型未声明 generateContent'}),200);
   });
 
@@ -216,7 +216,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/mimo-media-probe',tags:['admin'],summary:'只读检查小米官方模型列表，不产生识别费用',responses:{200:{description:'模型可访问性，不等同真实识别验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MimoMediaProbeResponse')}}}}}),async c=>{
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mimoMediaUnderstanding;
     if(!loaded||!model?.apiKeyEncrypted)throw invalidState('请先保存 MiMo 模型及密钥');
-    const passed=await new MimoMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET)).probe();
+    const passed=await new MimoMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'小米官方模型列表可访问；音频识别质量需真实样本核对':'当前密钥不可访问 mimo-v2.6-pro'}),200);
   });
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));

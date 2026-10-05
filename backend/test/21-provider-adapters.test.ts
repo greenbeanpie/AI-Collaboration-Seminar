@@ -57,6 +57,18 @@ it('a provider redirect is observed once and rejected without following or forwa
   expect(safeDiagnosticTarget('https://custom.example/private-key')).toEqual({ finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted' });
 });
 
+it('stores successful model-call metadata without storing prompts, answers, or credentials', async () => {
+  await env.DB.prepare('DELETE FROM ai_diagnostics').run();
+  const requestId = crypto.randomUUID();
+  const prompt = 'fixture-private-prompt';
+  const answer = 'fixture-private-answer';
+  const mock = vi.fn(async () => Response.json({ choices: [{ message: { content: answer } }] }));
+  await gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages: [{ role: 'user', content: prompt }], diagnosticRequestId: requestId }, mock);
+  const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
+  expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ operation: 'model_call', status: 'succeeded', errorCode: 'NONE', httpStatus: 200, finalHost: 'api.deepseek.com' });
+  expect(JSON.stringify(events)).not.toMatch(/fixture-private-prompt|fixture-private-answer|fixture-provider-key|authorization/);
+});
+
 describe('outgoing provider protocol contracts (mocked only)', () => {
   it.each([
     ['openai', 'gpt-5.4', 'responses'], ['openai', 'gpt-4.1-mini', 'chat-completions'],

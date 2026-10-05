@@ -1,6 +1,7 @@
 import type { Env } from '../env';
 import { loadAiConfig, type LoadedAiConfig, type AiPurpose } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
+import { recordAiDiagnostic, diagnosticErrorCode, safeBackendErrorReason } from '../ai/diagnostics';
 import { recordAiCall } from '../ai/calls';
 import { WHISPER_MODEL,transcriptSchema,transcriptGate,chunkTranscript,qualitySchema,allQualityPassed,type AudioChunk,type AudioQuality } from '../ai/whisper';
 import { mediaSummarySchema,type MediaSummary } from '../ai/gemini-media';
@@ -60,7 +61,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   const llm=async(purpose:AiPurpose,stage:string,index:number,prompt:string):Promise<unknown>=>{
   const model=config.config[purpose],callId=await claim(stage,index);let dispatched=false,recorded=false;
   try{
-    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
+    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME,diagnostics:env},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,diagnosticRequestId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
    await recordAiCall(env,{projectId:job.project_id,draftId:input.draftId,jobId,purpose,configVersionId:config.id,promptVersion:'audio-pipeline-v1',model:model.model,input:{stage,index},output:result.content.slice(0,512),promptTokens:result.promptTokens,completionTokens:result.completionTokens,latencyMs:result.latencyMs,status:'ok'});recorded=true;
    await env.DB.prepare("UPDATE audio_pipeline_calls SET status='ok' WHERE id=?1").bind(callId).run();return JSON.parse(result.content);
   }catch(error){
@@ -75,8 +76,9 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   const object=await env.FILES.get(params.r2Key);if(!object)throw invalidState('音频原文件不存在');
   const id=await claim('transcribing',0),mediaId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,created_at) VALUES(?1,?2,?3,?4,0,'started',?5)").bind(mediaId,jobId,config.id,WHISPER_MODEL,nowIso()).run();
   let raw:unknown;
-  try{raw=await env.AI!.run(WHISPER_MODEL,{audio:{body:object.body,contentType:params.mime},task:'transcribe',vad_filter:true,condition_on_previous_text:false});}
-  catch(error){const status=error instanceof AppError?error.details?.status:(error as {status?:number})?.status;if([400,413,415,422].includes(Number(status))){await env.DB.prepare("UPDATE media_calls SET status='failed' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='invalid' WHERE id=?1").bind(id).run();return fallback('Whisper 明确拒绝该输入格式或大小');}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='unknown' WHERE id=?1").bind(id).run();await set('unknown','Whisper 请求结果未知，拒绝自动重放');throw error;}
+  const whisperStarted=Date.now();
+  try{raw=await env.AI!.run(WHISPER_MODEL,{audio:{body:object.body,contentType:params.mime},task:'transcribe',vad_filter:true,condition_on_previous_text:false});await recordAiDiagnostic(env,{requestId:mediaId,operation:'model_call',phase:'model_result',status:'succeeded',durationMs:Math.min(3_600_000,Date.now()-whisperStarted),errorCode:'NONE'});}
+  catch(error){const status=error instanceof AppError?error.details?.status:(error as {status?:number})?.status;await recordAiDiagnostic(env,{requestId:mediaId,operation:'model_call',phase:'model_result',status:'failed',durationMs:Math.min(3_600_000,Date.now()-whisperStarted),errorCode:diagnosticErrorCode(error),errorReason:safeBackendErrorReason(error instanceof AppError?error:undefined)??(typeof status==='number'?`Workers AI Whisper 返回 HTTP ${status}`:'Workers AI Whisper 调用失败，后端未取得模型结果')});if([400,413,415,422].includes(Number(status))){await env.DB.prepare("UPDATE media_calls SET status='failed' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='invalid' WHERE id=?1").bind(id).run();return fallback('Whisper 明确拒绝该输入格式或大小');}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='unknown' WHERE id=?1").bind(id).run();await set('unknown','Whisper 请求结果未知，拒绝自动重放');throw error;}
   const key=`audio-pipeline/${jobId}/transcript.json`;await assertActive();await env.FILES.put(key,JSON.stringify(raw));
   await env.DB.prepare('UPDATE audio_pipeline SET transcript_r2_key=?2 WHERE job_id=?1').bind(jobId,key).run();row.transcript_r2_key=key;
   const parsed=transcriptSchema.safeParse(raw),duration=parsed.success?parsed.data.transcription_info?.duration:undefined;

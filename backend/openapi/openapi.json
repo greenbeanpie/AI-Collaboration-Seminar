@@ -21751,6 +21751,10 @@
                         "INTERNAL"
                       ]
                     },
+                    "errorReason": {
+                      "type": "string",
+                      "maxLength": 240
+                    },
                     "httpStatus": {
                       "type": "integer",
                       "minimum": 100,
@@ -21935,6 +21939,31 @@
             "required": [
               "items",
               "retention"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiDiagnosticsClearedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "deleted": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "deleted"
             ]
           },
           "requestId": {
@@ -38281,14 +38310,32 @@
         "tags": [
           "admin"
         ],
-        "summary": "超级管理员读取最后1000条、最多1MB的无内容AI诊断记录",
+        "summary": "超级管理员读取最后1000条、最多1MB的AI诊断记录",
         "responses": {
           "200": {
-            "description": "固定状态和阶段；无业务内容或密钥",
+            "description": "固定状态、阶段和错误原因；不包含请求内容或密钥",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AiDiagnosticsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "超级管理员清空AI诊断记录",
+        "responses": {
+          "200": {
+            "description": "记录已清空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDiagnosticsClearedResponse"
                 }
               }
             }

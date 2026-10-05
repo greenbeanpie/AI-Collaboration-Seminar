@@ -6,7 +6,7 @@ import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
 import { GO_DEFAULT_USER_AGENT, providerOptionErrors } from '../../../shared/ai-providers';
 import { buildProviderRequest, normalizeProviderResponse } from './transport';
-import { classifyFetchFailure, recordAiDiagnostic, safeDiagnosticTarget } from './diagnostics';
+import { classifyFetchFailure, diagnosticErrorCode, recordAiDiagnostic, safeBackendErrorReason, safeDiagnosticTarget, safeProviderErrorReason } from './diagnostics';
 import type { Env } from '../env';
 import { LIMITS } from '../core/limits';
 
@@ -128,6 +128,16 @@ export async function gatewayChat(
       }, fetchImpl, recoveryDeadline);
       return { ...output, latencyMs: Date.now() - started };
     } catch (error) {
+      if (endpoint.diagnostics) {
+        const appError = error instanceof AppError ? error : undefined;
+        const providerReason = appError?.details?.providerReason;
+        await recordAiDiagnostic(endpoint.diagnostics, {
+          requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'model_result', status: 'failed',
+          durationMs: Math.min(3_600_000, Date.now() - started), errorCode: diagnosticErrorCode(error),
+          errorReason: typeof providerReason === 'string' ? providerReason.slice(0, 240) : safeBackendErrorReason(appError) ?? '后端模型调用失败，未能提取明确错误说明',
+          ...(typeof appError?.details?.status === 'number' && appError.details.status >= 100 && appError.details.status <= 599 ? { httpStatus: appError.details.status } : {}),
+        });
+      }
       // Only a received HTTP response proves this is a provider rejection.
       // Network/timeouts, parser errors and quota/permission guards are never replayed.
       const status = error instanceof AppError ? error.details?.status : undefined;
@@ -237,7 +247,7 @@ async function gatewayChatAttempt(
     // 网络失败/超时：结果未知，由调用方保留尝试状态并避免自动重放。
     const timeout = timeoutSignal.aborted || (err instanceof Error && err.name === 'TimeoutError');
     const classification = classifyFetchFailure(err, timeout);
-    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_failed', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: timeout ? 'TIMEOUT' : 'FETCH_FAILED', protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...classification });
+    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_failed', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: timeout ? 'TIMEOUT' : 'FETCH_FAILED', errorReason: timeout ? `请求超过 ${Math.ceil(liveTimeout / 1000)} 秒仍未收到响应` : '网络层未收到供应商 HTTP 响应；请检查 DNS、TLS、出口网络和 API 地址', protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...classification });
     throw aiUnavailable(timeout
       ? `模型请求超时（${input.config.timeoutMs / 1000} 秒）；尚未收到 HTTP 响应，请检查超时设置及供应商服务状态`
       : '模型网络请求失败，尚未收到 HTTP 响应；请检查 API 地址、重定向和供应商服务可达性', {
@@ -255,33 +265,61 @@ async function gatewayChatAttempt(
   if (redirect) {
     try { const target = safeDiagnosticTarget(new URL(res.headers.get('location') ?? '', url).href); redirected = { redirectHost: target.finalHost, redirectPath: target.finalPath }; } catch { /* Never retain an untrusted Location header. */ }
   }
-  if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: res.ok ? 'succeeded' : 'failed', durationMs: Math.min(3_600_000, latencyMs), errorCode: redirect ? 'REDIRECT_BLOCKED' : res.ok ? 'NONE' : 'PROVIDER_FAILED', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...redirected, ...(redirect ? { failureKind: 'redirect' as const } : {}) });
   if (redirect) {
+    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'failed', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'REDIRECT_BLOCKED', errorReason: `供应商返回 HTTP ${res.status} 重定向；为避免转发凭据，后端未跟随跳转`, httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...redirected, failureKind: 'redirect' });
     await res.body?.cancel();
     throw new AppError('AI_UNAVAILABLE', `模型地址返回重定向（HTTP ${res.status}）；未跟随跳转或转发密钥，请核对完整 API 地址`, 502, false, { status: res.status, failureKind: 'redirect', ...safeDiagnosticTarget(url), ...redirected });
   }
 
   if (!res.ok) {
-    let multipleImagesRejected = false;
-    if ([400, 422].includes(res.status)) {
-      try {
-        const reason = JSON.stringify(await readProviderJson(res)).slice(0, 12000);
-        multipleImagesRejected = /(?:only|maximum|max(?:imum)?|at most)\s+(?:one|1)\s+image|multiple\s+images?\s+(?:(?:are|is)\s+)?(?:not\s+supported|unsupported)|不支持多(?:张|个)图|最多.{0,3}(?:1|一)张/u.test(reason.toLowerCase());
-      } catch { /* Invalid provider rejection bodies do not enable replay. */ }
-    } else await res.body?.cancel();
+    const errorBody = await readProviderErrorBody(res);
+    await res.body?.cancel();
+    const providerReason = safeProviderErrorReason(errorBody, token);
+    const multipleImagesRejected = [400, 422].includes(res.status) && /(?:only|maximum|max(?:imum)?|at most)\s+(?:one|1)\s+image|multiple\s+images?\s+(?:(?:are|is)\s+)?(?:not\s+supported|unsupported)|不支持多(?:张|个)图|最多.{0,3}(?:1|一)张/u.test(JSON.stringify(errorBody).toLowerCase());
     const retryable = res.status === 429 || res.status >= 500;
+    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'failed', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'PROVIDER_FAILED', errorReason: providerReason ?? `供应商返回 HTTP ${res.status}，但响应中没有可读取的结构化错误原因`, httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
     throw new AppError('AI_UNAVAILABLE', `模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
       status: res.status,
+      ...(providerReason ? { providerReason } : {}),
       ...(multipleImagesRejected ? { multipleImagesRejected: true } : {}),
     });
   }
 
-  const data: unknown = await readProviderJson(res);
+  if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'succeeded', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'NONE', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
+
+  let data: unknown;
+  try { data = await readProviderJson(res); }
+  catch (error) {
+    if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'model_result', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: 'AI_OUTPUT_INVALID', errorReason: error instanceof Error ? error.message : '模型响应 JSON 解析失败', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
+    throw error;
+  }
   if(input.toolMode) {
     try {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}
     catch {throw new AppError('AI_OUTPUT_INVALID','模型工具响应未通过校验：'+JSON.stringify(toolResponseShape(data)),502,false);}
   }
   return { ...normalizeProviderResponse(protocol, data), latencyMs };
+}
+
+async function readProviderErrorBody(response: Response): Promise<unknown> {
+  try {
+    const reader = response.clone().body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > 16 * 1024) { await reader.cancel(); return null; }
+        chunks.push(chunk.value);
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } finally { reader.releaseLock(); }
+  } catch { return null; }
 }
 
 /** 应用层统一的一次额外重试（仅对可重试错误） */

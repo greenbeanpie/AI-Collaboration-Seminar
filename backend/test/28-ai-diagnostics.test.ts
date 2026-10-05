@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
 import { authCookie, seedUser } from './helpers/seed';
-import { diagnosticErrorCode, readAiDiagnostics, recordAiDiagnostic, type DiagnosticInput } from '../src/ai/diagnostics';
+import { diagnosticErrorCode, readAiDiagnostics, recordAiDiagnostic, safeProviderErrorReason, type DiagnosticInput } from '../src/ai/diagnostics';
 
 const event: DiagnosticInput = { requestId: 'e4cc34b8-b74c-4719-bef0-a716055aa5cb', operation: 'config_save', phase: 'request_finished', status: 'failed', durationMs: 42, errorCode: 'VERSION_CONFLICT', httpStatus: 409, configVersion: 3, expectedVersion: 2 };
 const headers = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
@@ -20,6 +20,15 @@ it('diagnostics writes and reads only fixed, content-free fields and never raw e
   expect(report.items[0]).toMatchObject({ operation: 'config_save', errorCode: 'VERSION_CONFLICT', durationMs: 42 });
   expect(report.items[0]?.requestId).toMatch(/^[0-9a-f-]{36}$/);
   expect(diagnosticErrorCode(new Error('private-secret-exception'))).toBe('INTERNAL');
+});
+
+it('retains the provider error code and reason while scrubbing credentials and long identifiers', () => {
+  const reason = safeProviderErrorReason({ error: { code: 'invalid_api_key', message: 'Invalid key api-key=secret-value; Bearer abc123. Request trace abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH.' } }, 'secret-value');
+  expect(reason).toContain('invalid_api_key');
+  expect(reason).toContain('Invalid key');
+  expect(reason).not.toContain('secret-value');
+  expect(reason).not.toContain('Bearer abc123');
+  expect(reason).not.toContain('abcdefghijklmnopqrstuvwxyz');
 });
 
 it('concurrent atomic writers retain the newest 1000 records and the byte ceiling', async () => {
@@ -69,6 +78,21 @@ it('only a super-admin session can read diagnostics; operator and other roles ar
   }
 });
 
+it('allows only super-admin to clear diagnostic records', async () => {
+  await recordAiDiagnostic(env, event);
+  const path = `${BASE}/api/v1/admin/ai-diagnostics`;
+  const admin = await seedUser();
+  await env.DB.prepare("UPDATE auth_accounts SET account_role='admin',is_admin=1 WHERE user_id=?1").bind(admin.userId).run();
+  const denied = await SELF.fetch(path, { method: 'DELETE', headers: { cookie: authCookie(admin.token) } });
+  expect(denied.status).toBe(403);
+  const superAdmin = await seedUser();
+  await env.DB.prepare("UPDATE auth_accounts SET account_role='super_admin',is_admin=1 WHERE user_id=?1").bind(superAdmin.userId).run();
+  const cleared = await SELF.fetch(path, { method: 'DELETE', headers: { cookie: authCookie(superAdmin.token) } });
+  expect(cleared.status).toBe(200);
+  expect((await cleared.json() as { data: { deleted: number } }).data.deleted).toBeGreaterThan(0);
+  expect((await readAiDiagnostics(env)).items).toHaveLength(0);
+});
+
 it('save conflict logs fixed request-correlated phases and a safe current version, never the request draft', async () => {
   await env.DB.prepare('DELETE FROM ai_diagnostics').run();
   const currentResponse = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers });
@@ -84,13 +108,14 @@ it('save conflict logs fixed request-correlated phases and a safe current versio
 });
 
 it('failed probes are diagnosed without recording model responses, prompts, keys or private error text', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response('private-provider-failure', { status: 500 })));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'invalid_api_key', message: 'The provider rejected the configured API key.' } }, { status: 401 })));
   const requestId = crypto.randomUUID();
   const response = await SELF.fetch(`${BASE}/api/v1/admin/ai-config/probe`, { method: 'POST', headers: { ...headers, 'x-request-id': requestId }, body: JSON.stringify({ purpose: 'textEconomy' }) });
   expect(response.status).toBe(200);
   const report = await readAiDiagnostics(env);
   expect(report.items.filter(entry => entry.requestId === requestId).find(entry => entry.phase === 'probe_result')).toMatchObject({ status: 'failed', errorCode: 'PROBE_FAILED', purpose: 'textEconomy' });
-  expect(JSON.stringify(report)).not.toMatch(/private-provider|prompt|apiKey|authorization|ciphertext|你好/);
+  expect(report.items.find(entry => entry.requestId === requestId && entry.phase === 'fetch_received')).toMatchObject({ status: 'failed', errorCode: 'PROVIDER_FAILED', errorReason: 'invalid_api_key: The provider rejected the configured API key.' });
+  expect(JSON.stringify(report)).not.toMatch(/prompt|apiKey|authorization|ciphertext|你好/);
 }, 60_000);
 
 it('diagnostics storage failures cannot replace either a successful save or its real CAS error', async () => {

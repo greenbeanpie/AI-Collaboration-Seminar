@@ -11,6 +11,7 @@ import { reserveAiSlot, markAiCallStarted, settleReservation } from './ai-reserv
 import { MimoMediaClient } from '../ai/mimo-media';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { createMediaFetchUrl } from './media-fetch';
+import { diagnosticErrorCode, recordAiDiagnostic, safeBackendErrorReason } from '../ai/diagnostics';
 
 interface State {id:string;job_id:string;source_version_id:string|null;draft_file_id:string|null;config_version_id:string;stage:string;provider:'gemini'|'mimo';provider_name:string|null;provider_uri:string|null;windows_json:string;summary_json:string|null;duration_seconds:number|null;}
 export async function enqueueDraftMedia(env:Env,draftId:string,fileId:string,userId:string):Promise<void> {
@@ -66,7 +67,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     if(!summary&&mimoRequest){
       const routeError=mediaRouteError(env,config,file.mime);if(routeError)throw invalidState(routeError);
       const mimoModel=config.config.mimoMediaUnderstanding!;
-      const mimo=new MimoMediaClient(mimoModel,await unseal(mimoModel.apiKeyEncrypted!,env.AUTH_SECRET));
+      const mimo=new MimoMediaClient(mimoModel,await unseal(mimoModel.apiKeyEncrypted!,env.AUTH_SECRET),fetch,env,jobId);
       if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId,purpose:'media_summary',configVersionId:config.id,maxCalls:2});
       await assertActive();
       const claim=await env.DB.prepare("UPDATE media_processing SET stage='generating',updated_at=?3 WHERE id=?1 AND lease_token=?2 AND stage IN ('pending','processing')").bind(state.id,leaseToken,nowIso()).run();
@@ -85,7 +86,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     }
     if(!summary){
     if(!model?.apiKeyEncrypted)throw new AppError('AI_UNAVAILABLE','音视频 Gemini 模型尚未配置；原文件已保留',503,false);
-    client=new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,env.AUTH_SECRET));
+    client=new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,env.AUTH_SECRET),fetch,env,jobId);
     if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId,purpose:'media_summary',configVersionId:mediaConfig!.id,maxCalls:24});
     if(!state.provider_name){
       const claim=await env.DB.prepare("UPDATE media_processing SET stage='uploading',updated_at=?2 WHERE id=?1 AND stage IN ('pending','processing')").bind(state.id,nowIso()).run();if(!claim.meta.changes)throw invalidState('媒体上传已在运行');
@@ -162,6 +163,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       if(!held){ownsLease=false;return {status:'busy'};}
     }
     const message=error instanceof AppError?error.message:'媒体请求失败或受理状态未知；原文件保留，请核对后主动重试';
+    await recordAiDiagnostic(env,{requestId:jobId,operation:'model_call',phase:'model_result',status:'failed',durationMs:0,errorCode:diagnosticErrorCode(error),errorReason:(safeBackendErrorReason(error instanceof AppError?error:undefined)??message).slice(0,240)});
     if(state&&ownsLease){const failed=await env.DB.prepare("UPDATE media_processing SET stage='failed',error=?2,updated_at=?3 WHERE id=?1 AND lease_token=?4").bind(state.id,message,nowIso(),leaseToken).run();if(!failed.meta.changes){ownsLease=false;return {status:'busy'};}}
     if(sourceVersionId){const lifecycle=input.sourceLifecycleVersion??1;const guard=sourceLifecycleGuard('?1','?2')+" AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND status IN ('queued','running'))";await env.DB.batch([env.DB.prepare(`UPDATE source_versions SET status='failed',parse_error=?3 WHERE id=?1 AND ${guard}`).bind(sourceVersionId,lifecycle,message,jobId),env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,text_status,summary_status,summary_error,updated_at) SELECT id,project_id,'failed','failed',?3,?5 FROM source_versions WHERE id=?1 AND ${guard} ON CONFLICT(source_version_id) DO UPDATE SET text_status='failed',summary_status='failed',summary_error=excluded.summary_error,updated_at=excluded.updated_at`).bind(sourceVersionId,lifecycle,message,jobId,nowIso())]);}
     if(!sourceVersionId&&input.fileId)await env.DB.prepare("UPDATE creation_draft_files SET text_error=?2 WHERE id=?1 AND removed=0 AND EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=creation_draft_files.draft_id AND status='active') AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running'))").bind(input.fileId,message,jobId).run();

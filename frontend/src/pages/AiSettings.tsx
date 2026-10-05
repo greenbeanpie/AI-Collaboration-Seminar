@@ -1,7 +1,6 @@
 import { AudioModelSettings } from './AudioModelSettings';
 import { blankAudioSettings, localSpeechSettings, type AudioSettingsView } from './audio-settings-view';
 import { useSettingsDirty } from './settings-dirty';
-import { AiDiagnosticsPanel } from './AiDiagnosticsPanel';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { adminRequest, useSession } from '../auth';
@@ -228,7 +227,6 @@ export function AiSettings() {
       <p className="muted">保存配置、停用 AI 和启用 AI 均不发起模型请求。修改配置后会安全停用；未改配置时保留当前启用状态。测试按钮会发起少量真实模型请求，可能产生费用；测试为可选诊断，不影响启用。key 在后端加密保存，不写入浏览器存储。</p>
       <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || !version || dirty || savedEnabled} onClick={() => void run(() => save(true))}>{savedEnabled ? 'AI 已启用' : '启用 AI'}</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
-      <AiDiagnosticsPanel />
     </div>
   </SectionCard>;
 }
