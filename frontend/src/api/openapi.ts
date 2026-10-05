@@ -4705,7 +4705,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 私有任务质询 */
+                /** @description 当前任务中的私密一对一质询工单 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4731,13 +4731,13 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** Format: uuid */
-                        upstreamTaskId: string;
+                        recipientId: string;
                         body: string;
                     };
                 };
             };
             responses: {
-                /** @description 质询已发起 */
+                /** @description 一对一任务质询工单已创建 */
                 201: {
                     headers: {
                         [name: string]: unknown;
@@ -14116,7 +14116,7 @@ export interface components {
                     recipientId: string;
                     recipientName: string;
                     /** @enum {string} */
-                    recipientSource: "submission" | "completion" | "substitute";
+                    recipientSource: "submission" | "completion" | "substitute" | "direct";
                     createdAt: string;
                     messages: {
                         messageId: string;
@@ -14125,14 +14125,6 @@ export interface components {
                         body: string;
                         createdAt: string;
                     }[];
-                }[];
-                candidates: {
-                    taskId: string;
-                    title: string;
-                    recipientId: string;
-                    recipientName: string;
-                    /** @enum {string} */
-                    recipientSource: "submission" | "completion" | "substitute";
                 }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */

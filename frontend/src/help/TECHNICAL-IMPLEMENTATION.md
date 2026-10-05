@@ -161,7 +161,7 @@ notification_events ── notification_inbox ── users
 | `reviews` | `id PK`；`project_id/requirement_set_id/rubric_version_id FK`；`material_version_ids_json`；`status pending/running/succeeded/failed`；`report_json/job_id` | 原有预审底层实体仍存在；不要因统一 assessments 而直接删除。 |
 | `rehearsals` / `rehearsal_turns` | 答辩含 `scope all/member`、`member_id FK`、材料版本 JSON、`status active/finished`、`processing_job_id`、`finish_job_id/finish_snapshot_json`；回合含唯一 `(rehearsal_id,sequence)`、`kind question/answer/followup/summary`、`content_json`、`run_id`、`author_id FK` | `rehearsal.ts`：共享答辩一次处理作业持有 processing_job_id，回答作者独立记录，避免两个成员并发覆盖同一轮。 |
 | `task_readiness` / `task_completion_people` | readiness：`task_id PK/FK`、`assignee_id FK`、`ready CHECK 0/1`、`generation`；completion：`task_id PK/FK`、`user_id FK`、`completed_at` | 0037 的视图和触发器维护基线、完成者与通知。ready 要求任务未完成、已分配给当前成员、有依赖且所有上游 done；没有依赖不会触发“前置全部完成”通知。 |
-| `task_inquiries` / `task_inquiry_messages` | inquiry：project/task/upstream/requester/recipient FK，`recipient_source CHECK submission/completion/substitute`，任务名称快照；message：inquiry/author FK，`body CHECK length 1..4000` | 询问对象根据上游提交者/完成者/替代联系人确定，参与者访问校验在路由。项目成员身份不等于可以读所有私密询问。 |
+| `task_inquiries` / `task_inquiry_messages` | inquiry：project/task/upstream/requester/recipient FK，`recipient_source CHECK submission/completion/substitute`，任务名称快照；message：inquiry/author FK，`body CHECK length 1..4000` | 新工单将 `task_id` 与 `upstream_task_id` 都保存为对应任务 ID，接收人由发起人选择；API 根据相同 ID 返回 `direct`。旧记录保留原双任务和 `recipient_source` 快照。参与者访问校验在路由，项目成员不能读取他人的私密工单。 |
 | `task_summaries` | 复合 PK `(project_id,task_id,source_hash)`；`status queued/running/ready/failed`；`summary`、`job_id`、时间 | `task-summary.ts`：内容哈希隔离不同原文的摘要，避免旧作业覆盖新正文摘要。 |
 
 ### 创建草稿、模板和导出边界
@@ -661,7 +661,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 
 任务设置由 TaskSettings 串行保存内容、依赖、分工，停止输入三秒和区域失焦触发保存，窗口关闭调用异步保存守卫。任务写入采用响应中的 revision；依赖采用最新 graphRevision，提交依赖后重新读取任务版本。409 后重新读取任务和依赖图，三方字段合并仅自动处理无冲突字段；同字段冲突保留草稿并要求选择。前端版本提示隐藏，后端事务守卫和审计保留。
 
-质询候选 SQL 仅连接直接 task_dependencies，仍要求当前执行人发起、前置任务已完成、回应者为项目成员。历史参与人快照保留，发起者按 task_id 查看，被询问者按 upstream_task_id 查看。GET /task-inquiries/unread 由现有 notification_inbox.read_at 汇总；POST /tasks/{taskId}/inquiries/read 只更新请求中已展示的 messageIds，逐项检查项目与当前任务一侧参与人。新到消息不会随旧快照标记已读。通知使用 taskAction=inquiries 和接收者对应的任务 ID，不新增表或迁移。
+任务质询按一对一工单组织。项目成员可在对应任务中选另一位项目成员创建工单，不要求是任务执行人，也不受依赖关系或任务状态限制。新记录将 `task_id` 与 `upstream_task_id` 都设为该对应任务；创建与回复通知均跳转到该任务。列表、回复和已读接口仍逐项校验发起者/接收者与当前项目成员资格，只有工单双方可见。旧记录的两个任务 ID 保持不变，并继续分别显示在历史发起任务和接收任务。GET /task-inquiries/unread 复用 `notification_inbox.read_at` 汇总；POST /tasks/{taskId}/inquiries/read 只更新已展示的 `messageIds`。无需数据库迁移。
 
 离线工作台在项目入口、online、focus 和可见状态恢复时先 synchronizeOffline 再 prepareProject；组件和缓存准备层合并重复执行。正常联网时隐藏缓存就绪提示，失败与冲突仍可处理。
 

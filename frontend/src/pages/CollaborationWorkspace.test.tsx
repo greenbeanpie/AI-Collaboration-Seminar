@@ -20,7 +20,7 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
   client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 });
   client.setQueryData(['collaboration-proposals', 'p1'], { items: proposals });
   client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: submissions });
-  client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }]);
+  client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }, { userId: 'm2', displayName: '成员乙' }]);
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
   client.setQueryData(['task-files', 'p1', 't1'], []);
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
@@ -34,7 +34,7 @@ function NavigationProbe() { const location = useLocation(); const navigate = us
 describe('collaboration lifecycle', () => {
   it('opens inquiry notification links on the corresponding task and shows red unread counts', async () => {
     const { client } = setup({ entries: ['/tasks?task=t1&taskAction=inquiries'] });
-    expect(screen.getByRole('dialog', { name: '前置任务质询' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '任务质询' })).toBeInTheDocument();
     await waitFor(() => expect(client.getQueryState(['task-inquiries-unread', 'p1'])?.fetchStatus).toBe('idle'));
     act(() => client.setQueryData(['task-inquiries-unread', 'p1'], { items: [{ taskId: 't1', unreadCount: 2 }] }));
     await screen.findByLabelText('有未读质询');
@@ -119,16 +119,19 @@ describe('collaboration lifecycle', () => {
     expect(screen.queryByRole('button', { name: '确认人工审核' })).toBeNull();
   });
   it('opens inquiries as a sibling action without embedding inquiries or tabs in task dialogs', async () => {
+    identity.role = 'member';
     const { fetchMock } = setup();
-    expect(screen.getByRole('button', { name: '前置任务质询' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
+    expect(screen.getByRole('button', { name: '任务质询' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
     expect(screen.getByRole('button', { name: 'AI 辅助' }).parentElement).toBe(screen.getByRole('button', { name: '查看与提交' }).parentElement);
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    expect(within(screen.getByRole('dialog')).queryByRole('region', { name: '前置任务质询' })).toBeNull();
+    expect(within(screen.getByRole('dialog')).queryByRole('region', { name: '任务质询' })).toBeNull();
     expect(within(screen.getByRole('dialog')).queryByRole('tablist')).toBeNull();
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '保留执行草稿' } });
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-    fireEvent.click(screen.getByRole('button', { name: '前置任务质询' }));
-    expect(screen.getByRole('dialog', { name: '前置任务质询' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '任务质询' }));
+    expect(screen.getByRole('dialog', { name: '任务质询' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '成员乙' })).toBeInTheDocument();
+    expect(screen.getByText('工单和双方回复都保存在“交付原型”任务中，仅发起人与质询对象可见。')).toBeInTheDocument();
     await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/tasks/t1/inquiries'))).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
@@ -137,6 +140,14 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     expect(screen.getByLabelText('成果说明')).toHaveValue('保留执行草稿');
+  });
+  it('lets a project member open task inquiries without being assigned to the task', async () => {
+    identity.role = 'member';
+    setup({ tasks: [{ ...task, assigneeId: 'm2' }] });
+    fireEvent.click(screen.getByRole('button', { name: '任务质询' }));
+    expect(screen.getByRole('dialog', { name: '任务质询' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '成员乙' })).toBeInTheDocument();
+    expect(screen.getByText('工单和双方回复都保存在“交付原型”任务中，仅发起人与质询对象可见。')).toBeInTheDocument();
   });
   it('places AI controls in the creation toolbar and preserves the draft when collapsed', () => {
     setup();

@@ -10579,7 +10579,8 @@
                       "enum": [
                         "submission",
                         "completion",
-                        "substitute"
+                        "substitute",
+                        "direct"
                       ]
                     },
                     "createdAt": {
@@ -10631,46 +10632,10 @@
                     "messages"
                   ]
                 }
-              },
-              "candidates": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "taskId": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "recipientId": {
-                      "type": "string"
-                    },
-                    "recipientName": {
-                      "type": "string"
-                    },
-                    "recipientSource": {
-                      "type": "string",
-                      "enum": [
-                        "submission",
-                        "completion",
-                        "substitute"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "taskId",
-                    "title",
-                    "recipientId",
-                    "recipientName",
-                    "recipientSource"
-                  ]
-                }
               }
             },
             "required": [
-              "items",
-              "candidates"
+              "items"
             ]
           },
           "requestId": {
@@ -29466,7 +29431,7 @@
         ],
         "responses": {
           "200": {
-            "description": "私有任务质询",
+            "description": "当前任务中的私密一对一质询工单",
             "content": {
               "application/json": {
                 "schema": {
@@ -29505,7 +29470,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "upstreamTaskId": {
+                  "recipientId": {
                     "type": "string",
                     "format": "uuid"
                   },
@@ -29516,7 +29481,7 @@
                   }
                 },
                 "required": [
-                  "upstreamTaskId",
+                  "recipientId",
                   "body"
                 ],
                 "additionalProperties": false
@@ -29526,7 +29491,7 @@
         },
         "responses": {
           "201": {
-            "description": "质询已发起",
+            "description": "一对一任务质询工单已创建",
             "content": {
               "application/json": {
                 "schema": {

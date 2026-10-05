@@ -13,13 +13,32 @@ async function fixture(){
  return {owner,a,b,project,task,edge,call};
 }
 describe('task messaging',()=>{
- it('prefers the accepted submitter and labels historical fallback without exposing other threads',async()=>{
-  const f=await fixture(),up=await f.task(f.owner,'done'),down=await f.task(f.b),submission=newId();await f.edge(down,up);
-  let choices=(await f.call(f.b,`/tasks/${down}/inquiries`)).json.data.candidates;expect(choices[0].recipientSource).toBe('substitute');
-  await env.DB.prepare("INSERT INTO task_submissions(id,project_id,task_id,round,submitted_by,body,criteria,task_revision,status,created_at,updated_at) VALUES(?1,?2,?3,1,?4,'成果','标准',1,'accept',?5,?5)").bind(submission,f.project,up,f.a.userId,nowIso()).run();
-  await env.DB.prepare('UPDATE tasks SET current_submission_id=?2 WHERE id=?1').bind(up,submission).run();
-  choices=(await f.call(f.b,`/tasks/${down}/inquiries`)).json.data.candidates;expect(choices[0].recipientId).toBe(f.a.userId);expect(choices[0].recipientSource).toBe('submission');
-  expect((await f.call(f.owner,`/tasks/${down}/inquiries`,'POST',{upstreamTaskId:up,body:'wrong owner'})).status).toBe(409);
+ it('lets any member open a private one-to-one ticket for the selected task and another member',async()=>{
+  const f=await fixture(),target=await f.task(f.owner,'done'),senderTask=await f.task(f.b,'doing'),outsider=await seedUser();
+  const made=await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:f.a.userId,body:'请说明任务要求'},'ticket-key');expect(made.status).toBe(201);
+  const id=made.json.data.inquiryId;
+  expect((await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:f.a.userId,body:'请说明任务要求'},'ticket-key')).json.data.inquiryId).toBe(id);
+  expect((await f.call(f.a,`/tasks/${target}/inquiries`)).json.data.items[0]).toMatchObject({taskId:target,upstreamTaskId:target,recipientSource:'direct',requesterId:f.b.userId,recipientId:f.a.userId});
+  expect((await f.call(f.b,`/tasks/${target}/inquiries`)).json.data.items).toHaveLength(1);
+  expect((await f.call(f.owner,`/tasks/${target}/inquiries`)).json.data.items).toHaveLength(0);
+  expect((await f.call(f.a,`/tasks/${senderTask}/inquiries`)).json.data.items).toHaveLength(0);
+  expect((await f.call(f.b,`/tasks/${senderTask}/inquiries`)).json.data.items).toHaveLength(0);
+  expect((await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:f.b.userId,body:'自问'})).status).toBe(409);
+  expect((await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:outsider.userId,body:'外部成员'})).status).toBe(404);
+  const firstMessage=(await env.DB.prepare('SELECT id FROM task_inquiry_messages WHERE inquiry_id=?1').bind(id).first<{id:string}>())!;
+  const messageNotice=await env.DB.prepare('SELECT url FROM notification_events WHERE event_key=?1').bind(`task_inquiry:${firstMessage.id}`).first<{url:string}>();
+  expect(messageNotice!.url).toBe(`/app/projects/${f.project}/tasks?task=${target}&taskAction=inquiries`);
+ });
+ it('continues showing pre-existing two-task inquiries on each historical participant side',async()=>{
+  const f=await fixture(),requesterTask=await f.task(f.b),recipientTask=await f.task(f.a),id=newId(),messageId=newId(),now=nowIso();
+  await env.DB.batch([
+   env.DB.prepare("INSERT INTO task_inquiries(id,project_id,task_id,upstream_task_id,requester_id,recipient_id,recipient_source,task_title,upstream_title,created_at) VALUES(?1,?2,?3,?4,?5,?6,'completion','发起任务','接收任务',?7)").bind(id,f.project,requesterTask,recipientTask,f.b.userId,f.a.userId,now),
+   env.DB.prepare("INSERT INTO task_inquiry_messages(id,inquiry_id,author_id,body,created_at) VALUES(?1,?2,?3,'历史质询',?4)").bind(messageId,id,f.b.userId,now),
+  ]);
+  expect((await f.call(f.b,`/tasks/${requesterTask}/inquiries`)).json.data.items[0]).toMatchObject({taskId:requesterTask,upstreamTaskId:recipientTask,recipientSource:'completion'});
+  expect((await f.call(f.a,`/tasks/${recipientTask}/inquiries`)).json.data.items[0].messages[0].body).toBe('历史质询');
+  expect((await f.call(f.b,`/tasks/${recipientTask}/inquiries`)).json.data.items).toHaveLength(0);
+  expect((await f.call(f.a,`/tasks/${requesterTask}/inquiries`)).json.data.items).toHaveLength(0);
  });
  it('notifies only on the last dependency, deduplicates and resets after reopen',async()=>{
   const f=await fixture(),x=await f.task(f.a),y=await f.task(f.a),down=await f.task(f.b);
@@ -47,49 +66,42 @@ describe('task messaging',()=>{
   await env.DB.prepare('UPDATE tasks SET assignee_id=NULL WHERE id=?1').bind(down).run();await env.DB.prepare('UPDATE tasks SET assignee_id=?2 WHERE id=?1').bind(down,f.b.userId).run();
   expect((await env.DB.prepare("SELECT COUNT(*) n FROM notification_events WHERE resource_id=?1 AND kind='task_ready'").bind(f.project).first<{n:number}>())!.n).toBe(0);
  });
- it('private direct inquiries, participant replies, snapshots, idempotency and member revocation',async()=>{
-  const f=await fixture(),up=await f.task(f.a),middle=await f.task(f.a),down=await f.task(f.b);await f.edge(middle,up);await f.edge(down,middle);
-  await env.DB.prepare("UPDATE tasks SET status='done' WHERE id=?1").bind(up).run();
-  expect((await f.call(f.b,`/tasks/${down}/inquiries`,'POST',{upstreamTaskId:up,body:'indirect'})).status).toBe(409);
-  await f.edge(down,up);
-  const first=await f.call(f.b,`/tasks/${down}/inquiries`,'POST',{upstreamTaskId:up,body:'接口格式影响我的实现'},'inquiry-key');expect(first.status).toBe(201);
-  const id=first.json.data.inquiryId;
-  expect((await f.call(f.b,`/tasks/${down}/inquiries`,'POST',{upstreamTaskId:up,body:'接口格式影响我的实现'},'inquiry-key')).json.data.inquiryId).toBe(id);
-  expect((await f.call(f.owner,`/tasks/${down}/inquiries`)).json.data.items).toHaveLength(0);
-  expect((await f.call(f.a,`/tasks/${down}/inquiries`)).json.data.items).toHaveLength(0);
-  expect((await f.call(f.b,`/tasks/${up}/inquiries`)).json.data.items).toHaveLength(0);
-  expect((await f.call(f.a,`/tasks/${up}/inquiries`)).json.data.items).toHaveLength(1);
-  expect((await f.call(f.owner,`/task-inquiries/${id}/messages`,'POST',{body:'admin'})).status).toBe(404);
+ it('keeps participant-only replies and revokes ticket access when project membership ends',async()=>{
+  const f=await fixture(),target=await f.task(f.owner,'done');
+  const made=await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:f.a.userId,body:'接口格式影响我的实现'}),id=made.json.data.inquiryId;
+  expect((await f.call(f.owner,`/task-inquiries/${id}/messages`,'POST',{body:'not participant'})).status).toBe(404);
   expect((await f.call(f.a,`/task-inquiries/${id}/messages`,'POST',{body:'使用 JSON'})).status).toBe(201);
-  await env.DB.prepare('UPDATE tasks SET assignee_id=?2 WHERE id=?1').bind(up,f.owner.userId).run();
-  const thread=(await f.call(f.b,`/tasks/${down}/inquiries`)).json.data.items[0];expect(thread.recipientId).toBe(f.a.userId);expect(thread.recipientSource).toBe('completion');expect(thread.messages).toHaveLength(2);
+  const thread=(await f.call(f.b,`/tasks/${target}/inquiries`)).json.data.items[0];expect(thread.recipientId).toBe(f.a.userId);expect(thread.recipientSource).toBe('direct');expect(thread.messages).toHaveLength(2);
   await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.project,f.a.userId).run();
   expect((await f.call(f.a,`/task-inquiries/${id}/messages`,'POST',{body:'gone'})).status).toBe(403);
   expect((await f.call(f.a,'/task-inquiries/unread')).status).toBe(403);
-  expect((await f.call(f.a,`/tasks/${up}/inquiries/read`,'POST',{messageIds:[]})).status).toBe(403);
+  expect((await f.call(f.a,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[]})).status).toBe(403);
  });
- it('routes each side to its own task and marks only displayed private messages read',async()=>{
-  const f=await fixture(),up=await f.task(f.a,'done'),down=await f.task(f.b);await f.edge(down,up);
-  const made=await f.call(f.b,`/tasks/${down}/inquiries`,'POST',{upstreamTaskId:up,body:'first'}),id=made.json.data.inquiryId;
-  const first=(await f.call(f.a,`/tasks/${up}/inquiries`)).json.data.items[0].messages[0].messageId;
+ it('keeps each new ticket on the corresponding task and marks only displayed private messages read',async()=>{
+  const f=await fixture(),target=await f.task(f.owner,'done'),requesterTask=await f.task(f.b,'doing');
+  const made=await f.call(f.b,`/tasks/${target}/inquiries`,'POST',{recipientId:f.a.userId,body:'first'}),id=made.json.data.inquiryId;
+  const first=(await f.call(f.a,`/tasks/${target}/inquiries`)).json.data.items[0].messages[0].messageId;
+  expect((await f.call(f.b,`/tasks/${target}/inquiries`)).json.data.items).toHaveLength(1);
+  expect((await f.call(f.b,`/tasks/${requesterTask}/inquiries`)).json.data.items).toHaveLength(0);
+  expect((await f.call(f.a,`/tasks/${requesterTask}/inquiries`)).json.data.items).toHaveLength(0);
   const second=(await f.call(f.b,`/task-inquiries/${id}/messages`,'POST',{body:'second'})).json.data.messageId;
   const notice=await env.DB.prepare("SELECT url FROM notification_events WHERE event_key=?1").bind(`task_inquiry:${first}`).first<{url:string}>();
-  expect(notice!.url).toBe(`/app/projects/${f.project}/tasks?task=${up}&taskAction=inquiries`);
-  expect((await f.call(f.a,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:up,unreadCount:2}]);
+  expect(notice!.url).toBe(`/app/projects/${f.project}/tasks?task=${target}&taskAction=inquiries`);
+  expect((await f.call(f.a,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:target,unreadCount:2}]);
   expect((await f.call(f.owner,'/task-inquiries/unread')).json.data.items).toEqual([]);
-  expect((await f.call(f.a,`/tasks/${down}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
-  expect((await f.call(f.owner,`/tasks/${up}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
-  expect((await f.call(f.a,`/tasks/${up}/inquiries/read`,'POST',{messageIds:[first,newId()]})).json.data.readCount).toBe(1);
-  expect((await f.call(f.a,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:up,unreadCount:1}]);
-  expect((await f.call(f.a,`/tasks/${up}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
+  expect((await f.call(f.a,`/tasks/${requesterTask}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
+  expect((await f.call(f.owner,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
+  expect((await f.call(f.a,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[first,newId()]})).json.data.readCount).toBe(1);
+  expect((await f.call(f.a,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:target,unreadCount:1}]);
+  expect((await f.call(f.a,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[first]})).json.data.readCount).toBe(0);
   const response=(await f.call(f.a,`/task-inquiries/${id}/messages`,'POST',{body:'reply'})).json.data.messageId;
   const replyNotice=await env.DB.prepare('SELECT url FROM notification_events WHERE event_key=?1').bind(`task_inquiry:${response}`).first<{url:string}>();
-  expect(replyNotice!.url).toBe(`/app/projects/${f.project}/tasks?task=${down}&taskAction=inquiries`);
-  expect((await f.call(f.b,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:down,unreadCount:1}]);
-  expect((await f.call(f.a,`/tasks/${up}/inquiries/read`,'POST',{messageIds:[second]})).json.data.readCount).toBe(1);
+  expect(replyNotice!.url).toBe(`/app/projects/${f.project}/tasks?task=${target}&taskAction=inquiries`);
+  expect((await f.call(f.b,'/task-inquiries/unread')).json.data.items).toEqual([{taskId:target,unreadCount:1}]);
+  expect((await f.call(f.a,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[second]})).json.data.readCount).toBe(1);
   expect((await f.call(f.a,'/task-inquiries/unread')).json.data.items).toEqual([]);
-  expect((await f.call(f.b,`/tasks/${down}/inquiries/read`,'POST',{messageIds:[response]})).json.data.readCount).toBe(1);
+  expect((await f.call(f.b,`/tasks/${target}/inquiries/read`,'POST',{messageIds:[response]})).json.data.readCount).toBe(1);
   expect((await f.call(f.b,'/task-inquiries/unread')).json.data.items).toEqual([]);
-  expect((await f.call(f.b,`/tasks/${down}/inquiries/read`,'POST',{messageIds:Array.from({length:201},()=>newId())})).status).toBe(400);
+  expect((await f.call(f.b,`/tasks/${target}/inquiries/read`,'POST',{messageIds:Array.from({length:201},()=>newId())})).status).toBe(400);
  });
 });
