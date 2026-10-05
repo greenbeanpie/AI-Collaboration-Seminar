@@ -79,7 +79,7 @@ it('waiting for local voices propagates busy until cancellation',async()=>{
  await open();synthesis.getVoices.mockReturnValue([]);fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await waitFor(()=>expect(busy).toHaveBeenLastCalledWith(true));expect(screen.getByRole('button',{name:'开始录音'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'文字回答'}));expect(busy).toHaveBeenLastCalledWith(false);expect(captureMicrophone).not.toHaveBeenCalled();expect(synthesis.cancel).not.toHaveBeenCalled();
 });
 it('resolved unavailable strategy overrides an inherited voice selection',async()=>{
- const mode=vi.fn();vi.mocked(voiceRequest).mockResolvedValue({...config,ready:false,reason:'实时模型未配置'});render(<RehearsalVoicePanel {...props} initialVoiceMode onModeChange={mode}/>);await screen.findByText('实时模型未配置');expect(screen.getByRole('button',{name:'文字回答'})).toHaveAttribute('aria-pressed','true');expect(mode).toHaveBeenLastCalledWith(false);
+ const mode=vi.fn();vi.mocked(voiceRequest).mockResolvedValue({...config,ready:false,reason:'实时模型未配置'});render(<RehearsalVoicePanel {...props} initialVoiceMode onModeChange={mode}/>);await screen.findByText('实时模型未配置');await waitFor(()=>expect(screen.getByRole('button',{name:'文字回答'})).toHaveAttribute('aria-pressed','true'));expect(mode).toHaveBeenLastCalledWith(false);
 });
 it('initial idle render does not emit a spurious busy callback',async()=>{
  render(<RehearsalVoicePanel {...props}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'语音回答'})).toBeEnabled());expect(busy).not.toHaveBeenCalled();
