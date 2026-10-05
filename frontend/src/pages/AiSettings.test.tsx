@@ -551,16 +551,22 @@ it('separates fixed Whisper, realtime Gateway, TTS and strategies without copyin
   const realtime={provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'voice-gateway',languageCodes:['zh-CN'],keyConfigured:true,gatewayTokenConfigured:true};
   vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>init?.method==='GET'?Response.json({data:{version:8,enabled:true,config:{...savedConfig,realtimeAudioTranscription:realtime}}}):(writes.push(JSON.parse(String(init?.body))),Response.json({data:{version:9,enabled:true}}))));
   await setup(true,false);
-  for(const title of ['音视频理解模型','音频文件初步转录模型','实时语音转录模型','答辩语音朗读模型','音频与答辩处理策略'])expect(screen.getByRole('heading',{name:title})).toBeInTheDocument();
+  for(const title of ['音视频理解模型','音频文件初步转录模型','实时语音转录模型','答辩语音朗读','音频与答辩处理策略'])expect(screen.getByRole('heading',{name:title})).toBeInTheDocument();
   expect(screen.getByLabelText('文件转录模型')).toHaveValue('@cf/openai/whisper-large-v3-turbo');
   expect(screen.getByLabelText('文件转录模型')).toHaveAttribute('readonly');
+  const fileCard=screen.getByRole('heading',{name:'音频文件初步转录模型'}).closest('section')!;
+  expect(within(fileCard).getAllByRole('textbox')).toHaveLength(1);
+  expect(fileCard.textContent).toBe('音频文件初步转录模型文件转录模型');
+  expect(within(fileCard).queryByText(/binding|供应商|API URL|密钥|转录通过/i)).not.toBeInTheDocument();
   expect(screen.getByLabelText(/实时语音 Google API key/)).toHaveValue('');expect(screen.getByLabelText(/^实时语音 Gateway token/)).toHaveValue('');
-  expect(within(screen.getByLabelText('答辩朗读模型')).getAllByRole('option').map(option=>(option as HTMLOptionElement).value)).toEqual(['gemini-3.8-flash-lite-tts','gemini-3.8-flash-tts']);
-  fireEvent.change(screen.getByLabelText('答辩朗读模型'),{target:{value:'gemini-3.8-flash-tts'}});
+  expect(screen.queryByLabelText('答辩朗读模型')).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/^朗读语言/)).toHaveValue('zh-CN');
+  fireEvent.change(screen.getByLabelText(/^朗读语速/),{target:{value:'1.5'}});
+  fireEvent.change(screen.getByLabelText(/^朗读音量/),{target:{value:'0.7'}});
   fireEvent.change(screen.getByLabelText('模拟答辩处理策略'),{target:{value:'voice-with-text-fallback'}});
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes).toHaveLength(1);expect(writes[0]).toMatchObject({processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'},rehearsalSpeech:{model:'gemini-3.8-flash-tts',voice:'Kore'},realtimeAudioTranscription:{gatewayId:'voice-gateway',apiKey:'',gatewayToken:''}});
+  expect(writes).toHaveLength(1);expect(writes[0]).toMatchObject({processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'},rehearsalSpeech:{provider:'system-local',lang:'zh-CN',rate:1.5,volume:.7},realtimeAudioTranscription:{gatewayId:'voice-gateway',apiKey:'',gatewayToken:''}});
   expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('keyConfigured');expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('gatewayTokenConfigured');expect(writes[0]).not.toHaveProperty('enabled');
 });
 it('saves incomplete realtime drafts, explicitly clears individual credentials and removes the entire slot',async()=>{
@@ -583,4 +589,15 @@ it('clears loaded realtime credentials and disables audio controls when administ
   fireEvent.change(screen.getByLabelText(/^实时语音 Google API key/),{target:{value:'in-memory-only'}});
   const {act}=await import('@testing-library/react');await act(async()=>{client.setQueryData(['session'],{id:'account',role:'user'});});
   await waitFor(()=>expect(screen.queryByLabelText(/^实时语音 Google API key/)).not.toBeInTheDocument());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
+});
+
+it('normalizes legacy cloud TTS to local defaults and sends only local speech fields',async()=>{
+  const writes:Record<string,unknown>[]=[];
+  vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>init?.method==='GET'?Response.json({data:{version:8,enabled:true,config:{...savedConfig,rehearsalSpeech:{model:'gemini-3.8-flash-tts',voice:'Kore'}}}}):(writes.push(JSON.parse(String(init?.body))),Response.json({data:{version:9,enabled:true}}))));
+  await setup(true,false);
+  expect(screen.getByLabelText(/^朗读语言/)).toHaveValue('zh-CN');expect(screen.getByLabelText(/^朗读语速/)).toHaveValue(1);expect(screen.getByLabelText(/^朗读音量/)).toHaveValue(1);
+  expect(screen.getByLabelText(/^朗读语速/)).toHaveAttribute('min','0.5');expect(screen.getByLabelText(/^朗读语速/)).toHaveAttribute('max','2');expect(screen.getByLabelText(/^朗读音量/)).toHaveAttribute('max','1');
+  fireEvent.change(screen.getByLabelText(/^朗读语言/),{target:{value:'en-US'}});fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
+  await screen.findByText('配置已保存，AI 保持启用。');
+  expect(writes[0].rehearsalSpeech).toEqual({provider:'system-local',lang:'en-US',rate:1,volume:1});expect(writes[0]).not.toHaveProperty('fileTranscriptionRuntime');expect(writes[0]).not.toHaveProperty('enabled');
 });

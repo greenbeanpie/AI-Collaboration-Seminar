@@ -7,10 +7,8 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
   const complete = Boolean(realtime?.gatewayId && (realtime.apiKey || (realtime.keyConfigured && !realtime.clearKey)) && (realtime.gatewayToken || (realtime.gatewayTokenConfigured && !realtime.clearGatewayToken)));
   const editRealtime = (patch: Partial<NonNullable<AudioSettingsView['realtimeAudioTranscription']>>) => onChange({ realtimeAudioTranscription: { ...realtime!, ...patch } });
   return <>
-    <SectionCard title="音频文件初步转录模型" detail="文件初步转录独立于音视频理解模型与实时语音模型。">
-      <Field label="文件转录供应商"><input className="input" readOnly value="Cloudflare Workers AI" /></Field>
+    <SectionCard title="音频文件初步转录模型">
       <Field label="文件转录模型"><input className="input" readOnly value={config.audioFileTranscription.model} /></Field>
-      <p className="muted">固定使用 Whisper，需要 Workers AI binding；此处无需 Google 密钥。</p>
     </SectionCard>
     <SectionCard title="实时语音转录模型" detail="Gemini 3.5 Transcribe Live 仅负责将发言转为文字；答辩内容分析和问题生成继续使用现有文字模型。">
       <fieldset disabled={disabled}><legend>Cloudflare AI Gateway 转发配置</legend>
@@ -27,10 +25,12 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
         <p className="muted">新语音请求只通过 Cloudflare AI Gateway 转发，不提供 Google 直连 URL；不会复制音视频理解模型的密钥。</p>
       </fieldset>
     </SectionCard>
-    <SectionCard title="答辩语音朗读模型" detail="只朗读文字模型已生成的发言，共用上方实时语音 Gateway 凭据；不向朗读模型发送项目资料或答辩历史。">
-      <fieldset disabled={disabled}><legend>文字转语音</legend>
-        <Field label="答辩朗读模型"><select className="input" value={config.rehearsalSpeech.model} onChange={event => onChange({ rehearsalSpeech: { ...config.rehearsalSpeech, model: event.target.value as AudioSettingsView['rehearsalSpeech']['model'] } })}><option value="gemini-3.8-flash-lite-tts">Gemini 3.8 Flash Lite TTS（默认）</option><option value="gemini-3.8-flash-tts">Gemini 3.8 Flash TTS</option></select></Field>
-        <Field label="答辩朗读声音"><select className="input" value={config.rehearsalSpeech.voice} onChange={event => onChange({ rehearsalSpeech: { ...config.rehearsalSpeech, voice: event.target.value as AudioSettingsView['rehearsalSpeech']['voice'] } })}>{['Kore', 'Aoede', 'Puck'].map(voice => <option key={voice}>{voice}</option>)}</select></Field>
+    <SectionCard title="答辩语音朗读" detail="使用设备的系统本地语音朗读，无服务器调用，无需 Gateway 或 Google 密钥。">
+      <fieldset disabled={disabled}><legend>系统本地文字转语音</legend>
+        <Field label="朗读语言" hint="单个 BCP-47 语言代码，例如 zh-CN 或 en-US。"><input className="input" value={config.rehearsalSpeech.lang} onChange={event => onChange({ rehearsalSpeech: { ...config.rehearsalSpeech, lang: event.target.value.trim() } })} /></Field>
+        <Field label="朗读语速" hint="0.5–2；1 为默认语速。"><input className="input" type="number" min="0.5" max="2" step="0.1" value={config.rehearsalSpeech.rate} onChange={event => onChange({ rehearsalSpeech: { ...config.rehearsalSpeech, rate: Number(event.target.value) } })} /></Field>
+        <Field label="朗读音量" hint="0–1；1 为最大音量。"><input className="input" type="number" min="0" max="1" step="0.1" value={config.rehearsalSpeech.volume} onChange={event => onChange({ rehearsalSpeech: { ...config.rehearsalSpeech, volume: Number(event.target.value) } })} /></Field>
+        <p className="muted">自动选用设备提供的本地语音。文字答辩也可朗读；设备没有可用本地语音时保留文字。</p>
       </fieldset>
     </SectionCard>
     <SectionCard title="音频与答辩处理策略" detail="策略与模型分别配置，使用当前页面统一保存；仅修改音频设置不会停用现有文字 AI，保存不发起模型请求。">
@@ -38,7 +38,7 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
         <Field label="音频文件处理策略" hint="Whisper 转录后由现有图文模型检查；全部检查评分至少 0.85 且无关键异常时沿用文本总结，否则回退音视频理解模型。"><select className="input" value={config.processingStrategies.audioFiles} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, audioFiles: event.target.value as AudioSettingsView['processingStrategies']['audioFiles'] } })}><option value="whisper-first">优先 Whisper 转录（低成本）</option><option value="media-only">直接音视频理解模型</option></select></Field>
         <Field label="模拟答辩处理策略"><select className="input" value={config.processingStrategies.rehearsal} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, rehearsal: event.target.value as AudioSettingsView['processingStrategies']['rehearsal'] } })}><option value="text">文字答辩（默认）</option><option value="voice-with-text-fallback">轮流语音答辩，失败回退文字</option></select></Field>
         {config.processingStrategies.rehearsal === 'voice-with-text-fallback' && !complete && <p role="note">实时语音配置尚不完整，答辩将回退文字。补齐 Gateway ID、Google 密钥和 Gateway token 后才可使用语音。</p>}
-        <p className="muted">仅支持现有两方轮流发言；语音模型负责转录与朗读，判断与问答使用现有文字模型。视频始终使用音视频理解模型。</p>
+        <p className="muted">仅支持现有两方轮流发言；实时语音模型负责转录，朗读使用系统本地语音；判断与问答使用现有文字模型。视频始终使用音视频理解模型。</p>
       </fieldset>
     </SectionCard>
   </>;
