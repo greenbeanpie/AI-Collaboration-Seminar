@@ -7,6 +7,7 @@ import { unseal } from '../ai/secrets';
 import { recordAiCall } from '../ai/calls';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
 import { markAiCallStarted, reserveAiSlot, settleReservation } from './budget';
+import { projectPermissionSql, requireProjectPermission } from './project-permissions';
 
 type SpeechStatus = 'queued' | 'running' | 'ready' | 'failed';
 interface SpeechRow {
@@ -18,6 +19,12 @@ interface SpeechRow {
 interface SpeechJobInput { operation: 'rehearsal.tts'; speechId: string; rehearsalId: string; sequence: number; actorId: string; configVersionId: string; }
 type SpeechAccess = { projectId: string; rehearsalId: string; actorId: string; };
 export type SpeechReadParams = SpeechAccess & { speechId: string };
+function speechActionGuard(project: string, rehearsal: string, actor: string): string {
+  return `EXISTS(SELECT 1 FROM projects WHERE id=${project} AND status='active')
+    AND ${projectPermissionSql(project,actor,'scoreInitiate')}
+    AND NOT EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE rehearsal_id=${rehearsal} AND status IN ('reserved','connecting','open'))`;
+}
+const frozenConfigurationGuard = (config: string) => `EXISTS(SELECT 1 FROM ai_config_versions WHERE id=${config} AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`;
 const voiceConfigSchema = z.object({
   realtimeAudioTranscription: z.object({ provider: z.literal('google-ai-studio'), model: z.literal('gemini-3.5-transcribe-live'), gatewayId: z.string().regex(/^[a-z0-9-]{1,64}$/), apiKeyEncrypted: z.string().min(1), gatewayTokenEncrypted: z.string().min(1) }),
   rehearsalSpeech: z.object({ model: z.enum(TTS_MODELS), voice: z.enum(TTS_VOICES) }).default({ model: 'gemini-3.8-flash-lite-tts', voice: 'Kore' }),
@@ -39,7 +46,8 @@ async function assertOwner(env: Env, params: SpeechAccess): Promise<void> {
 }
 async function currentTurn(env: Env, params: SpeechAccess & { sequence: number }) {
   await assertOwner(env, params);
-  const row = await env.DB.prepare("SELECT t.id,t.content_json FROM rehearsals r JOIN rehearsal_turns t ON t.rehearsal_id=r.id WHERE r.id=?1 AND r.project_id=?2 AND r.status='active' AND r.finish_job_id IS NULL AND r.processing_job_id IS NULL AND t.sequence=?3 AND t.kind IN ('question','followup') AND t.sequence=(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=r.id)").bind(params.rehearsalId, params.projectId, params.sequence).first<{ id: string; content_json: string }>();
+  await requireProjectPermission(env,params.projectId,params.actorId,'scoreInitiate');
+  const row = await env.DB.prepare(`SELECT t.id,t.content_json FROM rehearsals r JOIN rehearsal_turns t ON t.rehearsal_id=r.id WHERE r.id=?1 AND r.project_id=?2 AND r.status='active' AND r.finish_job_id IS NULL AND r.processing_job_id IS NULL AND t.sequence=?3 AND t.kind IN ('question','followup') AND t.sequence=(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=r.id) AND ${speechActionGuard('?2','?1','?4')}`).bind(params.rehearsalId, params.projectId, params.sequence,params.actorId).first<{ id: string; content_json: string }>();
   if (!row) throw invalidState('只能朗读当前已保存的问题或点评');
   const payload = JSON.parse(row.content_json) as { content?: unknown };
   if (typeof payload.content !== 'string' || !payload.content.trim() || payload.content.length > 8000) throw invalidState('当前问题正文无效或超过朗读上限');
@@ -62,7 +70,7 @@ export async function enqueueRehearsalSpeech(env: Env, params: SpeechAccess & { 
     const saved = await env.DB.prepare(`INSERT OR IGNORE INTO rehearsal_speech(id,project_id,rehearsal_id,turn_id,sequence,created_by,content_hash,config_version_id,model,voice,job_id,status,created_at,updated_at)
       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'queued',?12,?12
       WHERE EXISTS(SELECT 1 FROM rehearsals r JOIN rehearsal_turns t ON t.rehearsal_id=r.id WHERE r.id=?3 AND r.project_id=?2 AND r.created_by=?6 AND r.status='active' AND r.finish_job_id IS NULL AND r.processing_job_id IS NULL AND t.id=?4 AND t.content_json=?13 AND t.kind IN ('question','followup') AND t.sequence=(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=r.id))
-      AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?6)`)
+      AND ${speechActionGuard('?2','?3','?6')} AND ${frozenConfigurationGuard('?8')}`)
       .bind(id,params.projectId,params.rehearsalId,turn.id,params.sequence,params.actorId,turn.hash,config.id,speech.model,speech.voice,jobId,now,turn.contentJson).run();
     if (!saved.meta.changes) {
       await settleReservation(env, jobId, 'released');
@@ -133,6 +141,8 @@ export async function runRehearsalSpeechJob(env: Env, jobId: string): Promise<vo
     if (!await env.DB.prepare("SELECT 1 FROM rehearsal_speech WHERE id=?1 AND job_id=?2 AND lease_token=?3 AND status='running'").bind(row.id,jobId,lease).first()) throw invalidState('朗读执行权已变化');
     const turn = await currentTurn(env,{projectId:row.project_id,rehearsalId:row.rehearsal_id,sequence:row.sequence,actorId:input.actorId});
     if (input.actorId !== row.created_by || turn.id !== row.turn_id || turn.hash !== row.content_hash) throw invalidState('朗读正文已变化');
+    const latest = await loadSpeechConfig(env);
+    if (latest.id !== row.config_version_id) throw invalidState('语音配置已变化，旧任务已停止');
     return turn;
   };
   try {
@@ -141,7 +151,9 @@ export async function runRehearsalSpeechJob(env: Env, jobId: string): Promise<vo
     const [apiKey,gatewayToken] = await Promise.all([unseal(credentials.apiKeyEncrypted,env.AUTH_SECRET),unseal(credentials.gatewayTokenEncrypted,env.AUTH_SECRET)]);
     const turn = await assertActive();
     await markAiCallStarted(env,jobId); await assertActive();
-    const marked = await env.DB.prepare("UPDATE rehearsal_speech SET dispatched_at=?4 WHERE id=?1 AND job_id=?2 AND lease_token=?3 AND status='running'").bind(row.id,jobId,lease,nowIso()).run();
+    const marked = await env.DB.prepare(`UPDATE rehearsal_speech SET dispatched_at=?4 WHERE id=?1 AND job_id=?2 AND lease_token=?3 AND status='running'
+      AND ${speechActionGuard('rehearsal_speech.project_id','rehearsal_speech.rehearsal_id','rehearsal_speech.created_by')} AND ${frozenConfigurationGuard('rehearsal_speech.config_version_id')}
+      AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))`).bind(row.id,jobId,lease,nowIso()).run();
     if (!marked.meta.changes) throw invalidState('朗读执行权已变化');
     dispatched = true;
     const output = await geminiSpeech({accountId:env.CLOUDFLARE_ACCOUNT_ID,gatewayId:credentials.gatewayId,gatewayToken,apiKey,model:row.model,voice:row.voice,text:turn.content});
@@ -154,7 +166,8 @@ export async function runRehearsalSpeechJob(env: Env, jobId: string): Promise<vo
     const saved = await env.DB.prepare(`UPDATE rehearsal_speech SET status='ready',r2_key=?4,mime=?5,duration_seconds=?6,error=NULL,lease_token=NULL,lease_expires_at=NULL,updated_at=?7 WHERE id=?1 AND job_id=?2 AND lease_token=?3 AND status='running'
       AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))
       AND EXISTS(SELECT 1 FROM rehearsals r JOIN rehearsal_turns t ON t.rehearsal_id=r.id WHERE r.id=rehearsal_speech.rehearsal_id AND r.created_by=rehearsal_speech.created_by AND r.status='active' AND r.finish_job_id IS NULL AND r.processing_job_id IS NULL AND t.id=rehearsal_speech.turn_id AND t.content_json=?8 AND t.sequence=(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=r.id))
-      AND EXISTS(SELECT 1 FROM project_members WHERE project_id=rehearsal_speech.project_id AND user_id=rehearsal_speech.created_by)`)
+      AND ${speechActionGuard('rehearsal_speech.project_id','rehearsal_speech.rehearsal_id','rehearsal_speech.created_by')}
+      AND ${frozenConfigurationGuard('rehearsal_speech.config_version_id')}`)
       .bind(row.id,jobId,lease,tempKey,output.mime,output.durationSeconds,nowIso(),turn.contentJson).run();
     if (!saved.meta.changes) throw invalidState('朗读问题或权限已变化，音频未发布');
     tempKey = undefined;

@@ -25,6 +25,10 @@ async function fixture() {
   const local={...env,AGENT_WORKFLOW:{create:vi.fn(async()=>({}))}} as unknown as typeof env;
   return {owner,projectId,rehearsalId,turnId,local,params:{projectId,rehearsalId,sequence:1,actorId:owner.userId}};
 }
+async function openAsr(f: Awaited<ReturnType<typeof fixture>>) {
+  const id=newId(),config=(await loadAiConfig(env.DB))!,now=nowIso();
+  await env.DB.prepare("INSERT INTO rehearsal_voice_sessions(id,project_id,rehearsal_id,question_sequence,actor_id,config_version_id,model,status,root_session_id,expires_at,created_at,updated_at) VALUES(?1,?2,?3,1,?4,?5,'gemini-3.5-transcribe-live','reserved',?1,?6,?7,?7)").bind(id,f.projectId,f.rehearsalId,f.owner.userId,config.id,new Date(Date.now()+600_000).toISOString(),now).run();
+}
 describe('Gateway-only TTS transport',()=>{
   it('sends exactly saved text and the fixed REST audio contract',async()=>{
     const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
@@ -82,5 +86,41 @@ describe('saved rehearsal speech',()=>{
     const first=runRehearsalSpeechJob(f.local,queued.jobId); await enteredRequest; await runRehearsalSpeechJob(f.local,queued.jobId);
     await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1').bind(f.projectId).run();release();await first;
     expect(request).toHaveBeenCalledOnce();expect(await env.DB.prepare('SELECT status,r2_key FROM rehearsal_speech WHERE id=?1').bind(queued.speechId).first()).toEqual({status:'failed',r2_key:null});
+  });
+  it('active ASR prevents enqueue and also prevents queued TTS from fetching',async()=>{
+    const f=await fixture(); await openAsr(f);
+    await expect(enqueueRehearsalSpeech(f.local,f.params)).rejects.toMatchObject({code:'INVALID_STATE'});
+    await env.DB.prepare("UPDATE rehearsal_voice_sessions SET status='closed' WHERE rehearsal_id=?1").bind(f.rehearsalId).run();
+    const queued=await enqueueRehearsalSpeech(f.local,f.params);await openAsr(f);
+    const request=vi.fn(async()=>Response.json(result()));vi.stubGlobal('fetch',request);
+    await runRehearsalSpeechJob(f.local,queued.jobId);expect(request).not.toHaveBeenCalled();
+  });
+  it('disabling AI or changing the credential configuration stops a queued old task',async()=>{
+    for(const change of ['disable','revision']) {
+      const f=await fixture(),queued=await enqueueRehearsalSpeech(f.local,f.params);
+      if(change==='disable')await env.DB.prepare('UPDATE ai_config_versions SET enabled=0 WHERE id=(SELECT config_version_id FROM rehearsal_speech WHERE id=?1)').bind(queued.speechId).run();
+      else {
+        const prior=(await env.DB.prepare('SELECT version,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{version:number;config_json:string}>())!,raw=JSON.parse(prior.config_json);delete raw.realtimeAudioTranscription.apiKeyEncrypted;
+        await env.DB.prepare('INSERT INTO ai_config_versions(id,version,config_json,enabled,created_at) VALUES(?1,?2,?3,1,?4)').bind(newId(),prior.version+1,JSON.stringify(raw),nowIso()).run();
+      }
+      const request=vi.fn(async()=>Response.json(result()));vi.stubGlobal('fetch',request);
+      await runRehearsalSpeechJob(f.local,queued.jobId);expect(request).not.toHaveBeenCalled();
+    }
+  });
+  it('revoked score permission prevents dispatch while cached audio keeps read-only access',async()=>{
+    const f=await fixture(),queued=await enqueueRehearsalSpeech(f.local,f.params);vi.stubGlobal('fetch',vi.fn(async()=>Response.json(result())));
+    await runRehearsalSpeechJob(f.local,queued.jobId);
+    await env.DB.prepare("UPDATE project_members SET role='member',permissions_json='{\"scoreInitiate\":false}' WHERE project_id=?1 AND user_id=?2").bind(f.projectId,f.owner.userId).run();
+    await expect(enqueueRehearsalSpeech(f.local,f.params)).rejects.toMatchObject({code:'PERMISSION_DENIED'});
+    expect((await readRehearsalSpeechAudio(f.local,{...f.params,speechId:queued.speechId})).status).toBe(200);
+  });
+  it('archiving the project or revoking score permission blocks a queued request',async()=>{
+    for(const change of ['archive','permission']) {
+      const f=await fixture(),queued=await enqueueRehearsalSpeech(f.local,f.params);
+      if(change==='archive')await env.DB.prepare("UPDATE projects SET status='archived' WHERE id=?1").bind(f.projectId).run();
+      else await env.DB.prepare("UPDATE project_members SET role='member',permissions_json='{\"scoreInitiate\":false}' WHERE project_id=?1 AND user_id=?2").bind(f.projectId,f.owner.userId).run();
+      const request=vi.fn(async()=>Response.json(result()));vi.stubGlobal('fetch',request);
+      await runRehearsalSpeechJob(f.local,queued.jobId);expect(request).not.toHaveBeenCalled();
+    }
   });
 });
