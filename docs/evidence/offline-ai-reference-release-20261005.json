@@ -1,0 +1,93 @@
+{
+  "releasedAt": "2026-10-05T09:25:05.262Z",
+  "codeCommit": "82ad4b3b1c27135bd1aad7aa3965d4664027cc63",
+  "remoteBranch": "origin/main",
+  "backend": {
+    "name": "greenbp-team-office-backend",
+    "versionId": "924b852c-ef8e-4956-a8ec-f5c075fc18ba",
+    "previousVersionId": "2a2e5e21-ad5b-48c2-a30a-f4f2576f6ac1",
+    "trafficPercent": 100
+  },
+  "frontend": {
+    "name": "greenbp-team-office",
+    "versionId": "7be096d5-b259-4de7-a485-048c2d232b44",
+    "previousVersionId": "eddf5774-5157-4a2b-b0d7-8b5011d03e38",
+    "trafficPercent": 100,
+    "origin": "https://greenbp-team-office.hddhp.workers.dev",
+    "customDomain": "https://team.greenbp.dpdns.org"
+  },
+  "noDatabaseMigrations": true,
+  "resourcesAndSecretsPreserved": true,
+  "checks": {
+    "productionPreflight": "passed",
+    "backendDryRun": "passed",
+    "frontendDryRun": "passed",
+    "build": "passed",
+    "frontendTests": 778,
+    "backendTests": 1174,
+    "health": [
+      {
+        "endpoint": "/api/v1/health",
+        "status": 200,
+        "data": {
+          "status": "ok",
+          "environment": "production",
+          "time": "2026-10-05T09:19:01.892Z"
+        }
+      },
+      {
+        "endpoint": "/api/v1/health/deps",
+        "status": 200,
+        "data": {
+          "d1": "ok",
+          "r2": "ok"
+        }
+      },
+      {
+        "endpoint": "/",
+        "status": 200,
+        "exactIndexMatch": true
+      },
+      {
+        "endpoint": "/assets/index-7_vZtY0k.js",
+        "status": 200,
+        "exactBundleMatch": true,
+        "sha256": "53e0de6b711fc272734f6a20da138351291529556513b784d780b8f682e7a147"
+      },
+      {
+        "endpoint": "custom-domain health",
+        "status": 403,
+        "challenged": true
+      }
+    ],
+    "productionBrowser": {
+      "passed": true,
+      "checks": [
+        "acceptance authenticated login",
+        "temporary isolated verification fixture with AI disabled",
+        "deployed blue pill badges on real project",
+        "real production offline refresh reads tasks and cached clarifications without missing-cache error",
+        "deployed per-account badge setting hides, persists and restores"
+      ],
+      "errors": [],
+      "offlineLoadMs": 877,
+      "badgeStyle": {
+        "background": "rgb(229, 240, 255)",
+        "color": "rgb(35, 88, 165)",
+        "radius": "999px"
+      },
+      "fixtureArchived": true,
+      "noModelCalls": true,
+      "noExistingProjectWrites": true
+    }
+  },
+  "limitations": [
+    "Custom-domain machine health returns Cloudflare challenge; authenticated UI verified on equivalent workers.dev origin.",
+    "administrator: saved login rejected; no credentials changed"
+  ],
+  "artifacts": [
+    "output/deploy-82ad4b3/production-tasks.png",
+    "output/deploy-82ad4b3/production-offline-tasks.png",
+    "output/deploy-82ad4b3/production-appearance.png"
+  ]
+}

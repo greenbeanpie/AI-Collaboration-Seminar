@@ -48,4 +48,4 @@
 - 使用固定 API 夹具，无生产写入、无模型调用。自动脚本：`frontend/e2e/ai-reference-badges.mjs`，运行需 `PLAYWRIGHT_CORE` 指向已安装模块，并启动 `npm run preview -- --port 5175`。
 - 浏览器结果与截图：`output/ai-reference-verification/result.json`、`tasks-light.png`、`task-form-mobile.png`、`tasks-mobile.png`、`materials-light.png`、`settings-dark.png`。
 
-当前交付为工作区代码和本地构建，尚未部署到生产。
+本记录中的本地验收随后已于 2026-10-05 发布到生产；版本与线上验证详见 `offline-ai-reference-release-20261005.json`。
