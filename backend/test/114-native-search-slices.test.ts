@@ -5,7 +5,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
 import { nativeSearchCapability } from '../src/ai/tool-transport';
 import { newId,nowIso } from '../src/core/db';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { projectToolConversation } from '../src/services/project-ai-tools';
 import { InvestigationContinuation,loadInvestigation,saveInvestigation } from '../src/services/project-investigation';
 afterEach(()=>vi.unstubAllGlobals());

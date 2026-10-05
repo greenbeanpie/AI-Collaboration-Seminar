@@ -2,13 +2,13 @@ import { runAudioPipeline,whisperEnabled,audioFallbackConfigId } from './audio-p
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
 import { unseal } from '../ai/secrets';
-import { GeminiMediaClient, mediaCost, mediaSummarySchema, mediaSummaryText, type MediaSummary } from '../ai/gemini-media';
+import { GeminiMediaClient, mediaSummarySchema, mediaSummaryText, type MediaSummary } from '../ai/gemini-media';
 import { nowIso, newId } from '../core/db';
 import { AppError, invalidState } from '../core/errors';
 import { createJobAndDispatch, getJob, failJob, succeedJob } from './jobs';
 import { loadActiveSourceVersion, assertSourceJobActive, sourceLifecycleGuard } from './source-lifecycle';
-import { reserveAiSlot, markAiCallStarted, settleReservation } from './budget';
-import { MimoMediaClient, mimoMediaCost } from '../ai/mimo-media';
+import { reserveAiSlot, markAiCallStarted, settleReservation } from './ai-reservations';
+import { MimoMediaClient } from '../ai/mimo-media';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { createMediaFetchUrl } from './media-fetch';
 
@@ -77,8 +77,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
       try{await assertActive();result=await mimo.summarize(url,file.mime);}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
-      const cost=mimoMediaCost(mimoModel,result);
-      await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cached_tokens=?4,audio_tokens=?5,video_tokens=?6,cost_usd=?7,cost_status=?8,window_end=?9 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,result.cachedTokens,result.audioTokens,result.videoTokens,cost,cost===null?'unknown':'known',result.summary.durationSeconds??null).run();
+      await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cached_tokens=?4,audio_tokens=?5,video_tokens=?6,window_end=?7 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,result.cachedTokens,result.audioTokens,result.videoTokens,result.summary.durationSeconds??null).run();
       await assertActive();
       await env.DB.prepare("UPDATE media_processing SET summary_json=?3,duration_seconds=?4,windows_json=?5,updated_at=?6 WHERE id=?1 AND lease_token=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=media_processing.job_id AND status IN ('queued','running'))").bind(state.id,leaseToken,JSON.stringify(result.summary),result.summary.durationSeconds??null,JSON.stringify([result.summary]),nowIso()).run();
       if(!result.summary.complete)throw new AppError('AI_OUTPUT_INVALID','MiMo 摘要未完整覆盖；部分结果已保留，请核对原文件',422,false);
@@ -118,8 +117,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
       try {result=await client.summarize(remote,file.mime,window.start,window.end);}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
-      const cost=mediaCost(model,result);
-      await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cost_usd=?4,cost_status=?5 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,cost,cost===null?'unknown':'known').run();
+      await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens).run();
       completed.push(result.summary);await env.DB.prepare("UPDATE media_processing SET windows_json=?2,summary_json=?3,stage='processing',updated_at=?4 WHERE id=?1").bind(state.id,JSON.stringify(completed),JSON.stringify({...result.summary,complete:false,caveats:[...result.summary.caveats,'处理中；尚未确认完整覆盖']}),nowIso()).run();
       if(file.mime.startsWith('audio/') && index===0){
         const audioDuration=result.summary.durationSeconds;

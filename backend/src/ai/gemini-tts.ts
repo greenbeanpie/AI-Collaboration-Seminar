@@ -69,7 +69,7 @@ export async function geminiSpeech(input: GeminiSpeechRequest, request: typeof f
       headers: { 'content-type': 'application/json', 'cf-aig-authorization': `Bearer ${input.gatewayToken}`, 'x-goog-api-key': input.apiKey, 'cf-aig-skip-cache': 'true', 'cf-aig-collect-log': 'false' },
       body: JSON.stringify({ model: input.model, input: [{ type: 'user_input', content: [{ type: 'text', text: input.text }] }], response_format: { type: 'audio', mime_type: 'audio/wav' }, generation_config: { speech_config: [{ voice: input.voice }] } }),
     });
-  } catch { throw aiUnavailable('TTS Gateway 请求失败或超时；本次费用待核对', { cause: 'network_error' }); }
+  } catch { throw aiUnavailable('TTS Gateway 请求失败或超时；本次结果未知', { cause: 'network_error' }); }
   if (!response.ok) { await response.body?.cancel(); throw new AppError('AI_UNAVAILABLE', `TTS Gateway 请求失败（HTTP ${response.status}）`, 502, [429,500,502,503,504].includes(response.status), { status: response.status }); }
   const data = object(await boundedJson(response));
   if (data.status !== 'completed' || !Array.isArray(data.steps)) throw invalid('TTS 未完整生成音频');

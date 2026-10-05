@@ -7,7 +7,7 @@ import { nowIso, sha256Hex } from '../core/db';
 import { loadAiConfig, requireEnabledAiConfig } from '../ai/config';
 import { aiJsonCall } from './agent';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
-import { reserveAiSlot, settleReservation } from './budget';
+import { reserveAiSlot, settleReservation } from './ai-reservations';
 import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
 import { isMediaExtension } from './files';
 

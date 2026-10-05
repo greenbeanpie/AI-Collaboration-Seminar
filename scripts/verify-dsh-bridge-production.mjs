@@ -36,7 +36,7 @@ const report = {
   dshAdapter: 'simulated; this verifier does not execute a native DSH model',
   nativeDshVerification: 'separate native RC2 verification; not asserted by this script',
   globalAiConfigurationChanged: false, semanticCheckRequests: 0, semanticJobsRetried: 0,
-  usagePolicy: { projectBudgetUsd: null, semanticJobDispatchLimit: 1, semanticReservationMaxCalls: 2, paidJobRetries: 0, normalAdoptionMayAddOneEvaluationJob: true },
+  usagePolicy: { semanticJobDispatchLimit: 1, semanticReservationMaxCalls: 2, paidJobRetries: 0, normalAdoptionMayAddOneEvaluationJob: true },
   normalEvaluation: 'Reviewed adoption may enqueue one normal evaluation even with manual project mode; this verifier never retries it.',
   checks: [], cleanup: [],
 };
@@ -122,7 +122,7 @@ try {
   phase = 'create-isolated-manual-project';
   const project = await api('/projects', 'POST', {
     name: 'DSH 桥接器生产验收 ' + new Date().toISOString(), description: '仅用于桥接器验收，任务和成果均为固定测试数据，不包含真实业务资料。',
-    aiCollaborationEnabled: true, aiBudgetUsd: null, assignmentMode: 'manual', evaluationMode: 'manual', planningMode: 'manual', progressionMode: 'manual',
+    aiCollaborationEnabled: true, assignmentMode: 'manual', evaluationMode: 'manual', planningMode: 'manual', progressionMode: 'manual',
   }, 201, { key: 'bridge-verification-project-' + runId });
   projectId = report.projectId = project.id;
   const base = `/projects/${projectId}`;

@@ -3,7 +3,7 @@ import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound } from '../core/errors';
 import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
@@ -215,7 +215,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
          OR EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?1 AND attempts_started > 0) AS started`,
     ).bind(jobId).first<{ started: number }>();
     if ((!active && started?.started) || active?.status === 'running' || active?.status === 'complete') {
-      const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 实例缺失且模型调用已开始，请核对费用后重试新任务' }, job.updated_at, active?.instance_id);
+      const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 实例缺失且模型调用已开始；为避免重复请求，请重新发起新任务' }, job.updated_at, active?.instance_id);
       if (failed) await settleReservation(env, jobId, 'released');
       return;
     }

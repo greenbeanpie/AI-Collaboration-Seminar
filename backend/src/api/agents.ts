@@ -11,7 +11,7 @@ import { invalidState, notFound, permissionDenied, validationFailed, versionConf
 import { nextCursor, parsePaging } from '../core/pagination';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { docToMarkdown, isTiptapDoc } from '../services/tiptap';
 import { projectParams } from './projects';
 
@@ -108,7 +108,7 @@ const agentCreateRoute = createRoute({
   request: { params: projectParams, body: { content: { 'application/json': { schema: createBody } }, required: true } },
   responses: {
     202: { content: { 'application/json': { schema: createResponse } }, description: '会话已创建，运行中（轮询 jobId）' },
-    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '并发/预算超限（QUOTA_EXCEEDED）' },
+    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '并发或调用次数超限（QUOTA_EXCEEDED）' },
   },
 });
 
@@ -178,7 +178,7 @@ interface RunRow {
   output_json: string | null;
 }
 
-/** 创建运行记录 + 预算预占 + 派发任务 */
+/** 创建运行记录 + AI 并发预占 + 派发任务 */
 async function createRunAndJob(
   env: AppEnv['Bindings'],
   params: {

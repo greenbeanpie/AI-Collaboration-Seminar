@@ -5,7 +5,7 @@ function fixture(path, searchParams=new URLSearchParams(), options={}) {
  const accountRole=options.accountRole||'user',projectRole=options.projectRole||'owner';
  const user={id:'fixture-user',username:'local_fixture',displayName:'入口审查成员',email:null,role:accountRole,isAdmin:accountRole!=='user'};
  const permissions={teamManage:projectRole==='owner',taskManage:projectRole==='owner',resourceManage:projectRole==='owner',scoreInitiate:true,scoreCorrect:projectRole==='owner'};
- const project={id:'fixture',name:'入口审查项目',description:'仅用于手机入口检查的假数据',deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',aiBudgetUsd:20,aiBudgetUsedUsd:0,revision:1,myRole:projectRole,permissions,canManagePermissions:projectRole==='owner',permissionsRevision:1,createdAt:date,updatedAt:date};
+ const project={id:'fixture',name:'入口审查项目',description:'仅用于手机入口检查的假数据',deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',revision:1,myRole:projectRole,permissions,canManagePermissions:projectRole==='owner',permissionsRevision:1,createdAt:date,updatedAt:date};
  const archived={...project,id:'archived-fixture',name:'已归档审查项目',status:'archived'};
  const member={...user,userId:user.id,role:projectRole,skills:['研究','整理'],hoursPerWeek:8,weeklyAvailableHours:8,joinedAt:date,permissions,canManagePermissions:projectRole==='owner',permissionsRevision:1};
  const contributor={userId:user.id,displayName:user.displayName,username:user.username};
@@ -49,7 +49,7 @@ function fixture(path, searchParams=new URLSearchParams(), options={}) {
  if(path==='/notifications/push/status')return {configured:false,publicKey:''};
  if(path==='/admin/accounts')return list([user,{...user,id:'fixture-member',username:'other_fixture',displayName:'另一成员',role:'user',isAdmin:false}]);
  if(path==='/admin/account-invitations')return list([]);
- if(path==='/admin/ai-config'){const config={provider:'workers-ai',model:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',apiUrl:'',keyConfigured:false,timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:false,pricePerMTokens:null};return {version:1,enabled:true,config:{routingMode:'unified',unified:config,textEconomy:config,visionEconomy:config,review:config}};}
+ if(path==='/admin/ai-config'){const config={provider:'workers-ai',model:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',apiUrl:'',keyConfigured:false,timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:false};return {version:1,enabled:true,config:{routingMode:'unified',unified:config,textEconomy:config,visionEconomy:config,review:config}};}
  const tail=path.replace(/^\/projects\/(fixture|archived-fixture)/,'');
  if(tail==='/members/me')return member;
  if(tail==='/members')return list([member,{...member,userId:'fixture-member',id:'fixture-member',username:'other_fixture',displayName:'另一成员',role:'member'}]);

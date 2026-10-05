@@ -32,7 +32,7 @@ export interface GatewayCallInput {
   jsonMode?: boolean;
   privateContext?: boolean;
   beforeFetch?: () => Promise<void>;
-  /** Resolve sensitive context after all config/key/budget I/O; no awaited work may follow before fetch. */
+  /** Resolve sensitive context after all config/key/reservation I/O; no awaited work may follow before fetch. */
   prepareMessages?: () => Promise<ChatMessage[]>;
   /** Synchronous accounting marker only; must not start or await I/O. */
   onDispatch?: () => void;
@@ -129,7 +129,7 @@ export async function gatewayChat(
       return { ...output, latencyMs: Date.now() - started };
     } catch (error) {
       // Only a received HTTP response proves this is a provider rejection.
-      // Network/timeouts, parser errors and budget/permission guards are never replayed.
+      // Network/timeouts, parser errors and quota/permission guards are never replayed.
       const status = error instanceof AppError ? error.details?.status : undefined;
       if (!(error instanceof AppError) || error.code !== 'AI_UNAVAILABLE' || !error.retryable ||
           ![429, 500, 502, 503, 504].includes(status as number) || attempt >= LIMITS.aiCallExtraRetries) throw error;
@@ -138,7 +138,7 @@ export async function gatewayChat(
       if (Date.now() + delay >= recoveryDeadline) throw error;
       await input.onProviderRetry?.({ attempt: attempt + 1, deadline: recoveryDeadline, nextAttemptAt: Date.now() + delay });
       await wait(delay);
-      // The next attempt repeats beforeFetch and prepareMessages, including budget,
+      // The next attempt repeats beforeFetch and prepareMessages, including reservation,
       // config, permissions and freshly authorized sensitive context.
     }
   }
@@ -187,7 +187,7 @@ async function gatewayChatAttempt(
   if (dispatchChars > input.config.maxInputChars || messages.length > 32) {
     throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
-  // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
+  // Everything from this point to fetch is synchronous: never add config/key/reservation reads here.
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode));
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
   const serializedBody = JSON.stringify(body);
@@ -234,7 +234,7 @@ async function gatewayChatAttempt(
       redirect: 'manual',
     });
   } catch (err) {
-    // 网络失败/超时：费用未知，由调用方保留待核对记录
+    // 网络失败/超时：结果未知，由调用方保留尝试状态并避免自动重放。
     const timeout = timeoutSignal.aborted || (err instanceof Error && err.name === 'TimeoutError');
     const classification = classifyFetchFailure(err, timeout);
     if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_failed', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: timeout ? 'TIMEOUT' : 'FETCH_FAILED', protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url), ...classification });

@@ -1,6 +1,6 @@
 # 「补位」AI 项目办公室：实现架构与待办
 
-更新：2026-09-30（launch_prep 分支本轮 A01–A15 推进）。当前实现包含 `3b0aaba` / `6fae48e` 的预算与恢复修复及本轮邀请制邮箱部署；19dedbd 复核结果作为历史记录保留。后续变更应同时更新本文及待办状态。
+更新：2026-09-30（launch_prep 分支本轮 A01–A15 推进）。当前实现包含 `3b0aaba` / `6fae48e` 的并发预占与恢复修复及本轮邀请制邮箱部署；19dedbd 复核结果作为历史记录保留。后续变更应同时更新本文及待办状态。
 
 
 本文中的“已实现”表示代码存在；“本地已验证”指已有本地测试或浏览器证据；“待配置”“未完成”“待验证”均不能作为上线通过。历史验证详情见 [实现对齐记录](IMPLEMENTATION-ALIGNMENT.md)，需求与阶段目标见 [PLAN](../PLAN.md)。本次仅补充文档，不开展部署、发信、付费模型调用或产品功能开发。
@@ -58,7 +58,7 @@ flowchart LR
 | 材料与 AI | `materials.ts`、`agents.ts` | `tiptap.ts`、`agent.ts`；不可变版本、AI 会话、三档运行与采纳 |
 | 预审与答辩 | `reviews.ts`、`rehearsals.ts` | `review.ts`、`rehearsal.ts`；固定输入版本、报告与逐题回答 |
 | 过程与导出 | `ledger.ts` | `events.ts`；业务事件、JSON/Markdown 汇总 |
-| 异步任务 | `jobs.ts` | `jobs.ts`、`ai-jobs.ts`、`budget.ts`、`cron.ts`；状态、派发、恢复、并发额度 |
+| 异步任务 | `jobs.ts` | `jobs.ts`、`ai-jobs.ts`、`ai-reservations.ts`、`cron.ts`；状态、派发、恢复、并发额度 |
 
 契约由 Hono/Zod 路由生成到 `backend/openapi/openapi.json`，前端生成 `frontend/src/api/openapi.ts`。当前契约包含 60 路径、81 操作（本轮新增来源全文片段、答辩历史列表与两个幂等运维端点）；准确字段、方法与响应以该契约为准。接入步骤见 [前端集成说明](../backend/docs/FRONTEND-INTEGRATION.md)。
 
@@ -128,7 +128,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 `ai/config.ts` 定义 textEconomy、visionEconomy、review 配置，配置以新版本追加；`ai/gateway.ts` 处理模型请求、输入上限和重试；`ai/probe.ts` 检查中文、JSON、图片和用量能力。启用状态由最新配置控制；capabilities 的 aiEnabled 不是密钥或模型可用性的实时探测。管理员可启用已保存的最新配置；能力探测是可选诊断 [A04](#a04)。
 
-`ai/calls.ts` 将输入/输出存 R2，并记录模型、配置/提示版本、token、延迟和结果状态；配置了 `pricePerMTokens` 时按真实用量计算 `cost_usd`，未配置或用量缺失时如实记 unknown。`services/budget.ts` 现按「并发上限 + 项目金额预算」原子预占：按模型参数估算预占金额，调用后按该次预占窗口内的 `ai_calls` 结算；部分入口先派发后预占、失败计费与估算上界仍未闭合，费用未知记 `pending_reconcile`；OCR 与要求提取也已纳入预占，见 [A03](#a03)。Gateway 支持 `workers-ai` 与自定义 `openai-compatible` 两种供应商（后者密钥 AES-GCM 加密存储），仅 `ENV_NAME=local` 允许回环模型地址，见 [A15](#a15)。
+`ai/calls.ts` 将输入/输出存 R2，并记录模型、配置/提示版本、token、延迟和结果状态。`services/ai-reservations.ts` 管理 AI 并发槽位及每任务调用次数；OCR 与要求提取也使用同一并发预占。Gateway 支持 `workers-ai` 与自定义 `openai-compatible` 两种供应商（后者密钥 AES-GCM 加密存储），仅 `ENV_NAME=local` 允许回环模型地址，见 [A15](#a15)。
 
 ## 7. 未完成与不确定事项登记
 
@@ -142,7 +142,6 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 | --- | --- | --- |
 | A01 | 两端 `wrangler deploy --dry-run --env staging` 通过；`npm run preflight:deploy -- staging` 精确列出仍缺 3 项（EMAIL_FROM、真实 D1 database_id、前端 HTTPS Origin 白名单）并退出 1 | 本机 dry-run 与 preflight 输出 |
 | A02 | Resend 适配器失败/成功路径单测（mock，不发送真实请求）：缺 Key、非 2xx、成功请求体 | `backend/test/24-email-resend.test.ts` |
-| A03 | 新增项目级 `ai_budget_usd`（null=不限额）；新增估算金额与并发原子检查、用量结算和 `pending_reconcile`；OCR/要求提取纳入预占，但先派发后预占、失败计费与估算上界仍待修正 | `0006_project_ai_budget.sql`、`services/budget.ts`、`test/82-agents.test.ts` |
 | A04 | 探测证据按配置版本留存作诊断；启用仅要求配置已保存且仍为最新版本 | `test/20-admin-ai.test.ts` |
 | A05 | 任务在创建时冻结 `configVersionId`，各执行服务按冻结版本读取；排队期间改配置不影响该任务 | `test/22-ai-routing.test.ts` |
 | A06 | `stillMissing` 只统计缺图且无文本层的页；OCR 失败的页使任务失败而非误报完整；**空 OCR 文本不再被当作识别成功**；失败页重新出现在待渲染列表可重试 | `test/70-sources-parse.test.ts` |
@@ -152,16 +151,16 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 | A10 | 来源全文片段分页接口 + 引用 `fragmentId` 定位；跨项目 403、非法游标 400 | `test/87-a-items-coverage.test.ts` |
 | A11 | 答辩历史列表接口（游标分页、成员权限） | `test/87-a-items-coverage.test.ts` |
 | A12 | 已补齐安装图标与应用内安装入口；**仍需人工**在操作系统完成实际安装与 Chrome 原生「另存为 PDF」 | `frontend/src/pwa-install.test.ts`（5 例）、构建产物 manifest 与 `dist/index.html` |
-| A13 | GC 与保留策略、本地恢复演练和预算竞争测试已有实现；云端执行与长期监控待验收 | `test/25-gc-retention.test.ts`、`test/26-budget-stress.test.ts`、`scripts/backup-drill-local.mjs` |
+| A13 | GC 与保留策略、本地恢复演练和并发竞争测试已有实现；云端执行与长期监控待验收 | `test/25-gc-retention.test.ts`、`test/26-ai-concurrency-stress.test.ts`、`scripts/backup-drill-local.mjs` |
 | A14 | 本地零费用全链路（来源解析→要求确认→AI 代做→采纳→导出）在真实 D1/R2/Workflow 代码路径上通过，模型为受控 fixture | `test/90-e2e-local.test.ts` |
 | A15 | 自定义 `openai-compatible` 供应商（URL + 加密密钥）、`workers-ai` 分支、地址安全策略与本地回环例外 | `test/22-ai-routing.test.ts`、`test/20-admin-ai.test.ts` |
 
-**仍未完成**：A03 调用前金额门槛/失败计费、A07 创建中断恢复、A08 冲突账本与完全原子性；A01 云端部署与资源验收、A02 真实投递、A07 云端故障演练、A12 操作系统级交互、A13 云端压测与长期监控、A14 真模型与比赛原始材料验收。
+**仍未完成**：A07 创建中断恢复、A08 冲突账本与完全原子性；A01 云端部署与资源验收、A02 真实投递、A07 云端故障演练、A12 操作系统级交互、A13 云端压测与长期监控、A14 真模型与比赛原始材料验收。
 
 ### 7.2 已知运行时现象与结论
 
 - **workerd `canceled request` / `RPC stub not disposed` 提示（A13）**：来自 `@cloudflare/vitest-pool-workers` 的工作流内省器收尾——它会对实例调用 `unsafeAbort`，且 `unsafeGetInstanceModifier` 的 RPC 结果由库自身持有。仅等待 `complete` 会在负向用例（实例停在 `errored`）超时后 abort。曾试过并发等待 `complete/errored/terminated`，因遗留待决 RPC 调用把告警从 5 条放大到 44 条，故保留单一终态等待并如实记录日志，不隐藏。
-- **本地回环模型地址**：`isAllowedModelEndpoint` 在 `ENV_NAME=local` 时允许 http/https 回环地址，用于零费用联调；但实测 `wrangler dev` 本地运行时不会把出站 fetch 路由到宿主机回环端口（stub 服务收不到任何请求），因此本地零费用端到端改用测试运行时注入的 fetch mock，而不是宿主机 stub 服务。云端环境仍强制公网 HTTPS。
+- **本地回环模型地址**：`isAllowedModelEndpoint` 在 `ENV_NAME=local` 时允许 http/https 回环地址；但实测 `wrangler dev` 本地运行时不会把出站 fetch 路由到宿主机回环端口（stub 服务收不到任何请求），因此本地端到端测试改用测试运行时注入的 fetch mock，而不是宿主机 stub 服务。云端环境仍强制公网 HTTPS。
 
 <a id="a01"></a>
 ### A01 · 云资源与正式部署【生产已部署；staging/域名自动化与故障演练待验收】
@@ -175,14 +174,6 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 - 位置：`backend/src/email/`、`backend/src/api/auth.ts`、部署 Secrets。
 - 完成判据：配置 Resend Key/已验证发信域名，真实邮箱收到验证码；过期、重发、错误次数及供应商失败路径通过；云端无 OTP 回显。
-
-<a id="a03"></a>
-### A03 · 金额预算与费用结算【调用前门槛与失败计费已修复；真账单待验证】
-
-- 位置：`backend/src/ai/calls.ts`、`services/budget.ts`、`api/projects.ts`、迁移 `0006_project_ai_budget.sql`、`usage_reservations`。
-- 本轮实现：项目级 `ai_budget_usd`（null=不限额）；配置了 `pricePerMTokens` 且 token 已知时按真实用量计算 `cost_usd`，否则记 `unknown`；`budget.ts` 用单条 `INSERT…SELECT` 原子完成「并发上限 + 剩余预算」检查并写入估算金额（输入按 `maxInputChars/4` 估 token、输出按固定 65535 token 估算；此估算不是中文输入、修复重试与多页 OCR 的最坏情况上界），调用后按该次预占窗口内的 `ai_calls` 结算，存在费用未知调用则记 `pending_reconcile`；OCR 与要求提取已纳入预占。价格未知时估算为 0，仅受并发上限约束。
-- 已修复：所有入口使用冻结配置先预占后派发，真实 fetch 前标记 attempts_started，并按 reservation_id 归属费用；失败释放自动按已发生调用结算，未知费用保留 pending_reconcile。有限预算拒绝未知价格、OCR 和非 Workers 接口；文本估算是规划金额，仍需真实供应商账单核对。
-- 完成判据：后端/产品确定计费规则，调用前原子检查并预占金额，成功/失败/重试/超时均结算或待对账；重复执行不重复扣款，预算竞争测试及供应商账单核对通过。
 
 <a id="a04"></a>
 ### A04 · 可选模型能力探测【启用不依赖探测】
@@ -211,7 +202,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 - 位置：`backend/src/services/jobs.ts`、`cron.ts`、`workflows/`、各业务执行服务。
 - 本轮实现：outbox 租约抢占检查条件更新影响行数；`already exists` 分支改为查询引擎实例状态（`reconcileWorkflowJob`），实例已结束但业务未提交时标记失败并释放额度；`succeedJob`/`failJob` 仅在 queued/running 时生效，终态不可被迟到回调改回；cron 每轮核对超过 5 分钟的 running 任务。证据：`backend/test/23-job-recovery.test.ts`。
-- 已修复该窗口：missing 实例且未开始调用时以 CAS 原子重排，并同轮补投；已开始调用则失败并按实际费用结算，不重复发出模型请求。仍需真实云端创建中断、步骤重放与取消竞争演练。
+- 已修复该窗口：missing 实例且未开始调用时以 CAS 原子重排，并同轮补投；已开始调用则失败并释放并发槽位，不重复发出模型请求。仍需真实云端创建中断、步骤重放与取消竞争演练。
 - 完成判据：故障注入覆盖创建后断电、派发异常、步骤重放、终态与取消竞争、租约到期；不会永久卡住、重复产生正式结果或复用已结束实例导致假成功。
 
 <a id="a08"></a>
@@ -257,10 +248,10 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 ### A13 · 运维、清理、压测和测试告警【本地已完成；云端压测与长期运行待验证】
 
 - 位置：`backend/src/services/gc.ts`、`cron.ts`、`core/limits.ts`、`backend/test/`、`backend/docs/DEPLOY.md`、`scripts/backup-drill-local.mjs`。
-- 本轮实现：新增孤儿 R2 对象回收（只处理已知受管键 `ai-calls/{id}/…`、`sources/{vid}/…`、`{projectId}/{fileId}{ext}`；只删除数据库无引用且超过 7 天宽限期的对象；单轮最多 200 个；支持 dryRun 预演）与已完成幂等记录 30 天清理（`processing` 不自动删除）；保留策略、监控阈值与恢复步骤写入 `backend/docs/DEPLOY.md` 第 9–11 节；本地备份/恢复演练脚本 `npm run backup:drill:local` 已实测通过（导出 → 完整性校验 → 建表前置重排 → 导入独立本地库 → 查询验证，仅用 `--local`）。证据：`backend/test/25-gc-retention.test.ts`（清理不误删有效对象、dryRun 不落删）、`26-budget-stress.test.ts`（12 并发严格限 2、承诺金额不超预算、预算 0 拒绝）。
+- 本轮实现：新增孤儿 R2 对象回收（只处理已知受管键 `ai-calls/{id}/…`、`sources/{vid}/…`、`{projectId}/{fileId}{ext}`；只删除数据库无引用且超过 7 天宽限期的对象；单轮最多 200 个；支持 dryRun 预演）与已完成幂等记录 30 天清理（`processing` 不自动删除）；保留策略、监控阈值与恢复步骤写入 `backend/docs/DEPLOY.md` 第 9–11 节；本地备份/恢复演练脚本 `npm run backup:drill:local` 已实测通过（导出 → 完整性校验 → 建表前置重排 → 导入独立本地库 → 查询验证，仅用 `--local`）。证据：`backend/test/25-gc-retention.test.ts`（清理不误删有效对象、dryRun 不落删）、`26-ai-concurrency-stress.test.ts`（12 并发严格限 2）。
 - 测试运行时告警：已定位为 `@cloudflare/vitest-pool-workers` 工作流内省器收尾所致（对实例 `unsafeAbort`，且库自身持有 `unsafeGetInstanceModifier` 的 RPC 结果），可复现依据见 7.2。
 - 仍需云端：真实数据量下的清理与压测、长期运行监控。
-- 完成判据：确定保留策略并验证清理不会删有效对象；恢复演练及监控证据齐全；完成预算竞争测试。历史后端测试通过但仍出现 workerd canceled request / RPC stub dispose 告警，需定位并消除或提供可复现的运行时问题依据，不隐藏日志。
+- 完成判据：确定保留策略并验证清理不会删有效对象；恢复演练及监控证据齐全；完成并发竞争测试。历史后端测试通过但仍出现 workerd canceled request / RPC stub dispose 告警，需定位并消除或提供可复现的运行时问题依据，不隐藏日志。
 
 <a id="a14"></a>
 ### A14 · 比赛材料与真模型端到端验收【待验证】
@@ -280,7 +271,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 文档依据源码及已有验收报告，不将历史测试计数或历史云账户状态当作实时验证。本轮文档检查记录见提交；后续功能改动应执行根 README 的 typecheck、lint、前后端测试、build 和 verify:worker。HTTP 集成脚本须先启动本地两端，仅允许 loopback + local + echo，不能用于生产验收或真模型验收。
 
-已有本地覆盖包含真实 Workers/D1/R2 HTTP 联调、成员隔离、材料冲突/离线、PDF.js 渲染、下载证据及 API 转发；模型成功测试使用受控 fixture。具体命令、测试运行告警、截图和样本见 [实现对齐记录](IMPLEMENTATION-ALIGNMENT.md) 与 [PDF 渲染复现](../frontend/verification/README.md)。部署步骤见 [部署说明](../backend/docs/DEPLOY.md)，涉及供应商、价格、权限及能力时须在实际执行前复核官方文档和账户。
+已有本地覆盖包含真实 Workers/D1/R2 HTTP 联调、成员隔离、材料冲突/离线、PDF.js 渲染、下载证据及 API 转发；模型成功测试使用受控 fixture。具体命令、测试运行告警、截图和样本见 [实现对齐记录](IMPLEMENTATION-ALIGNMENT.md) 与 [PDF 渲染复现](../frontend/verification/README.md)。部署步骤见 [部署说明](../backend/docs/DEPLOY.md)，涉及供应商、权限及能力时须在实际执行前复核官方文档和账户。
 
 待办关闭时记录：实现提交、验证环境、执行命令/操作、观察结果及证据链接。不得仅删除占位或将“配置存在”改写为“功能已验收”。
 
@@ -293,20 +284,19 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 ### 19dedbd 进度复核补记
 
-本次核对两个新增提交并重跑本地检查：后端 25/109、前端 15/43 通过，typecheck/lint/build/verify:worker 通过；production 静态预检通过，staging 仍有三项配置阻碍。A03/A07/A08 上述缺口来自源码核对，现有通过的测试没有覆盖这些窗口。本次只更新进度文档，未修改业务代码、未部署、未调用真实邮件或模型。
+本次核对两个新增提交并重跑本地检查：后端 25/109、前端 15/43 通过，typecheck/lint/build/verify:worker 通过；production 静态预检通过，staging 仍有三项配置阻碍。A07/A08 上述缺口来自源码核对，现有通过的测试没有覆盖这些窗口。本次只更新进度文档，未修改业务代码、未部署、未调用真实邮件或模型。
 
 ## 9. 邮箱上线与剩余验收补记（2026-09-30）
 
-本轮在当前 `main` 分支合入 `3b0aaba`（预算先预占、费用归属、原子采纳）和 `6fae48e`（缺失 Workflow 恢复），并部署邮箱邀请制。前面 19dedbd 复核中列出的先派发后预占、失败直接释放、缺失实例不恢复及采纳幽灵事件均已按新实现修复；保留真实供应商计费和云端故障演练边界。
+本轮在当前 `main` 分支合入 `3b0aaba`（调用并发预占、原子采纳）和 `6fae48e`（缺失 Workflow 恢复），并部署邮箱邀请制。前面 19dedbd 复核中列出的先派发后预占、失败直接释放、缺失实例不恢复及采纳幽灵事件均已按新实现修复；保留云端故障演练边界。
 
 - A01：生产两端、D1/R2 依赖、Service Binding、0008/0009/0010/0011 迁移与 Cron/Workflow 绑定已部署；备用入口实际可用。自定义域名对自动化请求仍 challenge，staging 尚未配置。
 - A02：Resend 子域 Verified、真实邮件 Delivered、用户确认实际登录，生产 Cookie 的 HttpOnly/Secure/SameSite=Lax 已实测。当前用户明确选择邀请制，名单为 Secret，公开注册未开启。限流采用独立持久化全站/邮箱日额度与 IP 小时记录，清理验证码不会重置限额。
-- A03：所有 AI 入口先冻结/预占后派发；调用开始与 reservation_id 持久化，invalid 响应真实 token 也结算，未落账费用保留 pending_reconcile；该状态不占运行槽位，但有限预算有待对账时拒绝新调用。有限预算拒绝未知价格、OCR/图片与非 Workers 兼容接口。金额为受限文本请求的规划估算，不承诺供应商账单硬上限。
-- A07：未开始模型调用的 missing 实例原子重排，同轮 Cron 补投；已有调用/开始标记则失败并结算，避免重复费用；仍需真实云端故障注入。
+- A07：未开始模型调用的 missing 实例原子重排，同轮 Cron 补投；已有调用/开始标记则失败，避免重复请求；仍需真实云端故障注入。
 - A08：采纳条件 INSERT/UPDATE 链保证并发失败不留下版本、事件或撤销其它采纳。响应回放仍在业务 batch 后写入，完全原子性边界保留，必要时人工恢复 processing。
 - A09/A10/A11：本地覆盖保持；生产材料模板、r2 保存、刷新和导出预览已验证。原生 JSON 下载等待超时，不能视为保存通过。
 - A12：生产网页的「立即更新」已实际点击并加载新版本；操作系统 PWA 安装和原生 PDF 保存仍待人工。
-- A13：30 张表的本地恢复演练与预算/邮件配额竞争测试通过；生产迁移前私有备份已保存。新增外键造成导出 DDL 结束格式变化的恢复脚本问题已修复。仍需云端恢复切换、长期监控与压力验证。
+- A13：30 张表的本地恢复演练与并发/邮件配额竞争测试通过；生产迁移前私有备份已保存。新增外键造成导出 DDL 结束格式变化的恢复脚本问题已修复。仍需云端恢复切换、长期监控与压力验证。
 - A14/A15：真实模型/OCR 未调用，URL/key 仍留待用户在网页填写；142 后端与 48 前端断言通过不能代替真模型验收。
 
 未来 VPS 前端/代理方案已准备并离线验证，实际服务器、DNS/TLS切换与可信 IP 传递仍未完成；见部署说明第 14 节。

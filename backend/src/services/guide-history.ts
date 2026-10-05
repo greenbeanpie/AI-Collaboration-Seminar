@@ -9,7 +9,7 @@ const listArgs = z.object({ offset: z.number().int().min(0).max(1000000) }).stri
 const readArgs = z.object({ turnId: z.string().uuid(), offset: z.number().int().min(0).max(1000000) }).strict();
 export const guideHistoryDefinitions: ToolDefinition[] = ([
   ['list_guide_turns', '分页列出本次带做会话的历史轮次、角色和全文长度；目录不代表已读回答。只能访问服务器绑定的当前会话。', listArgs],
-  ['read_guide_turn', '读取当前带做会话指定轮次的原文，每页最多4000字符，按 nextOffset 继续可读完整回答；不触发新的收费任务。', readArgs],
+  ['read_guide_turn', '读取当前带做会话指定轮次的原文，每页最多4000字符，按 nextOffset 继续可读完整回答；不触发新的 AI 请求。', readArgs],
 ] as const).map(([name, description, schema]) => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema(schema, { target: 'draft-7', io: 'input' });
   return { name, description, parameters };

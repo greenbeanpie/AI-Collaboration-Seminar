@@ -11,7 +11,7 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, getJob, succeedJob } from './jobs';
-import { markAiCallStarted, settleReservation } from './budget';
+import { markAiCallStarted, settleReservation } from './ai-reservations';
 import { recordEvent } from './events';
 import { markdownToDoc } from './tiptap';
 import { z } from 'zod';
@@ -210,7 +210,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     if (out) {
       try { data = params.schema.parse(extractJson(out.content)); } catch (error) { failure = error; }
     }
-    // 每次已发出的请求都记录；账本/R2失败不触发第二次付费请求，尝试标记保留待对账。
+    // 每次已发出的请求都记录；账本/R2失败不触发第二次请求，尝试标记保留作恢复判断。
     await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);

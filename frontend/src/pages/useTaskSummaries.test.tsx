@@ -39,9 +39,9 @@ describe('task card summaries', () => {
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(3));
   });
   it('retains failure until explicit retry and prevents stale response overwrite', async () => {
-    const summary = vi.spyOn(collaborationApi, 'summary').mockRejectedValueOnce(new Error('预算不足')).mockResolvedValue({ summary: '重试成功', summaryStatus: 'ready', summarySourceHash: 'a' });
+    const summary = vi.spyOn(collaborationApi, 'summary').mockRejectedValueOnce(new Error('项目 AI 并发已达上限')).mockResolvedValue({ summary: '重试成功', summaryStatus: 'ready', summarySourceHash: 'a' });
     const row = task('a'); const view = setup([row]);
-    await waitFor(() => expect(view.result.current.errors.a).toBe('预算不足'));
+    await waitFor(() => expect(view.result.current.errors.a).toBe('项目 AI 并发已达上限'));
     view.rerender({ rows: [row], active: true }); expect(summary).toHaveBeenCalledTimes(1);
     act(() => view.result.current.retry(row));
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(2));

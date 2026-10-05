@@ -3,7 +3,7 @@ import { loadAiConfig } from '../ai/config';
 import { aiUnavailable } from '../core/errors';
 import type { Env } from '../env';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
-import { withReservedAiJob } from './budget';
+import { withReservedAiJob } from './ai-reservations';
 import { createJobAndDispatch } from './jobs';
 import type { Submission } from './collaboration';
 import { snapshotEvaluationRubric } from './collaboration-ai';

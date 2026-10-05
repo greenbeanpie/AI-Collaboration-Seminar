@@ -6,7 +6,7 @@ import { invalidState, notFound, permissionDenied, validationFailed } from '../c
 import { projectPermissionSql } from './project-permissions';
 import { sourceInputsGuard } from './source-inputs';
 import { projectSourceContextGuard } from './collaboration-context';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 
 export const MAX_CLARIFICATION_ROUNDS = 3;
 export const questionInputSchema = z.object({

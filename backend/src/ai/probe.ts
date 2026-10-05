@@ -44,7 +44,7 @@ function extractJson(text: string): Record<string, unknown> {
  * 4. usage_fields  用量字段完整性
  *
  * 探测允许在 enabled=0 时运行，不修改配置版本或启用状态。
- * 探测调用同样计入 ai_calls（费用未知时如实记录，不填零）。
+ * 探测调用同样计入 ai_calls 与 token 用量。
  */
 export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig, diagnosticRequestId?: string): Promise<ProbeReport> {
   const loaded = frozen ?? await loadAiConfig(env.DB);
@@ -159,7 +159,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
   checks.push({
     name: 'usage_fields',
     passed: usageOk,
-    detail: usageOk ? 'prompt/completion tokens 均存在' : '缺少用量字段（计费记录将标为未知）',
+    detail: usageOk ? 'prompt/completion tokens 均存在' : '响应中缺少 prompt/completion 用量字段',
   });
 
   return finish(purpose, cfg.model, loaded.version, checks);

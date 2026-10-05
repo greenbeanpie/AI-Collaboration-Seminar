@@ -95,7 +95,7 @@ describe('source lifecycle processing fences', () => {
     expect((await pending).status).toBe('cancelled'); expect(await snapshot(f)).toEqual(preserved);
     expect(await env.DB.prepare('SELECT COUNT(*) n FROM requirement_sets WHERE source_version_id=?1').bind(f.sourceVersionId).first()).toEqual({n:0});
     expect(await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls WHERE job_id=?1').bind(jobId).first()).toEqual({n:1});
-    expect(await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(jobId).first()).toEqual({status:'pending_reconcile'});
+    expect(await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(jobId).first()).toEqual({status:'settled'});
     expect((await runParseJob(env,jobId)).status).toBe('cancelled'); expect(provider.fetch).toHaveBeenCalledOnce();
   });
 

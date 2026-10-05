@@ -95,10 +95,10 @@ describe('来源解析流水线', () => {
     const citations = JSON.parse(cite!.citations_json) as Array<{ fragmentId: string }>;
     expect(citations[0]?.fragmentId).toMatch(/^[0-9a-f-]{36}$/);
 
-    // 费用记录：未知费用如实标记
-    const call = await env.DB.prepare("SELECT cost_status, cost_usd FROM ai_calls WHERE purpose = 'textEconomy' LIMIT 1").first<{ cost_status: string; cost_usd: number | null }>();
-    expect(call?.cost_status).toBe('unknown');
-    expect(call?.cost_usd).toBeNull();
+    // 调用记录保存 token 用量，不生成费用状态
+    const call = await env.DB.prepare("SELECT prompt_tokens, completion_tokens FROM ai_calls WHERE purpose = 'textEconomy' LIMIT 1").first<{ prompt_tokens: number | null; completion_tokens: number | null }>();
+    expect(call?.prompt_tokens).toBeGreaterThan(0);
+    expect(call?.completion_tokens).toBeGreaterThan(0);
   });
 
   it('伪造引用 → 任务失败 AI_OUTPUT_INVALID', async () => {

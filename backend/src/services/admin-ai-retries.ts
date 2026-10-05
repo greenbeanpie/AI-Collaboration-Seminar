@@ -2,7 +2,7 @@ import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { loadAiConfig } from '../ai/config';
-import { reserveAiSlot, settleReservation } from './budget';
+import { reserveAiSlot, settleReservation } from './ai-reservations';
 import { projectPermissionSql } from './project-permissions';
 import { effectiveStandardGuardSql } from './effective-standard';
 import { sourceLifecycleGuard } from './source-lifecycle';
@@ -120,7 +120,7 @@ export async function recoverAdminAiRetries(env:Env,limit=10):Promise<void>{
      await env.DB.prepare("UPDATE admin_ai_retry_items SET status='pending',reason='等待项目 AI 并发槽位',updated_at=?2 WHERE id=?1 AND status='running'").bind(row.id,nowIso()).run();
      continue;
    }
-   result={status:'skipped',reason:error instanceof AppError&&error.code==='QUOTA_EXCEEDED'?'预算额度不足':'权限、版本或配置已变化'};
+   result={status:'skipped',reason:error instanceof AppError&&error.code==='QUOTA_EXCEEDED'?'并发或调用次数额度不足':'权限、版本或配置已变化'};
  }
  await env.DB.prepare('UPDATE admin_ai_retry_items SET status=?2,reason=?3,retry_job_id=?4,updated_at=?5 WHERE id=?1 AND status=\'running\'').bind(row.id,result.status,result.reason??null,result.jobId??null,nowIso()).run();
  }

@@ -9,7 +9,7 @@ import { normalizeProviderResponse } from '../src/ai/transport';
 import { aiJsonCall } from '../src/services/agent';
 import { probeModel } from '../src/ai/probe';
 import { classifyFetchFailure, readAiDiagnostics, safeDiagnosticTarget } from '../src/ai/diagnostics';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { seedProject, seedUser } from './helpers/seed';
 import { FIXED_MAX_OUTPUT_TOKENS, presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
 import { z } from 'zod';

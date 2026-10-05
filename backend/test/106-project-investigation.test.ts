@@ -7,7 +7,7 @@ import { referencesFromRead,validateReadReferences,decisionReferences,extractDec
 import { projectToolConversation } from '../src/services/project-ai-tools';
 import { configureGoFixture } from './helpers/provider-config';
 import { loadAiConfig } from '../src/ai/config';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { aiJsonCall,businessJson } from '../src/services/agent';
 import { redactPrivateExchanges } from '../src/services/project-investigation';
 import { z } from 'zod';

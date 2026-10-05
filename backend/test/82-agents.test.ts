@@ -6,7 +6,7 @@ import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { mockGatewayFetch } from './helpers/ai-mock';
 import { runAgentJob } from '../src/services/agent';
 import { runParseJob } from '../src/services/parse';
-import { releaseStaleReservations, reserveAiSlot, settleReservation } from '../src/services/budget';
+import { releaseStaleReservations, reserveAiSlot, settleReservation } from '../src/services/ai-reservations';
 import { markdownToDoc } from '../src/services/tiptap';
 import { quotaExceeded } from '../src/core/errors';
 
@@ -339,10 +339,10 @@ describe('预算并发预占（每项目 2）', () => {
     const now = '2026-09-30T12:00:00.000Z';
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'stale', 'agent_run', 0, 'reserved', '2026-09-30T09:59:59.000Z')",
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'stale', 'agent_run', 'reserved', '2026-09-30T09:59:59.000Z')",
       ).bind(crypto.randomUUID(), pid),
       env.DB.prepare(
-        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'fresh', 'agent_run', 0, 'reserved', '2026-09-30T10:00:01.000Z')",
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'fresh', 'agent_run', 'reserved', '2026-09-30T10:00:01.000Z')",
       ).bind(crypto.randomUUID(), pid),
     ]);
     await releaseStaleReservations(env, now);
@@ -365,7 +365,7 @@ describe('预算并发预占（每项目 2）', () => {
         "INSERT INTO jobs (id, project_id, kind, status, input_json, attempts, created_by, created_at, updated_at) VALUES ('running-job', ?1, 'agent_run', 'running', '{}', 0, ?2, ?3, ?3)",
       ).bind(pid, owner.userId, stale),
       env.DB.prepare(
-        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, estimated_cost, status, created_at) VALUES (?1, ?2, 'running-job', 'agent_run', 0, 'reserved', ?3)",
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'running-job', 'agent_run', 'reserved', ?3)",
       ).bind(crypto.randomUUID(), pid, stale),
     ]);
     await releaseStaleReservations(env, now);
@@ -373,56 +373,4 @@ describe('预算并发预占（每项目 2）', () => {
     expect(row?.status).toBe('reserved');
   });
 
-  it('项目 AI 预算不足时拒绝预占并返回预算明细', async () => {
-    const owner = await seedUser();
-    const pid = await seedProject(owner.userId);
-    const configRow = await env.DB.prepare('SELECT id, config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1')
-      .first<{ id: string; config_json: string }>();
-    const priced = JSON.parse(configRow!.config_json) as Record<string, { pricePerMTokens: [number, number] | null }>;
-    for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) priced[purpose]!.pricePerMTokens = [1_000_000, 1_000_000];
-    await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1')
-      .bind(configRow!.id, JSON.stringify(priced))
-      .run();
-    try {
-      await env.DB.prepare('UPDATE projects SET ai_budget_usd = 0.000001 WHERE id = ?1').bind(pid).run();
-      let error: unknown;
-      try {
-        await reserveAiSlot(env, { projectId: pid, jobId: `over-budget-${pid}`, purpose: 'agent_run' });
-      } catch (err) {
-        error = err;
-      }
-      expect((error as { code?: string } | undefined)?.code).toBe('QUOTA_EXCEEDED');
-      expect((error as { details?: { budgetUsd?: number } } | undefined)?.details?.budgetUsd).toBe(0.000001);
-      const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations WHERE job_id = ?1").bind(`over-budget-${pid}`).first<{ n: number }>();
-      expect(row?.n).toBe(0);
-    } finally {
-      await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1')
-        .bind(configRow!.id, configRow!.config_json)
-        .run();
-    }
-  });
-
-  it('结算按真实用量写入金额，费用未知时标记待对账', async () => {
-    const owner = await seedUser();
-    const pid = await seedProject(owner.userId);
-    const configRow = await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ id: string }>();
-
-    await reserveAiSlot(env, { projectId: pid, jobId: 'job-known-cost', purpose: 'agent_run' });
-    await env.DB.prepare(
-      "INSERT INTO ai_calls (id, project_id, job_id, purpose, config_version_id, prompt_version, model, cost_usd, cost_status, status, created_at) VALUES (?1, ?2, 'job-known-cost', 'textEconomy', ?3, 'v1', 'm', 0.5, 'known', 'ok', ?4)",
-    ).bind(crypto.randomUUID(), pid, configRow!.id, new Date(Date.now() + 1000).toISOString()).run();
-    await settleReservation(env, 'job-known-cost', 'settled');
-    const known = await env.DB.prepare("SELECT status, settled_cost FROM usage_reservations WHERE job_id = 'job-known-cost'").first<{ status: string; settled_cost: number }>();
-    expect(known?.status).toBe('settled');
-    expect(known?.settled_cost).toBeCloseTo(0.5);
-
-    await reserveAiSlot(env, { projectId: pid, jobId: 'job-unknown-cost', purpose: 'agent_run' });
-    await env.DB.prepare(
-      "INSERT INTO ai_calls (id, project_id, job_id, purpose, config_version_id, prompt_version, model, cost_usd, cost_status, status, created_at) VALUES (?1, ?2, 'job-unknown-cost', 'textEconomy', ?3, 'v1', 'm', NULL, 'unknown', 'timeout', ?4)",
-    ).bind(crypto.randomUUID(), pid, configRow!.id, new Date(Date.now() + 1000).toISOString()).run();
-    await settleReservation(env, 'job-unknown-cost', 'settled');
-    const unknown = await env.DB.prepare("SELECT status, settled_cost FROM usage_reservations WHERE job_id = 'job-unknown-cost'").first<{ status: string; settled_cost: number | null }>();
-    expect(unknown?.status).toBe('pending_reconcile');
-    expect(unknown?.settled_cost).toBeNull();
-  });
 });

@@ -6,7 +6,7 @@ const origin = process.env.UI_ORIGIN || 'http://127.0.0.1:5197';
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('UI audits require a loopback origin');
 const date = '2026-09-30T12:00:00Z';
 const long = '跨学科项目协作与人工智能应用研究：完整保留任务说明、来源依据和人工确认记录。';
-const project = {id:'fixture',name:'项目2 · AI 协作研讨',description:long.repeat(3),deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',aiBudgetUsd:20,revision:1,myRole:'owner',createdAt:date,updatedAt:date};
+const project = {id:'fixture',name:'项目2 · AI 协作研讨',description:long.repeat(3),deadlineDate:'2026-12-01',deadlinePrecision:'date',status:'active',revision:1,myRole:'owner',createdAt:date,updatedAt:date};
 const user = {id:'fixture-user',username:'local_fixture',email:null,displayName:'本地审查测试成员',isAdmin:true};
 const member = {userId:user.id,...user,role:'owner',skills:['研究','材料整理'],hoursPerWeek:8,joinedAt:date};
 const capabilities = {apiVersion:'v1',environment:'local-fixture',features:{aiEnabled:false,webFetch:false,emailMode:'echo'},limits:{maxFileBytes:20000000,maxPdfPages:50,pageImageMaxEdge:1600,pageImageMaxBytes:1000000,listDefaultPageSize:20,listMaxPageSize:100,concurrentAiTasksPerProject:2,assignmentSuggestionMaxTasks:20},competitionTemplate:{teamSizeLimit:5},authentication:{mode:'password',passwordEnabled:true,invitationRequired:true,passwordMinLength:12,turnstileRequired:false,turnstileSiteKey:null}};

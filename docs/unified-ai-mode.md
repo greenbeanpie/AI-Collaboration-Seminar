@@ -38,9 +38,9 @@ Existing callers therefore share the frozen version and configuration:
 | textEconomy | requirement extraction, agent writing/guidance/chat, assignment, collaboration decomposition/assignment |
 | review | reviews, rehearsals, collaboration evaluation |
 | visionEconomy | page OCR |
-| prices/limits | budget reservation/estimate and call accounting use the resolved snapshot too |
+| call tracking | token usage and call status are recorded against the resolved configuration |
 
-Existing current-version, membership, job, concurrency, budget and reservation guards
+Existing current-version, membership, job, concurrency and reservation guards
 are retained. A missing frozen configuration does not fall back to another endpoint.
 Already-created jobs keep their existing snapshot semantics.
 

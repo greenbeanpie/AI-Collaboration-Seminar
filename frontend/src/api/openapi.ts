@@ -1768,7 +1768,6 @@ export interface paths {
                          * @enum {string}
                          */
                         deadlinePrecision?: "date" | "datetime" | "unknown";
-                        aiBudgetUsd?: number | null;
                         /** @default true */
                         aiCollaborationEnabled?: boolean;
                         /**
@@ -1879,7 +1878,6 @@ export interface paths {
                         deadlinePrecision?: "date" | "datetime" | "unknown";
                         /** @enum {string} */
                         status?: "active" | "archived";
-                        aiBudgetUsd?: number | null;
                     };
                 };
             };
@@ -8192,7 +8190,7 @@ export interface paths {
                         "application/json": components["schemas"]["AgentSessionCreateResponse"];
                     };
                 };
-                /** @description 并发/预算超限（QUOTA_EXCEEDED） */
+                /** @description 并发或调用次数超限（QUOTA_EXCEEDED） */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -10598,17 +10596,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -10635,17 +10622,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -10671,17 +10647,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -10707,17 +10672,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -10743,17 +10697,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -10780,17 +10723,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            mediaInputPricePerMTokens?: {
-                                audio?: number;
-                                video?: number;
-                                text?: number;
-                            };
-                            cachedInputPricePerMTokens?: number;
-                            /** @default null */
-                            pricePerMTokens?: [
-                                number,
-                                number
-                            ] | null;
                             apiKey?: string;
                             clearKey?: boolean;
                         };
@@ -12510,8 +12442,6 @@ export interface components {
                 deadlinePrecision: "date" | "datetime" | "unknown";
                 /** @enum {string} */
                 status: "active" | "archived";
-                /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
-                aiBudgetUsd: number | null;
                 /** @description 项目 AI 智能协作开关，默认关闭 */
                 aiCollaborationEnabled?: boolean;
                 revision: number;
@@ -12545,8 +12475,6 @@ export interface components {
                     deadlinePrecision: "date" | "datetime" | "unknown";
                     /** @enum {string} */
                     status: "active" | "archived";
-                    /** @description 项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束 */
-                    aiBudgetUsd: number | null;
                     /** @description 项目 AI 智能协作开关，默认关闭 */
                     aiCollaborationEnabled?: boolean;
                     revision: number;
@@ -15924,8 +15852,6 @@ export interface components {
                     supported: boolean;
                     reason: string;
                 };
-                /** @enum {string} */
-                searchCost: "unknown";
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -16633,8 +16559,6 @@ export interface components {
                     calls: number;
                     promptTokens: number;
                     completionTokens: number;
-                    costStatus: string;
-                    note: string;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */

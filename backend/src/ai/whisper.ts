@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { LIMITS } from '../core/limits';
 export const WHISPER_MODEL = '@cf/openai/whisper-large-v3-turbo' as const;
-export const WHISPER_USD_PER_MINUTE = 0.000513;
 const segmentSchema = z.object({start:z.number().finite().optional(),end:z.number().finite().optional(),text:z.string().optional(),avg_logprob:z.number().finite().optional(),no_speech_prob:z.number().finite().optional(),compression_ratio:z.number().finite().optional()});
 export const transcriptSchema = z.object({text:z.string().max(1000000),transcription_info:z.object({duration:z.number().finite().positive().optional(),language:z.string().optional(),language_probability:z.number().optional()}).optional(),segments:z.array(segmentSchema).max(100000).optional()});
 export type Transcript = z.infer<typeof transcriptSchema>;

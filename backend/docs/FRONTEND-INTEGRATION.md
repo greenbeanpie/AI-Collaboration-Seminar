@@ -3,7 +3,7 @@
 > 面向前端 AI / 前端同学。说明如何接入「补位」AI 项目办公室后端。
 > 契约唯一来源：[`backend/openapi/openapi.json`](../openapi/openapi.json)（当前 57 条路径、77 个操作）。契约由双方共同确认，不得单方面修改。
 >
-> 更新日期：2026-09-30 ｜ 本地代码覆盖 PLAN 后端 API 清单中的身份、项目协作、来源/要求、任务分工、材料、AI 补位、预审/答辩、过程账本及导出接口。生产模型、真实发信、费用计量和部署链路尚未完成验证，详见第 8 节。
+> 更新日期：2026-09-30 ｜ 本地代码覆盖 PLAN 后端 API 清单中的身份、项目协作、来源/要求、任务分工、材料、AI 补位、预审/答辩、过程记录及导出接口。生产模型、真实发信和部署链路尚未完成验证，详见第 8 节。
 
 ---
 
@@ -77,7 +77,7 @@ export default defineConfig({
 | `FILE_TOO_LARGE` | 413 | 超过 10 MiB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | 文件头与扩展名不符 |
 | `SOURCE_PARSE_FAILED` | 422 | 解析失败（加密 PDF/超页/白名单外域名等），`details` 有原因 |
-| `QUOTA_EXCEEDED` | 429 | 人数已满 / AI 并发或预算不足 |
+| `QUOTA_EXCEEDED` | 429 | 人数已满 / AI 并发或单次调用次数达到上限 |
 | `AI_OUTPUT_INVALID` | 502 | 模型输出不可用（含伪造引用） |
 | `AI_UNAVAILABLE` | 503 | 模型/邮件服务不可用，可重试 |
 | `EMAIL_UNAVAILABLE` | 503 | 验证码邮件发送失败 |
@@ -280,7 +280,7 @@ await fetch(`/api/v1/projects/${projectId}/tasks/apply-assignment`, {
 
 人工应用一次只处理一个任务。服务端在写入时再次检查任务 revision 和负责人当前项目成员资格，任务状态保持不变。建议请求分工建议、AI 会话、预审等创建异步任务的关键 POST 时携带 `Idempotency-Key`。该头目前落在 AI 会话创建、采纳、预审和分工建议接口。
 
-`GET /api/v1/projects/{projectId}/export-bundle` 除材料 Markdown、任务与过程记录外，还返回 `requirementSets[]`（要求集确认态/版本、逐条要求及原文 citations）和 `rubricVersions[]`（版本、确认态、权重和备注），供成果说明导出引用。费用未知时 `aiUsage.costStatus` 为 `unknown`。
+`GET /api/v1/projects/{projectId}/export-bundle` 除材料 Markdown、任务与过程记录外，还返回 `requirementSets[]`（要求集确认态/版本、逐条要求及原文 citations）和 `rubricVersions[]`（版本、确认态、权重和备注），供成果说明导出引用。`aiUsage` 只汇总调用次数与 token 用量。
 
 当前后端与 PLAN 的实现对齐：
 
@@ -292,7 +292,7 @@ await fetch(`/api/v1/projects/${projectId}/tasks/apply-assignment`, {
 | 团队分工建议与人工应用 | 已实现 | 异步建议不写任务；应用需 `expectedRevision`，一次一项 |
 | 三档 AI 会话、带做回合、人工复核采纳 | 已实现 | 依赖已配置并启用的模型；失败不会自动切到演示结果 |
 | 预审、答辩演练、事件/贡献/资源账本、导出包 | 已实现 | 关联和访问以服务端项目权限为准 |
-| Workflow 恢复、费用/预算 | 部分实现 | 有异步派发、并发预占和过期释放；预算 `estimated_cost` 目前固定为 0，真实费用未知/对账未完成，不代表预算限额已完整执行 |
+| Workflow 恢复、AI 并发控制 | 部分实现 | 有异步派发、并发槽位预占和过期释放 |
 
 尚未完成、影响真实部署的事项：
 
@@ -300,9 +300,8 @@ await fetch(`/api/v1/projects/${projectId}/tasks/apply-assignment`, {
 |---|---|---|
 | 真实发信（Resend） | 待验证域名和部署密钥 | 部署环境 `EMAIL_MODE=echo` 会拒绝发信；不返回真实验证码 |
 | 正式模型 | 待配置并验证 Gateway/model 密钥与模型能力 | `/capabilities.features.aiEnabled` 来自 D1 配置；禁用或未配置时异步 AI job 会进入 `failed` 并携带 `AI_UNAVAILABLE`，同步能力调用可能直接返回 503 |
-| 生产费用预算 | 未完成 | 目前 reservation 的 `estimated_cost` 固定为 0；不应据此认定花费已受限 |
 | staging/production 部署 | 待创建/核验 Cloudflare 资源 | 生产联调与前端 Service Binding 仍待完成 |
-| 长期任务核对/压测/监控 | 未完成 | B5 不应标记完成，需真实服务联调及预算/恢复验证 |
+| 长期任务核对/压测/监控 | 未完成 | B5 不应标记完成，需真实服务联调及恢复验证 |
 
 三档 AI 与预审/答辩的接口行为提醒：
 

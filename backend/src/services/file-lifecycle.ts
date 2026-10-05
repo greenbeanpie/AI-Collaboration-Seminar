@@ -2,7 +2,7 @@ import { fileManageSql } from './task-files';
 import type { Env } from '../env';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { nowIso } from '../core/db';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 import { projectAccess, projectPermissionSql } from './project-permissions';
 
 export const lifecycleBodyDescription = '当前生命周期版本，删除和恢复都递增；旧请求不得重放';
@@ -46,8 +46,8 @@ function cancelSourceJobs(env: Env, sourceIdsSql: string, binds: unknown[], now:
 
 async function releaseCancelledReservations(env: Env, now: string): Promise<void> {
   const jobs=await env.DB.prepare("SELECT id FROM jobs WHERE status='cancelled' AND updated_at=?1 AND error_json LIKE '%来源已移入回收站%'").bind(now).all<{id:string}>();
-  // An already started provider call is kept pending_reconcile by settleReservation;
-  // cancellation never pretends that incurred/unknown costs were free.
+  // An already started provider call remains represented by its task and call state.
+  // cancellation preserves the provider call state and never replays an uncertain request.
   for (const job of jobs.results) await settleReservation(env,job.id,'released');
 }
 

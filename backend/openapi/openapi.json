@@ -2956,14 +2956,6 @@
                   "archived"
                 ]
               },
-              "aiBudgetUsd": {
-                "type": [
-                  "number",
-                  "null"
-                ],
-                "minimum": 0,
-                "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
-              },
               "aiCollaborationEnabled": {
                 "type": "boolean",
                 "description": "项目 AI 智能协作开关，默认关闭"
@@ -3023,7 +3015,6 @@
               "deadlineDate",
               "deadlinePrecision",
               "status",
-              "aiBudgetUsd",
               "revision",
               "myRole",
               "createdAt",
@@ -3082,14 +3073,6 @@
                         "active",
                         "archived"
                       ]
-                    },
-                    "aiBudgetUsd": {
-                      "type": [
-                        "number",
-                        "null"
-                      ],
-                      "minimum": 0,
-                      "description": "项目 AI 金额预算上限（美元）；null 表示不限额，仅受并发上限约束"
                     },
                     "aiCollaborationEnabled": {
                       "type": "boolean",
@@ -3150,7 +3133,6 @@
                     "deadlineDate",
                     "deadlinePrecision",
                     "status",
-                    "aiBudgetUsd",
                     "revision",
                     "myRole",
                     "createdAt",
@@ -17201,18 +17183,11 @@
                   "supported",
                   "reason"
                 ]
-              },
-              "searchCost": {
-                "type": "string",
-                "enum": [
-                  "unknown"
-                ]
               }
             },
             "required": [
               "fileTools",
-              "search",
-              "searchCost"
+              "search"
             ]
           },
           "requestId": {
@@ -20195,20 +20170,12 @@
                   },
                   "completionTokens": {
                     "type": "integer"
-                  },
-                  "costStatus": {
-                    "type": "string"
-                  },
-                  "note": {
-                    "type": "string"
                   }
                 },
                 "required": [
                   "calls",
                   "promptTokens",
-                  "completionTokens",
-                  "costStatus",
-                  "note"
+                  "completionTokens"
                 ]
               }
             },
@@ -25152,13 +25119,6 @@
                     ],
                     "default": "unknown"
                   },
-                  "aiBudgetUsd": {
-                    "type": [
-                      "number",
-                      "null"
-                    ],
-                    "minimum": 0
-                  },
                   "aiCollaborationEnabled": {
                     "type": "boolean",
                     "default": true
@@ -25367,13 +25327,6 @@
                       "active",
                       "archived"
                     ]
-                  },
-                  "aiBudgetUsd": {
-                    "type": [
-                      "number",
-                      "null"
-                    ],
-                    "minimum": 0
                   }
                 },
                 "required": [
@@ -34170,7 +34123,7 @@
             }
           },
           "409": {
-            "description": "并发/预算超限（QUOTA_EXCEEDED）",
+            "description": "并发或调用次数超限（QUOTA_EXCEEDED）",
             "content": {
               "application/json": {
                 "schema": {
@@ -37480,44 +37433,6 @@
                         },
                         "additionalProperties": false
                       },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
-                      },
                       "apiKey": {
                         "type": "string",
                         "maxLength": 4096,
@@ -37631,44 +37546,6 @@
                         },
                         "additionalProperties": false
                       },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
-                      },
                       "apiKey": {
                         "type": "string",
                         "maxLength": 4096,
@@ -37777,44 +37654,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
                       },
                       "apiKey": {
                         "type": "string",
@@ -37925,44 +37764,6 @@
                         },
                         "additionalProperties": false
                       },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
-                      },
                       "apiKey": {
                         "type": "string",
                         "maxLength": 4096,
@@ -38071,44 +37872,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
                       },
                       "apiKey": {
                         "type": "string",
@@ -38221,44 +37984,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "mediaInputPricePerMTokens": {
-                        "type": "object",
-                        "properties": {
-                          "audio": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "video": {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          "text": {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        }
-                      },
-                      "cachedInputPricePerMTokens": {
-                        "type": "number",
-                        "minimum": 0
-                      },
-                      "pricePerMTokens": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "prefixItems": [
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          },
-                          {
-                            "type": "number",
-                            "minimum": 0
-                          }
-                        ],
-                        "default": null
                       },
                       "apiKey": {
                         "type": "string",

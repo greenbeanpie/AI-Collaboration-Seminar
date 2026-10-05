@@ -5,7 +5,7 @@ import { env, BASE } from './helpers/env';
 import type { Env } from '../src/env';
 import { assignmentOutputSchema } from '../src/services/assignment';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
 import { applyProposal, decideSubmission, pendingTaskHumanReview, toSubmission, type Submission } from '../src/services/collaboration';
 import { continueConfirmedPlan, runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';

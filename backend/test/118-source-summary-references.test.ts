@@ -7,7 +7,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { executeFileTool, projectToolConversation } from '../src/services/project-ai-tools';
 import { decisionReferences, referencesFromRead, validateReadReferences, type ProjectReference } from '../src/services/project-evidence';
 import { projectReferenceGuard } from '../src/services/project-reference-guard';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { InvestigationContinuation } from '../src/services/project-investigation';
 afterEach(() => vi.unstubAllGlobals());
 async function fixture() {

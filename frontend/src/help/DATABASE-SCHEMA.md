@@ -4,6 +4,8 @@
 
 当前参考结构包含 `0043_remove_task_parent.sql`，移除了历史任务父子关系；任务平级保存，主目标和前置依赖分别维护。下方结构描述的是代码中迁移完成后的目标结构，不表示生产数据库已应用该变更。
 
+数据库迁移历史中保留的 AI 金额字段仅用于兼容既有结构和数据；当前应用不读取、不写入，也不提供项目金额预算或费用核算功能。
+
 [返回技术说明](/app/help?doc=technical)。每张表可从章节目录直接定位，也可按字段名搜索。
 
 约定：多数 ID 为 TEXT UUID，日期和时间为 TEXT；时间戳使用 ISO-8601 UTC，日历日期使用日期字符串。SQLite 中 NULL 允许性以 NOT NULL 声明列为准；TEXT PRIMARY KEY 在 SQLite 上不等同于额外声明 NOT NULL，应用仍须提供合法 ID。JSON TEXT 的结构由 TypeScript 契约及服务校验，多数没有数据库层 JSON CHECK。

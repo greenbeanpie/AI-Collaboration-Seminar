@@ -8,7 +8,7 @@ import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { recordEvent } from './events';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 import { aiJsonCall } from './agent';
 import { failJob, getJob } from './jobs';
 

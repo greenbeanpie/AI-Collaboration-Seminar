@@ -5,7 +5,7 @@ import { env, BASE } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { loadAiConfig } from '../src/ai/config';
 import { aiJsonCall } from '../src/services/agent';
-import { estimateCostUsd, markAiCallStarted, reserveAiSlot, settleReservation, withReservedAiJob } from '../src/services/budget';
+import { markAiCallStarted, reserveAiSlot, settleReservation, withReservedAiJob } from '../src/services/ai-reservations';
 import { gatewayChat } from '../src/ai/gateway';
 import { recordAiCall } from '../src/ai/calls';
 import type { Env } from '../src/env';
@@ -13,37 +13,25 @@ import type { Env } from '../src/env';
 await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1').run();
 afterEach(() => vi.unstubAllGlobals());
 
-async function pricedProject() {
+async function projectFixture() {
   const owner = await seedUser();
   const pid = await seedProject(owner.userId);
   const cfg = (await loadAiConfig(env.DB))!;
-  for (const model of [cfg.config.textEconomy, cfg.config.visionEconomy, cfg.config.review]) model.pricePerMTokens = [1_000_000, 1_000_000];
-  await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1').bind(cfg.id, JSON.stringify(cfg.config)).run();
   return { owner, pid, cfg };
 }
 
 async function reservation(jobId: string) {
-  return env.DB.prepare('SELECT status, settled_cost, attempts_started FROM usage_reservations WHERE job_id = ?1 ORDER BY created_at DESC LIMIT 1').bind(jobId).first<{ status: string; settled_cost: number | null; attempts_started: number }>();
+  return env.DB.prepare('SELECT status, attempts_started FROM usage_reservations WHERE job_id = ?1 ORDER BY created_at DESC LIMIT 1').bind(jobId).first<{ status: string; attempts_started: number }>();
 }
 
-describe('A03 admission, call accounting and bounded inputs', () => {
-  it('budget refusal happens before AI job/business creation and before any model request', async () => {
-    const { owner, pid } = await pricedProject();
-    await env.DB.prepare('UPDATE projects SET ai_budget_usd = 0 WHERE id = ?1').bind(pid).run();
-    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    const res = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/agent-sessions`, {
-      method: 'POST', headers: { cookie: authCookie(owner.token), 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
-      body: JSON.stringify({ mode: 'do', instruction: '编写介绍' }),
-    });
-    expect(res.status).toBe(429);
-    expect(fetch).not.toHaveBeenCalled();
-    for (const table of ['jobs', 'agent_runs', 'usage_reservations']) {
-      expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id = ?1`).bind(pid).first<{ n: number }>())?.n).toBe(0);
-    }
+describe('AI admission, call tracking and bounded inputs', () => {
+  it('creates an AI concurrency reservation without monetary checks', async () => {
+    const { pid } = await projectFixture();
+    await expect(reserveAiSlot(env, { projectId: pid, jobId: `reservation-${pid}`, purpose: 'agent_run' })).resolves.toBeUndefined();
   });
 
   it('freezes config before creation and releases only failed uncreated jobs', async () => {
-    const { pid, cfg } = await pricedProject();
+    const { pid, cfg } = await projectFixture();
     let id = '';
     await expect(withReservedAiJob(env, { projectId: pid, purpose: 'agent_run' }, async (jobId, configId) => {
       id = jobId;
@@ -54,49 +42,40 @@ describe('A03 admission, call accounting and bounded inputs', () => {
     expect((await reservation(id))?.status).toBe('released');
   });
 
-  it('charges invalid JSON and repaired response, with task and reservation attribution', async () => {
-    const { pid, cfg } = await pricedProject();
+  it('records invalid and repaired calls with task and reservation attribution', async () => {
+    const { pid, cfg } = await projectFixture();
     const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run', configVersionId: cfg.id });
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: calls++ ? '{"ok":true}' : 'invalid json' } }], usage: { prompt_tokens: 10, completion_tokens: 5 } }))));
     const result = await aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) });
     expect(result.repaired).toBe(true);
-    await settleReservation(env, jobId, 'released'); // business failure after response still costs money
-    expect(await reservation(jobId)).toMatchObject({ status: 'settled', settled_cost: 30, attempts_started: 2 });
-    const rows = await env.DB.prepare('SELECT status, cost_status, reservation_id FROM ai_calls WHERE job_id = ?1 ORDER BY created_at').bind(jobId).all<{ status: string; cost_status: string; reservation_id: string }>();
+    await settleReservation(env, jobId, 'released');
+    expect(await reservation(jobId)).toMatchObject({ status: 'settled', attempts_started: 2 });
+    const rows = await env.DB.prepare('SELECT status, reservation_id, prompt_tokens, completion_tokens FROM ai_calls WHERE job_id = ?1 ORDER BY created_at').bind(jobId).all<{ status: string; reservation_id: string; prompt_tokens:number|null; completion_tokens:number|null }>();
     expect(rows.results.map(row => row.status).sort()).toEqual(['invalid', 'repaired']);
-    expect(rows.results.every(row => row.cost_status === 'known' && row.reservation_id)).toBe(true);
+    expect(rows.results.every(row => row.reservation_id && row.prompt_tokens === 10 && row.completion_tokens === 5)).toBe(true);
   });
 
-  it('timeout or missing call ledger remains pending, never a free release', async () => {
-    const { pid, cfg } = await pricedProject();
+  it('closes terminal reservations after timeouts and missing call records', async () => {
+    const { pid, cfg } = await projectFixture();
     const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' });
     vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); }));
     await expect(aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
     await settleReservation(env, jobId, 'released');
-    expect(await reservation(jobId)).toMatchObject({ status: 'pending_reconcile', settled_cost: null, attempts_started: 1 });
+    expect(await reservation(jobId)).toMatchObject({ status: 'settled', attempts_started: 1 });
     const lost = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId: lost, purpose: 'agent_run' });
     await markAiCallStarted(env, lost); // simulate crash before recording response
     await settleReservation(env, lost, 'released');
-    expect((await reservation(lost))?.status).toBe('pending_reconcile');
-    // completed unknown-cost requests do not occupy running concurrency slots
+    expect((await reservation(lost))?.status).toBe('settled');
+    // Completed requests do not occupy running concurrency slots.
     await expect(reserveAiSlot(env, { projectId: pid, jobId: crypto.randomUUID(), purpose: 'agent_run' })).resolves.toBeUndefined();
   });
 
-  it('finite budget refuses images and unknown pricing before requests', async () => {
-    const { pid, cfg } = await pricedProject();
-    await env.DB.prepare('UPDATE projects SET ai_budget_usd = 100000000 WHERE id = ?1').bind(pid).run();
-    await expect(reserveAiSlot(env, { projectId: pid, jobId: crypto.randomUUID(), purpose: 'ocr_pages' })).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
-    cfg.config.textEconomy.pricePerMTokens = null;
-    await env.DB.prepare('UPDATE ai_config_versions SET config_json = ?2 WHERE id = ?1').bind(cfg.id, JSON.stringify(cfg.config)).run();
-    await expect(reserveAiSlot(env, { projectId: pid, jobId: crypto.randomUUID(), purpose: 'agent_run' })).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
-  });
-
   it('stage reservations cannot charge earlier calls again, and same-job concurrent reservation is unique', async () => {
-    const { pid, cfg } = await pricedProject(); const jobId = crypto.randomUUID();
+    const { pid, cfg } = await projectFixture(); const jobId = crypto.randomUUID();
     await Promise.all([reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' }), reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' })]);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved'").bind(jobId).first<{ n: number }>())?.n).toBe(1);
     for (let stage = 0; stage < 2; stage++) {
@@ -105,13 +84,14 @@ describe('A03 admission, call accounting and bounded inputs', () => {
       await recordAiCall(env, { projectId: pid, jobId, purpose: 'textEconomy', configVersionId: cfg.id, promptVersion: 'test', model: cfg.config.textEconomy.model, input: {}, output: {}, promptTokens: 1, completionTokens: 2, latencyMs: 1, status: 'ok' });
       await settleReservation(env, jobId, 'settled');
     }
-    const rows = await env.DB.prepare('SELECT settled_cost FROM usage_reservations WHERE job_id = ?1').bind(jobId).all<{ settled_cost: number }>();
+    const rows = await env.DB.prepare('SELECT status, attempts_started FROM usage_reservations WHERE job_id = ?1').bind(jobId).all<{ status:string; attempts_started:number }>();
     expect(rows.results).toHaveLength(2);
-    expect(rows.results.map(row => row.settled_cost)).toEqual([3, 3]);
+    expect(rows.results.map(row => row.status)).toEqual(['settled', 'settled']);
+    expect(rows.results.map(row => row.attempts_started)).toEqual([1, 1]);
   });
 
-  it('call ledger storage failure preserves attempt liability and sends no repair request', async () => {
-    const { pid, cfg } = await pricedProject(); const jobId = crypto.randomUUID();
+  it('call ledger storage failure preserves the attempt marker and sends no repair request', async () => {
+    const { pid, cfg } = await projectFixture(); const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' });
     const fetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } })));
     vi.stubGlobal('fetch', fetch);
@@ -119,26 +99,25 @@ describe('A03 admission, call accounting and bounded inputs', () => {
     await expect(aiJsonCall(broken, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) })).rejects.toThrow('R2 write failed');
     expect(fetch).toHaveBeenCalledTimes(1);
     await settleReservation(env, jobId, 'released');
-    expect(await reservation(jobId)).toMatchObject({ status: 'pending_reconcile', attempts_started: 1 });
+    expect(await reservation(jobId)).toMatchObject({ status: 'settled', attempts_started: 1 });
   });
 
-  it('invalid upstream token numbers are stored as unknown and never a zero bill', async () => {
-    const { pid, cfg } = await pricedProject(); const jobId = crypto.randomUUID();
+  it('invalid upstream token numbers are omitted from call usage', async () => {
+    const { pid, cfg } = await projectFixture(); const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' });
     for (const promptTokens of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       await recordAiCall(env, { projectId: pid, jobId, purpose: 'textEconomy', configVersionId: cfg.id, promptVersion: 'test', model: cfg.config.textEconomy.model, input: {}, output: {}, promptTokens, completionTokens: 1, latencyMs: 1, status: 'invalid' });
     }
-    const calls = await env.DB.prepare('SELECT cost_status, cost_usd, prompt_tokens FROM ai_calls WHERE job_id = ?1').bind(jobId).all();
+    const calls = await env.DB.prepare('SELECT prompt_tokens, completion_tokens FROM ai_calls WHERE job_id = ?1').bind(jobId).all();
     expect(calls.results).toHaveLength(4);
-    expect(calls.results.every(row => row.cost_status === 'unknown' && row.cost_usd === null && row.prompt_tokens === null)).toBe(true);
+    expect(calls.results.every(row => row.prompt_tokens === null && row.completion_tokens === 1)).toBe(true);
     await settleReservation(env, jobId, 'released');
-    expect((await reservation(jobId))?.status).toBe('pending_reconcile');
+    expect((await reservation(jobId))?.status).toBe('released');
   });
 
-  it('enforces message/output bounds before request and accounts for two byte-bounded text calls', async () => {
-    const { cfg } = await pricedProject();
+  it('enforces message/input bounds before request', async () => {
+    const { cfg } = await projectFixture();
     const model = { ...cfg.config.textEconomy, maxInputChars: 2 };
-    expect(estimateCostUsd({ ...cfg, config: { ...cfg.config, textEconomy: model } }, 'textEconomy')).toBe(2 * (2 * 6 + 4096 + 65535));
     const fetch = vi.fn(); const beforeFetch = vi.fn();
     await expect(gatewayChat({ accountId: 'a', apiToken: 't', gatewayId: 'g' }, { config: model, messages: [{ role: 'user', content: '中文超限' }], beforeFetch }, fetch)).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
     expect(fetch).not.toHaveBeenCalled(); expect(beforeFetch).not.toHaveBeenCalled();

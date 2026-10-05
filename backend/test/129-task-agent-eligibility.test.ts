@@ -80,9 +80,6 @@ describe('model based task Agent eligibility',()=>{
     const other=await fixture();await expect(enqueueTaskAgentEligibility(offline,other.projectId,other.taskId,other.user.userId,2)).rejects.toMatchObject({code:'VERSION_CONFLICT'});
     await expect(readTaskAgentEligibility(env,other.projectId,f.taskId,other.user.userId)).rejects.toMatchObject({code:'NOT_FOUND'});
   });
-  it('records budget exhaustion without paid calls',async()=>{
-    const f=await fixture(),provider=model();await env.DB.prepare('UPDATE projects SET ai_budget_usd=0 WHERE id=?1').bind(f.projectId).run();await expect(f.start()).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});expect((await f.read()).status).toBe('failed');expect(provider).not.toHaveBeenCalled();
-  });
   it('allows ordinary members to request a read-only check without management permissions',async()=>{
     const f=await fixture(),member=await seedUser();
     await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(crypto.randomUUID(),f.projectId,member.userId,new Date().toISOString()).run();

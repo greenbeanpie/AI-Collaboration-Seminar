@@ -4,7 +4,7 @@ import { seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { newId, nowIso } from '../src/core/db';
 import { loadAiConfig } from '../src/ai/config';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { executeFileTool, projectToolConversation } from '../src/services/project-ai-tools';
 import { applyToolMode, nativeSearchCapability, normalizeToolResponse, toolResponseShape } from '../src/ai/tool-transport';
 import { projectToolDefinitions } from '../src/services/project-ai-tools';
@@ -236,7 +236,7 @@ describe('recycle lifecycle integration for dynamic file tools', () => {
       expect(await env.DB.prepare(`SELECT 1 WHERE ${guard('?1', '?2')}`).bind(job!.input_json, f.p).first()).toBeNull();
     expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(jobId).first<{
       status: string;
-    }>())?.status).toBe('pending_reconcile');
+    }>())?.status).toBe('settled');
   });
   it('cancels jobs that listed a file with no source, preserving original bytes and metadata', async () => {
     const f = await fixture(), jobId = await running(f);
@@ -341,7 +341,7 @@ describe('authorized native search (fixtures only)', () => {
       search_usage_json: string;
     }>();
     expect(JSON.parse(usage!.search_usage_json)).toMatchObject({
-      performed: true, costStatus: 'unknown'
+      performed: true
     });
   });
   it('refuses a model-selected private query even when search is enabled, without dispatching native search', async () => {
@@ -380,7 +380,7 @@ describe('authorized native search (fixtures only)', () => {
 describe('provider-native tool contracts (fixtures, no live billing)', () => {
   it.each(['chat-completions', 'responses', 'messages', 'gemini'] as const)('serializes local file tools and results for %s', protocol => {
     const cfg = {
-      provider: 'openai-compatible', providerPreset: 'custom' as const, apiProtocol: protocol, model: 'fixture', maxInputChars: 10000, timeoutMs: 1000, apiUrl: 'https://example.com', supportsJson: false, supportsVision: false, pricePerMTokens: null
+      provider: 'openai-compatible', providerPreset: 'custom' as const, apiProtocol: protocol, model: 'fixture', maxInputChars: 10000, timeoutMs: 1000, apiUrl: 'https://example.com', supportsJson: false, supportsVision: false
     };
     const body: Record<string, unknown> = {
       input: [], messages: [], contents: []
@@ -433,7 +433,7 @@ describe('provider-native tool contracts (fixtures, no live billing)', () => {
         url: 'https://example.com/evidence', title: '官方来源'
       }]);
     expect(searched.searchUsage).toMatchObject({
-      performed: true, queries: 1, costStatus: 'unknown'
+      performed: true, queries: 1
     });
     expect(normalizeToolResponse('messages', {
       stop_reason: 'end_turn', content: [{

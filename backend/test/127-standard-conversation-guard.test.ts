@@ -7,7 +7,7 @@ import { newId,nowIso } from '../src/core/db';
 import { projectToolConversation } from '../src/services/project-ai-tools';
 import { saveStandard } from '../src/services/project-simplification';
 import { applyProposal,reviseProposal } from '../src/services/collaboration';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { InvestigationContinuation,loadInvestigation } from '../src/services/project-investigation';
 afterEach(()=>vi.unstubAllGlobals());
 async function fixture(){await configureGoFixture();const owner=await seedUser(),projectId=await seedProject(owner.userId),config=(await loadAiConfig(env.DB))!;return {owner,projectId,params:{context:{projectId,userId:owner.userId},config:config.config.textEconomy,configVersionId:config.id,messages:[{role:'user' as const,content:'调查项目'}],promptVersion:'standard-conversation-guard'}};}

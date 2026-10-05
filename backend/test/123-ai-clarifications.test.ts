@@ -6,7 +6,7 @@ import type { Env } from '../src/env';
 import { seedProject,seedUser,authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { newId,nowIso } from '../src/core/db';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
 import { projectGoal } from '../src/services/project-simplification';
 import { runCollaborationAiJob } from '../src/services/collaboration-ai';

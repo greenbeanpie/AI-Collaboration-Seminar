@@ -9,7 +9,7 @@ import { InvestigationContinuation, loadInvestigation, saveInvestigation } from 
 import { projectToolConversation } from '../src/services/project-ai-tools';
 import { configureGoFixture } from './helpers/provider-config';
 import { loadAiConfig } from '../src/ai/config';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 afterEach(() => vi.unstubAllGlobals());
 
 async function fixture() {

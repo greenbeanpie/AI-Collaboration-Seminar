@@ -18,7 +18,7 @@ function activeGuard(rehearsal:string,project:string,actor:string,sequence:strin
     AND ${sequence}=(SELECT MAX(t.sequence) FROM rehearsal_turns t WHERE t.rehearsal_id=r.id))`;
 }
 async function ownedRehearsal(env:Env,binding:VoiceBinding) {
-  const row=await env.DB.prepare('SELECT r.created_by,r.status,p.ai_budget_usd FROM rehearsals r JOIN projects p ON p.id=r.project_id WHERE r.id=?1 AND r.project_id=?2').bind(binding.rehearsalId,binding.projectId).first<{created_by:string;status:string;ai_budget_usd:number|null}>();
+  const row=await env.DB.prepare('SELECT r.created_by,r.status FROM rehearsals r JOIN projects p ON p.id=r.project_id WHERE r.id=?1 AND r.project_id=?2').bind(binding.rehearsalId,binding.projectId).first<{created_by:string;status:string}>();
   if(!row)throw notFound('答辩演练不存在');
   return row;
 }
@@ -30,7 +30,6 @@ export async function readRehearsalVoice(env:Env,binding:VoiceBinding) {
   let reason:string|null=null;
   if(mode==='text')reason='本项目使用文字答辩模式';
   else if(!configured || !/^[a-zA-Z0-9_-]+$/.test(env.CLOUDFLARE_ACCOUNT_ID))reason='实时转录Gateway配置不完整；可继续文字回答';
-  else if(rehearsal.ai_budget_usd!==null)reason='项目设置了金额预算，实时语音费用无法可靠预占；可继续文字回答';
   else if(rehearsal.created_by!==binding.actorId)reason='只有本轮发起人可以录音';
   else {
     const valid=await env.DB.prepare(`SELECT 1 WHERE ${activeGuard('?1','?2','?3',"(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=?1)")}`).bind(binding.rehearsalId,binding.projectId,binding.actorId).first();
@@ -59,13 +58,12 @@ export async function createRehearsalVoiceSession(env:Env,binding:VoiceBinding,i
       SELECT ?1,?2,?3,?4,?5,?6,?7,'reserved',?8,?9,?10,?11,?11
       WHERE ${activeGuard('?3','?2','?5','?4')}
       AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?6 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions) AND json_extract(config_json,'$.processingStrategies.rehearsal')='voice-with-text-fallback')
-      AND (SELECT ai_budget_usd FROM projects WHERE id=?2) IS NULL
       AND NOT EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE rehearsal_id=?3 AND status IN ('reserved','connecting','open'))
       AND NOT EXISTS(SELECT 1 FROM jobs WHERE project_id=?2 AND status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.operation')='rehearsal.tts' AND json_extract(input_json,'$.rehearsalId')=?3)
       AND NOT EXISTS(SELECT 1 FROM rehearsal_speech sp LEFT JOIN jobs j ON j.id=sp.job_id WHERE sp.rehearsal_id=?3 AND sp.status IN ('queued','running') AND (j.id IS NULL OR j.status IN ('queued','running','waiting_input')))
       AND (SELECT COUNT(*) FROM usage_reservations WHERE project_id=?2 AND status='reserved')<2
       AND (?9=0 OR ?9=(SELECT MAX(retry_number)+1 FROM rehearsal_voice_sessions WHERE root_session_id=?8))`).bind(id,binding.projectId,binding.rehearsalId,input.sequence,binding.actorId,cfg.id,TRANSCRIBE_LIVE_MODEL,root,retry,expiresAt,now),
-    env.DB.prepare("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,estimated_cost,max_calls,created_at) SELECT ?1,?2,?3,'rehearsal_voice','reserved',0,1,?4 WHERE EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE id=?3 AND status='reserved')").bind(slotId,binding.projectId,id,now),
+    env.DB.prepare("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,max_calls,created_at) SELECT ?1,?2,?3,'rehearsal_voice','reserved',1,?4 WHERE EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE id=?3 AND status='reserved')").bind(slotId,binding.projectId,id,now),
   ]);
   if(!writes[0]?.meta.changes)throw invalidState('录音已占用、并发额度不足或问题轮次已变化');
   return {sessionId:id,webSocketPath:`/api/v1/projects/${binding.projectId}/rehearsals/${binding.rehearsalId}/voice-sessions/${id}/stream`,expiresAt};
@@ -79,7 +77,7 @@ export async function assertVoiceSessionActive(env:Env,binding:VoiceBinding,sess
   const row=await getVoiceSession(env,binding,sessionId),cfg=await loadAiConfig(env.DB);
   if(!['reserved','connecting','open'].includes(row.status) || Date.parse(row.expires_at)<=Date.now())throw invalidState('语音请求已结束或过期');
   if(!cfg?.enabled || cfg.id!==row.config_version_id || (cfg.config as VoiceConfig).processingStrategies?.rehearsal!=='voice-with-text-fallback')throw invalidState('语音配置已变化');
-  const allowed=await env.DB.prepare(`SELECT 1 WHERE ${activeGuard('?1','?2','?3','?4')} AND (SELECT ai_budget_usd FROM projects WHERE id=?2) IS NULL`).bind(binding.rehearsalId,binding.projectId,binding.actorId,row.question_sequence).first();
+  const allowed=await env.DB.prepare(`SELECT 1 WHERE ${activeGuard('?1','?2','?3','?4')}`).bind(binding.rehearsalId,binding.projectId,binding.actorId,row.question_sequence).first();
   if(!allowed)throw permissionDenied('录音权限或答辩轮次已变化');
   return row;
 }
@@ -87,7 +85,7 @@ export async function finishRehearsalVoiceSession(env:Env,sessionId:string,statu
   const now=nowIso();
   await env.DB.batch([
     env.DB.prepare("UPDATE rehearsal_voice_sessions SET status=?2,error_code=?3,finished_at=?4,updated_at=?4,duration_seconds=CASE WHEN started_at IS NOT NULL THEN MAX(0,(julianday(?4)-julianday(started_at))*86400) ELSE NULL END WHERE id=?1 AND status IN ('reserved','connecting','open')").bind(sessionId,status,errorCode??null,now),
-    env.DB.prepare("UPDATE usage_reservations SET status=CASE WHEN (SELECT started_at FROM rehearsal_voice_sessions WHERE id=?1) IS NULL THEN 'released' ELSE 'pending_reconcile' END,settled_cost=NULL,settled_at=?2 WHERE job_id=?1 AND purpose='rehearsal_voice' AND status='reserved' AND EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE id=?1 AND status IN ('succeeded','failed','closed','expired'))").bind(sessionId,now),
+    env.DB.prepare("UPDATE usage_reservations SET status=CASE WHEN (SELECT started_at FROM rehearsal_voice_sessions WHERE id=?1) IS NULL THEN 'released' ELSE 'settled' END,settled_at=?2 WHERE job_id=?1 AND purpose='rehearsal_voice' AND status='reserved' AND EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE id=?1 AND status IN ('succeeded','failed','closed','expired'))").bind(sessionId,now),
   ]);
 }
 export async function closeRehearsalVoiceSession(env:Env,binding:VoiceBinding,sessionId:string) {
@@ -113,7 +111,7 @@ export async function openRehearsalVoiceStream(env:Env,binding:VoiceBinding,sess
     if(!configuredSlot)throw aiUnavailable('实时转录未配置');
     slot=configuredSlot;
     const beforeHandshake=async()=>{await guard();await env.DB.prepare("UPDATE rehearsal_voice_sessions SET started_at=?2 WHERE id=?1 AND status='connecting'").bind(sessionId,nowIso()).run();};
-    // Persist immediately before the outbound handshake; later failure retains unknown cost.
+    // Persist immediately before the outbound handshake so recovery will not replay an uncertain call.
     upstream=await (options.connect??connectTranscribeGateway)(env,slot,beforeHandshake);
     await guard();
   } catch(error) {

@@ -14,7 +14,7 @@ db.execute("INSERT INTO project_creation_drafts(id,owner_id,payload_json,project
 db.execute("INSERT INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha256,size_bytes,mime,created_at) VALUES('file','draft','audio.wav','.wav','private-key','hash',4,'audio/wav',?)",(now,))
 db.execute("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES('job',NULL,'agent_run','succeeded','{}','owner',?,?)",(now,now))
 db.execute("INSERT INTO media_processing(id,job_id,draft_file_id,config_version_id,stage,created_at,updated_at) VALUES('media','job','file',?,'ready',?,?)",(config,now,now))
-db.execute("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,cost_status,created_at) VALUES('call','job',?,'gemini',0,'ok','unknown',?)",(config,now))
+db.execute("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,created_at) VALUES('call','job',?,'gemini',0,'ok',?)",(config,now))
 tables=['users','projects','project_members','project_creation_drafts','creation_draft_files','jobs','media_processing','media_calls','ai_config_versions','materials','material_versions']
 before={table:db.execute(f'SELECT * FROM {table}').fetchall() for table in tables}
 db.executescript((root/'migrations/0052_whisper_audio_pipeline.sql').read_text(encoding='utf-8'))

@@ -5,7 +5,7 @@ import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { newId, nowIso } from '../src/core/db';
 import { getJob } from '../src/services/jobs';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { runCollaborationAiJob, adjustmentSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 
 afterEach(() => vi.unstubAllGlobals());

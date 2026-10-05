@@ -118,8 +118,6 @@ const exportBundleResponse = apiEnvelope(z.object({
     calls: z.number().int(),
     promptTokens: z.number().int(),
     completionTokens: z.number().int(),
-    costStatus: z.string(),
-    note: z.string(),
   }),
 }), 'ExportBundleResponse');
 
@@ -257,13 +255,11 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
 
     const aiUsage = await c.env.DB.prepare(
       `SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
-              COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
-              CASE WHEN COUNT(*) = 0 OR SUM(CASE WHEN cost_status = 'unknown' THEN 1 ELSE 0 END) > 0
-                   THEN 'unknown' ELSE 'known' END AS cost_status
-         FROM (SELECT prompt_tokens,completion_tokens,cost_status FROM ai_calls WHERE project_id=?1 UNION ALL SELECT m.prompt_tokens,m.completion_tokens,m.cost_status FROM media_calls m JOIN jobs j ON j.id=m.job_id WHERE j.project_id=?1)`,
+              COALESCE(SUM(completion_tokens), 0) AS completion_tokens
+         FROM (SELECT prompt_tokens,completion_tokens FROM ai_calls WHERE project_id=?1 UNION ALL SELECT m.prompt_tokens,m.completion_tokens FROM media_calls m JOIN jobs j ON j.id=m.job_id WHERE j.project_id=?1)`,
     )
       .bind(projectId)
-      .first<{ calls: number; prompt_tokens: number; completion_tokens: number; cost_status: string }>();
+      .first<{ calls: number; prompt_tokens: number; completion_tokens: number }>();
 
     return c.json(
       apiData(c, {
@@ -319,8 +315,6 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
           calls: aiUsage?.calls ?? 0,
           promptTokens: aiUsage?.prompt_tokens ?? 0,
           completionTokens: aiUsage?.completion_tokens ?? 0,
-          costStatus: aiUsage?.cost_status ?? 'unknown',
-          note: '费用未知时如实标注，不填零',
         },
       }),
       200,

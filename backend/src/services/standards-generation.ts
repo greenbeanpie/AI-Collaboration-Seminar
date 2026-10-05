@@ -7,7 +7,7 @@ import { owner } from './collaboration';
 import { aiJsonCall } from './agent';
 import { projectGoal, type Goal } from './project-simplification';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
-import { withReservedAiJob, settleReservation } from './budget';
+import { withReservedAiJob, settleReservation } from './ai-reservations';
 import { InvestigationContinuation } from './project-investigation';
 
 export const generatedStandardSchema = scoringStandardOutputSchema;

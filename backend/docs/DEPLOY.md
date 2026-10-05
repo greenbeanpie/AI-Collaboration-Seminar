@@ -68,7 +68,7 @@ curl https://ai-office-api-staging.<subdomain>.workers.dev/api/v1/capabilities
 模型默认 `enabled=0`（种子配置）。启用流程（PLAN 要求：未通过能力验证的模型不启用）：
 
 ```bash
-# 1) 探测（中文/JSON/图片/用量字段四项检查，产生真实调用与费用记录）
+# 1) 探测（中文/JSON/图片/用量字段四项检查，会发起真实模型请求）
 curl -X POST https://.../api/v1/admin/ai-config/probe \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
   -d '{"purpose": "textEconomy"}'
@@ -166,9 +166,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "content-type: applicati
 | 任务排队时长 | p95 > 60 秒告警 | `jobs.created_at` → 首次 running |
 | 长期非终态任务 | 超过 5 分钟仍 `running` 需核对（cron 每轮处理并记录） | `cron.ts` 日志 `[cron] Workflow 状态核对失败` |
 | 派发重试耗尽 | 任一 job `attempts >= 5` 立即关注 | `job_outbox.last_error='dispatch_exhausted'` |
-| 项目 AI 并发 | 长期处于并发上限（2）说明排队积压 | `usage_reservations` `status IN ('reserved','pending_reconcile')` |
-| 项目预算水位 | 已承诺金额 > 预算 80% 告警 | `usage_reservations` + `projects.ai_budget_usd` |
-| 待对账费用 | `pending_reconcile` 记录 > 0 需人工核对 | `usage_reservations.status='pending_reconcile'` |
+| 项目 AI 并发 | 长期处于并发上限（2）说明排队积压 | `usage_reservations.status='reserved'` |
 | 隔离文件 / 孤儿对象 | 单轮 GC 删除量异常升高（远大于日常）需排查 | `cron` 日志 `[cron] 孤儿对象回收` |
 | 测试运行时告警 | workerd canceled request / RPC stub | 见架构文档 7.2，属测试池收尾现象，不隐藏日志 |
 
@@ -178,7 +176,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "content-type: applicati
 
 production 的 Worker 名称、Service Binding 和资源字段在仓库中已对齐，`npm run preflight:deploy -- production` 通过。staging 的同命令仍报缺 EMAIL_FROM、D1 ID、Origin。以上均是静态配置验证，不代表远端资源或发信域名已验收；当前 `EMAIL_FROM` 仍使用 `onboarding@resend.dev`，真实邮件投递需单独验证。
 
-正式放量前先修复架构文档 A03/A07/A08 所列代码缺口；随后验收 Secrets、D1 迁移、私有 R2、两端部署与回滚、Service Binding、真实邮件、模型/OCR、云端恢复与监控。模型 URL/key 继续留待用户在网页设置填写，不能仅凭预算竞争单元测试或模型 fixture 成功认定费用上限与真模型已验收。
+正式放量前先修复架构文档 A03/A07/A08 所列代码缺口；随后验收 Secrets、D1 迁移、私有 R2、两端部署与回滚、Service Binding、真实邮件、模型/OCR、云端恢复与监控。模型 URL/key 继续留待用户在网页设置填写；模型 fixture 成功不能替代真模型和云端故障验收。
 
 ## 13. 密码身份与一次性注册码
 

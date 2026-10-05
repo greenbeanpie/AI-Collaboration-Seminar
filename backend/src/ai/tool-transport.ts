@@ -38,7 +38,6 @@ export interface ToolOutput {
     provider: string;
     performed: boolean;
     queries: number | null;
-    costStatus: 'unknown';
   };
 }
 const object = (v: unknown): Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
@@ -346,7 +345,7 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
   return {
     content, toolCalls: calls, assistant, citations: citations.slice(0, 20), promptTokens: tokens(prompt), completionTokens: tokens(completion), ...(nativeSearch ? {
       searchUsage: {
-        provider: protocol, performed, queries, costStatus: 'unknown' as const
+        provider: protocol, performed, queries
       }
     } : {})
   };

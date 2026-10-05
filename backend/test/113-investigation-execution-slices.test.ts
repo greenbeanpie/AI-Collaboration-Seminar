@@ -4,7 +4,7 @@ import { seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { loadAiConfig } from '../src/ai/config';
 import { newId, nowIso } from '../src/core/db';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { projectToolConversation } from '../src/services/project-ai-tools';
 import { InvestigationContinuation, loadInvestigation } from '../src/services/project-investigation';
 afterEach(() => vi.unstubAllGlobals());

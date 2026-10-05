@@ -20,7 +20,8 @@ it('keeps Gemini and MiMo keys independent, saves MiMo drafts without switching 
   fireEvent.change(screen.getByLabelText('MiMo 超时（毫秒）'), { target: { value: '120000' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes[0]).toMatchObject({ processingStrategies: { audioFiles: 'whisper-first' }, mediaUnderstanding: { model: media.model, apiKey: '' }, mimoMediaUnderstanding: { model: mimo.model, apiKey: '', timeoutMs: 120000, cachedInputPricePerMTokens: .1 }, clearMimoMediaUnderstanding: false });
+  expect(writes[0]).toMatchObject({ processingStrategies: { audioFiles: 'whisper-first' }, mediaUnderstanding: { model: media.model, apiKey: '' }, mimoMediaUnderstanding: { model: mimo.model, apiKey: '', timeoutMs: 120000 }, clearMimoMediaUnderstanding: false });
+  expect(JSON.stringify(writes[0])).not.toMatch(/pricePerMTokens|cachedInputPricePerMTokens|mediaInputPricePerMTokens/);
   fireEvent.change(screen.getByLabelText(/音频文件处理策略/), { target: { value: 'mimo-only' } });
   fireEvent.change(screen.getByLabelText(/视频文件处理策略/), { target: { value: 'mimo' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
@@ -80,7 +81,7 @@ it('defaults legacy audio strategy to Whisper and saves strategy independently w
   expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({processingStrategies:{audioFiles:'media-only',rehearsal:'text'},audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
 });
 it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
-  const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: false, pricePerMTokens: null };
+  const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: false };
   const legacy = { ...deepseek, provider: 'workers-ai', providerPreset: undefined, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', apiUrl: '' };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 3, enabled: false, config: { routingMode: 'unified', unified: deepseek, textEconomy: legacy, visionEconomy: legacy, review: legacy } } }));
@@ -232,7 +233,7 @@ it.each([
 });
 
 it('old saved custom config is preserved; changing providers clears key reuse and does not enable AI', async () => {
-  const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, temperature: 0.4, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+  const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, temperature: 0.4, supportsJson: false, supportsVision: false };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 5, enabled: true, config: { textEconomy: model, visionEconomy: model, review: model } } }));
     const body = JSON.parse(String(init?.body));
@@ -301,7 +302,7 @@ it('text-only unified mode enables without probes, keeps diagnostics available, 
 });
 
 it('loads sanitized unified config and retains draft on optimistic version conflict', async () => {
-  const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+  const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 7, enabled: false, config: { routingMode: 'unified', unified: model, textEconomy: model, visionEconomy: model, review: model } } }));
     const body = JSON.parse(String(init?.body)); expect(body.expectedVersion).toBe(7); expect(body.unified.apiKey).toBe('');
@@ -318,7 +319,7 @@ it('loads sanitized unified config and retains draft on optimistic version confl
   expect(screen.queryByText(/^配置已保存/)).not.toBeInTheDocument();
 });
 
-const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
 
 it('only changing the unified supplier updates its API URL; model and protocol changes preserve it', async () => {
@@ -653,16 +654,18 @@ it('editing an OpenCode preset URL preserves its provider, explicit key, model a
 });
 
  it('preserves independent media config in unified mode and probes only free metadata',async()=>{
-  const media={...savedModel,providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com',keyConfigured:true,mediaInputPricePerMTokens:{audio:1,video:2,text:.5}};
+  const media={...savedModel,providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com',keyConfigured:true,mediaInputPricePerMTokens:{audio:1,video:2,text:.5},pricePerMTokens:[1,2]};
   const calls:Record<string,unknown>[]=[];
   vi.stubGlobal('fetch',vi.fn(async(url:string,init?:RequestInit)=>{if(init?.method==='GET')return Response.json({data:{version:8,enabled:true,config:{...savedConfig,mediaUnderstanding:media}}});if(url.endsWith('/media-probe'))return Response.json({data:{passed:true,detail:'元数据通过'}});calls.push(JSON.parse(String(init?.body)));return Response.json({data:{version:9,enabled:true}});}));
   await setup(true,false);
+  expect(screen.queryByLabelText(/输入价格|输出价格|单价/)).not.toBeInTheDocument();
   expect(screen.getByLabelText('音视频 Gemini 模型')).toHaveValue('gemini-2.5-flash');
   fireEvent.click(screen.getByRole('button',{name:'测试音视频模型元数据（不生成）'}));await screen.findByText('元数据通过');
   fireEvent.change(screen.getByLabelText('统一模型模型名称'),{target:{value:'deepseek-v4-pro'}});
   expect(screen.getByLabelText('音视频 Gemini 模型')).toHaveValue('gemini-2.5-flash');
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
-  expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash',apiKey:'',mediaInputPricePerMTokens:{audio:1,video:2,text:.5}},clearMediaUnderstanding:false});
+  expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash',apiKey:''},clearMediaUnderstanding:false});
+  expect(JSON.stringify(calls[0])).not.toMatch(/pricePerMTokens|cachedInputPricePerMTokens|mediaInputPricePerMTokens/);
  });
 
 it('separates fixed Whisper, realtime Gateway, TTS and strategies without copying media credentials', async () => {

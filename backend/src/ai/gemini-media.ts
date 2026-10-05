@@ -64,12 +64,3 @@ export class GeminiMediaClient {
   }
 }
 export function mediaSummaryText(summary:MediaSummary):string {return '# AI 摘要（非逐字原文）\n\n'+summary.summary+'\n\n'+summary.keyPoints.map(x=>'- '+x).join('\n')+'\n\n结论\n'+summary.conclusions.join('\n')+'\n\n行动事项\n'+summary.actionItems.join('\n')+'\n\n关键时间点\n'+summary.timestamps.map(t=>'['+t.seconds+'s] '+t.description).join('\n')+'\n\n局限\n'+summary.caveats.join('\n');}
-
-export function mediaCost(model:AiModelConfig,usage:{promptTokens:number|null;completionTokens:number|null;inputDetails:Array<{modality:string;tokenCount:number}>}):number|null{
-  if(usage.promptTokens===null||usage.completionTokens===null||!model.pricePerMTokens||!model.mediaInputPricePerMTokens||!usage.inputDetails.length)return null;
-  if(!Number.isSafeInteger(usage.promptTokens)||usage.promptTokens<0||!Number.isSafeInteger(usage.completionTokens)||usage.completionTokens<0)return null;
-  let tokens=0,inputCost=0;
-  for(const detail of usage.inputDetails){const modality=detail.modality.toLowerCase();if(!['audio','video','text'].includes(modality)||!Number.isSafeInteger(detail.tokenCount)||detail.tokenCount<0)return null;const price=model.mediaInputPricePerMTokens[modality as 'audio'|'video'|'text'];if(price===undefined)return null;tokens+=detail.tokenCount;inputCost+=detail.tokenCount*price;}
-  if(tokens!==usage.promptTokens)return null;
-  return (inputCost+usage.completionTokens*model.pricePerMTokens[1])/1e6;
-}

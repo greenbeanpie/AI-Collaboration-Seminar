@@ -20,7 +20,7 @@ p2 = "33333333-3333-4333-8333-333333333333"
 db.execute("INSERT INTO users(id,email,display_name,created_at) VALUES(?,?,?,?)", (owner,"fixture@invalid.test","Fixture",now))
 db.execute("INSERT INTO personal_profiles(user_id,bio,major,specialties,preferred_roles,revision,updated_at,ai_use_allowed) VALUES(?,?,?,?,?,?,?,?)", (owner,"Existing bio","Existing major","Existing skills","Existing role",7,now,1))
 for i, project in enumerate((p1,p2),1):
-    db.execute("INSERT INTO projects(id,name,description,created_by,created_at,updated_at,ai_budget_usd,assignment_mode,evaluation_mode) VALUES(?,?,?,?,?,?,?, ?,?)", (project,f"Project {i}",f"Background {i}",owner,now,now,5,"manual","automatic"))
+    db.execute("INSERT INTO projects(id,name,description,created_by,created_at,updated_at,assignment_mode,evaluation_mode) VALUES(?,?,?,?,?,?,?,?)", (project,f"Project {i}",f"Background {i}",owner,now,now,"manual","automatic"))
     db.execute("INSERT INTO project_members(id,project_id,user_id,role,major,skills_json,hours_per_week,joined_at) VALUES(?,?,?,?,?,?,?,?)", (f"membership-{i}",project,owner,"owner",f"Legacy major {i}",json.dumps([f"Legacy skill {i}"]),float(i),now))
 
 db.execute("INSERT INTO tasks(id,project_id,title,status,revision,created_by,created_at,updated_at) VALUES('old-done',?,'Old completed','done',9,?,?,?)",(p1,owner,now,now))
@@ -34,7 +34,7 @@ db.execute("INSERT INTO source_versions(id,source_id,project_id,revision,origin,
 job_input = {"members":[{"userId":owner,"major":"Legacy major","skills":["Legacy skill"],"hoursPerWeek":2,"loadHours":1}],"tasks":[],"operation":"collaboration.assign"}
 db.execute("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES('assignment-job',?,'agent_run','succeeded',?,1,?,?,?)",(p1,json.dumps(job_input),owner,now,now))
 db.execute("INSERT INTO job_outbox(id,job_id,status,available_at,attempts,created_at,updated_at) VALUES('outbox','assignment-job','done',?,1,?,?)",(now,now,now))
-db.execute("INSERT INTO usage_reservations(id,project_id,job_id,purpose,estimated_cost,status,created_at,attempts_started) VALUES('reservation',?,'assignment-job','agent_run',0.02,'pending_reconcile',?,1)",(p1,now))
+db.execute("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,created_at,attempts_started) VALUES('reservation',?,'assignment-job','agent_run','reserved',?,1)",(p1,now))
 db.execute("INSERT INTO task_links(id,task_id,project_id,kind,target_id,created_at) VALUES('link','accepted-task',?,'material','original-material',?)",(p1,now))
 db.commit()
 

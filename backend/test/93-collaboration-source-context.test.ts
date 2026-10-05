@@ -8,7 +8,7 @@ import type { Env } from '../src/env';
 import { readProjectSourceContext, assertProjectSourceContext, type ProjectSourceSnapshot } from '../src/services/collaboration-context';
 import { runCollaborationAiJob, projectSourceCitationSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 import { applyProposal } from '../src/services/collaboration';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
 
 afterEach(() => vi.unstubAllGlobals());

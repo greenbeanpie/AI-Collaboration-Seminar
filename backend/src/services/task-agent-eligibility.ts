@@ -5,7 +5,7 @@ import { AppError, invalidState, notFound, permissionDenied, versionConflict } f
 import { newId, nowIso, sha256Hex } from '../core/db';
 import type { CollaborationTask } from './collaboration';
 import { aiJsonCall } from './agent';
-import { reserveAiSlot, settleReservation } from './budget';
+import { reserveAiSlot, settleReservation } from './ai-reservations';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
 
 export const taskAgentEligibilitySchema = z.object({

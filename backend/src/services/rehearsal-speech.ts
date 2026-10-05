@@ -2,7 +2,7 @@ import type { Env } from '../env';
 import { AppError, invalidState, notFound, permissionDenied } from '../core/errors';
 import { nowIso } from '../core/db';
 import { getJob, succeedJob } from './jobs';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 
 type SpeechStatus='queued'|'running'|'ready'|'failed';
 interface SpeechRow {id:string;job_id:string;status:SpeechStatus;r2_key:string|null;mime:string|null;error:string|null}
@@ -56,7 +56,7 @@ export async function runRehearsalSpeechJob(env:Env,jobId:string):Promise<void>{
   env.DB.prepare("UPDATE rehearsal_speech SET status='failed',error=?2,lease_token=NULL,lease_expires_at=NULL,updated_at=?3 WHERE job_id=?1 AND status IN ('queued','running') AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status IN ('cancelled','failed'))").bind(jobId,CLOUD_SPEECH_RETIRED_MESSAGE,now),
   env.DB.prepare("UPDATE job_outbox SET status='failed',lease_until=NULL,last_error='CLOUD_SPEECH_RETIRED',updated_at=?2 WHERE job_id=?1 AND status IN ('pending','dispatched') AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status IN ('cancelled','failed'))").bind(jobId,now),
  ]);
- // released keeps paid/uncertain calls as settled or pending_reconcile; no ledger deletion.
+ // Release the concurrency slot when the speech job reaches a terminal state.
  await settleReservation(env,jobId,'released');
 }
 export async function retireCloudRehearsalSpeechJobs(env:Env,limit=50):Promise<void>{

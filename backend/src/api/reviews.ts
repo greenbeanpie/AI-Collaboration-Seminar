@@ -10,7 +10,7 @@ import { newId, nowIso } from '../core/db';
 import { notFound,invalidState , permissionDenied } from '../core/errors';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { projectParams } from './projects';
 
 const reviewParams = projectParams.extend({ reviewId: z.string().uuid() });

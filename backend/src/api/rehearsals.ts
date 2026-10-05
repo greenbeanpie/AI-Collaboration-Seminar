@@ -9,7 +9,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { createJobAndDispatch } from '../services/jobs';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { projectParams } from './projects';
 import { parsePaging, nextCursor } from '../core/pagination';
 

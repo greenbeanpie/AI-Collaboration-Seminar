@@ -12,7 +12,7 @@ import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
 import { nowIso } from './core/db';
 import { tryDispatchJob, reconcileWorkflowJob, failJob } from './services/jobs';
-import { releaseStaleReservations, settleReservation } from './services/budget';
+import { releaseStaleReservations, settleReservation } from './services/ai-reservations';
 import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
 import { dispatchProjectProgression } from './services/project-progression';
 

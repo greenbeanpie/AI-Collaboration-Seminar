@@ -2,7 +2,7 @@
 
 核对日期：2026-10-03。本文按现行路由、服务、迁移和测试编写；本次同步平级任务及待人工审核的实现说明。任务父子关系由增量迁移 `0043_remove_task_parent.sql` 移除。生产是否已应用迁移，应以发布验证记录和实际迁移状态为准；文末保留早期核对记录。
 
-本文详细说明功能修改入口、数据归属、AI 请求执行链路及失败恢复条件，为代码阅读、系统维护与实现核对提供依据。先读代码地图、数据库关系和 AI 链路；需要某张表的全部字段或 DDL 时，打开[数据库完整结构字典](/app/help?doc=database)。资料整理、AI 评价及分数均为协作辅助结果，正式评审与供应商实际账单需要单独核验。
+本文详细说明功能修改入口、数据归属、AI 请求执行链路及失败恢复条件，为代码阅读、系统维护与实现核对提供依据。先读代码地图、数据库关系和 AI 链路；需要某张表的全部字段或 DDL 时，打开[数据库完整结构字典](/app/help?doc=database)。资料整理、AI 评价及分数均为协作辅助结果，正式评审与供应商实际模型行为需要单独核验。
 
 此前只读核对了生产数据库结构，不读取业务数据；该核对早于移除历史父任务字段的变更。文档不包含账户凭据、生产资源标识或模型密钥。代码路径相对仓库根目录，命令的环境与工作目录在对应章节标明。
 
@@ -43,7 +43,7 @@
 | Worker与定时入口 | `frontend/src/worker.ts`、`backend/src/index.ts`、`backend/src/app.ts`、`backend/src/env.ts`、`backend/src/cron.ts` |
 | 鉴权、权限、幂等 | `backend/src/core/auth.ts`、`backend/src/core/origin.ts`、`backend/src/services/accounts.ts`、`backend/src/services/project-permissions.ts`、`backend/src/services/idempotency.ts` |
 | API与后台分发 | `backend/src/api/agents.ts`、`backend/src/api/collaboration.ts`、`backend/src/api/project-simplification.ts`、`backend/src/services/jobs.ts`、`backend/src/services/ai-jobs.ts` |
-| Workflow和预算 | `backend/src/workflows/ai-job.ts`、`backend/src/workflows/parse-source.ts`、`backend/src/services/ai-execution-slices.ts`、`backend/src/services/budget.ts` |
+| Workflow和并发预占 | `backend/src/workflows/ai-job.ts`、`backend/src/workflows/parse-source.ts`、`backend/src/services/ai-execution-slices.ts`、`backend/src/services/ai-reservations.ts` |
 | 工具、调查、证据 | `backend/src/services/project-ai-tools.ts`、`backend/src/services/project-context.ts`、`backend/src/services/project-investigation.ts`、`backend/src/services/project-evidence.ts`、`backend/src/services/project-reference-guard.ts` |
 | 模型协议与调用审计 | `backend/src/ai/gateway.ts`、`backend/src/ai/transport.ts`、`backend/src/ai/tool-transport.ts`、`backend/src/ai/calls.ts`、`backend/src/ai/config.ts`、`shared/ai-providers.ts` |
 | 来源与材料生命周期 | `backend/src/api/materials.ts`、`backend/src/services/files.ts`、`backend/src/services/source-lifecycle.ts`、`backend/src/services/source-inputs.ts`、`backend/src/services/parse.ts`、`backend/src/services/source-summary.ts` |
@@ -57,11 +57,11 @@
   ├─ 页面与帮助：前端 Worker → ASSETS
   └─ 同源 /api/v1：前端 Worker → API Service Binding → 后端 Hono Worker
       ├─ 请求中间件、Zod 契约、认证、项目操作权限 → API handler / service
-      ├─ D1：实体、不可变版本、引用片段、状态、预算与审计元数据
+      ├─ D1：实体、不可变版本、引用片段、状态、并发预占与审计元数据
       ├─ 私有 R2（FILES）：原文件、正文对象、AI 调用证据、调查检查点
       ├─ PARSE_WORKFLOW → ParseSourceWorkflow → runParseJob
       └─ AGENT_WORKFLOW → AgentRunWorkflow → executeAiSlice → runAiJob
-定时 scheduled → handleScheduled：推进、通知、作业/分片恢复、预算/文件清理
+定时 scheduled → handleScheduled：推进、通知、作业/分片恢复、并发预占/文件清理
 ```
 
 主要运行组合为 React 19、React Router 7、Vite、TypeScript、Hono、Zod 与 Cloudflare Workers/D1/R2/Workflows。具体版本由两个子项目的锁文件决定，不能将 package.json 的范围表达式当成已安装精确版本。后端通过 nodejs_compat 使用密码 KDF 等兼容能力；浏览器不能直接访问 D1、R2 或模型密钥。
@@ -82,7 +82,7 @@
 
 ### D1、R2 与运行时分别保存什么
 
-- D1 保存账号、项目成员、来源及材料版本元数据、正文片段、任务依赖、提交/评估、作业状态、预算预占、AI 审计和通知发件箱。大部分主键是 `TEXT` UUID，时间戳是 ISO-8601 UTC `TEXT`，布尔值是带 CHECK 的 0/1 INTEGER，结构化载荷主要是 JSON TEXT。
+- D1 保存账号、项目成员、来源及材料版本元数据、正文片段、任务依赖、提交/评估、作业状态、并发预占、AI 审计和通知发件箱。大部分主键是 `TEXT` UUID，时间戳是 ISO-8601 UTC `TEXT`，布尔值是带 CHECK 的 0/1 INTEGER，结构化载荷主要是 JSON TEXT。
 - R2 通过 `env.FILES` 保存上传原文件、解析文本、图片、AI 输入输出证据、调查检查点及长文摘要块缓存。D1 的 `r2_key`、`text_r2_key`、`input_r2_key`、`output_r2_key`、`checkpoint_key` 是对象指针，不能把 D1 元数据存在等同于对象必然存在。
 - `document-chunks.ts` 的 chunks 是将完整原文按模型输入容量划分的运行时数组，**没有 `document_chunks` 表**。原文落在 `source_fragments`；摘要块缓存使用 R2 中 `ai-document-chunks/...` 键。文件附件也没有独立 `attachments` 表，材料版本的 `attachments_json` 保存附件描述。
 - `creation-template.ts` 当前模板目录是代码里的 `projectTemplates`（`blank`），没有 `project_templates` 表。项目导出通过读取当前项目与历史快照组装结果，没有持久化 `exports` 表；修改导出能力时应查对应导出路由和服务，避免假设数据库已有导出任务表。
@@ -132,7 +132,7 @@ notification_events ── notification_inbox ── users
 
 | 表 | 关键字段与约束 | 主要载荷与行为 |
 | --- | --- | --- |
-| `projects` | `id PK`；`name`、`description`；`status CHECK active/archived`；`revision`；`created_by FK`；`competition_deadline_date`、`deadline_precision`；`ai_budget_usd REAL`；`ai_collaboration_enabled`；`planning_mode`、`assignment_mode`、`evaluation_mode`、`progression_mode CHECK manual/automatic`；`collaboration_revision`、`collaboration_mutation_token` | 普通字段 revision 与协作设置 revision 分开；`team_size_limit` 仍是兼容字段，0030 将存量值改为 NULL，但没有删列。 |
+| `projects` | `id PK`；`name`、`description`；`status CHECK active/archived`；`revision`；`created_by FK`；`competition_deadline_date`、`deadline_precision`；`ai_collaboration_enabled`；`planning_mode`、`assignment_mode`、`evaluation_mode`、`progression_mode CHECK manual/automatic`；`collaboration_revision`、`collaboration_mutation_token` | 普通字段 revision 与协作设置 revision 分开；`team_size_limit` 仍是兼容字段，0030 将存量值改为 NULL，但没有删列。旧数据库保留未使用的金额预算列。 |
 | `project_goals` | `project_id PK/FK`；`title`、`detail`；`revision`、`graph_revision INTEGER`；`graph_token TEXT`；时间戳 | `project-simplification.ts`：目标文字与依赖图使用不同版本，修改任务图不应伪造目标文字变更。 |
 | `files` | `id PK`；`project_id FK`、`uploader_user_id FK`；`r2_key`、`original_name`、`ext`；`mime_declared/detected`；`size_bytes`、`sha256`、`page_count`；`status CHECK pending/available/quarantined/discarded`；`gc_after`；`deleted_at/by`、`lifecycle_version`、`lifecycle_change_id` | `files.ts`、`file-lifecycle.ts`、`gc.ts`；索引 `(project_id,sha256)` 用于内容定位但不唯一。上传者身份与贡献者不是同一个概念。 |
 | `file_contributors` | 复合 PK `(file_id,user_id)`；`file_id FK ON DELETE CASCADE`；`user_id TEXT`、`display_name TEXT` | 贡献署名保存用户和姓名快照，user_id 刻意无 FK，离开项目不会抹去历史署名。 |
@@ -172,17 +172,17 @@ notification_events ── notification_inbox ── users
 
 模板定义来自代码而不是数据库，当前支持 `blank`；workspace 材料项包含 key/title/markdown/purpose，标准项包含 requirements/weights/notes。导出要按对象关系与冻结版本读取，JSON内引用不是FK，不应写出已回收的资源为当前可用对象，也不应误导使用者为导出包包含所有 R2 原件。
 
-### 作业、AI 证据、预算与通知
+### 作业、AI 证据、并发预占与通知
 
 | 表 | 关键字段与约束 | 行为 |
 | --- | --- | --- |
 | `jobs` | `id PK`；可 NULL 的 `project_id FK`；kind 为 parse_source/ocr_pages/requirement_extract/assignment_suggest/agent_run/review_run/rehearsal_turn/web_fetch/gc；status 为 queued/running/waiting_input/succeeded/failed/cancelled；`input_json/input_r2_key/result_json/error_json`；`attempts/lease_until`；创建者与时间 | `input_json.operation` 在既有 kind 内区分摘要、协作等细分操作，新增操作不一定需要新增 kind。创建时冻结 configVersionId 与来源生命周期版本。创建草稿预览直接以 draftPreview payload 进入 AGENT_WORKFLOW，不落普通 jobs。 |
 | `job_outbox` | `id PK`；`job_id UNIQUE FK`；`status pending/dispatched/done/failed`；`available_at/lease_until`；attempts/last_error/时间 | 作业和 outbox 同批写入；派发失败靠恢复器补投，先落库后派发不能只写 jobs。 |
-| `ai_execution_slices` | 复合 PK `(job_id,slice)`；job FK；CHECK `0 <= slice < 512`；`instance_id UNIQUE`；`status pending/dispatched/running/continued/complete`；attempts/last_error/时间 | `ai-execution-slices.ts`：slice0 的实例名为 jobId，后续为 jobId-sN；一个作业允许跨独立 Workflow 实例接力，仍共用 job、预算和审计。 |
+| `ai_execution_slices` | 复合 PK `(job_id,slice)`；job FK；CHECK `0 <= slice < 512`；`instance_id UNIQUE`；`status pending/dispatched/running/continued/complete`；attempts/last_error/时间 | `ai-execution-slices.ts`：slice0 的实例名为 jobId，后续为 jobId-sN；一个作业允许跨独立 Workflow 实例接力，仍共用 job、并发预占和审计。 |
 | `ai_investigations` | `id PK`；project/job/requested_by FK；`prompt_version/checkpoint_key`；`phase`、`step`、updated_at；索引 `(job_id,prompt_version)` | D1 保存检查点位置与进度；完整 exchanges、证据等在 R2，私人上下文检查点采用分块加密 envelope；不要将检查点当作普通公开资料。 |
-| `ai_config_versions` | `id PK`；`version INTEGER UNIQUE`；`config_json TEXT`；`enabled`、notes、created_by/at | 每调用关联配置版本；冻结模型名称、供应商、输入输出限额与价格等配置，服务读取时校验。不能以最新配置推断过去调用。 |
-| `usage_reservations` | `id PK`；project FK；`job_id`、`purpose`；`estimated_cost REAL`；`status reserved/settled/released/pending_reconcile`；`settled_cost`、时间；`attempts_started`、`max_calls` | `budget.ts` 原子预占并发槽位/金额；fetch 前持久化 started 尝试。预估为0不等于真实免费；未知实际费用不能写“已结算0美元”。 |
-| `ai_calls` | `id PK`；project/config/reservation/draft FK；`job_id/run_id`；`purpose textEconomy/visionEconomy/review`；`prompt_version/model`；`input_r2_key/output_r2_key`；prompt/completion tokens、cost；`cost_status known/unknown`；`status ok/repaired/invalid/failed/timeout`；latency/time；`search_usage_json` | 模型调用审计，与业务成功分开：收到模型输出但校验失败可记录 invalid。排查路径从 jobId 到 reservation、call、R2证据和业务实体，不要只看作业状态。 |
+| `ai_config_versions` | `id PK`；`version INTEGER UNIQUE`；`config_json TEXT`；`enabled`、notes、created_by/at | 每调用关联配置版本；冻结模型名称、供应商和协议选项，服务读取时校验。不能以最新配置推断过去调用。 |
+| `usage_reservations` | `id PK`；project FK；`job_id`、`purpose`；`status reserved/settled/released`；`attempts_started`、`max_calls` | `ai-reservations.ts` 原子预占并发槽位和每任务调用次数；fetch 前持久化 started 尝试。旧金额字段和 `pending_reconcile` 状态保留给既有数据库记录，不参与当前运行。 |
+| `ai_calls` | `id PK`；project/config/reservation/draft FK；`job_id/run_id`；`purpose textEconomy/visionEconomy/review`；`prompt_version/model`；`input_r2_key/output_r2_key`；prompt/completion tokens；`status ok/repaired/invalid/failed/timeout`；latency/time；`search_usage_json` | 模型调用审计，与业务成功分开：收到模型输出但校验失败可记录 invalid。旧费用字段仅保留在既有数据库行，不参与新调用。排查路径从 jobId 到 reservation、call、R2 证据和业务实体。 |
 | `ai_tool_calls` | `id PK`；project/job/requested_by FK；`name/args_json/result_json`；`status ok/failed`；时间 | 工具调用证据，可和模型调用按 jobId 串起来；工具失败并不自动代表整个调查失败。 |
 | `ai_diagnostics` | `id INTEGER PK AUTOINCREMENT`；`entry_json TEXT`；`byte_size CHECK=length(CAST(entry_json AS BLOB))+1` | 有界运维诊断，设计上不存 prompt、response 或密钥。不能向此表写模型完整输入来“方便排查”。 |
 | `idempotency_records` | 唯一 `(idempotency_key,user_id,operation)`；request_hash；`status processing/completed`；response_status/body；created_at | 相同操作同用户同键同内容可返回历史响应；不同内容返回冲突，processing 不应被当成 completed。 |
@@ -219,10 +219,10 @@ AI slice: pending → dispatched → running → complete
 submission: pending → evaluated → accept / improve / rework
 task lifecycle: open → in_progress → submitted → accepted / improve / rework
 proposal: pending → applied；失效 → stale；人工修订创建历史并更新 revision
-reservation: reserved → settled / released / pending_reconcile
+reservation: reserved → settled / released
 ```
 
-箭头是主要流向；恢复器可能将尚未开始付费调用且引擎确证缺失的派发恢复成 queued/pending。`jobs.attempts` 是派发次数，`usage_reservations.attempts_started` 是持久化模型请求尝试次数，`ai_calls` 是已保存审计记录数，三者不能互相代替。引擎查询暂时失败不构成安全重放证据；付费调用已开始但实例/调用记录缺失时，要保留费用不确定性，不能自动再请求模型。
+箭头是主要流向；恢复器可能将尚未开始模型请求且引擎确证缺失的派发恢复成 queued/pending。`jobs.attempts` 是派发次数，`usage_reservations.attempts_started` 是持久化模型请求尝试次数，`ai_calls` 是已保存审计记录数，三者不能互相代替。引擎查询暂时失败不构成安全重放证据；模型调用已开始但实例/调用记录缺失时，不能自动再请求模型。
 
 长调查只有保存安全检查点后才能继续下一 slice；`continueExecutionSlice` 原子创建下一行、将当前标为 continued、刷新 job，随后派发新的独立实例。claimExecutionSlice 仅抢占 pending/dispatched 且必须是最新 slice，避免引擎重放重复执行同一付费段。
 
@@ -282,7 +282,7 @@ reservation: reserved → settled / released / pending_reconcile
 
 ### 标准评分与答辩演练
 
-`services/assessments.ts.assessmentInputs()` 冻结标准版本、材料版本、项目目标及来源快照；`scoreAssessment()` 生成评分报告；`assessmentPublication()` 在发布 SQL 再检查 assessment 原始 AI 状态、job 状态、成员及来源有效性，更新 report_json/ai_report_json 并增加 revision。人工修订与 AI 发布分开，不能将人工修订后的报告当作未发布 AI 作业继续覆盖。`runMaterialAssessmentJob()` 成功发布后结算预算及 succeedJob，失败标记 assessment 并释放预留；续执行异常必须交还持久执行，不可误判成普通失败。
+`services/assessments.ts.assessmentInputs()` 冻结标准版本、材料版本、项目目标及来源快照；`scoreAssessment()` 生成评分报告；`assessmentPublication()` 在发布 SQL 再检查 assessment 原始 AI 状态、job 状态、成员及来源有效性，更新 report_json/ai_report_json 并增加 revision。人工修订与 AI 发布分开，不能将人工修订后的报告当作未发布 AI 作业继续覆盖。`runMaterialAssessmentJob()` 成功发布后释放并发预占并 succeedJob，失败标记 assessment 并结束预占；续执行异常必须交还持久执行，不可误判成普通失败。
 
 `services/rehearsal.ts.runRehearsalTurnJob()` 要核对 processing_job_id，材料按版本读取；member 范围核对目标仍是项目成员并读取其任务，不能把请求者误当演练对象。summary 阶段使用 finish_snapshot_json 的回答快照，核对 finish_job_id，批量发布 assessment、summary turn 与 finished 状态。共享演练的操作者和目标成员属于不同概念，修改前阅读 `api/rehearsals.ts` 的所有权检查及 114-rehearsal-ownership 测试。
 
@@ -292,7 +292,7 @@ reservation: reserved → settled / released / pending_reconcile
 
 本章依据当前工作区源码核对。`agent.ts`、`assessments.ts`、`assignment.ts`、`guide-history.ts`、`project-ai-tools.ts`、`project-context.ts` 六个服务文件存在未提交修改，尤其涉及工具参数契约、评分提示、带做历史和调查继续执行的异常透传。以下函数名、表名和链路描述对应本地源码；这些未提交实现是否已发布，需要结合部署构建和线上版本另行核对。不能凭帮助页面更新就推断后台代码已经发布，也不能把本章的静态检查当作真实供应商付费调用验证。
 
-核心调查函数的真实名称是 `projectToolConversation`，在 `backend/src/services/project-ai-tools.ts`；不要寻找不存在的 `runProjectInvestigation`。建议按 `api → budget/jobs → workflows → ai-jobs → 业务执行器 → agent/project-ai-tools → gateway → transport/tool-transport → calls → 发布 SQL` 的顺序阅读。
+核心调查函数的真实名称是 `projectToolConversation`，在 `backend/src/services/project-ai-tools.ts`；不要寻找不存在的 `runProjectInvestigation`。建议按 `api → ai-reservations/jobs → workflows → ai-jobs → 业务执行器 → agent/project-ai-tools → gateway → transport/tool-transport → calls → 发布 SQL` 的顺序阅读。
 
 ### 用户入口与执行器对照
 
@@ -321,7 +321,7 @@ reservation: reserved → settled / released / pending_reconcile
 
 ```text
 用户点击 → API 校验身份、项目权限、参数、expectedRevision、幂等键
-  → withReservedAiJob / reserveAiSlot：冻结 configVersionId，预占预算与并发
+  → withReservedAiJob / reserveAiSlot：冻结 configVersionId，预占并发槽位与调用次数
   → 写 agent_run / assessment / submission 等业务记录与输入快照
   → createJobAndDispatch：jobs(queued) + job_outbox(pending) 同 batch
   → tryDispatchJob：原子领取 jobs，queued → running，attempts + 1
@@ -329,7 +329,7 @@ reservation: reserved → settled / released / pending_reconcile
   → AgentRunWorkflow.step.do(retries.limit=0)
   → executeAiSlice → claimExecutionSlice → runAiJob → 业务执行器
   → aiJsonCall → projectToolConversation（需要项目工具时）
-  → gatewayChat → beforeFetch guard/预算尝试标记 → prepareMessages
+  → gatewayChat → beforeFetch guard/调用尝试标记 → prepareMessages
   → buildProviderRequest / applyToolMode → onDispatch → fetch
   → 规范化协议结果 → recordAiCall → 保存调查检查点 / 执行只读工具
   → 最终 JSON 与业务证据校验 → 条件 SQL 发布 → settleReservation
@@ -346,13 +346,13 @@ reservation: reserved → settled / released / pending_reconcile
 
 拆解与调整在 `collaboration-ai.ts` 生成 `collaboration_proposals`。局部调整只能修改冻结 scope 的标题、说明、验收标准和工时，不能删除任务或修改权限。`assertSnapshot/currentConfig` 检查任务 revision、来源、成员、`settingsRevision`、`goalRevision/graphRevision` 等。`applyProposal` 位于 `collaboration.ts`，采纳时仍检查当前权限和版本；自动采纳同样走该函数。结果会区分 `autoApplied/applyError`，因此“生成成功”不保证“已经应用”。
 
-自动拆解后自动分工由 `enqueueDecompositionAssignment` 创建一个独立预算的 `collaboration.assign` 后续任务，带 `parentProposalId`，使用确定性 ID 避免重复；没有待分配任务则不创建。已创建的任务不会因此重新递归拆解。`continueConfirmedPlan` 支持明确确认方案后继续分工。分工使用 `generateAssignmentSuggestions`；验证每个任务恰好覆盖一次，责任人只能为输入中的项目成员或 null。模型给出的自由理由不作为个人评价发布，服务器生成固定协作提醒。
+自动拆解后自动分工由 `enqueueDecompositionAssignment` 创建一个独立的 `collaboration.assign` 后续任务，带 `parentProposalId`，使用确定性 ID 避免重复；没有待分配任务则不创建。已创建的任务不会因此重新递归拆解。`continueConfirmedPlan` 支持明确确认方案后继续分工。分工使用 `generateAssignmentSuggestions`；验证每个任务恰好覆盖一次，责任人只能为输入中的项目成员或 null。模型给出的自由理由不作为个人评价发布，服务器生成固定协作提醒。
 
 分工个人偏好采用 `profileStamp`：job 只保存成员 ID、成员记录 ID、个人资料 revision 和 `ai_use_allowed`，不保存个人简介正文。`recommendationDispatch` 在真实 fetch 前最后一次数据库读取中统一检查授权、成员范围、来源和最新配置，再提供当前允许用于 AI 的偏好与负载；调用方不能在这次读取与 fetch 之间加入异步 I/O。`finishRecommendationJob` 的发布 SQL 再检查 `profileSnapshotGuard`，防止授权撤回后仍发布旧推荐。
 
 每轮提交在系统与项目 AI 启用时只自动创建一个评价作业，禁用时不评价；同轮重复或失败作业不能通过手动评价或通用重试接口创建第二份评价。提交评价使用固定 `task_submissions` 轮次、完整 `material_versions.markdown` 和可选生效标准的 `rubricSnapshot`。`evaluate` 要求 `current_submission_id/evaluation_job_id/task_revision/assignee_id/submitted_by` 一致，阶段性提纲按本任务 criteria 评价，不能要求尚未到达阶段的最终成果。此操作 `maxAttempts:1`，不自动修复评价结论。`assessEvidence` 检查逐字证据、附件/链接未读、coverage、limitations、低于 0.6 的评分置信度。任务为平级任务，主目标单独保存，依赖通过 `task_dependencies` 表达。原文证据不足时即使模型给 accept，自动验收仍被阻止；只有未读附件或引用造成证据限制、正文证据有效且其他校验通过时，可以先行接受，并在报告 `humanReview.status` 中保存 `pending`，对外返回 `pendingHumanReview`；负责人随后完成人工审核。先行接受仍使用 `accepted/done`，计入完成与依赖就绪；评分总分由 `calculateRubricWeightedTotal` 算，不采信模型总分。结果落 `ai_report_json` 后才可能由 `decideSubmission` 应用。已存在报告可复用，避免再次付费生成。
 
-材料预审与主目标评分是两条路径。旧 `reviews` 冻结 `requirement_set_id/rubric_version_id/material_version_ids_json`；新 `assessments` 冻结 `goal_revision/standards_version_id/inputs_json`，`review_run` 携带 `assessmentId` 时 `runReviewJob` 转 `runMaterialAssessmentJob → scoreAssessment → publishAssessment/assessmentPublication`。每个数字评分都要固定成果引文；没有可靠证据或置信度不足则 score=null，不冒充 0 分。要求检查覆盖全部 requirement ID；没有证据的 met/unmet 改 unknown。材料检查不要求答辩回答，演练数字分必须含实际 answer 证据。空材料、无实际回答可返回 unscorable，无须收费模型请求。
+材料预审与主目标评分是两条路径。旧 `reviews` 冻结 `requirement_set_id/rubric_version_id/material_version_ids_json`；新 `assessments` 冻结 `goal_revision/standards_version_id/inputs_json`，`review_run` 携带 `assessmentId` 时 `runReviewJob` 转 `runMaterialAssessmentJob → scoreAssessment → publishAssessment/assessmentPublication`。每个数字评分都要固定成果引文；没有可靠证据或置信度不足则 score=null，不冒充 0 分。要求检查覆盖全部 requirement ID；没有证据的 met/unmet 改 unknown。材料检查不要求答辩回答，演练数字分必须含实际 answer 证据。空材料、无实际回答可返回 unscorable，无需发起模型请求。
 
 演练依靠 `rehearsals.processing_job_id` 保证当前轮独占；finish 使用 `finish_job_id/finish_snapshot_json` 冻结完整问答。普通首问/追问输出 `{action:question|feedback,content}`，用户回答由 API 保存；有 assessment 的结束阶段调用 `scoreAssessment`，将评分发布、summary turn、finished 状态放在 batch 中，条件检查作业仍拥有结束权。`scope=member` 针对明确 `member_id` 的责任任务，不能把请求账户当目标成员。历史回合表没有 role 列：`kind=answer` 为答辩者，其余是评委侧。
 
@@ -362,11 +362,11 @@ reservation: reserved → settled / released / pending_reconcile
 
 本地 Agent 交接的适用性由 `task-agent-eligibility.ts` 调用当前 `textEconomy` 模型判断，不使用关键词规则。任务保存和内容修改通过数据库触发器记录后台检查需求，由现有定时维护有界派发；已有任务及重新启用 AI 后的失效判断也会补检。判断按完整标题、说明、验收标准、配置版本及提示词版本的哈希缓存，失败不自动重发付费检查；前端仅读取和轮询状态。只有当前内容对应的 `ready/eligible=true` 允许代实施。
 
-`GET/POST .../collaboration/tasks/{taskId}/assistance-plan` 读取和手动生成持久化辅助计划；生成作业复用预算、审计和 Workflow。计划上下文包含项目背景、目标、生效标准、资料及前置任务固定成果，发布前再次核对上下文和成员资格。重新生成时保留上次成功计划，过期只标记、不自动生成。辅助计划不受整项任务执行适用性限制。
+`GET/POST .../collaboration/tasks/{taskId}/assistance-plan` 读取和手动生成持久化辅助计划；生成作业复用调用审计、并发控制和 Workflow。计划上下文包含项目背景、目标、生效标准、资料及前置任务固定成果，发布前再次核对上下文和成员资格。重新生成时保留上次成功计划，过期只标记、不自动生成。辅助计划不受整项任务执行适用性限制。
 
 DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目录通过 DSH 原生选择器绑定。插件持久化凭据并在启动和网络恢复后自动连接；打开任务的“AI 辅助”弹窗不派发执行。只有显式执行才创建交接，成果回传为待核对草稿。手动复制、下载提示词作为无桥接配置时的交接方式保留。
 
-创建项目草稿预览走例外路径：`enqueueDraftPreview → AGENT_WORKFLOW.create({draftPreview}) → previewDraft → gatewayChat`。它尚无正式 project ID，不使用普通项目 `usage_reservations`、调查工具或执行分片。预览使用 `preview_state/preview_attempt_id/preview_revision`，只生成主目标及 1–20 个任务，不分工、不评分，验证依赖无循环及文件页逐字 citations。模型输出失败不通过 `aiJsonCall` 修复；显式重新生成可能再次计费。提交项目后通过 `draft_id` 将对应 `ai_calls.project_id` 归到新项目。
+创建项目草稿预览走例外路径：`enqueueDraftPreview → AGENT_WORKFLOW.create({draftPreview}) → previewDraft → gatewayChat`。它尚无正式 project ID，不使用普通项目 `usage_reservations`、调查工具或执行分片。预览使用 `preview_state/preview_attempt_id/preview_revision`，只生成主目标及 1–20 个任务，不分工、不评分，验证依赖无循环及文件页逐字 citations。模型输出失败不通过 `aiJsonCall` 修复；显式重新生成会重新发起模型请求。提交项目后通过 `draft_id` 将对应 `ai_calls.project_id` 归到新项目。
 
 自动项目推进不是新 operation：`cron.ts → dispatchProjectProgression` 消费 `events.actor_type=user`，15 秒防抖，用 `project_progression` 游标和 `pending_job_id` 限制单个在途推进，再创建 `collaboration.decompose` + `progression:true/causeEventId`。AI 写事件不会递归触发；人工修订仍待审方案优先保留；存在活跃协作或解析任务时跳过。结束游标记录观察事件，避免每分钟无变化重复付费。
 
@@ -374,9 +374,9 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 `projectToolConversation` 首先通过服务器读取 `get_project_overview/list_project_resources/list_tasks/read_project_standards` 给出索引，再由模型选择相关正文。工具只读当前授权项目；project ID、user ID、guide session 由服务器绑定，模型不能通过参数指定别的项目。`project-context.ts` 的工具参数由 Zod 同一 schema 生成 JSON Schema 并执行校验，避免提示契约与实际验证不一致。
 
-发现工具包括 `get_project_overview`、`list_project_plans/read_project_plan`、`list_assessments/read_assessment`、`list_project_resources/search_project_information/list_resource_versions/read_resource`、`list_tasks/read_task/read_submission/read_project_standards/read_admin_feedback/read_project_history/read_member_workload`；文件工具为 `list_project_files/read_project_file`。文件列表每页 20 项；文件正文或保存总结每页最多 6000 字符；目录和分页继续采用 `nextOffset`。工具读取文件不自动发起 OCR 或总结收费任务，缺正文返回 unavailable；总结标记 `derived:true`，不能冒充来源原文引文。连续三轮相同工具名和参数、没有进展会停止。
+发现工具包括 `get_project_overview`、`list_project_plans/read_project_plan`、`list_assessments/read_assessment`、`list_project_resources/search_project_information/list_resource_versions/read_resource`、`list_tasks/read_task/read_submission/read_project_standards/read_admin_feedback/read_project_history/read_member_workload`；文件工具为 `list_project_files/read_project_file`。文件列表每页 20 项；文件正文或保存总结每页最多 6000 字符；目录和分页继续采用 `nextOffset`。工具读取文件不自动发起 OCR 或总结请求，缺正文返回 unavailable；总结标记 `derived:true`，不能冒充来源原文引文。连续三轮相同工具名和参数、没有进展会停止。
 
-工具返回和文件名统一按不可信数据处理。工具参数非法时将安全字段错误返回给模型，使其修正；权限变更、生命周期失效、预算不足、供应商不可用和 `InvestigationContinuation` 必须透传，不能包装成普通可忽略工具错误。工具审计落 `ai_tool_calls(name,args_json,result_json,status,requested_by,job_id)`，保留分页、片段 ID、错误和引用元数据，避免直接保存文件全文或搜索查询。
+工具返回和文件名统一按不可信数据处理。工具参数非法时将安全字段错误返回给模型，使其修正；权限变更、生命周期失效、并发限制、供应商不可用和 `InvestigationContinuation` 必须透传，不能包装成普通可忽略工具错误。工具审计落 `ai_tool_calls(name,args_json,result_json,status,requested_by,job_id)`，保留分页、片段 ID、错误和引用元数据，避免直接保存文件全文或搜索查询。
 
 `ProjectReference` 包含 `resourceType/resourceId/versionId/revision/fragmentId/pageNumber/quote/usage`，派生总结还有 `offset/summaryRevision`。`referencesFromRead` 不给目录 `directoryOnly:true` 生成正文依据；`decisionReferences/extractDecisionReferences` 仅接受实际读过的 reference ID。模型最终返回 `referenceIds/decisionReferences:[{decisionPath,referenceIds}]`，用于区分读过与用于决策的依据。`validateReadReferences` 核对来源当前生命周期、固定版本、正文引文、派生总结 revision、带做回合所属会话、方案/评分当前生效内容；发布 SQL 的 `projectReferenceGuard` 再堵住检查与提交间的竞态。引用存在不等于语义上充分支持判断，仍需业务证据校验。
 
@@ -386,9 +386,9 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 `privateContext=true` 时 JSON 按 Unicode 码点每 16000 字符拆块，用现有 `seal/unseal` 和 `AUTH_SECRET` 加密；信封格式 `encrypted-investigation-v1`，每块核对 id、index、total。不要更换 AUTH_SECRET 来解决普通失败，否则会同时影响既有加密数据。`compactExchanges` 做确定性历史压缩，保留资源定位元数据和近期交流，遗漏正文可以重新读取；它不允许凭压缩目录宣称已核对原文。
 
-`projectToolConversation` 内部的 `checkpoint()` 调用 `project-investigation.ts.saveInvestigation()`，先写 R2，再更新 D1 的调查索引。模型请求前先保存 `pendingDispatch:true`，持久化预算调用开始标记，再重查 guard，最后 fetch。响应和账本记录成功后保存 `pendingDispatch:false` 及 `pendingOutput`。`loadInvestigation` 发现 pendingDispatch 时直接拒绝重放：上次已派发但结果不确定，应核对账单后重新发起。收到响应但未执行完工具时保存 pendingResults；恢复使用已持久化 pendingOutput，不重复模型请求。
+`projectToolConversation` 内部的 `checkpoint()` 调用 `project-investigation.ts.saveInvestigation()`，先写 R2，再更新 D1 的调查索引。模型请求前先保存 `pendingDispatch:true` 和调用开始标记，再重查 guard，最后 fetch。响应和调用记录成功后保存 `pendingDispatch:false` 及 `pendingOutput`。`loadInvestigation` 发现 pendingDispatch 时直接拒绝重放：上次已派发但结果不确定，避免重复发起模型请求。收到响应但未执行完工具时保存 pendingResults；恢复使用已持久化 pendingOutput，不重复模型请求。
 
-`ai_execution_slices` 是同一业务 job 下独立 Workflow 实例的恢复 outbox：首片 instance ID=job ID，后续为 `{jobId}-s{n}`；状态 `pending/dispatched/running/continued/complete`，slice 从 0 到 511，最多 512 个，不等于允许 512 次模型调用。`claimExecutionSlice` 条件 UPDATE 确保每片只执行一次，旧片不能覆盖新片。收到模型工具响应后立即安全保存并 yield；工具每片最多执行 4 个，保存结果后再继续。`executeAiSlice` 只识别 `InvestigationContinuation` 并调用 `continueExecutionSlice`，其他异常不能当安全继续处理。外层业务 catch 必须先原样抛出该类，不能 failJob 或释放预算。续片要同时传递 `AI_EXECUTION_SLICE:true`、原 job ID、promptVersion、私有上下文及业务 scope，确保读取同一检查点和预算。
+`ai_execution_slices` 是同一业务 job 下独立 Workflow 实例的恢复 outbox：首片 instance ID=job ID，后续为 `{jobId}-s{n}`；状态 `pending/dispatched/running/continued/complete`，slice 从 0 到 511，最多 512 个，不等于允许 512 次模型调用。`claimExecutionSlice` 条件 UPDATE 确保每片只执行一次，旧片不能覆盖新片。收到模型工具响应后立即安全保存并 yield；工具每片最多执行 4 个，保存结果后再继续。`executeAiSlice` 只识别 `InvestigationContinuation` 并调用 `continueExecutionSlice`，其他异常不能当安全继续处理。外层业务 catch 必须先原样抛出该类，不能 failJob 或提前释放并发槽位。续片要同时传递 `AI_EXECUTION_SLICE:true`、原 job ID、promptVersion、私有上下文及业务 scope，确保读取同一检查点和预占记录。
 
 分片用于重置 Worker invocation 子请求额度；单纯增加 `step.do` 不能重置该额度。512 是保护界限，不是 Cloudflare 任意错误恢复器。10034/嵌套子请求深度错误与供应商 HTTP 503 不同，不能靠供应商重试分类假装解决。
 
@@ -407,21 +407,19 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 OpenCode Go 额外要求稳定 opaque session ID，生成 `x-opencode-session` 和已验证 user-agent；不能把用户输入直接当 header。模型 JSON 能力不足时不强行发送不支持字段，仍通过明确 JSON 提示和 Zod 验证。业务最终 JSON 错误由 `aiJsonCall` 至多增加一次修复请求；工具调查结束的修复关闭工具，保留完整输出和已读 ID，提示只纠正字段，且重复原权限/配置/授权检查。输入过大直接拒绝，不静默截掉报告末尾。评分评价可指定 `maxAttempts:1` 禁止修复改变判断。
 
-供应商恢复与 JSON 修复是两个预算维度。`gatewayChat` 仅对已收到的 HTTP 429/500/502/503/504、且 AppError 为 retryable 的 `AI_UNAVAILABLE`，按 1 秒、5 秒、15 秒额外最多三次恢复；从首次明确拒绝开始共享 60 秒窗口，下一次 timeout 取配置 timeout 与窗口剩余时间较小值。调查作业通过 `onProviderRetry` 保存 `attempt/deadline/nextAttemptAt` 后抛 continuation，在独立实例等待后恢复；窗口跨分片不能重置。每次再次调用都执行 beforeFetch 和 prepareMessages。网络失败、超时、重定向、配置/预算/权限错误、解析失败、10034 不属于该恢复列表。调用方不得在 JSON 修复循环中重新启动供应商恢复窗口；`AI_UNAVAILABLE` 终止当前调用内恢复；业务失败另由 D1 持久重试链在至少60秒后排队新作业，最多追加3次，旧未知费用保留待核对。配置、预算和权限拒绝会停止恢复，不能把业务恢复计数与调用内计数混为一谈。存在 `withSingleRetry` helper 也不代表核心链路应重复套用它。
+供应商恢复与 JSON 修复是两个有界流程。`gatewayChat` 仅对已收到的 HTTP 429/500/502/503/504、且 AppError 为 retryable 的 `AI_UNAVAILABLE`，按 1 秒、5 秒、15 秒额外最多三次恢复；从首次明确拒绝开始共享 60 秒窗口，下一次 timeout 取配置 timeout 与窗口剩余时间较小值。调查作业通过 `onProviderRetry` 保存 `attempt/deadline/nextAttemptAt` 后抛 continuation，在独立实例等待后恢复；窗口跨分片不能重置。每次再次调用都执行 beforeFetch 和 prepareMessages。网络失败、超时、重定向、配置/权限错误、解析失败、10034 不属于该恢复列表。调用方不得在 JSON 修复循环中重新启动供应商恢复窗口；`AI_UNAVAILABLE` 终止当前调用内恢复；业务失败另由 D1 持久重试链在至少60秒后排队新作业，最多追加3次。配置、权限和并发额度拒绝会停止恢复，不能把业务恢复计数与调用内计数混为一谈。存在 `withSingleRetry` helper 也不代表核心链路应重复套用它。
 
-原生搜索由 `nativeSearchCapability` 按 preset/protocol/model 白名单判断，不等于所有兼容模型都能搜索。只有 `allowSearch=true`、公开 `searchQuery`、模型能力支持，才暴露 web_search；工具查询必须与授权查询逐字一致，本轮最多一次。有限金额预算禁原生搜索，因为附加费用不能由 token 上界保证。搜索单独请求只带公开查询，不带项目正文；必须返回 performed 与实际 citations 才可声称联网。Responses 使用 web_search，Messages 使用 web_search_20250305，Gemini 用 google_search，OpenRouter 强制 native 引擎；不可用不回落第三方。供应商真实兼容性仍应逐项验证，尤其 DeepSeek Anthropic 搜索不是仅凭模拟响应即可证明。
+原生搜索由 `nativeSearchCapability` 按 preset/protocol/model 白名单判断，不等于所有兼容模型都能搜索。只有 `allowSearch=true`、公开 `searchQuery`、模型能力支持，才暴露 web_search；工具查询必须与授权查询逐字一致，本轮最多一次。搜索单独请求只带公开查询，不带项目正文；必须返回 performed 与实际 citations 才可声称联网。Responses 使用 web_search，Messages 使用 web_search_20250305，Gemini 用 google_search，OpenRouter 强制 native 引擎；不可用不回落第三方。供应商真实兼容性仍应逐项验证，尤其 DeepSeek Anthropic 搜索不是仅凭模拟响应即可证明。
 
-## 12. 预算、审计与发布竞态
+## 12. 并发控制、审计与发布竞态
 
-`usage_reservations` 持有 `project_id/job_id/purpose/estimated_cost/status/max_calls/attempts_started/settled_cost`。每项目同时 reserved 最多 2 个；原子 INSERT 同时检查并发、预算和现有预占，避免应用层先查后写竞态。`reserveAiSlot` 将 kind 映射到 `textEconomy/visionEconomy/review`；默认至少 2 次，最多 24 次。调查到调用额度时，`markAiCallStarted(...,true)` 可在同一预占里追加两个 allowance 至最多 24，并检查余额，不无限创建新预算。4 工具/片、24 请求预算、512 分片分别限制不同资源，不能互相替代。
+`usage_reservations` 为每个作业保存 `project_id/job_id/purpose/status/attempts_started/max_calls`。每项目同时最多 2 个活动预占；`reserveAiSlot` 原子检查并发及同作业重复预占。普通任务预占至少 2 次，最多 24 次；调查达到额度时，`markAiCallStarted(...,true)` 可追加两个调用位，最多扩展至 24 次。4 工具/片、24 次模型调用、512 个执行分片分别限制不同资源，不能互相替代。历史金额字段仅保留在旧数据库结构中，应用不再读取或写入。
 
 上述24次是普通调用预占及调查扩容的上限；`markAiCallStarted` 对 purpose 为 `ocr_pages` 的预占有单独计数条件，不能将调查的调用上限直接套用到逐页 OCR。OCR 同时依赖来源、页面范围、页数及图像输入限制。
 
-有限 `ai_budget_usd` 要求 known price、输出 cap、可估算 Workers AI 文本模型；图片/OCR、自定义兼容模型、未知价格、关闭输出 cap 无法保证上界，拒绝而非按零费放行。`estimateCostUsd` 用输入字符转义上界和协议开销规划两次文本请求；它不代表实际供应商账单上限。预算用途与实际 purpose 要对齐，新增调用不能只写模型请求而不预占。
+`recordAiCall` 将 input/output 存 `ai-calls/{id}/input.json/output.json`，并将模型、`config_version_id/prompt_version/job_id/run_id/reservation_id/draft_id`、token 用量、延迟和执行状态写入 `ai_calls`。
 
-`recordAiCall` 将 input/output 存 `ai-calls/{id}/input.json/output.json`，将模型、`config_version_id/prompt_version/job_id/run_id/reservation_id/draft_id`、用量、延迟、状态写 `ai_calls`。有合法输入/输出 token、配置价格且无 searchUsage 才 `cost_status=known`；缺 usage、无价格、搜索附加费等记 unknown，`cost_usd=null`，不是 0。`settleReservation` 汇总该 reservation 的 calls：存在 unknown 或 `attempts_started > calls`，则 `pending_reconcile`；失败请求已发生调用也结算或待核对，只有没有调用才 released。调用前记尝试是保守规则，后续 guard 拒绝可能留下需核对记录，不可人工把数量差一概视为零费用。
-
-R2/账本写失败不能触发第二次付费请求；checkpoint 先标记 in-flight，可阻止崩溃后无证据重放。`ai_diagnostics`（见 diagnostics.ts）记录请求 ID、协议、HTTP 状态、阶段、safe host/path、失败类别；不要向用户暴露解密密钥、原始供应商响应正文或私有完整输入。
+R2/调用记录写失败不能触发第二次模型请求；checkpoint 先标记 in-flight，可阻止崩溃后无证据重放。`ai_diagnostics`（见 diagnostics.ts）记录请求 ID、协议、HTTP 状态、阶段、safe host/path、失败类别；不要向用户暴露解密密钥、原始供应商响应正文或私有完整输入。
 
 运行前检查并不足以保证发布正确，发布 SQL 仍绑定作业状态、当前项目成员、项目 active、来源 lifecycle、固定材料与实际已读引用、配置版本、设置 revision、任务 revision、提交轮次、guide session 或演练处理权。自动应用再检查一次规则，失败时保留提案/报告及 applyError，供人工审查。发布路径变更必须保留条件 UPDATE/INSERT SELECT 和结果 meta.changes 检查。
 
@@ -439,10 +437,10 @@ SELECT job_id,status,attempts,available_at,lease_until,last_error
 FROM job_outbox WHERE job_id='JOB_UUID';
 SELECT job_id,slice,instance_id,status,attempts,last_error,updated_at
 FROM ai_execution_slices WHERE job_id='JOB_UUID' ORDER BY slice;
-SELECT id,purpose,status,estimated_cost,settled_cost,max_calls,attempts_started
+SELECT id,purpose,status,max_calls,attempts_started
 FROM usage_reservations WHERE job_id='JOB_UUID';
 SELECT id,purpose,model,config_version_id,prompt_version,status,
-       prompt_tokens,completion_tokens,cost_status,cost_usd,latency_ms,created_at
+       prompt_tokens,completion_tokens,latency_ms,created_at
 FROM ai_calls WHERE job_id='JOB_UUID' ORDER BY created_at;
 SELECT id,prompt_version,phase,step,checkpoint_key,updated_at
 FROM ai_investigations WHERE job_id='JOB_UUID';
@@ -450,17 +448,17 @@ SELECT name,status,args_json,result_json,created_at
 FROM ai_tool_calls WHERE job_id='JOB_UUID' ORDER BY created_at;
 ```
 
-queued 且 outbox pending 看 lease/available_at 和 cron；running 看最新 slice，再查真实 Workflow instance 状态，不能仅因时间长就重派。cron 对超过 5 分钟未更新的 running 每批 10 条执行 `reconcileWorkflowJob`，先检查实例；只有明确 instance.not_found、且没有已开始模型证据的路径才安全补派。查询引擎 transient error 不允许重放。实例已结束而业务未提交则失败并核对费用；最新 pending slice 可由 `recoverExecutionSlices` 补派。超过两小时预占只在 job 不属于 queued/running/waiting_input 时清理，不释放仍在运行的槽位。
+queued 且 outbox pending 看 lease/available_at 和 cron；running 看最新 slice，再查真实 Workflow instance 状态，不能仅因时间长就重派。cron 对超过 5 分钟未更新的 running 每批 10 条执行 `reconcileWorkflowJob`，先检查实例；只有明确 instance.not_found、且没有已开始模型证据的路径才安全补派。查询引擎 transient error 不允许重放。实例已结束而业务未提交则失败；最新 pending slice 可由 `recoverExecutionSlices` 补派。超过两小时预占只在 job 不属于 queued/running/waiting_input 时清理，不释放仍在运行的槽位。
 
-waiting_input 看 source processing 和缺图片页；AI_OUTPUT_INVALID 看协议完成状态、output_limit、Zod 字段、引文/coverage；QUOTA_EXCEEDED 看并发、pending_reconcile、max_calls；INVALID_STATE 看 settings/source/config/profile 版本；AI_UNAVAILABLE 看 HTTP 响应与网络失败分类。若有 pendingDispatch 或 usage unknown，先对照供应商调用记录/账单，保留证据；不要手动清 pendingDispatch、重置 running、清 R2 或将 unknown 改为 known 0。
+waiting_input 看 source processing 和缺图片页；AI_OUTPUT_INVALID 看协议完成状态、output_limit、Zod 字段、引文/coverage；QUOTA_EXCEEDED 看并发与 max_calls；INVALID_STATE 看 settings/source/config/profile 版本；AI_UNAVAILABLE 看 HTTP 响应与网络失败分类。若有 pendingDispatch，保留任务和调用状态证据，不要手动清 pendingDispatch、重置 running 或清 R2。
 
-`POST /api/v1/jobs/{jobId}/retry` 仅接受 failed，创建新 job；source.summary 要走 processing/summary 专用入口，`collaboration.*` 从当前任务重新发起重冻快照；演练仅原发起人在旧作业仍持有 processing_job_id 且 rehearsal active 时可重试。成功/取消任务不复活。通用 retry 不保证所有关联业务记录都能重新跑，因此优先使用对应业务的新发起路径，确认旧请求费用后再创建新的付费任务。
+`POST /api/v1/jobs/{jobId}/retry` 仅接受 failed，创建新 job；source.summary 要走 processing/summary 专用入口，`collaboration.*` 从当前任务重新发起重冻快照；演练仅原发起人在旧作业仍持有 processing_job_id 且 rehearsal active 时可重试。成功/取消任务不复活。通用 retry 不保证所有关联业务记录都能重新跑，因此优先使用对应业务的新发起路径。
 
 ### 源码核对清单
 
-可优先阅读 `backend/test/111-investigation-continuation.test.ts`、`113-investigation-execution-slices.test.ts`、`114-native-search-slices.test.ts`、`120-provider-retries.test.ts`、`116-guide-history.test.ts`、`121-project-tool-contracts.test.ts`、`21-provider-adapters.test.ts`、`28-budget-adoption-atomic.test.ts`、`96-output-limit-switch.test.ts`。当前文档只说明源码和已有测试覆盖意图，不宣称这些测试在本次文档调查中重新通过。
+可优先阅读 `backend/test/111-investigation-continuation.test.ts`、`113-investigation-execution-slices.test.ts`、`114-native-search-slices.test.ts`、`120-provider-retries.test.ts`、`116-guide-history.test.ts`、`121-project-tool-contracts.test.ts`、`21-provider-adapters.test.ts`、`28-reservation-adoption-atomic.test.ts`、`96-output-limit-switch.test.ts`。当前文档只说明源码和已有测试覆盖意图，不宣称这些测试在本次文档调查中重新通过。
 
-维护核对顺序：确认源码与部署版本；用本地 stub 验证 API 到 job 到报告，无付费模型；核对 continuation 穿过每个业务 catch；验证重复派发不重复模型请求、pendingDispatch 拒绝重放；验证拒绝/超时/输出修复分类；验证有限预算和 unknown 结算；验证成员移除、授权撤回、来源回收、设置变更及并发 finish 在发布 SQL 被拒绝；最后在获授权的供应商真实接口逐协议验证 token、搜索证据及计费。真实供应商可达性、当前模型能力和 Worker 子请求深度不能仅凭本地测试确认。
+维护核对顺序：确认源码与部署版本；用本地 stub 验证 API 到 job 到报告；核对 continuation 穿过每个业务 catch；验证重复派发不重复模型请求、pendingDispatch 拒绝重放；验证拒绝/超时/输出修复分类；验证并发与 max_calls；验证成员移除、授权撤回、来源回收、设置变更及并发 finish 在发布 SQL 被拒绝；最后在获授权的供应商真实接口逐协议验证 token 和搜索证据。真实供应商可达性、当前模型能力和 Worker 子请求深度不能仅凭本地测试确认。
 ## 14. 前端请求、缓存与编辑安全
 
 ### 请求契约和查询刷新
@@ -559,7 +557,7 @@ npm run lint
 3. `0033_remove_manual_ledger.sql` 清空 contributions.correction_of 后 DROP contributions、resource_references、decisions。当前结构参考包含该迁移；重放新数据库与更新既有生产库是两种不同任务。未确认备份、实际迁移记录和历史数据保留要求前不能执行该文件。
 4. 0012 是新增 auth_accounts 并回填联系邮箱，不迁移 user ID；0013 包含一个历史指定身份的角色回填，仅适合了解历史，不能当通用新环境 bootstrap；0026 先保存旧成员档案导入候选再清项目域字段，不能拆开运行。0030 清除 team_size_limit，0036 根据历史回答和作业回填作者/处理持有者，0037 建立通知 baseline，都含数据迁移副作用。
 5. 本地参考重放必须有 SQLite JSON1、外键约束和迁移依赖；执行检查点为 integrity_check 与 foreign_key_check。通过空数据库检查只能证明结构可创建，不能验证存量数据转换；对真实迁移还需使用相关 preservation 测试和脱敏副本进行前后行数、ID、引用链及字段值核对。
-6. 写跨表业务改动前找对应 service 的 CAS 门禁与 batch 边界；写 JSON 字段前找 Zod schema、契约和 toView 映射；删除文件前读 lifecycle/GC；改变任务图前读 validateTaskGraph；改变 AI 执行前读 budget/jobs/execution-slices/investigation。只改前端模型或数据库字段，通常无法完成完整行为变更。
+6. 写跨表业务改动前找对应 service 的 CAS 门禁与 batch 边界；写 JSON 字段前找 Zod schema、契约和 toView 映射；删除文件前读 lifecycle/GC；改变任务图前读 validateTaskGraph；改变 AI 执行前读 ai-reservations/jobs/execution-slices/investigation。只改前端模型或数据库字段，通常无法完成完整行为变更。
 
 ### 可复现核对流程
 
@@ -567,7 +565,7 @@ npm run lint
 py scripts/verify-handover-docs.py
 ```
 
-文档结构验证脚本在本地 SQLite 内存重放迁移，并核对已发布的结构字典；不连接生产，也不修改项目数据库。本次额外结构证据记录迁移完整文件名、执行/跳过原因与 SHA-256、所有表列/FK/索引/DDL、视图/触发器、完整性检查结果及生产结构离线比对。服务行为核对基于 jobs.ts、budget.ts、collaboration.ts、project-simplification.ts、source-summary.ts、document-chunks.ts、ai-execution-slices.ts、project-investigation.ts 等现行源码。完整列字典应作为可下载附录，帮助页面正文优先呈现关系、状态与读写入口。
+文档结构验证脚本在本地 SQLite 内存重放迁移，并核对已发布的结构字典；不连接生产，也不修改项目数据库。本次额外结构证据记录迁移完整文件名、执行/跳过原因与 SHA-256、所有表列/FK/索引/DDL、视图/触发器、完整性检查结果及生产结构离线比对。服务行为核对基于 jobs.ts、ai-reservations.ts、collaboration.ts、project-simplification.ts、source-summary.ts、document-chunks.ts、ai-execution-slices.ts、project-investigation.ts 等现行源码。完整列字典应作为可下载附录，帮助页面正文优先呈现关系、状态与读写入口。
 
 ## 17. 发布、恢复与排障
 
@@ -581,7 +579,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 
 禁止把 `wrangler d1 migrations apply --remote` 当成可直接执行的生产全量更新。`0033_remove_manual_ledger.sql` 会清除 correction_of 自引用并 DROP contributions、resource_references、decisions；它是破坏性历史迁移。先读取目标库迁移历史与真实 schema，列出已应用/待应用范围，核对数据依赖并备份，再决定单项批准的迁移。不能只将文件移走或更改迁移记录来绕过风险，也不能让测试已全量迁移的结果替代生产库判断。
 
-生产备份应使用整库可恢复导出并保护文件访问，另核对 R2 对象、配置版本及作业恢复要求；数据库 SQL 不是文件对象的备份。`npm run backup:drill:local` 是独立模拟恢复演练，不能证明当前生产备份齐全。恢复后还需检查 users/project_members 外键、版本指针、jobs/预算预留及引用有效性；不要自动 reset 管理账号或重放仍在执行的付费作业。
+生产备份应使用整库可恢复导出并保护文件访问，另核对 R2 对象、配置版本及作业恢复要求；数据库 SQL 不是文件对象的备份。`npm run backup:drill:local` 是独立模拟恢复演练，不能证明当前生产备份齐全。恢复后还需检查 users/project_members 外键、版本指针、jobs/并发预占及引用有效性；不要自动 reset 管理账号或重放仍在执行的作业。
 
 ### 排障取证顺序
 
@@ -599,7 +597,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 
 ### 增加 AI 工具或一种 AI 作业
 
-读 `services/project-ai-tools.ts.projectToolDefinitions/executeFileTool/projectToolConversation`，先定义模型可见的 schema、参数限制、服务端绑定 context 和结果 DTO；严禁让模型参数决定 actor/project/session 身份。执行前后沿用 assertToolAccess、文件/来源生命周期快照及引用核验，记录脱敏 ai_tool_calls；接入 tool transport 时同时考虑可支持的 provider 及 continuation checkpoint。新作业还需 API 参数冻结、job 类型/dispatcher、预算预留、Workflow 可恢复分支、幂等发布与失败结算。不要只写一个 fetch gateway 的 handler 就绕过持久执行和费用证据。
+读 `services/project-ai-tools.ts.projectToolDefinitions/executeFileTool/projectToolConversation`，先定义模型可见的 schema、参数限制、服务端绑定 context 和结果 DTO；严禁让模型参数决定 actor/project/session 身份。执行前后沿用 assertToolAccess、文件/来源生命周期快照及引用核验，记录脱敏 ai_tool_calls；接入 tool transport 时同时考虑可支持的 provider 及 continuation checkpoint。新作业还需 API 参数冻结、job 类型/dispatcher、并发槽位预占、Workflow 可恢复分支、幂等发布与调用留痕。不要只写一个 fetch gateway 的 handler 就绕过持久执行和审计证据。
 
 测试至少涵盖非法参数、非成员/撤权、跨项目文件、软删除后的输入、模型返回格式错误、工具多轮上限、执行恢复及结果重复发布；更新功能入口和契约后再做本地/线上边界明确的验证。
 
@@ -612,14 +610,14 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 | --- | --- | --- |
 | requestId | 某一次 HTTP 请求、响应错误与 request_failed 日志 | 一次点击可能创建长期 job，requestId 不等于 jobId |
 | jobId | jobs 与调用、预占、调查、工具审计关联 | jobs.attempts 不是模型调用次数 |
-| Workflow instance_id | 某一运行实例，首片为 jobId，后续为 jobId-sN | slice 是执行预算边界，不是新的业务任务 |
+| Workflow instance_id | 某一运行实例，首片为 jobId，后续为 jobId-sN | slice 是执行资源边界，不是新的业务任务 |
 | configVersionId / promptVersion | 模型配置快照 / 提示词语义版本 | 当前配置不自动替换过去输入 |
 | revision / graph_revision / lifecycle_version | 实体编辑 / 全图变更 / 删除恢复有效性 | 数据库迁移版本是 d1_migrations 的完整文件名 |
 | source / material / fixed version | 来源证据 / 成果文档 / 已保存不可变版本 | 草稿、总结、附件目录不等于已核验原文 |
 | read reference / decision reference | 实际读过的片段 / 对某项决定使用的依据 | 引文格式合法不证明语义判断正确 |
-| reserved / pending_reconcile | 在途预算预占 / 费用不确定待核对 | 请求失败不等于供应商未受理或免费 |
+| reserved / settled / released | 活动并发预占 / 已结束或已释放 | 终态任务不能继续占用活动槽位 |
 
-维护验证应形成可复核记录：本地安装和构建正常；登录及五组项目功能可定位到路由与 SQL；数据库字典验证通过并与目标环境迁移记录对齐；固定响应模型夹具能追踪排队、调用、报告和发布；并发编辑、撤权、回收站、pendingDispatch 及重复执行负向测试通过；发布只包含已核对的变更；线上资源和 API 状态有独立检查。真实模型费用、质量、设备推送与平台限制仍需单独验证，不能把本文的结构检查当成这些结果。
+维护验证应形成可复核记录：本地安装和构建正常；登录及五组项目功能可定位到路由与 SQL；数据库字典验证通过并与目标环境迁移记录对齐；固定响应模型夹具能追踪排队、调用、报告和发布；并发编辑、撤权、回收站、pendingDispatch 及重复执行负向测试通过；发布只包含已核对的变更；线上资源和 API 状态有独立检查。真实模型行为、质量、设备推送与平台限制仍需单独验证，不能把本文的结构检查当成这些结果。
 
 ## 20. 全表定位目录
 
@@ -651,7 +649,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 | 过程记录 | `events`, `comments` | events按(project,type,entity_type,entity_id,dedup_key)去重；comments按target_type/id定位，多态target不含FK。 |
 | 作业 | `jobs`, `job_outbox`, `ai_execution_slices`, `idempotency_records` | 业务任务、可靠派发、独立执行接力与HTTP请求去重；不能用一张表的状态替代全部执行证据。 |
 | AI配置 | `ai_config_versions`, `ai_probes`, `app_config` | 模型配置版本；probe复合PK(config_version_id,purpose)保存能力检查passed/report/tested_at；app_config按key保存应用级JSON与时间。 |
-| AI执行 | `ai_calls`, `usage_reservations`, `ai_investigations`, `ai_tool_calls`, `ai_diagnostics` | 调用证据、预算/并发预占、R2调查检查点索引、工具证据、有界无内容诊断。 |
+| AI执行 | `ai_calls`, `usage_reservations`, `ai_investigations`, `ai_tool_calls`, `ai_diagnostics` | 调用证据、并发预占、R2调查检查点索引、工具证据、有界无内容诊断。 |
 | 通知 | `notification_settings`, `notification_events`, `notification_inbox`, `push_subscriptions`, `notification_push_outbox` | 用户站内/Push开关、去重事件、每人已读状态、设备订阅与可靠网络发件箱。 |
 | 反馈工单 | `support_tickets`, `support_ticket_messages`, `support_ticket_images` | 私人工单→回复/状态记录/图片；ticket归owner，message归author；图片先reserve pending再R2上传ready，限制类型与1..5MB。 |
 
@@ -683,11 +681,11 @@ standardView 批量读取项目范围内的引用元数据与可用状态，源�
 
 ### AI 失败请求批量重试
 
-`0056/0057` 新增管理员批次、失败快照、后继映射和自动恢复队列。`cron` 分批执行 `recoverAdminAiRetries` 与 `recoverAutomaticAiRetries`，调用共同的业务恢复校验；并发槽位不足继续排队，预算/权限/输入失效则停止。管理员读取统计，超级管理员才能一键入队。`GET /jobs/{id}` 跟随后继，待自动恢复的失败尝试对逻辑请求呈现 queued 并附 retry 元数据，保留原始错误；数据库旧失败作业仍保持终态。详见仓库 `docs/AI-RETRIES.md` 与 `docs/GEMINI-VOICE-PLAN.md`，语音答辩已接入，文件转录仅Whisper；实时转录经Gateway、TTS使用系统本地语音，失败回退文字，真实模型验收仍需专用凭据。
+`0056/0057` 新增管理员批次、失败快照、后继映射和自动恢复队列。`cron` 分批执行 `recoverAdminAiRetries` 与 `recoverAutomaticAiRetries`，调用共同的业务恢复校验；并发槽位不足继续排队，权限/输入失效则停止。管理员读取统计，超级管理员才能一键入队。`GET /jobs/{id}` 跟随后继，待自动恢复的失败尝试对逻辑请求呈现 queued 并附 retry 元数据，保留原始错误；数据库旧失败作业仍保持终态。详见仓库 `docs/AI-RETRIES.md` 与 `docs/GEMINI-VOICE-PLAN.md`，语音答辩已接入，文件转录仅Whisper；实时转录经Gateway、TTS使用系统本地语音，失败回退文字，真实模型验收仍需专用凭据。
 
 ### 音频模型职责与语音答辩
 
-设置将 mediaUnderstanding 音视频理解、audioFileTranscription 固定 Whisper、realtimeAudioTranscription 专用实时模型、rehearsalSpeech 系统本地 TTS 和 processingStrategies 分开。新语音调用由后台保存凭据，浏览器只连接本项目 WebSocket，不发送项目材料给 ASR，也不让 TTS 出题，本地朗读不向合成服务器发送文字。语音失败切回文字，最终字幕保留，仍由用户核对并提交原 answers 接口；后台文字模型生成追问与评分。详见仓库 docs/GEMINI-VOICE-PLAN.md 的接口、权限、账目和真实验收边界。
+设置将 mediaUnderstanding 音视频理解、audioFileTranscription 固定 Whisper、realtimeAudioTranscription 专用实时模型、rehearsalSpeech 系统本地 TTS 和 processingStrategies 分开。新语音调用由后台保存凭据，浏览器只连接本项目 WebSocket，不发送项目材料给 ASR，也不让 TTS 出题，本地朗读不向合成服务器发送文字。语音失败切回文字，最终字幕保留，仍由用户核对并提交原 answers 接口；后台文字模型生成追问与评分。详见仓库 docs/GEMINI-VOICE-PLAN.md 的接口、权限和真实验收边界。
 ### 评分生成输出契约 v2 与错误透传
 
 standards.generate 使用严格 scoringStandardOutputSchema，只接受 methodSource 和 dimensions，维度只含 key/label/weight/citations。documented 必须引用实际读取的 source 固定片段，名称与原始分值逐字可验证，引用不得夹带其他原文；proposed 根据主目标生成总和100的权重，引用必须为空。服务端转换到兼容保存结构时 detail/notes 为空、category=scoring、日期为 null，原始分值按比例转换为百分比。scoringOnly 上下文只预载来源目录，仅暴露原文检索工具，不读取任务、反馈、旧标准或模型总结。引用批量补充原文件名和定位字段，前端 fromGenerated 保留并通过保存协议传回引用核心字段。scoringOutputVersion=2 阻止旧格式任务恢复或旧成功结果进入编辑器，不重放旧的已付费调查。

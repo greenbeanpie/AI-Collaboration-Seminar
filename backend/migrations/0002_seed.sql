@@ -12,8 +12,7 @@ VALUES (
       "timeoutMs": 60000,
       "maxInputChars": 48000,
       "supportsJson": true,
-      "supportsVision": false,
-      "pricePerMTokens": null
+      "supportsVision": false
     },
     "visionEconomy": {
       "provider": "workers-ai",
@@ -21,8 +20,7 @@ VALUES (
       "timeoutMs": 90000,
       "maxInputChars": 12000,
       "supportsJson": true,
-      "supportsVision": true,
-      "pricePerMTokens": null
+      "supportsVision": true
     },
     "review": {
       "provider": "workers-ai",
@@ -30,12 +28,11 @@ VALUES (
       "timeoutMs": 120000,
       "maxInputChars": 96000,
       "supportsJson": true,
-      "supportsVision": false,
-      "pricePerMTokens": null
+      "supportsVision": false
     }
   }',
   0,
-  '种子配置：中文/JSON/用量字段待能力探测验证；pricePerMTokens 为空表示费用未知（不填零）。正式模型（GLM 等）到位后新增版本。',
+  '种子配置：中文/JSON/用量字段待能力探测验证。正式模型（GLM 等）到位后新增版本。',
   'system',
   '2026-09-29T00:00:00.000Z'
 );

@@ -8,7 +8,7 @@ import { loadAiConfig } from '../ai/config';
 import { aiJsonCall } from './agent';
 import { calculateRubricWeightedTotal } from './collaboration-ai';
 import { getJob, failJob, succeedJob } from './jobs';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 import { assertRequirementSources, snapshotRequirementSources, sourceInputsGuard, snapshotSourceInputs, assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
 import { projectGoal, type Goal, type StandardSnapshot } from './project-simplification';
 

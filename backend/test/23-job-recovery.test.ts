@@ -193,14 +193,14 @@ describe('A07 model attempt replay boundary', () => {
       "INSERT INTO usage_reservations (id, project_id, job_id, purpose, attempts_started, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 1, ?4)",
     ).bind(newId(), projectId, jobId, nowIso()).run();
     await env.DB.prepare(
-      "INSERT INTO ai_calls (id, project_id, job_id, purpose, model, cost_usd, cost_status, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 'fixture', 0.25, 'known', ?4)",
+      "INSERT INTO ai_calls (id, project_id, job_id, purpose, model, created_at) VALUES (?1, ?2, ?3, 'textEconomy', 'fixture', ?4)",
     ).bind(newId(), projectId, jobId, nowIso()).run();
     const create = vi.fn();
     await handleScheduled(withWorkflow({ get: async () => { throw new Error('instance.not_found'); }, create }));
     expect((await getJob(env, jobId)).status).toBe('failed');
     expect((await getJob(env, jobId)).error_json).toContain('模型调用已开始');
-    const reservation = await env.DB.prepare('SELECT status, settled_cost FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string; settled_cost: number }>();
-    expect(reservation).toMatchObject({ status: 'settled', settled_cost: 0.25 });
+    const reservation = await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string }>();
+    expect(reservation).toEqual({ status: 'settled' });
     expect(create).not.toHaveBeenCalled();
     expect(await outboxStatus(jobId)).toBe('failed');
   });
@@ -215,8 +215,8 @@ describe('A07 model attempt replay boundary', () => {
     await handleScheduled(withWorkflow({ get: async () => { throw new Error('instance.not_found'); }, create }));
     expect((await getJob(env, jobId)).status).toBe('failed');
     expect(create).not.toHaveBeenCalled();
-    const reservation = await env.DB.prepare('SELECT status, settled_cost FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string; settled_cost: number | null }>();
-    expect(reservation).toMatchObject({ status: 'pending_reconcile', settled_cost: null });
+    const reservation = await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id = ?1').bind(jobId).first<{ status: string }>();
+    expect(reservation).toEqual({ status: 'settled' });
     expect(await outboxStatus(jobId)).toBe('failed');
   });
 

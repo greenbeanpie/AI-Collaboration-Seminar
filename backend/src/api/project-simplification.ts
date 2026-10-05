@@ -9,7 +9,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { createJobAndDispatch } from '../services/jobs';
 import { projectGoal, updateGoal, replaceTaskDependencies, saveStandard, standardView, type StandardRow, type StandardsInput } from '../services/project-simplification';
 import { assessmentInputs, assessmentView, scoringReportSchema, type AssessmentRow } from '../services/assessments';

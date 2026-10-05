@@ -7,7 +7,7 @@ import { LegacyCreateProjectPage } from './LegacyCreateProjectPage';
 import { cancelPageDialog } from '../dialogs/dialog-service';
 import { newCreationFile, readCreationDraft, writeCreationDraft, type CreationDraft } from './project-creation-workflow';
 
-const project = { id: 'p', name: '测试项目', description: '', deadlineDate: null, deadlinePrecision: 'unknown', status: 'active', aiBudgetUsd: null, revision: 1, myRole: 'owner', createdAt: '2026-10-01', updatedAt: '2026-10-01' };
+const project = { id: 'p', name: '测试项目', description: '', deadlineDate: null, deadlinePrecision: 'unknown', status: 'active', revision: 1, myRole: 'owner', createdAt: '2026-10-01', updatedAt: '2026-10-01' };
 const user = { id: 'alice', username: 'alice', displayName: 'Alice', email: null, isAdmin: false, role: 'user' };
 const capability = { features: { aiEnabled: false }, limits: { maxFileBytes: 1024 } };
 const response = (data: unknown) => Response.json({ data, requestId: 'fixture' });

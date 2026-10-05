@@ -7,7 +7,7 @@ import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
 import { loadAiConfig } from '../ai/config';
 import { failJob, getJob, succeedJob } from './jobs';
-import { settleReservation } from './budget';
+import { settleReservation } from './ai-reservations';
 import { recordEvent } from './events';
 import { z } from 'zod';
 import { runMaterialAssessmentJob } from './assessments';

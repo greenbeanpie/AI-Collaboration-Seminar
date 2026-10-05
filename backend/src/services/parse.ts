@@ -12,7 +12,7 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, succeedJob, waitJobInput, getJob } from './jobs';
-import { markAiCallStarted, reserveAiSlot, settleReservation } from './budget';
+import { markAiCallStarted, reserveAiSlot, settleReservation } from './ai-reservations';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
 import { aiJsonCall } from './agent';

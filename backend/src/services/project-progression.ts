@@ -2,7 +2,7 @@ import { currentProjectFeedback } from './project-feedback';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { loadAiConfig } from '../ai/config';
-import { reserveAiSlot, settleReservation } from './budget';
+import { reserveAiSlot, settleReservation } from './ai-reservations';
 import { createJobAndDispatch } from './jobs';
 import { projectGoal } from './project-simplification';
 import type { CollaborationAiInput } from './collaboration-ai';

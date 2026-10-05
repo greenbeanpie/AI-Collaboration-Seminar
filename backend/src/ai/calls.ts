@@ -22,18 +22,10 @@ export interface AiCallRecord {
   status: 'ok' | 'repaired' | 'invalid' | 'failed' | 'timeout';
 }
 
-/**
- * 记录每次模型调用：输入/输出快照存 R2，元数据落 D1。
- * 费用：pricePerMTokens 未配置 → cost_status='unknown'，不填零（PLAN 二.7）。
- */
+/** 记录模型调用、输入/输出快照、token 用量和执行状态。 */
 export async function recordAiCall(env: Env, params: AiCallRecord): Promise<string> {
   const config = await loadAiConfig(env.DB, params.configVersionId);
-  const price = config?.config[params.purpose].pricePerMTokens;
   const validTokens = (value: number | null): value is number => value !== null && Number.isSafeInteger(value) && value >= 0;
-  const calculated = price && validTokens(params.promptTokens) && validTokens(params.completionTokens)
-    ? (params.promptTokens * price[0] + params.completionTokens * price[1]) / 1_000_000 : null;
-  const known = !params.searchUsage && calculated !== null && Number.isFinite(calculated);
-  const cost = known ? calculated : null;
   const reservation = params.jobId ? await env.DB.prepare("SELECT id FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved' ORDER BY created_at DESC LIMIT 1").bind(params.jobId).first<{ id: string }>() : null;
   const id = newId();
   await recordAiDiagnostic(env, {
@@ -51,9 +43,9 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
   await env.DB.prepare(
     `INSERT INTO ai_calls (
        id, project_id, job_id, run_id, purpose, config_version_id, prompt_version, model,
-       input_r2_key, output_r2_key, prompt_tokens, completion_tokens, cost_usd, cost_status,
+       input_r2_key, output_r2_key, prompt_tokens, completion_tokens,
        status, latency_ms, created_at, reservation_id, draft_id, search_usage_json
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)`,
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)`,
   )
     .bind(
       id,
@@ -68,8 +60,6 @@ export async function recordAiCall(env: Env, params: AiCallRecord): Promise<stri
       outputKey,
       validTokens(params.promptTokens) ? params.promptTokens : null,
       validTokens(params.completionTokens) ? params.completionTokens : null,
-      cost,
-      known ? 'known' : 'unknown',
       params.status,
       Math.round(params.latencyMs),
       nowIso(),

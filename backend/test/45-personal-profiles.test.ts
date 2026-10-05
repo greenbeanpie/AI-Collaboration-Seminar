@@ -8,7 +8,7 @@ import { runCollaborationAiJob } from '../src/services/collaboration-ai';
 import { loadAiConfig } from '../src/ai/config';
 import { configureGoFixture } from './helpers/provider-config';
 import { applyProposal } from '../src/services/collaboration';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 
 const blank = { searchable:false,aiUseAllowed:false,bio:'private-bio-needle',major:'private-major-needle',specialties:'private-specialties-needle',preferredRoles:'private-role-needle',visibility:{bio:false,major:false,specialties:false,preferredRoles:false},expectedRevision:0 };
 const ownPath='/api/v1/auth/personal-profile';
@@ -69,7 +69,7 @@ async function assignmentFixture(allowed=true) {
 describe('private profile AI boundary',()=>{
  it('uses the unified frozen model while retaining private request and output protections',async()=>{
   const f=await assignmentFixture();
-  const merged={...f.config.config,routingMode:'unified',unified:{...f.config.config.textEconomy,model:'single-private-model',apiProtocol:'chat-completions',pricePerMTokens:[1,2]}};
+  const merged={...f.config.config,routingMode:'unified',unified:{...f.config.config.textEconomy,model:'single-private-model',apiProtocol:'chat-completions'}};
   await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(f.config.id,JSON.stringify(merged)).run();
   const resolved=(await loadAiConfig(env.DB,f.config.id))!;
   expect(resolved.config.textEconomy).toBe(resolved.config.unified);

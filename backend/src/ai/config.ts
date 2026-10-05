@@ -31,10 +31,6 @@ export const aiModelConfigSchema = z.object({
   reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   goUsageAcknowledged: z.boolean().optional(),
   goHeaders: z.object({ userAgent: z.string().max(100).optional(), sessionPrefix: z.string().max(32).optional() }).strict().optional(),
-  /** 每百万 token 价格 [输入 USD, 输出 USD]；null 表示未配置 → 费用记未知，不填零 */
-  mediaInputPricePerMTokens:z.object({audio:z.number().nonnegative().optional(),video:z.number().nonnegative().optional(),text:z.number().nonnegative().optional()}).optional(),
-  cachedInputPricePerMTokens:z.number().nonnegative().optional(),
-  pricePerMTokens: z.tuple([z.number().nonnegative(), z.number().nonnegative()]).nullable().default(null),
 });
 
 export const aiConfigSchema = z.object({

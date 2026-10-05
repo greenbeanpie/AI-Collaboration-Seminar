@@ -7,7 +7,7 @@ import { newId,nowIso,sha256Hex } from '../core/db';
 import { bridgeContextStampSql } from './agent-bridge-context';
 import { effectiveStandard } from './effective-standard';
 import { aiJsonCall } from './agent';
-import { reserveAiSlot,settleReservation } from './budget';
+import { reserveAiSlot,settleReservation } from './ai-reservations';
 import { createJobAndDispatch,failJob,getJob,succeedJob } from './jobs';
 
 const promptVersion='task-assistance-plan-v1';

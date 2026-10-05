@@ -12,11 +12,11 @@ mkdirSync(output,{recursive:true});
   try{for(const width of [1440,390]){
     const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],writes=[];
     page.on('pageerror',e=>errors.push(e.message));
-    const model={provider:'openai-compatible',providerPreset:'custom',model:'fixture-text',apiUrl:'https://model.example/v1/chat/completions',timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:true,pricePerMTokens:null,keyConfigured:true};
+    const model={provider:'openai-compatible',providerPreset:'custom',model:'fixture-text',apiUrl:'https://model.example/v1/chat/completions',timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:true,keyConfigured:true};
     const config={routingMode:'unified',textEconomy:model,visionEconomy:model,review:model,unified:model,
       audioFileTranscription:{provider:'workers-ai',model:'@cf/openai/whisper-large-v3-turbo'},
       processingStrategies:{audioFiles:'whisper-first',rehearsal:'text'},rehearsalSpeech:{provider:'system-local',lang:'zh-CN',rate:1,volume:1},
-      mediaUnderstanding:{...model,model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com'},mimoMediaUnderstanding:{...model,provider:'xiaomi-mimo',model:'mimo-v2.6-pro',apiUrl:'https://api.xiaomimimo.com/v1',cachedInputPricePerMTokens:.1},realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'fixture-voice',languageCodes:['zh-CN'],keyConfigured:true,gatewayTokenConfigured:true}};
+      mediaUnderstanding:{...model,model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com'},mimoMediaUnderstanding:{...model,provider:'xiaomi-mimo',model:'mimo-v2.6-pro',apiUrl:'https://api.xiaomimimo.com/v1'},realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'fixture-voice',languageCodes:['zh-CN'],keyConfigured:true,gatewayTokenConfigured:true}};
     await page.route('**/*',async route=>{
       const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();
       let data={items:[],nextCursor:null};

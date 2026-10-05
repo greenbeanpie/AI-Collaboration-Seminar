@@ -71,7 +71,7 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     else if(path.endsWith('/collaboration/decompose'))data={jobId:'55555555-5555-4555-8555-555555555555'};
     else if(path.endsWith('/jobs/scoring-fixture'))data={jobId:'scoring-fixture',status:'succeeded',result:{scoringOutputVersion:2,methodSource:'documented',draft:{title:'项目评分标准',notes:'',weights:[{key:'quality',label:'质量',weight:100}],requirements:[{title:'质量',detail:'',category:'scoring',dimensionKey:'quality',dueDate:null,duePrecision:'unknown',citations:[{sourceVersionId:'66666666-6666-4666-8666-666666666666',fragmentId:'frag',pageNumber:1,quote:'质量100分',fileName:'标准通知.pdf',fileId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}]}]}}};
     else if(path.startsWith('/api/v1/jobs/'))data={jobId:path.split('/').at(-1),status:'succeeded',attempts:1,feedbackSnapshot:state.feedback,createdAt:now,updatedAt:now};
-    else if(path.endsWith('/ai-tools/capabilities'))data={fileTools:true,search:{supported:false,reason:'管理员尚未启用互联网搜索'},searchCost:'unknown'};
+    else if(path.endsWith('/ai-tools/capabilities'))data={fileTools:true,search:{supported:false,reason:'管理员尚未启用互联网搜索'}};
     else if(path.endsWith('/ai/clarifications'))data={items:[]};
     else if(path.endsWith('/invitation-requests')){
       if(method==='POST')state.invitations.push({id:'invite-1',username:body.username,requestedBy:userId,status:'pending',revision:1,createdAt:now});

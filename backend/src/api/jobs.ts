@@ -9,7 +9,7 @@ import { requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied } from '../core/errors';
 import { getJob, tryDispatchJob } from '../services/jobs';
-import { reserveAiSlot, settleReservation } from '../services/budget';
+import { reserveAiSlot, settleReservation } from '../services/ai-reservations';
 import { assertProfileStamp } from '../services/personal-profiles';
 
 const jobParams = z.object({ jobId: z.string().uuid() });
@@ -108,7 +108,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     if (input.operation === 'source.summary') throw invalidState('请在文件总结状态中单独重试，以核对最新总结版本');
     if (input.operation === 'standards.generate') throw invalidState('请从项目标准重新生成，以核对当前目标和权限');
     if (input.operation === 'collaboration.evaluate') throw invalidState('每轮提交仅评价一次，请负责人验收或提交新的成果轮次');
-    if (typeof input.operation === 'string' && input.operation.startsWith('collaboration.')) throw invalidState('协作任务请从当前任务重新发起，以重新核对版本与预算');
+    if (typeof input.operation === 'string' && input.operation.startsWith('collaboration.')) throw invalidState('协作任务请从当前任务重新发起，以重新核对版本与并发额度');
     if(job.kind==='rehearsal_turn') {
       const rehearsal=await c.env.DB.prepare('SELECT created_by,processing_job_id,status FROM rehearsals WHERE id=?1 AND project_id=?2').bind(input.rehearsalId,job.project_id).first<{created_by:string;processing_job_id:string|null;status:string}>();
       if(!rehearsal || rehearsal.created_by!==c.get('user')!.id)throw permissionDenied('只有本轮发起人可以重试答辩');

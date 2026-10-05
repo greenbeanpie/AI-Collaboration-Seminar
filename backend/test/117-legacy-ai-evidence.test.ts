@@ -6,7 +6,7 @@ import { seedProject,seedUser,authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { createApp } from '../src/app';
 import { newId,nowIso } from '../src/core/db';
-import { reserveAiSlot } from '../src/services/budget';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { snapshotRequirementSources } from '../src/services/source-inputs';
 import { runReviewJob } from '../src/services/review';
 import { runRehearsalTurnJob } from '../src/services/rehearsal';

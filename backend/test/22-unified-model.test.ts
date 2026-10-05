@@ -4,7 +4,7 @@ import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
 import { loadAiConfig } from '../src/ai/config';
 import { gatewayChat } from '../src/ai/gateway';
-import { estimateCostUsd, withReservedAiJob } from '../src/services/budget';
+import { withReservedAiJob } from '../src/services/ai-reservations';
 import { seedProject, seedUser } from './helpers/seed';
 const headers = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
 const get = async () => (await (await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers })).json() as { data: { version: number; config: Record<string, any> } }).data;
@@ -24,35 +24,36 @@ describe('unified routing', () => {
     expect((await put({ ...read.config, searchEnabled: true, enabled: true, expectedVersion: read.version })).status).toBe(409);
     expect((await put({ ...read.config, enabled: true, expectedVersion: read.version })).status).toBe(201);
   });
-  it('uses unified pricing and retains finite-budget guards before creating work', async () => {
+  it('accepts configurations without price settings and preserves concurrency admission', async () => {
     const current = await get();
     const owner = await seedUser();
     const projectId = await seedProject(owner.userId);
-    await env.DB.prepare('UPDATE projects SET ai_budget_usd = 100 WHERE id = ?1').bind(projectId).run();
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
     for (const provider of ['workers-ai', 'openai-compatible']) {
-      const unified = { ...current.config.textEconomy, provider, pricePerMTokens: provider === 'workers-ai' ? null : [2, 4] };
+      const unified = { ...current.config.textEconomy, provider };
       expect((await put({ ...current.config, routingMode: 'unified', unified })).status).toBe(201);
       const runtime = (await loadAiConfig(env.DB))!;
-      expect(estimateCostUsd(runtime, 'textEconomy')).toBe(estimateCostUsd(runtime, 'visionEconomy'));
-      expect(estimateCostUsd(runtime, 'review')).toBe(estimateCostUsd(runtime, 'textEconomy'));
-      if (provider !== 'workers-ai') expect(estimateCostUsd(runtime, 'review')).toBeGreaterThan(0);
-      const create = vi.fn();
-      await expect(withReservedAiJob(env, { projectId, purpose: 'review_run' }, create)).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
-      expect(create).not.toHaveBeenCalled();
+      for (const purpose of ['unified', 'textEconomy', 'visionEconomy', 'review'] as const) {
+      expect(runtime.config[purpose]).not.toHaveProperty('pricePerMTokens');
+      expect(runtime.config[purpose]).not.toHaveProperty('cachedInputPricePerMTokens');
+      expect(runtime.config[purpose]).not.toHaveProperty('mediaInputPricePerMTokens');
+      }
+      const create = vi.fn(async () => 'created');
+      await expect(withReservedAiJob(env, { projectId, purpose: 'review_run' }, create)).resolves.toBe('created');
+      expect(create).toHaveBeenCalledOnce();
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it('preserves drafts and frozen versions while resolving all runtime purposes and prices', async () => {
+  it('preserves drafts and frozen versions while resolving all runtime purposes without money fields', async () => {
     const old = (await loadAiConfig(env.DB))!;
     const current = await get();
-    expect((await put({ ...current.config, routingMode: 'unified', unified: { ...current.config.textEconomy, model: 'one-model', pricePerMTokens: [3, 7] }, expectedVersion: current.version })).status).toBe(201);
+    expect((await put({ ...current.config, routingMode: 'unified', unified: { ...current.config.textEconomy, model: 'one-model' }, expectedVersion: current.version })).status).toBe(201);
     const raw = (await loadAiConfig(env.DB, undefined, false))!;
     const runtime = (await loadAiConfig(env.DB))!;
     expect(raw.config.textEconomy.model).toBe(old.config.textEconomy.model);
     for (const purpose of ['textEconomy', 'visionEconomy', 'review'] as const) {
       expect(runtime.config[purpose]).toBe(runtime.config.unified);
-      expect(runtime.config[purpose].pricePerMTokens).toEqual([3, 7]);
+      expect(runtime.config[purpose]).not.toHaveProperty('pricePerMTokens');
     }
     expect((await loadAiConfig(env.DB, old.id))!.config.textEconomy.model).toBe(old.config.textEconomy.model);
     const read = await get();

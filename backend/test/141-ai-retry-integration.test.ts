@@ -5,7 +5,7 @@ import { seedUser, seedProject, authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { newId, nowIso } from '../src/core/db';
 import { failJob } from '../src/services/jobs';
-import { settleReservation } from '../src/services/budget';
+import { settleReservation } from '../src/services/ai-reservations';
 import { retryFailedAiJob } from '../src/services/admin-ai-retries';
 import { recoverAutomaticAiRetries } from '../src/services/ai-automatic-retries';
 import { AppError } from '../src/core/errors';

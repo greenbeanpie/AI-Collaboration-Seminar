@@ -8,7 +8,7 @@ import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { invalidState, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { createJobAndDispatch } from '../services/jobs';
 import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';

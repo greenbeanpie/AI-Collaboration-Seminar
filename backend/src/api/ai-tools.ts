@@ -38,22 +38,18 @@ export function registerAiToolRoutes(app: OpenAPIHono<AppEnv>) {
             schema: apiEnvelope(z.object({
               fileTools: z.boolean(), search: z.object({
                 supported: z.boolean(), reason: z.string()
-              }), searchCost: z.literal('unknown')
+              })
             }), 'ProjectAiToolsResponse')
           }
         }
       }
     }
   }), async (c) => {
-    const cfg = await loadAiConfig(c.env.DB), project = await c.env.DB.prepare('SELECT ai_budget_usd FROM projects WHERE id=?1').bind(c.get('member')!.projectId).first<{
-      ai_budget_usd: number | null;
-    }>();
+    const cfg = await loadAiConfig(c.env.DB);
     return c.json(apiData(c, {
-      fileTools: Boolean(cfg?.enabled), search: project?.ai_budget_usd != null ? {
-        supported: false, reason: '有限金额预算无法保证供应商搜索附加费用上界；当前项目搜索不可用'
-      } : cfg?.enabled && cfg.config.searchEnabled === true ? nativeSearchCapability(cfg.config.textEconomy) : {
+      fileTools: Boolean(cfg?.enabled), search: cfg?.enabled && cfg.config.searchEnabled === true ? nativeSearchCapability(cfg.config.textEconomy) : {
         supported: false, reason: cfg?.enabled ? '管理员尚未启用互联网搜索' : '系统 AI 未启用'
-      }, searchCost: 'unknown' as const
+      }
     }), 200);
   });
   app.openapi(createRoute({

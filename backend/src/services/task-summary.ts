@@ -5,7 +5,7 @@ import { AppError, invalidState, notFound, permissionDenied } from '../core/erro
 import { newId, nowIso, sha256Hex } from '../core/db';
 import type { CollaborationTask } from './collaboration';
 import { aiJsonCall } from './agent';
-import { reserveAiSlot, settleReservation } from './budget';
+import { reserveAiSlot, settleReservation } from './ai-reservations';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
 
 export const taskSummarySchema = z.object({
@@ -47,7 +47,7 @@ export async function enqueueTaskSummary(env: Env, projectId: string, taskId: st
   const config = await enabled(env,projectId);
   if (!config) return {...current,summaryStatus:'disabled'};
   const jobId = newId();
-  // Claim before budget reservation: competing requests never reserve a second call.
+  // Claim before concurrency reservation: competing requests never reserve a second call.
   const claim = await env.DB.prepare(`INSERT INTO task_summaries(project_id,task_id,source_hash,status,job_id,updated_at) VALUES(?1,?2,?3,'queued',?4,?5)
     ON CONFLICT(project_id,task_id,source_hash) DO UPDATE SET status='queued',summary=NULL,job_id=excluded.job_id,updated_at=excluded.updated_at
     WHERE ?6=1 AND (task_summaries.status='failed' OR EXISTS(SELECT 1 FROM jobs WHERE id=task_summaries.job_id AND status IN ('failed','cancelled')) OR (task_summaries.updated_at<?7 AND NOT EXISTS(SELECT 1 FROM jobs WHERE id=task_summaries.job_id)))`)

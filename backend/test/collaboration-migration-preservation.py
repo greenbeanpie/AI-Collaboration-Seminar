@@ -19,7 +19,7 @@ db.execute("INSERT INTO material_versions(id,material_id,project_id,revision,doc
 db.execute("INSERT INTO comments(id,project_id,target_type,target_id,author_id,body,created_at) VALUES('comment','project','task','task','owner','Retain comment',?)", (now,))
 db.execute("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES('job','project','agent_run','succeeded','{}',1,'owner',?,?)", (now, now))
 db.execute("INSERT INTO job_outbox(id,job_id,status,available_at,attempts,created_at,updated_at) VALUES('outbox','job','done',?,1,?,?)", (now, now, now))
-db.execute("INSERT INTO usage_reservations(id,project_id,job_id,purpose,estimated_cost,status,created_at,attempts_started) VALUES('reservation','project','job','agent_run',0.02,'pending_reconcile',?,1)", (now,))
+db.execute("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,created_at,attempts_started) VALUES('reservation','project','job','agent_run','reserved',?,1)", (now,))
 db.execute("INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) VALUES('event','project','user','owner','fixture','task','task','preserve','{}',?)", (now,))
 db.execute("INSERT INTO task_links(id,task_id,project_id,kind,target_id,created_at) VALUES('link','task','project','material','material',?)", (now,))
 

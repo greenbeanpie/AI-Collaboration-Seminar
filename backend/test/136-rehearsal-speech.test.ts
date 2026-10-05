@@ -5,7 +5,7 @@ import { newId, nowIso } from '../src/core/db';
 import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
 import { createApp } from '../src/app';
-import { reserveAiSlot, markAiCallStarted } from '../src/services/budget';
+import { reserveAiSlot, markAiCallStarted } from '../src/services/ai-reservations';
 import { recordAiCall } from '../src/ai/calls';
 import { geminiSpeech, inspectSpeechWav } from '../src/ai/gemini-tts';
 import { enqueueRehearsalSpeech, readRehearsalSpeechAudio, runRehearsalSpeechJob, retireCloudRehearsalSpeechJobs, readRehearsalSpeech } from '../src/services/rehearsal-speech';
@@ -88,18 +88,13 @@ describe('retired cloud speech and preserved historical artifacts',()=>{
    expect((await env.DB.prepare("UPDATE rehearsal_speech SET status='ready' WHERE id=?1 AND status='running' AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))").bind(old.speechId,old.jobId).run()).meta.changes).toBe(0);
   }expect(request).not.toHaveBeenCalled();
  });
- it('retirement retains unknown paid calls and missing-result attempts as pending_reconcile',async()=>{
+ it('retirement closes the reservation for failed or missing call results',async()=>{
   const f=await fixture(),old=await historical(f,'running');await markAiCallStarted(f.local,old.jobId);
   await recordAiCall(f.local,{projectId:f.projectId,jobId:old.jobId,purpose:'review',configVersionId:old.configId,promptVersion:'rehearsal-tts-v1',model:input.model,input:{historical:true},output:{error:'timeout'},promptTokens:null,completionTokens:null,latencyMs:1,status:'timeout'});
   await runRehearsalSpeechJob(f.local,old.jobId);
-  expect(await env.DB.prepare('SELECT status,settled_cost FROM usage_reservations WHERE job_id=?1').bind(old.jobId).first()).toEqual({status:'pending_reconcile',settled_cost:null});
-  expect(await env.DB.prepare('SELECT model,cost_status,cost_usd FROM ai_calls WHERE job_id=?1').bind(old.jobId).first()).toEqual({model:input.model,cost_status:'unknown',cost_usd:null});
-  const second=await historical(await fixture(),'running');await markAiCallStarted(f.local,second.jobId);await runRehearsalSpeechJob(f.local,second.jobId);expect(await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(second.jobId).first()).toEqual({status:'pending_reconcile'});
- });
- it('retirement settles known historical charges without discarding cost or replaying the request',async()=>{
-  const f=await fixture(),old=await historical(f,'running'),snapshot=await env.DB.prepare('SELECT config_json FROM ai_config_versions WHERE id=?1').bind(old.configId).first<{config_json:string}>(),raw=JSON.parse(snapshot!.config_json);raw.review.pricePerMTokens=[1,1];await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(old.configId,JSON.stringify(raw)).run();
-  await markAiCallStarted(f.local,old.jobId);await recordAiCall(f.local,{projectId:f.projectId,jobId:old.jobId,purpose:'review',configVersionId:old.configId,promptVersion:'rehearsal-tts-v1',model:input.model,input:{historical:true},output:{historical:true},promptTokens:10,completionTokens:20,latencyMs:1,status:'ok'});
-  await runRehearsalSpeechJob(f.local,old.jobId);const paid=await env.DB.prepare('SELECT status,settled_cost FROM usage_reservations WHERE job_id=?1').bind(old.jobId).first<{status:string;settled_cost:number}>();expect(paid!.status).toBe('settled');expect(paid!.settled_cost).toBeCloseTo(0.00003,8);expect((await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls WHERE job_id=?1').bind(old.jobId).first<{n:number}>())!.n).toBe(1);
+  expect(await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(old.jobId).first()).toEqual({status:'settled'});
+  expect(await env.DB.prepare('SELECT model,prompt_tokens,completion_tokens FROM ai_calls WHERE job_id=?1').bind(old.jobId).first()).toEqual({model:input.model,prompt_tokens:null,completion_tokens:null});
+  const second=await historical(await fixture(),'running');await markAiCallStarted(f.local,second.jobId);await runRehearsalSpeechJob(f.local,second.jobId);expect(await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(second.jobId).first()).toEqual({status:'settled'});
  });
  it('keeps ready audio private and readable with score permission revoked, while outsiders and withdrawn members cannot read',async()=>{
   const f=await fixture(),old=await historical(f,'ready'),request=vi.fn();vi.stubGlobal('fetch',request);await runRehearsalSpeechJob(f.local,old.jobId);

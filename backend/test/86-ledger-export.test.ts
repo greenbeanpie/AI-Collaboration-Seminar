@@ -55,7 +55,7 @@ describe('活动历史与导出', () => {
         requirementSets: Array<{ requirementSetId: string; status: string; requirements: Array<{ requirementId: string; citations: Array<{ fragmentId: string }> }> }>;
         rubricVersions: Array<{ rubricId: string; status: string; weights: Array<{ key: string; weight: number }> }>;
         tasks: unknown[];
-        aiUsage: { calls: number; costStatus: string };
+        aiUsage: { calls: number; promptTokens: number; completionTokens: number };
       };
     };
     for (const key of ['decisions', 'contributions', 'resources']) expect(bundleBody.data).not.toHaveProperty(key);
@@ -76,6 +76,6 @@ describe('活动历史与导出', () => {
       confirmedAt: createdAt,
       createdAt,
     }]);
-    expect(bundleBody.data.aiUsage.costStatus).toBe('unknown');
+    expect(bundleBody.data.aiUsage).not.toHaveProperty('costStatus');
   });
 });

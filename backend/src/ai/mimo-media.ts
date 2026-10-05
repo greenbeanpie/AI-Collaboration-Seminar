@@ -17,7 +17,6 @@ export interface MimoMediaResult {
   audioTokens: number | null;
   videoTokens: number | null;
 }
-
 export function validateMimoMediaModel(model: AiModelConfig): void {
   if (model.provider !== 'xiaomi-mimo' || model.model !== MIMO_MEDIA_MODEL) throw validationFailed('MiMo 音视频模型必须为小米官方 mimo-v2.6-pro');
   if (model.apiUrl && model.apiUrl.replace(/\/$/, '') !== MIMO_MEDIA_ENDPOINT) throw validationFailed('MiMo 音视频端点必须为 https://api.xiaomimimo.com/v1');
@@ -116,15 +115,4 @@ export class MimoMediaClient {
     const usage = record(data.usage), details = record(usage.prompt_tokens_details);
     return { summary, promptTokens: tokens(usage.prompt_tokens), completionTokens: tokens(usage.completion_tokens), cachedTokens: tokens(details.cached_tokens), audioTokens: tokens(details.audio_tokens), videoTokens: tokens(details.video_tokens) };
   }
-}
-
-/** All prices are explicitly configured USD prices; missing usage is never estimated. */
-export function mimoMediaCost(model: AiModelConfig & { cachedInputPricePerMTokens?: number }, usage: MimoMediaResult): number | null {
-  const prompt = tokens(usage.promptTokens), completion = tokens(usage.completionTokens), cached = tokens(usage.cachedTokens);
-  if (prompt === null || completion === null || cached === null || cached > prompt || !model.pricePerMTokens) return null;
-  const [inputPrice, outputPrice] = model.pricePerMTokens;
-  const cachePrice = model.cachedInputPricePerMTokens;
-  if (!Number.isFinite(inputPrice) || inputPrice < 0 || !Number.isFinite(outputPrice) || outputPrice < 0 || (cached > 0 && (cachePrice === undefined || !Number.isFinite(cachePrice) || cachePrice < 0))) return null;
-  const cost = ((prompt - cached) * inputPrice + cached * (cachePrice ?? 0) + completion * outputPrice) / 1e6;
-  return Number.isFinite(cost) ? cost : null;
 }

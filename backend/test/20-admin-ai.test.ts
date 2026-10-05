@@ -56,7 +56,6 @@ describe('AI 配置版本化', () => {
           maxInputChars: 48000,
           supportsJson: true,
           supportsVision: false,
-          pricePerMTokens: null,
         },
         visionEconomy: {
           provider: 'workers-ai',
@@ -65,7 +64,6 @@ describe('AI 配置版本化', () => {
           maxInputChars: 12000,
           supportsJson: true,
           supportsVision: true,
-          pricePerMTokens: null,
         },
         review: {
           provider: 'workers-ai',
@@ -74,7 +72,6 @@ describe('AI 配置版本化', () => {
           maxInputChars: 96000,
           supportsJson: true,
           supportsVision: false,
-          pricePerMTokens: null,
         },
         enabled: true,
         notes: '测试启用',
@@ -116,7 +113,7 @@ describe('AI 能力探测', () => {
     const changed = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...loaded, textEconomy: { ...loaded.textEconomy, model: 'changed' }, enabled: true }) });
     expect(changed.status).toBe(409);
   });
-  it('模型正常时四项检查通过，并记录 ai_calls（费用未知）', async () => {
+  it('模型正常时四项检查通过，并记录 ai_calls 与 token 用量', async () => {
     const beforeCalls = await env.DB.prepare('SELECT COUNT(*) AS n FROM ai_calls').first<{ n: number }>();
     const mock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
@@ -160,11 +157,11 @@ describe('AI 能力探测', () => {
     });
     expect(mock).toHaveBeenCalled();
 
-    const calls = await env.DB.prepare('SELECT cost_usd, cost_status FROM ai_calls').all<{ cost_usd: number | null; cost_status: string }>();
+    const calls = await env.DB.prepare('SELECT prompt_tokens, completion_tokens FROM ai_calls').all<{ prompt_tokens: number | null; completion_tokens: number | null }>();
     expect(calls.results.length).toBe((beforeCalls?.n ?? 0) + 2); // 中文 + JSON 两次真实调用记录
     for (const row of calls.results) {
-      expect(row.cost_usd).toBeNull();
-      expect(row.cost_status).toBe('unknown');
+      expect(row.prompt_tokens).toBeGreaterThan(0);
+      expect(row.completion_tokens).toBeGreaterThan(0);
     }
   });
 

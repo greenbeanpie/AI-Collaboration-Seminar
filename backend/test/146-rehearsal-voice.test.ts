@@ -21,7 +21,7 @@ async function fixture() {
   await env.DB.prepare("INSERT INTO rehearsal_turns(id,rehearsal_id,project_id,sequence,kind,content_json,created_at) VALUES(?1,?2,?3,1,'question','{\"content\":\"已经由文字模型生成的问题\"}',?4)").bind(newId(),rehearsalId,projectId,now).run();
   return {owner,cfg,binding:{projectId,rehearsalId,actorId:owner.userId}};
 }
-async function row(id:string) { return env.DB.prepare('SELECT * FROM rehearsal_voice_sessions WHERE id=?1').bind(id).first<{status:string;transcript_text:string;retry_number:number;cost_usd:number|null;audio_frames:number}>(); }
+async function row(id:string) { return env.DB.prepare('SELECT * FROM rehearsal_voice_sessions WHERE id=?1').bind(id).first<{status:string;transcript_text:string;retry_number:number;audio_frames:number}>(); }
 const audio={type:'audio',sequence:1,data:btoa('\x01\x00'.repeat(1600))};
 async function socketFixture() {
   const f=await fixture(),session=await createRehearsalVoiceSession(env,f.binding,{sequence:1});
@@ -59,20 +59,21 @@ describe('private Gemini Transcribe Live rehearsal ASR',()=>{
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({redirect:'manual',headers:{Upgrade:'websocket','cf-aig-authorization':'Bearer fixture-gateway-secret','cf-aig-collect-log':'false'}});
     expect(guard).toHaveBeenCalledTimes(1);ws.close();pair[1].close();
   });
-  it('returns readiness without secrets, rejects finite budgets and restricts recording to the initiator',async()=>{
+  it('returns readiness without secrets and restricts recording to the initiator',async()=>{
     const f=await fixture();expect(await readRehearsalVoice(env,f.binding)).toMatchObject({configured:true,ready:true,mode:'voice-with-text-fallback'});
     expect(JSON.stringify(await readRehearsalVoice(env,f.binding))).not.toMatch(/secret|Encrypted|gatewayId/);
     const other=await seedUser();await expect(createRehearsalVoiceSession(env,{...f.binding,actorId:other.userId},{sequence:1})).rejects.toThrow('发起人');
-    await env.DB.prepare('UPDATE projects SET ai_budget_usd=10 WHERE id=?1').bind(f.binding.projectId).run();
-    expect(await readRehearsalVoice(env,f.binding)).toMatchObject({ready:false});
-    await expect(createRehearsalVoiceSession(env,f.binding,{sequence:1})).rejects.toThrow('金额预算');
+    expect(await readRehearsalVoice(env,f.binding)).toMatchObject({ready:true});
+    const session=await createRehearsalVoiceSession(env,f.binding,{sequence:1});
+    expect(session.sessionId).toBeTruthy();
+    await closeRehearsalVoiceSession(env,f.binding,session.sessionId);
   });
   it('claims a unique active session and one shared project concurrency slot atomically',async()=>{
     const f=await fixture();const results=await Promise.allSettled([createRehearsalVoiceSession(env,f.binding,{sequence:1}),createRehearsalVoiceSession(env,f.binding,{sequence:1})]);
     expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
     const session=(results.find(r=>r.status==='fulfilled') as PromiseFulfilledResult<{sessionId:string}>).value;
-    const reservation=await env.DB.prepare("SELECT status,settled_cost FROM usage_reservations WHERE job_id=?1").bind(session.sessionId).first<{status:string;settled_cost:number|null}>();
-    expect(reservation).toEqual({status:'reserved',settled_cost:null});
+    const reservation=await env.DB.prepare("SELECT status FROM usage_reservations WHERE job_id=?1").bind(session.sessionId).first<{status:string}>();
+    expect(reservation).toEqual({status:'reserved'});
     await closeRehearsalVoiceSession(env,f.binding,session.sessionId);await closeRehearsalVoiceSession(env,f.binding,session.sessionId);
     expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(session.sessionId).first<{status:string}>())?.status).toBe('released');
   });
@@ -93,9 +94,9 @@ describe('private Gemini Transcribe Live rehearsal ASR',()=>{
     f.provider.send(JSON.stringify({serverContent:{interimInputTranscription:{text:'临时'}}}));
     f.provider.send(JSON.stringify({serverContent:{inputTranscription:{text:'核对后才提交'},turnComplete:true}}));
     await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('succeeded'));
-    expect(await row(f.session.sessionId)).toMatchObject({transcript_text:'核对后才提交',cost_usd:null,audio_frames:1});
+    expect(await row(f.session.sessionId)).toMatchObject({transcript_text:'核对后才提交',audio_frames:1});
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM rehearsal_turns WHERE rehearsal_id=?1 AND kind=\'answer\'').bind(f.binding.rehearsalId).first<{n:number}>())?.n).toBe(0);
-    expect((await env.DB.prepare('SELECT status,settled_cost FROM usage_reservations WHERE job_id=?1').bind(f.session.sessionId).first())).toEqual({status:'pending_reconcile',settled_cost:null});
+    expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(f.session.sessionId).first())).toEqual({status:'settled'});
     expect(f.events).toContainEqual({type:'final',text:'核对后才提交',sequence:2});f.browser.close();
   });
   it('closes on revoked membership and retains unknown cost without sending the next audio chunk',async()=>{

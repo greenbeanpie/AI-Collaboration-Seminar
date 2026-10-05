@@ -36,7 +36,7 @@ export function ocrBatchSize(pages: Array<{ page_number: number; size_bytes?: nu
     if (bytes + next > bodyBudget) break;
     bytes += next; count++;
   }
-  if (!count) throw new AppError('QUOTA_EXCEEDED', '单张页面图超过当前模型请求预算，请降低图片大小或调整模型输入预算', 422, false);
+  if (!count) throw new AppError('QUOTA_EXCEEDED', '单张页面图片超过当前模型请求大小限制，请降低图片大小', 422, false);
   return count;
 }
 export function removeOcrDuplicates(text: string, existing: string[]): string {

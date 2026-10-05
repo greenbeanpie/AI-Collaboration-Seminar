@@ -77,10 +77,6 @@ describe('independent bounded task summaries',()=>{
     const a=await f.start(),provider=model();await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1').bind(f.projectId).run();
     await runTaskSummaryJob(env,a.summaryJobId!);expect(provider).not.toHaveBeenCalled();expect((await getJob(env,a.summaryJobId!)).status).toBe('failed');
   });
-  it('rejects exhausted budget and records failure without retry loops',async()=>{
-    const f=await fixture(),provider=model();await env.DB.prepare('UPDATE projects SET ai_budget_usd=0 WHERE id=?1').bind(f.projectId).run();
-    await expect(f.start()).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});expect((await f.read()).summaryStatus).toBe('failed');expect(provider).not.toHaveBeenCalled();
-  });
   it('rejects configuration changes while a provider result is pending',async()=>{
     const f=await fixture(),a=await f.start();model('采集真实样本。',async()=>{await env.DB.prepare('UPDATE ai_config_versions SET enabled=0').run();});
     await runTaskSummaryJob(env,a.summaryJobId!);expect((await getJob(env,a.summaryJobId!)).status).toBe('failed');

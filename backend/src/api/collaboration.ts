@@ -20,7 +20,7 @@ import { newId, nowIso } from '../core/db';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
 import { withIdempotency } from '../services/idempotency';
-import { withReservedAiJob } from '../services/budget';
+import { withReservedAiJob } from '../services/ai-reservations';
 import { createJobAndDispatch } from '../services/jobs';
 import { applyProposal, reviseProposal, audit, decideSubmission, owner, toCollaborationTask, toProposal, toSubmission, type CollaborationTask, type Proposal, type Submission } from '../services/collaboration';
 import { projectParams } from './projects';
