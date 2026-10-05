@@ -6,6 +6,48 @@ import { AiSettings } from './AiSettings';
 async function setup(admin = true, advanced = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); if (admin) await waitFor(() => expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled()); if (advanced && admin) fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } }); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it('keeps Gemini and MiMo keys independent, saves MiMo drafts without switching routes, then persists explicit routes', async () => {
+  const writes: Record<string, unknown>[] = [];
+  const media = { ...savedModel, model: 'gemini-2.5-flash', apiUrl: 'https://generativelanguage.googleapis.com' };
+  const mimo = { ...savedModel, provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiUrl: 'https://api.xiaomimimo.com/v1', pricePerMTokens: [1, 2], cachedInputPricePerMTokens: .1 };
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'GET' ? Response.json({ data: { version: 8, enabled: true, config: { ...savedConfig, mediaUnderstanding: media, mimoMediaUnderstanding: mimo } } }) : (writes.push(JSON.parse(String(init?.body))), Response.json({ data: { version: 8 + writes.length, enabled: true } }))));
+  await setup(true, false);
+  expect(screen.getByLabelText(/音频文件处理策略/)).toHaveValue('whisper-first');
+  expect(screen.getByLabelText(/视频文件处理策略/)).toHaveValue('gemini');
+  expect(screen.getByLabelText('MiMo 模型')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('MiMo 官方端点')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText(/^MiMo API key/)).toHaveValue('');
+  fireEvent.change(screen.getByLabelText('MiMo 超时（毫秒）'), { target: { value: '120000' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 保持启用。');
+  expect(writes[0]).toMatchObject({ processingStrategies: { audioFiles: 'whisper-first' }, mediaUnderstanding: { model: media.model, apiKey: '' }, mimoMediaUnderstanding: { model: mimo.model, apiKey: '', timeoutMs: 120000, cachedInputPricePerMTokens: .1 }, clearMimoMediaUnderstanding: false });
+  fireEvent.change(screen.getByLabelText(/音频文件处理策略/), { target: { value: 'mimo-only' } });
+  fireEvent.change(screen.getByLabelText(/视频文件处理策略/), { target: { value: 'mimo' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(writes[1]).toMatchObject({ processingStrategies: { audioFiles: 'mimo-only', videoFiles: 'mimo' }, audioProcessingStrategy: 'whisper-first', mimoMediaUnderstanding: { apiKey: '', keyConfigured: true } });
+  expect(localStorage.length).toBe(0);
+});
+
+it('saves an incomplete MiMo draft, probes metadata only after saving, and explicitly removes its configuration', async () => {
+  const writes: Record<string, unknown>[] = []; const urls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    urls.push(url);
+    if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: true, config: savedConfig } });
+    if (url.endsWith('/mimo-media-probe')) return Response.json({ data: { passed: true, detail: 'MiMo 元数据通过' } });
+    writes.push(JSON.parse(String(init?.body))); return Response.json({ data: { version: 8 + writes.length, enabled: true } });
+  }));
+  await setup(true, false); fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型'));
+  expect(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await screen.findByText('配置已保存，AI 保持启用。');
+  expect(writes[0]).toMatchObject({ mimoMediaUnderstanding: { provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiKey: '' }, processingStrategies: { audioFiles: 'whisper-first' } });
+  fireEvent.click(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })); await screen.findByText('MiMo 元数据通过');
+  expect(urls.filter(url => url.endsWith('/mimo-media-probe'))).toHaveLength(1);
+  expect(screen.getByText(/不代表音频识别质量或视频理解已验证/)).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型')); fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(writes).toHaveLength(2)); expect(writes[1]).toMatchObject({ clearMimoMediaUnderstanding: true }); expect(writes[1]).not.toHaveProperty('mimoMediaUnderstanding');
+});
+
 it('defaults legacy audio strategy to Whisper and saves strategy independently without paid probes', async () => {
   const calls:Record<string,unknown>[]=[];
   vi.stubGlobal('fetch', vi.fn(async (_url:string,init?:RequestInit) => {

@@ -10,7 +10,7 @@ export const realtimeAudioTranscriptionSchema = z.object({provider:z.literal(REA
 export const rehearsalSpeechSchema = z.object({provider:z.literal('system-local'),lang:z.string().max(64).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/).default('zh-CN'),rate:z.number().min(0.5).max(2).default(1),volume:z.number().min(0).max(1).default(1)}).strict();
 // Frozen cloud configuration remains readable for accounting and historical artifacts.
 const historicalRehearsalSpeechSchema=z.object({model:z.enum(['gemini-3.8-flash-lite-tts','gemini-3.8-flash-tts']),voice:z.enum(['Kore','Aoede','Puck'])}).strict().transform(()=>({...DEFAULT_REHEARSAL_SPEECH}));
-export const processingStrategiesSchema = z.object({audioFiles:z.enum(['whisper-first','media-only']),rehearsal:z.enum(['text','voice-with-text-fallback'])}).strict();
+export const processingStrategiesSchema = z.object({audioFiles:z.enum(['whisper-first','media-only','mimo-only']),videoFiles:z.enum(['gemini','mimo']).optional(),rehearsal:z.enum(['text','voice-with-text-fallback'])}).strict();
 
 export type AiPurpose = 'textEconomy' | 'visionEconomy' | 'review';
 
@@ -36,6 +36,7 @@ export const aiModelConfigSchema = z.object({
   goHeaders: z.object({ userAgent: z.string().max(100).optional(), sessionPrefix: z.string().max(32).optional() }).strict().optional(),
   /** 每百万 token 价格 [输入 USD, 输出 USD]；null 表示未配置 → 费用记未知，不填零 */
   mediaInputPricePerMTokens:z.object({audio:z.number().nonnegative().optional(),video:z.number().nonnegative().optional(),text:z.number().nonnegative().optional()}).optional(),
+  cachedInputPricePerMTokens:z.number().nonnegative().optional(),
   pricePerMTokens: z.tuple([z.number().nonnegative(), z.number().nonnegative()]).nullable().default(null),
 });
 
@@ -53,6 +54,7 @@ export const aiConfigSchema = z.object({
   review: aiModelConfigSchema,
   // Native Google media processing is independent of text/image routing.
   mediaUnderstanding: aiModelConfigSchema.optional(),
+  mimoMediaUnderstanding: aiModelConfigSchema.optional(),
 }).refine(c => c.routingMode !== 'unified' || Boolean(c.unified), { message: 'Unified mode requires a model', path: ['unified'] });
 
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;

@@ -112,6 +112,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/media-fetch/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 活动 MiMo 任务的短期签名媒体读取 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 媒体流或元数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 媒体字节范围 */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 授权失效 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 字节范围不可满足 */
+                416: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** 活动 MiMo 任务的短期签名媒体读取 */
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 媒体流或元数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 媒体字节范围 */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 授权失效 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 字节范围不可满足 */
+                416: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/challenges": {
         parameters: {
             query?: never;
@@ -10301,6 +10399,42 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/v1/admin/ai-config/mimo-media-probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只读检查小米官方模型列表，不产生识别费用 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 模型可访问性，不等同真实识别验证 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MimoMediaProbeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/account-invitations": {
         parameters: {
             query?: never;
@@ -10431,7 +10565,9 @@ export interface paths {
                         clearRealtimeAudioTranscription?: boolean;
                         processingStrategies?: {
                             /** @enum {string} */
-                            audioFiles: "whisper-first" | "media-only";
+                            audioFiles: "whisper-first" | "media-only" | "mimo-only";
+                            /** @enum {string} */
+                            videoFiles?: "gemini" | "mimo";
                             /** @enum {string} */
                             rehearsal: "text" | "voice-with-text-fallback";
                         };
@@ -10470,6 +10606,7 @@ export interface paths {
                                 video?: number;
                                 text?: number;
                             };
+                            cachedInputPricePerMTokens?: number;
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -10509,6 +10646,7 @@ export interface paths {
                                 video?: number;
                                 text?: number;
                             };
+                            cachedInputPricePerMTokens?: number;
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -10547,6 +10685,7 @@ export interface paths {
                                 video?: number;
                                 text?: number;
                             };
+                            cachedInputPricePerMTokens?: number;
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -10585,6 +10724,7 @@ export interface paths {
                                 video?: number;
                                 text?: number;
                             };
+                            cachedInputPricePerMTokens?: number;
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -10623,6 +10763,7 @@ export interface paths {
                                 video?: number;
                                 text?: number;
                             };
+                            cachedInputPricePerMTokens?: number;
                             /** @default null */
                             pricePerMTokens?: [
                                 number,
@@ -10632,6 +10773,46 @@ export interface paths {
                             clearKey?: boolean;
                         };
                         clearMediaUnderstanding?: boolean;
+                        mimoMediaUnderstanding?: {
+                            provider: string;
+                            /** @enum {string} */
+                            providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            /** @enum {string} */
+                            apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
+                            model: string;
+                            /** @default  */
+                            apiUrl?: string;
+                            timeoutMs: number;
+                            maxInputChars: number;
+                            /** @default true */
+                            enabledOutputLimit?: boolean;
+                            maxOutputTokens: number;
+                            supportsJson: boolean;
+                            supportsVision: boolean;
+                            temperature?: number;
+                            topP?: number;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                            goUsageAcknowledged?: boolean;
+                            goHeaders?: {
+                                userAgent?: string;
+                                sessionPrefix?: string;
+                            };
+                            mediaInputPricePerMTokens?: {
+                                audio?: number;
+                                video?: number;
+                                text?: number;
+                            };
+                            cachedInputPricePerMTokens?: number;
+                            /** @default null */
+                            pricePerMTokens?: [
+                                number,
+                                number
+                            ] | null;
+                            apiKey?: string;
+                            clearKey?: boolean;
+                        };
+                        clearMimoMediaUnderstanding?: boolean;
                         enabled?: boolean;
                         notes?: string;
                     };
@@ -11701,6 +11882,11 @@ export interface components {
                     ocrBatching?: boolean;
                     mediaEnabled?: boolean;
                     audioTranscriptionEnabled?: boolean;
+                    audioSummaryEnabled?: boolean;
+                    /** @enum {string} */
+                    audioMediaProvider?: "gemini" | "mimo";
+                    /** @enum {string} */
+                    videoMediaProvider?: "gemini" | "mimo";
                     videoSummaryEnabled?: boolean;
                     webFetch: boolean;
                     /** @enum {string} */
@@ -16694,6 +16880,16 @@ export interface components {
                     role: "super_admin" | "admin" | "user";
                     isAdmin: boolean;
                 };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        MimoMediaProbeResponse: {
+            data: {
+                passed: boolean;
+                model: string;
+                configVersion: number;
+                detail: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

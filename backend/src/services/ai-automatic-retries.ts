@@ -14,12 +14,15 @@ export function isAutomaticAiFailure(code:string):boolean {
 
 /** Prepared insert belongs in the same transaction as the exact failed transition. */
 export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string;details?:unknown},failedAt:string):D1PreparedStatement|null {
+  if(error.details && typeof error.details==='object' && 'automaticRetry' in error.details && error.details.automaticRetry===false)return null;
   if(!isAutomaticAiFailure(error.code)) return null;
   const due=new Date(Date.parse(failedAt)+AUTOMATIC_AI_RETRY_DELAY_MS).toISOString();
   return env.DB.prepare(`INSERT INTO ai_automatic_retries(id,target_kind,target_id,status,next_attempt_at,last_error,created_at,updated_at)
     SELECT COALESCE(json_extract(input_json,'$.autoRetryRootId'),'job:'||id),'job',id,'pending',?3,?4,?2,?2
     FROM jobs WHERE id=?1 AND status='failed' AND updated_at=?2 AND error_json=?5
       AND kind IN ('agent_run','review_run','rehearsal_turn','assignment_suggest','requirement_extract','parse_source','ocr_pages')
+      AND COALESCE(json_extract(input_json,'$.mediaProvider'),'')!='mimo'
+      AND NOT EXISTS(SELECT 1 FROM media_processing WHERE job_id=jobs.id AND provider='mimo')
     ON CONFLICT(id) DO UPDATE SET target_id=excluded.target_id,
       status=CASE WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,
       next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,lease_token=NULL,lease_until=NULL,updated_at=excluded.updated_at

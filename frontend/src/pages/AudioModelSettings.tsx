@@ -33,10 +33,11 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
     </SectionCard>
     <SectionCard title="音频与答辩处理策略" detail="策略与模型分别配置，使用当前页面统一保存；仅修改音频设置不会停用现有文字 AI，保存不发起模型请求。">
       <fieldset disabled={disabled}><legend>处理方式</legend>
-        <Field label="音频文件处理策略" hint="Whisper 转录后由现有图文模型检查；全部检查评分至少 0.85 且无关键异常时沿用文本总结，否则回退音视频理解模型。"><select className="input" value={config.processingStrategies.audioFiles} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, audioFiles: event.target.value as AudioSettingsView['processingStrategies']['audioFiles'] } })}><option value="whisper-first">优先 Whisper 转录（低成本）</option><option value="media-only">直接音视频理解模型</option></select></Field>
+        <Field label="音频文件处理策略" hint="Whisper 转录后由现有图文模型检查；全部检查评分至少 0.85 且无关键异常时沿用文本总结，否则回退音视频理解模型。"><select className="input" value={config.processingStrategies.audioFiles} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, audioFiles: event.target.value as AudioSettingsView['processingStrategies']['audioFiles'] } })}><option value="whisper-first">优先 Whisper 转录（低成本）</option><option value="media-only">直接 Gemini 音视频理解</option><option value="mimo-only">直接 MiMo 音视频理解</option></select></Field>
+        <Field label="视频文件处理策略" hint="缺省使用 Gemini；MiMo 失败不自动切换供应商。"><select className="input" value={config.processingStrategies.videoFiles ?? 'gemini'} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, videoFiles: event.target.value as 'gemini' | 'mimo' } })}><option value="gemini">Gemini（现有默认）</option><option value="mimo">MiMo</option></select></Field>
         <Field label="模拟答辩处理策略"><select className="input" value={config.processingStrategies.rehearsal} onChange={event => onChange({ processingStrategies: { ...config.processingStrategies, rehearsal: event.target.value as AudioSettingsView['processingStrategies']['rehearsal'] } })}><option value="text">文字答辩（默认）</option><option value="voice-with-text-fallback">轮流语音答辩，失败回退文字</option></select></Field>
         {config.processingStrategies.rehearsal === 'voice-with-text-fallback' && !complete && <p role="note">实时语音配置尚不完整，答辩将回退文字。补齐 Gateway ID、Google 密钥和 Gateway token 后才可使用语音。</p>}
-        <p className="muted">仅支持现有两方轮流发言；实时语音模型负责转录，朗读使用系统本地语音；判断与问答使用现有文字模型。视频始终使用音视频理解模型。</p>
+        <p className="muted">仅支持现有两方轮流发言；实时语音模型负责转录，朗读使用系统本地语音；判断与问答使用现有文字模型。音视频策略分别选择；Whisper 检查失败仍回退现有 Gemini。</p>
       </fieldset>
     </SectionCard>
   </>;

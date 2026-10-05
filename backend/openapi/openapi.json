@@ -119,6 +119,23 @@
                   "audioTranscriptionEnabled": {
                     "type": "boolean"
                   },
+                  "audioSummaryEnabled": {
+                    "type": "boolean"
+                  },
+                  "audioMediaProvider": {
+                    "type": "string",
+                    "enum": [
+                      "gemini",
+                      "mimo"
+                    ]
+                  },
+                  "videoMediaProvider": {
+                    "type": "string",
+                    "enum": [
+                      "gemini",
+                      "mimo"
+                    ]
+                  },
                   "videoSummaryEnabled": {
                     "type": "boolean"
                   },
@@ -21099,6 +21116,42 @@
           "requestId"
         ]
       },
+      "MimoMediaProbeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "type": "boolean"
+              },
+              "model": {
+                "type": "string"
+              },
+              "configVersion": {
+                "type": "integer"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "passed",
+              "model",
+              "configVersion",
+              "detail"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AccountInvitationCreateResponse": {
         "type": "object",
         "properties": {
@@ -22665,6 +22718,70 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/media-fetch/{jobId}": {
+      "get": {
+        "tags": [
+          "media"
+        ],
+        "summary": "活动 MiMo 任务的短期签名媒体读取",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "媒体流或元数据"
+          },
+          "206": {
+            "description": "媒体字节范围"
+          },
+          "404": {
+            "description": "授权失效"
+          },
+          "416": {
+            "description": "字节范围不可满足"
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "media"
+        ],
+        "summary": "活动 MiMo 任务的短期签名媒体读取",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "媒体流或元数据"
+          },
+          "206": {
+            "description": "媒体字节范围"
+          },
+          "404": {
+            "description": "授权失效"
+          },
+          "416": {
+            "description": "字节范围不可满足"
           }
         }
       }
@@ -37013,6 +37130,26 @@
         }
       }
     },
+    "/api/v1/admin/ai-config/mimo-media-probe": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "只读检查小米官方模型列表，不产生识别费用",
+        "responses": {
+          "200": {
+            "description": "模型可访问性，不等同真实识别验证",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MimoMediaProbeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/account-invitations": {
       "post": {
         "tags": [
@@ -37210,7 +37347,15 @@
                         "type": "string",
                         "enum": [
                           "whisper-first",
-                          "media-only"
+                          "media-only",
+                          "mimo-only"
+                        ]
+                      },
+                      "videoFiles": {
+                        "type": "string",
+                        "enum": [
+                          "gemini",
+                          "mimo"
                         ]
                       },
                       "rehearsal": {
@@ -37359,6 +37504,10 @@
                             "minimum": 0
                           }
                         }
+                      },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
                       },
                       "pricePerMTokens": {
                         "type": [
@@ -37516,6 +37665,10 @@
                           }
                         }
                       },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -37667,6 +37820,10 @@
                             "minimum": 0
                           }
                         }
+                      },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
                       },
                       "pricePerMTokens": {
                         "type": [
@@ -37820,6 +37977,10 @@
                           }
                         }
                       },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -37972,6 +38133,10 @@
                           }
                         }
                       },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
+                      },
                       "pricePerMTokens": {
                         "type": [
                           "array",
@@ -38009,6 +38174,165 @@
                     ]
                   },
                   "clearMediaUnderstanding": {
+                    "type": "boolean"
+                  },
+                  "mimoMediaUnderstanding": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "providerPreset": {
+                        "type": "string",
+                        "enum": [
+                          "custom",
+                          "openai",
+                          "anthropic",
+                          "deepseek-anthropic",
+                          "gemini",
+                          "deepseek",
+                          "openrouter",
+                          "opencode-zen",
+                          "opencode-go"
+                        ]
+                      },
+                      "apiProtocol": {
+                        "type": "string",
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "messages",
+                          "gemini"
+                        ]
+                      },
+                      "model": {
+                        "type": "string"
+                      },
+                      "apiUrl": {
+                        "type": "string",
+                        "default": ""
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 600000
+                      },
+                      "maxInputChars": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "enabledOutputLimit": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "maxOutputTokens": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "supportsJson": {
+                        "type": "boolean"
+                      },
+                      "supportsVision": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "topP": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reasoningEffort": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max"
+                        ]
+                      },
+                      "goUsageAcknowledged": {
+                        "type": "boolean"
+                      },
+                      "goHeaders": {
+                        "type": "object",
+                        "properties": {
+                          "userAgent": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "sessionPrefix": {
+                            "type": "string",
+                            "maxLength": 32
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "mediaInputPricePerMTokens": {
+                        "type": "object",
+                        "properties": {
+                          "audio": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "video": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "text": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      },
+                      "cachedInputPricePerMTokens": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "pricePerMTokens": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        ],
+                        "default": null
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "timeoutMs",
+                      "maxInputChars",
+                      "maxOutputTokens",
+                      "supportsJson",
+                      "supportsVision"
+                    ]
+                  },
+                  "clearMimoMediaUnderstanding": {
                     "type": "boolean"
                   },
                   "enabled": {

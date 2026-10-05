@@ -81,6 +81,7 @@
       "name": "greenbp-team-office-backend",
       "vars": {
         "ENV_NAME": "production",
+        "MEDIA_FETCH_BASE_URL": "https://greenbp-team-office-backend.hddhp.workers.dev",
         "DOCUMENT_IMPORTS_ENABLED": "true",
         "RESOURCE_INDEX_ENABLED": "true",
         "OCR_BATCH_ENABLED": "true",

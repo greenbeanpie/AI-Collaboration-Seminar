@@ -1,4 +1,5 @@
 import { loadAiConfig } from '../ai/config';
+import { mediaRouteError, selectedMediaProvider } from '../services/media-routing';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -16,6 +17,9 @@ const capabilitiesResponse = apiEnvelope(
           documentImports:z.boolean().optional(),resourceIndex:z.boolean().optional(),ocrBatching:z.boolean().optional(),
           mediaEnabled:z.boolean().optional(),
           audioTranscriptionEnabled: z.boolean().optional(),
+          audioSummaryEnabled: z.boolean().optional(),
+          audioMediaProvider:z.enum(['gemini','mimo']).optional(),
+          videoMediaProvider:z.enum(['gemini','mimo']).optional(),
           videoSummaryEnabled: z.boolean().optional(),
           webFetch: z.boolean(),
           emailMode: z.enum(['echo', 'resend']),
@@ -97,8 +101,9 @@ async function competitionTemplate(db: D1Database): Promise<{ teamSizeLimit: num
 export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(capabilitiesRoute, async (c) => {
     const [aiEnabled, template, mediaConfig] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB), loadAiConfig(c.env.DB).catch(()=>null)]);
-    const videoSummaryEnabled = Boolean(mediaConfig?.enabled && mediaConfig.config.mediaUnderstanding?.apiKeyEncrypted);
-    const audioTranscriptionEnabled = Boolean(mediaConfig?.enabled && (mediaConfig.config.audioProcessingStrategy ?? 'whisper-first') === 'whisper-first' && (c.env as unknown as { AI?: unknown }).AI);
+    const videoSummaryEnabled = Boolean(mediaConfig&&!mediaRouteError(c.env,mediaConfig,'video/mp4'));
+    const audioSummaryEnabled = Boolean(mediaConfig&&!mediaRouteError(c.env,mediaConfig,'audio/mpeg'));
+    const audioTranscriptionEnabled = Boolean(mediaConfig?.enabled && (mediaConfig.config.processingStrategies?.audioFiles ?? (mediaConfig.config.audioProcessingStrategy==='gemini-only'?'media-only':'whisper-first')) === 'whisper-first' && c.env.AI);
     return c.json(
       apiData(c, {
         apiVersion: 'v1' as const,
@@ -106,7 +111,9 @@ export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
         features: {
           aiEnabled,
           documentImports:c.env.DOCUMENT_IMPORTS_ENABLED!=='false',resourceIndex:c.env.RESOURCE_INDEX_ENABLED!=='false',ocrBatching:c.env.OCR_BATCH_ENABLED!=='false',
-          mediaEnabled: audioTranscriptionEnabled || videoSummaryEnabled,
+          mediaEnabled: audioSummaryEnabled || videoSummaryEnabled,
+          audioSummaryEnabled,
+          ...(mediaConfig?{audioMediaProvider:selectedMediaProvider(mediaConfig,'audio/mpeg'),videoMediaProvider:selectedMediaProvider(mediaConfig,'video/mp4')} : {}),
           audioTranscriptionEnabled,
           videoSummaryEnabled,
           webFetch: true,

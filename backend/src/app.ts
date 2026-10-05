@@ -1,4 +1,5 @@
 import { registerAdminAiRetryRoutes } from './api/admin-ai-retries';
+import { registerMediaFetchRoutes } from './api/media-fetch';
 import { registerTaskFileRoutes } from './api/task-files';
 import { registerTaskAssistancePlanRoutes } from './api/task-assistance-plan';
 import { registerAgentBridgeRoutes } from './api/agent-bridges';
@@ -87,6 +88,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   // 所有域路由直接注册到本实例（带完整 /api/v1 前缀），保证契约文档完整
   registerSystemRoutes(app);
   registerCapabilitiesRoutes(app);
+  registerMediaFetchRoutes(app);
   registerAuthRoutes(app);
   registerAccountSettingsRoutes(app);
   registerPersonalProfileRoutes(app);

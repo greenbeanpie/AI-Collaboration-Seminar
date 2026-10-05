@@ -1,5 +1,6 @@
 import { normalizeProcessingStrategies } from '../../../shared/audio-settings';
 import { validateMediaModel, GeminiMediaClient } from '../ai/gemini-media';
+import { validateMimoMediaModel, MimoMediaClient } from '../ai/mimo-media';
 import { registerAdminAccountRoutes } from './admin-accounts';
 import { createMiddleware } from 'hono/factory';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -62,6 +63,8 @@ const configShape = z.object({
   review: editableModel.optional(),
   mediaUnderstanding: editableModel.optional(),
   clearMediaUnderstanding:z.boolean().optional(),
+  mimoMediaUnderstanding: editableModel.optional(),
+  clearMimoMediaUnderstanding:z.boolean().optional(),
   // Omitted for ordinary saves: retain an already-enabled unchanged config only.
   // Explicit true remains the separate, probe-gated activation action.
   enabled: z.boolean().optional(),
@@ -210,6 +213,12 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   registerAdminAccountRoutes(app);
+  app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/mimo-media-probe',tags:['admin'],summary:'只读检查小米官方模型列表，不产生识别费用',responses:{200:{description:'模型可访问性，不等同真实识别验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MimoMediaProbeResponse')}}}}}),async c=>{
+    const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mimoMediaUnderstanding;
+    if(!loaded||!model?.apiKeyEncrypted)throw invalidState('请先保存 MiMo 模型及密钥');
+    const passed=await new MimoMediaClient(model,await unseal(model.apiKeyEncrypted,c.env.AUTH_SECRET)).probe();
+    return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'小米官方模型列表可访问；音频识别质量需真实样本核对':'当前密钥不可访问 mimo-v2.6-pro'}),200);
+  });
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
   app.openapi(listAccountInvitationsRoute, async c => {
     const rows = await c.env.DB.prepare('SELECT id, created_at, used_at, used_by FROM account_invitations ORDER BY created_at DESC, id DESC LIMIT 100').all<{ id: string; created_at: string; used_at: string | null; used_by: string | null }>();
@@ -236,7 +245,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
           ...Object.fromEntries(loaded.config.realtimeAudioTranscription?[['realtimeAudioTranscription',((entry)=>{const {apiKeyEncrypted,gatewayTokenEncrypted,...publicConfig}=entry;return {...publicConfig,keyConfigured:Boolean(apiKeyEncrypted),gatewayTokenConfigured:Boolean(gatewayTokenEncrypted)};})(loaded.config.realtimeAudioTranscription)]]:[]),
           routingMode: loaded.config.routingMode ?? 'advanced',
           searchEnabled: loaded.config.searchEnabled === true,
-          ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const).flatMap(purpose => {
+          ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding', 'mimoMediaUnderstanding'] as const).flatMap(purpose => {
             const entry = loaded.config[purpose];
             if (!entry) return [];
             const { apiKeyEncrypted, ...model } = entry;
@@ -260,15 +269,16 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const strategies=body.processingStrategies??(body.audioProcessingStrategy!==undefined?{...(latest?.config.processingStrategies??normalizeProcessingStrategies()),audioFiles:body.audioProcessingStrategy==='gemini-only'?'media-only' as const:'whisper-first' as const}:latest?.config.processingStrategies??normalizeProcessingStrategies());
     const realtimeInput=body.realtimeAudioTranscription;
     const realtime=body.clearRealtimeAudioTranscription?undefined:realtimeInput?(({apiKey,clearKey,gatewayToken,clearGatewayToken,...settings})=>settings)(realtimeInput):latest?.config.realtimeAudioTranscription;
-    const parsed = aiConfigSchema.safeParse({ ...body, textEconomy:body.textEconomy??latest?.config.textEconomy,visionEconomy:body.visionEconomy??latest?.config.visionEconomy,review:body.review??latest?.config.review,rehearsalSpeech:body.rehearsalSpeech??latest?.config.rehearsalSpeech, audioFileTranscription:body.audioFileTranscription??latest?.config.audioFileTranscription, realtimeAudioTranscription:realtime, processingStrategies:strategies, audioProcessingStrategy:strategies.audioFiles==='media-only'?'gemini-only':'whisper-first', searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
+    const parsed = aiConfigSchema.safeParse({ ...body, textEconomy:body.textEconomy??latest?.config.textEconomy,visionEconomy:body.visionEconomy??latest?.config.visionEconomy,review:body.review??latest?.config.review,rehearsalSpeech:body.rehearsalSpeech??latest?.config.rehearsalSpeech, audioFileTranscription:body.audioFileTranscription??latest?.config.audioFileTranscription, realtimeAudioTranscription:realtime, processingStrategies:strategies, audioProcessingStrategy:strategies.audioFiles==='media-only'?'gemini-only':'whisper-first', searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding, mimoMediaUnderstanding:body.clearMimoMediaUnderstanding?undefined:body.mimoMediaUnderstanding??latest?.config.mimoMediaUnderstanding });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
-    for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const) {
+    for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding', 'mimoMediaUnderstanding'] as const) {
       const input = body[purpose];
       if (!input) continue;
       const active = config.routingMode === 'unified' ? purpose === 'unified' : purpose !== 'unified';
       if(purpose==='mediaUnderstanding')validateMediaModel(input);
-      const optionErrors = active && purpose!=='mediaUnderstanding' ? providerOptionErrors(input) : [];
+      if(purpose==='mimoMediaUnderstanding')validateMimoMediaModel(input);
+      const optionErrors = active && purpose!=='mediaUnderstanding' && purpose!=='mimoMediaUnderstanding' ? providerOptionErrors(input) : [];
       if (optionErrors.length) throw validationFailed(`${purpose}: ${optionErrors.join('；')}`);
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
         throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');
@@ -287,7 +297,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
     // Normalize only equivalent defaults: an actual search permission change still invalidates probes.
-    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, audioProcessingStrategy: _audio, audioFileTranscription:_file,realtimeAudioTranscription:_realtime,processingStrategies:_strategies,rehearsalSpeech:_speech, ...core}=value; void _media; void _audio; void _file; void _realtime; void _strategies; void _speech; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
+    const comparable = (value: typeof config) => { const {mimoMediaUnderstanding:_mimo,mediaUnderstanding: _media, audioProcessingStrategy: _audio, audioFileTranscription:_file,realtimeAudioTranscription:_realtime,processingStrategies:_strategies,rehearsalSpeech:_speech, ...core}=value; void _mimo; void _media; void _audio; void _file; void _realtime; void _strategies; void _speech; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
     const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {

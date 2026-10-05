@@ -6,7 +6,7 @@ export const REALTIME_TRANSCRIPTION_MODEL = 'gemini-3.5-transcribe-live' as cons
 export interface RehearsalSpeechConfig { provider:'system-local';lang:string;rate:number;volume:number }
 export const DEFAULT_REHEARSAL_SPEECH:RehearsalSpeechConfig={provider:'system-local',lang:'zh-CN',rate:1,volume:1};
 export interface AudioFileTranscription { provider:typeof FILE_TRANSCRIPTION_PROVIDER;model:typeof FILE_TRANSCRIPTION_MODEL }
-export interface ProcessingStrategies { audioFiles:'whisper-first'|'media-only';rehearsal:'text'|'voice-with-text-fallback' }
+export interface ProcessingStrategies { audioFiles:'whisper-first'|'media-only'|'mimo-only';videoFiles?:'gemini'|'mimo';rehearsal:'text'|'voice-with-text-fallback' }
 export interface RealtimeAudioTranscription { provider:typeof REALTIME_TRANSCRIPTION_PROVIDER;model:typeof REALTIME_TRANSCRIPTION_MODEL;gatewayId:string;languageCodes?:string[];apiKeyEncrypted?:string;gatewayTokenEncrypted?:string }
 export const DEFAULT_AUDIO_FILE_TRANSCRIPTION:AudioFileTranscription={provider:FILE_TRANSCRIPTION_PROVIDER,model:FILE_TRANSCRIPTION_MODEL};
 export function normalizeProcessingStrategies(value?:ProcessingStrategies,legacy?:'whisper-first'|'gemini-only'):ProcessingStrategies {

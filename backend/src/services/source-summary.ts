@@ -1,4 +1,4 @@
-import { whisperEnabled } from './audio-pipeline';
+import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
@@ -43,7 +43,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
   const mediaFile=await env.DB.prepare('SELECT f.ext,f.mime_detected AS mime FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(versionId).first<{ext:string;mime:string}>();
   if(mediaFile&&isMediaExtension(mediaFile.ext)){
     const config=await requireEnabledAiConfig(env.DB);
-    if(!config.config.mediaUnderstanding?.apiKeyEncrypted&&!whisperEnabled(env,config,mediaFile.mime))throw invalidState('音视频 Gemini 模型尚未配置');
+    const routeError=mediaRouteError(env,config,mediaFile.mime);if(routeError)throw invalidState(routeError);
     const jobId=crypto.randomUUID(),now=nowIso();
     const claim=await env.DB.batch([
       env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,updated_at) SELECT ?1,?2,?3 WHERE ${sourceLifecycleGuard('?1','?4')} ON CONFLICT(source_version_id) DO NOTHING`).bind(versionId,active.projectId,now,active.lifecycleVersion),
@@ -51,7 +51,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
     ]);
     const revision=(claim[1]?.results[0] as {summary_revision:number}|undefined)?.summary_revision;
     if(revision===undefined)throw invalidState('媒体总结版本已变化或已有处理任务');
-    try{await createJobAndDispatch(env,{projectId:active.projectId,kind:'parse_source',jobId,createdBy,input:{operation:'media.summary',sourceId:active.sourceId,sourceVersionId:versionId,sourceLifecycleVersion:active.lifecycleVersion,phase:'extract',configVersionId:config.id}});}catch(error){await env.DB.prepare("UPDATE source_processing SET summary_status='failed',summary_error='媒体任务未能创建' WHERE source_version_id=?1 AND summary_job_id=?2 AND summary_status='queued'").bind(versionId,jobId).run();throw error;}
+    try{await createJobAndDispatch(env,{projectId:active.projectId,kind:'parse_source',jobId,createdBy,input:{operation:'media.summary',sourceId:active.sourceId,sourceVersionId:versionId,sourceLifecycleVersion:active.lifecycleVersion,phase:'extract',configVersionId:config.id,mediaProvider:selectedMediaProvider(config,mediaFile.mime)}});}catch(error){await env.DB.prepare("UPDATE source_processing SET summary_status='failed',summary_error='媒体任务未能创建' WHERE source_version_id=?1 AND summary_job_id=?2 AND summary_status='queued'").bind(versionId,jobId).run();throw error;}
     return {jobId,revision:revision+1};
   }
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(versionId).first<{ n: number }>();

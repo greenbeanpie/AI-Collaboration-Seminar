@@ -1,0 +1,24 @@
+{
+  "feature": "optional official mimo-v2.6-pro uploaded media understanding",
+  "defaultStrategyChanged": false,
+  "verification": {
+    "backendFull": {"files": 129, "tests": 1172, "passed": true},
+    "backendFinalAudioAndLegacyRegression": {"files": 4, "tests": 75, "passed": true},
+    "backendRetryRegression": {"files": 3, "tests": 19, "passed": true},
+    "frontendFull": {"files": 126, "tests": 763, "passed": true},
+    "typecheck": true,
+    "lint": true,
+    "frontendBuild": true,
+    "serviceBindingCheck": true,
+    "productionPreflight": true,
+    "backendDeploymentDryRun": true,
+    "browserFixture": {"desktopWidth": 1440, "mobileWidth": 390, "passed": true}
+  },
+  "productionBackup": {"timeTravelBookmarkSaved": true, "criticalTables": 9, "privateSqlBytes": 628061},
+  "limitations": [
+    "Real audio inference awaits the administrator configuring the official pay-as-you-go MiMo key after deployment.",
+    "No real video inference is performed, following the user's audio-only test request.",
+    "Long-audio coverage is not verified by short synthetic audio.",
+    "Full backend tests exited successfully with existing Workflow RPC disposal/cancellation teardown diagnostics; focused final media regressions passed without these diagnostics."
+  ]
+}

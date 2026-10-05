@@ -20,6 +20,8 @@ export interface Env {
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;
   AI_GATEWAY_ID: string;
+  /** Public HTTPS origin used only for short-lived MiMo media grants. */
+  MEDIA_FETCH_BASE_URL?: string;
   ADMIN_TOKEN: string;
   RESEND_API_KEY?: string;
   /** 验证码邮件发件人（如 验证码 <noreply@example.com>）；Resend 需已验证域名 */
