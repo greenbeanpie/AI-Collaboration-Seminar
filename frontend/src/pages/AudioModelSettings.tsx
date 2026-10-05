@@ -7,9 +7,7 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
   const complete = Boolean(realtime?.gatewayId && (realtime.apiKey || (realtime.keyConfigured && !realtime.clearKey)) && (realtime.gatewayToken || (realtime.gatewayTokenConfigured && !realtime.clearGatewayToken)));
   const editRealtime = (patch: Partial<NonNullable<AudioSettingsView['realtimeAudioTranscription']>>) => onChange({ realtimeAudioTranscription: { ...realtime!, ...patch } });
   return <>
-    <SectionCard title="音频文件初步转录模型">
-      <Field label="文件转录模型"><input className="input" readOnly value={config.audioFileTranscription.model} /></Field>
-    </SectionCard>
+    <Field label="文件转录模型"><input className="input" readOnly value={config.audioFileTranscription.model} /></Field>
     <SectionCard title="实时语音转录模型" detail="Gemini 3.5 Transcribe Live 仅负责将发言转为文字；答辩内容分析和问题生成继续使用现有文字模型。">
       <fieldset disabled={disabled}><legend>Cloudflare AI Gateway 转发配置</legend>
         <label><input type="checkbox" checked={Boolean(realtime)} onChange={event => onChange({ realtimeAudioTranscription: event.target.checked ? { provider: 'google-ai-studio', model: 'gemini-3.5-transcribe-live', gatewayId: '', apiKey: '', gatewayToken: '' } : undefined })} /> 配置实时语音转录</label>

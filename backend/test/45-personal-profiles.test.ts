@@ -55,7 +55,7 @@ describe('private profiles and exact account search',()=>{
   const hidden=await (await get('/api/v1/profiles/alice',b.token)).json() as any;const missing=await (await get('/api/v1/profiles/nobody',b.token)).json() as any;expect(hidden.data).toEqual(missing.data);
   expect((await (await get(ownPath,b.token)).json() as any).data.bio).toBe('');
  });
- it('rate limits authenticated enumeration',async()=>{const a=await user('alice');for(let i=0;i<30;i++)expect((await get('/api/v1/profiles/search?username=none',a.token)).status).toBe(200);expect((await get('/api/v1/profiles/search?username=none',a.token)).status).toBe(429);});
+ it('rate limits authenticated enumeration',async()=>{const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now());try{const a=await user('alice');for(let i=0;i<30;i++)expect((await get('/api/v1/profiles/search?username=none',a.token)).status).toBe(200);expect((await get('/api/v1/profiles/search?username=none',a.token)).status).toBe(429);}finally{clock.mockRestore();}});
 });
 
 async function assignmentFixture(allowed=true) {

@@ -45,15 +45,18 @@ it('preserves the WebSocket upgrade through app middleware and persists captions
   expect((await env.DB.prepare("SELECT COUNT(*) n FROM rehearsal_turns WHERE rehearsal_id=?1 AND kind='answer'").bind(f.rehearsalId).first<{n:number}>())!.n).toBe(0);
 });
 
-it('routes TTS jobs through the common dispatcher and replaces failed speech jobs without touching text processing',async()=>{
-  const f=await fixture(),local={...env,AGENT_WORKFLOW:{create:vi.fn(async()=>({}))}} as unknown as typeof env;
-  const response=await f.app.fetch(new Request(BASE+f.prefix+'/turns/1/speech',{method:'POST',headers:f.headers,body:'{}'}),local);
-  expect(response.status).toBe(202);const queued=(await response.json() as {data:{jobId:string;speechId:string}}).data;
-  vi.stubGlobal('fetch',vi.fn(async()=>new Response(null,{status:503})));
-  await runAiJob(local,queued.jobId);
-  const next=await retryFailedAiJob(local,queued.jobId,undefined,`job:${queued.jobId}`);
-  expect(next.status).toBe('queued');expect(next.jobId).not.toBe(queued.jobId);
-  expect(await env.DB.prepare('SELECT status,job_id FROM rehearsal_speech WHERE id=?1').bind(queued.speechId).first()).toEqual({status:'queued',job_id:next.jobId});
+it('rejects retired cloud TTS and prevents its dispatcher or retries from making a model call',async()=>{
+  const f=await fixture();
+  const request=vi.fn(async()=>new Response(null,{status:503}));vi.stubGlobal('fetch',request);
+  const response=await f.app.fetch(new Request(BASE+f.prefix+'/turns/1/speech',{method:'POST',headers:f.headers,body:'{}'}),env);
+  expect(response.status).toBe(410);
+  const id=newId(),now=nowIso();
+  await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'agent_run','queued',?3,?4,?5,?5)").bind(id,f.projectId,JSON.stringify({operation:'rehearsal.tts',rehearsalId:f.rehearsalId}),f.user.userId,now).run();
+  await runAiJob(env,id);
+  expect(await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(id).first()).toEqual({status:'cancelled'});
+  await env.DB.prepare("UPDATE jobs SET status='failed' WHERE id=?1").bind(id).run();
+  expect(await retryFailedAiJob(env,id)).toMatchObject({status:'skipped',reason:'朗读已改为系统本地 TTS'});
+  expect(request).not.toHaveBeenCalled();
   expect(await env.DB.prepare('SELECT processing_job_id FROM rehearsals WHERE id=?1').bind(f.rehearsalId).first()).toEqual({processing_job_id:null});
-  expect(classifyManagedKey(`rehearsal-speech/${queued.speechId}/${next.jobId}-${newId()}.wav`)).toEqual({kind:'rehearsal_speech',id:queued.speechId});
+  expect(classifyManagedKey(`rehearsal-speech/${newId()}/${id}-${newId()}.wav`)?.kind).toBe('rehearsal_speech');
 });

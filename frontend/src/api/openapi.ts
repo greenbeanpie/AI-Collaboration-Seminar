@@ -8978,7 +8978,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 朗读已生成的评委文字（仅语音合成） */
+        /** 云端朗读已退役，请使用系统本地朗读 */
         post: {
             parameters: {
                 query?: never;
@@ -8996,13 +8996,13 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description 朗读已排队 */
-                202: {
+                /** @description 系统本地朗读不使用云端 API */
+                410: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["RehearsalSpeechQueued"];
+                        "application/json": components["schemas"]["ApiFailure"];
                     };
                 };
             };
@@ -10402,9 +10402,13 @@ export interface paths {
                     "application/json": {
                         rehearsalSpeech?: {
                             /** @enum {string} */
-                            model: "gemini-3.8-flash-lite-tts" | "gemini-3.8-flash-tts";
-                            /** @enum {string} */
-                            voice: "Kore" | "Aoede" | "Puck";
+                            provider: "system-local";
+                            /** @default zh-CN */
+                            lang?: string;
+                            /** @default 1 */
+                            rate?: number;
+                            /** @default 1 */
+                            volume?: number;
                         };
                         audioFileTranscription?: {
                             /** @enum {string} */
@@ -15931,8 +15935,14 @@ export interface components {
                 mode: "text" | "voice-with-text-fallback";
                 reason: string | null;
                 speech: {
-                    model: string;
-                    voice: string;
+                    /** @enum {string} */
+                    provider: "system-local";
+                    /** @default zh-CN */
+                    lang: string;
+                    /** @default 1 */
+                    rate: number;
+                    /** @default 1 */
+                    volume: number;
                 };
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -15954,17 +15964,6 @@ export interface components {
                 sessionId: string;
                 /** @enum {string} */
                 status: "closed";
-            };
-            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
-            requestId: string;
-        };
-        RehearsalSpeechQueued: {
-            data: {
-                /** Format: uuid */
-                jobId: string;
-                /** Format: uuid */
-                speechId: string;
-                status: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

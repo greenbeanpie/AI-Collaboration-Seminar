@@ -10,7 +10,6 @@ import { assertSourceInputs } from './source-inputs';
 import { assertProjectSourceContext } from './collaboration-context';
 import { assertProfileStamp } from './personal-profiles';
 import { retryFailedDraftPreview } from './ai-automatic-retries';
-import { assertRehearsalSpeechRetry } from './rehearsal-speech';
 
 const candidates = `j.status='failed' AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links l WHERE l.parent_job_id=j.id) AND (j.kind IN ('agent_run','assignment_suggest','review_run','rehearsal_turn','requirement_extract','ocr_pages','parse_source') OR json_extract(j.input_json,'$.operation') IN ('source.summary','media.summary') OR EXISTS(SELECT 1 FROM media_processing WHERE job_id=j.id) OR EXISTS(SELECT 1 FROM ai_calls WHERE job_id=j.id))`;
 export interface RetryBatch { batchId:string;status:'queued'|'running'|'completed';total:number;pending:number;queued:number;skipped:number;createdAt:string;updatedAt:string;skipReasons:Array<{reason:string;count:number}> }
@@ -47,6 +46,7 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  if(!job||job.status!=='failed'||(expectedUpdatedAt&&job.updated_at!==expectedUpdatedAt))return {status:'skipped',reason:'任务状态已变化'};
  if(await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(jobId).first())return {status:'skipped',reason:'已排队重试'};
  const input=JSON.parse(job.input_json) as Record<string,any>,actor=input.requestedBy??job.created_by;
+ if(input.operation==='rehearsal.tts')return {status:'skipped',reason:'朗读已改为系统本地 TTS'};
  let effectiveActor=actor;
  if(!effectiveActor&&job.project_id&&input.sourceVersionId&&['parse_source','ocr_pages','requirement_extract'].includes(job.kind)){effectiveActor=(await env.DB.prepare("SELECT s.created_by FROM sources s JOIN source_versions v ON v.source_id=s.id JOIN project_members m ON m.project_id=s.project_id AND m.user_id=s.created_by WHERE v.id=?1 AND s.project_id=?2").bind(input.sourceVersionId,job.project_id).first<{created_by:string}>())?.created_by;}
  if(!effectiveActor)return {status:'skipped',reason:'原请求账户缺失'};
@@ -72,19 +72,13 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  if(input.settingsRevision!==undefined)guards.push("EXISTS(SELECT 1 FROM projects WHERE id=old.project_id AND ai_collaboration_enabled=1 AND collaboration_revision=json_extract(old.input_json,'$.settingsRevision'))");
  if(input.tasks)for(const task of input.tasks){const current=await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1 AND project_id=?2').bind(task.taskId,job.project_id).first<{revision:number}>();if(current?.revision!==task.revision)return {status:'skipped',reason:'任务版本已变化'};}
  const reset:Array<{table:string;pointer:string;extra?:string}>=[];
- const isSpeech=input.operation==='rehearsal.tts';
- if(isSpeech){
-   await assertRehearsalSpeechRetry(env,jobId,actorId);
-   guards.push("EXISTS(SELECT 1 FROM rehearsal_speech sp JOIN rehearsals r ON r.id=sp.rehearsal_id JOIN ai_config_versions cfg ON cfg.id=sp.config_version_id WHERE sp.job_id=old.id AND sp.status!='ready' AND sp.created_by=?4 AND sp.config_version_id=json_extract(old.input_json,'$.configVersionId') AND cfg.enabled=1 AND cfg.version=(SELECT MAX(version) FROM ai_config_versions) AND r.status='active' AND r.created_by=?4 AND r.processing_job_id IS NULL AND sp.sequence=(SELECT MAX(sequence) FROM rehearsal_turns WHERE rehearsal_id=r.id))");
-   reset.push({table:'rehearsal_speech',pointer:'job_id',extra:"status='queued',lease_token=NULL,lease_expires_at=NULL,dispatched_at=NULL,error=NULL,"});
- }
  const requireRow=async(table:string,pointer:string,condition:string)=>{guards.push(`EXISTS(SELECT 1 FROM ${table} WHERE ${pointer}=old.id AND ${condition})`);};
  if(input.operation==='media.draft')guards.push("EXISTS(SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=json_extract(old.input_json,'$.fileId') AND d.id=json_extract(old.input_json,'$.draftId') AND f.removed=0 AND d.status='active' AND d.owner_id=?4)");
  if(input.operation==='source.summary'){await requireRow('source_processing','summary_job_id',"summary_status='failed'");reset.push({table:'source_processing',pointer:'summary_job_id',extra:"summary_status='queued',summary_error=NULL,"});}
  if(input.runId){await requireRow('agent_runs','job_id',"status='failed'");reset.push({table:'agent_runs',pointer:'job_id',extra:"status='running',output_json=NULL,"});}
  if(input.reviewId){await requireRow('reviews','job_id',"status='failed' AND created_by=?4");reset.push({table:'reviews',pointer:'job_id',extra:"status='pending',"});}
- if(input.rehearsalId&&!isSpeech){await requireRow('rehearsals','processing_job_id',"status='active' AND created_by=?4");reset.push({table:'rehearsals',pointer:'processing_job_id',extra:"finish_job_id=CASE WHEN finish_job_id=?1 THEN ?2 ELSE finish_job_id END,"});}
- if(input.assessmentId||(input.rehearsalId&&!isSpeech)){await requireRow('assessments','job_id',"status!='succeeded' AND origin='ai' AND revision=1");reset.push({table:'assessments',pointer:'job_id',extra:"status='active',"});}
+ if(input.rehearsalId){await requireRow('rehearsals','processing_job_id',"status='active' AND created_by=?4");reset.push({table:'rehearsals',pointer:'processing_job_id',extra:"finish_job_id=CASE WHEN finish_job_id=?1 THEN ?2 ELSE finish_job_id END,"});}
+ if(input.assessmentId||input.rehearsalId){await requireRow('assessments','job_id',"status!='succeeded' AND origin='ai' AND revision=1");reset.push({table:'assessments',pointer:'job_id',extra:"status='active',"});}
  if(input.submissionId){await requireRow('task_submissions','evaluation_job_id',"status='pending' AND ai_report_json IS NULL AND EXISTS(SELECT 1 FROM tasks t WHERE t.current_submission_id=task_submissions.id AND t.lifecycle_state='submitted' AND t.revision=task_submissions.task_revision AND t.assignee_id=task_submissions.submitted_by) AND (submitted_by=?4 OR "+projectPermissionSql('task_submissions.project_id','?4','taskManage')+')');reset.push({table:'task_submissions',pointer:'evaluation_job_id'});}
  const caches:Record<string,string>={'collaboration.summary':'task_summaries','collaboration.agent-eligibility':'task_agent_eligibility','collaboration.assistance-plan':'task_assistance_plans'};
  if(caches[input.operation]){await requireRow(caches[input.operation]!,'job_id',"status='failed'");reset.push({table:caches[input.operation]!,pointer:'job_id',extra:"status='queued',"});}
