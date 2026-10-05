@@ -13,12 +13,12 @@ it('defaults legacy audio strategy to Whisper and saves strategy independently w
     expect(init?.method).toBe('PUT'); calls.push(JSON.parse(String(init?.body))); return Response.json({data:{version:9,enabled:true}});
   }));
   await setup(true,false);
-  expect(screen.getByLabelText('音频处理策略')).toHaveValue('whisper-first');
+  expect(screen.getByLabelText(/音频文件处理策略/)).toHaveValue('whisper-first');
   expect(screen.getByText(/全部检查评分至少 0.85/)).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('音频处理策略'), {target:{value:'gemini-only'}});
+  fireEvent.change(screen.getByLabelText(/音频文件处理策略/), {target:{value:'media-only'}});
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({processingStrategies:{audioFiles:'media-only',rehearsal:'text'},audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
 });
 it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
   const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };
@@ -545,3 +545,42 @@ it('editing an OpenCode preset URL converts to custom and preserves explicit key
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
   expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash',apiKey:'',mediaInputPricePerMTokens:{audio:1,video:2,text:.5}},clearMediaUnderstanding:false});
  });
+
+it('separates fixed Whisper, realtime Gateway, TTS and strategies without copying media credentials', async () => {
+  const writes:Record<string,unknown>[]=[];
+  const realtime={provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'voice-gateway',languageCodes:['zh-CN'],keyConfigured:true,gatewayTokenConfigured:true};
+  vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>init?.method==='GET'?Response.json({data:{version:8,enabled:true,config:{...savedConfig,realtimeAudioTranscription:realtime}}}):(writes.push(JSON.parse(String(init?.body))),Response.json({data:{version:9,enabled:true}}))));
+  await setup(true,false);
+  for(const title of ['音视频理解模型','音频文件初步转录模型','实时语音转录模型','答辩语音朗读模型','音频与答辩处理策略'])expect(screen.getByRole('heading',{name:title})).toBeInTheDocument();
+  expect(screen.getByLabelText('文件转录模型')).toHaveValue('@cf/openai/whisper-large-v3-turbo');
+  expect(screen.getByLabelText('文件转录模型')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText(/实时语音 Google API key/)).toHaveValue('');expect(screen.getByLabelText(/^实时语音 Gateway token/)).toHaveValue('');
+  expect(within(screen.getByLabelText('答辩朗读模型')).getAllByRole('option').map(option=>(option as HTMLOptionElement).value)).toEqual(['gemini-3.8-flash-lite-tts','gemini-3.8-flash-tts']);
+  fireEvent.change(screen.getByLabelText('答辩朗读模型'),{target:{value:'gemini-3.8-flash-tts'}});
+  fireEvent.change(screen.getByLabelText('模拟答辩处理策略'),{target:{value:'voice-with-text-fallback'}});
+  fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
+  await screen.findByText('配置已保存，AI 保持启用。');
+  expect(writes).toHaveLength(1);expect(writes[0]).toMatchObject({processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'},rehearsalSpeech:{model:'gemini-3.8-flash-tts',voice:'Kore'},realtimeAudioTranscription:{gatewayId:'voice-gateway',apiKey:'',gatewayToken:''}});
+  expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('keyConfigured');expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('gatewayTokenConfigured');expect(writes[0]).not.toHaveProperty('enabled');
+});
+it('saves incomplete realtime drafts, explicitly clears individual credentials and removes the entire slot',async()=>{
+  const writes:Record<string,unknown>[]=[];let version=8;
+  vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>init?.method==='GET'?Response.json({data:{version,enabled:true,config:{...savedConfig,realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'voice-gateway',keyConfigured:true,gatewayTokenConfigured:true}}}}):(writes.push(JSON.parse(String(init?.body))),Response.json({data:{version:++version,enabled:true}}))));
+  await setup(true,false);
+  fireEvent.click(screen.getByLabelText('清除实时语音 Google 密钥'));fireEvent.click(screen.getByLabelText('清除实时语音 Gateway token'));
+  fireEvent.change(screen.getByLabelText('模拟答辩处理策略'),{target:{value:'voice-with-text-fallback'}});expect(screen.getByText(/实时语音配置尚不完整，答辩将回退文字/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/实时语音 Gateway ID/),{target:{value:''}});
+  fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
+  expect(writes[0]).toMatchObject({realtimeAudioTranscription:{clearKey:true,clearGatewayToken:true,gatewayId:''},clearRealtimeAudioTranscription:false});
+  fireEvent.click(screen.getByLabelText('配置实时语音转录'));fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
+  await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toMatchObject({clearRealtimeAudioTranscription:true});expect(writes[1]).not.toHaveProperty('realtimeAudioTranscription');
+});
+it('clears loaded realtime credentials and disables audio controls when administrator session is downgraded',async()=>{
+  vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:{version:8,enabled:true,config:{...savedConfig,realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'voice-gateway',keyConfigured:true,gatewayTokenConfigured:true}}}})));
+  const client=new QueryClient();client.setQueryData(['session'],{id:'account',role:'super_admin'});
+  render(<QueryClientProvider client={client}><AiSettings/></QueryClientProvider>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'保存配置'})).toBeEnabled());
+  fireEvent.change(screen.getByLabelText(/^实时语音 Google API key/),{target:{value:'in-memory-only'}});
+  const {act}=await import('@testing-library/react');await act(async()=>{client.setQueryData(['session'],{id:'account',role:'user'});});
+  await waitFor(()=>expect(screen.queryByLabelText(/^实时语音 Google API key/)).not.toBeInTheDocument());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
+});

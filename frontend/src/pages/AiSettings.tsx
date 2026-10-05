@@ -1,3 +1,5 @@
+import { AudioModelSettings } from './AudioModelSettings';
+import { blankAudioSettings, type AudioSettingsView } from './audio-settings-view';
 import { useSettingsDirty } from './settings-dirty';
 import { AiDiagnosticsPanel } from './AiDiagnosticsPanel';
 import { useEffect, useRef, useState } from 'react';
@@ -12,16 +14,17 @@ type ModelSlot = Purpose | 'unified';
 const modelSlots: ModelSlot[] = [...purposes, 'unified'];
 const labels = { unified: '统一模型', textEconomy: '文本与要求提取', visionEconomy: '图片与 OCR', review: '预审与答辩' };
 type Model = ProviderOptions & { model: string; apiUrl: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; maxOutputTokens: number; supportsJson: boolean; supportsVision: boolean; mediaInputPricePerMTokens?:{audio?:number;video?:number;text?:number}; pricePerMTokens: [number, number] | null };
-type Config = Record<ModelSlot, Model> & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean; audioProcessingStrategy?: 'whisper-first' | 'gemini-only'; mediaUnderstanding?:Model };
+type Config = Record<ModelSlot, Model> & AudioSettingsView & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean; audioProcessingStrategy?: 'whisper-first' | 'gemini-only'; mediaUnderstanding?:Model };
 type TokenLimits = { routingMode: Config['routingMode']; values: Partial<Record<ModelSlot, number>>; enabled: Partial<Record<ModelSlot, boolean>> };
 type Report = { passed: boolean; configVersion: number; checks: { name: string; passed: boolean; detail: string }[] };
-const blank = (): Config => ({ routingMode: 'unified', audioProcessingStrategy: 'whisper-first', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, enabledOutputLimit: true, maxOutputTokens: 4096, supportsJson: true, supportsVision: p === 'visionEconomy', pricePerMTokens: null }])) }) as Config;
+const blank = (): Config => ({ ...blankAudioSettings(), routingMode: 'unified', audioProcessingStrategy: 'whisper-first', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, enabledOutputLimit: true, maxOutputTokens: 4096, supportsJson: true, supportsVision: p === 'visionEconomy', pricePerMTokens: null }])) }) as Config;
 const tokenLimits = (config: Partial<Config>): TokenLimits => ({ routingMode: config.routingMode ?? 'advanced', values: Object.fromEntries(modelSlots.flatMap(p => typeof config[p]?.maxOutputTokens === 'number' ? [[p, config[p]!.maxOutputTokens]] : [])), enabled: Object.fromEntries(modelSlots.map(p => [p, config[p]?.enabledOutputLimit !== false])) });
 
 export function AiSettings() {
   const qc = useQueryClient();
   const session = useSession();
   const [token, setToken] = useState('');
+  const tokenRef = useRef(token); tokenRef.current = token;
   const access = session.data?.role === 'super_admin' || Boolean(token.trim());
   const [config, setConfig] = useState<Config>(blank);
   const [reports, setReports] = useState<Partial<Record<Purpose, Report>>>({});
@@ -40,9 +43,15 @@ export function AiSettings() {
   const unifiedEdited = useRef(false);
   const [error, setError] = useState<unknown>();
   const [message, setMessage] = useState('');
+  const previousAdminUser = useRef<string | undefined>(undefined);
   const adminUserId = session.data?.role === 'super_admin' ? session.data.id : undefined;
   useEffect(() => {
-    if (!adminUserId) return;
+    if (!adminUserId) {
+      if (previousAdminUser.current && !tokenRef.current.trim()) { loadSequence.current++; draftRevision.current++; setConfig(blank()); setReady(false); setDirty(false); setEdited(false); setReports({}); setVersion(0); setSavedEnabled(false); setMessage('超级管理员权限已移除，请使用有权限的账户或运维令牌。'); }
+      previousAdminUser.current = undefined;
+      return;
+    }
+    previousAdminUser.current = adminUserId;
     let cancelled = false;
     const sequence = ++loadSequence.current;
     const revision = draftRevision.current;
@@ -58,7 +67,7 @@ export function AiSettings() {
   function applyLoaded(data: { config: Config; version: number; enabled: boolean }, revision: number) {
     const preserveDraft = draftRevision.current !== revision;
     if (!preserveDraft) {
-      setConfig(data.version ? { audioProcessingStrategy: data.config.audioProcessingStrategy ?? 'whisper-first', mediaUnderstanding:data.config.mediaUnderstanding?{...data.config.mediaUnderstanding,apiKey:''}:undefined, searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), enabledOutputLimit: data.config[p]?.enabledOutputLimit ?? true, apiKey: '' }])) } as Config : blank());
+      setConfig(data.version ? { ...blankAudioSettings(), processingStrategies: data.config.processingStrategies ?? { audioFiles: data.config.audioProcessingStrategy === 'gemini-only' ? 'media-only' : 'whisper-first', rehearsal: 'text' }, rehearsalSpeech: data.config.rehearsalSpeech ?? blankAudioSettings().rehearsalSpeech, realtimeAudioTranscription: data.config.realtimeAudioTranscription ? { ...data.config.realtimeAudioTranscription, apiKey: '', gatewayToken: '' } : undefined, audioProcessingStrategy: data.config.audioProcessingStrategy ?? 'whisper-first', mediaUnderstanding:data.config.mediaUnderstanding?{...data.config.mediaUnderstanding,apiKey:''}:undefined, searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => [p, { ...(data.config[p] ?? blank()[p]), enabledOutputLimit: data.config[p]?.enabledOutputLimit ?? true, apiKey: '' }])) } as Config : blank());
       setDirty(false); setEdited(false);
       hasSavedUnified.current = Boolean(data.config.unified);
       unifiedEdited.current = false;
@@ -110,10 +119,11 @@ export function AiSettings() {
     // Do not materialize an untouched optional legacy slot just by opening the UI.
     const { unified, ...advanced } = config;
     const includeUnified = config.routingMode === 'unified' || hasSavedUnified.current || unifiedEdited.current;
-    const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, clearMediaUnderstanding:!config.mediaUnderstanding, ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
+    const realtimePayload = config.realtimeAudioTranscription ? { provider: config.realtimeAudioTranscription.provider, model: config.realtimeAudioTranscription.model, gatewayId: config.realtimeAudioTranscription.gatewayId, languageCodes: config.realtimeAudioTranscription.languageCodes?.filter(Boolean), apiKey: config.realtimeAudioTranscription.apiKey, clearKey: config.realtimeAudioTranscription.clearKey, gatewayToken: config.realtimeAudioTranscription.gatewayToken, clearGatewayToken: config.realtimeAudioTranscription.clearGatewayToken } : undefined;
+    const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, realtimeAudioTranscription: realtimePayload, clearMediaUnderstanding:!config.mediaUnderstanding, clearRealtimeAudioTranscription:!config.realtimeAudioTranscription, audioProcessingStrategy:config.processingStrategies.audioFiles === 'media-only' ? 'gemini-only' : 'whisper-first', ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
     setVersion(data.version); setSavedEnabled(data.enabled); setSavedTokenLimits(tokenLimits(includeUnified ? config : advanced)); setDirty(false); setEdited(false); setReports({});
     hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
-    setConfig(c => ({ ...c, mediaUnderstanding:c.mediaUnderstanding?{...c.mediaUnderstanding,keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
+    setConfig(c => ({ ...c, realtimeAudioTranscription:c.realtimeAudioTranscription?{...c.realtimeAudioTranscription,keyConfigured:Boolean(c.realtimeAudioTranscription.apiKey)||(!c.realtimeAudioTranscription.clearKey&&Boolean(c.realtimeAudioTranscription.keyConfigured)),gatewayTokenConfigured:Boolean(c.realtimeAudioTranscription.gatewayToken)||(!c.realtimeAudioTranscription.clearGatewayToken&&Boolean(c.realtimeAudioTranscription.gatewayTokenConfigured)),apiKey:'',gatewayToken:'',clearKey:false,clearGatewayToken:false}:undefined, mediaUnderstanding:c.mediaUnderstanding?{...c.mediaUnderstanding,keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
     setMessage(activate ? 'AI 已启用，可继续真实业务测试。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
@@ -154,7 +164,7 @@ export function AiSettings() {
         <p className="muted">累计费用预算单独在各项目的“项目设置 → AI 预算”中管理，单位为美元（USD）。有限金额预算要求启用输出上限以估算费用；关闭后仍记录实际用量。本系统没有全局累计 token 额度；输入长度按字符限制，并发与重试保护仍独立保留。</p>
       </fieldset>
       {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；文本功能可在文本与评价测试通过后启用。</p>}
-      {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready}><legend>{labels[p]}</legend>
+      {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready || !access}><legend>{labels[p]}</legend>
         <Field label={`${labels[p]}供应商`} hint="选择预设只填入建议地址和模型；不会启用 AI 或发出请求。自定义保留现有兼容接口。"><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
 
         {preset === 'opencode-go' && <div role="note"><p>{GO_USAGE_NOTICE} <a href="https://opencode.ai/docs/go/#where-can-i-use-it" target="_blank" rel="noreferrer">官方使用说明</a></p><label><input type="checkbox" checked={config[p].goUsageAcknowledged ?? false} onChange={e => edit(p, { goUsageAcknowledged: e.target.checked })} /> 我已确认套餐适用于本应用用途</label><p className="muted">使用本应用真实 User-Agent 和稳定会话 ID；不模拟官方客户端，不绕过服务限制。</p><fieldset><legend>OpenCode Go 专用请求头</legend><Field label={`${labels[p]} Go User-Agent`} hint="仅填写你实际应用的名称/版本；不能填写官方客户端身份或密钥。"><input className="input" value={config[p].goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, userAgent: e.target.value } })} /></Field><Field label={`${labels[p]} Go 会话前缀`} hint="x-opencode-session 默认自动按会话/任务生成，重试保持一致。可选非敏感前缀；不填 key、姓名或用户资料。"><input className="input" maxLength={32} value={config[p].goHeaders?.sessionPrefix ?? ''} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, sessionPrefix: e.target.value } })} /></Field><p className="muted">鉴权头由后端密钥生成，不允许编辑 Authorization、x-api-key、Cookie、Host 或任意请求头。</p></fieldset></div>}
@@ -176,15 +186,9 @@ export function AiSettings() {
         <label><input type="checkbox" disabled={protocol === 'messages'} checked={config[p].supportsJson} onChange={e => edit(p, { supportsJson: e.target.checked })} /> 服务支持协议对应的 JSON 输出约束（不支持时取消，仍会校验 JSON 输出）</label>
         {providerOptionErrors(config[p]).map(detail => <p className="muted" key={detail}>{detail}</p>)}
       </fieldset>; })}
-      <fieldset disabled={!access || busy}><legend>音视频摘要 · 音频策略与独立 Gemini 模型（可选）</legend>
+      <SectionCard title="音视频理解模型" detail="现有 Gemini 音视频理解与摘要配置，与文件转录和实时语音转录独立。"><fieldset disabled={!access || busy || !ready}><legend>音视频摘要模型（可选）</legend>
         <p className="muted">与图文模型分开配置，统一模型模式不会覆盖。支持 MP3、WAV、M4A、MP4、WebM，单文件 50 MiB。只生成 AI 摘要；视频同时理解画面与声音。长音频窗口处理会重复计费完整输入。</p>
-        <Field label="音频处理策略" hint="Whisper 转录后由图文模型检查质量；全部检查评分至少 0.85 且无关键异常，才使用文本模型总结。否则回退 Gemini；未配置 Gemini 时保留结果等待配置。">
-          <select aria-label="音频处理策略" className="input" value={config.audioProcessingStrategy ?? 'whisper-first'} onChange={e => { draftRevision.current++; setConfig(c => ({ ...c, audioProcessingStrategy: e.target.value as Config['audioProcessingStrategy'] })); setDirty(true); setEdited(true); }}>
-            <option value="whisper-first">优先 Whisper 转录（低成本）</option>
-            <option value="gemini-only">直接 Gemini 音频摘要</option>
-          </select>
-        </Field>
-        <p className="muted">Whisper 固定使用 @cf/openai/whisper-large-v3-turbo，需要 Workers AI binding；检查与总结沿用图文和文本经济模型配置。保存策略不会触发付费调用，视频始终使用 Gemini。</p>
+        <p className="muted">此现有音视频接口使用下方 Google 官方端点；它与仅经 Cloudflare AI Gateway 转发的新语音配置独立。</p>
         <label><input type="checkbox" checked={Boolean(config.mediaUnderstanding)} onChange={e=>{draftRevision.current++;setConfig(c=>({...c,mediaUnderstanding:e.target.checked?{...blank().textEconomy,provider:'openai-compatible',providerPreset:'gemini',apiUrl:'https://generativelanguage.googleapis.com',model:'gemini-2.5-flash',supportsVision:true}:undefined}));setDirty(true);setEdited(true);}} /> 配置音视频摘要模型</label>
         {config.mediaUnderstanding && <>
           <button className="button button-quiet" type="button" disabled={busy||dirty||!version} onClick={()=>void run(async()=>{const result=await call<{passed:boolean;detail:string}>('POST','/media-probe');setMessage(result.detail);if(!result.passed)throw new Error(result.detail);})}>测试音视频模型元数据（不生成）</button>
@@ -196,7 +200,8 @@ export function AiSettings() {
           {(['audio','video','text'] as const).map(kind=><Field key={kind} label={`音视频 ${kind} 输入价格（USD / 百万 token）`} hint="按供应商模态单价填写；缺少用量分解或任一模态价格时费用未知。"><input className="input" type="number" min="0" step="0.01" value={config.mediaUnderstanding!.mediaInputPricePerMTokens?.[kind]??''} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,mediaInputPricePerMTokens:{...c.mediaUnderstanding!.mediaInputPricePerMTokens,[kind]:e.target.value===''?undefined:Number(e.target.value)}}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>)}
           {([0,1] as const).map(index=><Field key={index} label={index===0?'旧输入单价（媒体不采用此值）':'音视频输出价格（USD / 百万 token）'} hint="留空时费用未知，不能据此保证预算上限。"><input className="input" type="number" min="0" step="0.01" value={config.mediaUnderstanding!.pricePerMTokens?.[index]??''} onChange={e=>{setConfig(c=>{const price: [number,number]=[...(c.mediaUnderstanding!.pricePerMTokens??[0,0])];price[index]=Number(e.target.value);return {...c,mediaUnderstanding:{...c.mediaUnderstanding!,pricePerMTokens:e.target.value===''?null:price}};});draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>)}
         </>}
-      </fieldset>
+      </fieldset></SectionCard>
+      <AudioModelSettings config={config} disabled={!access || busy || !ready} onChange={patch => { draftRevision.current++; setConfig(current => ({ ...current, ...patch })); setDirty(true); setEdited(true); setReports({}); }} />
       <div className="form-actions">{requiredProbes.map(p => <div key={p}>
         <button className="button button-quiet" disabled={!access || busy || !ready || dirty || !version} onClick={() => void run(async () => {
           const report = await call<Report>('POST', '/probe', { purpose: p });
