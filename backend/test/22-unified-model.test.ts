@@ -16,12 +16,9 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe('unified routing', () => {
-  it('enables legacy rows without routingMode after their existing probes', async () => {
+  it('enables a saved legacy row without routingMode or probe evidence', async () => {
     const raw = (await loadAiConfig(env.DB, undefined, false))!;
     expect(raw.config.routingMode).toBeUndefined();
-    for (const purpose of ['textEconomy', 'visionEconomy', 'review']) {
-      await env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, 1, ?3, ?4)').bind(raw.id, purpose, '{}', new Date().toISOString()).run();
-    }
     const read = await get();
     expect(read.config.searchEnabled).toBe(false);
     expect((await put({ ...read.config, searchEnabled: true, enabled: true, expectedVersion: read.version })).status).toBe(409);
@@ -92,26 +89,10 @@ describe('unified routing', () => {
     expect((await put(draft)).status).toBe(201);
     expect((await put({ ...draft, routingMode: 'advanced' })).status).toBe(400);
   });
-  it('text-only enables after applicable probes and denies images before decrypt/fetch', async () => {
+  it('enables text-only config without probes and denies images before decrypt/fetch', async () => {
     const current = await get();
     expect((await put({ ...current.config, routingMode: 'unified', unified: { ...current.config.textEconomy, supportsVision: false, model: 'one-text' } })).status).toBe(201);
     const read = await get();
-    expect((await put({ ...read.config, enabled: true })).status).toBe(409);
-    const mock = vi.fn(async (_url: unknown, init?: RequestInit) => {
-      const request = JSON.parse(String(init?.body));
-      expect(request.model).toBe('one-text');
-      const content = request.messages[0].content.includes('JSON') ? '{"ok":true,"n":1}' : '你好，测试';
-      return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { prompt_tokens: 4, completion_tokens: 3 } }));
-    });
-    vi.stubGlobal('fetch', mock);
-    for (const purpose of ['textEconomy', 'review']) {
-      const res = await SELF.fetch(`${BASE}/api/v1/admin/ai-config/probe`, { method: 'POST', headers, body: JSON.stringify({ purpose }) });
-      expect((await res.json() as any).data.passed).toBe(true);
-    }
-    mock.mockClear();
-    const vision = await SELF.fetch(`${BASE}/api/v1/admin/ai-config/probe`, { method: 'POST', headers, body: JSON.stringify({ purpose: 'visionEconomy' }) });
-    expect((await vision.json() as any).data.passed).toBe(false);
-    expect(mock).not.toHaveBeenCalled();
     expect((await put({ ...read.config, enabled: true })).status).toBe(201);
     const runtime = (await loadAiConfig(env.DB))!;
     const fetchMock = vi.fn();

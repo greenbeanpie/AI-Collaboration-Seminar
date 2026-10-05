@@ -126,7 +126,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 
 `cron.ts` 每分钟补投到期 pending outbox，查询最多 10 项，租约 5 分钟、派发重试达到 5 次标记失败；并释放超过 2 小时的 reserved 并发额度。前端查询任务，重试 API 校验身份及任务状态。已有实例通过错误文本 `already exists` 分支处理；该分支没有查询实例状态。running 状态崩溃、重复步骤及终态一致性仍需专项验证 [A07](#a07)，不能把确定性实例 ID 等同于端到端恰好一次执行。
 
-`ai/config.ts` 定义 textEconomy、visionEconomy、review 配置，配置以新版本追加；`ai/gateway.ts` 处理模型请求、输入上限和重试；`ai/probe.ts` 检查中文、JSON、图片和用量能力。启用状态由最新配置控制；capabilities 的 aiEnabled 不是密钥或模型可用性的实时探测。启用流程需要人工遵守探测要求 [A04](#a04)。
+`ai/config.ts` 定义 textEconomy、visionEconomy、review 配置，配置以新版本追加；`ai/gateway.ts` 处理模型请求、输入上限和重试；`ai/probe.ts` 检查中文、JSON、图片和用量能力。启用状态由最新配置控制；capabilities 的 aiEnabled 不是密钥或模型可用性的实时探测。管理员可启用已保存的最新配置；能力探测是可选诊断 [A04](#a04)。
 
 `ai/calls.ts` 将输入/输出存 R2，并记录模型、配置/提示版本、token、延迟和结果状态；配置了 `pricePerMTokens` 时按真实用量计算 `cost_usd`，未配置或用量缺失时如实记 unknown。`services/budget.ts` 现按「并发上限 + 项目金额预算」原子预占：按模型参数估算预占金额，调用后按该次预占窗口内的 `ai_calls` 结算；部分入口先派发后预占、失败计费与估算上界仍未闭合，费用未知记 `pending_reconcile`；OCR 与要求提取也已纳入预占，见 [A03](#a03)。Gateway 支持 `workers-ai` 与自定义 `openai-compatible` 两种供应商（后者密钥 AES-GCM 加密存储），仅 `ENV_NAME=local` 允许回环模型地址，见 [A15](#a15)。
 
@@ -143,7 +143,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 | A01 | 两端 `wrangler deploy --dry-run --env staging` 通过；`npm run preflight:deploy -- staging` 精确列出仍缺 3 项（EMAIL_FROM、真实 D1 database_id、前端 HTTPS Origin 白名单）并退出 1 | 本机 dry-run 与 preflight 输出 |
 | A02 | Resend 适配器失败/成功路径单测（mock，不发送真实请求）：缺 Key、非 2xx、成功请求体 | `backend/test/24-email-resend.test.ts` |
 | A03 | 新增项目级 `ai_budget_usd`（null=不限额）；新增估算金额与并发原子检查、用量结算和 `pending_reconcile`；OCR/要求提取纳入预占，但先派发后预占、失败计费与估算上界仍待修正 | `0006_project_ai_budget.sql`、`services/budget.ts`、`test/82-agents.test.ts` |
-| A04 | 探测证据按配置版本持久化，未探测/探测失败/配置变更后均拒绝启用 | `test/20-admin-ai.test.ts` |
+| A04 | 探测证据按配置版本留存作诊断；启用仅要求配置已保存且仍为最新版本 | `test/20-admin-ai.test.ts` |
 | A05 | 任务在创建时冻结 `configVersionId`，各执行服务按冻结版本读取；排队期间改配置不影响该任务 | `test/22-ai-routing.test.ts` |
 | A06 | `stillMissing` 只统计缺图且无文本层的页；OCR 失败的页使任务失败而非误报完整；**空 OCR 文本不再被当作识别成功**；失败页重新出现在待渲染列表可重试 | `test/70-sources-parse.test.ts` |
 | A07 | 终态不可被迟到回调改回；租约只允许一次抢占；运行中任务额度不被清理释放；创建 Workflow 前中断的恢复仍待补 | `test/23-job-recovery.test.ts`、`test/82-agents.test.ts` |
@@ -185,11 +185,11 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 - 完成判据：后端/产品确定计费规则，调用前原子检查并预占金额，成功/失败/重试/超时均结算或待对账；重复执行不重复扣款，预算竞争测试及供应商账单核对通过。
 
 <a id="a04"></a>
-### A04 · 模型探测启用门槛【已实现（本地）；真模型探测待云端】
+### A04 · 可选模型能力探测【启用不依赖探测】
 
 - 位置：`backend/src/api/admin.ts`、`ai/probe.ts`、迁移 `0004_ai_probes.sql`。
-- 本轮实现：探测结果按 `(config_version_id, purpose)` 持久化；写 `enabled=true` 时要求配置与最新版本完全一致且该版本三用途均有 `passed=1` 证据，否则 409。缺密钥或模型不可用时探测报告与 `ai_calls` 如实记失败。
-- 完成判据：未探测、失败或配置已变化时拒绝启用；textEconomy/visionEconomy/review 真模型能力证据齐全，缺密钥/模型不可用明确报错。
+- 本轮实现：探测结果按 `(config_version_id, purpose)` 持久化供诊断。写 `enabled=true` 时只要求配置已保存且与最新版本一致，不要求探测通过；缺密钥或模型不可用时探测报告与 `ai_calls` 如实记失败。
+- 完成判据：未保存或配置已变化时拒绝直接启用；未探测/探测失败不阻止启用，缺密钥或模型不可用会在实际调用时明确失败。
 
 <a id="a05"></a>
 ### A05 · 任务冻结模型配置【已实现（本地）】

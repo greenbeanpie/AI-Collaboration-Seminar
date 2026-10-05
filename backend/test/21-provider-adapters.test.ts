@@ -101,6 +101,11 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     ['openrouter', 'openai/gpt-5', { reasoningEffort: 'minimal' }, { reasoning: { effort: 'minimal' }, provider: { require_parameters: true } }],
     ['anthropic', 'claude-sonnet-5-5', { reasoningEffort: 'xhigh' }, { output_config: { effort: 'xhigh' } }],
     ['gemini', 'gemini-3.8-flash', { reasoningEffort: 'medium' }, { generationConfig: { thinkingConfig: { thinkingLevel: 'medium' } } }],
+    ['opencode-go', 'gpt-6-luna', { reasoningEffort: 'high' }, { reasoning: { effort: 'high' } }],
+    ['opencode-go', 'gpt-5.6-luna', { reasoningEffort: 'max' }, { reasoning: { effort: 'max' } }],
+    ['opencode-go', 'grok-4.7', { reasoningEffort: 'xhigh' }, { reasoning: { effort: 'xhigh' } }],
+    ['opencode-go', 'deepseek-v4-pro', { reasoningEffort: 'high' }, { reasoning_effort: 'high' }],
+    ['opencode-go', 'deepseek-v4-pro', { reasoningEffort: 'none' }, { thinking: { type: 'disabled' } }],
   ] as const)('%s %s serializes only supported option names', async (preset, model, options, expected) => {
     const cfg = config(preset, model, options);
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(response(protocolForConfig(cfg)))));
@@ -109,7 +114,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(body).toMatchObject(expected);
     if (preset === 'openrouter' || protocolForConfig(cfg) === 'responses' || preset === 'gemini') expect(body.reasoning_effort).toBeUndefined();
     expect(body.apiKeyEncrypted).toBeUndefined();
-    if (preset === 'deepseek' && options.reasoningEffort === 'none') expect(body.reasoning_effort).toBeUndefined();
+    if ((preset === 'deepseek' || (preset === 'opencode-go' && model === 'deepseek-v4-pro')) && options.reasoningEffort === 'none') expect(body.reasoning_effort).toBeUndefined();
   });
 
   it('DeepSeek preserves the configured output cap and extracts only a completed answer', async () => {
@@ -235,7 +240,7 @@ describe('versioned configuration, authorization, and reservations', () => {
     const mock = vi.fn(async () => new Response(JSON.stringify(response('responses'))));
     await gatewayChat(endpoint, { config: (await loadAiConfig(env.DB, frozen.id))!.config.textEconomy, messages }, mock);
     expect(JSON.parse(String((mock.mock.calls[0] as unknown as [string, RequestInit])[1].body)).reasoning).toEqual({ effort: 'low' });
-    expect((await putConfig({ ...original, reasoningEffort: 'high' }, undefined, true)).status).toBe(409);
+    expect((await putConfig({ ...original, reasoningEffort: 'high' }, undefined, true)).status).toBe(201);
     expect((await putConfig(config('deepseek', 'deepseek-flash'))).status).toBe(400);
   });
 

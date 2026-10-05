@@ -17,7 +17,7 @@ export interface ProbeReport {
   model: string;
   configVersion: number;
   checks: ProbeCheck[];
-  /** 四项全部通过才允许启用（backend_plan.md 6.2） */
+  /** 检查均通过时记为诊断通过；探测结果不作为启用门槛。 */
   passed: boolean;
 }
 
@@ -37,13 +37,13 @@ function extractJson(text: string): Record<string, unknown> {
 }
 
 /**
- * 能力探测（模型启用前置条件）：
+ * 可选能力诊断：
  * 1. chinese_text  中文短文生成
  * 2. json_output   JSON 输出（supportsJson 时走 response_format，否则靠提示词 + 解析）
  * 3. vision_accept 图片输入链路（仅 visionEconomy 必须通过；其余用途跳过记为通过）
  * 4. usage_fields  用量字段完整性
  *
- * 探测允许在 enabled=0 时运行——它正是启用前的验证门槛。
+ * 探测允许在 enabled=0 时运行，不修改配置版本或启用状态。
  * 探测调用同样计入 ai_calls（费用未知时如实记录，不填零）。
  */
 export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig, diagnosticRequestId?: string): Promise<ProbeReport> {

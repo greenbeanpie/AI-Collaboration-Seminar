@@ -10,6 +10,14 @@ const zenMessages = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'c
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ReasoningEffort = typeof REASONING_EFFORTS[number];
 export const GO_USAGE_NOTICE = 'OpenCode Go 面向编码代理请求。本应用含项目写作、分工和验收等非编码任务；请求头适配不代表套餐适用或获得官方认证。请先确认你的套餐允许此用途；供应商可能拒绝请求。';
+const openCodeReasoningEfforts: Readonly<Record<string, readonly ReasoningEffort[]>> = {
+  'gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'gpt-6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'grok-4.5': ['low', 'medium', 'high'],
+  'grok-4.6': ['low', 'medium', 'high', 'xhigh'],
+  'grok-4.7': ['low', 'medium', 'high', 'xhigh'],
+};
+const openCodeDeepseekReasoningEfforts: readonly ReasoningEffort[] = ['none', 'low', 'high', 'max'];
 const goModels = ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'longcat-2.0', 'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.6-flash', 'mimo-v2.6-pro', 'mimo-v2.5', 'mimo-v2.5-pro', 'hy4-preview', 'hy3'];
 const zenModels = ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'kimi-k2.5', 'kimi-k2.6', 'kimi-k2.7-code', 'kimi-k3', 'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'minimax-m3', 'minimax-m2.7', 'minimax-m2.5', 'qwen3.8-max'];
 export const providerPresets: Record<ProviderPreset, { label: string; apiUrl: string; models: readonly string[]; supportsJson: boolean }> = {
@@ -45,6 +53,14 @@ export function requiresExplicitApiProtocol(config: ProviderOptions): boolean {
     && !providerPresets[preset].models.includes(config.model)
     && !config.apiProtocol;
 }
+export function usesDeepSeekThinkingToggle(config: ProviderOptions): boolean {
+  const preset = config.providerPreset ?? 'custom';
+  return preset === 'deepseek'
+    ? providerPresets.deepseek.models.includes(config.model)
+    : (preset === 'opencode-go' || preset === 'opencode-zen')
+      && providerPresets[preset].models.includes(config.model)
+      && config.model === 'deepseek-v4-pro';
+}
 export interface ModelCapabilities {
   reasoning: readonly ReasoningEffort[];
   temperature: boolean;
@@ -60,7 +76,12 @@ export function modelCapabilities(config: ProviderOptions): ModelCapabilities {
   if (preset === 'anthropic') return { ...base, reasoning: config.model === 'claude-sonnet-5-5' ? ['low', 'medium', 'high', 'xhigh', 'max'] : [], temperature: false, topP: false };
   if (preset === 'gemini') return { ...base, reasoning: config.model === 'gemini-3.8-flash' ? ['low', 'medium', 'high'] : [], temperature: false, topP: false };
   if (preset === 'custom') return { ...base, topP: config.provider !== 'workers-ai' };
-  if (preset === 'opencode-go' || preset === 'opencode-zen') return { ...base, temperature: false, topP: false };
+  if (preset === 'opencode-go' || preset === 'opencode-zen') {
+    const knownModel = providerPresets[preset].models.includes(config.model);
+    const reasoning = knownModel ? openCodeReasoningEfforts[config.model]
+      ?? (config.model === 'deepseek-v4-pro' ? openCodeDeepseekReasoningEfforts : []) : [];
+    return { ...base, reasoning, temperature: false, topP: false };
+  }
   if (preset === 'deepseek') {
     if (!providerPresets.deepseek.models.includes(config.model)) return { ...base, temperature: false, topP: false };
     const thinking = config.reasoningEffort !== 'none';

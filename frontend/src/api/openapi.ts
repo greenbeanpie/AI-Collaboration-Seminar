@@ -10523,7 +10523,7 @@ export interface paths {
                 };
             };
         };
-        /** 保存 AI 配置新版本（无需探测；变更后停用，显式启用仍须探测） */
+        /** 保存 AI 配置新版本（探测为可选诊断；变更后停用，保存后可显式启用） */
         put: {
             parameters: {
                 query?: never;

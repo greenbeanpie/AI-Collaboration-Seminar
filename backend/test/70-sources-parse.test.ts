@@ -8,7 +8,7 @@ import { mockGatewayFetch } from './helpers/ai-mock';
 import { runParseJob } from '../src/services/parse';
 import { LIMITS } from '../src/core/limits';
 
-// 种子配置默认 enabled=0（需探测后启用）；本文件测试直接启用
+// 种子配置默认 enabled=0；本文件测试直接启用已保存的配置
 await configureGoFixture();
 
 afterEach(() => {

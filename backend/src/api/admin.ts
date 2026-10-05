@@ -118,7 +118,7 @@ const putRoute = createRoute({
   method: 'put',
   path: '/api/v1/admin/ai-config',
   tags: ['admin'],
-  summary: '保存 AI 配置新版本（无需探测；变更后停用，显式启用仍须探测）',
+  summary: '保存 AI 配置新版本（探测为可选诊断；变更后停用，保存后可显式启用）',
   request: { body: { content: { 'application/json': { schema: configShape } }, required: true } },
   responses: { 201: { content: { 'application/json': { schema: putResponse } }, description: '新版本已创建' } },
 });
@@ -301,10 +301,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {
-      if (!latest || !unchanged) throw invalidState('请先保存配置并测试适用模型，配置变化后必须重新测试');
-      const probes = await c.env.DB.prepare('SELECT purpose FROM ai_probes WHERE config_version_id = ?1 AND passed = 1').bind(latest.id).all<{ purpose: string }>();
-      const required = config.routingMode === 'unified' && !config.unified?.supportsVision ? ['textEconomy', 'review'] : ['textEconomy', 'visionEconomy', 'review'];
-      if (!required.every(purpose => probes.results.some(probe => probe.purpose === purpose))) throw invalidState('所有适用用途的模型测试通过后才能启用 AI');
+      if (!latest || !unchanged) throw invalidState('请先保存配置后再启用 AI');
     }
     const saved = await c.env.DB.batch([c.env.DB.prepare(
       'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COALESCE(MAX(version), 0) FROM ai_config_versions) = ?8',

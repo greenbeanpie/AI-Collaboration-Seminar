@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
-import { aiConfigSchema } from '../src/ai/config';
+import { aiConfigSchema, loadAiConfig } from '../src/ai/config';
 
 const adminHeaders = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
 
@@ -34,7 +34,7 @@ describe('管理端鉴权', () => {
 });
 
 describe('AI 配置版本化', () => {
-  it('种子配置未启用；禁止未测试直接启用', async () => {
+  it('种子配置可在不探测的情况下直接启用', async () => {
     const get = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers: adminHeaders });
     expect(get.status).toBe(200);
     const current = (await get.json()) as { data: { version: number; enabled: boolean } };
@@ -83,15 +83,15 @@ describe('AI 配置版本化', () => {
         notes: '测试启用',
       }),
     });
-    expect(put.status).toBe(409);
+    expect(put.status).toBe(201);
     const capsAfter = await SELF.fetch(`${BASE}/api/v1/capabilities`);
     const after = (await capsAfter.json()) as { data: { features: { aiEnabled: boolean } } };
-    expect(after.data.features.aiEnabled).toBe(false);
+    expect(after.data.features.aiEnabled).toBe(true);
   });
 });
 
 describe('AI 能力探测', () => {
-  it('自定义地址和密钥加密保存，全部用途探测后启用；变更配置使证据失效', async () => {
+  it('自定义地址和密钥加密保存；可选探测保留证据，变更配置后须先另行保存', async () => {
     const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
     const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
     const body = Object.fromEntries((['textEconomy', 'visionEconomy', 'review'] as const).map(p => [p, config[p]] as const).map(([p, model]) => [p, { ...model, provider: 'openai-compatible', model: 'test-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-key' }]));
@@ -188,7 +188,7 @@ describe('AI 能力探测', () => {
     expect(report.data.checks[0]?.detail).toContain('500');
   }, 60_000);
 
-  it('探测失败不产生通过证据，启用仍被拒绝', async () => {
+  it('探测失败会记录诊断结果，但不会阻止启用已保存配置', async () => {
     const row = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ config_json: string }>();
     const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
     const body = Object.fromEntries(
@@ -205,9 +205,10 @@ describe('AI 能力探测', () => {
     const evidence = await env.DB.prepare('SELECT passed FROM ai_probes WHERE config_version_id = ?1 AND purpose = ?2').bind(saved!.id, 'textEconomy').first<{ passed: number }>();
     expect(evidence?.passed).toBe(0);
 
-    // 配置未变（apiKey 留空以复用已存密钥）但证据不足 → 仍禁止启用
+    // 配置未变（apiKey 留空以复用已存密钥），失败探测不构成启用门槛。
     const enableBody = Object.fromEntries(Object.entries(body).map(([p, model]) => [p, { ...model, apiKey: '' }]));
     const enable = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ ...enableBody, enabled: true }) });
-    expect(enable.status).toBe(409);
+    expect(enable.status).toBe(201);
+    expect((await loadAiConfig(env.DB))?.enabled).toBe(true);
   });
 });

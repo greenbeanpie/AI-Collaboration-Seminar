@@ -60,7 +60,7 @@ it('enabling separate Gemini and MiMo media models does not set either API URL',
   fireEvent.click(screen.getByLabelText('配置音视频摘要模型'));
   fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型'));
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(saved?.mediaUnderstanding).not.toHaveProperty('apiUrl');
   expect(saved?.mimoMediaUnderstanding).not.toHaveProperty('apiUrl');
 });
@@ -99,31 +99,31 @@ it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every su
   fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
   expect(screen.getByLabelText(/统一模型思考强度/)).toHaveValue('none');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(2);
 });
-it('system admin session saves blank configuration, tests connections, and cannot enable failed probes', async () => {
+it('system admin can enable a saved configuration despite a failed optional probe', async () => {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
     const body = JSON.parse(String(init?.body));
     expect(new Headers(init?.headers).has('authorization')).toBe(false); expect(init?.credentials).toBe('same-origin');
     if (init?.method === 'PUT') {
+      if (body.enabled === true) return new Response(JSON.stringify({ data: { version: 3, enabled: true } }));
       expect(body.textEconomy.apiUrl).toBe(''); expect(body.textEconomy.apiKey).toBe(''); expect(body.enabled).toBeUndefined();
       return new Response(JSON.stringify({ data: { version: 2, enabled: false } }));
     }
     return new Response(JSON.stringify({ data: { passed: false, configVersion: 2, checks: [{ name: 'chinese_text', passed: false, detail: '请填写 API URL、key 和模型名称' }] } }));
   });
   vi.stubGlobal('fetch', fetchMock); await setup();
-  const enable = screen.getByRole('button', { name: '全部测试通过后启用 AI' }); expect(enable).toBeDisabled();
+  const enable = screen.getByRole('button', { name: '启用 AI' }); expect(enable).toBeDisabled();
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   fireEvent.click(screen.getByRole('button', { name: /测试.*文本与要求提取.*连接与能力/ }));
   await waitFor(() => expect(screen.getByText(/请填写 API URL、key 和模型名称/)).toBeInTheDocument());
-  expect(enable).toBeDisabled(); expect(fetchMock).toHaveBeenCalledTimes(3);
-  expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(enable).toBeEnabled(); expect(fetchMock).toHaveBeenCalledTimes(3);
+  fireEvent.click(enable);
+  await screen.findByText('AI 已启用。');
   expect(fetchMock).toHaveBeenCalledTimes(4);
 });
 
@@ -167,7 +167,7 @@ it('Go has independent manual protocol and bounded headers, never automatically 
   fireEvent.change(screen.getByLabelText(/文本与要求提取 Go 会话前缀/), { target: { value: 'office' } });
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'new-key' } });
   expect(save).toBeEnabled(); fireEvent.click(save);
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(2); expect(localStorage.length).toBe(0);
   expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('');
 });
@@ -188,6 +188,38 @@ it('OpenAI options follow model capability and explicit protocol; invalid hidden
   expect(screen.getByLabelText(/文本与要求提取思考强度/)).toHaveValue('');
 });
 
+it.each([
+  ['gpt-6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
+  ['gpt-5.6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
+  ['grok-4.7', 'responses', ['', 'low', 'medium', 'high', 'xhigh']],
+  ['deepseek-v4-pro', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+] as const)('OpenCode Go %s shows supported thinking levels and saves the selected effort', async (modelId, apiProtocol, efforts) => {
+  const unified = {
+    ...savedModel,
+    providerPreset: 'opencode-go',
+    model: modelId,
+    apiProtocol,
+    apiUrl: `https://opencode.ai/zen/go/v1/${apiProtocol === 'chat-completions' ? 'chat/completions' : apiProtocol}`,
+    goUsageAcknowledged: true,
+    supportsJson: false,
+  };
+  const writes: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: false, config: { ...savedConfig, unified } } });
+    writes.push(JSON.parse(String(init?.body)));
+    return Response.json({ data: { version: 9, enabled: false } });
+  }));
+  await setup(true, false);
+
+  const effort = screen.getByLabelText(/统一模型思考强度/);
+  expect(within(effort).getAllByRole('option').map(option => (option as HTMLOptionElement).value)).toEqual(efforts);
+  fireEvent.change(effort, { target: { value: 'high' } });
+  expect(effort).toHaveValue('high');
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
+  expect(writes[0]?.unified).toMatchObject({ model: modelId, reasoningEffort: 'high' });
+});
+
 it('old saved custom config is preserved; changing providers clears key reuse and does not enable AI', async () => {
   const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, temperature: 0.4, supportsJson: false, supportsVision: false, pricePerMTokens: null };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -204,7 +236,7 @@ it('old saved custom config is preserved; changing providers clears key reuse an
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'deepseek' } });
   expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(2);
 });
 
@@ -226,12 +258,12 @@ it('unified mode preserves advanced drafts, sends one independent model and vers
   expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('test-only-key');
   expect(mock).toHaveBeenCalledOnce(); // Initial sanitized configuration load only.
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
   expect(localStorage.length).toBe(0);
 });
 
-it('text-only unified mode enables after both text probes, requires vision probe when declared, and invalidates reports on mode changes', async () => {
+it('text-only unified mode enables without probes, keeps diagnostics available, and disables enable while drafts change', async () => {
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
     const body = JSON.parse(String(init?.body));
@@ -243,12 +275,14 @@ it('text-only unified mode enables after both text probes, requires vision probe
   expect(screen.getByRole('note')).toHaveTextContent('图片 / OCR 不可用');
   expect(screen.queryByRole('button', { name: /测试图片/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
-  const enable = screen.getByRole('button', { name: '全部测试通过后启用 AI' });
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
+  const enable = screen.getByRole('button', { name: '启用 AI' });
+  expect(enable).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: /测试文本/ }));
-  await screen.findByText(/^测试通过 · 配置/); expect(enable).toBeDisabled();
+  await screen.findByText(/^测试通过 · 配置/); expect(enable).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: /测试预审/ }));
-  await waitFor(() => expect(enable).toBeEnabled());
+  await waitFor(() => expect(screen.getAllByText(/^测试通过 · 配置/)).toHaveLength(2));
+  expect(enable).toBeEnabled();
   fireEvent.click(screen.getByLabelText(/声明模型支持图片输入/));
   expect(enable).toBeDisabled(); expect(screen.getByRole('button', { name: /测试图片/ })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
@@ -269,7 +303,7 @@ it('loads sanitized unified config and retains draft on optimistic version confl
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByRole('alert');
   expect(screen.getByLabelText('统一模型模型名称')).toHaveValue('unsaved-change');
-  expect(screen.getByRole('button', { name: '全部测试通过后启用 AI' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '启用 AI' })).toBeDisabled();
   expect(screen.queryByText(/^配置已保存/)).not.toBeInTheDocument();
 });
 
@@ -328,7 +362,7 @@ it('saves the explicit off switch while retaining a value above the former maxim
   fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
   expect(screen.getByLabelText(/统一模型最大输出 token/)).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 已关闭（保留 65536 token）');
   expect(mock).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
@@ -362,7 +396,7 @@ it('prominent unified output limit retains the saved value and inactive purpose 
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 9876 token / 次');
   expect(mock).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v12：统一模型 12345 token / 次');
   expect(mock).toHaveBeenCalledTimes(2);
   expect(within(limits).getByText(/累计费用预算/)).toHaveTextContent('美元（USD）');
@@ -387,7 +421,7 @@ it('advanced output limits remain independent across routing-mode changes withou
   fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
   expect(screen.getByLabelText(/预审与答辩最大输出 token/)).toHaveValue(32768);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(2);
 });
 
@@ -402,7 +436,7 @@ it.each(['0', '9007199254740992', '1.5'])('rejects invalid output token limit %s
   expect(mock).toHaveBeenCalledOnce();
 });
 
-it('unchanged save preserves enabled state without requiring or making a connection probe', async () => {
+it('unchanged save preserves enabled state and marks activation unavailable while already enabled', async () => {
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 4, enabled: true, config: savedConfig } }));
     expect(init?.method).toBe('PUT');
@@ -412,7 +446,7 @@ it('unchanged save preserves enabled state without requiring or making a connect
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   await screen.findByText('当前 AI 已启用。');
-  expect(screen.getByRole('button', { name: '全部测试通过后启用 AI' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'AI 已启用' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 保持启用。');
   expect(mock).toHaveBeenCalledTimes(2);
@@ -430,7 +464,7 @@ it('edited enabled config saves independently and displays the safely disabled s
   await screen.findByText('当前 AI 已启用。');
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'edited-model' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(screen.getByText(/已保存配置 v5 · AI 未启用/)).toBeInTheDocument();
   expect(mock).toHaveBeenCalledTimes(2);
 });
@@ -455,7 +489,7 @@ it('disable sends only the saved version and false, preserving invalid provider 
   expect(screen.getByLabelText('我已确认套餐适用于本应用用途')).not.toBeChecked();
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
   expect(screen.getByRole('button', { name: /测试文本/ })).toBeDisabled();
-  expect(screen.getByRole('button', { name: '全部测试通过后启用 AI' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '启用 AI' })).toBeDisabled();
   expect(mock).toHaveBeenCalledTimes(2);
   expect(localStorage.length).toBe(0);
 });
@@ -511,7 +545,7 @@ it('lets admins explicitly choose the fallback protocol for an unverified OpenCo
 
   fireEvent.change(protocol, { target: { value: 'chat-completions' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(writes).toHaveLength(1);
   expect(writes[0].unified).toMatchObject({ model: 'future-model', apiProtocol: 'chat-completions' });
 });
@@ -531,13 +565,13 @@ it('opens with the saved version automatically and uses each new version for con
   for (const name of ['first-change', 'second-change']) {
     fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: name } });
     fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-    await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+    await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   }
   expect(version).toBe(9);
   expect(mock).toHaveBeenCalledTimes(3);
 });
 
-it('probe does not advance the version and enable uses the saved and tested version', async () => {
+it('enables a saved config before optional probes; probes remain available and do not advance the version', async () => {
   let version = 7;
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version, enabled: false, config: savedConfig } }));
@@ -550,14 +584,15 @@ it('probe does not advance the version and enable uses the saved and tested vers
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
-  fireEvent.click(screen.getByRole('button', { name: /测试文本/ }));
-  await screen.findByText('测试通过 · 配置 v8');
-  fireEvent.click(screen.getByRole('button', { name: /测试预审/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '全部测试通过后启用 AI' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: '全部测试通过后启用 AI' }));
-  await screen.findByText('AI 已启用，可继续真实业务测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
+  expect(screen.getByRole('button', { name: '启用 AI' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: '启用 AI' }));
+  await screen.findByText('AI 已启用。');
   expect(version).toBe(9);
+  fireEvent.click(screen.getByRole('button', { name: /测试文本/ }));
+  await screen.findByText('测试通过 · 配置 v9');
+  fireEvent.click(screen.getByRole('button', { name: /测试预审/ }));
+  await screen.findByText('测试通过 · 配置 v9');
   expect(mock).toHaveBeenCalledTimes(5);
 });
 
@@ -577,7 +612,7 @@ it('disabling with a draft advances expectedVersion and a later save retains the
   fireEvent.click(screen.getByRole('button', { name: '停用 AI' }));
   await screen.findByText('AI 已停用。未保存的表单修改已保留，请点击保存配置后再测试。');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(3);
   expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
 });
@@ -658,7 +693,7 @@ it('editing an OpenCode preset URL preserves its provider, explicit key, model a
   expect(screen.getByLabelText(/文本与要求提取 API 协议/)).toHaveValue('chat-completions');
   expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('explicit-draft-key');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-zen', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions' } });
 });
 
@@ -756,6 +791,6 @@ it('editing the Go URL preserves acknowledgement, headers, protocol and model wh
   expect(screen.getByLabelText(/文本与要求提取 Go User-Agent/)).toHaveValue('MyOffice/1.2');
   expect(screen.getByLabelText(/文本与要求提取 Go 会话前缀/)).toHaveValue('office');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', apiUrl: 'https://proxy.example/v1/messages', apiKey: 'new-endpoint-key', goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } } });
 });

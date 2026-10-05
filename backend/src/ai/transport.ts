@@ -1,7 +1,7 @@
 import type { AiModelConfig } from './config';
 import type { ChatMessage } from './gateway';
 import { AppError } from '../core/errors';
-import { modelCapabilities, protocolForConfig, type ApiProtocol } from '../../../shared/ai-providers';
+import { modelCapabilities, protocolForConfig, usesDeepSeekThinkingToggle, type ApiProtocol } from '../../../shared/ai-providers';
 
 const invalid = (message: string, details?: Record<string, unknown>) => new AppError('AI_OUTPUT_INVALID', message, 502, false, details);
 const inputError = (message: string) => new AppError('AI_UNAVAILABLE', message, 503, false);
@@ -63,7 +63,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
       if (jsonMode && config.supportsJson) body.response_format = { type: 'json_object' };
       if (config.reasoningEffort !== undefined) {
         // DeepSeek Chat toggles thinking separately; "none" is not a Chat effort.
-        if (config.providerPreset === 'deepseek' && config.reasoningEffort === 'none') body.thinking = { type: 'disabled' };
+        if (usesDeepSeekThinkingToggle(config) && config.reasoningEffort === 'none') body.thinking = { type: 'disabled' };
         else if (config.providerPreset === 'openrouter') body.reasoning = { effort: config.reasoningEffort };
         else body.reasoning_effort = config.reasoningEffort;
       }

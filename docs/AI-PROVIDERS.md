@@ -1,6 +1,6 @@
 # AI 供应商、协议与参数
 
-本次改动仅增加接入能力和管理界面。没有变更线上配置、读取已有明文密钥、购买套餐、创建新 Worker 或执行真实付费请求。预设不是模型可用性/套餐资格保证；实际启用仍需要管理员手动保存、分别探测三个用途并通过同一版本的启用门槛。
+预设不是模型可用性或套餐资格保证。管理员保存有效配置后可手动启用 AI；能力测试是可选诊断，失败或未测试不阻止启用。
 
 ## 网页配置
 
@@ -13,11 +13,11 @@
 - 自定义接口保留完整 URL、模型和原有参数；代理请使用「自定义」。不因字符串中含有某个模型名称而自动推断能力
 - 思考强度默认「不发送」，遵循供应商默认值。切换模型会清理不兼容的思考/采样参数；已保存的旧配置不会在读取时被改写
 - 最大输出 token 在醒目的「全局输出 token 上限」区域编辑；常用参数包含 temperature、top_p、最大输入字符、超时、JSON 输出约束和图片能力声明。参数范围与供应商/模型/思考模式联动；不支持的值会被拒绝，不能绕过前端校验
-- 保存配置默认停用；只有用户明确点击「测试」才会调用真实模型，可能产生费用。所有用途探测通过后才可再次明确启用
+- 保存配置默认停用；只有用户明确点击「测试」才会调用真实模型，可能产生费用。测试结果仅供诊断，不作为启用门槛
 
 ### 全局输出 token 上限
 
-每个模型配置用 `enabledOutputLimit` 控制是否发送 `maxOutputTokens`；旧配置缺少开关时默认启用并保持原数值。这是现有模型配置的 `maxOutputTokens`，单位为 **每次模型请求的输出 token**。统一模式只有一个全局值，适用于所有项目的各用途；高级模式保留文本、图片/OCR、预审/答辩三个独立值。界面显示已保存版本与上限，编辑草稿不会改变已保存值、其他用途的草稿或密钥。保存和启用继续走原有版本冲突检查与能力测试流程，旧任务冻结的配置版本不改写。
+每个模型配置用 `enabledOutputLimit` 控制是否发送 `maxOutputTokens`；旧配置缺少开关时默认启用并保持原数值。这是现有模型配置的 `maxOutputTokens`，单位为 **每次模型请求的输出 token**。统一模式只有一个全局值，适用于所有项目的各用途；高级模式保留文本、图片/OCR、预审/答辩三个独立值。界面显示已保存版本与上限，编辑草稿不会改变已保存值、其他用途的草稿或密钥。保存和启用继续走原有版本冲突检查；能力测试为可选诊断，旧任务冻结的配置版本不改写。
 
 启用时接受可安全表示的正整数，没有 32768 等固定业务最大值；数字精度校验仍保留。关闭时 Chat Completions（含 `max_completion_tokens`）、Responses 和 Gemini 省略输出上限字段，任何单次调用值也不能重新引入 4096/32768 等回退。保留原数值方便再次启用，不自动修改线上配置。供应商默认值、模型输出和上下文硬上限仍然生效，省略参数不保证无限输出。Messages 协议必填 `max_tokens`，活动配置关闭上限时保存和发送前均明确拒绝，要求用户自行启用并设置数值。这不是供应商能力保证，具体模型可能有更低的技术上限；部分模型的思考 token 与正文共同占用输出预算。输入长度仍按字符限制，累计 token 用量不是此参数的含义，也没有新增全局累计 token 额度控制。累计费用预算仍在各项目设置中以美元（USD）管理，原有金额预占、并发和重试保护保持独立。有限金额预算要求启用输出上限；关闭时无法保守预占，任务明确拒绝。无金额上限的项目继续按返回的实际用量记账。
 
@@ -46,6 +46,7 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - DeepSeek 思考 token 和正文共同占用最大输出 token。保持用户配置的预算和超时，不自动增加费用上限；达到 `finish_reason=length` 时明确提示调整预算/强度，不自动再发同预算的付费修复。超时与未收到 HTTP 响应的网络失败分别显示，不把它们误报成密钥或模型不支持
 - OpenRouter：只对公开模型元数据明确列出档位的 `openai/gpt-5` 暴露 `minimal/low/medium/high`，映射为嵌套 `reasoning.effort`。o3/o4-mini 元数据未列出档位，保持省略
 - Gemini `gemini-3.8-flash`：`low/medium/high` 映射为 `generationConfig.thinkingConfig.thinkingLevel`。2.5 的 numeric thinkingBudget 暂不开放。Gemini 3.x 采样参数依官方建议保持默认（并非 API 不接受这些字段）
+- OpenCode Go/Zen 的 GPT-5.6 Luna、GPT-6 Luna：`none/low/medium/high/xhigh/max`；Grok 4.5：`low/medium/high`；Grok 4.6/4.7：`low/medium/high/xhigh`；DeepSeek V4 Pro：`none/low/high/max`。DeepSeek Chat 的 `none` 使用 `thinking.type=disabled`
 - Claude `claude-sonnet-5-5`：`low/medium/high/xhigh/max` 映射 `output_config.effort`；默认 adaptive thinking，不发送猜测的 off/disabled 开关。其他未核实的 Claude/Go/Zen 模型参数保持默认，不猜测可用档位；仍可调整文本长度、输出上限、超时等调用限制
 
 ## OpenCode Go 请求头
@@ -92,11 +93,13 @@ Go 与 Zen 的模型协议不能混用。例如 MiniMax M3 和 Qwen3.8 Max 在 G
 - [OpenCode Zen 端点](https://opencode.ai/docs/zen/#endpoints)
 - [Go Messages 官方路由](https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/go/v1/messages.ts)
 - [OpenAI GPT-5 参数](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5)、[GPT-5.1](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.1)、[GPT-5.2](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.2)、[GPT-5.4](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4)
+- [GPT-5.6 Luna 思考等级](https://developers.openai.com/api/docs/models/gpt-5.6-luna)、[GPT-6 Luna 思考等级](https://developers.openai.com/api/docs/models/gpt-6-luna)
 - [OpenAI Chat 输出参数](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Responses 输出参数](https://developers.openai.com/api/reference/resources/responses/methods/create)
 - [OpenAI Responses 类型](https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response.py)
 - [Claude 思考强度](https://platform.claude.com/docs/en/build-with-claude/effort#recommended-effort-levels-for-claude-sonnet-55)、[Claude Messages](https://platform.claude.com/docs/en/api/messages/create)、[模型 ID](https://platform.claude.com/docs/en/models/overview)
 - [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)、[思考参数](https://ai.google.dev/gemini-api/docs/generate-content/thinking)、[用量语义](https://ai.google.dev/api/generate-content#UsageMetadata)
 - [DeepSeek Chat API](https://api-docs.deepseek.com/api/create-chat-completion/)
+- [DeepSeek 思考模式与 effort 映射](https://api-docs.deepseek.com/guides/thinking_mode/)、[Grok 思考参数](https://docs.x.ai/developers/model-capabilities/text/reasoning)
 - [OpenRouter 思考参数](https://github.com/OpenRouterTeam/docs/blob/main/guides/best-practices/reasoning-tokens.mdx)、[公开模型元数据](https://openrouter.ai/api/v1/models)
 
 

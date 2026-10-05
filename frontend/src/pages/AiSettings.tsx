@@ -134,7 +134,7 @@ export function AiSettings() {
     setVersion(data.version); setSavedEnabled(data.enabled); setSavedTokenLimits(tokenLimits(includeUnified ? config : advanced)); setDirty(false); setEdited(false); setReports({});
     hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
     setConfig(c => ({ ...c, realtimeAudioTranscription:c.realtimeAudioTranscription?{...c.realtimeAudioTranscription,keyConfigured:Boolean(c.realtimeAudioTranscription.apiKey)||(!c.realtimeAudioTranscription.clearKey&&Boolean(c.realtimeAudioTranscription.keyConfigured)),gatewayTokenConfigured:Boolean(c.realtimeAudioTranscription.gatewayToken)||(!c.realtimeAudioTranscription.clearGatewayToken&&Boolean(c.realtimeAudioTranscription.gatewayTokenConfigured)),apiKey:'',gatewayToken:'',clearKey:false,clearGatewayToken:false}:undefined, mimoMediaUnderstanding:c.mimoMediaUnderstanding?{...c.mimoMediaUnderstanding,keyConfigured:Boolean(c.mimoMediaUnderstanding.apiKey)||(!c.mimoMediaUnderstanding.clearKey&&Boolean(c.mimoMediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, mediaUnderstanding:c.mediaUnderstanding?{...c.mediaUnderstanding,keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => [p, { ...c[p], keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
-    setMessage(activate ? 'AI 已启用，可继续真实业务测试。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+    setMessage(activate ? 'AI 已启用。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
   async function disable() {
@@ -170,10 +170,10 @@ export function AiSettings() {
           {protocolForConfig(config[p]) === 'messages' && <p role="note">Messages 协议必填 max_tokens，必须启用输出上限并自行设置；不能省略该参数。</p>}
         </div>)}
         <p className="muted">关闭后，允许省略上限的协议不会发送输出上限参数，也不会自动回退到 4096 或 32768。供应商的默认值和模型自身上限仍然适用；关闭不代表无限输出。关闭时保留输入值，便于再次启用。</p>
-        <p className="muted">修改的是表单草稿，需点击下方“保存配置”。保存并启用后用于后续任务，不改写已冻结的旧配置版本；更改上限沿用现有停用、测试与启用流程。</p>
+        <p className="muted">修改的是表单草稿，需点击下方“保存配置”。保存并启用后用于后续任务，不改写已冻结的旧配置版本；更改上限沿用现有保存、可选测试与启用流程。</p>
         <p className="muted">累计费用预算单独在各项目的“项目设置 → AI 预算”中管理，单位为美元（USD）。有限金额预算要求启用输出上限以估算费用；关闭后仍记录实际用量。本系统没有全局累计 token 额度；输入长度按字符限制，并发与重试保护仍独立保留。</p>
       </fieldset>
-      {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；文本功能可在文本与评价测试通过后启用。</p>}
+      {config.routingMode === 'unified' && !config.unified.supportsVision && <p role="note">当前统一模型未声明图片支持：图片 / OCR 不可用；保存后可启用文本功能，图像任务仍不可用。</p>}
       {(config.routingMode === 'unified' ? ['unified'] as const : purposes).map(p => { const caps = modelCapabilities(config[p]); const preset = config[p].providerPreset ?? 'custom'; const protocol = protocolForConfig(config[p]); const requiresExplicitProtocol = requiresExplicitApiProtocol(config[p]); return <fieldset key={p} className="ai-model-settings" disabled={busy || !ready || !access}><legend>{labels[p]}</legend>
         <Field label={`${labels[p]}供应商`} hint={p === 'unified' ? '切换统一模型供应商会应用其建议 API URL 和模型；不会启用 AI 或发出请求。' : '切换供应商只改变供应商和模型预设，API URL 保持不变；不会启用 AI 或发出请求。'}><select className="input" value={config[p].provider === 'workers-ai' ? 'workers-ai' : preset} onChange={e => choosePreset(p, e.target.value)}>{PROVIDER_PRESETS.map(id => <option key={id} value={id}>{providerPresets[id].label}</option>)}<option value="workers-ai">Cloudflare Workers AI（运维配置）</option></select></Field>
 
@@ -234,8 +234,8 @@ export function AiSettings() {
         })}>测试{labels[p]}（连接与能力）</button>
         {reports[p] && <div role="status"><strong>{reports[p]?.passed ? '测试通过' : '测试失败'} · 配置 v{reports[p]?.configVersion}</strong><ul>{reports[p]?.checks.map(c => <li key={c.name}>{c.passed ? '✓' : '✗'} {c.name}：{c.detail}</li>)}</ul></div>}
       </div>)}</div>
-      <p className="muted">保存配置和停用 AI 不发起模型请求，连接测试失败不影响保存。修改配置后会安全停用；未改配置时保留当前启用状态。测试会发起少量真实模型请求，可能产生费用；启用前仍须当前版本全部适用测试通过。key 在后端加密保存，不写入浏览器存储。</p>
-      <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || dirty || !requiredProbes.every(p => reports[p]?.passed && reports[p]?.configVersion === version)} onClick={() => void run(() => save(true))}>全部测试通过后启用 AI</button></div>
+      <p className="muted">保存配置、停用 AI 和启用 AI 均不发起模型请求。修改配置后会安全停用；未改配置时保留当前启用状态。测试按钮会发起少量真实模型请求，可能产生费用；测试为可选诊断，不影响启用。key 在后端加密保存，不写入浏览器存储。</p>
+      <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || !version || dirty || savedEnabled} onClick={() => void run(() => save(true))}>{savedEnabled ? 'AI 已启用' : '启用 AI'}</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
       <AiDiagnosticsPanel />
     </div>
