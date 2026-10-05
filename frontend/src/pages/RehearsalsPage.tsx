@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
+import { RehearsalVoicePanel } from './RehearsalVoicePanel';
 import { ReferencePicker } from './ReferencePicker';
 import { api, projectPath, listAllItems } from '../api/client';
 import { projectPermission } from '../project-permissions';
@@ -39,6 +40,9 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const [selectedRehearsalId, setSelectedRehearsalId] = useState(() => linkedId || readRecentIds(recentIdsKey(projectId))[0] || '');
   const [pendingRehearsalJob, setPendingRehearsalJob] = useState<PendingRehearsalJob | null>(() => readPendingJob<PendingRehearsalJob>(pendingJobKey(projectId)));
   const [answerText, setAnswerText] = useState('');
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  useEffect(() => { setVoiceMode(false); }, [selectedRehearsalId]);
   const [createError, setCreateError] = useState<unknown>(null);
   const [answerError, setAnswerError] = useState<unknown>(null);
   const [finishError, setFinishError] = useState<unknown>(null);
@@ -118,7 +122,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
 
   const handleAnswer = async (event: FormEvent) => {
     event.preventDefault();
-    if (!rehearsal || !canAnswer || !aiEnabled || sendingAnswer || !answerText.trim()) return;
+    if (!rehearsal || !canAnswer || !aiEnabled || sendingAnswer || !answerText.trim() || voiceBusy) return;
     const body = { content: answerText.trim() };
     const namespace = `rehearsal-answer:${projectId}:${rehearsal.rehearsalId}`;
     setSendingAnswer(true);
@@ -139,7 +143,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   };
 
   const handleFinish = async () => {
-    if (!rehearsal || !rehearsal.canOperate || rehearsal.status !== 'active' || hasPendingJob || !aiEnabled || finishing || rehearsal.turns.length === 0) return;
+    if (!rehearsal || !rehearsal.canOperate || rehearsal.status !== 'active' || hasPendingJob || voiceBusy || !aiEnabled || finishing || rehearsal.turns.length === 0) return;
     setFinishing(true);
     setFinishError(null);
     const namespace = `rehearsal-finish:${projectId}:${rehearsal.rehearsalId}`;
@@ -230,12 +234,13 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
             {rehearsal.status === 'finished' && <div className="ai-workflow-note"><strong>演练结果已保存。</strong> 下方总结来自后端已保存的 summary 回合。</div>}
             {!rehearsal.canOperate && <div className="notice">本轮由 {members.find(m=>m.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId} 发起并答辩，其他成员只读，进展会自动刷新。</div>}
             {rehearsal.status === 'active' && rehearsal.canOperate && <form className="stack" onSubmit={(event) => void handleAnswer(event)}>
+              <RehearsalVoicePanel key={`${rehearsal.rehearsalId}:${latestTurn?.sequence}:${rehearsal.respondentId}`} projectId={projectId} rehearsalId={rehearsal.rehearsalId} sequence={latestTurn?.sequence ?? 1} enabled={canAnswer && aiEnabled && !sendingAnswer && !finishing} initialVoiceMode={voiceMode} onModeChange={setVoiceMode} onBusyChange={setVoiceBusy} onTranscriptFinal={text => setAnswerText(current => `${current}${current ? '\n' : ''}${text}`.slice(0, 8000))} />
               <Field label="回答当前问题" hint={answerJobFailed ? '上一轮回答已保存，但后端处理失败。请重试任务后再提交下一轮。' : '每次提交会保存一轮回答，并等待后端生成追问或反馈。'}>
                 <textarea className="input textarea ai-workflow-textarea" maxLength={8000} value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={canAnswer ? '围绕项目方案、证据和实施细节作答。' : '等待后端生成下一道问题后才能作答。'} disabled={!canAnswer || !aiEnabled || sendingAnswer || isFinishPending} />
               </Field>
               {Boolean(answerError) && <ErrorNotice error={answerError} onRetry={() => void rehearsalQuery.refetch()} />}
               {Boolean(finishError) && <ErrorNotice error={finishError} onRetry={() => void rehearsalQuery.refetch()} />}
-              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!canAnswer || !aiEnabled || sendingAnswer || !answerText.trim()}><Send size={15} />{sendingAnswer ? '正在提交回答' : '提交回答'}</button><button className="button button-quiet" type="button" onClick={() => void handleFinish()} disabled={!aiEnabled || hasPendingJob || finishing || isFinishPending || rehearsal.turns.length === 0}><Check size={15} />{finishing || isFinishPending ? '正在生成总结' : '结束并生成总结'}</button>{!canAnswer && rehearsal.status === 'active' && <span className="muted">等候后端保存的问题后再提交回答。</span>}</div>
+              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!canAnswer || !aiEnabled || sendingAnswer || voiceBusy || !answerText.trim()}><Send size={15} />{sendingAnswer ? '正在提交回答' : '提交回答'}</button><button className="button button-quiet" type="button" onClick={() => void handleFinish()} disabled={!aiEnabled || hasPendingJob || voiceBusy || finishing || isFinishPending || rehearsal.turns.length === 0}><Check size={15} />{finishing || isFinishPending ? '正在生成总结' : '结束并生成总结'}</button>{!canAnswer && rehearsal.status === 'active' && <span className="muted">等候后端保存的问题后再提交回答。</span>}</div>
             </form>}
           </> : <EmptyState title="选择一场最近的演练" detail="演练记录只从真实服务端按其 ID 恢复。" />}
         </div> : <EmptyState title="还没有答辩演练" detail="创建演练后，可在此处和其他设备恢复。" />}
