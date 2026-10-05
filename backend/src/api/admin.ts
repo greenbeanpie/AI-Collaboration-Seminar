@@ -1,3 +1,4 @@
+import { normalizeProcessingStrategies } from '../../../shared/audio-settings';
 import { validateMediaModel, GeminiMediaClient } from '../ai/gemini-media';
 import { registerAdminAccountRoutes } from './admin-accounts';
 import { createMiddleware } from 'hono/factory';
@@ -11,7 +12,7 @@ import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { createAccountInvitation } from '../services/accounts';
 import { AppError, versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
 import { listStuckIdempotencyRecords, releaseIdempotencyRecord } from '../services/idempotency';
-import { aiConfigSchema, aiModelConfigSchema, loadAiConfig, type AiPurpose } from '../ai/config';
+import { aiConfigSchema, aiModelConfigSchema, audioFileTranscriptionSchema, realtimeAudioTranscriptionSchema, processingStrategiesSchema, rehearsalSpeechSchema, loadAiConfig, type AiPurpose } from '../ai/config';
 import { probeModel } from '../ai/probe';
 import { isAllowedModelEndpoint } from '../ai/gateway';
 import { providerOptionErrors, sameCredentialDestination } from '../../../shared/ai-providers';
@@ -44,15 +45,21 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/, 'API key 不能包含控制字符').optional(), clearKey: z.boolean().optional() });
+const editableRealtimeTranscription = realtimeAudioTranscriptionSchema.omit({apiKeyEncrypted:true,gatewayTokenEncrypted:true}).extend({apiKey:z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/).optional(),clearKey:z.boolean().optional(),gatewayToken:z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/).optional(),clearGatewayToken:z.boolean().optional()}).strict();
 const configShape = z.object({
+  rehearsalSpeech:rehearsalSpeechSchema.optional(),
+  audioFileTranscription:audioFileTranscriptionSchema.optional(),
+  realtimeAudioTranscription:editableRealtimeTranscription.optional(),
+  clearRealtimeAudioTranscription:z.boolean().optional(),
+  processingStrategies:processingStrategiesSchema.optional(),
   audioProcessingStrategy: z.enum(['whisper-first', 'gemini-only']).optional(),
   searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
   unified: editableModel.optional(),
   expectedVersion: z.number().int().nonnegative().optional(),
-  textEconomy: editableModel,
-  visionEconomy: editableModel,
-  review: editableModel,
+  textEconomy: editableModel.optional(),
+  visionEconomy: editableModel.optional(),
+  review: editableModel.optional(),
   mediaUnderstanding: editableModel.optional(),
   clearMediaUnderstanding:z.boolean().optional(),
   // Omitted for ordinary saves: retain an already-enabled unchanged config only.
@@ -222,7 +229,11 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
         version: loaded.version,
         enabled: loaded.enabled,
         config: {
-          audioProcessingStrategy: loaded.config.audioProcessingStrategy ?? 'whisper-first',
+          audioProcessingStrategy: loaded.config.processingStrategies?.audioFiles==='media-only'?'gemini-only':'whisper-first',
+          rehearsalSpeech:loaded.config.rehearsalSpeech,
+          audioFileTranscription:loaded.config.audioFileTranscription,
+          processingStrategies:loaded.config.processingStrategies??normalizeProcessingStrategies(undefined,loaded.config.audioProcessingStrategy),
+          ...Object.fromEntries(loaded.config.realtimeAudioTranscription?[['realtimeAudioTranscription',((entry)=>{const {apiKeyEncrypted,gatewayTokenEncrypted,...publicConfig}=entry;return {...publicConfig,keyConfigured:Boolean(apiKeyEncrypted),gatewayTokenConfigured:Boolean(gatewayTokenEncrypted)};})(loaded.config.realtimeAudioTranscription)]]:[]),
           routingMode: loaded.config.routingMode ?? 'advanced',
           searchEnabled: loaded.config.searchEnabled === true,
           ...Object.fromEntries((['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const).flatMap(purpose => {
@@ -246,7 +257,10 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const id = `cfg-v${version}-${newId().slice(0, 8)}`;
     const { notes } = body;
     // Legacy saves must preserve inactive drafts and must not silently switch the active route.
-    const parsed = aiConfigSchema.safeParse({ ...body, audioProcessingStrategy: body.audioProcessingStrategy ?? latest?.config.audioProcessingStrategy, searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
+    const strategies=body.processingStrategies??(body.audioProcessingStrategy!==undefined?{...(latest?.config.processingStrategies??normalizeProcessingStrategies()),audioFiles:body.audioProcessingStrategy==='gemini-only'?'media-only' as const:'whisper-first' as const}:latest?.config.processingStrategies??normalizeProcessingStrategies());
+    const realtimeInput=body.realtimeAudioTranscription;
+    const realtime=body.clearRealtimeAudioTranscription?undefined:realtimeInput?(({apiKey,clearKey,gatewayToken,clearGatewayToken,...settings})=>settings)(realtimeInput):latest?.config.realtimeAudioTranscription;
+    const parsed = aiConfigSchema.safeParse({ ...body, textEconomy:body.textEconomy??latest?.config.textEconomy,visionEconomy:body.visionEconomy??latest?.config.visionEconomy,review:body.review??latest?.config.review,rehearsalSpeech:body.rehearsalSpeech??latest?.config.rehearsalSpeech, audioFileTranscription:body.audioFileTranscription??latest?.config.audioFileTranscription, realtimeAudioTranscription:realtime, processingStrategies:strategies, audioProcessingStrategy:strategies.audioFiles==='media-only'?'gemini-only':'whisper-first', searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
     for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding'] as const) {
@@ -265,9 +279,15 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       config[purpose]!.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
+    if(config.realtimeAudioTranscription&&realtimeInput&&!body.clearRealtimeAudioTranscription){
+      const previous=latest?.config.realtimeAudioTranscription;
+      if(previous?.gatewayTokenEncrypted&&previous.gatewayId!==realtimeInput.gatewayId&&!realtimeInput.gatewayToken&&!realtimeInput.clearGatewayToken)throw validationFailed('切换 Gateway 时，请重新填写或清除 Gateway token');
+      config.realtimeAudioTranscription.apiKeyEncrypted=realtimeInput.clearKey?undefined:realtimeInput.apiKey?await seal(realtimeInput.apiKey,c.env.AUTH_SECRET):previous?.apiKeyEncrypted;
+      config.realtimeAudioTranscription.gatewayTokenEncrypted=realtimeInput.clearGatewayToken?undefined:realtimeInput.gatewayToken?await seal(realtimeInput.gatewayToken,c.env.AUTH_SECRET):previous?.gatewayTokenEncrypted;
+    }
     // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
     // Normalize only equivalent defaults: an actual search permission change still invalidates probes.
-    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, audioProcessingStrategy: _audio, ...core}=value; void _media; void _audio; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
+    const comparable = (value: typeof config) => { const {mediaUnderstanding: _media, audioProcessingStrategy: _audio, audioFileTranscription:_file,realtimeAudioTranscription:_realtime,processingStrategies:_strategies,rehearsalSpeech:_speech, ...core}=value; void _media; void _audio; void _file; void _realtime; void _strategies; void _speech; return aiConfigSchema.parse({ ...core, searchEnabled: value.searchEnabled === true, routingMode: value.routingMode ?? 'advanced' }); };
     const unchanged = Boolean(latest && JSON.stringify(comparable(config)) === JSON.stringify(comparable(latest.config)));
     const enabled = body.enabled ?? (unchanged && latest?.enabled === true);
     if (body.enabled === true) {
@@ -276,11 +296,13 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       const required = config.routingMode === 'unified' && !config.unified?.supportsVision ? ['textEconomy', 'review'] : ['textEconomy', 'visionEconomy', 'review'];
       if (!required.every(purpose => probes.results.some(probe => probe.purpose === purpose))) throw invalidState('所有适用用途的模型测试通过后才能启用 AI');
     }
-    const inserted = await c.env.DB.prepare(
+    const saved = await c.env.DB.batch([c.env.DB.prepare(
       'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COALESCE(MAX(version), 0) FROM ai_config_versions) = ?8',
     )
-      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso(), version - 1)
-      .run();
+      .bind(id, version, JSON.stringify(config), enabled ? 1 : 0, notes ?? null, c.get('user')?.id ?? 'operator-token', nowIso(), version - 1),
+      c.env.DB.prepare("INSERT INTO ai_probes(config_version_id,purpose,passed,report_json,tested_at) SELECT ?1,purpose,passed,json_set(report_json,'$.configVersion',?4),tested_at FROM ai_probes WHERE config_version_id=?2 AND ?3=1 AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?1)").bind(id,latest?.id??null,unchanged?1:0,version),
+    ]);
+    const inserted=saved[0]!;
     if (!inserted.meta.changes) throw versionConflict((await loadAiConfig(c.env.DB, undefined, false))?.version ?? 0);
     await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'config_save', phase: 'config_persisted', status: 'succeeded', durationMs: 0, errorCode: 'NONE', configVersion: version, expectedVersion: body.expectedVersion });
     return c.json(apiData(c, { id, version, enabled }), 201);

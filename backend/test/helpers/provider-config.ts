@@ -7,12 +7,16 @@ import { seal } from '../../src/ai/secrets';
 export async function configureGoFixture(): Promise<void> {
   const loaded = (await loadAiConfig(env.DB))!;
   const apiKeyEncrypted = await seal('fixture-go-job-key', env.AUTH_SECRET);
-  for (const model of Object.values(loaded.config)) Object.assign(model, {
+  for (const purpose of ['textEconomy','visionEconomy','review','unified','mediaUnderstanding'] as const) {
+    const model=loaded.config[purpose];
+    if(!model) continue;
+    Object.assign(model, {
     provider: 'openai-compatible', providerPreset: 'opencode-go', model: 'glm-5.2',
     apiUrl: 'https://opencode.ai/zen/go/v1/chat/completions', apiKeyEncrypted,
     goUsageAcknowledged: true, supportsJson: false,
     goHeaders: { userAgent: 'AI-Collaboration-Seminar/1.0', sessionPrefix: 'integration' },
   });
+  }
   await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(loaded.id, JSON.stringify(loaded.config)).run();
 }
 export function assertGoRequest(url: RequestInfo | URL, init?: RequestInit, outputLimitEnabled = true): void {

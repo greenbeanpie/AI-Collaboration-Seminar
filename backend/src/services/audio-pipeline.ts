@@ -37,7 +37,7 @@ export async function resumeWaitingAudioFallback(env:Env,jobId:string,actorId:st
  return {jobId,status:(await getJob(env,jobId)).status};
 }
 export async function audioFallbackConfigId(env:Env,jobId:string):Promise<string|undefined>{return (await env.DB.prepare('SELECT fallback_config_version_id FROM audio_pipeline WHERE job_id=?1').bind(jobId).first<{fallback_config_version_id:string|null}>())?.fallback_config_version_id??undefined;}
-export function whisperEnabled(env:Env,config:LoadedAiConfig,mime:string):boolean{return !!env.AI&&mime.startsWith('audio/')&&(config.config as typeof config.config & {audioProcessingStrategy?:string}).audioProcessingStrategy!=='gemini-only';}
+export function whisperEnabled(env:Env,config:LoadedAiConfig,mime:string):boolean{return !!env.AI&&mime.startsWith('audio/')&&(config.config.processingStrategies?.audioFiles??(config.config.audioProcessingStrategy==='gemini-only'?'media-only':'whisper-first'))!=='media-only';}
 export async function runAudioPipeline(env:Env,params:{jobId:string;config:LoadedAiConfig;r2Key:string;mime:string;assertActive:()=>Promise<void>;maxSteps:number}):Promise<{kind:'continue'|'waiting'|'fallback'}|{kind:'summary';summary:MediaSummary}>{
  const {jobId,config,assertActive}=params,job=await getJob(env,jobId),input=JSON.parse(job.input_json) as {draftId?:string};
  await env.DB.prepare('INSERT OR IGNORE INTO audio_pipeline(job_id,config_version_id,created_at,updated_at) VALUES(?1,?2,?3,?3)').bind(jobId,config.id,nowIso()).run();

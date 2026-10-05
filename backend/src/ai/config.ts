@@ -3,6 +3,13 @@ import type { D1Database } from '@cloudflare/workers-types';
 import { AppError, aiUnavailable } from '../core/errors';
 import { API_PROTOCOLS, PROVIDER_PRESETS, REASONING_EFFORTS } from '../../../shared/ai-providers';
 
+import { FILE_TRANSCRIPTION_PROVIDER, FILE_TRANSCRIPTION_MODEL, REALTIME_TRANSCRIPTION_PROVIDER, REALTIME_TRANSCRIPTION_MODEL, normalizeProcessingStrategies, DEFAULT_AUDIO_FILE_TRANSCRIPTION, DEFAULT_REHEARSAL_SPEECH, REHEARSAL_TTS_MODELS, REHEARSAL_TTS_VOICES } from '../../../shared/audio-settings';
+
+export const audioFileTranscriptionSchema = z.object({provider:z.literal(FILE_TRANSCRIPTION_PROVIDER),model:z.literal(FILE_TRANSCRIPTION_MODEL)}).strict();
+export const realtimeAudioTranscriptionSchema = z.object({provider:z.literal(REALTIME_TRANSCRIPTION_PROVIDER),model:z.literal(REALTIME_TRANSCRIPTION_MODEL),gatewayId:z.string().max(64).refine(value=>value===''||/^[a-z0-9-]+$/.test(value),'Gateway ID must use lowercase letters, digits and hyphens'),apiKeyEncrypted:z.string().optional(),gatewayTokenEncrypted:z.string().optional(),languageCodes:z.array(z.string()).optional()}).strict();
+export const rehearsalSpeechSchema = z.object({model:z.enum(REHEARSAL_TTS_MODELS),voice:z.enum(REHEARSAL_TTS_VOICES)}).strict();
+export const processingStrategiesSchema = z.object({audioFiles:z.enum(['whisper-first','media-only']),rehearsal:z.enum(['text','voice-with-text-fallback'])}).strict();
+
 export type AiPurpose = 'textEconomy' | 'visionEconomy' | 'review';
 
 export const aiModelConfigSchema = z.object({
@@ -31,6 +38,10 @@ export const aiModelConfigSchema = z.object({
 });
 
 export const aiConfigSchema = z.object({
+  rehearsalSpeech:rehearsalSpeechSchema.default(DEFAULT_REHEARSAL_SPEECH),
+  audioFileTranscription: audioFileTranscriptionSchema.default(DEFAULT_AUDIO_FILE_TRANSCRIPTION),
+  realtimeAudioTranscription: realtimeAudioTranscriptionSchema.optional(),
+  processingStrategies: processingStrategiesSchema.optional(),
   audioProcessingStrategy: z.enum(['whisper-first', 'gemini-only']).optional(),
   searchEnabled: z.boolean().optional(),
   routingMode: z.enum(['advanced', 'unified']).optional(),
@@ -63,7 +74,7 @@ export async function loadAiConfig(db: D1Database, configVersionId?: string, res
     id: row.id,
     version: row.version,
     enabled: row.enabled === 1,
-    config: resolve ? resolveAiConfig(aiConfigSchema.parse(JSON.parse(row.config_json))) : aiConfigSchema.parse(JSON.parse(row.config_json)),
+    config: resolve ? resolveAiConfig(normalizeAudioConfig(aiConfigSchema.parse(JSON.parse(row.config_json)))) : normalizeAudioConfig(aiConfigSchema.parse(JSON.parse(row.config_json))),
   };
 }
 
@@ -80,6 +91,8 @@ export async function requireEnabledAiConfig(db: D1Database): Promise<LoadedAiCo
 export function configForPurpose(loaded: LoadedAiConfig, purpose: AiPurpose): AiModelConfig {
   return resolveAiConfig(loaded.config)[purpose];
 }
+
+export function normalizeAudioConfig(config:AiConfig):AiConfig { return {...config,audioFileTranscription:config.audioFileTranscription??DEFAULT_AUDIO_FILE_TRANSCRIPTION,processingStrategies:normalizeProcessingStrategies(config.processingStrategies,config.audioProcessingStrategy)}; }
 
 /** Resolve once at the frozen version boundary, including every pricing and legacy purpose reader. */
 export function resolveAiConfig(config: AiConfig): AiConfig {
