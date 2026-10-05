@@ -252,7 +252,7 @@ export async function projectToolConversation(env: Env, params: {
   citations: WebCitation[];
 }> {
   const { context, config } = params;
-  const providerSessionId=context.jobId ?? params.sessionId ?? params.runId ?? newId();
+  const providerSessionId=params.sessionId ?? params.runId ?? context.jobId ?? newId();
   const investigationId=context.jobId ? context.jobId+'-'+params.promptVersion.replace(/[^a-zA-Z0-9_-]/g,'_') : undefined;
   let restored=investigationId ? await loadInvestigation(env,investigationId) : null;
   // A prompt upgrade must not discard an already-paid pending provider response.

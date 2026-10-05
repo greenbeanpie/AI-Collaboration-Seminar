@@ -208,7 +208,8 @@ describe('三档 AI 补位', () => {
   });
 
   it('带做：提问 → 回答 → 下一轮；历史完整保留', async () => {
-    vi.stubGlobal('fetch', mockGatewayFetch());
+    const fetchMock = mockGatewayFetch();
+    vi.stubGlobal('fetch', fetchMock);
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);
 
@@ -238,6 +239,8 @@ describe('三档 AI 补位', () => {
     const sessionBody = (await session.json()) as { data: { turns: Array<{ sequence: number; role: string; kind: string }> } };
     const roles = sessionBody.data.turns.map((t) => `${t.sequence}:${t.role}:${t.kind}`);
     expect(roles).toEqual(['1:assistant:question', '2:user:answer', '3:assistant:question']);
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get('x-opencode-session')))
+      .toEqual([`integration:${created.data.sessionId}`, `integration:${created.data.sessionId}`]);
   });
 
   it('输入归属校验：引用他项目材料 → 404', async () => {

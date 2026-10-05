@@ -112,7 +112,7 @@ export async function aiJsonCall<S extends z.ZodType>(
   },
 ): Promise<{ data: z.infer<S>; repaired: boolean; effectiveStandardsVersionId?:string|null; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
   if (params.projectTools) {
-    const stableSessionId=params.sessionId??params.jobId??params.runId??crypto.randomUUID();
+    const stableSessionId=params.sessionId??params.runId??params.jobId??crypto.randomUUID();
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
     await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
     try { return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
@@ -177,7 +177,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       status,
     });
 
-  const sessionId = params.sessionId ?? params.jobId ?? params.runId ?? crypto.randomUUID();
+  const sessionId = params.sessionId ?? params.runId ?? params.jobId ?? crypto.randomUUID();
   let messages = params.messages;
   const maxAttempts=params.maxAttempts??2;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {

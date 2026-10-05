@@ -271,6 +271,22 @@ it('unknown Go models require explicit supported protocol and retain no speculat
   expect(mock).toHaveBeenCalledOnce();
 });
 
+it('always attaches x-opencode-session at dispatch, falling back to the stable job ID when needed', async () => {
+  const mock = vi.fn(async () => new Response(JSON.stringify(response('chat-completions'))));
+  await gatewayChat(endpoint, { config: config('opencode-go', 'glm-5.2'), jobId: 'stable-job-123', messages }, mock);
+  const [, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
+  const headers = new Headers(init.headers);
+  expect(headers.get('x-opencode-session')).toBe('stable-job-123');
+  expect(headers.get('user-agent')).toBe('AI-Collaboration-Seminar/1.0');
+});
+
+it('generates a valid OpenCode Go session header when no caller ID is available', async () => {
+  const mock = vi.fn(async () => new Response(JSON.stringify(response('chat-completions'))));
+  await gatewayChat(endpoint, { config: config('opencode-go', 'glm-5.2'), messages }, mock);
+  const [, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(new Headers(init.headers).get('x-opencode-session')).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
 it.each([
   ['messages', { ...response('messages'), stop_reason: 'tool_use' }],
   ['chat-completions', { choices: [{ finish_reason: 'tool_calls', message: { content: '{"ok":true}', tool_calls: [] } }] }],

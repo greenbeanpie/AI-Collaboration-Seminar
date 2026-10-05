@@ -4,7 +4,7 @@ import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode,
 import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
-import { providerOptionErrors } from '../../../shared/ai-providers';
+import { GO_DEFAULT_USER_AGENT, providerOptionErrors } from '../../../shared/ai-providers';
 import { buildProviderRequest, normalizeProviderResponse } from './transport';
 import { classifyFetchFailure, recordAiDiagnostic, safeDiagnosticTarget } from './diagnostics';
 import type { Env } from '../env';
@@ -113,6 +113,10 @@ export async function gatewayChat(
     const prepare=input.prepareMessages;
     input={...input,messages:append(input.messages),...(prepare?{prepareMessages:async()=>append(await prepare())}:{})};
   }
+  if (input.config.providerPreset === 'opencode-go') {
+    const sessionId = input.sessionId ?? input.jobId ?? crypto.randomUUID();
+    input = { ...input, sessionId: requireOpenCodeGoSessionId(sessionId) };
+  }
   const started = Date.now();
   let recoveryDeadline = input.providerRetry?.deadline;
   if (input.providerRetry && input.providerRetry.nextAttemptAt > Date.now()) await wait(input.providerRetry.nextAttemptAt - Date.now());
@@ -139,6 +143,13 @@ export async function gatewayChat(
       // config, permissions and freshly authorized sensitive context.
     }
   }
+}
+
+function requireOpenCodeGoSessionId(value: string | undefined): string {
+  if (!value || !/^[A-Za-z0-9_.:-]{1,160}$/.test(value)) {
+    throw new AppError('AI_UNAVAILABLE', 'OpenCode Go 缺少有效的稳定会话标识', 503, false);
+  }
+  return value;
 }
 
 async function gatewayChatAttempt(
@@ -181,7 +192,7 @@ async function gatewayChatAttempt(
     throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
   // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
-  const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens, input.sessionId);
+  const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens);
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
   const serializedBody = JSON.stringify(body);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
@@ -202,6 +213,11 @@ async function gatewayChatAttempt(
   }
   if (encodedImages > MULTIMODAL_LIMITS.imagePayloadBytes || serializedBody.length - encodedImages > input.config.maxInputChars * 6 + 32000) throw new AppError('QUOTA_EXCEEDED', '工具或文字上下文超过当前模型输入限制', 429, false);
   if (images.length && new TextEncoder().encode(serializedBody).length > MULTIMODAL_LIMITS.requestBytes) throw new AppError('QUOTA_EXCEEDED', '视觉请求超过9 MiB传输边界', 422, false);
+  if (input.config.providerPreset === 'opencode-go') {
+    const sessionId = requireOpenCodeGoSessionId(input.sessionId);
+    headers['user-agent'] = input.config.goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT;
+    headers['x-opencode-session'] = input.config.goHeaders?.sessionPrefix ? `${input.config.goHeaders.sessionPrefix}:${sessionId}` : sessionId;
+  }
   if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
   if (input.privateContext) {
     headers['cf-aig-skip-cache'] = 'true';

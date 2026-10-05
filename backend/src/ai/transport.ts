@@ -1,7 +1,7 @@
 import type { AiModelConfig } from './config';
 import type { ChatMessage } from './gateway';
 import { AppError } from '../core/errors';
-import { GO_DEFAULT_USER_AGENT, modelCapabilities, protocolForConfig, type ApiProtocol } from '../../../shared/ai-providers';
+import { modelCapabilities, protocolForConfig, type ApiProtocol } from '../../../shared/ai-providers';
 
 const invalid = (message: string, details?: Record<string, unknown>) => new AppError('AI_OUTPUT_INVALID', message, 502, false, details);
 const inputError = (message: string) => new AppError('AI_UNAVAILABLE', message, 503, false);
@@ -17,7 +17,7 @@ function textContent(message: ChatMessage): string {
 }
 
 /** No arbitrary headers/body passthrough. Authentication is constructed after validation. */
-export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean, maxOutputTokens: number | undefined, sessionId?: string): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
+export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean, maxOutputTokens: number | undefined): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
   const protocol = protocolForConfig(config);
   const outputLimit = config.enabledOutputLimit === false ? undefined : maxOutputTokens ?? config.maxOutputTokens;
   if (outputLimit !== undefined && (!Number.isSafeInteger(outputLimit) || outputLimit < 1)) throw inputError('输出 token 上限必须为可安全表示的正整数');
@@ -73,11 +73,6 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
   if (protocol !== 'gemini') {
     if (config.temperature !== undefined) body.temperature = config.temperature;
     if (config.topP !== undefined) body.top_p = config.topP;
-  }
-  if (config.providerPreset === 'opencode-go') {
-    if (!sessionId || !/^[A-Za-z0-9_.:-]{1,160}$/.test(sessionId)) throw inputError('OpenCode Go 缺少有效的稳定会话标识');
-    headers['user-agent'] = config.goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT;
-    headers['x-opencode-session'] = config.goHeaders?.sessionPrefix ? `${config.goHeaders.sessionPrefix}:${sessionId}` : sessionId;
   }
   return { protocol, headers, body };
 }
