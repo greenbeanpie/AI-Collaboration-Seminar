@@ -30,7 +30,7 @@ export function TurnstileChallenge({ siteKey, reset, onToken, onError }: { siteK
         sitekey: siteKey, action: 'email_login', theme: 'auto', callback: onToken,
         'expired-callback': () => { onToken(''); onError('安全验证已过期，请重新验证'); },
         'timeout-callback': () => { onToken(''); onError('安全验证超时，请重试；若仍失败，请检查浏览器与网络'); },
-        'error-callback': (code: string) => { onToken(''); const visibleCode = /^\d+$/.test(code) ? `（${code}）` : ''; onError(`安全验证失败${visibleCode}，请重试或使用系统浏览器`); },
+        'error-callback': () => { onToken(''); onError('安全验证失败，请重试或使用系统浏览器'); },
       });
     }).catch(error => { if (!cancelled) onError(error instanceof Error ? error.message : '安全验证不可用'); });
     return () => { cancelled = true; if (widget && window.turnstile) window.turnstile.remove(widget); };

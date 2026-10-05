@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
-import { listAllProjectItems } from './source-workflows';
+import { downloadSourcePdf, listAllProjectItems } from './source-workflows';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -64,4 +64,10 @@ describe('project list pagination', () => {
       .rejects.toMatchObject({ code: 'PAGINATION_LIMIT' } satisfies Partial<ApiError>);
     expect(fetchMock).toHaveBeenCalledTimes(200);
   });
+});
+
+it('preserves binary download failure reasons even without correlation metadata', async () => {
+  const message = '来源不存在或无权读取\n原始详情';
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({error:{message,code:'INTERNAL',retryable:false}},{status:500})));
+  await expect(downloadSourcePdf('project','file')).rejects.toMatchObject({message,code:'INTERNAL',status:500});
 });

@@ -1,27 +1,19 @@
-import { ErrorDetails } from './WorkspaceErrorBoundary';
-import { errorDiagnostics } from './error-diagnostics';
+import { errorMessage } from '../api/error-info';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { AlertCircle, ArrowRight, LoaderCircle } from 'lucide-react';
-import { ApiError } from '../api/client';
 
 export function Spinner({ label = '正在加载' }: { label?: string }) {
   return <div className="loading"><LoaderCircle className="spin" size={18} aria-hidden="true" /><span>{label}</span></div>;
 }
 
 export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const diagnostics=useMemo(()=>errorDiagnostics(error),[error]);
-  const apiError = error instanceof ApiError ? error : null;
-  const message = apiError?.code === 'NETWORK_ERROR'
-    ? '暂时无法连接服务。请确认网络正常，并检查本地后端是否已启动。'
-    : apiError?.message ?? (error instanceof Error ? error.message : '发生了未知错误。');
+  const message = errorMessage(error);
   return (
     <div className="notice notice-error" role="alert">
       <AlertCircle size={19} aria-hidden="true" />
       <div className="notice-copy">
-        <strong>{message}</strong>
-        {apiError && <small>错误码 {apiError.code} · 请求编号 {apiError.requestId}</small>}
-        <ErrorDetails diagnostics={diagnostics}/>
+        <strong style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message}</strong>
       </div>
       {onRetry && <button className="button button-quiet button-small" onClick={onRetry}>重试</button>}
     </div>

@@ -113,7 +113,7 @@ describe('grounded project source selection', () => {
     });
     vi.stubGlobal('fetch', fetch); setup({ projectId: 'stable', items: [item] });
     choose('stable',1);expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '读取资料正文' })); await screen.findByText(/暂时无法连接服务/);
+    fireEvent.click(screen.getByRole('button', { name: '读取资料正文' })); await screen.findByText(/无法连接服务/);
     expect(screen.queryByText('正文已就绪')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '读取资料正文' }));
     await screen.findByText('正文已就绪'); await waitFor(() => expect(screen.getByRole('button', { name: '测试拆解入口' })).toBeEnabled());

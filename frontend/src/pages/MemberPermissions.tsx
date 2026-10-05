@@ -65,7 +65,6 @@ export function MemberPermissionsDialog({ projectId, member, onClose }: { projec
         </select>
       </label>
       <p className="form-note">模板只是快速填写权限的方式，不是账户角色；保存后以逐项权限为准。</p>
-      {conflict && <div className="notice notice-warn" role="alert">权限已发生变化，请刷新后重新确认。</div>}
       {groups.map(group => <fieldset className="permission-group" key={group} disabled={save.isPending}>
         <legend>{group}</legend>
         {permissionOptions.filter(option => option.group === group).map(option => <label className="permission-option" key={option.key}>
@@ -73,7 +72,7 @@ export function MemberPermissionsDialog({ projectId, member, onClose }: { projec
           <span><strong>{option.label}</strong><small>{option.detail}</small></span>
         </label>)}
       </fieldset>)}
-      {save.error && !conflict && <ErrorNotice error={save.error} />}
+      {save.error && <ErrorNotice error={save.error} />}
       <div className="form-actions">
         <button type="button" className="button button-quiet" disabled={save.isPending} onClick={onClose}>取消</button>
         <button type="submit" className="button button-primary" disabled={save.isPending}>{save.isPending ? '保存中…' : conflict ? '刷新后重新保存' : '保存'}</button>

@@ -47,6 +47,7 @@ export function TaskSettings({ projectId, task, tasks, graphRevision, canManage,
       if (blocked.current) return false;
       if (equal(live.current.draft, live.current.base)) return true;
       setSaving(true);
+      let lastConflict: ApiError | undefined;
       try {
         for (let attempt = 0; attempt < 8; attempt++) {
           const current = live.current, submitted = { ...current.draft }, base = { ...current.base };
@@ -81,15 +82,16 @@ export function TaskSettings({ projectId, task, tasks, graphRevision, canManage,
             setDraft({ ...current.draft });
           } catch (error) {
             if (!(error instanceof ApiError) || error.status !== 409) throw error;
+            lastConflict = error;
             const latestTask = await projectRequest<CollaborationTask>(projectId, `/tasks/${task.taskId}`, { networkOnly: true });
             const goal = await projectRequest<ProjectGoal>(projectId, '/goal', { networkOnly: true });
             const latest = draftOf(latestTask), merged = mergeFields(current.base, current.draft, latest);
             current.task = latestTask; current.base = latest; current.draft = merged.value; current.graphRevision = goal.graphRevision;
             setDraft({ ...merged.value });
-            if (merged.conflicts.length) { setConflicts(merged.conflicts); throw new Error('内容已被其他人修改，请选择保留内容。', { cause: error }); }
+            if (merged.conflicts.length) { setConflicts(merged.conflicts); throw error; }
           }
         }
-        throw new Error('任务持续发生变化，请稍后重试；当前修改已保留。');
+        throw lastConflict ?? new Error('任务持续发生变化，请稍后重试；当前修改已保留。');
       } catch (error) {
         blocked.current = true; setNotice(error instanceof Error ? error.message : '保存失败，当前修改已保留。'); return false;
       } finally { setSaving(false); await live.current.onChanged(); }

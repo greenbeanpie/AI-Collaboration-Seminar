@@ -1,3 +1,4 @@
+import { errorMessage } from '../api/error-info';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CollaborationTask } from '../api/collaboration';
@@ -51,11 +52,11 @@ export function useTaskAgentEligibility(projectId: string, task: CollaborationTa
   const revisionMatches = result?.taskRevision === task.revision;
   const eligible = !query.error && !query.isFetching && !check.isPending && revisionMatches && result?.status === 'ready' && result.eligible === true && Boolean(result.sourceHash);
   const pending = check.isPending || (revisionMatches && (result?.status === 'queued' || result?.status === 'running'));
-  const reason = query.error ? '无法读取 AI 适用性判断，请重试读取。'
+  const reason = query.error ? errorMessage(query.error)
     : result && !revisionMatches ? '任务已更新，正在等待最新适用性判断。'
     : result?.status === 'disabled' ? '当前 AI 服务不可用，暂不能代实施。'
     : pending ? 'AI 正在判断任务能否完整执行，请稍候。'
-    : result?.status === 'failed' ? '自动检查失败，可重试。'
+    : result?.status === 'failed' ? result.reason ?? '自动检查失败，可重试。'
     : result?.status === 'ready' && result.eligible === false ? '此任务暂不支持代实施。'
     : !eligible ? 'AI 正在自动检查适用性，完成后可代实施。' : undefined;
   return { eligible, pending, reason, result, loading: query.isPending || query.isFetching, check: () => void check.mutateAsync().catch(() => {}), reload: () => void query.refetch(), readError: Boolean(query.error), canCheck: !query.isPending && !query.error && !query.isFetching && !pending && revisionMatches && result?.status === 'failed', retry: result?.status === 'failed' };

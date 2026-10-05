@@ -1,5 +1,5 @@
 import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
-import { publicErrorMessage } from './error-info';
+import { errorMessage } from './error-info';
 import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
 import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
 
@@ -14,13 +14,13 @@ export class ApiError extends Error {
   readonly details?: Record<string, unknown>;
 
   constructor(status: number, failure: ApiFailure) {
-    super(publicErrorMessage(failure.error.code,failure.error.message));
+    super(failure.error.message);
     this.name = 'ApiError';
     this.diagnosticMessage = failure.error.message;
     this.status = status;
-    this.code = failure.error.code;
-    this.requestId = failure.requestId;
-    this.retryable = failure.error.retryable;
+    this.code = failure.error.code ?? 'UNKNOWN_ERROR';
+    this.requestId = failure.requestId ?? failure.error.requestId ?? '';
+    this.retryable = failure.error.retryable ?? false;
     this.stage = failure.error.stage;
     this.action = failure.error.action;
     this.details = failure.error.details;
@@ -97,13 +97,15 @@ export async function request<Name extends SchemaName>(path: string, options: Re
   }
 
   const returnedRequestId = response.headers.get('X-Request-Id') ?? requestId;
-  const contentType = response.headers.get('content-type') ?? '';
-  const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null;
+  const responseText = await response.text();
+  let payload: unknown = null;
+  try { payload = JSON.parse(responseText); } catch { /* A plain-text backend reason is handled below. */ }
+  const backendReason = errorMessage(payload, '') || (response.headers.get('Content-Type')?.startsWith('text/plain') ? responseText : '');
   if (!response.ok) {
     const failure = isApiFailure(payload)
       ? payload
       : {
-          error: { code: `HTTP_${response.status}`, message: '服务暂时无法处理该请求。', retryable: response.status >= 500 },
+          error: { code: `HTTP_${response.status}`, message: backendReason || '服务暂时无法处理该请求。', retryable: response.status >= 500 },
           requestId: returnedRequestId,
         } satisfies ApiFailure;
     if (response.status === 401) {
@@ -145,7 +147,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
 export function isApiFailure(value: unknown): value is ApiFailure {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<ApiFailure>;
-  return typeof candidate.requestId === 'string' && typeof candidate.error?.code === 'string' && typeof candidate.error.message === 'string';
+  return typeof candidate.error?.message === 'string';
 }
 
 export const api = {
@@ -208,3 +210,10 @@ export async function listAllItems<Name extends SchemaName>(
 }
 
 export const projectPath = (projectId: string, tail = '') => `/api/v1/projects/${encodeURIComponent(projectId)}${tail}`;
+
+/** Binary response paths share the API reason contract without exposing transport metadata. */
+export async function responseError(response: Response, fallback: string): Promise<Error> {
+  const payload: unknown = await response.json().catch(() => null);
+  if (isApiFailure(payload)) return new ApiError(response.status, payload);
+  return new Error(errorMessage(payload, fallback));
+}

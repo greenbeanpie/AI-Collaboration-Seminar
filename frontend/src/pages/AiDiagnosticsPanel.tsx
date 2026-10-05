@@ -24,14 +24,14 @@ export function AiDiagnosticsPanel() {
   }
   return <details className="ai-diagnostics"><summary>AI 诊断日志（仅超级管理员）</summary>
     <div className="stack">
-      <p className="muted">保留最后 1000 条关键步骤，UTF-8 总大小不超过 1 MB。仅记录请求 / 任务关联 ID、阶段、耗时、状态和固定错误码，不记录密钥、请求头、提示词、模型回答或个人资料。读取日志不会发起模型请求。</p>
+      <p className="muted">保留最后 1000 条关键步骤，UTF-8 总大小不超过 1 MB。记录阶段、耗时和状态，不记录密钥、请求头、提示词、模型回答或个人资料。读取日志不会发起模型请求。</p>
       <button className="button button-quiet" disabled={busy} onClick={() => void refresh()}>{busy ? '正在读取诊断日志……' : '刷新诊断日志'}</button>
       {Boolean(error) && <ErrorNotice error={error} />}
       {report && <>
         <p role="status">已保留 {report.retention.retainedEntries} 条 · {report.retention.retainedBytes.toLocaleString()} / {report.retention.maxBytes.toLocaleString()} 字节 · 最新记录在前</p>
         {!report.items.length ? <p>暂无诊断记录。重试保存或测试后可刷新这里。</p> : <ol style={{ maxHeight: '28rem', overflow: 'auto', paddingInlineStart: '1.5rem' }}>{report.items.map((entry, index) => <li key={`${entry.timestamp}-${entry.requestId}-${entry.phase}-${index}`}>
           <p><strong>{operations[entry.operation] ?? 'AI 步骤'} · {phases[entry.phase] ?? '处理步骤'} · {statuses[entry.status] ?? '未知'}</strong> · {entry.durationMs} ms{entry.httpStatus !== undefined ? ` · HTTP ${entry.httpStatus}` : ''}</p>
-          <p className="muted">{entry.timestamp} · 请求 / 任务 ID：{entry.requestId} · 错误码：{entry.errorCode}{entry.expectedVersion !== undefined ? ` · 提交版本 v${entry.expectedVersion}` : ''}{entry.configVersion !== undefined ? ` · 配置版本 v${entry.configVersion}` : ''}{entry.purpose ? ` · 用途 ${entry.purpose}` : ''}</p>
+          <p className="muted">{entry.timestamp}{entry.expectedVersion !== undefined ? ` · 提交版本 v${entry.expectedVersion}` : ''}{entry.configVersion !== undefined ? ` · 配置版本 v${entry.configVersion}` : ''}{entry.purpose ? ` · 用途 ${entry.purpose}` : ''}</p>
           {entry.finalHost && <p className="muted">请求目标：{entry.method ?? 'POST'} {entry.finalHost}{entry.finalPath} · 协议：{entry.protocol ?? '未知'}{entry.redirectMode ? ` · 跳转策略：${entry.redirectMode}（不跟随）` : ''}{entry.failureKind ? ` · 类别：${entry.failureKind}` : ''}{entry.exceptionType ? ` · 异常类型：${entry.exceptionType}` : ''}{entry.redirectHost ? ` · 被拒绝的跳转：${entry.redirectHost}${entry.redirectPath ?? ''}` : ''}</p>}
         </li>)}</ol>}
       </>}

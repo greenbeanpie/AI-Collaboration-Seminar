@@ -43,3 +43,10 @@ it('hides model eligibility conclusions while preserving the execution restricti
   expect(screen.queryByText(/任务需核对在读身份/)).toBeNull();
   expect(screen.getByRole('button')).toBeDisabled();
 });
+
+it('preserves the reason of a failed server eligibility check', async () => {
+  request.mockResolvedValue({ ...verdict('failed'), reason:'模型执行失败或配置未完成\n原始详情' });
+  setup();
+  await screen.findByText('模型执行失败或配置未完成 原始详情');
+  expect(screen.getByRole('button')).toBeDisabled();
+});

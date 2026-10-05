@@ -58,6 +58,6 @@ it('shows an explicit conflict notice on 409 instead of silently overwriting', a
   patch.mockRejectedValue(new ApiError(409, { requestId: 'r', error: { code: 'VERSION_CONFLICT', message: '内容已被他人更新，请获取最新版本后重试', retryable: false } }));
   const { onClose } = renderDialog();
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('权限已发生变化，请刷新后重新确认。');
+  expect(await screen.findByRole('alert')).toHaveTextContent('内容已被他人更新，请获取最新版本后重试');
   expect(onClose).not.toHaveBeenCalled();
 });

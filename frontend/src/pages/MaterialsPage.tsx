@@ -338,7 +338,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
         try {
           const server = await api.get<'MaterialResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(activeMaterialId)}`));
           setConflict({ server, localDoc: doc, reviewed: false });
-          setSaveError(null);
+          setSaveError(error);
           queryClient.setQueryData(['material', projectId, activeMaterialId], server);
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['materials', projectId] }),

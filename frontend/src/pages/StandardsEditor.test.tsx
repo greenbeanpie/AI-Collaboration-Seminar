@@ -15,32 +15,30 @@ function show(items: StandardVersion[] = []) {
 it('preserves unmapped existing rubric dimensions in the same editor while keeping internal keys hidden', () => {
   show([version]);
   fireEvent.click(screen.getByRole('button', { name: '修订生效标准' }));
-  expect(screen.getByLabelText('要求 1 标题')).toHaveValue('提供来源');
+  expect(screen.queryByLabelText('要求 1 标题')).toBeNull();
+  expect(screen.queryByLabelText('要求截止日期')).toBeNull();
+  expect(screen.queryByLabelText('标准说明')).toBeNull();
   expect(screen.getByLabelText('评分维度名称')).toHaveValue('官方质量维度');
   expect(screen.getByLabelText('评分权重（%）')).toHaveValue(70);
   expect(screen.queryByLabelText('评分维度标识')).toBeNull();
 });
-it('saves pure checklist requirements with dates without inventing a numeric dimension', async () => {
+it('saves only scoring dimensions without checklist fields, descriptions or dates', async () => {
   const writes: unknown[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (_path: unknown, init?: RequestInit) => {
-    if (init?.method === 'POST') writes.push(JSON.parse(String(init.body)));
-    return new Response(JSON.stringify({ data: init?.method === 'POST' ? { ...version, status: 'draft', rubric: { ...version.rubric, weights: [] } } : { items: [] }, requestId: 'standards' }), { headers: { 'Content-Type': 'application/json' } });
-  }));
-  show(); fireEvent.click(screen.getByRole('button', { name: '新建标准' }));
-  fireEvent.change(screen.getByLabelText('要求 1 标题'), { target: { value: '按时提交 PDF' } });
-  fireEvent.change(screen.getByLabelText('要求截止日期'), { target: { value: '2026-11-01' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存并生效' }));
-  await waitFor(() => expect(writes).toHaveLength(1));
-  expect(writes[0]).toMatchObject({ requirements: [{ title: '按时提交 PDF', dueDate: '2026-11-01', duePrecision: 'date' }], weights: [] });
+  vi.stubGlobal('fetch', vi.fn(async (path: unknown, init?: RequestInit) => { if(init?.method==='POST')writes.push(JSON.parse(String(init.body)));return Response.json({data:init?.method==='POST'?version:String(path).endsWith('/current')?{standard:version}:{items:[version]},requestId:'r'}); }));
+  show();fireEvent.click(screen.getByRole('button',{name:'新建标准'}));
+  fireEvent.change(screen.getByLabelText('评分维度名称'),{target:{value:'成果质量'}});fireEvent.change(screen.getByLabelText('评分权重（%）'),{target:{value:'100'}});
+  fireEvent.click(screen.getByRole('button',{name:'保存并生效'}));await waitFor(()=>expect(writes).toHaveLength(1));
+  expect(writes[0]).toMatchObject({requirements:[{title:'成果质量',category:'scoring',detail:'',dueDate:null,citations:[]}],notes:''});
+  expect(screen.queryByLabelText('要求截止日期')).toBeNull();
 });
 it('loads AI output into an editable draft and saves mapped and independent dimensions and activates only when saved', async () => {
   const writes: { path: string; body: Record<string, unknown> }[] = [];
-  const generated = { title: 'AI 标准草稿', notes: '建议评分', requirements: [{ title: '可操作原型', detail: '完整交付', category: 'deliverable', dimensionKey: 'quality', dueDate: null, duePrecision: 'unknown' }], weights: [{ key: 'quality', label: '质量', weight: 80 }, { key: 'format', label: '格式', weight: 20 }] };
+  const generated = { title: 'AI 标准草稿', notes: '', requirements: [{ title: '质量', detail: '', category: 'scoring', dimensionKey: 'quality', dueDate: null, duePrecision: 'unknown',citations:[{sourceVersionId:'source-version',fragmentId:'fragment',pageNumber:1,quote:'质量80分',fileName:'评分方法.pdf'}] }], weights: [{ key: 'quality', label: '质量', weight: 80 }, { key: 'format', label: '格式', weight: 20 }] };
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
     const path = String(input);
     if (init?.method === 'POST') writes.push({ path, body: JSON.parse(String(init.body)) });
     const data = path.endsWith('/standards/generate') ? { jobId: 'job' }
-      : path.endsWith('/jobs/job') ? { jobId: 'job', status: 'succeeded', result: { draft: generated } }
+      : path.endsWith('/jobs/job') ? { jobId: 'job', status: 'succeeded', result: { draft: generated,scoringOutputVersion:2 } }
       : init?.method === 'POST' ? { ...version, status: 'draft' } : { items: [] };
     return new Response(JSON.stringify({ data, requestId: 'fixture' }), { headers: { 'Content-Type': 'application/json' } });
   }));
@@ -49,11 +47,13 @@ it('loads AI output into an editable draft and saves mapped and independent dime
   await waitFor(() => expect(screen.getByLabelText('标准名称')).toHaveValue('AI 标准草稿'));
   expect(screen.getAllByLabelText('评分权重（%）').map(input => (input as HTMLInputElement).value)).toEqual(['80', '20']);
   expect(writes).toHaveLength(1);
-  fireEvent.change(screen.getByLabelText('要求 1 标题'), { target: { value: '修订后的可操作原型' } });
+  expect(screen.getByText('来源引用（1 条）')).toBeInTheDocument();
+  fireEvent.change(screen.getAllByLabelText('评分维度名称')[0], { target: { value: '修订质量' } });
   fireEvent.click(screen.getByRole('button', { name: '保存并生效' }));
   await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1].body).toMatchObject({ requirements: [{ title: '修订后的可操作原型', dimensionKey: 'quality' }], weights: generated.weights });
+  expect(writes[1].body).toMatchObject({ requirements: [{ title: '修订质量', dimensionKey: 'quality' },{title:'格式',dimensionKey:'format'}], weights: generated.weights.map(row=>row.key==='quality'?{...row,label:'修订质量'}:row) });
   expect(writes.some(write => write.path.endsWith('/confirm'))).toBe(false);
+  expect((writes[1].body.requirements as Array<{citations:unknown[]}>)[0].citations).toEqual([{sourceVersionId:'source-version',fragmentId:'fragment',pageNumber:1,quote:'质量80分'}]);
 });
 it('keeps existing standards visible and blocks editing them while generation runs', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: string) => new Response(JSON.stringify({ data: String(input).endsWith('/standards/generate') ? { jobId: 'job' } : { jobId: 'job', status: 'running' }, requestId: 'fixture' }), { headers: { 'Content-Type': 'application/json' } })));

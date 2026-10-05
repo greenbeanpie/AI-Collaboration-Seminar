@@ -383,7 +383,7 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
         writeAdoptionIntent(storedIntentKey, null);
         setAdoptionIntent(null);
         onAdopted();
-        setError(new Error('目标材料在采纳前已更新。材料信息已刷新，请再次检查内容并确认；重试会使用新的期望修订号。'));
+        setError(reason);
         return;
       }
       setError(reason);
@@ -414,7 +414,7 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
 
 function JobPanel({ jobId, job, error, retryError, loading, retrying, canRetry, onRetry }: { jobId: string; job: DataOf<'JobResponse'> | null; error: unknown; retryError: unknown; loading: boolean; retrying: boolean; canRetry: boolean; onRetry: () => void }) {
   const status = job ? jobStatusLabel(job.status) : loading ? '正在读取任务' : '等待任务状态';
-  return <div className="ai-workflow-job"><RefreshCw className={job && (job.status === 'queued' || job.status === 'running') ? 'spin' : ''} size={16} /><div><strong>{status}</strong><p>后端任务 ID {jobId}{job ? ` · 第 ${job.attempts} 次执行` : ''}</p>{Boolean(error) && <p>读取状态暂时失败，页面可见时会继续重试：{error instanceof Error ? error.message : '未知错误'}</p>}{job?.status === 'failed' && <><p>后端任务已失败，失败状态已保留。</p><button className="button button-quiet button-small" onClick={onRetry} disabled={retrying || !canRetry}><RefreshCw size={13} />{retrying ? '正在重试' : canRetry ? '重试后端任务' : '后端 AI 未启用，暂不可重试'}</button></>}{Boolean(retryError) && <ErrorNotice error={retryError} />}{job?.status === 'waiting_input' && <p>后端任务在等待补充信息，当前页面不会伪造完成结果。</p>}</div></div>;
+  return <div className="ai-workflow-job"><RefreshCw className={job && (job.status === 'queued' || job.status === 'running') ? 'spin' : ''} size={16} /><div><strong>{status}</strong><p>后端任务 ID {jobId}{job ? ` · 第 ${job.attempts} 次执行` : ''}</p>{Boolean(error) && <ErrorNotice error={error} />}{job?.status === 'failed' && <><ErrorNotice error={job.error ?? new Error('任务执行失败。')} /><button className="button button-quiet button-small" onClick={onRetry} disabled={retrying || !canRetry}><RefreshCw size={13} />{retrying ? '正在重试' : canRetry ? '重试后端任务' : '后端 AI 未启用，暂不可重试'}</button></>}{Boolean(retryError) && <ErrorNotice error={retryError} />}{job?.status === 'waiting_input' && <p>后端任务在等待补充信息，当前页面不会伪造完成结果。</p>}</div></div>;
 }
 
 function turnLabel(kind: AgentSession['turns'][number]['kind']): string {

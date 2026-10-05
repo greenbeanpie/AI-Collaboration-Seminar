@@ -44,9 +44,9 @@ export async function adminRequest<T>(path: string, options: { method?: 'GET' | 
   const result: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401 && !token) window.dispatchEvent(new CustomEvent('auth-expired'));
-    if (token && response.status === 401) throw new Error('管理员令牌无效或已失效，请重新填写。');
     if (isApiFailure(result)) throw new ApiError(response.status, result);
-    throw new Error(response.status === 403 ? '需要系统管理员权限，项目负责人不能管理系统账户。' : `请求失败 ${response.status}`);
+    if (token && response.status === 401) throw new Error('管理员令牌无效或已失效，请重新填写。');
+    throw new Error(response.status === 403 ? '需要系统管理员权限，项目负责人不能管理系统账户。' : '请求失败，请稍后重试。');
   }
   if (!result || typeof result !== 'object' || !('data' in result)) throw new Error('服务返回了无法识别的响应。');
   return result.data as T;
