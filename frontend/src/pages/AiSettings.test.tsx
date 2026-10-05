@@ -490,6 +490,32 @@ it('save validation is explicit and leaves the button and form available without
   expect(localStorage.length).toBe(0);
 });
 
+it('lets admins explicitly choose the fallback protocol for an unverified OpenCode model before saving', async () => {
+  const writes: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 0, enabled: false, config: {} } });
+    writes.push(JSON.parse(String(init?.body)));
+    return Response.json({ data: { version: 1, enabled: false } });
+  }));
+  await setup(true, false);
+
+  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-zen' } });
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'future-model' } });
+  const protocol = screen.getByLabelText(/统一模型 API 协议/);
+  expect(protocol).toHaveValue('');
+  expect(screen.getByText('此 OpenCode 模型尚未核实，请显式选择其支持的协议；思考参数保持默认。')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('该 OpenCode 模型尚未核实，请显式选择协议');
+  expect(writes).toHaveLength(0);
+
+  fireEvent.change(protocol, { target: { value: 'chat-completions' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存，AI 未启用。连接测试失败不影响保存；启用前请逐项测试。');
+  expect(writes).toHaveLength(1);
+  expect(writes[0].unified).toMatchObject({ model: 'future-model', apiProtocol: 'chat-completions' });
+});
+
 it('opens with the saved version automatically and uses each new version for consecutive saves', async () => {
   let version = 7;
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {

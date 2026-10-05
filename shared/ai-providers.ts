@@ -37,6 +37,14 @@ export interface ProviderOptions {
   goUsageAcknowledged?: boolean;
   goHeaders?: { userAgent?: string; sessionPrefix?: string };
 }
+/** Unlisted OpenCode models need an explicitly chosen wire protocol before use. */
+export function requiresExplicitApiProtocol(config: ProviderOptions): boolean {
+  const preset = config.providerPreset ?? 'custom';
+  return (preset === 'opencode-zen' || preset === 'opencode-go')
+    && Boolean(config.model)
+    && !providerPresets[preset].models.includes(config.model)
+    && !config.apiProtocol;
+}
 export interface ModelCapabilities {
   reasoning: readonly ReasoningEffort[];
   temperature: boolean;
@@ -86,7 +94,7 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   if (preset === 'openai' && config.apiProtocol && !['responses', 'chat-completions'].includes(config.apiProtocol)) errors.push('OpenAI 仅支持 Responses 或 Chat Completions 协议');
   if (protocolForConfig(config) === 'messages' && config.supportsJson) errors.push('Messages 协议请取消 JSON response_format；仍会使用 JSON 提示和输出校验');
   if (protocolForConfig(config) === 'messages' && config.enabledOutputLimit === false) errors.push('Messages 协议必填 max_tokens，请启用输出 token 上限并自行设置正整数；该协议无法省略上限');
-  if ((preset === 'opencode-zen' || preset === 'opencode-go') && config.model && !providerPresets[preset].models.includes(config.model) && !config.apiProtocol) errors.push('该 OpenCode 模型尚未核实，请显式选择协议；思考参数保持默认');
+  if (requiresExplicitApiProtocol(config)) errors.push('该 OpenCode 模型尚未核实，请显式选择协议；思考参数保持默认');
   if (preset === 'opencode-go' && !config.goUsageAcknowledged) errors.push('请先确认 OpenCode Go 套餐适用于本应用用途');
   if (preset === 'opencode-go' && config.goHeaders?.userAgent !== undefined && !isSafeGoUserAgent(config.goHeaders.userAgent)) errors.push('Go User-Agent 需为真实应用名/版本，不能模拟 OpenCode、Codex 或 Claude 客户端');
   if (preset === 'opencode-go' && config.goHeaders?.sessionPrefix !== undefined && !/^[A-Za-z0-9_.-]{0,32}$/.test(config.goHeaders.sessionPrefix)) errors.push('Go 会话前缀只能含字母、数字、点、下划线或连字符，最多32位');
