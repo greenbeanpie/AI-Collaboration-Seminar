@@ -181,7 +181,7 @@ export function AiSettings() {
           <Field label={`${labels[p]}超时（毫秒）`}><input className="input" type="number" min="1000" max="600000" step="1000" value={config[p].timeoutMs} onChange={e => edit(p, { timeoutMs: Number(e.target.value) })} /></Field>
           <Field label={`${labels[p]}最大输入字符`}><input className="input" type="number" min="1" value={config[p].maxInputChars} onChange={e => edit(p, { maxInputChars: Number(e.target.value) })} /></Field>
           <label><input type="checkbox" checked={config[p].supportsVision} onChange={e => edit(p, { supportsVision: e.target.checked })} /> 声明模型支持图片输入（仍需探测）</label>
-          <p className="muted">业务请求保留最多两次调用（首次 + 一次修复/可重试错误），不自动换模型。有限金额预算仍只允许可估算的 Workers 文本模型；非 Workers、图片或未知价格的任务会被拒绝。费用记录按配置单价估算，缓存价和附加费用可能与供应商账单不同。</p>
+          <p className="muted">保留调用内恢复与 JSON 修复；仍有效的失败作业由后台每隔至少一分钟恢复，连续三次恢复失败后停止，不自动换模型。权限、输入或预算失效时停止。有限金额预算仍只允许可估算的 Workers 文本模型；非 Workers、图片或未知价格的任务会被拒绝。费用记录按配置单价估算，缓存价和附加费用可能与供应商账单不同。</p>
         </details>
         <label><input type="checkbox" disabled={protocol === 'messages'} checked={config[p].supportsJson} onChange={e => edit(p, { supportsJson: e.target.checked })} /> 服务支持协议对应的 JSON 输出约束（不支持时取消，仍会校验 JSON 输出）</label>
         {providerOptionErrors(config[p]).map(detail => <p className="muted" key={detail}>{detail}</p>)}
