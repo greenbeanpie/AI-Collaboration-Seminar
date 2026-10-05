@@ -43,13 +43,13 @@ it('configuration unavailable keeps text without microphone',async()=>{
   vi.mocked(voiceRequest).mockResolvedValue({...config,ready:false,reason:'Gateway未配置'});render(<RehearsalVoicePanel {...props}/>);await screen.findByText('Gateway未配置');expect(screen.getByRole('button',{name:'语音回答'})).toBeDisabled();expect(captureMicrophone).not.toHaveBeenCalled();
 });
 it('failure keeps finals and shuts microphone with one minute cooldown',async()=>{
-  await record();act(()=>Socket.latest.event({type:'final',sequence:1,text:'保留'}));act(()=>Socket.latest.event({type:'error',message:'连接失败'}));expect(stop).toHaveBeenCalled();expect(screen.getByText(/已确认字幕：保留/)).toBeInTheDocument();expect(screen.getByRole('button',{name:/秒后可继续/})).toBeDisabled();expect(captureMicrophone).toHaveBeenCalledTimes(1);
+  await record();act(()=>Socket.latest.event({type:'final',sequence:1,text:'保留'}));act(()=>Socket.latest.event({type:'error',message:'连接失败'}));expect(stop).toHaveBeenCalled();expect(screen.getByText(/已确认字幕：保留/)).toBeInTheDocument();expect(screen.getByRole('button',{name:'文字回答'})).toHaveAttribute('aria-pressed','true');fireEvent.click(screen.getByRole('button',{name:'语音回答'}));expect(screen.getByRole('button',{name:/秒后可继续/})).toBeDisabled();expect(captureMicrophone).toHaveBeenCalledTimes(1);
 });
 it('denied microphone falls back without creating session',async()=>{
   vi.mocked(captureMicrophone).mockRejectedValue(new DOMException('麦克风权限被拒绝','NotAllowedError'));await open();fireEvent.click(screen.getByRole('button',{name:'开始录音'}));await screen.findByText(/麦克风权限被拒绝/);expect(vi.mocked(voiceRequest).mock.calls.some(([path])=>path.endsWith('/voice-sessions'))).toBe(false);expect(busy).toHaveBeenLastCalledWith(false);
 });
 it('TTS excludes recording and switching to text stops audio',async()=>{
-  await open();fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await waitFor(()=>expect(audioElement.play).toHaveBeenCalled());expect(screen.getByRole('button',{name:'开始录音'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'文字回答'}));expect(audioElement.pause).toHaveBeenCalled();expect(captureMicrophone).not.toHaveBeenCalled();
+  await open();fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await waitFor(()=>expect(audioElement.play).toHaveBeenCalled());expect(screen.getByRole('button',{name:'开始录音'})).toBeDisabled();expect(busy).toHaveBeenLastCalledWith(true);fireEvent.click(screen.getByRole('button',{name:'文字回答'}));expect(audioElement.pause).toHaveBeenCalled();expect(captureMicrophone).not.toHaveBeenCalled();
 });
 it('unmount releases all resources and ignores late captions',async()=>{
   await record();cleanup();expect(stop).toHaveBeenCalled();expect(Socket.latest.close).toHaveBeenCalled();act(()=>Socket.latest.event({type:'final',sequence:99,text:'不应写入'}));expect(final).not.toHaveBeenCalled();
@@ -61,10 +61,10 @@ it('three successive failures stop recovery, next explicit start resets cycle',a
   await record();vi.useFakeTimers();
   for(let attempt=0;attempt<3;attempt++){
     act(()=>Socket.latest.event({type:'error',message:'恢复失败'}));
-    if(attempt<2){act(()=>vi.advanceTimersByTime(60001));fireEvent.click(screen.getByRole('button',{name:'手动继续语音'}));await act(async()=>{await Promise.resolve();});act(()=>Socket.latest.event({type:'ready'}));}
+    if(attempt<2){act(()=>vi.advanceTimersByTime(60001));fireEvent.click(screen.getByRole('button',{name:'语音回答'}));fireEvent.click(screen.getByRole('button',{name:'手动继续语音'}));await act(async()=>{await Promise.resolve();});act(()=>Socket.latest.event({type:'ready'}));}
   }
   expect(screen.getByText(/连续三次语音恢复失败/)).toBeInTheDocument();expect(captureMicrophone).toHaveBeenCalledTimes(3);act(()=>vi.advanceTimersByTime(60001));expect(captureMicrophone).toHaveBeenCalledTimes(3);
-  fireEvent.click(screen.getByRole('button',{name:'手动继续语音'}));await act(async()=>{await Promise.resolve();});const body=vi.mocked(voiceRequest).mock.calls.filter(([path])=>path.endsWith('/voice-sessions')).at(-1)?.[2];expect(body).toEqual({sequence:1});
+  fireEvent.click(screen.getByRole('button',{name:'语音回答'}));fireEvent.click(screen.getByRole('button',{name:'手动继续语音'}));await act(async()=>{await Promise.resolve();});const body=vi.mocked(voiceRequest).mock.calls.filter(([path])=>path.endsWith('/voice-sessions')).at(-1)?.[2];expect(body).toEqual({sequence:1});
 });
 it('recording blocks synthesis and five seconds backpressure closes microphone',async()=>{
   await record();expect(screen.getByRole('button',{name:'播放问题'})).toBeDisabled();Socket.latest.bufferedAmount=160001;act(()=>onFrame?.(new Uint8Array([1,0])));expect(screen.getByText(/音频发送阻塞/)).toBeInTheDocument();expect(stop).toHaveBeenCalled();
@@ -72,4 +72,19 @@ it('recording blocks synthesis and five seconds backpressure closes microphone',
 it('browser autoplay rejection offers explicit replay without regenerating TTS',async()=>{
  audioElement.play.mockRejectedValueOnce(new DOMException('Gesture required','NotAllowedError'));await open();fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await screen.findByText(/朗读已生成，浏览器未开始播放/);
  const requests=vi.mocked(voiceRequest).mock.calls.filter(([path])=>path.endsWith('/speech')).length;fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await waitFor(()=>expect(audioElement.play).toHaveBeenCalledTimes(2));expect(vi.mocked(voiceRequest).mock.calls.filter(([path])=>path.endsWith('/speech'))).toHaveLength(requests);
+});
+it('failed TTS synthesis selects actual text fallback without changing the ASR retry chain',async()=>{
+ const mode=vi.fn();render(<RehearsalVoicePanel {...props} onModeChange={mode}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'语音回答'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'语音回答'}));
+ vi.mocked(voiceRequest).mockRejectedValueOnce(new Error('TTS供应商失败'));fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await screen.findByText(/TTS供应商失败/);
+ expect(screen.getByRole('button',{name:'文字回答'})).toHaveAttribute('aria-pressed','true');expect(mode).toHaveBeenLastCalledWith(false);expect(busy).toHaveBeenLastCalledWith(false);expect(captureMicrophone).not.toHaveBeenCalled();
+});
+it('synthesis propagates busy until cancellation, without starting a microphone',async()=>{
+ await open();vi.mocked(voiceRequest).mockImplementationOnce(()=>new Promise(()=>{}));fireEvent.click(screen.getByRole('button',{name:'播放问题'}));await waitFor(()=>expect(busy).toHaveBeenLastCalledWith(true));
+ expect(screen.getByRole('button',{name:'开始录音'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'文字回答'}));expect(busy).toHaveBeenLastCalledWith(false);expect(captureMicrophone).not.toHaveBeenCalled();
+});
+it('resolved unavailable strategy overrides an inherited voice selection',async()=>{
+ const mode=vi.fn();vi.mocked(voiceRequest).mockResolvedValue({...config,ready:false,reason:'实时模型未配置'});render(<RehearsalVoicePanel {...props} initialVoiceMode onModeChange={mode}/>);await screen.findByText('实时模型未配置');expect(screen.getByRole('button',{name:'文字回答'})).toHaveAttribute('aria-pressed','true');expect(mode).toHaveBeenLastCalledWith(false);
+});
+it('initial idle render does not emit a spurious busy callback',async()=>{
+ render(<RehearsalVoicePanel {...props}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'语音回答'})).toBeEnabled());expect(busy).not.toHaveBeenCalled();
 });

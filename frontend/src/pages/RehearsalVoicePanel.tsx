@@ -23,8 +23,13 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
   const audio = useRef<HTMLAudioElement | null>(null);
   const audioController = useRef<AbortController | null>(null);
   const generation = useRef(0), failures = useRef(0), previousSession = useRef<string | undefined>(undefined);
-  const callbacks = useRef({ onTranscriptFinal, onBusyChange });
-  useEffect(() => { callbacks.current = { onTranscriptFinal, onBusyChange }; }, [onTranscriptFinal, onBusyChange]);
+  const callbacks = useRef({ onTranscriptFinal, onBusyChange, onModeChange });
+  const lastBusy = useRef(false);
+  useEffect(() => { callbacks.current = { onTranscriptFinal, onBusyChange, onModeChange }; }, [onTranscriptFinal, onBusyChange, onModeChange]);
+  useEffect(() => {
+    const busy = phase !== 'idle' || speaking || synthesizing;
+    if (lastBusy.current !== busy) { lastBusy.current = busy; callbacks.current.onBusyChange(busy); }
+  }, [phase, speaking, synthesizing]);
 
   const release = () => {
     generation.current++;
@@ -33,14 +38,14 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     if (current.sessionId) void voiceRequest(`${prefix}/voice-sessions/${encodeURIComponent(current.sessionId)}/close`, undefined, {}).catch(() => undefined);
     audioController.current?.abort(); audioController.current = null;
     if (audio.current) { audio.current.onended = null; audio.current.onerror = null; audio.current.pause(); audio.current.removeAttribute('src'); audio.current.load(); audio.current = null; }
-    callbacks.current.onBusyChange(false);
+    lastBusy.current = false; callbacks.current.onBusyChange(false);
   };
   const releaseRef = useRef(release);
   useEffect(() => { releaseRef.current = release; });
   useEffect(() => {
     const controller = new AbortController();
     void voiceRequest<VoiceConfig>(`${prefix}/voice`, controller.signal).then(setConfig).catch(error => {
-      if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : '语音配置读取失败，可继续文字回答。');
+      if (!controller.signal.aborted) { setVoice(false); callbacks.current.onModeChange?.(false); setNotice(error instanceof Error ? error.message : '语音配置读取失败，可继续文字回答。'); }
     });
     return () => { controller.abort(); releaseRef.current(); };
   }, [prefix]);
@@ -49,11 +54,15 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [retryAt]);
-  useEffect(() => { if (!enabled) { releaseRef.current(); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial(''); } }, [enabled]);
+  useEffect(() => {
+    if (!enabled || (config && (!config.ready || config.mode === 'text'))) {
+      releaseRef.current(); setVoice(false); callbacks.current.onModeChange?.(false); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial('');
+    }
+  }, [enabled, config]);
 
   const fallback = (message: string, countFailure = true) => {
     if (countFailure) failures.current++;
-    release(); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial('');
+    release(); setVoice(false); callbacks.current.onModeChange?.(false); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial('');
     setRetryAt(Date.now() + 60000); setClock(Date.now());
     setNotice(`${message} 已停止麦克风，可在下方继续文字回答。${failures.current >= 3 ? '连续三次语音恢复失败，已停止本轮恢复；再次主动开始可开启新一轮。' : '60 秒后可手动继续语音，已确认文字保留。'}`);
   };
@@ -62,7 +71,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     if (failures.current >= 3) { failures.current = 0; previousSession.current = undefined; }
     release(); const token = generation.current, controller = new AbortController(); resources.current.controller = controller;
     let audioSequence = 0, started = false, gotAudio = false;
-    setNotice(''); setPartial(''); setPhase('connecting'); callbacks.current.onBusyChange(true);
+    setNotice(''); setPartial(''); setPhase('connecting');
     try {
       // Permission is only requested in direct response to this button; audio is buffered nowhere before provider readiness.
       const capture = await captureMicrophone(frame => {
@@ -135,10 +144,13 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
       if (controller.signal.aborted) return;
       if (speech.status !== 'ready' || !speech.audioPath) throw new Error(speech.error || '朗读生成尚未完成，请稍后重试。');
       const element = new Audio(authenticatedVoicePath(speech.audioPath, prefix)); audio.current = element;
-      element.onended = () => { setSpeaking(false); }; element.onerror = () => { setSpeaking(false); setNotice('朗读播放失败，可继续文字回答。'); };
+      element.onended = () => { setSpeaking(false); }; element.onerror = () => { fallback('朗读播放失败。', false); };
       setSynthesizing(false); setSpeaking(true);
       await element.play();
-    } catch (error) { if (!controller.signal.aborted) { setNotice(audio.current ? '朗读已生成，浏览器未开始播放；请再次点击“播放问题”。' : error instanceof Error ? error.message : '朗读失败，可继续文字回答。'); setSpeaking(false); } }
+    } catch (error) { if (!controller.signal.aborted) {
+      if (audio.current) { setNotice('朗读已生成，浏览器未开始播放；请再次点击“播放问题”。'); setSpeaking(false); }
+      else fallback(error instanceof Error ? error.message : '朗读生成失败。', false);
+    } }
     finally { if (!controller.signal.aborted) setSynthesizing(false); }
   };
   const switchMode = (next: boolean) => { release(); setVoice(next); onModeChange?.(next); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial(''); };
@@ -154,9 +166,9 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
         {phase === 'connecting' || phase === 'finalizing' ? <button type="button" className="button button-quiet button-small" onClick={() => switchMode(false)}>取消并转文字</button> : null}
       </div>
       {partial && <p role="status">临时字幕（尚未写入回答）：{partial}</p>}
-      {finalText && <p style={{ whiteSpace: 'pre-wrap' }}>已确认字幕：{finalText}</p>}
-      <p>停止录音并完成转录后，请核对下方回答；不会自动提交。回答最多 8000 字，超出部分保留在字幕中供整理。</p>
     </div>}
+    {finalText && <p style={{ whiteSpace: 'pre-wrap' }}>已确认字幕：{finalText}</p>}
+    {(voice || finalText) && <p>停止录音并完成转录后，请核对下方回答；不会自动提交。回答最多 8000 字，超出部分保留在字幕中供整理。</p>}
     {notice && <p role="status">{notice}</p>}
   </div>;
 }
