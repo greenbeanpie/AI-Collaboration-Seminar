@@ -11,13 +11,13 @@ import { probeModel } from '../src/ai/probe';
 import { classifyFetchFailure, readAiDiagnostics, safeDiagnosticTarget } from '../src/ai/diagnostics';
 import { reserveAiSlot } from '../src/services/budget';
 import { seedProject, seedUser } from './helpers/seed';
-import { presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
+import { FIXED_MAX_OUTPUT_TOKENS, presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
 import { z } from 'zod';
 
 const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: env.AUTH_SECRET, envName: 'local' };
 const encrypted = await seal('fixture-provider-key', env.AUTH_SECRET);
 function config(preset: ProviderPreset, model: string, extra: Partial<AiModelConfig> = {}): AiModelConfig {
-  return aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: preset, model, apiUrl: presetEndpoint(preset, model, extra.apiProtocol), apiKeyEncrypted: encrypted, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 2048, supportsJson: providerPresets[preset].supportsJson, supportsVision: true, goUsageAcknowledged: preset === 'opencode-go', ...extra });
+  return aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: preset, model, apiUrl: presetEndpoint(preset, model, extra.apiProtocol), apiKeyEncrypted: encrypted, timeoutMs: 90000, maxInputChars: 48000, supportsJson: providerPresets[preset].supportsJson, supportsVision: true, goUsageAcknowledged: preset === 'opencode-go', ...extra });
 }
 function response(protocol: ApiProtocol) {
   if (protocol === 'responses') return { status: 'completed', output: [{ type: 'reasoning', summary: [{ text: 'not the answer' }] }, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"ok":true}' }] }], usage: { input_tokens: 9, output_tokens: 6, output_tokens_details: { reasoning_tokens: 4 } } };
@@ -79,14 +79,14 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(headers.get('cf-aig-gateway-id')).toBeNull();
     if (protocol === 'messages') {
       expect(headers.get('x-api-key')).toBe('fixture-provider-key'); expect(headers.get('anthropic-version')).toBe('2023-06-01'); expect(headers.has('authorization')).toBe(false);
-      expect(body).toMatchObject({ model, max_tokens: 2048, system: 'Only JSON', messages: [{ role: 'user', content: 'Reply JSON' }] }); expect(body.response_format).toBeUndefined();
+      expect(body).toMatchObject({ model, max_tokens: FIXED_MAX_OUTPUT_TOKENS, system: 'Only JSON', messages: [{ role: 'user', content: 'Reply JSON' }] }); expect(body.response_format).toBeUndefined();
     } else if (protocol === 'gemini') {
       expect(headers.get('x-goog-api-key')).toBe('fixture-provider-key'); expect(headers.has('authorization')).toBe(false);
-      expect(body).toMatchObject({ generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' }, systemInstruction: { parts: [{ text: 'Only JSON' }] }, contents: [{ role: 'user', parts: [{ text: 'Reply JSON' }] }] });
+      expect(body).toMatchObject({ generationConfig: { maxOutputTokens: FIXED_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' }, systemInstruction: { parts: [{ text: 'Only JSON' }] }, contents: [{ role: 'user', parts: [{ text: 'Reply JSON' }] }] });
     } else {
       expect(headers.get('authorization')).toBe('Bearer fixture-provider-key');
-      if (protocol === 'responses') { expect(body).toMatchObject({ model, max_output_tokens: 2048, store: false, input: messages }); expect(body.messages).toBeUndefined(); }
-      else { expect(body.messages).toEqual(messages); expect(body.max_tokens ?? body.max_completion_tokens).toBe(2048); }
+      if (protocol === 'responses') { expect(body).toMatchObject({ model, max_output_tokens: FIXED_MAX_OUTPUT_TOKENS, store: false, input: messages }); expect(body.messages).toBeUndefined(); }
+      else { expect(body.messages).toEqual(messages); expect(body.max_tokens ?? body.max_completion_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS); }
     }
     if (preset === 'opencode-go') { expect(headers.get('user-agent')).toBe('AI-Collaboration-Seminar/1.0'); expect(headers.get('x-opencode-session')).toBe('stable-job-123'); }
     else expect(headers.has('x-opencode-session')).toBe(false);
@@ -94,7 +94,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
   });
 
   it.each([
-    ['openai', 'gpt-5', { reasoningEffort: 'low', apiProtocol: 'chat-completions' }, { reasoning_effort: 'low', max_completion_tokens: 2048 }],
+    ['openai', 'gpt-5', { reasoningEffort: 'low', apiProtocol: 'chat-completions' }, { reasoning_effort: 'low', max_completion_tokens: FIXED_MAX_OUTPUT_TOKENS }],
     ['openai', 'gpt-5.4', { reasoningEffort: 'none', temperature: 0.2, topP: 0.9 }, { reasoning: { effort: 'none' }, temperature: 0.2, top_p: 0.9 }],
     ['deepseek', 'deepseek-flash', { reasoningEffort: 'high', topP: 0.98 }, { reasoning_effort: 'high', top_p: 0.98 }],
     ['deepseek', 'deepseek-flash', { reasoningEffort: 'none', temperature: 0.5 }, { thinking: { type: 'disabled' }, temperature: 0.5 }],
@@ -106,6 +106,12 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     ['opencode-go', 'grok-4.7', { reasoningEffort: 'xhigh' }, { reasoning: { effort: 'xhigh' } }],
     ['opencode-go', 'deepseek-v4-pro', { reasoningEffort: 'high' }, { reasoning_effort: 'high' }],
     ['opencode-go', 'deepseek-v4-pro', { reasoningEffort: 'none' }, { thinking: { type: 'disabled' } }],
+    ['opencode-go', 'deepseek-v4.1-flash', { reasoningEffort: 'high' }, { reasoning_effort: 'high' }],
+    ['opencode-go', 'deepseek-v4-flash', { reasoningEffort: 'max' }, { reasoning_effort: 'max' }],
+    ['opencode-go', 'deepseek-v4-flash-vision-exp', { reasoningEffort: 'none' }, { thinking: { type: 'disabled' } }],
+    ['opencode-zen', 'deepseek-v4-pro', { reasoningEffort: 'none' }, { thinking: { type: 'disabled' } }],
+    ['deepseek', 'deepseek-v4.1-flash', { reasoningEffort: 'high' }, { reasoning_effort: 'high' }],
+    ['deepseek-anthropic', 'deepseek-v4-pro', { reasoningEffort: 'max' }, { output_config: { effort: 'max' } }],
   ] as const)('%s %s serializes only supported option names', async (preset, model, options, expected) => {
     const cfg = config(preset, model, options);
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(response(protocolForConfig(cfg)))));
@@ -114,18 +120,18 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(body).toMatchObject(expected);
     if (preset === 'openrouter' || protocolForConfig(cfg) === 'responses' || preset === 'gemini') expect(body.reasoning_effort).toBeUndefined();
     expect(body.apiKeyEncrypted).toBeUndefined();
-    if ((preset === 'deepseek' || (preset === 'opencode-go' && model === 'deepseek-v4-pro')) && options.reasoningEffort === 'none') expect(body.reasoning_effort).toBeUndefined();
+    if ((preset === 'deepseek' || preset === 'opencode-go' || preset === 'opencode-zen') && model.startsWith('deepseek-') && options.reasoningEffort === 'none') expect(body.reasoning_effort).toBeUndefined();
   });
 
-  it('DeepSeek preserves the configured output cap and extracts only a completed answer', async () => {
-    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high', maxOutputTokens: 4096 });
+  it('DeepSeek uses the fixed output cap and extracts only a completed answer', async () => {
+    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high' });
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       choices: [{ finish_reason: 'stop', message: { content: '{"ok":true}', reasoning_content: 'synthetic private thought' } }],
       usage: { prompt_tokens: 9, completion_tokens: 100, completion_tokens_details: { reasoning_tokens: 94 } },
     })));
     expect(await gatewayChat(endpoint, { config: cfg, messages, jsonMode: true }, fetchMock)).toMatchObject({ content: '{"ok":true}', completionTokens: 100 });
     const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body));
-    expect(body).toMatchObject({ max_tokens: 4096, reasoning_effort: 'high', response_format: { type: 'json_object' } });
+    expect(body).toMatchObject({ max_tokens: FIXED_MAX_OUTPUT_TOKENS, reasoning_effort: 'high', response_format: { type: 'json_object' } });
     expect(body.response_format).not.toHaveProperty('json_schema');
     expect(() => normalizeProviderResponse('chat-completions', {
       choices: [{ finish_reason: 'length', message: { content: null, reasoning_content: 'synthetic private thought' } }],
@@ -169,7 +175,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
       expect(headers.get('x-opencode-session')).toBe('office:job');
       const body = JSON.parse(String(init?.body));
       expect(body.model).toBe('minimax-m3');
-      expect(body.max_tokens).toBe(2048);
+      expect(body.max_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS);
       return Response.json(response('messages'));
     });
     await gatewayChat(endpoint, { config: cfg, messages, sessionId: 'job' }, fetchMock);
@@ -183,7 +189,7 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
       await gatewayChat(endpoint, { config: c, messages, jsonMode: true }, mock);
       const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
       expect(url).toBe(c.provider === 'workers-ai' ? 'https://api.cloudflare.com/client/v4/accounts/account/ai/v1/chat/completions' : cfg.apiUrl);
-      expect(JSON.parse(String(init.body))).toEqual({ model: 'old-model', messages, max_tokens: 1024, temperature: 0.3, response_format: { type: 'json_object' } });
+      expect(JSON.parse(String(init.body))).toEqual({ model: 'old-model', messages, max_tokens: FIXED_MAX_OUTPUT_TOKENS, temperature: 0.3, response_format: { type: 'json_object' } });
       expect(new Headers(init.headers).get('cf-aig-gateway-id')).toBe(c.provider === 'workers-ai' ? 'gateway' : null);
     }
   });
@@ -217,7 +223,7 @@ async function putConfig(model: AiModelConfig, apiKey?: string, enabled = false)
 }
 describe('versioned configuration, authorization, and reservations', () => {
   it('does not pay for a same-budget repair when DeepSeek exhausts output tokens', async () => {
-    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high', maxOutputTokens: 4096 });
+    const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high' });
     expect((await putConfig(cfg, 'fixture-provider-key')).status).toBe(201);
     const loaded = (await loadAiConfig(env.DB))!;
     const user = await seedUser(); const projectId = await seedProject(user.userId); const jobId = crypto.randomUUID();

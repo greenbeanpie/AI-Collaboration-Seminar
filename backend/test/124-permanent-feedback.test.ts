@@ -35,7 +35,7 @@ it('freezes full job feedback and gateway transmits that version after later edi
  await saveProjectFeedback(env,projectId,owner.userId,'新版本',1);
  expect((await feedbackForJob(env,projectId,jobId)).feedback).toBe(original);
  const fetch=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>Response.json({choices:[{message:{content:'ok'}}]}));
- const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'fixture',timeoutMs:1000,maxInputChars:48000,maxOutputTokens:1000,supportsJson:true,supportsVision:false});
+ const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'fixture',timeoutMs:1000,maxInputChars:48000,supportsJson:true,supportsVision:false});
  const endpoint={accountId:'fixture',apiToken:'fixture',gatewayId:'fixture',diagnostics:env};
  await gatewayChat(endpoint,{config,projectId,jobId,messages:[{role:'user',content:'任务请求'}]},fetch);
  const body=JSON.parse(String(fetch.mock.calls[0]![1]?.body));

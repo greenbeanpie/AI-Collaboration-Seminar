@@ -49,7 +49,7 @@ function fixture(path, searchParams=new URLSearchParams(), options={}) {
  if(path==='/notifications/push/status')return {configured:false,publicKey:''};
  if(path==='/admin/accounts')return list([user,{...user,id:'fixture-member',username:'other_fixture',displayName:'另一成员',role:'user',isAdmin:false}]);
  if(path==='/admin/account-invitations')return list([]);
- if(path==='/admin/ai-config'){const config={provider:'workers-ai',model:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',apiUrl:'',keyConfigured:false,timeoutMs:90000,maxInputChars:48000,maxOutputTokens:4096,supportsJson:true,supportsVision:false,pricePerMTokens:null};return {version:1,enabled:true,config:{routingMode:'unified',unified:config,textEconomy:config,visionEconomy:config,review:config}};}
+ if(path==='/admin/ai-config'){const config={provider:'workers-ai',model:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',apiUrl:'',keyConfigured:false,timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:false,pricePerMTokens:null};return {version:1,enabled:true,config:{routingMode:'unified',unified:config,textEconomy:config,visionEconomy:config,review:config}};}
  const tail=path.replace(/^\/projects\/(fixture|archived-fixture)/,'');
  if(tail==='/members/me')return member;
  if(tail==='/members')return list([member,{...member,userId:'fixture-member',id:'fixture-member',username:'other_fixture',displayName:'另一成员',role:'member'}]);

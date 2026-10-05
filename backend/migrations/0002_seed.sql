@@ -11,7 +11,6 @@ VALUES (
       "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
       "timeoutMs": 60000,
       "maxInputChars": 48000,
-      "maxOutputTokens": 4096,
       "supportsJson": true,
       "supportsVision": false,
       "pricePerMTokens": null
@@ -21,7 +20,6 @@ VALUES (
       "model": "@cf/meta/llama-3.2-11b-vision-instruct",
       "timeoutMs": 90000,
       "maxInputChars": 12000,
-      "maxOutputTokens": 2048,
       "supportsJson": true,
       "supportsVision": true,
       "pricePerMTokens": null
@@ -31,7 +29,6 @@ VALUES (
       "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
       "timeoutMs": 120000,
       "maxInputChars": 96000,
-      "maxOutputTokens": 6144,
       "supportsJson": true,
       "supportsVision": false,
       "pricePerMTokens": null

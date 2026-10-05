@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AiModelConfig } from '../src/ai/config';
 import { MIMO_MEDIA_ENDPOINT, MIMO_MEDIA_MODEL, MimoMediaClient, mimoMediaCost, validateMimoMediaMime, validateMimoMediaModel } from '../src/ai/mimo-media';
+import { FIXED_MAX_OUTPUT_TOKENS } from '../../shared/ai-providers';
 
-const model: AiModelConfig = { provider: 'xiaomi-mimo', model: MIMO_MEDIA_MODEL, apiUrl: MIMO_MEDIA_ENDPOINT, timeoutMs: 10000, maxInputChars: 10000, enabledOutputLimit: true, maxOutputTokens: 4096, supportsJson: true, supportsVision: true, pricePerMTokens: [2, 5] };
+const model: AiModelConfig = { provider: 'xiaomi-mimo', model: MIMO_MEDIA_MODEL, apiUrl: MIMO_MEDIA_ENDPOINT, timeoutMs: 10000, maxInputChars: 10000, supportsJson: true, supportsVision: true, pricePerMTokens: [2, 5] };
 const summary = { title: '音频摘要', summary: '讨论实验计划', keyPoints: ['实验'], conclusions: [], actionItems: [], timestamps: [{ seconds: 2, description: '实验' }], caveats: [], complete: true, durationSeconds: 30 };
 function response(output: unknown = summary, usage: unknown = { prompt_tokens: 100, completion_tokens: 40, prompt_tokens_details: { cached_tokens: 20, audio_tokens: 60, video_tokens: 0 } }, finish = 'stop') {
   return Response.json({ choices: [{ finish_reason: finish, message: { content: JSON.stringify(output), reasoning_content: 'untrusted reasoning is ignored' } }], usage });
@@ -28,7 +29,7 @@ describe('official MiMo media adapter (mock provider only)', () => {
     expect(init?.redirect).toBe('error');
     expect(new Headers(init?.headers).get('api-key')).toBe('private-key');
     const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ model: MIMO_MEDIA_MODEL, response_format: { type: 'json_object' }, thinking: { type: 'disabled' }, max_completion_tokens: 4096, stream: false });
+    expect(body).toMatchObject({ model: MIMO_MEDIA_MODEL, response_format: { type: 'json_object' }, thinking: { type: 'disabled' }, max_completion_tokens: FIXED_MAX_OUTPUT_TOKENS, stream: false });
     expect(body.messages[1].content[0]).toEqual({ type: 'input_audio', input_audio: { data: mediaUrl } });
     expect(result).toMatchObject({ summary, promptTokens: 100, completionTokens: 40, cachedTokens: 20, audioTokens: 60, videoTokens: 0 });
     expect(f.request).toHaveBeenCalledTimes(1);

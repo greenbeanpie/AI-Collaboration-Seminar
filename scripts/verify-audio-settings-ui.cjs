@@ -12,7 +12,7 @@ mkdirSync(output,{recursive:true});
   try{for(const width of [1440,390]){
     const page=await browser.newPage({viewport:{width,height:1000}}),errors=[],writes=[];
     page.on('pageerror',e=>errors.push(e.message));
-    const model={provider:'openai-compatible',providerPreset:'custom',model:'fixture-text',apiUrl:'https://model.example/v1/chat/completions',timeoutMs:90000,maxInputChars:48000,maxOutputTokens:4096,enabledOutputLimit:true,supportsJson:true,supportsVision:true,pricePerMTokens:null,keyConfigured:true};
+    const model={provider:'openai-compatible',providerPreset:'custom',model:'fixture-text',apiUrl:'https://model.example/v1/chat/completions',timeoutMs:90000,maxInputChars:48000,supportsJson:true,supportsVision:true,pricePerMTokens:null,keyConfigured:true};
     const config={routingMode:'unified',textEconomy:model,visionEconomy:model,review:model,unified:model,
       audioFileTranscription:{provider:'workers-ai',model:'@cf/openai/whisper-large-v3-turbo'},
       processingStrategies:{audioFiles:'whisper-first',rehearsal:'text'},rehearsalSpeech:{provider:'system-local',lang:'zh-CN',rate:1,volume:1},

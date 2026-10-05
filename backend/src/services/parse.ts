@@ -265,7 +265,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   let ocred = 0; let failed = 0; let batches = 0;
   for (let offset = 0; offset < pages.results.length;) {
     await assertProcessingActive(env, version, jobId);
-    const count = singleOnly ? 1 : ocrBatchSize(pages.results.slice(offset), vision.maxInputChars, vision.enabledOutputLimit === false ? 6000 : vision.maxOutputTokens);
+    const count = singleOnly ? 1 : ocrBatchSize(pages.results.slice(offset));
     const batch = pages.results.slice(offset, offset + count);
     const previous = await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id = ?1 AND page_number = ?2 ORDER BY seq').bind(version.id, batch[0]!.page_number - 1).all<{ content: string }>();
     const context = ocrContext(previous.results.map(f => f.content).join('\n'), vision.maxInputChars);

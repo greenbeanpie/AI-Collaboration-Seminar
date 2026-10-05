@@ -137,8 +137,8 @@ describe('A03 admission, call accounting and bounded inputs', () => {
 
   it('enforces message/output bounds before request and accounts for two byte-bounded text calls', async () => {
     const { cfg } = await pricedProject();
-    const model = { ...cfg.config.textEconomy, maxInputChars: 2, maxOutputTokens: 3 };
-    expect(estimateCostUsd({ ...cfg, config: { ...cfg.config, textEconomy: model } }, 'textEconomy')).toBe(2 * (2 * 6 + 4096 + 3));
+    const model = { ...cfg.config.textEconomy, maxInputChars: 2 };
+    expect(estimateCostUsd({ ...cfg, config: { ...cfg.config, textEconomy: model } }, 'textEconomy')).toBe(2 * (2 * 6 + 4096 + 65535));
     const fetch = vi.fn(); const beforeFetch = vi.fn();
     await expect(gatewayChat({ accountId: 'a', apiToken: 't', gatewayId: 'g' }, { config: model, messages: [{ role: 'user', content: '中文超限' }], beforeFetch }, fetch)).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
     expect(fetch).not.toHaveBeenCalled(); expect(beforeFetch).not.toHaveBeenCalled();

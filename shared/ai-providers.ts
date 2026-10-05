@@ -3,6 +3,7 @@ export const PROVIDER_PRESETS = ['custom', 'openai', 'anthropic', 'deepseek-anth
 export type ProviderPreset = typeof PROVIDER_PRESETS[number];
 export const API_PROTOCOLS = ['chat-completions', 'responses', 'messages', 'gemini'] as const;
 export type ApiProtocol = typeof API_PROTOCOLS[number];
+export const FIXED_MAX_OUTPUT_TOKENS = 65535;
 const goResponses = ['grok-4.7', 'grok-4.6', 'gpt-6-luna', 'gpt-5.6-luna', 'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor'];
 const goMessages = ['minimax-m3', 'minimax-m2.7', 'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus'];
 const zenResponses = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.3-codex', 'gpt-5.3-codex-spark', 'gpt-5.2', 'gpt-5.2-codex', 'gpt-5.1', 'gpt-5.1-codex', 'gpt-5.1-codex-max', 'gpt-5.1-codex-mini', 'gpt-5', 'gpt-5-codex', 'gpt-5-nano', 'grok-4.7', 'grok-4.6', 'grok-4.5', 'grok-build-0.1', 'muse-spark-1.3', 'muse-spark-1.2'];
@@ -10,6 +11,10 @@ const zenMessages = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'c
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ReasoningEffort = typeof REASONING_EFFORTS[number];
 export const GO_USAGE_NOTICE = 'OpenCode Go 面向编码代理请求。本应用含项目写作、分工和验收等非编码任务；请求头适配不代表套餐适用或获得官方认证。请先确认你的套餐允许此用途；供应商可能拒绝请求。';
+const deepSeekChatReasoningModels: readonly string[] = ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4.1-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'];
+const deepSeekChatReasoningEfforts: readonly ReasoningEffort[] = ['none', 'low', 'high', 'max'];
+const deepSeekAnthropicReasoningModels: readonly string[] = ['deepseek-flash', 'deepseek-v4-pro'];
+const deepSeekAnthropicReasoningEfforts: readonly ReasoningEffort[] = ['low', 'high', 'max'];
 const openCodeReasoningEfforts: Readonly<Record<string, readonly ReasoningEffort[]>> = {
   'gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
   'gpt-6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
@@ -17,16 +22,15 @@ const openCodeReasoningEfforts: Readonly<Record<string, readonly ReasoningEffort
   'grok-4.6': ['low', 'medium', 'high', 'xhigh'],
   'grok-4.7': ['low', 'medium', 'high', 'xhigh'],
 };
-const openCodeDeepseekReasoningEfforts: readonly ReasoningEffort[] = ['none', 'low', 'high', 'max'];
 const goModels = ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'longcat-2.0', 'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.6-flash', 'mimo-v2.6-pro', 'mimo-v2.5', 'mimo-v2.5-pro', 'hy4-preview', 'hy3'];
 const zenModels = ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5', 'kimi-k2.5', 'kimi-k2.6', 'kimi-k2.7-code', 'kimi-k3', 'deepseek-v4.1-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'minimax-m3', 'minimax-m2.7', 'minimax-m2.5', 'qwen3.8-max'];
 export const providerPresets: Record<ProviderPreset, { label: string; apiUrl: string; models: readonly string[]; supportsJson: boolean }> = {
   custom: { label: '自定义 OpenAI 兼容接口', apiUrl: '', models: [], supportsJson: true },
   openai: { label: 'OpenAI', apiUrl: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5.1', 'gpt-5.2', 'gpt-5.4', 'o3', 'o4-mini'], supportsJson: true },
   anthropic: { label: 'Anthropic Claude', apiUrl: 'https://api.anthropic.com/v1/messages', models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-sonnet-4-6'], supportsJson: false },
-  'deepseek-anthropic': { label: 'DeepSeek · Anthropic 兼容（原生搜索待验证）', apiUrl: 'https://api.deepseek.com/anthropic/v1/messages', models: ['deepseek-v4-pro', 'deepseek-flash'], supportsJson: false },
+  'deepseek-anthropic': { label: 'DeepSeek · Anthropic 兼容（原生搜索待验证）', apiUrl: 'https://api.deepseek.com/anthropic/v1/messages', models: [...deepSeekAnthropicReasoningModels], supportsJson: false },
   gemini: { label: 'Google Gemini', apiUrl: '', models: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'], supportsJson: true },
-  deepseek: { label: 'DeepSeek', apiUrl: 'https://api.deepseek.com/chat/completions', models: ['deepseek-flash', 'deepseek-v4-pro'], supportsJson: true },
+  deepseek: { label: 'DeepSeek', apiUrl: 'https://api.deepseek.com/chat/completions', models: [...deepSeekChatReasoningModels], supportsJson: true },
   openrouter: { label: 'OpenRouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', models: ['openai/gpt-4.1-mini', 'openai/gpt-5', 'openai/o3', 'openai/o4-mini'], supportsJson: false },
   'opencode-zen': { label: 'OpenCode Zen', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', models: [...zenModels, ...zenResponses, ...zenMessages], supportsJson: false },
   'opencode-go': { label: 'OpenCode Go（需确认用途）', apiUrl: 'https://opencode.ai/zen/go/v1/chat/completions', models: [...goModels, ...goResponses, ...goMessages], supportsJson: false },
@@ -37,7 +41,6 @@ export interface ProviderOptions {
   apiUrl?: string;
   apiProtocol?: ApiProtocol;
   supportsJson?: boolean;
-  enabledOutputLimit?: boolean;
   model: string;
   reasoningEffort?: ReasoningEffort;
   temperature?: number;
@@ -56,10 +59,10 @@ export function requiresExplicitApiProtocol(config: ProviderOptions): boolean {
 export function usesDeepSeekThinkingToggle(config: ProviderOptions): boolean {
   const preset = config.providerPreset ?? 'custom';
   return preset === 'deepseek'
-    ? providerPresets.deepseek.models.includes(config.model)
+    ? deepSeekChatReasoningModels.includes(config.model)
     : (preset === 'opencode-go' || preset === 'opencode-zen')
       && providerPresets[preset].models.includes(config.model)
-      && config.model === 'deepseek-v4-pro';
+      && deepSeekChatReasoningModels.includes(config.model);
 }
 export interface ModelCapabilities {
   reasoning: readonly ReasoningEffort[];
@@ -72,18 +75,18 @@ export interface ModelCapabilities {
 export function modelCapabilities(config: ProviderOptions): ModelCapabilities {
   const base: ModelCapabilities = { reasoning: [], temperature: true, topP: true, minTopP: 0, tokenField: 'max_tokens' };
   const preset = config.providerPreset ?? 'custom';
-  if (preset === 'deepseek-anthropic') return { ...base, temperature:false, topP:false };
+  if (preset === 'deepseek-anthropic') return { ...base, reasoning: deepSeekAnthropicReasoningModels.includes(config.model) ? deepSeekAnthropicReasoningEfforts : [], temperature:false, topP:false };
   if (preset === 'anthropic') return { ...base, reasoning: config.model === 'claude-sonnet-5-5' ? ['low', 'medium', 'high', 'xhigh', 'max'] : [], temperature: false, topP: false };
   if (preset === 'gemini') return { ...base, reasoning: config.model === 'gemini-3.8-flash' ? ['low', 'medium', 'high'] : [], temperature: false, topP: false };
   if (preset === 'custom') return { ...base, topP: config.provider !== 'workers-ai' };
   if (preset === 'opencode-go' || preset === 'opencode-zen') {
     const knownModel = providerPresets[preset].models.includes(config.model);
     const reasoning = knownModel ? openCodeReasoningEfforts[config.model]
-      ?? (config.model === 'deepseek-v4-pro' ? openCodeDeepseekReasoningEfforts : []) : [];
+      ?? (deepSeekChatReasoningModels.includes(config.model) ? deepSeekChatReasoningEfforts : []) : [];
     return { ...base, reasoning, temperature: false, topP: false };
   }
   if (preset === 'deepseek') {
-    if (!providerPresets.deepseek.models.includes(config.model)) return { ...base, temperature: false, topP: false };
+    if (!deepSeekChatReasoningModels.includes(config.model)) return { ...base, temperature: false, topP: false };
     const thinking = config.reasoningEffort !== 'none';
     return { ...base, reasoning: ['none', 'low', 'high', 'max'], temperature: !thinking, topP: thinking, minTopP: 0.95 };
   }
@@ -114,7 +117,6 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   if (config.apiProtocol && config.apiProtocol !== protocolForConfig({ ...config, apiProtocol: undefined }) && preset !== 'custom' && preset !== 'openai' && (knownModel || ['anthropic', 'deepseek-anthropic', 'gemini', 'deepseek', 'openrouter'].includes(preset))) errors.push('协议与已核实的供应商/模型不匹配；代理接口请选择自定义');
   if (preset === 'openai' && config.apiProtocol && !['responses', 'chat-completions'].includes(config.apiProtocol)) errors.push('OpenAI 仅支持 Responses 或 Chat Completions 协议');
   if (protocolForConfig(config) === 'messages' && config.supportsJson) errors.push('Messages 协议请取消 JSON response_format；仍会使用 JSON 提示和输出校验');
-  if (protocolForConfig(config) === 'messages' && config.enabledOutputLimit === false) errors.push('Messages 协议必填 max_tokens，请启用输出 token 上限并自行设置正整数；该协议无法省略上限');
   if (requiresExplicitApiProtocol(config)) errors.push('该 OpenCode 模型尚未核实，请显式选择协议；思考参数保持默认');
   if (preset === 'opencode-go' && !config.goUsageAcknowledged) errors.push('请先确认 OpenCode Go 套餐适用于本应用用途');
   if (preset === 'opencode-go' && config.goHeaders?.userAgent !== undefined && !isSafeGoUserAgent(config.goHeaders.userAgent)) errors.push('Go User-Agent 需为真实应用名/版本，不能模拟 OpenCode、Codex 或 Claude 客户端');

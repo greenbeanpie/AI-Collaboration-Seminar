@@ -276,8 +276,8 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       const input = body[purpose];
       if (!input) continue;
       const active = config.routingMode === 'unified' ? purpose === 'unified' : purpose !== 'unified';
-      if(purpose==='mediaUnderstanding')validateMediaModel(input);
-      if(purpose==='mimoMediaUnderstanding')validateMimoMediaModel(input);
+      if(purpose==='mediaUnderstanding')validateMediaModel(config.mediaUnderstanding!);
+      if(purpose==='mimoMediaUnderstanding')validateMimoMediaModel(config.mimoMediaUnderstanding!);
       const optionErrors = active && purpose!=='mediaUnderstanding' && purpose!=='mimoMediaUnderstanding' ? providerOptionErrors(input) : [];
       if (optionErrors.length) throw validationFailed(`${purpose}: ${optionErrors.join('；')}`);
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {

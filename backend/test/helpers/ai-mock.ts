@@ -2,8 +2,6 @@ import { assertGoRequest } from './provider-config';
 import { vi } from 'vitest';
 
 export interface GatewayMockOptions {
-  /** Assert omission when a job explicitly disables the output cap. */
-  outputLimitEnabled?: boolean;
   /** 第一次要求提取调用返回非法 JSON，触发一次修复重试 */
   repair?: boolean;
   /** 返回伪造 fragmentId 的引用（应导致 AI_OUTPUT_INVALID） */
@@ -41,10 +39,14 @@ export function mockGatewayFetch(options?: GatewayMockOptions) {
   let textCalls = 0;
   return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? '{}')) as ChatBody;
-    if (body.model === 'glm-5.2') assertGoRequest(_input, init, options?.outputLimitEnabled);
+    if (body.model === 'glm-5.2') assertGoRequest(_input, init);
     const first = body.messages?.[0]?.content;
     if (Array.isArray(first)) {
       if (options?.visionInvalid) return openAiResponse('{"unexpected": true}');
+      const imageCount = first.filter(part => typeof part === 'object' && part !== null && (part as { type?: unknown }).type === 'image_url').length;
+      if (imageCount > 1) {
+        return openAiResponse(JSON.stringify({ pages: Array.from({ length: imageCount }, (_, index) => ({ pageNumber: index + 1, text: `扫描页内容：作品提交截止日期为 2026-10-08，第 ${index + 1} 页`, confidence: 0.92 })) }));
+      }
       return openAiResponse(
         '{"text": "扫描页内容：作品提交截止日期为 2026-10-08，团队人数不超过 5 人。", "confidence": 0.92}',
       );

@@ -10587,9 +10587,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
@@ -10627,9 +10624,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
@@ -10666,9 +10660,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
@@ -10705,9 +10696,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
@@ -10744,9 +10732,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;
@@ -10784,9 +10769,6 @@ export interface paths {
                             apiUrl?: string;
                             timeoutMs: number;
                             maxInputChars: number;
-                            /** @default true */
-                            enabledOutputLimit?: boolean;
-                            maxOutputTokens: number;
                             supportsJson: boolean;
                             supportsVision: boolean;
                             temperature?: number;

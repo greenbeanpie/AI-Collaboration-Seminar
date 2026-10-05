@@ -380,7 +380,7 @@ describe('authorized native search (fixtures only)', () => {
 describe('provider-native tool contracts (fixtures, no live billing)', () => {
   it.each(['chat-completions', 'responses', 'messages', 'gemini'] as const)('serializes local file tools and results for %s', protocol => {
     const cfg = {
-      provider: 'openai-compatible', providerPreset: 'custom' as const, apiProtocol: protocol, model: 'fixture', maxInputChars: 10000, maxOutputTokens: 2000, timeoutMs: 1000, apiUrl: 'https://example.com', supportsJson: false, supportsVision: false, enabledOutputLimit: true, pricePerMTokens: null
+      provider: 'openai-compatible', providerPreset: 'custom' as const, apiProtocol: protocol, model: 'fixture', maxInputChars: 10000, timeoutMs: 1000, apiUrl: 'https://example.com', supportsJson: false, supportsVision: false, pricePerMTokens: null
     };
     const body: Record<string, unknown> = {
       input: [], messages: [], contents: []

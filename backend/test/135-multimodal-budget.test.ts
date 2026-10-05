@@ -3,7 +3,7 @@ import { gatewayChat } from '../src/ai/gateway';
 import { aiModelConfigSchema } from '../src/ai/config';
 import type { ChatContentPart } from '../src/ai/gateway';
 const endpoint={accountId:'test',apiToken:'test',gatewayId:'test'};
-const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'vision-test',supportsVision:true,supportsJson:true,timeoutMs:1000,maxInputChars:1000,maxOutputTokens:6000});
+const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'vision-test',supportsVision:true,supportsJson:true,timeoutMs:1000,maxInputChars:1000});
 const image=(bytes:number):ChatContentPart=>({type:'image_url',image_url:{url:'data:image/png;base64,'+btoa('x'.repeat(bytes))}});
 const success=()=>Response.json({choices:[{message:{content:'ok'}}]});
 it('sends three realistic 200 KB images without counting base64 against text capacity',async()=>{

@@ -11,7 +11,7 @@ assert.equal(new URL(base).hostname, '127.0.0.1');
 const output = path.resolve(process.env.QA_OUTPUT || '../../qa'); mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', headless: true });
 const results = [], errors = [], puts = [], external = [];
-const model = { provider: 'openai-compatible', model: 'synthetic-old-model', apiUrl: 'https://fixture.invalid/v1/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };
+const model = { provider: 'openai-compatible', model: 'synthetic-old-model', apiUrl: 'https://fixture.invalid/v1/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: false, pricePerMTokens: null };
 try {
  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
  const page = await context.newPage(); page.setDefaultTimeout(12000);

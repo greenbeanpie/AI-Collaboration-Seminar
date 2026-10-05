@@ -9,7 +9,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { aiJsonCall } from '../src/services/agent';
 
 const endpoint = { accountId: 'fixture', apiToken: 'fixture', gatewayId: 'fixture' };
-const config = aiModelConfigSchema.parse({ provider: 'workers-ai', model: 'fixture', timeoutMs: 180000, maxInputChars: 48000, maxOutputTokens: 1000, supportsJson: true, supportsVision: false });
+const config = aiModelConfigSchema.parse({ provider: 'workers-ai', model: 'fixture', timeoutMs: 180000, maxInputChars: 48000, supportsJson: true, supportsVision: false });
 const input = { config, messages: [{ role: 'user' as const, content: 'fixture' }] };
 const success = () => Response.json({ choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 2, completion_tokens: 1 } });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });

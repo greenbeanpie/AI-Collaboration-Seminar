@@ -80,13 +80,15 @@ it('defaults legacy audio strategy to Whisper and saves strategy independently w
   expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({processingStrategies:{audioFiles:'media-only',rehearsal:'text'},audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
 });
 it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
-  const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, maxOutputTokens: 4096, supportsJson: true, supportsVision: false, pricePerMTokens: null };
+  const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: false, pricePerMTokens: null };
   const legacy = { ...deepseek, provider: 'workers-ai', providerPreset: undefined, model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', apiUrl: '' };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 3, enabled: false, config: { routingMode: 'unified', unified: deepseek, textEconomy: legacy, visionEconomy: legacy, review: legacy } } }));
     expect(init?.method).toBe('PUT');
     const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ expectedVersion: 3, routingMode: 'unified', unified: { providerPreset: 'deepseek', model: modelId, reasoningEffort: 'none', maxOutputTokens: 4096 } });
+    expect(body).toMatchObject({ expectedVersion: 3, routingMode: 'unified', unified: { providerPreset: 'deepseek', model: modelId, reasoningEffort: 'none' } });
+    expect(body.unified).not.toHaveProperty('maxOutputTokens');
+    expect(body.unified).not.toHaveProperty('enabledOutputLimit');
     return new Response(JSON.stringify({ data: { version: 4, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
@@ -189,19 +191,28 @@ it('OpenAI options follow model capability and explicit protocol; invalid hidden
 });
 
 it.each([
-  ['gpt-6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
-  ['gpt-5.6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
-  ['grok-4.7', 'responses', ['', 'low', 'medium', 'high', 'xhigh']],
-  ['deepseek-v4-pro', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
-] as const)('OpenCode Go %s shows supported thinking levels and saves the selected effort', async (modelId, apiProtocol, efforts) => {
+  ['opencode-go', 'gpt-6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
+  ['opencode-go', 'gpt-5.6-luna', 'responses', ['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']],
+  ['opencode-go', 'grok-4.7', 'responses', ['', 'low', 'medium', 'high', 'xhigh']],
+  ['opencode-go', 'deepseek-v4-pro', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+  ['opencode-go', 'deepseek-v4.1-flash', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+  ['opencode-go', 'deepseek-v4-flash', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+  ['opencode-go', 'deepseek-v4-flash-vision-exp', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+  ['deepseek', 'deepseek-v4.1-flash', 'chat-completions', ['', 'none', 'low', 'high', 'max']],
+  ['deepseek-anthropic', 'deepseek-v4-pro', 'messages', ['', 'low', 'high', 'max']],
+] as const)('%s %s shows supported thinking levels and saves the selected effort', async (preset, modelId, apiProtocol, efforts) => {
   const unified = {
     ...savedModel,
-    providerPreset: 'opencode-go',
+    providerPreset: preset,
     model: modelId,
     apiProtocol,
-    apiUrl: `https://opencode.ai/zen/go/v1/${apiProtocol === 'chat-completions' ? 'chat/completions' : apiProtocol}`,
-    goUsageAcknowledged: true,
-    supportsJson: false,
+    apiUrl: preset === 'deepseek'
+      ? 'https://api.deepseek.com/chat/completions'
+      : preset === 'deepseek-anthropic'
+        ? 'https://api.deepseek.com/anthropic/v1/messages'
+        : `https://opencode.ai/zen/go/v1/${apiProtocol === 'chat-completions' ? 'chat/completions' : apiProtocol}`,
+    goUsageAcknowledged: preset === 'opencode-go',
+    supportsJson: preset === 'deepseek',
   };
   const writes: Record<string, unknown>[] = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
@@ -221,7 +232,7 @@ it.each([
 });
 
 it('old saved custom config is preserved; changing providers clears key reuse and does not enable AI', async () => {
-  const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, temperature: 0.4, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+  const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, temperature: 0.4, supportsJson: false, supportsVision: false, pricePerMTokens: null };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 5, enabled: true, config: { textEconomy: model, visionEconomy: model, review: model } } }));
     const body = JSON.parse(String(init?.body));
@@ -290,7 +301,7 @@ it('text-only unified mode enables without probes, keeps diagnostics available, 
 });
 
 it('loads sanitized unified config and retains draft on optimistic version conflict', async () => {
-  const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+  const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false, pricePerMTokens: null };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 7, enabled: false, config: { routingMode: 'unified', unified: model, textEconomy: model, visionEconomy: model, review: model } } }));
     const body = JSON.parse(String(init?.body)); expect(body.expectedVersion).toBe(7); expect(body.unified.apiKey).toBe('');
@@ -307,7 +318,7 @@ it('loads sanitized unified config and retains draft on optimistic version confl
   expect(screen.queryByText(/^配置已保存/)).not.toBeInTheDocument();
 });
 
-const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, maxOutputTokens: 1500, supportsJson: false, supportsVision: false, pricePerMTokens: null };
+const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false, pricePerMTokens: null };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
 
 it('only changing the unified supplier updates its API URL; model and protocol changes preserve it', async () => {
@@ -350,90 +361,29 @@ it('changing an advanced supplier, model or protocol leaves its API URL unchange
   expect(url).toHaveValue('https://proxy.example/text');
 });
 
-it('saves the explicit off switch while retaining a value above the former maximum and makes no model call', async () => {
-  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
-    if (init?.method === 'GET') return Response.json({ data: { version: 4, enabled: true, config: savedConfig } });
-    expect(init?.method).toBe('PUT');
-    expect(JSON.parse(String(init?.body))).toMatchObject({ unified: { enabledOutputLimit: false, maxOutputTokens: 65536 }, textEconomy: { enabledOutputLimit: true, maxOutputTokens: 1500 } });
-    return Response.json({ data: { version: 5, enabled: false } });
-  });
-  vi.stubGlobal('fetch', mock); await setup(true, false);
-  fireEvent.change(screen.getByLabelText(/统一模型最大输出 token/), { target: { value: '65536' } });
-  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
-  expect(screen.getByLabelText(/统一模型最大输出 token/)).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 已关闭（保留 65536 token）');
-  expect(mock).toHaveBeenCalledTimes(2);
-  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
-  expect(screen.getByLabelText(/统一模型最大输出 token/)).toHaveValue(65536);
-});
-
-it('preserves a saved disabled switch and its retained numeric value on load', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { version: 7, enabled: true, config: { ...savedConfig, unified: { ...savedModel, enabledOutputLimit: false, maxOutputTokens: 70000 } } } })));
+it('removes all user output-limit controls and omits legacy cap fields when saving', async () => {
+  let saved: Record<string, unknown> | undefined;
+  const geminiMedia = { ...savedModel, providerPreset: 'gemini', model: 'gemini-2.5-flash', apiUrl: 'https://generativelanguage.googleapis.com', maxOutputTokens: 77, enabledOutputLimit: false };
+  const mimoMedia = { ...savedModel, provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiUrl: 'https://api.xiaomimimo.com/v1', maxOutputTokens: 88, enabledOutputLimit: false };
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: false, config: { ...savedConfig, unified: { ...savedModel, maxOutputTokens: 1234, enabledOutputLimit: false }, mediaUnderstanding: geminiMedia, mimoMediaUnderstanding: mimoMedia } } });
+    saved = JSON.parse(String(init?.body));
+    return Response.json({ data: { version: 9, enabled: false } });
+  }));
   await setup(true, false);
-  expect(screen.getByLabelText('启用统一模型输出 token 上限')).not.toBeChecked();
-  expect(screen.getByLabelText(/统一模型最大输出 token/)).toHaveValue(70000);
-  expect(screen.getByLabelText(/统一模型最大输出 token/)).toBeDisabled();
-});
 
-it('prominent unified output limit retains the saved value and inactive purpose limits until explicitly saved', async () => {
-  const persisted = { ...savedConfig, unified: { ...savedModel, maxOutputTokens: 9876 }, textEconomy: { ...savedModel, maxOutputTokens: 2100 }, visionEconomy: { ...savedModel, maxOutputTokens: 3200 }, review: { ...savedModel, maxOutputTokens: 4300 } };
-  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
-    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 11, enabled: true, config: persisted } }));
-    const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ expectedVersion: 11, unified: { maxOutputTokens: 12345, apiKey: '', keyConfigured: true }, textEconomy: { maxOutputTokens: 2100 }, visionEconomy: { maxOutputTokens: 3200 }, review: { maxOutputTokens: 4300 } });
-    expect(body).not.toHaveProperty('enabled');
-    return new Response(JSON.stringify({ data: { version: 12, enabled: false } }));
-  });
-  vi.stubGlobal('fetch', mock); await setup(true, false);
-  const limits = screen.getByRole('group', { name: '全局输出 token 上限' });
-  const input = within(limits).getByLabelText(/统一模型最大输出 token/);
-  expect(input).toHaveValue(9876); expect(input).toHaveAttribute('min', '1'); expect(input).not.toHaveAttribute('max'); expect(input).toHaveAttribute('step', '1');
-  expect(screen.getByLabelText('启用统一模型输出 token 上限')).toBeChecked();
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v11：统一模型 9876 token / 次');
-  fireEvent.change(input, { target: { value: '12345' } });
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 9876 token / 次');
-  expect(mock).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('group', { name: '全局输出 token 上限' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/最大输出 token|输出 token 上限/)).not.toBeInTheDocument();
+  expect(screen.getByText(/输出上限由系统固定为 65535 token/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/音视频超时/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/MiMo 超时/)).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'edited-model' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('已保存 v12：统一模型 12345 token / 次');
-  expect(mock).toHaveBeenCalledTimes(2);
-  expect(within(limits).getByText(/累计费用预算/)).toHaveTextContent('美元（USD）');
-  expect(within(limits).getByText(/单位是每次请求/)).toHaveTextContent('思考 token');
-});
-
-it('advanced output limits remain independent across routing-mode changes without materializing an untouched unified slot', async () => {
-  const persisted = { textEconomy: { ...savedModel, maxOutputTokens: 1024 }, visionEconomy: { ...savedModel, maxOutputTokens: 8192 }, review: { ...savedModel, maxOutputTokens: 16384 } };
-  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
-    if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 8, enabled: false, config: persisted } }));
-    const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ routingMode: 'advanced', expectedVersion: 8, textEconomy: { maxOutputTokens: 1024 }, visionEconomy: { maxOutputTokens: 8192 }, review: { maxOutputTokens: 32768 } });
-    expect(body).not.toHaveProperty('unified');
-    return new Response(JSON.stringify({ data: { version: 9, enabled: false } }));
-  });
-  vi.stubGlobal('fetch', mock); await setup(true, false);
-  expect(screen.getByLabelText(/文本与要求提取最大输出 token/)).toHaveValue(1024);
-  expect(screen.getByLabelText(/图片与 OCR最大输出 token/)).toHaveValue(8192);
-  fireEvent.change(screen.getByLabelText(/预审与答辩最大输出 token/), { target: { value: '32768' } });
-  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('预审与答辩 16384 token / 次');
-  fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
-  expect(screen.getByLabelText(/预审与答辩最大输出 token/)).toHaveValue(32768);
-  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(mock).toHaveBeenCalledTimes(2);
-});
-
-it.each(['0', '9007199254740992', '1.5'])('rejects invalid output token limit %s without saving or running a model probe', async value => {
-  const mock = vi.fn(async () => new Response(JSON.stringify({ data: { version: 4, enabled: true, config: savedConfig } })));
-  vi.stubGlobal('fetch', mock); await setup(true, false);
-  fireEvent.change(screen.getByLabelText(/统一模型最大输出 token/), { target: { value } });
-  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  await screen.findByRole('alert');
-  expect(screen.getByRole('alert')).toHaveTextContent('输出上限必须为可安全表示的正整数 token');
-  expect(screen.getByTestId('saved-token-limits')).toHaveTextContent('统一模型 1500 token / 次');
-  expect(mock).toHaveBeenCalledOnce();
+  const encoded = JSON.stringify(saved);
+  expect(encoded).not.toContain('maxOutputTokens');
+  expect(encoded).not.toContain('enabledOutputLimit');
 });
 
 it('unchanged save preserves enabled state and marks activation unavailable while already enabled', async () => {
@@ -667,15 +617,20 @@ it('untouched legacy advanced config does not invent a unified draft or force a 
   await screen.findByText('配置已保存，AI 保持启用。');
 });
 
-it('explains the required Messages cap and rejects an off switch without saving or probing', async () => {
-  const unified = { ...savedModel, providerPreset: 'anthropic', apiProtocol: 'messages', model: 'claude-sonnet-4-6', apiUrl: 'https://api.anthropic.com/v1/messages', enabledOutputLimit: true };
-  const mock = vi.fn(async () => Response.json({ data: { version: 8, enabled: true, config: { ...savedConfig, unified } } }));
+it('keeps Messages output cap fixed in the backend and removes its setting from the UI payload', async () => {
+  const unified = { ...savedModel, providerPreset: 'anthropic', apiProtocol: 'messages', model: 'claude-sonnet-4-6', apiUrl: 'https://api.anthropic.com/v1/messages', enabledOutputLimit: false, maxOutputTokens: 42 };
+  let saved: Record<string, unknown> | undefined;
+  const mock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: false, config: { ...savedConfig, unified } } });
+    saved = JSON.parse(String(init?.body));
+    return Response.json({ data: { version: 9, enabled: false } });
+  });
   vi.stubGlobal('fetch', mock); await setup(true, false);
-  fireEvent.click(screen.getByLabelText('启用统一模型输出 token 上限'));
-  expect(screen.getByText(/Messages 协议必填 max_tokens，必须启用输出上限/)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/输出 token/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Messages 协议必填 max_tokens');
-  expect(mock).toHaveBeenCalledOnce();
+  await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
+  expect((saved?.unified as Record<string, unknown>)).not.toHaveProperty('maxOutputTokens');
+  expect((saved?.unified as Record<string, unknown>)).not.toHaveProperty('enabledOutputLimit');
 });
 
 it('editing an OpenCode preset URL preserves its provider, explicit key, model and inferred protocol', async () => {

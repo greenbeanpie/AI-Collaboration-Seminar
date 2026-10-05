@@ -24,9 +24,6 @@ export const aiModelConfigSchema = z.object({
   apiKeyEncrypted: z.string().optional(),
   timeoutMs: z.number().int().min(1000).max(600000),
   maxInputChars: z.number().int().min(1),
-  // Missing in legacy/frozen versions means the existing cap remains enabled.
-  enabledOutputLimit: z.boolean().default(true),
-  maxOutputTokens: z.number().int().min(1),
   supportsJson: z.boolean(),
   supportsVision: z.boolean(),
   temperature: z.number().min(0).max(2).optional(),

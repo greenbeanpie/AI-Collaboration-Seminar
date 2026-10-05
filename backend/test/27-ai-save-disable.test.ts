@@ -16,7 +16,7 @@ async function readConfig() {
 }
 afterEach(() => vi.unstubAllGlobals());
 
-it('ordinary save succeeds after a failed connection probe without invoking a model or enabling AI', async () => {
+it('ordinary save and explicit enable do not require a successful connection probe', async () => {
   const loaded = await loadAiConfig(env.DB, undefined, false);
   const text = { ...loaded!.config.textEconomy, provider: 'openai-compatible', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-only-key' };
   const initial = await request('PUT', '', { ...loaded!.config, textEconomy: text, enabled: false, expectedVersion: loaded!.version });
@@ -33,7 +33,8 @@ it('ordinary save succeeds after a failed connection probe without invoking a mo
   expect(network).not.toHaveBeenCalled();
   const newest = await readConfig();
   const enable = await request('PUT', '', { ...newest.config, expectedVersion: newest.version, enabled: true });
-  expect(enable.status).toBe(409);
+  expect(enable.status).toBe(201);
+  expect((await enable.json() as { data: { enabled: boolean } }).data.enabled).toBe(true);
   expect(network).not.toHaveBeenCalled();
 }, 60_000);
 

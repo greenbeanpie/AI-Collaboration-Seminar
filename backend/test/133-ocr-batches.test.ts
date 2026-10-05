@@ -13,8 +13,6 @@ afterEach(()=>vi.unstubAllGlobals());
 const response = (data: unknown) => Response.json({choices:[{message:{content:JSON.stringify(data)}}],usage:{prompt_tokens:50,completion_tokens:30}});
 async function fixture(count=3) {
   const configRow=await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();
-  const config=JSON.parse(configRow!.config_json);config.visionEconomy.maxOutputTokens=6000;
-  await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(configRow!.id,JSON.stringify(config)).run();
   const owner=await seedUser();const projectId=await seedProject(owner.userId);
   const res=await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/sources`,{method:'POST',headers:{cookie:authCookie(owner.token),'content-type':'application/json'},body:JSON.stringify({kind:'paste',text:'前文截止时间'})});
   const {sourceVersionId}= (await res.json() as {data:{sourceVersionId:string}}).data;
@@ -30,12 +28,11 @@ async function fixture(count=3) {
   return {sourceVersionId};
 }
 describe('bounded OCR batches',()=>{
-  it('groups consecutive pages while respecting image/output budget',()=>{
-    expect(ocrBatchSize([1,2,3,4].map(page_number=>({page_number,size_bytes:100})),48000,6000)).toBe(3);
-    expect(ocrBatchSize([{page_number:1,size_bytes:100},{page_number:3,size_bytes:100}],48000,6000)).toBe(1);
-    expect(ocrBatchSize([1,2,3].map(page_number=>({page_number,size_bytes:100})),48000,2000)).toBe(1);
-    expect(ocrBatchSize([{page_number:1,size_bytes:2000000}],1000,6000)).toBe(1);
-    expect(()=>ocrBatchSize([{page_number:1,size_bytes:3*1024*1024}],1000,6000)).toThrow();
+  it('groups consecutive pages while respecting the fixed request and image budgets',()=>{
+    expect(ocrBatchSize([1,2,3,4].map(page_number=>({page_number,size_bytes:100})))).toBe(3);
+    expect(ocrBatchSize([{page_number:1,size_bytes:100},{page_number:3,size_bytes:100}])).toBe(1);
+    expect(ocrBatchSize([{page_number:1,size_bytes:2000000}])).toBe(1);
+    expect(()=>ocrBatchSize([{page_number:1,size_bytes:3*1024*1024}])).toThrow();
     expect(ocrContext('文'.repeat(3000),10000)).toHaveLength(1000);
     expect(ocrContext('全文',1)).toBe('');
     expect(ocrContext('文😀',10)).toBe('');
@@ -70,7 +67,7 @@ describe('bounded OCR batches',()=>{
     expect(await env.DB.prepare('SELECT single_image_only FROM ocr_model_capabilities').first()).toEqual({single_image_only:1});
   });
   it('does not classify generic 400 as a safe multi-image fallback',async()=>{
-    const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'test',timeoutMs:1000,maxInputChars:1000,maxOutputTokens:100,supportsVision:true,supportsJson:true});
+    const config=aiModelConfigSchema.parse({provider:'workers-ai',model:'test',timeoutMs:1000,maxInputChars:1000,supportsVision:true,supportsJson:true});
     const fetch=vi.fn(async()=>Response.json({error:{message:'Invalid parameter'}},{status:400}));
     await expect(gatewayChat({accountId:'x',apiToken:'x',gatewayId:'x'},{config,messages:[{role:'user',content:'test'}]},fetch)).rejects.toMatchObject({details:{status:400}});
     expect(fetch).toHaveBeenCalledOnce();

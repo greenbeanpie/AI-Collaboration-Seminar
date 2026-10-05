@@ -31,7 +31,6 @@ export interface GatewayCallInput {
   /** 需要 JSON 输出时置 true；模型不支持结构化约束时由调用方改用 JSON 提示 + Zod 校验 */
   jsonMode?: boolean;
   privateContext?: boolean;
-  maxOutputTokens?: number;
   beforeFetch?: () => Promise<void>;
   /** Resolve sensitive context after all config/key/budget I/O; no awaited work may follow before fetch. */
   prepareMessages?: () => Promise<ChatMessage[]>;
@@ -180,9 +179,6 @@ async function gatewayChatAttempt(
   if (textChars > input.config.maxInputChars || input.messages.length > 32) {
     throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
-  if (input.maxOutputTokens !== undefined && (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || (input.config.enabledOutputLimit !== false && input.maxOutputTokens > input.config.maxOutputTokens))) {
-    throw new AppError('QUOTA_EXCEEDED', '模型输出上限超过已预占额度', 429, false);
-  }
   const started = Date.now();
   let res: Response;
   await input.beforeFetch?.();
@@ -192,7 +188,7 @@ async function gatewayChatAttempt(
     throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
   }
   // Everything from this point to fetch is synchronous: never add config/key/budget reads here.
-  const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode), input.maxOutputTokens ?? input.config.maxOutputTokens);
+  const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode));
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
   const serializedBody = JSON.stringify(body);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));

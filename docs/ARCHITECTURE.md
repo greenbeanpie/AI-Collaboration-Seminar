@@ -180,7 +180,7 @@ AI 三档为 `do`（代做草稿）、`guide`（引导）、`review_only`（审�
 ### A03 · 金额预算与费用结算【调用前门槛与失败计费已修复；真账单待验证】
 
 - 位置：`backend/src/ai/calls.ts`、`services/budget.ts`、`api/projects.ts`、迁移 `0006_project_ai_budget.sql`、`usage_reservations`。
-- 本轮实现：项目级 `ai_budget_usd`（null=不限额）；配置了 `pricePerMTokens` 且 token 已知时按真实用量计算 `cost_usd`，否则记 `unknown`；`budget.ts` 用单条 `INSERT…SELECT` 原子完成「并发上限 + 剩余预算」检查并写入估算金额（输入按 `maxInputChars/4` 估 token、输出按 `maxOutputTokens` 估算；此估算不是中文输入、修复重试与多页 OCR 的最坏情况上界），调用后按该次预占窗口内的 `ai_calls` 结算，存在费用未知调用则记 `pending_reconcile`；OCR 与要求提取已纳入预占。价格未知时估算为 0，仅受并发上限约束。
+- 本轮实现：项目级 `ai_budget_usd`（null=不限额）；配置了 `pricePerMTokens` 且 token 已知时按真实用量计算 `cost_usd`，否则记 `unknown`；`budget.ts` 用单条 `INSERT…SELECT` 原子完成「并发上限 + 剩余预算」检查并写入估算金额（输入按 `maxInputChars/4` 估 token、输出按固定 65535 token 估算；此估算不是中文输入、修复重试与多页 OCR 的最坏情况上界），调用后按该次预占窗口内的 `ai_calls` 结算，存在费用未知调用则记 `pending_reconcile`；OCR 与要求提取已纳入预占。价格未知时估算为 0，仅受并发上限约束。
 - 已修复：所有入口使用冻结配置先预占后派发，真实 fetch 前标记 attempts_started，并按 reservation_id 归属费用；失败释放自动按已发生调用结算，未知费用保留 pending_reconcile。有限预算拒绝未知价格、OCR 和非 Workers 接口；文本估算是规划金额，仍需真实供应商账单核对。
 - 完成判据：后端/产品确定计费规则，调用前原子检查并预占金额，成功/失败/重试/超时均结算或待对账；重复执行不重复扣款，预算竞争测试及供应商账单核对通过。
 

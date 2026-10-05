@@ -2,6 +2,7 @@ import { expect } from 'vitest';
 import { env } from './env';
 import { loadAiConfig } from '../../src/ai/config';
 import { seal } from '../../src/ai/secrets';
+import { FIXED_MAX_OUTPUT_TOKENS } from '../../../shared/ai-providers';
 
 /** Test-only per-file D1 fixture. Does not read credentials or contact any provider. */
 export async function configureGoFixture(): Promise<void> {
@@ -19,7 +20,7 @@ export async function configureGoFixture(): Promise<void> {
   }
   await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(loaded.id, JSON.stringify(loaded.config)).run();
 }
-export function assertGoRequest(url: RequestInfo | URL, init?: RequestInit, outputLimitEnabled = true): void {
+export function assertGoRequest(url: RequestInfo | URL, init?: RequestInit): void {
   expect(String(url)).toBe('https://opencode.ai/zen/go/v1/chat/completions');
   const headers = new Headers(init?.headers);
   expect(headers.get('authorization')).toBe('Bearer fixture-go-job-key');
@@ -28,7 +29,6 @@ export function assertGoRequest(url: RequestInfo | URL, init?: RequestInit, outp
   expect(headers.has('cf-aig-gateway-id')).toBe(false);
   const body = JSON.parse(String(init?.body));
   expect(body.model).toBe('glm-5.2'); expect(body.messages.length).toBeGreaterThan(0);
-  if (outputLimitEnabled) expect(body.max_tokens).toBeGreaterThan(0);
-  else expect(body).not.toHaveProperty('max_tokens');
+  expect(body.max_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS);
   expect(body.response_format).toBeUndefined(); expect(body.reasoning_effort).toBeUndefined(); expect(body.temperature).toBeUndefined();
 }

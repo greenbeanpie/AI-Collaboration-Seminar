@@ -37435,14 +37435,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -37540,7 +37532,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]
@@ -37595,14 +37586,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -37700,7 +37683,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]
@@ -37751,14 +37733,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -37856,7 +37830,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]
@@ -37907,14 +37880,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -38012,7 +37977,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]
@@ -38063,14 +38027,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -38168,7 +38124,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]
@@ -38222,14 +38177,6 @@
                         "type": "integer",
                         "minimum": 1
                       },
-                      "enabledOutputLimit": {
-                        "type": "boolean",
-                        "default": true
-                      },
-                      "maxOutputTokens": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
                       "supportsJson": {
                         "type": "boolean"
                       },
@@ -38327,7 +38274,6 @@
                       "model",
                       "timeoutMs",
                       "maxInputChars",
-                      "maxOutputTokens",
                       "supportsJson",
                       "supportsVision"
                     ]

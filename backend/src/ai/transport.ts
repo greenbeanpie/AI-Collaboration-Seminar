@@ -1,7 +1,7 @@
 import type { AiModelConfig } from './config';
 import type { ChatMessage } from './gateway';
 import { AppError } from '../core/errors';
-import { modelCapabilities, protocolForConfig, usesDeepSeekThinkingToggle, type ApiProtocol } from '../../../shared/ai-providers';
+import { FIXED_MAX_OUTPUT_TOKENS, modelCapabilities, protocolForConfig, usesDeepSeekThinkingToggle, type ApiProtocol } from '../../../shared/ai-providers';
 
 const invalid = (message: string, details?: Record<string, unknown>) => new AppError('AI_OUTPUT_INVALID', message, 502, false, details);
 const inputError = (message: string) => new AppError('AI_UNAVAILABLE', message, 503, false);
@@ -17,11 +17,8 @@ function textContent(message: ChatMessage): string {
 }
 
 /** No arbitrary headers/body passthrough. Authentication is constructed after validation. */
-export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean, maxOutputTokens: number | undefined): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
+export function buildProviderRequest(config: AiModelConfig, messages: ChatMessage[], token: string, jsonMode: boolean): { protocol: ApiProtocol; headers: Record<string, string>; body: Record<string, unknown> } {
   const protocol = protocolForConfig(config);
-  const outputLimit = config.enabledOutputLimit === false ? undefined : maxOutputTokens ?? config.maxOutputTokens;
-  if (outputLimit !== undefined && (!Number.isSafeInteger(outputLimit) || outputLimit < 1)) throw inputError('输出 token 上限必须为可安全表示的正整数');
-  if (protocol === 'messages' && outputLimit === undefined) throw inputError('Messages 协议必填 max_tokens，请启用输出 token 上限');
   const caps = modelCapabilities(config);
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   let body: Record<string, unknown>;
@@ -29,7 +26,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     headers['x-api-key'] = token;
     headers['anthropic-version'] = '2023-06-01';
     body = {
-      model: config.model, max_tokens: outputLimit,
+      model: config.model, max_tokens: FIXED_MAX_OUTPUT_TOKENS,
       messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => {
         if (part.type === 'text') return part;
         const image = dataImage(part.image_url.url);
@@ -41,7 +38,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     if (config.reasoningEffort !== undefined) body.output_config = { effort: config.reasoningEffort };
   } else if (protocol === 'gemini') {
     headers['x-goog-api-key'] = token;
-    const generationConfig: Record<string, unknown> = outputLimit === undefined ? {} : { maxOutputTokens: outputLimit };
+    const generationConfig: Record<string, unknown> = { maxOutputTokens: FIXED_MAX_OUTPUT_TOKENS };
     if (jsonMode && config.supportsJson) generationConfig.responseMimeType = 'application/json';
     if (config.reasoningEffort !== undefined) generationConfig.thinkingConfig = { thinkingLevel: config.reasoningEffort };
     if (config.temperature !== undefined) generationConfig.temperature = config.temperature;
@@ -55,11 +52,11 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
   } else {
     headers.authorization = `Bearer ${token}`;
     if (protocol === 'responses') {
-      body = { model: config.model, ...(outputLimit === undefined ? {} : { max_output_tokens: outputLimit }), store: false, input: messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => part.type === 'text' ? { type: 'input_text', text: part.text } : { type: 'input_image', image_url: part.image_url.url }) })) };
+      body = { model: config.model, max_output_tokens: FIXED_MAX_OUTPUT_TOKENS, store: false, input: messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => part.type === 'text' ? { type: 'input_text', text: part.text } : { type: 'input_image', image_url: part.image_url.url }) })) };
       if (jsonMode && config.supportsJson) body.text = { format: { type: 'json_object' } };
       if (config.reasoningEffort !== undefined) body.reasoning = { effort: config.reasoningEffort };
     } else {
-      body = { model: config.model, messages, ...(outputLimit === undefined ? {} : { [caps.tokenField]: outputLimit }) };
+      body = { model: config.model, messages, [caps.tokenField]: FIXED_MAX_OUTPUT_TOKENS };
       if (jsonMode && config.supportsJson) body.response_format = { type: 'json_object' };
       if (config.reasoningEffort !== undefined) {
         // DeepSeek Chat toggles thinking separately; "none" is not a Chat effort.
@@ -111,7 +108,7 @@ export function normalizeProviderResponse(protocol: ApiProtocol, value: unknown)
     promptTokens = count(metadata.promptTokenCount); completionTokens = sum(metadata.candidatesTokenCount, metadata.thoughtsTokenCount);
   } else {
     const choice = items(data.choices)[0];
-    if (choice?.finish_reason === 'length') throw invalid('模型输出被截断：达到 token 上限；思考 token 也占输出预算，请调整输出上限或思考强度后重新测试', { cause: 'output_limit', finishReason: 'length' });
+    if (choice?.finish_reason === 'length') throw invalid(`模型输出被截断：达到系统固定的 ${FIXED_MAX_OUTPUT_TOKENS} token 上限；请缩短任务内容或降低思考强度后重试`, { cause: 'output_limit', finishReason: 'length' });
     if ((choice?.finish_reason !== undefined && choice.finish_reason !== 'stop') || obj(choice?.message).refusal || obj(choice?.message).tool_calls || obj(choice?.message).function_call) throw invalid('模型 Chat 输出被截断、过滤或需要工具执行');
     const text = obj(choice?.message).content;
     content = typeof text === 'string' ? text : '';
