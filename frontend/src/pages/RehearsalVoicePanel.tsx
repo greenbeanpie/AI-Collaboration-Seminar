@@ -64,7 +64,7 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     if (countFailure) failures.current++;
     release(); setVoice(false); callbacks.current.onModeChange?.(false); setPhase('idle'); setSpeaking(false); setSynthesizing(false); setPartial('');
     setRetryAt(Date.now() + 60000); setClock(Date.now());
-    setNotice(`${message} 已停止麦克风，可在下方继续文字回答。${failures.current >= 3 ? '连续三次语音恢复失败，已停止本轮恢复；再次主动开始可开启新一轮。' : '60 秒后可手动继续语音，已确认文字保留。'}`);
+    setNotice(message);
   };
   const start = async () => {
     if (!enabled || !voice || !config?.ready || config.mode !== 'voice-with-text-fallback' || phase !== 'idle' || speaking || synthesizing || Date.now() < retryAt) return;
@@ -169,6 +169,6 @@ export function RehearsalVoicePanel({ projectId, rehearsalId, sequence, enabled,
     </div>}
     {finalText && <p style={{ whiteSpace: 'pre-wrap' }}>已确认字幕：{finalText}</p>}
     {(voice || finalText) && <p>停止录音并完成转录后，请核对下方回答；不会自动提交。回答最多 8000 字，超出部分保留在字幕中供整理。</p>}
-    {notice && <p role="status">{notice}</p>}
+    {notice && <p role="status" style={{whiteSpace:'pre-wrap'}}>{notice}</p>}
   </div>;
 }

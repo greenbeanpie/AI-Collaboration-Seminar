@@ -69,6 +69,7 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     }
     else if(path.endsWith('/collaboration/feedback/history'))data={items:[state.feedback]};
     else if(path.endsWith('/collaboration/decompose'))data={jobId:'55555555-5555-4555-8555-555555555555'};
+    else if(path.endsWith('/jobs/scoring-fixture'))data={jobId:'scoring-fixture',status:'succeeded',result:{scoringOutputVersion:2,methodSource:'documented',draft:{title:'项目评分标准',notes:'',weights:[{key:'quality',label:'质量',weight:100}],requirements:[{title:'质量',detail:'',category:'scoring',dimensionKey:'quality',dueDate:null,duePrecision:'unknown',citations:[{sourceVersionId:'66666666-6666-4666-8666-666666666666',fragmentId:'frag',pageNumber:1,quote:'质量100分',fileName:'标准通知.pdf',fileId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}]}]}}};
     else if(path.startsWith('/api/v1/jobs/'))data={jobId:path.split('/').at(-1),status:'succeeded',attempts:1,feedbackSnapshot:state.feedback,createdAt:now,updatedAt:now};
     else if(path.endsWith('/ai-tools/capabilities'))data={fileTools:true,search:{supported:false,reason:'管理员尚未启用互联网搜索'},searchCost:'unknown'};
     else if(path.endsWith('/ai/clarifications'))data={items:[]};
@@ -78,6 +79,8 @@ async function scenario(name,role,run,scoreCorrect=false,accountRole=role==='adm
     }
     else if(path.endsWith('/invitation-requests/invite-1/decide')){state.invitations[0].status=body.action==='approve'?'approved':'rejected';data=state.invitations[0];}
     else if(path.endsWith('/sources'))data={items:[{sourceId:'source-1',title:'本地参考通知',currentVersionId:'66666666-6666-4666-8666-666666666666'}],nextCursor:null};
+    else if(path.endsWith('/standards/generate')&&name==='error-verbatim'){await route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:{code:'INTERNAL',message:'原始后端原因：评分方法来源已变化\n请重新选择原文件',retryable:false},requestId:'deadbeef-dead-4eef-8eef-deadbeefdead'})});return;}
+    else if(path.endsWith('/standards/generate'))data={jobId:'scoring-fixture'};
     else if(path.endsWith('/standards/current'))data={standard};
     else if(path.endsWith('/standards'))data={items:[standard]};
     else if(path.endsWith('/submissions'))data={items:name.startsWith('submission-')?[{submissionId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',taskId:fixtureTask.taskId,round:1,submittedBy:userId,body:'完整成果正文'+ '内容'.repeat(1000)+'末尾完整文本',materialVersionIds:[],criteria:'固定标准',status:'accept',decision:'accept',feedback:'通过理由',aiDecision:null,aiReport:null,revision:1,createdAt:now}]:[]};
@@ -309,6 +312,24 @@ try{
     await screenshot('collapsed');await body.getByText('展开提交内容',{exact:true}).click();
     await body.getByText('收起提交内容',{exact:true}).waitFor();assert((await body.locator('p').textContent()).endsWith('末尾完整文本'));
     await screenshot('expanded');await page.setViewportSize({width:390,height:844});await screenshot('mobile');
+  });
+  await scenario('scoring-only-generation','owner',async({page,screenshot})=>{
+    await page.goto(origin+base+'/assessment');await page.getByRole('button',{name:'AI 生成标准',exact:true}).click();
+    await page.getByLabel('评分维度名称',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('评分维度名称',{exact:true}).inputValue(),'质量');
+    assert.equal(await page.getByLabel('要求 1 标题',{exact:true}).count(),0);
+    assert.equal(await page.getByLabel('要求截止日期',{exact:true}).count(),0);
+    assert.equal(await page.getByLabel('标准说明',{exact:true}).count(),0);
+    await page.getByText('来源引用（1 条）',{exact:true}).click();
+    await page.getByText('[1] 标准通知.pdf',{exact:true}).waitFor();
+    await screenshot('editor');
+  });
+  await scenario('error-verbatim','owner',async({page,screenshot})=>{
+    await page.goto(origin+base+'/assessment');await page.getByRole('button',{name:'AI 生成标准',exact:true}).click();
+    const error=page.getByRole('alert');await error.waitFor();
+    assert((await error.textContent()).includes('原始后端原因：评分方法来源已变化\n请重新选择原文件'));
+    assert(!(await error.textContent()).includes('INTERNAL'));assert(!(await error.textContent()).includes('deadbeef'));assert(!(await error.textContent()).includes('traceback'));
+    await screenshot('reason');
   });
 }finally{
   await browser.close();

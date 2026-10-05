@@ -1,5 +1,5 @@
 import { uploadMultipartFile } from './document-import-client';
-import { ApiError, api, apiUrl, projectPath, request, type RequestOptions } from '../api/client';
+import { ApiError, responseError, api, apiUrl, projectPath, request, type RequestOptions } from '../api/client';
 import type { DataOf, SchemaName } from '../api/types';
 
 export type TrackedSourceJob = {
@@ -155,19 +155,7 @@ export async function downloadSourcePdf(projectId: string, fileId: string): Prom
     credentials: 'include',
     headers: { 'X-Request-Id': requestId },
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const failure = payload && typeof payload === 'object' ? payload as { error?: { code?: string; message?: string; retryable?: boolean; details?: Record<string, unknown> }; requestId?: string } : null;
-    throw new ApiError(response.status, {
-      error: {
-        code: failure?.error?.code ?? `HTTP_${response.status}`,
-        message: failure?.error?.message ?? '无法读取已上传的来源 PDF。',
-        retryable: failure?.error?.retryable ?? response.status >= 500,
-        details: failure?.error?.details,
-      },
-      requestId: failure?.requestId ?? requestId,
-    });
-  }
+  if (!response.ok) throw await responseError(response, '无法读取已上传的来源 PDF。');
   return new Uint8Array(await response.arrayBuffer());
 }
 

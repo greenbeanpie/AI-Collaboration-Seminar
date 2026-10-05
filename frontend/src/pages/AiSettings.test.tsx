@@ -75,7 +75,7 @@ it('ordinary account cannot save with a session alone; token fallback errors are
   fireEvent.click(screen.getByText('运维管理员令牌模式（可选）'));
   fireEvent.change(screen.getByLabelText(/管理员令牌/), { target: { value: 'wrong-token' } });
   fireEvent.click(screen.getByRole('button', { name: /读取已保存配置/ }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('管理员令牌无效或已失效');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unauthorized');
   expect(new Headers(mock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer wrong-token');
   expect(localStorage.length).toBe(0);
 });

@@ -216,7 +216,7 @@ function ProjectCreationForm({ userId }: { userId: string }) {
       {selectionError && <div className="notice notice-error" role="alert">{selectionError}</div>}
       {files.length > 0 && <ul className="page-stack" aria-label="文件上传进度">{files.map(file => <li key={file.localId}>
         <strong>{file.name}</strong> · {(file.size / 1024).toFixed(1)} KiB · {file.sourceId ? '已保存原文件并建立来源' : pending && file.status === 'uploading' ? '正在上传或核对原文件' : pending && file.status === 'linking' ? '正在建立来源' : file.uploadConfirmed ? '原文件已上传，来源尚未确认' : file.status === 'failed' ? '上传未完成' : file.status === 'needs_file' ? '需要重新选择原文件' : '等待上传'}
-        {file.error && <div role="status">{file.error}</div>}
+        {file.error && <div role="status" style={{whiteSpace:'pre-wrap'}}>{file.error}</div>}
         {!frozen && <button className="button button-quiet button-small" type="button" disabled={pending} aria-label={`移除 ${file.name}`} onClick={() => { originals.current.delete(file.localId); setFiles(items => items.filter(item => item.localId !== file.localId)); }}>移除</button>}
       </li>)}</ul>}
       {storageUnavailable && <div className="notice notice-warn" role="alert">此浏览器无法保存恢复进度。离开或刷新可能丢失本次重试信息，请等创建结果确认后保留项目链接。</div>}

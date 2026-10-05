@@ -20,7 +20,8 @@ it('super-admin manually reads no-store fixed metadata without rendering extra p
   vi.stubGlobal('fetch', mock); setup('super_admin'); expect(mock).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText('AI 诊断日志（仅超级管理员）'));
   fireEvent.click(screen.getByRole('button', { name: '刷新诊断日志' }));
-  await screen.findByText(/错误码：VERSION_CONFLICT/);
+  await screen.findByText(/已保留 1 条/);
+  expect(screen.queryByText(/VERSION_CONFLICT|e4cc34b8-b74c-4719-bef0-a716055aa5cb/)).not.toBeInTheDocument();
   expect(screen.getByText(/HTTP 409/)).toBeInTheDocument();
   expect(screen.queryByText(/private-prompt|private-key/)).not.toBeInTheDocument();
   expect(mock).toHaveBeenCalledOnce();

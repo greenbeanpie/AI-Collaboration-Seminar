@@ -1,3 +1,4 @@
+import { errorMessage } from '../api/error-info';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationRequest } from './api';
@@ -37,7 +38,7 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
     const modify = (event: Event) => {
       const detail = (event as CustomEvent<{ id: string; action: 'read' | 'dismiss' }>).detail;
       if (!detail || !/^[a-zA-Z0-9-]{1,80}$/.test(detail.id) || !['read', 'dismiss'].includes(detail.action)) return;
-      void notificationRequest(`/notifications/${encodeURIComponent(detail.id)}/${detail.action}`, 'POST', {}, abort.signal, userId).then(()=>{if(active)refresh();}).catch(() => {if(active)window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: 'error', text: '通知状态未能保存，请重试。' } }));});
+      void notificationRequest(`/notifications/${encodeURIComponent(detail.id)}/${detail.action}`, 'POST', {}, abort.signal, userId).then(()=>{if(active)refresh();}).catch(error => {if(active)window.dispatchEvent(new CustomEvent('app-notification', { detail: { kind: 'error', text: errorMessage(error, '通知状态未能保存，请重试。') } }));});
     };
     const readAll=(event:Event)=>{
       if(!active||readAllBusy||(event as CustomEvent<{userId?:string}>).detail?.userId!==userId)return;
@@ -45,14 +46,12 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
       const status=(busy:boolean,message='')=>{if(active)window.dispatchEvent(new CustomEvent('app-notification-read-all-status',{detail:{userId,busy,message}}));};
       status(true);
       void (async()=>{
-        let saved=false;
         try {
           const result=await notificationRequest<{updatedCount:number;unreadCount:number}>('/notifications/read-all','POST',{},abort.signal,userId);
           if(!active)return;
-          saved=true;
           await sync(true,true);
           status(false,result.updatedCount?'全部通知已标为已读。':'没有未读通知。');
-        }catch(error){status(false,saved?'已保存已读状态，通知列表刷新失败，请重试。':error instanceof Error?error.message:'通知状态未能保存，请重试。');}
+        }catch(error){status(false,errorMessage(error, '通知状态未能保存，请重试。'));}
         finally{readAllBusy=false;}
       })();
     };
@@ -124,5 +123,5 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
     finally { permissionBusy.current = false; }
   }
   if (!userId || !enabled) return null;
-  return <>{offer && <section className="notification-introduction" aria-label="开启通知"><div><strong>及时收到项目和工单更新</strong><p>应用内通知默认开启。允许系统通知后，本设备会显示不含正文的更新摘要；浏览器和系统可能限制后台送达。</p></div><div className="notification-buttons"><button type="button" onClick={() => void allow()}>允许系统通知</button><button type="button" onClick={dismissOffer}>稍后</button></div></section>}{message && <p className="notification-feedback" role="status">{message}</p>}</>;
+  return <>{offer && <section className="notification-introduction" aria-label="开启通知"><div><strong>及时收到项目和工单更新</strong><p>应用内通知默认开启。允许系统通知后，本设备会显示不含正文的更新摘要；浏览器和系统可能限制后台送达。</p></div><div className="notification-buttons"><button type="button" onClick={() => void allow()}>允许系统通知</button><button type="button" onClick={dismissOffer}>稍后</button></div></section>}{message && <p className="notification-feedback" role="status" style={{whiteSpace:'pre-wrap'}}>{message}</p>}</>;
 }

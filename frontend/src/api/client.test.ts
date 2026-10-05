@@ -98,3 +98,9 @@ describe('API client', () => {
     expect(fetchMock.mock.calls.map(([, options]) => new Headers(options?.headers).get('Idempotency-Key'))).toEqual(['one-user-intent', 'one-user-intent']);
   });
 });
+
+it('accepts backend errors with missing optional metadata and content-type', async () => {
+  const message = '模型请求未完成或配置错误\n精确失败原因';
+  vi.stubGlobal('fetch',vi.fn(async () => new Response(JSON.stringify({error:{message}}),{status:500})));
+  await expect(request<'JobResponse'>('/api/v1/jobs/job')).rejects.toMatchObject({message,status:500});
+});

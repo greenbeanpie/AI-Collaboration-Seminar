@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery,useQueryClient } from '@tanstack/react-query';
-import { projectPath } from '../api/client';
+import { projectPath, responseError } from '../api/client';
 import { documentRequest,importBrowserFile } from './document-import-client';
 import { downloadSourcePdf,uploadProjectFile } from './source-workflows';
 import { ErrorNotice } from '../components/ui';
@@ -28,7 +28,7 @@ export function BrowserSourceRecovery({projectId,versionId,fileId}:{projectId:st
  async function recover(file?:File) {
   const abort=new AbortController();setController(abort);setBusy(true);setError(undefined);
   try {
-   if(!file){const r=await fetch(projectPath(projectId,`/files/${fileId}/content`),{credentials:'include',signal:abort.signal});if(!r.ok)throw new Error('原文件下载失败，请选择同一份原文件重试');const mime=r.headers.get('content-type')??'';file=new File([await r.blob()],mime.includes('wordprocessingml')?'source.docx':'source.pdf',{type:mime});}
+   if(!file){const r=await fetch(projectPath(projectId,`/files/${fileId}/content`),{credentials:'include',signal:abort.signal});if(!r.ok)throw await responseError(r,'原文件下载失败，请选择同一份原文件重试');const mime=r.headers.get('content-type')??'';file=new File([await r.blob()],mime.includes('wordprocessingml')?'source.docx':'source.pdf',{type:mime});}
    const result=await importBrowserFile(projectId,versionId,file,abort.signal,setNotice);
    setNotice((result.textReady?'本机正文已保存，可以生成总结或提取要求。':result.needsImages?`正文已保存；${result.needsImages} 页仍待识别或确认空白。`:'本机解析未完整完成，保留了已提交正文。')+(result.warnings.length?' '+result.warnings.join('；'):''));await queryClient.invalidateQueries({predicate:q=>['sourceVersion','resourceIndex','resourceSection','sourceFragments','sourceProcessing'].includes(String(q.queryKey[0]))});
   }catch(e){setError(e);}finally{setBusy(false);setController(undefined);}

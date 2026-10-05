@@ -675,7 +675,7 @@ Env 中需要按部署功能核对的敏感变量名称包括 AUTH_SECRET、CLOU
 
 ### 标准摘要展示与提交正文折叠
 
-评分分区导航由 ProjectSectionNavigation 统一提供，保留 assessment 的 section 查询参数与旧 requirements/reviews/rehearsals 路由。StandardsEditor 保留完整编辑与历史入口，StandardSummary 只遍历 rubric.weights，并按 mappings 从对应 requirements.citations 生成引用编号；不会从 rubric.notes 猜测来源。编号按首次出现顺序分配，以固定 fileId 优先去重，文件名仅在底部引用列表展示。固定文件采用带成员权限的文件内容链接，避免当前来源版本的归档状态影响旧引用定位。
+评分分区导航由 ProjectSectionNavigation 统一提供，保留 assessment 的 section 查询参数与旧 requirements/reviews/rehearsals 路由。StandardsEditor 保留评分维度编辑与历史入口，StandardSummary 只遍历 rubric.weights，并按 mappings 从对应 requirements.citations 生成引用编号；不会从 rubric.notes 猜测来源。编号按首次出现顺序分配，以固定 fileId 优先去重，文件名仅在底部引用列表展示。固定文件采用带成员权限的文件内容链接，避免当前来源版本的归档状态影响旧引用定位。
 
 standardView 批量读取项目范围内的引用元数据与可用状态，源版本引用每份标准仅增加一次批量查询，fragmentId 历史引用另加一次解析查询。输出补充可选文件名和定位信息，不修改 snapshot_json 或评分规则；2000 条重复引用的测试验证仅执行两次读取（版本状态及引用元数据）。SubmissionBody 使用默认关闭的原生 details，仅折叠成果正文，完整文本和验收控件保留。此变更不需要数据库迁移。
 
@@ -686,3 +686,9 @@ standardView 批量读取项目范围内的引用元数据与可用状态，源�
 ### 音频模型职责与语音答辩
 
 设置将 mediaUnderstanding 音视频理解、audioFileTranscription 固定 Whisper、realtimeAudioTranscription 专用实时模型、rehearsalSpeech 独立 TTS 和 processingStrategies 分开。新语音调用由后台保存凭据，浏览器只连接本项目 WebSocket，不发送项目材料给 ASR，也不让 TTS 出题。语音失败切回文字，最终字幕保留，仍由用户核对并提交原 answers 接口；后台文字模型生成追问与评分。详见仓库 docs/GEMINI-VOICE-PLAN.md 的接口、权限、账目和真实验收边界。
+
+### 评分生成输出契约 v2 与错误透传
+
+standards.generate 使用严格 scoringStandardOutputSchema，只接受 methodSource 和 dimensions，维度只含 key/label/weight/citations。documented 必须引用实际读取的 source 固定片段，名称与原始分值逐字可验证，引用不得夹带其他原文；proposed 根据主目标生成总和100的权重，引用必须为空。服务端转换到兼容保存结构时 detail/notes 为空、category=scoring、日期为 null，原始分值按比例转换为百分比。scoringOnly 上下文只预载来源目录，仅暴露原文检索工具，不读取任务、反馈、旧标准或模型总结。引用批量补充原文件名和定位字段，前端 fromGenerated 保留并通过保存协议传回引用核心字段。scoringOutputVersion=2 阻止旧格式任务恢复或旧成功结果进入编辑器，不重放旧的已付费调查。
+
+ApiError.message 直接取后端 message，兼容无错误码/请求编号的消息对象及纯文本原因。ErrorNotice、页面边界和所有作业/传输/通知/权限错误入口使用统一 errorMessage 原文显示，React 文本节点安全渲染并保留换行；诊断元数据只留在内部，不作为网页错误提示展示，不追加 traceback 或固定泛化提示。

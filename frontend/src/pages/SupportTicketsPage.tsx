@@ -93,12 +93,12 @@ export function SupportTicketsPage() {
         </div>
         <label>上传问题图片<input className="input" type="file" accept={ticketImageTypes.join(',')} multiple disabled={create.isPending || !!savedTicket} aria-describedby="support-image-help" onChange={e => { selectImages(e.target.files); e.target.value = ''; }} /></label>
         <p id="support-image-help" className="muted">最多 {MAX_TICKET_IMAGES} 张，每张不超过 5 MiB；支持 PNG、JPEG、静态 WebP。截图请遮盖密码、密钥和个人资料。</p>
-        {imageError && <p role="alert">{imageError}</p>}
+        {imageError && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{imageError}</p>}
         {images.length > 0 && <ul className="support-images" aria-label="已选择图片">{images.map(image => <li className="support-image" key={image.id}>
           <img src={image.preview} alt={`待上传图片：${image.file.name}`} />
           <span className="support-image-name">{image.file.name} · {(image.file.size / 1024 / 1024).toFixed(2)} MiB</span>
           <span role="status">{{ selected: '待上传', uploading: '正在上传……', uploaded: '已上传', failed: '上传失败' }[image.state]}</span>
-          {image.error && <p role="alert">{image.error}</p>}
+          {image.error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{image.error}</p>}
           {!savedTicket && <button type="button" className="button button-quiet" disabled={create.isPending} onClick={() => removeImage(image)}>移除 {image.file.name}</button>}
         </li>)}</ul>}
         {savedTicket && <p role="status">工单文字已保存。失败的图片可以重试，已成功的图片不会重复上传。<Link to={`/app/support/${savedTicket.id}`}>查看已保存工单</Link></p>}

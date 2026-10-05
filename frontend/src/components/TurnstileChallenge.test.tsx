@@ -24,14 +24,14 @@ it('StrictMode 只保留一个验证实例，过期和超时清除令牌并提�
   expect(onError).toHaveBeenLastCalledWith('安全验证超时，请重试；若仍失败，请检查浏览器与网络');
   view.unmount(); expect(remove).toHaveBeenCalledOnce();
 });
-it('重试会清理旧实例，并展示可供排查的公共错误码', async () => {
+it('重试会清理旧实例，错误提示不展示技术错误码', async () => {
   const onToken = vi.fn(); const onError = vi.fn(); const remove = vi.fn();
   const renderWidget = vi.fn<NonNullable<typeof window.turnstile>['render']>(() => 'widget');
   window.turnstile = { render: renderWidget, remove };
   const view = render(<TurnstileChallenge siteKey="fixture-site" reset={0} onToken={onToken} onError={onError} />);
   await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(1));
   act(() => renderWidget.mock.calls[0]![1]['error-callback']('110200'));
-  expect(onError).toHaveBeenLastCalledWith('安全验证失败（110200），请重试或使用系统浏览器');
+  expect(onError).toHaveBeenLastCalledWith('安全验证失败，请重试或使用系统浏览器');
   view.rerender(<TurnstileChallenge siteKey="fixture-site" reset={1} onToken={onToken} onError={onError} />);
   await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(2));
   expect(remove).toHaveBeenCalledTimes(1);

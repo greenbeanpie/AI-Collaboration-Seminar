@@ -6,7 +6,7 @@ export type Speech = { speechId: string; jobId?: string; status: 'queued' | 'run
 export async function voiceRequest<T>(path: string, signal?: AbortSignal, body?: unknown): Promise<T> {
   const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'include', cache: 'no-store', signal,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const payload: unknown = await response.json();
+  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new CustomEvent('auth-expired'));
     if (isApiFailure(payload)) throw new ApiError(response.status, payload);

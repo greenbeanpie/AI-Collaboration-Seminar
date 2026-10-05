@@ -22,7 +22,7 @@ export function AudioPipelineStatus({ audio, disabled, onResume, onRefresh }: {
     <strong>{phases[audio.phase] ?? audio.phase}</strong>
     {audio.qualityScore !== null && <p>转录质量评分：{audio.qualityScore.toFixed(2)} · 通过门槛 0.85</p>}
     {audio.transcriptAvailable && <p>机器转录已私有保存，可继续处理。</p>}
-    {audio.reasons.length > 0 && <ul>{audio.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>}
+    {audio.reasons.length > 0 && <ul>{audio.reasons.map((reason, index) => <li key={index} style={{whiteSpace:'pre-wrap'}}>{reason}</li>)}</ul>}
     <p className="muted">质量评分是 AI 检查结果，不是原音准确率保证。</p>
     {audio.phase === 'waiting_config' && <div className="form-actions">
       <button type="button" className="button button-primary button-small" disabled={disabled || !audio.canResumeFallback} onClick={onResume}>继续 Gemini 回退</button>

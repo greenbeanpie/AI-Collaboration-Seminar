@@ -137,7 +137,7 @@ describe('project file recycle library', () => {
     mount();
     fireEvent.click(await screen.findByRole('button', { name: '移入回收站：未完成.pdf' }));
     fireEvent.click(await screen.findByRole('button', { name: '确认移入回收站' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('LIFECYCLE_CONFLICT');
+    expect(await screen.findByRole('alert')).toHaveTextContent('记录已变化');
     expect(mocked.delete).toHaveBeenCalledTimes(1);
   });
 

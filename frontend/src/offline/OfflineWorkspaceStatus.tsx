@@ -71,9 +71,9 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
       {pending.length > 0 && <span>{pending.length} 项本机操作待同步</span>}
     </div>
     {online && (pending.length > 0 || error) && <button className="button button-small" disabled={busy} onClick={() => void sync()}>重试同步</button>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{error}</p>}
     {pending.some(row => row.state !== 'pending') && <details><summary>查看需要处理的本机操作</summary>{pending.filter(row => row.state !== 'pending').map(row => <article key={row.key}>
-      <strong>{row.state === 'conflict' ? '内容存在冲突' : '操作未获服务端接受'}</strong><p>{row.error}</p>
+      <strong>{row.state === 'conflict' ? '内容存在冲突' : '操作未获服务端接受'}</strong><p style={{whiteSpace:'pre-wrap'}}>{row.error}</p>
       <div className="offline-conflict-copies"><div><h3>本机内容</h3><pre>{preview(row.body) || '本机任务操作已保留'}</pre></div><div><h3>服务端内容</h3><pre>{preview(row.server) || '请在原页面核对最新内容'}</pre></div></div>
       <button className="button button-quiet button-small" disabled={busy} onClick={() => void resolve(row, 'server')}>使用服务端内容</button>
       {row.state === 'conflict' && ['PUT', 'PATCH'].includes(row.method) && <button className="button button-small" disabled={!online || busy} onClick={() => void resolve(row, 'local')}>已核对，提交本机内容</button>}

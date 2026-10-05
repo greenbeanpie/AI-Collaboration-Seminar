@@ -1,3 +1,4 @@
+import { errorMessage } from '../api/error-info';
 import { ResourceIndexView,BrowserSourceRecovery,PageReviewActions } from './ResourceIndexView';
 import { importBrowserFile,documentRequest } from './document-import-client';
 import { ContributorNames, FileContributorPicker } from '../components/FileContributors';
@@ -9,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FilePlus2, FileText, Globe2, LoaderCircle, ScanText, Send, Trash2, Type } from 'lucide-react';
-import { ApiError, api, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { useProject } from '../components/ProjectShell';
@@ -37,15 +38,7 @@ type PendingPageImagesSubmission = { body: PageImagesBody; idempotencyKey: strin
 
 const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled', 'waiting_input']);
 
-function classifySourceError(error: unknown): string {
-  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : '操作失败，请稍后重试。';
-  if (error.code === 'FILE_TOO_LARGE') return '文件超过当前服务端限制，请选择更小的文件。';
-  if (error.code === 'UNSUPPORTED_MEDIA_TYPE') return '文件内容与扩展名不匹配，服务端拒绝了上传。';
-  if (error.code === 'SOURCE_PARSE_FAILED') return error.message;
-  if (error.code === 'AI_UNAVAILABLE') return 'AI 能力当前不可用。来源已保留；请稍后重试，系统不会改用模拟结果。';
-  if (error.code === 'PERMISSION_DENIED') return '当前账户没有此项目的操作权限。';
-  return `${error.message}（${error.code}）`;
-}
+function classifySourceError(error: unknown): string { return errorMessage(error, '操作失败，请稍后重试。'); }
 
 function formatSourceKind(kind: SourceItem['kind']): string {
   return kind === 'file' ? '文件' : kind === 'web' ? '网页' : '粘贴文本';
@@ -125,16 +118,16 @@ function SourceJobProgress({
   const needsImages = typeof result.needsImages === 'number' ? result.needsImages : 0;
   const remaining = typeof result.stillMissing === 'number' ? result.stillMissing : needsImages;
   const pagesToRender = Math.max(needsImages, remaining);
-  const error = job?.error && typeof job.error === 'object' ? job.error as { code?: string; message?: string } : null;
+  const error = job?.error;
   const progress = job?.status === 'waiting_input'
     ? remaining > 0 ? `有 ${remaining} 页需要补充页面图。` : '等待补充资料。'
     : job?.status === 'succeeded' ? result.count === 0 ? '正文处理完成，未发现明确的项目要求。文件总结可在下方单独查看。' : '处理完成，已生成要求草稿。'
-    : job?.status === 'failed' ? `${error?.message ?? '来源处理失败。'}${error?.code ? `（${error.code}）` : ''}`
+    : job?.status === 'failed' ? errorMessage(error, '来源处理失败。')
         : job?.status === 'cancelled' ? '任务已取消。' : '正在解析来源并生成要求草稿。';
 
   return <div className="sources-job" aria-live="polite">
     <div className="sources-job-head">
-      <div><strong>{query.isLoading ? '正在读取解析任务' : job ? `解析任务：${job.status}` : '解析任务状态暂不可用'}</strong><p>{query.error ? classifySourceError(query.error) : progress}</p></div>
+      <div><strong>{query.isLoading ? '正在读取解析任务' : job ? `解析任务：${job.status}` : '解析任务状态暂不可用'}</strong><p style={{whiteSpace:'pre-wrap'}}>{query.error ? classifySourceError(query.error) : progress}</p></div>
       <div className="sources-record-actions">
         {job?.status === 'waiting_input' && pagesToRender > 0 && (
           <button className="button button-primary button-small" type="button" disabled={scanning || !capability?.features.aiEnabled} onClick={() => onScan(tracked)}>

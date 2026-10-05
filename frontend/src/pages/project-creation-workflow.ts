@@ -1,5 +1,5 @@
 import { uploadMultipartFile,importBrowserFile } from './document-import-client';
-import { ApiError, api, apiUrl, projectPath, request } from '../api/client';
+import { ApiError, api, apiUrl, projectPath, request , responseError} from '../api/client';
 import { createIntentKey } from './source-workflows';
 
 export const creationFileExtensions = '.pdf,.docx,.png,.jpg,.jpeg,.webp,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm';
@@ -127,7 +127,7 @@ async function verifyStoredOriginal(projectId: string, fileId: string, original:
     credentials: 'include', cache: 'no-store', headers: { 'X-Request-Id': createIntentKey() },
   });
   if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`无法核对已上传原文件（HTTP ${response.status}），请稍后重试。`);
+  if (!response.ok) throw await responseError(response, '无法核对已上传原文件，请稍后重试。');
   const length = Number(response.headers.get('content-length'));
   if (length && length !== original.size) throw new Error('已存储内容与所选原文件大小不同，已停止，未建立来源。');
   const stored = new Uint8Array(await response.arrayBuffer());

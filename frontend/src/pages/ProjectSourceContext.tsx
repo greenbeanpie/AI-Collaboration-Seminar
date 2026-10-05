@@ -56,6 +56,6 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
     {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{waitingForPages ? '请到来源页面补齐缺页' : running ? '资料处理进行中…' : '读取资料正文'}</button>}
     {version.data?.parseError && <p className="notice notice-warn">资料处理提示：{version.data.parseError}。可在来源页面独立核对正文、重试要求提取或生成总结。</p>}
     {(parse.error || version.error || processing.error) && <ErrorNotice error={parse.error || version.error || processing.error} />}
-    {job.job?.status === 'failed' && <p className="notice notice-warn">资料读取未完成，请到来源页面查看错误和缺页状态；不会把未读资料当作已完成。</p>}
+    {job.job?.status === 'failed' && <ErrorNotice error={job.job.error ?? new Error('资料读取未完成。')} />}
   </article>;
 }

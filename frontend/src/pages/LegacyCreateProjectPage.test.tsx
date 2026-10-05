@@ -85,7 +85,7 @@ describe('project creation', () => {
     let attempt = 0;
     const fetch = fixtureFetch((url, init) => { if (url === '/api/v1/projects' && init?.method === 'POST' && ++attempt === 1) return Promise.reject(new TypeError('lost response')); });
     vi.stubGlobal('fetch', fetch); setup(); fill(); submit();
-    await screen.findByText(/暂时无法连接服务/);
+    await screen.findByText(/无法连接服务/);
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '不能成为另一个项目' } });
     fireEvent.click(screen.getByRole('button', { name: '用原请求重试确认创建' }));
     await screen.findByText('已有项目目的地'); const calls = writes(fetch, '/projects');

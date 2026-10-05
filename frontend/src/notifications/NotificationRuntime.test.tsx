@@ -34,7 +34,7 @@ it('does not clear the count on a failed mutation or a failed refresh',async()=>
   if(path.includes('?limit=50')){if(mode==='refresh-fail')throw new Error('无法刷新');return {items:[notice],unreadCount:75,nextCursor:'more'} as T;}return settings(path) as T;
  });
  show();await waitFor(()=>expect(inbox).toHaveBeenCalledOnce());mode='fail';act(()=>signal());await waitFor(()=>expect(status.mock.calls.at(-1)![0].detail.message).toBe('网络未连接'));expect(inbox.mock.calls.at(-1)![0].detail.unreadCount).toBe(75);
- mode='save';act(()=>signal());await waitFor(()=>expect(status.mock.calls.at(-1)![0].detail.message).toContain('列表刷新失败'));expect(inbox).toHaveBeenCalledOnce();
+ mode='save';act(()=>signal());await waitFor(()=>expect(status.mock.calls.at(-1)![0].detail.message).toBe('无法刷新'));expect(inbox).toHaveBeenCalledOnce();
 });
 it('ignores an older poll after the forced post-mutation refresh',async()=>{
  const older=deferred<NotificationPage>(),inbox=watch('app-notification-inbox'),status=watch('app-notification-read-all-status');let reads=0;
