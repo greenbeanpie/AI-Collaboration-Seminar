@@ -5,6 +5,7 @@ import { invalidateStaleProjectClarifications } from './services/ai-clarificatio
 import { recoverDraftPreviews } from './services/draft-preview-jobs';
 import { recoverAutomaticAiRetries } from './services/ai-automatic-retries';
 import { recoverAdminAiRetries, retryFailedAiJob } from './services/admin-ai-retries';
+import { cleanupExpiredRehearsalVoiceSessions } from './services/rehearsal-voice';
 import { recoverExecutionSlices } from './services/ai-execution-slices';
 import { dispatchNotifications } from './services/notifications';
 import type { Env } from './env';
@@ -21,6 +22,7 @@ import { dispatchProjectProgression } from './services/project-progression';
  * 3. 清理过期会话与验证码挑战。
  */
 export async function handleScheduled(env: Env): Promise<void> {
+  try { await cleanupExpiredRehearsalVoiceSessions(env); } catch { console.error('[cron] Voice session cleanup failed'); }
   try { await backfillTaskAgentEligibility(env); } catch { console.error('[cron] task eligibility backfill failed'); }
   try { await cleanupMediaFiles(env); } catch { console.error('[cron] Media cleanup failed'); }
   try { await invalidateStaleProjectClarifications(env); } catch { console.error('[cron] Clarification cleanup failed'); }

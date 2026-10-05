@@ -160,4 +160,4 @@ npm run verify:integration  # 两个 dev 服务启动后执行，仅允许 loopb
 
 业务 AI 失败后每隔至少一分钟自动排队恢复，连续三次恢复失败即停止。账户管理页面提供超级管理员一键批量重试，展示批次与跳过原因。行为、接口和恢复边界见 [AI 重试说明](docs/AI-RETRIES.md)。
 
-语音功能本次仅交付 [Gemini 接入评估与计划](docs/GEMINI-VOICE-PLAN.md)：保留 Whisper 默认路径，未来设置提供 Whisper/Gemini 二选一；Google 转录及独立 TTS 限定经 Cloudflare AI Gateway。现有文字模型继续负责答辩，两方轮流。尚未启用 Gemini 语音或完成真实 Gateway 模型验收。
+音频设置已拆分为音视频理解、固定 Whisper 文件转录、实时 Gateway 转录及独立 TTS，处理策略单独选择。语音答辩采用实时转录 → 人工核对/编辑 → 现有文字模型，问题由 TTS 朗读；两方轮流，失败回退文字。专用凭据配置后才能使用语音，真实模型/麦克风质量尚待验收。接口、配置及验证边界见 [语音接入说明](docs/GEMINI-VOICE-PLAN.md)。

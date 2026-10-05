@@ -6,7 +6,7 @@ import { API_PROTOCOLS, PROVIDER_PRESETS, REASONING_EFFORTS } from '../../../sha
 import { FILE_TRANSCRIPTION_PROVIDER, FILE_TRANSCRIPTION_MODEL, REALTIME_TRANSCRIPTION_PROVIDER, REALTIME_TRANSCRIPTION_MODEL, normalizeProcessingStrategies, DEFAULT_AUDIO_FILE_TRANSCRIPTION, DEFAULT_REHEARSAL_SPEECH, REHEARSAL_TTS_MODELS, REHEARSAL_TTS_VOICES } from '../../../shared/audio-settings';
 
 export const audioFileTranscriptionSchema = z.object({provider:z.literal(FILE_TRANSCRIPTION_PROVIDER),model:z.literal(FILE_TRANSCRIPTION_MODEL)}).strict();
-export const realtimeAudioTranscriptionSchema = z.object({provider:z.literal(REALTIME_TRANSCRIPTION_PROVIDER),model:z.literal(REALTIME_TRANSCRIPTION_MODEL),gatewayId:z.string().max(64).refine(value=>value===''||/^[a-z0-9-]+$/.test(value),'Gateway ID must use lowercase letters, digits and hyphens'),apiKeyEncrypted:z.string().optional(),gatewayTokenEncrypted:z.string().optional(),languageCodes:z.array(z.string()).optional()}).strict();
+export const realtimeAudioTranscriptionSchema = z.object({provider:z.literal(REALTIME_TRANSCRIPTION_PROVIDER),model:z.literal(REALTIME_TRANSCRIPTION_MODEL),gatewayId:z.string().max(64).refine(value=>value===''||/^[a-z0-9-]+$/.test(value),'Gateway ID must use lowercase letters, digits and hyphens'),apiKeyEncrypted:z.string().optional(),gatewayTokenEncrypted:z.string().optional(),languageCodes:z.array(z.string().max(64).regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)).max(8).optional()}).strict();
 export const rehearsalSpeechSchema = z.object({model:z.enum(REHEARSAL_TTS_MODELS),voice:z.enum(REHEARSAL_TTS_VOICES)}).strict();
 export const processingStrategiesSchema = z.object({audioFiles:z.enum(['whisper-first','media-only']),rehearsal:z.enum(['text','voice-with-text-fallback'])}).strict();
 

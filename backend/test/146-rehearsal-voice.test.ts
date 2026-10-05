@@ -35,6 +35,12 @@ async function socketFixture() {
 }
 
 describe('private Gemini Transcribe Live rehearsal ASR',()=>{
+  it('blocks recording while a TTS intent is saved but its job is not yet created',async()=>{
+    const f=await fixture(),turn=await env.DB.prepare('SELECT id FROM rehearsal_turns WHERE rehearsal_id=?1 AND sequence=1').bind(f.binding.rehearsalId).first<{id:string}>(),now=nowIso();
+    await env.DB.prepare("INSERT INTO rehearsal_speech(id,project_id,rehearsal_id,turn_id,sequence,created_by,content_hash,config_version_id,model,voice,job_id,status,created_at,updated_at) VALUES(?1,?2,?3,?4,1,?5,'fixture',?6,'gemini-3.8-flash-lite-tts','Kore',?7,'queued',?8,?8)").bind(newId(),f.binding.projectId,f.binding.rehearsalId,turn!.id,f.owner.userId,f.cfg.id,newId(),now).run();
+    await expect(createRehearsalVoiceSession(env,f.binding,{sequence:1})).rejects.toMatchObject({code:'INVALID_STATE'});
+    expect((await env.DB.prepare('SELECT COUNT(*) n FROM rehearsal_voice_sessions WHERE rehearsal_id=?1').bind(f.binding.rehearsalId).first<{n:number}>())?.n).toBe(0);
+  });
   it('pins speech-only setup and rejects arbitrary provider fields, malformed audio and oversized frames',()=>{
     const setup=transcribeLiveSetup({provider:'google-ai-studio',model:TRANSCRIBE_LIVE_MODEL,gatewayId:'voice',languageCodes:['cmn-Hans-CN']});
     expect(setup).toMatchObject({setup:{model:'models/gemini-3.5-transcribe-live',generationConfig:{responseModalities:['TEXT']},realtimeInputConfig:{automaticActivityDetection:{disabled:true}},inputAudioTranscription:{mode:'VERBATIM',languageCodes:['cmn-Hans-CN']}}});

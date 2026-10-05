@@ -17805,6 +17805,199 @@
           "requestId"
         ]
       },
+      "RehearsalVoiceReadiness": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "voice-with-text-fallback"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "speech": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "voice": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "voice"
+                ]
+              }
+            },
+            "required": [
+              "configured",
+              "ready",
+              "mode",
+              "reason",
+              "speech"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalVoiceSession": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "webSocketPath": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionId",
+              "webSocketPath",
+              "expiresAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalVoiceClosed": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "closed"
+                ]
+              }
+            },
+            "required": [
+              "sessionId",
+              "status"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalSpeechQueued": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "speechId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId",
+              "speechId",
+              "status"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "RehearsalSpeechState": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "speechId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string"
+              },
+              "audioPath": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "speechId",
+              "status"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "EventListResponse": {
         "type": "object",
         "properties": {
@@ -34909,6 +35102,281 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice": {
+      "get": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "语音答辩准备状态（配置与权限，不代表已付费连通验证）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "语音准备状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalVoiceReadiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "创建逐题转录会话（原答案仍由用户提交）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "retryOfSessionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "sequence"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "语音会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalVoiceSession"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions/{sessionId}/close": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "幂等关闭语音会话",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已关闭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalVoiceClosed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/turns/{sequence}/speech": {
+      "post": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "朗读已生成的评委文字（仅语音合成）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "sequence",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "朗读已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalSpeechQueued"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/speech/{speechId}": {
+      "get": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "查询私有评委朗读",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "speechId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "朗读状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalSpeechState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/events": {
       "get": {
         "tags": [
@@ -36676,6 +37144,132 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "rehearsalSpeech": {
+                    "type": "object",
+                    "properties": {
+                      "model": {
+                        "type": "string",
+                        "enum": [
+                          "gemini-3.8-flash-lite-tts",
+                          "gemini-3.8-flash-tts"
+                        ]
+                      },
+                      "voice": {
+                        "type": "string",
+                        "enum": [
+                          "Kore",
+                          "Aoede",
+                          "Puck"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "model",
+                      "voice"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "audioFileTranscription": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "workers-ai"
+                        ]
+                      },
+                      "model": {
+                        "type": "string",
+                        "enum": [
+                          "@cf/openai/whisper-large-v3-turbo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "realtimeAudioTranscription": {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "google-ai-studio"
+                        ]
+                      },
+                      "model": {
+                        "type": "string",
+                        "enum": [
+                          "gemini-3.5-transcribe-live"
+                        ]
+                      },
+                      "gatewayId": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "languageCodes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
+                        },
+                        "maxItems": 8
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
+                      },
+                      "gatewayToken": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearGatewayToken": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model",
+                      "gatewayId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "clearRealtimeAudioTranscription": {
+                    "type": "boolean"
+                  },
+                  "processingStrategies": {
+                    "type": "object",
+                    "properties": {
+                      "audioFiles": {
+                        "type": "string",
+                        "enum": [
+                          "whisper-first",
+                          "media-only"
+                        ]
+                      },
+                      "rehearsal": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "voice-with-text-fallback"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "audioFiles",
+                      "rehearsal"
+                    ],
+                    "additionalProperties": false
+                  },
                   "audioProcessingStrategy": {
                     "type": "string",
                     "enum": [
@@ -37467,12 +38061,7 @@
                     "type": "string",
                     "maxLength": 2000
                   }
-                },
-                "required": [
-                  "textEconomy",
-                  "visionEconomy",
-                  "review"
-                ]
+                }
               }
             }
           }

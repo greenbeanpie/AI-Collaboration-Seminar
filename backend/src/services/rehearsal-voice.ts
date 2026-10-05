@@ -61,6 +61,7 @@ export async function createRehearsalVoiceSession(env:Env,binding:VoiceBinding,i
       AND (SELECT ai_budget_usd FROM projects WHERE id=?2) IS NULL
       AND NOT EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE rehearsal_id=?3 AND status IN ('reserved','connecting','open'))
       AND NOT EXISTS(SELECT 1 FROM jobs WHERE project_id=?2 AND status IN ('queued','running','waiting_input') AND json_extract(input_json,'$.operation')='rehearsal.tts' AND json_extract(input_json,'$.rehearsalId')=?3)
+      AND NOT EXISTS(SELECT 1 FROM rehearsal_speech sp LEFT JOIN jobs j ON j.id=sp.job_id WHERE sp.rehearsal_id=?3 AND sp.status IN ('queued','running') AND (j.id IS NULL OR j.status IN ('queued','running','waiting_input')))
       AND (SELECT COUNT(*) FROM usage_reservations WHERE project_id=?2 AND status='reserved')<2
       AND (?9=0 OR ?9=(SELECT MAX(retry_number)+1 FROM rehearsal_voice_sessions WHERE root_session_id=?8))`).bind(id,binding.projectId,binding.rehearsalId,input.sequence,binding.actorId,cfg.id,TRANSCRIBE_LIVE_MODEL,root,retry,expiresAt,now),
     env.DB.prepare("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,estimated_cost,max_calls,created_at) SELECT ?1,?2,?3,'rehearsal_voice','reserved',0,1,?4 WHERE EXISTS(SELECT 1 FROM rehearsal_voice_sessions WHERE id=?3 AND status='reserved')").bind(slotId,binding.projectId,id,now),

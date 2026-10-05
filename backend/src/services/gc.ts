@@ -23,13 +23,14 @@ export interface OrphanGcResult {
   failures: number;
 }
 
-type OwnerKind = 'agent_bridge' | 'audio_pipeline' | 'ai_call' | 'source_version' | 'file' | 'investigation';
+type OwnerKind = 'rehearsal_speech' | 'agent_bridge' | 'audio_pipeline' | 'ai_call' | 'source_version' | 'file' | 'investigation';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** 解析受管对象键的归属；返回 null 表示不属于受管命名空间，一律不处理。 */
 export function classifyManagedKey(key: string): { kind: OwnerKind; id: string } | null {
   const segments = key.split('/');
+  if(segments[0]==='rehearsal-speech' && segments.length===3 && UUID_RE.test(segments[1]??'') && /^[0-9a-f-]{36}-[0-9a-f-]{36}\.wav$/i.test(segments[2]??''))return {kind:'rehearsal_speech',id:segments[1]!};
   if (segments[0] === 'agent-bridges' && segments.length === 4 && UUID_RE.test(segments[1] ?? '') && UUID_RE.test(segments[2] ?? '') && /^snapshot-[a-f0-9]{64}\.json$/.test(segments[3] ?? '')) return {kind:'agent_bridge',id:segments[2]!};
   if (segments[0] === 'audio-pipeline' && segments.length === 3 && UUID_RE.test(segments[1] ?? '') && segments[2] === 'transcript.json') return {kind:'audio_pipeline',id:segments[1]!};
   if (segments[0] === 'ai' && segments[1] === 'investigations' && segments.length === 3 && segments[2]?.endsWith('.json')) {
@@ -50,6 +51,7 @@ export function classifyManagedKey(key: string): { kind: OwnerKind; id: string }
 }
 
 async function isReferenced(env: Env, owner: { kind: OwnerKind; id: string }, key: string): Promise<boolean> {
+  if(owner.kind==='rehearsal_speech')return Boolean(await env.DB.prepare('SELECT 1 FROM rehearsal_speech WHERE id=?1 AND r2_key=?2').bind(owner.id,key).first());
   if(owner.kind==='agent_bridge')return Boolean(await env.DB.prepare('SELECT 1 FROM agent_bridge_handoffs WHERE id=?1 AND snapshot_key=?2').bind(owner.id,key).first());
   if(owner.kind==='audio_pipeline')return Boolean(await env.DB.prepare('SELECT 1 FROM audio_pipeline WHERE job_id=?1 AND transcript_r2_key=?2').bind(owner.id,key).first());
   if(owner.kind==='investigation')return Boolean(await env.DB.prepare('SELECT 1 FROM ai_investigations WHERE id=?1 AND checkpoint_key=?2').bind(owner.id,key).first());

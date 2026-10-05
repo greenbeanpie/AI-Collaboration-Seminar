@@ -8839,6 +8839,220 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 语音答辩准备状态（配置与权限，不代表已付费连通验证） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    rehearsalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 语音准备状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalVoiceReadiness"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建逐题转录会话（原答案仍由用户提交） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    rehearsalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sequence: number;
+                        /** Format: uuid */
+                        retryOfSessionId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 语音会话 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalVoiceSession"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions/{sessionId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 幂等关闭语音会话 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    rehearsalId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 已关闭 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalVoiceClosed"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/turns/{sequence}/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 朗读已生成的评委文字（仅语音合成） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    rehearsalId: string;
+                    sequence: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 朗读已排队 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalSpeechQueued"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/speech/{speechId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询私有评委朗读 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    rehearsalId: string;
+                    speechId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 朗读状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalSpeechState"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/events": {
         parameters: {
             query?: never;
@@ -10186,6 +10400,37 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        rehearsalSpeech?: {
+                            /** @enum {string} */
+                            model: "gemini-3.8-flash-lite-tts" | "gemini-3.8-flash-tts";
+                            /** @enum {string} */
+                            voice: "Kore" | "Aoede" | "Puck";
+                        };
+                        audioFileTranscription?: {
+                            /** @enum {string} */
+                            provider: "workers-ai";
+                            /** @enum {string} */
+                            model: "@cf/openai/whisper-large-v3-turbo";
+                        };
+                        realtimeAudioTranscription?: {
+                            /** @enum {string} */
+                            provider: "google-ai-studio";
+                            /** @enum {string} */
+                            model: "gemini-3.5-transcribe-live";
+                            gatewayId: string;
+                            languageCodes?: string[];
+                            apiKey?: string;
+                            clearKey?: boolean;
+                            gatewayToken?: string;
+                            clearGatewayToken?: boolean;
+                        };
+                        clearRealtimeAudioTranscription?: boolean;
+                        processingStrategies?: {
+                            /** @enum {string} */
+                            audioFiles: "whisper-first" | "media-only";
+                            /** @enum {string} */
+                            rehearsal: "text" | "voice-with-text-fallback";
+                        };
                         /** @enum {string} */
                         audioProcessingStrategy?: "whisper-first" | "gemini-only";
                         searchEnabled?: boolean;
@@ -10230,7 +10475,7 @@ export interface paths {
                             clearKey?: boolean;
                         };
                         expectedVersion?: number;
-                        textEconomy: {
+                        textEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
@@ -10268,7 +10513,7 @@ export interface paths {
                             apiKey?: string;
                             clearKey?: boolean;
                         };
-                        visionEconomy: {
+                        visionEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
@@ -10306,7 +10551,7 @@ export interface paths {
                             apiKey?: string;
                             clearKey?: boolean;
                         };
-                        review: {
+                        review?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
@@ -15674,6 +15919,63 @@ export interface components {
             data: {
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalVoiceReadiness: {
+            data: {
+                configured: boolean;
+                ready: boolean;
+                /** @enum {string} */
+                mode: "text" | "voice-with-text-fallback";
+                reason: string | null;
+                speech: {
+                    model: string;
+                    voice: string;
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalVoiceSession: {
+            data: {
+                /** Format: uuid */
+                sessionId: string;
+                webSocketPath: string;
+                expiresAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalVoiceClosed: {
+            data: {
+                /** Format: uuid */
+                sessionId: string;
+                /** @enum {string} */
+                status: "closed";
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalSpeechQueued: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                /** Format: uuid */
+                speechId: string;
+                status: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RehearsalSpeechState: {
+            data: {
+                /** Format: uuid */
+                speechId: string;
+                status: string;
+                audioPath?: string;
+                error?: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

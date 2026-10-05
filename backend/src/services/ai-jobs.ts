@@ -8,6 +8,7 @@ import { getJob } from './jobs';
 import { runAgentJob } from './agent';
 import { runReviewJob } from './review';
 import { runRehearsalTurnJob } from './rehearsal';
+import { runRehearsalSpeechJob } from './rehearsal-speech';
 import { runAssignmentSuggestionJob } from './assignment';
 import { runCollaborationAiJob } from './collaboration-ai';
 
@@ -17,6 +18,7 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
     case 'agent_run':
+      if (JSON.parse(job.input_json).operation === 'rehearsal.tts') { await runRehearsalSpeechJob(env,jobId); return; }
       if (JSON.parse(job.input_json).operation === 'collaboration.assistance-plan') { await runTaskAssistancePlanJob(env,jobId); return; }
       if(['media.draft','media.summary'].includes(JSON.parse(job.input_json).operation)){const input=JSON.parse(job.input_json);await runMediaJob(env,jobId,input.sourceVersionId);return;}
       if (JSON.parse(job.input_json).operation === 'collaboration.agent-eligibility') {

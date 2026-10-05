@@ -681,4 +681,8 @@ standardView 批量读取项目范围内的引用元数据与可用状态，源�
 
 ### AI 失败请求批量重试
 
-`0056/0057` 新增管理员批次、失败快照、后继映射和自动恢复队列。`cron` 分批执行 `recoverAdminAiRetries` 与 `recoverAutomaticAiRetries`，调用共同的业务恢复校验；并发槽位不足继续排队，预算/权限/输入失效则停止。管理员读取统计，超级管理员才能一键入队。`GET /jobs/{id}` 跟随后继，待自动恢复的失败尝试对逻辑请求呈现 queued 并附 retry 元数据，保留原始错误；数据库旧失败作业仍保持终态。详见仓库 `docs/AI-RETRIES.md` 与 `docs/GEMINI-VOICE-PLAN.md`，语音模型仅完成评估，Whisper仍保留。
+`0056/0057` 新增管理员批次、失败快照、后继映射和自动恢复队列。`cron` 分批执行 `recoverAdminAiRetries` 与 `recoverAutomaticAiRetries`，调用共同的业务恢复校验；并发槽位不足继续排队，预算/权限/输入失效则停止。管理员读取统计，超级管理员才能一键入队。`GET /jobs/{id}` 跟随后继，待自动恢复的失败尝试对逻辑请求呈现 queued 并附 retry 元数据，保留原始错误；数据库旧失败作业仍保持终态。详见仓库 `docs/AI-RETRIES.md` 与 `docs/GEMINI-VOICE-PLAN.md`，语音答辩已接入，文件转录仅Whisper；实时转录与独立TTS经Gateway，失败回退文字，真实模型验收仍需专用凭据。
+
+### 音频模型职责与语音答辩
+
+设置将 mediaUnderstanding 音视频理解、audioFileTranscription 固定 Whisper、realtimeAudioTranscription 专用实时模型、rehearsalSpeech 独立 TTS 和 processingStrategies 分开。新语音调用由后台保存凭据，浏览器只连接本项目 WebSocket，不发送项目材料给 ASR，也不让 TTS 出题。语音失败切回文字，最终字幕保留，仍由用户核对并提交原 answers 接口；后台文字模型生成追问与评分。详见仓库 docs/GEMINI-VOICE-PLAN.md 的接口、权限、账目和真实验收边界。

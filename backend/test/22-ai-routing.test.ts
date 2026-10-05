@@ -34,7 +34,7 @@ describe('任务冻结模型配置（A05）', () => {
     const frozenModel = latest!.config.textEconomy.model;
 
     const changed = JSON.parse(JSON.stringify(latest!.config)) as Record<string, { model: string }>;
-    for (const purpose of Object.keys(changed)) changed[purpose]!.model = `changed-${purpose}`;
+    for (const purpose of ['textEconomy','visionEconomy','review','unified','mediaUnderstanding']) if(changed[purpose]) changed[purpose]!.model = `changed-${purpose}`;
     await env.DB.prepare(
       'INSERT INTO ai_config_versions (id, version, config_json, enabled, notes, created_by, created_at) VALUES (?1, ?2, ?3, 0, null, ?4, ?5)',
     )

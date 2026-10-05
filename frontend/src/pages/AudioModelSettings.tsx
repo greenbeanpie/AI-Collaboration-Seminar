@@ -22,7 +22,7 @@ export function AudioModelSettings({ config, disabled, onChange }: { config: Aud
           {realtime.keyConfigured && <label><input type="checkbox" checked={realtime.clearKey ?? false} onChange={event => editRealtime({ clearKey: event.target.checked })} /> 清除实时语音 Google 密钥</label>}
           <Field label="实时语音 Gateway token" hint={realtime.gatewayTokenConfigured ? '已保存；留空保留，不回显。' : '尚未配置。'}><input className="input" type="password" autoComplete="off" value={realtime.gatewayToken ?? ''} onChange={event => editRealtime({ gatewayToken: event.target.value })} /></Field>
           {realtime.gatewayTokenConfigured && <label><input type="checkbox" checked={realtime.clearGatewayToken ?? false} onChange={event => editRealtime({ clearGatewayToken: event.target.checked })} /> 清除实时语音 Gateway token</label>}
-          <Field label="实时转录语言提示" hint="可选 BCP-47 语言代码，使用逗号分隔，例如 zh-CN,en-US。"><input className="input" value={realtime.languageCodes?.join(',') ?? ''} onChange={event => editRealtime({ languageCodes: event.target.value.split(',').map(value => value.trim()) })} /></Field>
+          <Field label="实时转录语言提示" hint="可选 BCP-47 语言代码，最多 8 个，使用逗号分隔，例如 zh-CN,en-US；留空自动识别。"><input className="input" value={realtime.languageCodes?.join(',') ?? ''} onChange={event => editRealtime({ languageCodes: event.target.value.split(',').map(value => value.trim()) })} /></Field>
         </>}
         <p className="muted">新语音请求只通过 Cloudflare AI Gateway 转发，不提供 Google 直连 URL；不会复制音视频理解模型的密钥。</p>
       </fieldset>

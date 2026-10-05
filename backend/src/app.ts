@@ -40,6 +40,7 @@ import { registerMaterialRoutes } from './api/materials';
 import { registerAgentRoutes } from './api/agents';
 import { registerReviewRoutes } from './api/reviews';
 import { registerRehearsalRoutes } from './api/rehearsals';
+import { registerRehearsalVoiceRoutes } from './api/rehearsal-voice';
 import { registerLedgerRoutes } from './api/ledger';
 import { requireAllowedOrigin } from './core/origin';
 import { registerOfflineSyncRoutes } from './api/offline-sync';
@@ -113,6 +114,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAiToolRoutes(app);
   registerReviewRoutes(app);
   registerRehearsalRoutes(app);
+  registerRehearsalVoiceRoutes(app);
   registerLedgerRoutes(app);
   registerFileRoutes(app);
   registerMultipartRoutes(app);
