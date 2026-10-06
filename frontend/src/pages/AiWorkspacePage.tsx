@@ -1,3 +1,4 @@
+import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { FixedMaterialVersions } from './FixedMaterialVersions';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -24,8 +25,8 @@ const modeOptions = [
   { value: 'review_only', label: '自由审阅', detail: '检查已有材料并给出意见；不依据项目标准评分' },
 ] as const;
 
-const pendingJobKey = (projectId: string) => `ai-office:pending-agent-job:${projectId}`;
-const adoptionIntentKey = (projectId: string, runId: string) => `ai-office:adoption-intent:${projectId}:${runId}`;
+const pendingJobKey = (projectId: string) => accountStorageKey(`pending-agent-job:${projectId}`);
+const adoptionIntentKey = (projectId: string, runId: string) => accountStorageKey(`adoption-intent:${projectId}:${runId}`);
 
 function readAdoptionIntent(key: string): AdoptionIntent | null {
   try {

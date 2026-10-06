@@ -22,9 +22,12 @@ function cachedProject() {
   client.setQueryData(['requirementSets', 'project-1'], []);
   client.setQueryData(['materials', 'project-1'], []);
   client.setQueryData(['sources', 'project-1'], []);
+  for (const key of ['materials', 'sources']) client.setQueryData([key, 'project-1', 'pages', { limit: 100 }, ''], { pages: [{ items: [], nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['agentSessions', 'project-1', 'pages', { status: 'all', limit: 100 }, ''], { pages: [{ items: [], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['agentSessions', 'project-1'], []);
   client.setQueryData(['tasks', 'project-1', 'all'], []);
   client.setQueryData(['tasks', 'project-1'], [{ taskId: 'task-1', title: '真实协作任务', status: 'todo' }]);
+  client.setQueryData(['tasks', 'project-1', 'pages', { limit: 100 }, ''], { pages: [{ items: [{ taskId: 'task-1', title: '真实协作任务', status: 'todo' }], nextCursor: null }], pageParams: [null] });
   return client;
 }
 
@@ -36,7 +39,7 @@ describe('project pages share consistent list cache shapes', () => {
     expect(screen.getByRole('option', { name: '真实成员甲' })).toBeInTheDocument();
   });
 
-  it('the AI workspace reads tasks from the same array cache without an items envelope', () => {
+  it('the AI workspace reads its bounded page cache independently of the complete task graph', () => {
     const client = cachedProject();
     render(<QueryClientProvider client={client}><MemoryRouter><AiWorkspacePage /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByRole('option', { name: /真实协作任务/ })).toBeInTheDocument();

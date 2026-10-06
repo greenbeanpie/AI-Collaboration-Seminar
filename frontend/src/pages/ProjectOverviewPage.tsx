@@ -5,7 +5,7 @@ import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
 import { projectPermission } from '../project-permissions';
@@ -21,8 +21,8 @@ export function ProjectOverviewPage() {
   const pendingInvitations = invitationRequests.data?.items.filter(item => item.status === 'pending').length ?? 0;
   const queries = useQueries({ queries: [
     { queryKey: ['tasks', projectId], queryFn: () => completeTaskGraph(projectId) },
-    { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) },
-    { queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) },
+    { queryKey: ['sources', projectId], queryFn: () => api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 1 }).then(page => page.items) },
+    { queryKey: ['requirementSets', projectId], queryFn: () => api.get<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets')).then(page => page.items) },
   ] });
   const [tasks, sources, requirementSets] = queries;
   const taskItems = tasks.data ?? [];

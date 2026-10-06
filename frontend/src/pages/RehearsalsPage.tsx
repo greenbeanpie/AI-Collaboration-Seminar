@@ -1,3 +1,4 @@
+import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { VirtualList } from '../components/VirtualList';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -18,8 +19,8 @@ import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForI
 
 type Rehearsal = DataOf<'RehearsalResponse'> & {initiatorId:string;respondentId:string;canOperate:boolean;processingJobId:string|null;processingStatus:string|null;turns:Array<DataOf<'RehearsalResponse'>['turns'][number]&{authorId?:string|null}>};
 type PendingRehearsalJob = { jobId: string; entityId: string; action: 'create' | 'answer' | 'finish' | string };
-const recentIdsKey = (projectId: string) => `ai-office:recent-rehearsals:${projectId}`;
-const pendingJobKey = (projectId: string) => `ai-office:pending-rehearsal-job:${projectId}`;
+const recentIdsKey = (projectId: string) => accountStorageKey(`recent-rehearsals:${projectId}`);
+const pendingJobKey = (projectId: string) => accountStorageKey(`pending-rehearsal-job:${projectId}`);
 
 export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: { rehearsalId?: string; embedded?: boolean }) {
   const { projectId, project } = useProject();

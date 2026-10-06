@@ -1,3 +1,4 @@
+import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { VirtualList } from '../components/VirtualList';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -16,7 +17,7 @@ import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForI
 type ReviewItem = DataOf<'ReviewListResponse'>['items'][number];
 type MaterialItem = DataOf<'MaterialListResponse'>['items'][number];
 type PendingReviewJob = { jobId: string; entityId: string; action: string };
-const pendingJobKey = (projectId: string) => `ai-office:pending-review-job:${projectId}`;
+const pendingJobKey = (projectId: string) => accountStorageKey(`pending-review-job:${projectId}`);
 
 export function ReviewsPage() {
   const { projectId } = useProject();
