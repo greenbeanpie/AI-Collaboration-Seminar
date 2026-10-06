@@ -10,6 +10,7 @@ import { TaskFileUploads } from './TaskFileUploads';
 import { useSettingsDirty } from './settings-dirty';
 import { listTaskFiles, taskFilesKey } from './task-files-client';
 import { TaskInquiries } from './TaskInquiries';
+import { isDesktop } from '../desktop/bridge';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -56,7 +57,7 @@ function ProjectCollaborationWorkspace() {
   const feedbackHistory = useQuery({queryKey:['project-feedback-history',projectId],queryFn:()=>projectRequest<{items:FeedbackSnapshot[]}>(projectId,'/collaboration/feedback/history')});
   const capabilities = useCapabilities();
   const modelEnabled = capabilities.data?.features.aiEnabled === true;
-  const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: ({ signal }) => collaborationApi.tasks(projectId, { networkOnly: navigator.onLine !== false, signal }), refetchInterval: 30_000 });
+  const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: ({ signal }) => collaborationApi.tasks(projectId, { networkOnly: navigator.onLine !== false, offlineReadFallback: isDesktop(), signal }), refetchInterval: 30_000 });
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   const settings = useQuery({ queryKey: ['collaboration-settings', projectId], queryFn: () => collaborationApi.settings(projectId) });
   const aiEnabled = modelEnabled && settings.data?.aiCollaborationEnabled === true;
