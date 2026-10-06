@@ -1,20 +1,29 @@
 mod cache;
+#[cfg(desktop)]
 mod notifications;
 mod runtime;
+#[cfg(desktop)]
 mod updater;
+#[cfg(target_os = "android")]
+mod android;
 pub use runtime::{NativeState, PRODUCTION_ORIGIN};
+#[cfg(target_os = "android")]
+mod mobile;
 use std::sync::atomic::Ordering;
+#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WebviewWindow, WindowEvent,
+    WindowEvent,
 };
+use tauri::{AppHandle, Manager as _, WebviewWindow};
+#[cfg(desktop)]
 #[tauri::command]
 fn desktop_hello(window: WebviewWindow, app: AppHandle) -> Result<serde_json::Value, String> {
     runtime::validate_source(&window)?;
     let manager = app.state::<updater::UpdateManager>();
     Ok(
-        serde_json::json!({"protocol":1,"version":app.package_info().version.to_string(),"updateState":manager.status(),"autoRestart":manager.auto_restart()}),
+        serde_json::json!({"platform":"windows","capabilities":{"attachments":true,"updater":true,"tray":true},"protocol":1,"version":app.package_info().version.to_string(),"updateState":manager.status(),"autoRestart":manager.auto_restart()}),
     )
 }
 #[tauri::command]
@@ -47,6 +56,7 @@ fn desktop_report_state(
     }
     Ok(())
 }
+#[cfg(desktop)]
 #[tauri::command]
 fn desktop_update_state(
     window: WebviewWindow,
@@ -55,6 +65,7 @@ fn desktop_update_state(
     runtime::validate_source(&window)?;
     serde_json::to_value(app.state::<updater::UpdateManager>().status()).map_err(|e| e.to_string())
 }
+#[cfg(desktop)]
 #[tauri::command]
 async fn desktop_check_update(
     window: WebviewWindow,
@@ -64,6 +75,7 @@ async fn desktop_check_update(
     let status = updater::check_update(&app, &app.state::<updater::UpdateManager>()).await?;
     serde_json::to_value(status).map_err(|e| e.to_string())
 }
+#[cfg(desktop)]
 async fn safe_install(app: AppHandle, interactive: bool) -> Result<(), String> {
     let native = app.state::<NativeState>();
     if native.preparing.swap(true, Ordering::SeqCst) {
@@ -94,6 +106,7 @@ async fn safe_install(app: AppHandle, interactive: bool) -> Result<(), String> {
     runtime::suspend(&app);
     Err("请先保存编辑并等待传输完成".into())
 }
+#[cfg(desktop)]
 async fn safe_exit(app: AppHandle) -> Result<(), String> {
     let native = app.state::<NativeState>();
     if native.page.lock().unwrap().protocol == 0 {
@@ -141,11 +154,13 @@ async fn safe_exit(app: AppHandle) -> Result<(), String> {
     );
     Err("Unsaved work prevents exit".into())
 }
+#[cfg(desktop)]
 #[tauri::command]
 async fn desktop_restart_update(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
     runtime::validate_source(&window)?;
     safe_install(app, true).await
 }
+#[cfg(desktop)]
 #[tauri::command]
 fn desktop_set_auto_restart(
     window: WebviewWindow,
@@ -156,6 +171,7 @@ fn desktop_set_auto_restart(
     app.state::<updater::UpdateManager>()
         .set_auto_restart(&app, enabled)
 }
+#[cfg(desktop)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
@@ -321,3 +337,7 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("desktop runtime failed");
 }
+
+#[cfg(target_os = "android")]
+#[tauri::mobile_entry_point]
+pub fn run() { mobile::run(); }

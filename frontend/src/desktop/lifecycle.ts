@@ -1,4 +1,4 @@
-import { DESKTOP_PROTOCOL, desktopInvoke, isDesktop } from './bridge';
+import { DESKTOP_PROTOCOL, desktopInvoke, isAndroidClient, isDesktop } from './bridge';
 
 const dirtyOwners = new Set<string>();
 let active = 0;
@@ -55,6 +55,12 @@ export function startDesktopLifecycle(): () => void {
     window.dispatchEvent(new Event('desktop-transfer-refresh'));
     report?.();
   };
+  const visibility = () => {
+    if (!isAndroidClient()) return;
+    void desktopInvoke('mobile_set_foreground', { foreground: document.visibilityState !== 'hidden' }).catch(() => {});
+    if (document.visibilityState !== 'hidden') resume();
+    else report?.();
+  };
   const guardUpdate = (event: Event) => { if (!desktopSafeToReload()) event.preventDefault(); };
   const activityInput = (event: Event) => {
     const target = event.target;
@@ -71,6 +77,7 @@ export function startDesktopLifecycle(): () => void {
   window.addEventListener('app-before-update', guardUpdate);
   window.addEventListener('desktop-route-changed', route);
   document.addEventListener('input', activityInput, true);
+  document.addEventListener('visibilitychange', visibility);
   void send();
   return () => {
     disposed = true; report = undefined;
@@ -80,5 +87,6 @@ export function startDesktopLifecycle(): () => void {
     window.removeEventListener('app-before-update', guardUpdate);
     window.removeEventListener('desktop-route-changed', route);
     document.removeEventListener('input', activityInput, true);
+    document.removeEventListener('visibilitychange', visibility);
   };
 }

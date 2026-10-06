@@ -17,6 +17,7 @@ fn main() {
             "desktop_cache_usage",
             "desktop_transfer_files",
             "desktop_pending_files",
+            "mobile_set_foreground",
         ]),
     ))
     .expect("failed to build desktop permissions");

@@ -31,6 +31,7 @@ pub struct NativeState {
     pub nonce: AtomicU64,
     pub auth_epoch: AtomicU64,
     pub preparing: AtomicBool,
+    pub foreground: AtomicBool,
 }
 impl Default for NativeState {
     fn default() -> Self {
@@ -42,6 +43,7 @@ impl Default for NativeState {
             nonce: AtomicU64::new(0),
             auth_epoch: AtomicU64::new(0),
             preparing: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
         }
     }
 }
@@ -110,6 +112,7 @@ pub fn dispatch(app: &AppHandle, name: &str, detail: serde_json::Value) {
         );
     }
 }
+#[cfg(desktop)]
 pub fn resume(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.with_webview(|webview| {
@@ -126,6 +129,7 @@ pub fn resume(app: &AppHandle) {
         });
     }
 }
+#[cfg(desktop)]
 pub fn show(app: &AppHandle, route: Option<&str>) {
     resume(app);
     if let Some(w) = app.get_webview_window("main") {
@@ -140,6 +144,7 @@ pub fn show(app: &AppHandle, route: Option<&str>) {
         dispatch(app, "desktop-resume", serde_json::json!({}));
     }
 }
+#[cfg(any(desktop, test))]
 pub fn safe_route(path: &str) -> bool {
     path.starts_with("/app")
         && !path.starts_with("//")
@@ -150,6 +155,7 @@ pub fn safe_route(path: &str) -> bool {
                 && (u.path() == "/app" || u.path().starts_with("/app/"))
         })
 }
+#[cfg(desktop)]
 pub fn suspend(app: &AppHandle) {
     if !app.state::<NativeState>().safe() {
         return;
@@ -184,23 +190,24 @@ pub fn suspend(app: &AppHandle) {
         });
     }
 }
+#[cfg(target_os = "android")]
+pub fn suspend(_app: &AppHandle) {}
 pub async fn session_client(
     app: &AppHandle,
     expected_account: &str,
 ) -> Result<(reqwest::Client, String), String> {
     let w = app.get_webview_window("main").ok_or("Window unavailable")?;
     validate_source(&w)?;
-    let origin = url::Url::parse(PRODUCTION_ORIGIN).map_err(|e| e.to_string())?;
-    let cookies = tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(origin))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-    let cookie = cookies
-        .iter()
-        .filter(|c| c.name() == "ai_office_session")
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .collect::<Vec<_>>()
-        .join("; ");
+    #[cfg(not(target_os = "android"))]
+    let cookie = {
+        let origin = url::Url::parse(PRODUCTION_ORIGIN).map_err(|e| e.to_string())?;
+        let cookies = tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(origin))
+            .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        cookies.iter().filter(|c| c.name() == "ai_office_session")
+            .map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; ")
+    };
+    #[cfg(target_os = "android")]
+    let cookie = crate::android::session(app).await?.cookie;
     if cookie.is_empty() {
         return Err("Not authenticated".into());
     }
@@ -245,6 +252,7 @@ pub async fn session_client(
     }
     Ok((client, cookie))
 }
+#[cfg(desktop)]
 pub fn open_external(url: &url::Url) {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return;
