@@ -11,6 +11,15 @@ import type { DataOf } from '../api/types';
 
 export function ProjectSourceContext({ projectId, enabled, selected, onSelection, onReady }: { projectId: string; enabled: boolean; selected: string[]; onSelection: (versionId: string, checked: boolean) => void; onReady: (versionId: string, ready: boolean) => void }) {
   const sources = usePagedItems<'SourceListResponse'>({ searchable: true, queryKey: ['project-assistant-sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
+  useEffect(() => {
+    // Only a complete, unfiltered list can prove a formerly current source is gone.
+    if (!sources.data || sources.hasNextPage || sources.search?.trim()) return;
+    const activeVersions = new Set(sources.data.map(source => source.currentVersionId).filter(Boolean));
+    for (const versionId of selected) if (!activeVersions.has(versionId)) {
+      onSelection(versionId, false);
+      onReady(versionId, false);
+    }
+  }, [sources.data, sources.hasNextPage, sources.search, selected, onSelection, onReady]);
   return <section className="stack">
     <strong>优先参考来源（可选固定版本）</strong>
 

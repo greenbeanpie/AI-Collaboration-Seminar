@@ -14,7 +14,7 @@ export function usePagedRecords<Value>({ queryKey, path, query, enabled = true, 
   const deferredSearch = useDeferredValue(search.trim());
   const result = useInfiniteQuery({
     queryKey: [...queryKey, 'pages', query ?? {}, deferredSearch],
-    enabled, staleTime,
+    enabled, ...(staleTime !== undefined ? { staleTime } : {}),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
       const response = await api.get<'ProjectListResponse'>(path, { ...query, limit: 50, cursor: pageParam, ...(searchable ? { q: deferredSearch } : {}) }, signal);

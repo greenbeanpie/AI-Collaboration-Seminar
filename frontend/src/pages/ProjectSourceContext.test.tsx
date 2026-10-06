@@ -35,7 +35,7 @@ function SelectionState({ projectId, enabled }: { projectId: string; enabled: bo
 // Match the workspace's keyed project boundary, so selection/readiness cannot migrate across projects.
 function Harness({ projectId, enabled }: { projectId: string; enabled: boolean }) { return <SelectionState key={projectId} projectId={projectId} enabled={enabled} />; }
 function seed(client: QueryClient, projectId: string, items: Source[], versions?: Version[]) {
-  client.setQueryData(['project-assistant-sources', projectId], items);
+  client.setQueryData(['project-assistant-sources', projectId, 'pages', { limit: 100 }, ''], { pages: [{ items, nextCursor: null }], pageParams: [null] });
   items.filter(source => source.currentVersionId).forEach((source, index) => {
     const body = versions?.[index] ?? version(source);
     client.setQueryData(['project-assistant-source-version', projectId, source.sourceId, source.currentVersionId], body);
@@ -62,7 +62,7 @@ describe('grounded project source selection', () => {
     const { client } = setup({ items });
     choose('p',2);
     await waitFor(() => expect(selectedIds()).toEqual(['p-v0', 'p-v1']));
-    await act(async () => { client.setQueryData(['project-assistant-sources', 'p'], [items[1]]); });
+    await act(async () => { client.setQueryData(['project-assistant-sources', 'p', 'pages', { limit: 100 }, ''], { pages: [{ items: [items[1]], nextCursor: null }], pageParams: [null] }); });
     await waitFor(() => expect(selectedIds()).toEqual(['p-v1']));
     expect(screen.queryByRole('checkbox', { name: '使用来源：p资料0' })).not.toBeInTheDocument();
     expect(JSON.parse(screen.getByTestId('version-readiness').textContent ?? '{}')['p-v0']).toBe(false);
