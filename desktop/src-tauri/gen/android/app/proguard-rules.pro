@@ -22,3 +22,7 @@
 # Rust JNI and Tauri plugin registration look up these classes and methods by name.
 -keep class cn.buwei.mobile.NativeFilesPlugin { *; }
 -keep class cn.buwei.mobile.MainActivity { *; }
+
+# Plugin JSON serialization reflects DTO members.
+-keep class cn.buwei.mobile.Session { *; }
+-keep class cn.buwei.mobile.PickedFile { *; }
