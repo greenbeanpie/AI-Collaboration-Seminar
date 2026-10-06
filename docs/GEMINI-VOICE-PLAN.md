@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 音视频处理模型 | `mediaUnderstanding` | 保留既有音视频理解、摘要模型；独立于转录配置 |
 | 音频文件初步转录模型 | `audioFileTranscription` | 固定 Workers AI 的 `@cf/openai/whisper-large-v3-turbo`，不提供 Gemini 文件转录选项 |
-| 实时语音转录模型 | `realtimeAudioTranscription` | 固定 `gemini-3.5-transcribe-live`，独立 Gateway ID、Google API key、Gateway token 与语言提示 |
+| 实时语音转录模型 | `realtimeAudioTranscription` | 固定 `gemini-3.5-transcribe-live`，独立 Gateway ID、Google API key、Cloudflare AI Gateway 认证令牌与语言提示 |
 | 答辩朗读模型 | `rehearsalSpeech` | 系统本地语音，设置语言、语速与音量；无需 Gateway 凭据 |
 | 音频与答辩处理策略 | `processingStrategies` | 音频文件选 Whisper 优先或直接音视频理解；答辩选文本或轮流语音并允许文本回退 |
 
@@ -41,7 +41,7 @@ ASR、麦克风、网络或 TTS 生成失败时明确切回文字，关闭麦克
 
 ## 配置与上线验证
 
-使用项目现有 Gateway `team-colleboration` 或管理员指定的有效 Gateway。在实时语音区填写 Google API key 与具备 AI Gateway Run 权限的 token；凭据只填设置页，不放入聊天、仓库或日志。新策略默认文字；切换为语音后仍由用户选择是否开始录音。
+使用项目现有 Gateway `team-colleboration` 或管理员指定的有效 Gateway。在实时语音区填写 Google API key 与 Cloudflare 控制台为该 Gateway 创建的认证令牌（需 AI Gateway Run 权限）；后者通过 `cf-aig-authorization: Bearer ...` 头认证 Gateway，不是 Google API key 或模型供应商密钥。凭据只填设置页，不放入聊天、仓库或日志。新策略默认文字；切换为语音后仍由用户选择是否开始录音。
 
 迁移 `0058/0059` 新增私有会话与 TTS 记录；cron 清理过期会话和并发预占，R2 GC 按音频记录及精确成品键保留有效音频。回滚时优先将策略设为文字，保留已保存回答、字幕及历史音频；不删除业务记录。
 

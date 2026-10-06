@@ -2,6 +2,8 @@ import { AppError, validationFailed } from '../core/errors';
 import type { AiModelConfig } from './config';
 import { FIXED_MAX_OUTPUT_TOKENS } from '../../../shared/ai-providers';
 import { mediaSummarySchema, type MediaSummary } from './gemini-media';
+import type { Env } from '../env';
+import { fetchAiProvider } from './diagnostics';
 
 export const MIMO_MEDIA_ENDPOINT = 'https://api.xiaomimimo.com/v1';
 export const MIMO_MEDIA_MODEL = 'mimo-v2.6-pro';
@@ -65,16 +67,16 @@ async function boundedJson(response: Response): Promise<unknown> {
 }
 
 export class MimoMediaClient {
-  constructor(private readonly model: AiModelConfig, private readonly key: string, private readonly request: typeof fetch = fetch) { validateMimoMediaModel(model); }
+  constructor(private readonly model: AiModelConfig, private readonly key: string, private readonly request: typeof fetch = fetch, private readonly diagnostics?:Pick<Env,'DB'>, private readonly diagnosticRequestId=crypto.randomUUID()) { validateMimoMediaModel(model); }
 
   private async send(path: string, body?: unknown): Promise<unknown> {
     let response: Response;
     try {
-      response = await this.request(MIMO_MEDIA_ENDPOINT + path, {
+      response = await fetchAiProvider(this.diagnostics,this.diagnosticRequestId,MIMO_MEDIA_ENDPOINT + path, {
         method: body === undefined ? 'GET' : 'POST', redirect: 'error',
         headers: { 'api-key': this.key, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
         signal: AbortSignal.timeout(this.model.timeoutMs), ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
+      },this.request,'chat-completions',this.key);
     } catch { throw new AppError('AI_UNAVAILABLE', 'MiMo 媒体请求未取得响应；受理状态未知，请核对后主动重试', 502, false); }
     return boundedJson(response);
   }

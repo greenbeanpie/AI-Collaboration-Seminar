@@ -275,6 +275,9 @@ describe('authorized native search (fixtures only)', () => {
     let round = 0;
     const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toBe('https://api.deepseek.com/anthropic/v1/messages');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('x-api-key')).toBe('fixture-go-job-key');
+      expect(headers.has('cf-aig-authorization')).toBe(false);
       const body = JSON.parse(String(init?.body));
       if (round++ === 0) {
         return Response.json({

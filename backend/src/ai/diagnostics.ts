@@ -15,6 +15,7 @@ export const diagnosticEntrySchema = z.object({
   status: z.enum(['started', 'succeeded', 'failed']),
   durationMs: z.number().int().min(0).max(3_600_000),
   errorCode: z.enum(fixedCodes),
+  errorReason: z.string().max(240).optional(),
   httpStatus: z.number().int().min(100).max(599).optional(),
   configVersion: z.number().int().nonnegative().optional(),
   expectedVersion: z.number().int().nonnegative().optional(),
@@ -70,6 +71,80 @@ export function classifyFetchFailure(error: unknown, timedOut: boolean): Pick<Di
 export function diagnosticErrorCode(error: unknown): DiagnosticEntry['errorCode'] {
   if (error instanceof AppError && (fixedCodes as readonly string[]).includes(error.code)) return error.code as DiagnosticEntry['errorCode'];
   return error instanceof Error && error.name === 'AbortError' ? 'TIMEOUT' : 'INTERNAL';
+}
+
+/** Keep a provider's explicit error explanation while dropping credentials and oversized echoes. */
+export function safeProviderErrorReason(payload: unknown, credential?: string): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const root = payload as Record<string, unknown>;
+  const error = root.error && typeof root.error === 'object' ? root.error as Record<string, unknown> : root;
+  const code = [error.code, error.type].find((value): value is string => typeof value === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(value));
+  const message = typeof root.error === 'string' ? root.error : typeof error.message === 'string' ? error.message : typeof error.detail === 'string' ? error.detail : undefined;
+  if (!code && !message) return undefined;
+  let reason = [code, message].filter(Boolean).join(': ').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  if (credential) reason = reason.split(credential).join('[已隐藏凭据]');
+  reason = reason
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [已隐藏凭据]')
+    .replace(/\b(api[_-]?key|authorization|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1=[已隐藏]')
+    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, '[已隐藏长标识]')
+    .slice(0, 240);
+  return reason || undefined;
+}
+
+export function safeBackendErrorReason(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  return safeProviderErrorReason({ message: error.message })?.slice(0, 240);
+}
+
+export async function fetchAiProvider(
+  env: Pick<Env, 'DB'> | undefined,
+  requestId: string,
+  url: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch = fetch,
+  protocol?: DiagnosticEntry['protocol'],
+  credential?: string,
+): Promise<Response> {
+  const id = z.string().uuid().safeParse(requestId).success ? requestId : crypto.randomUUID();
+  const target = safeDiagnosticTarget(url);
+  const method = init.method?.toUpperCase();
+  const safeMethod = method === 'GET' || method === 'PUT' || method === 'POST' ? method : undefined;
+  const started = Date.now();
+  let response: Response;
+  try { response = await fetchImpl(url, init); }
+  catch (error) {
+    if (env) {
+      const timeout = (init.signal instanceof AbortSignal && init.signal.aborted) || error instanceof Error && error.name === 'TimeoutError';
+      await recordAiDiagnostic(env, { requestId: id, operation: 'model_call', phase: 'fetch_failed', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: timeout ? 'TIMEOUT' : 'FETCH_FAILED', errorReason: timeout ? '后端达到配置的供应商请求超时，未收到 HTTP 响应' : '后端网络请求失败，未收到供应商 HTTP 响应；请检查 DNS、TLS、出口网络和 API 地址', ...(safeMethod ? { method: safeMethod } : {}), ...(protocol ? { protocol } : {}), ...target, ...classifyFetchFailure(error, timeout) });
+    }
+    throw error;
+  }
+  if (env) {
+    const errorReason = response.ok ? undefined : safeProviderErrorReason(await readBoundedProviderJson(response), credential) ?? `供应商返回 HTTP ${response.status}，但没有可读取的结构化错误原因`;
+    await recordAiDiagnostic(env, { requestId: id, operation: 'model_call', phase: 'fetch_received', status: response.ok ? 'succeeded' : 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: response.ok ? 'NONE' : 'PROVIDER_FAILED', ...(errorReason ? { errorReason } : {}), httpStatus: response.status, ...(safeMethod ? { method: safeMethod } : {}), ...(protocol ? { protocol } : {}), ...target });
+  }
+  return response;
+}
+
+async function readBoundedProviderJson(response: Response): Promise<unknown> {
+  try {
+    const reader = response.clone().body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > 16 * 1024) { await reader.cancel(); return null; }
+        chunks.push(chunk.value);
+      }
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } finally { reader.releaseLock(); }
+  } catch { return null; }
 }
 
 // INSERT and both retention bounds are one serialized D1 transaction, including

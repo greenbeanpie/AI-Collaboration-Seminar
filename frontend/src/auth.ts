@@ -30,7 +30,7 @@ export function useCapabilities() {
 }
 
 /** Admin session cookies are the default; a token is an explicit operations fallback. */
-export async function adminRequest<T>(path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH'; body?: unknown; token?: string } = {}): Promise<T> {
+export async function adminRequest<T>(path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; token?: string } = {}): Promise<T> {
   const token = options.token?.trim();
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);

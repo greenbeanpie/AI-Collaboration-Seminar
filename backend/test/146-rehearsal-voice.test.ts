@@ -55,8 +55,9 @@ describe('private Gemini Transcribe Live rehearsal ASR',()=>{
     const f=await fixture(),pair=new WebSocketPair();pair[1].accept();
     const fetch=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(null,{status:101,webSocket:pair[0]}));
     const guard=vi.fn(async()=>{});const ws=await connectTranscribeGateway(env,f.cfg.config.realtimeAudioTranscription!,guard,fetch as typeof globalThis.fetch);ws.accept();
-    expect(String(fetch.mock.calls[0]?.[0])).toBe('https://gateway.ai.cloudflare.com/v1/test-account-id/voice-fixture/google?api_key=fixture-google-secret');
+    expect(String(fetch.mock.calls[0]?.[0])).toBe('https://gateway.ai.cloudflare.com/v1/test-account-id/voice-fixture/google');
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({redirect:'manual',headers:{Upgrade:'websocket','cf-aig-authorization':'Bearer fixture-gateway-secret','cf-aig-collect-log':'false'}});
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).has('x-goog-api-key')).toBe(false);
     expect(guard).toHaveBeenCalledTimes(1);ws.close();pair[1].close();
   });
   it('returns readiness without secrets and restricts recording to the initiator',async()=>{

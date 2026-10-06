@@ -202,6 +202,10 @@ describe('答辩演练', () => {
     expect(finalBody.data.status).toBe('finished');
     expect(finalBody.data.turns.map((t) => t.kind)).toEqual(['question', 'answer', 'followup', 'summary']);
 
+    const cancelFinished = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals/${created.data.rehearsalId}`, { method: 'DELETE', headers: { cookie } });
+    expect(cancelFinished.status).toBe(409);
+    await cancelFinished.text();
+
     // 已结束的演练不能再答题
     const again = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals/${created.data.rehearsalId}/answers`, {
       method: 'POST',
@@ -209,5 +213,41 @@ describe('答辩演练', () => {
       body: JSON.stringify({ content: '再答一次' }),
     });
     expect(again.status).toBe(409);
+  });
+
+  it('取消未结束答辩会停止作业并删除问答和评分草稿', async () => {
+    vi.stubGlobal('fetch', compatibleGatewayMock());
+    const { owner, pid, materialVersionId } = await setup();
+    const cookie = authCookie(owner.token);
+    const create = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals`, {
+      method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ scope: 'all', materialVersionIds: [materialVersionId] }),
+    });
+    expect(create.status).toBe(202);
+    const created = (await create.json() as { data: { rehearsalId: string; jobId: string } }).data;
+    const activeJobId = crypto.randomUUID(), createdAt = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at) VALUES(?1,?2,'rehearsal_turn','running',?3,1,?4,?5,?5)").bind(activeJobId,pid,JSON.stringify({rehearsalId:created.rehearsalId,projectId:pid,phase:'followup'}),owner.userId,createdAt),
+      env.DB.prepare('UPDATE rehearsals SET processing_job_id=?2 WHERE id=?1').bind(created.rehearsalId,activeJobId),
+      env.DB.prepare("INSERT INTO job_outbox(id,job_id,status,available_at,attempts,created_at,updated_at) VALUES(?1,?2,'dispatched',?3,1,?3,?3)").bind(crypto.randomUUID(),activeJobId,createdAt),
+      env.DB.prepare("INSERT INTO usage_reservations(id,project_id,job_id,purpose,status,max_calls,created_at) VALUES(?1,?2,?3,'rehearsal_turn','reserved',24,?4)").bind(crypto.randomUUID(),pid,activeJobId,createdAt),
+    ]);
+    const standard = await env.DB.prepare('SELECT id FROM standards_versions WHERE project_id=?1 AND status=\'confirmed\' ORDER BY version DESC LIMIT 1').bind(pid).first<{id:string}>();
+    await env.DB.prepare("INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) VALUES(?1,?2,'rehearsal',?3,?4,?5,'{}','active',?6,?7,?8)")
+      .bind(crypto.randomUUID(),pid,created.rehearsalId,1,standard!.id,activeJobId,owner.userId,createdAt).run();
+
+    const cancelled = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals/${created.rehearsalId}`, { method: 'DELETE', headers: { cookie } });
+    expect(cancelled.status).toBe(200);
+    expect((await cancelled.json() as { data: { cancelled: boolean } }).data.cancelled).toBe(true);
+    expect(await env.DB.prepare('SELECT id FROM rehearsals WHERE id=?1').bind(created.rehearsalId).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM rehearsal_turns WHERE rehearsal_id=?1').bind(created.rehearsalId).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT id FROM assessments WHERE entity_id=?1 AND kind='rehearsal'").bind(created.rehearsalId).first()).toBeNull();
+    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(activeJobId).first<{status:string}>())?.status).toBe('cancelled');
+    expect((await env.DB.prepare('SELECT status FROM job_outbox WHERE job_id=?1').bind(activeJobId).first<{status:string}>())?.status).toBe('failed');
+    expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(activeJobId).first<{status:string}>())?.status).toBe('released');
+
+    // A late worker invocation must not revive or persist the deleted rehearsal.
+    await runAiJob(env, activeJobId);
+    expect(await env.DB.prepare('SELECT id FROM rehearsals WHERE id=?1').bind(created.rehearsalId).first()).toBeNull();
   });
 });

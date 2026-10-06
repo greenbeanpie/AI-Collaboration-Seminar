@@ -26,7 +26,7 @@ it('keeps Gemini and MiMo keys independent, saves MiMo drafts without switching 
   fireEvent.change(screen.getByLabelText(/视频文件处理策略/), { target: { value: 'mimo' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1]).toMatchObject({ processingStrategies: { audioFiles: 'mimo-only', videoFiles: 'mimo' }, audioProcessingStrategy: 'whisper-first', mimoMediaUnderstanding: { apiKey: '', keyConfigured: true } });
+  expect(writes[1]).toMatchObject({ processingStrategies: { audioFiles: 'mimo-only', videoFiles: 'mimo' }, audioProcessingStrategy: 'whisper-first', mimoMediaUnderstanding: { apiKey: '' } });
   expect(localStorage.length).toBe(0);
 });
 
@@ -147,7 +147,7 @@ it('Go has independent manual protocol and bounded headers, never automatically 
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
     const body = JSON.parse(String(init?.body));
     expect(init?.method).toBe('PUT');
-    expect(body.textEconomy).toMatchObject({ providerPreset: 'opencode-go', apiProtocol: 'messages', model: 'minimax-m3', apiUrl: 'https://opencode.ai/zen/go/v1/messages', apiKey: 'new-key', clearKey: true, goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
+    expect(body.textEconomy).toMatchObject({ providerPreset: 'opencode-go', apiProtocol: 'messages', model: 'minimax-m3', apiUrl: 'https://opencode.ai/zen/go/v1/messages', apiKey: 'new-key', clearKey: false, goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
     expect(body.textEconomy.supportsJson).toBe(false); expect(body.enabled).toBeUndefined();
     return new Response(JSON.stringify({ data: { version: 2, enabled: false } }));
   });
@@ -238,7 +238,7 @@ it('old saved custom config is preserved; changing providers clears key reuse an
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 5, enabled: true, config: { textEconomy: model, visionEconomy: model, review: model } } }));
     const body = JSON.parse(String(init?.body));
     expect(body.textEconomy).toMatchObject({ providerPreset: 'deepseek', apiKey: '', clearKey: true });
-    expect(body.review).toMatchObject(model); expect(body.enabled).toBeUndefined();
+    expect(body.review).toMatchObject({ provider: model.provider, model: model.model, apiUrl: model.apiUrl }); expect(body.review).not.toHaveProperty('keyConfigured'); expect(body.enabled).toBeUndefined();
     return new Response(JSON.stringify({ data: { version: 6, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup();
@@ -256,7 +256,8 @@ it('unified mode preserves advanced drafts, sends one independent model and vers
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
     const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ routingMode: 'unified', expectedVersion: 0, unified: { model: 'one-model', apiKey: 'test-only-key' }, textEconomy: { model: 'advanced-draft', apiKey: '' } });
+    expect(body).toMatchObject({ routingMode: 'unified', expectedVersion: 0, unified: { model: 'one-model', apiKey: 'test-only-key' } });
+    expect(body).not.toHaveProperty('textEconomy');
     return new Response(JSON.stringify({ data: { version: 1, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
@@ -329,8 +330,9 @@ it('only changing the unified supplier updates its API URL; model and protocol c
     : Response.json({ data: { version: 9, enabled: false } })));
   await setup(true, false);
 
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'anthropic' } });
-  const url = screen.getByLabelText(/统一模型 API URL/);
+  const unifiedGroup = within(screen.getByRole('group', { name: '统一模型' }));
+  fireEvent.change(unifiedGroup.getAllByRole('combobox')[0]!, { target: { value: 'anthropic' } });
+  const url = unifiedGroup.getByRole('textbox', { name: /API URL/ });
   expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
 
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'claude-opus-5-5' } });
@@ -430,12 +432,12 @@ it('disable sends only the saved version and false, preserving invalid provider 
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   await screen.findByText('当前 AI 已启用。');
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-go' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-go' } });
   fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'unsaved-key' } });
   expect(screen.getByRole('button', { name: '停用 AI' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: '停用 AI' }));
   await screen.findByText('AI 已停用。未保存的表单修改已保留，请点击保存配置后再测试。');
-  expect(screen.getByLabelText(/统一模型供应商/)).toHaveValue('opencode-go');
+  expect(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]).toHaveValue('opencode-go');
   expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('unsaved-key');
   expect(screen.getByLabelText('我已确认套餐适用于本应用用途')).not.toBeChecked();
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
@@ -462,7 +464,7 @@ it('disable CAS failure leaves enabled status, version and the unsaved form inta
 
 it('save validation is explicit and leaves the button and form available without a fake success', async () => {
   const mock = vi.fn(async () => new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }))); vi.stubGlobal('fetch', mock); await setup(true, false);
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-go' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-go' } });
   fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'unsaved-key' } });
   const save = screen.getByRole('button', { name: '保存配置' });
   expect(save).toBeEnabled();
@@ -484,7 +486,7 @@ it('lets admins explicitly choose the fallback protocol for an unverified OpenCo
   }));
   await setup(true, false);
 
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-zen' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-zen' } });
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'future-model' } });
   const protocol = screen.getByLabelText(/统一模型 API 协议/);
   expect(protocol).toHaveValue('');
@@ -681,7 +683,7 @@ it('separates fixed Whisper, realtime Gateway, TTS and strategies without copyin
   expect(screen.queryByRole('heading',{name:'音频文件初步转录模型'})).not.toBeInTheDocument();
   expect(within(fileField).getAllByRole('textbox')).toHaveLength(1);
   expect(fileField.querySelector('p')).toBeNull();
-  expect(screen.getByLabelText(/实时语音 Google API key/)).toHaveValue('');expect(screen.getByLabelText(/^实时语音 Gateway token/)).toHaveValue('');
+  expect(screen.queryByLabelText(/实时语音 Google API key/)).not.toBeInTheDocument();expect(screen.getByLabelText(/^实时语音 Cloudflare AI Gateway 认证令牌/)).toHaveValue('');
   expect(screen.queryByLabelText('答辩朗读模型')).not.toBeInTheDocument();
   expect(screen.getByLabelText(/^朗读语言/)).toHaveValue('zh-CN');
   fireEvent.change(screen.getByLabelText(/^朗读语速/),{target:{value:'1.5'}});
@@ -689,18 +691,18 @@ it('separates fixed Whisper, realtime Gateway, TTS and strategies without copyin
   fireEvent.change(screen.getByLabelText('模拟答辩处理策略'),{target:{value:'voice-with-text-fallback'}});
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes).toHaveLength(1);expect(writes[0]).toMatchObject({processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'},rehearsalSpeech:{provider:'system-local',lang:'zh-CN',rate:1.5,volume:.7},realtimeAudioTranscription:{gatewayId:'voice-gateway',apiKey:'',gatewayToken:''}});
+  expect(writes).toHaveLength(1);expect(writes[0]).toMatchObject({processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'},rehearsalSpeech:{provider:'system-local',lang:'zh-CN',rate:1.5,volume:.7},realtimeAudioTranscription:{gatewayId:'voice-gateway',gatewayToken:''}});
   expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('keyConfigured');expect(writes[0].realtimeAudioTranscription).not.toHaveProperty('gatewayTokenConfigured');expect(writes[0]).not.toHaveProperty('enabled');
 });
 it('saves incomplete realtime drafts, explicitly clears individual credentials and removes the entire slot',async()=>{
   const writes:Record<string,unknown>[]=[];let version=8;
   vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>init?.method==='GET'?Response.json({data:{version,enabled:true,config:{...savedConfig,realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'voice-gateway',keyConfigured:true,gatewayTokenConfigured:true}}}}):(writes.push(JSON.parse(String(init?.body))),Response.json({data:{version:++version,enabled:true}}))));
   await setup(true,false);
-  fireEvent.click(screen.getByLabelText('清除实时语音 Google 密钥'));fireEvent.click(screen.getByLabelText('清除实时语音 Gateway token'));
+  fireEvent.click(screen.getByLabelText('清除实时语音 Cloudflare AI Gateway 认证令牌'));
   fireEvent.change(screen.getByLabelText('模拟答辩处理策略'),{target:{value:'voice-with-text-fallback'}});expect(screen.getByText(/实时语音配置尚不完整，答辩将回退文字/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText(/实时语音 Gateway ID/),{target:{value:''}});
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes[0]).toMatchObject({realtimeAudioTranscription:{clearKey:true,clearGatewayToken:true,gatewayId:''},clearRealtimeAudioTranscription:false});
+  expect(writes[0]).toMatchObject({realtimeAudioTranscription:{clearGatewayToken:true,gatewayId:''},clearRealtimeAudioTranscription:false});
   fireEvent.click(screen.getByLabelText('配置实时语音转录'));fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toMatchObject({clearRealtimeAudioTranscription:true});expect(writes[1]).not.toHaveProperty('realtimeAudioTranscription');
 });
@@ -709,9 +711,9 @@ it('clears loaded realtime credentials and disables audio controls when administ
   const client=new QueryClient();client.setQueryData(['session'],{id:'account',role:'super_admin'});
   render(<QueryClientProvider client={client}><AiSettings/></QueryClientProvider>);
   await waitFor(()=>expect(screen.getByRole('button',{name:'保存配置'})).toBeEnabled());
-  fireEvent.change(screen.getByLabelText(/^实时语音 Google API key/),{target:{value:'in-memory-only'}});
+  fireEvent.change(screen.getByLabelText(/^实时语音 Cloudflare AI Gateway 认证令牌/),{target:{value:'in-memory-only'}});
   const {act}=await import('@testing-library/react');await act(async()=>{client.setQueryData(['session'],{id:'account',role:'user'});});
-  await waitFor(()=>expect(screen.queryByLabelText(/^实时语音 Google API key/)).not.toBeInTheDocument());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
+  await waitFor(()=>expect(screen.getByLabelText(/^实时语音 Cloudflare AI Gateway 认证令牌/)).toBeDisabled());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
 });
 
 it('normalizes legacy cloud TTS to local defaults and sends only local speech fields',async()=>{

@@ -41,7 +41,7 @@ describe('autonomous project investigation',()=>{
       const body=JSON.parse(String(init?.body)),i=round++;
       if(i===0)return Response.json({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{id:'discover',type:'function',function:{name:'list_project_resources',arguments:'{"offset":0}'}}]}}],usage:{prompt_tokens:10,completion_tokens:5}});
       if(i===1)return Response.json({choices:[{message:{content:'{"wrong":"needs structure repair"}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
-      expect(body.tools).toBeUndefined();expect(new Headers(init?.headers).get('cf-aig-collect-log')).toBe('false');
+      expect(body.tools).toBeUndefined();expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-go-job-key');expect(new Headers(init?.headers).has('cf-aig-authorization')).toBe(false);
       expect(JSON.stringify(body)).toContain('fresh-private-context');
       return Response.json({choices:[{message:{content:'{"title":"已修复","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
     });vi.stubGlobal('fetch',fetch);

@@ -23,7 +23,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   let body: Record<string, unknown>;
   if (protocol === 'messages') {
-    headers['x-api-key'] = token;
+    if (token) headers['x-api-key'] = token;
     headers['anthropic-version'] = '2023-06-01';
     body = {
       model: config.model, max_tokens: FIXED_MAX_OUTPUT_TOKENS,
@@ -37,7 +37,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     if (system) body.system = system;
     if (config.reasoningEffort !== undefined) body.output_config = { effort: config.reasoningEffort };
   } else if (protocol === 'gemini') {
-    headers['x-goog-api-key'] = token;
+    if (token) headers['x-goog-api-key'] = token;
     const generationConfig: Record<string, unknown> = { maxOutputTokens: FIXED_MAX_OUTPUT_TOKENS };
     if (jsonMode && config.supportsJson) generationConfig.responseMimeType = 'application/json';
     if (config.reasoningEffort !== undefined) generationConfig.thinkingConfig = { thinkingLevel: config.reasoningEffort };
@@ -50,7 +50,7 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
     const system = messages.filter(m => m.role === 'system').map(textContent).join('\n\n');
     if (system) body.systemInstruction = { parts: [{ text: system }] };
   } else {
-    headers.authorization = `Bearer ${token}`;
+    if (token) headers.authorization = `Bearer ${token}`;
     if (protocol === 'responses') {
       body = { model: config.model, max_output_tokens: FIXED_MAX_OUTPUT_TOKENS, store: false, input: messages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(part => part.type === 'text' ? { type: 'input_text', text: part.text } : { type: 'input_image', image_url: part.image_url.url }) })) };
       if (jsonMode && config.supportsJson) body.text = { format: { type: 'json_object' } };

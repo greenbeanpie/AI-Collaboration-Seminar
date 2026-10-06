@@ -184,7 +184,7 @@ notification_events ── notification_inbox ── users
 | `usage_reservations` | `id PK`；project FK；`job_id`、`purpose`；`status reserved/settled/released`；`attempts_started`、`max_calls` | `ai-reservations.ts` 原子预占并发槽位和每任务调用次数；fetch 前持久化 started 尝试。旧金额字段和 `pending_reconcile` 状态保留给既有数据库记录，不参与当前运行。 |
 | `ai_calls` | `id PK`；project/config/reservation/draft FK；`job_id/run_id`；`purpose textEconomy/visionEconomy/review`；`prompt_version/model`；`input_r2_key/output_r2_key`；prompt/completion tokens；`status ok/repaired/invalid/failed/timeout`；latency/time；`search_usage_json` | 模型调用审计，与业务成功分开：收到模型输出但校验失败可记录 invalid。旧费用字段仅保留在既有数据库行，不参与新调用。排查路径从 jobId 到 reservation、call、R2 证据和业务实体。 |
 | `ai_tool_calls` | `id PK`；project/job/requested_by FK；`name/args_json/result_json`；`status ok/failed`；时间 | 工具调用证据，可和模型调用按 jobId 串起来；工具失败并不自动代表整个调查失败。 |
-| `ai_diagnostics` | `id INTEGER PK AUTOINCREMENT`；`entry_json TEXT`；`byte_size CHECK=length(CAST(entry_json AS BLOB))+1` | 有界运维诊断，设计上不存 prompt、response 或密钥。不能向此表写模型完整输入来“方便排查”。 |
+| `ai_diagnostics` | `id INTEGER PK AUTOINCREMENT`；`entry_json TEXT`；`byte_size CHECK=length(CAST(entry_json AS BLOB))+1` | 有界运维诊断，保存每次模型调用的成功/失败阶段、耗时和安全错误原因；不存 prompt、response 或密钥，超级管理员可查看和清空。 |
 | `idempotency_records` | 唯一 `(idempotency_key,user_id,operation)`；request_hash；`status processing/completed`；response_status/body；created_at | 相同操作同用户同键同内容可返回历史响应；不同内容返回冲突，processing 不应被当成 completed。 |
 | `notification_events` | `id PK`；`event_key UNIQUE`；kind/scope project或ticket；resource_id、actor FK；title/body/url/time | 去重事件源。任务可开始事件键含任务与 generation，避免重复通知也支持下一轮有效转换。 |
 | `notification_inbox` | 复合 PK `(event_id,user_id)`；两者 FK；read_at/dismissed_at | 站内每人状态独立。 |
@@ -398,12 +398,12 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 | 协议 | 请求和工具历史 | 返回与限制 |
 | --- | --- | --- |
-| Chat Completions | Bearer；messages；如发送输出字段则固定为 65535；tools.function + role=tool/tool_call_id | choices.message.content、usage.prompt_tokens/completion_tokens；拒绝截断/拒答；达到固定输出上限时提示缩短任务或降低思考强度 |
-| Responses | Bearer；input，store=false，max_output_tokens 固定为 65535；function_call_output/call_id | output 中 assistant output_text；input_tokens/output_tokens；必须 completed；工具 adapter 另处理 function call |
-| Anthropic Messages | x-api-key、anthropic-version；system 单独；必填 max_tokens 固定为 65535；tool_use/tool_result | end_turn/stop_sequence；usage 将 cache_creation/cache_read 算入输入；thinking 不当答案 |
-| Gemini | x-goog-api-key；contents/model、systemInstruction、inlineData、generationConfig.maxOutputTokens 固定为 65535；functionDeclarations/functionResponse | STOP；忽略 thought；候选输出与 thoughtsTokenCount 合计输出用量；grounding 搜索引用另外处理 |
+| Chat Completions | `Authorization: Bearer <provider key>`；messages；如发送输出字段则固定为 65535；tools.function + role=tool/tool_call_id | choices.message.content、usage.prompt_tokens/completion_tokens；拒绝截断/拒答；达到固定输出上限时提示缩短任务或降低思考强度 |
+| Responses | `Authorization: Bearer <provider key>`；input，store=false，max_output_tokens 固定为 65535；function_call_output/call_id | output 中 assistant output_text；input_tokens/output_tokens；必须 completed；工具 adapter 另处理 function call |
+| Anthropic Messages | `x-api-key: <provider key>`、anthropic-version；system 单独；必填 max_tokens 固定为 65535；tool_use/tool_result | end_turn/stop_sequence；usage 将 cache_creation/cache_read 算入输入；thinking 不当答案 |
+| Gemini | `x-goog-api-key: <provider key>`；contents/model、systemInstruction、inlineData、generationConfig.maxOutputTokens 固定为 65535；functionDeclarations/functionResponse | STOP；忽略 thought；候选输出与 thoughtsTokenCount 合计输出用量；grounding 搜索引用另外处理 |
 
-`workers-ai` 使用 `https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions` + Bearer + `cf-aig-gateway-id`。自定义供应商由 apiUrl/apiKeyEncrypted 指定，解密密钥仅用于当前请求；生产要求公网 HTTPS 域名，禁查询、用户信息、本地/内网地址，local 才允许回环 stub。设置 `redirect:'manual'`，任何 3xx 都不会跟随或转发凭据。不支持视觉输入时拒绝，不回落其他端点。输入最多 32 条消息、`maxInputChars`，序列化工具 body 还有大小界限；JSON 响应最多 4 MiB。敏感上下文设置 `cf-aig-skip-cache=true/cf-aig-collect-log=false`，但不能据此替外部自定义供应商承诺隐私行为。
+普通第三方模型使用 AI 设置中加密保存的 `apiKeyEncrypted`，直接请求对应 `apiUrl`；构建请求时按协议写入 `Authorization`、`x-api-key` 或 `x-goog-api-key`。Cloudflare AI Gateway 的默认 Provider Key 只用于显式配置为 Gateway 路由的专门功能（例如实时 Google 转录和 Gateway 语音生成）；它不接管普通模型槽位、Gemini 媒体摘要或 MiMo 媒体摘要。Workers AI 使用 Cloudflare 账户服务凭据和 `cf-aig-gateway-id`。设置 `redirect:'manual'`，普通供应商的任何 3xx 都不会跟随或转发凭据。不支持视觉输入时拒绝，不回落其他端点。输入最多 32 条消息、`maxInputChars`，序列化工具 body 还有大小界限；JSON 响应最多 4 MiB。敏感上下文只有经过 Gateway 的请求才添加 Gateway 日志/缓存控制头。
 
 OpenCode Go 额外要求稳定 opaque session ID，生成 `x-opencode-session` 和已验证 user-agent；不能把用户输入直接当 header。模型 JSON 能力不足时不强行发送不支持字段，仍通过明确 JSON 提示和 Zod 验证。业务最终 JSON 错误由 `aiJsonCall` 至多增加一次修复请求；工具调查结束的修复关闭工具，保留完整输出和已读 ID，提示只纠正字段，且重复原权限/配置/授权检查。输入过大直接拒绝，不静默截掉报告末尾。评分评价可指定 `maxAttempts:1` 禁止修复改变判断。
 
@@ -419,7 +419,7 @@ OpenCode Go 额外要求稳定 opaque session ID，生成 `x-opencode-session` �
 
 `recordAiCall` 将 input/output 存 `ai-calls/{id}/input.json/output.json`，并将模型、`config_version_id/prompt_version/job_id/run_id/reservation_id/draft_id`、token 用量、延迟和执行状态写入 `ai_calls`。
 
-R2/调用记录写失败不能触发第二次模型请求；checkpoint 先标记 in-flight，可阻止崩溃后无证据重放。`ai_diagnostics`（见 diagnostics.ts）记录请求 ID、协议、HTTP 状态、阶段、safe host/path、失败类别；不要向用户暴露解密密钥、原始供应商响应正文或私有完整输入。
+R2/调用记录写失败不能触发第二次模型请求；checkpoint 先标记 in-flight，可阻止崩溃后无证据重放。`ai_diagnostics`（见 diagnostics.ts）记录每次模型调用的成功/失败、请求 ID、协议、HTTP 状态、阶段、耗时、safe host/path 和经脱敏的后端错误原因；不记录或展示解密密钥、原始供应商响应正文、提示词或模型回答。系统概况中仅超级管理员可查看和清空日志。
 
 运行前检查并不足以保证发布正确，发布 SQL 仍绑定作业状态、当前项目成员、项目 active、来源 lifecycle、固定材料与实际已读引用、配置版本、设置 revision、任务 revision、提交轮次、guide session 或演练处理权。自动应用再检查一次规则，失败时保留提案/报告及 applyError，供人工审查。发布路径变更必须保留条件 UPDATE/INSERT SELECT 和结果 meta.changes 检查。
 

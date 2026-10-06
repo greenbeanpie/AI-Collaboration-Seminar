@@ -21,9 +21,19 @@ async function batchView(env:Env,id:string):Promise<RetryBatch> {
 }
 export async function readAdminAiRetries(env:Env) {
  const failed=await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM jobs j WHERE ${candidates})+(SELECT COUNT(*) FROM project_creation_drafts WHERE status='active' AND preview_state='failed') n`).first<{n:number}>();
+ const pending=await env.DB.prepare("SELECT COUNT(*) n FROM admin_ai_retry_items WHERE status='pending'").first<{n:number}>();
  const active=await env.DB.prepare("SELECT id FROM admin_ai_retry_batches WHERE status!='completed' LIMIT 1").first<{id:string}>();
  const latest=await env.DB.prepare('SELECT id FROM admin_ai_retry_batches ORDER BY created_at DESC,id DESC LIMIT 1').first<{id:string}>();
- return {failedCount:failed?.n??0,activeBatch:active?await batchView(env,active.id):null,latestBatch:latest?await batchView(env,latest.id):null};
+ return {failedCount:failed?.n??0,pendingRetryCount:pending?.n??0,activeBatch:active?await batchView(env,active.id):null,latestBatch:latest?await batchView(env,latest.id):null};
+}
+/** Remove only work not yet claimed by the retry worker. Source jobs and retry history remain intact. */
+export async function clearPendingAdminAiRetries(env:Env) {
+ const now=nowIso();
+ const [deleted,completed]=await env.DB.batch([
+  env.DB.prepare("DELETE FROM admin_ai_retry_items WHERE status='pending'").bind(),
+  env.DB.prepare("UPDATE admin_ai_retry_batches SET status='completed',updated_at=?1 WHERE status!='completed' AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_items WHERE batch_id=admin_ai_retry_batches.id AND status IN ('pending','running'))").bind(now),
+ ]);
+ return {deletedItems:deleted?.meta.changes??0,completedBatches:completed?.meta.changes??0};
 }
 export async function enqueueAdminAiRetries(env:Env,idempotencyKey:string,actorId:string|null) {
  const existing=await env.DB.prepare('SELECT id FROM admin_ai_retry_batches WHERE idempotency_key=?1 OR status!=\'completed\' ORDER BY idempotency_key=?1 DESC LIMIT 1').bind(idempotencyKey).first<{id:string}>();

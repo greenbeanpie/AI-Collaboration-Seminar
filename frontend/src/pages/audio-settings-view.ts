@@ -1,6 +1,6 @@
 export type AudioSettingsView = {
   audioFileTranscription: { provider: 'workers-ai'; model: '@cf/openai/whisper-large-v3-turbo' };
-  realtimeAudioTranscription?: { provider: 'google-ai-studio'; model: 'gemini-3.5-transcribe-live'; gatewayId: string; languageCodes?: string[]; apiKey?: string; clearKey?: boolean; keyConfigured?: boolean; gatewayToken?: string; clearGatewayToken?: boolean; gatewayTokenConfigured?: boolean };
+  realtimeAudioTranscription?: { provider: 'google-ai-studio'; model: 'gemini-3.5-transcribe-live'; gatewayId: string; languageCodes?: string[]; gatewayToken?: string; clearGatewayToken?: boolean; gatewayTokenConfigured?: boolean };
   processingStrategies: { audioFiles: 'whisper-first' | 'media-only' | 'mimo-only'; videoFiles?: 'gemini' | 'mimo'; rehearsal: 'text' | 'voice-with-text-fallback' };
   rehearsalSpeech: { provider: 'system-local'; lang: string; rate: number; volume: number };
 };

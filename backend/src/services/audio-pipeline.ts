@@ -1,6 +1,7 @@
 import type { Env } from '../env';
 import { loadAiConfig, type LoadedAiConfig, type AiPurpose } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
+import { recordAiDiagnostic, diagnosticErrorCode, safeBackendErrorReason } from '../ai/diagnostics';
 import { recordAiCall } from '../ai/calls';
 import { WHISPER_MODEL,transcriptSchema,transcriptGate,chunkTranscript,qualitySchema,allQualityPassed,type AudioChunk,type AudioQuality } from '../ai/whisper';
 import { mediaSummarySchema,type MediaSummary } from '../ai/gemini-media';
@@ -16,13 +17,13 @@ export type AudioPipelineStatus={phase:string;qualityScore:number|null;reasons:s
 export async function readAudioPipelineStatus(env:Env,jobId:string):Promise<AudioPipelineStatus|null>{
  const row=await env.DB.prepare('SELECT * FROM audio_pipeline WHERE job_id=?1').bind(jobId).first<AudioState>();if(!row)return null;
  const quality=JSON.parse(row.quality_json) as AudioQuality[];const latest=await loadAiConfig(env.DB);const job=await getJob(env,jobId);
- return {phase:row.phase,qualityScore:quality.length?Math.min(...quality.map(q=>q.score)):null,reasons:[...(row.error?[row.error]:[]),...quality.flatMap(q=>q.reasons)].slice(0,32),transcriptAvailable:!!row.transcript_r2_key,canResumeFallback:job.status==='waiting_input'&&row.phase==='waiting_config'&&!!latest?.enabled&&!!latest.config.mediaUnderstanding?.apiKeyEncrypted};
+ return {phase:row.phase,qualityScore:quality.length?Math.min(...quality.map(q=>q.score)):null,reasons:[...(row.error?[row.error]:[]),...quality.flatMap(q=>q.reasons)].slice(0,32),transcriptAvailable:!!row.transcript_r2_key,canResumeFallback:job.status==='waiting_input'&&row.phase==='waiting_config'&&!!latest?.enabled&&!!latest.config.mediaUnderstanding};
 }
 export async function resumeWaitingAudioFallback(env:Env,jobId:string,actorId:string):Promise<{jobId:string;status:string}>{
  const job=await getJob(env,jobId);const auth=await env.DB.prepare("SELECT 1 FROM jobs j WHERE j.id=?1 AND (j.created_by=?2 OR EXISTS(SELECT 1 FROM project_members m WHERE m.project_id=j.project_id AND m.user_id=?2 AND m.role='owner'))").bind(jobId,actorId).first();
  if(job.project_id&&!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(job.project_id,actorId).first())throw new AppError('PERMISSION_DENIED','当前用户已不是项目成员',403,false);
  if(!auth)throw new AppError('PERMISSION_DENIED','仅任务创建者或项目负责人可继续处理',403,false);
- const latest=await loadAiConfig(env.DB);if(!latest?.enabled||!latest.config.mediaUnderstanding?.apiKeyEncrypted)throw invalidState('请先配置 Gemini 音视频模型');
+ const latest=await loadAiConfig(env.DB);if(!latest?.enabled||!latest.config.mediaUnderstanding)throw invalidState('请先配置 Gemini 音视频模型');
  const input=JSON.parse(job.input_json) as {fileId?:string;draftId?:string;sourceVersionId?:string;sourceLifecycleVersion?:number};
  if(job.project_id){await loadActiveSourceVersion(env,input.sourceVersionId!,input.sourceLifecycleVersion);}
  else if(!await env.DB.prepare("SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=?1 AND d.id=?2 AND f.removed=0 AND d.status='active'").bind(input.fileId??null,input.draftId??null).first())throw invalidState('草稿生命周期已变化');
@@ -43,7 +44,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
  await env.DB.prepare('INSERT OR IGNORE INTO audio_pipeline(job_id,config_version_id,created_at,updated_at) VALUES(?1,?2,?3,?3)').bind(jobId,config.id,nowIso()).run();
  let row=(await env.DB.prepare('SELECT * FROM audio_pipeline WHERE job_id=?1').bind(jobId).first<AudioState>())!;
  const set=async(phase:string,error:string|null=null)=>{await assertActive();await env.DB.prepare('UPDATE audio_pipeline SET phase=?2,error=?3,updated_at=?4 WHERE job_id=?1').bind(jobId,phase,error,nowIso()).run();row.phase=phase;};
- const fallback=async(reason:string)=>{await set('fallback',reason);const fallbackConfig=await loadAiConfig(env.DB,row.fallback_config_version_id??config.id);if(fallbackConfig?.enabled&&fallbackConfig.config.mediaUnderstanding?.apiKeyEncrypted)return {kind:'fallback' as const};await set('waiting_config',reason+'；等待 Gemini 配置');await env.DB.prepare("UPDATE jobs SET status='waiting_input',result_json=?2,updated_at=?3 WHERE id=?1 AND status IN ('running','queued')").bind(jobId,JSON.stringify({media:true,waitingGemini:true}),nowIso()).run();await settleReservation(env,jobId,'settled');return {kind:'waiting' as const};};
+ const fallback=async(reason:string)=>{await set('fallback',reason);const fallbackConfig=await loadAiConfig(env.DB,row.fallback_config_version_id??config.id);if(fallbackConfig?.enabled&&fallbackConfig.config.mediaUnderstanding)return {kind:'fallback' as const};await set('waiting_config',reason+'；等待 Gemini 配置');await env.DB.prepare("UPDATE jobs SET status='waiting_input',result_json=?2,updated_at=?3 WHERE id=?1 AND status IN ('running','queued')").bind(jobId,JSON.stringify({media:true,waitingGemini:true}),nowIso()).run();await settleReservation(env,jobId,'settled');return {kind:'waiting' as const};};
  if(['transcribing','checking','summarizing','merging','unknown'].includes(row.phase))throw invalidState('上次模型请求结果未知，拒绝自动重放');
  if(row.phase==='ready'&&row.final_summary_json)return {kind:'summary',summary:mediaSummarySchema.parse(JSON.parse(row.final_summary_json))};
  if(row.phase==='waiting_config')return {kind:'waiting'};
@@ -60,7 +61,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   const llm=async(purpose:AiPurpose,stage:string,index:number,prompt:string):Promise<unknown>=>{
   const model=config.config[purpose],callId=await claim(stage,index);let dispatched=false,recorded=false;
   try{
-    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
+    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME,diagnostics:env},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,diagnosticRequestId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
    await recordAiCall(env,{projectId:job.project_id,draftId:input.draftId,jobId,purpose,configVersionId:config.id,promptVersion:'audio-pipeline-v1',model:model.model,input:{stage,index},output:result.content.slice(0,512),promptTokens:result.promptTokens,completionTokens:result.completionTokens,latencyMs:result.latencyMs,status:'ok'});recorded=true;
    await env.DB.prepare("UPDATE audio_pipeline_calls SET status='ok' WHERE id=?1").bind(callId).run();return JSON.parse(result.content);
   }catch(error){
@@ -75,8 +76,9 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   const object=await env.FILES.get(params.r2Key);if(!object)throw invalidState('音频原文件不存在');
   const id=await claim('transcribing',0),mediaId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,created_at) VALUES(?1,?2,?3,?4,0,'started',?5)").bind(mediaId,jobId,config.id,WHISPER_MODEL,nowIso()).run();
   let raw:unknown;
-  try{raw=await env.AI!.run(WHISPER_MODEL,{audio:{body:object.body,contentType:params.mime},task:'transcribe',vad_filter:true,condition_on_previous_text:false});}
-  catch(error){const status=error instanceof AppError?error.details?.status:(error as {status?:number})?.status;if([400,413,415,422].includes(Number(status))){await env.DB.prepare("UPDATE media_calls SET status='failed' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='invalid' WHERE id=?1").bind(id).run();return fallback('Whisper 明确拒绝该输入格式或大小');}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='unknown' WHERE id=?1").bind(id).run();await set('unknown','Whisper 请求结果未知，拒绝自动重放');throw error;}
+  const whisperStarted=Date.now();
+  try{raw=await env.AI!.run(WHISPER_MODEL,{audio:{body:object.body,contentType:params.mime},task:'transcribe',vad_filter:true,condition_on_previous_text:false});await recordAiDiagnostic(env,{requestId:mediaId,operation:'model_call',phase:'model_result',status:'succeeded',durationMs:Math.min(3_600_000,Date.now()-whisperStarted),errorCode:'NONE'});}
+  catch(error){const status=error instanceof AppError?error.details?.status:(error as {status?:number})?.status;await recordAiDiagnostic(env,{requestId:mediaId,operation:'model_call',phase:'model_result',status:'failed',durationMs:Math.min(3_600_000,Date.now()-whisperStarted),errorCode:diagnosticErrorCode(error),errorReason:safeBackendErrorReason(error instanceof AppError?error:undefined)??(typeof status==='number'?`Workers AI Whisper 返回 HTTP ${status}`:'Workers AI Whisper 调用失败，后端未取得模型结果')});if([400,413,415,422].includes(Number(status))){await env.DB.prepare("UPDATE media_calls SET status='failed' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='invalid' WHERE id=?1").bind(id).run();return fallback('Whisper 明确拒绝该输入格式或大小');}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(mediaId).run();await env.DB.prepare("UPDATE audio_pipeline_calls SET status='unknown' WHERE id=?1").bind(id).run();await set('unknown','Whisper 请求结果未知，拒绝自动重放');throw error;}
   const key=`audio-pipeline/${jobId}/transcript.json`;await assertActive();await env.FILES.put(key,JSON.stringify(raw));
   await env.DB.prepare('UPDATE audio_pipeline SET transcript_r2_key=?2 WHERE job_id=?1').bind(jobId,key).run();row.transcript_r2_key=key;
   const parsed=transcriptSchema.safeParse(raw),duration=parsed.success?parsed.data.transcription_info?.duration:undefined;

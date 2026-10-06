@@ -5,7 +5,7 @@ export const TTS_VOICES = ['Kore', 'Aoede', 'Puck'] as const;
 const JSON_LIMIT = 20 * 1024 * 1024;
 export const TTS_AUDIO_LIMIT = 10 * 1024 * 1024;
 export interface GeminiSpeechRequest {
-  accountId: string; gatewayId: string; gatewayToken: string; apiKey: string;
+  accountId: string; gatewayId: string; gatewayToken: string;
   model: typeof TTS_MODELS[number]; voice: typeof TTS_VOICES[number]; text: string;
 }
 export interface GeminiSpeechOutput { bytes: Uint8Array; mime: 'audio/wav'; durationSeconds: number; usage: unknown; }
@@ -61,12 +61,12 @@ const object = (value: unknown): Record<string, unknown> => value && typeof valu
 export async function geminiSpeech(input: GeminiSpeechRequest, request: typeof fetch = fetch): Promise<GeminiSpeechOutput> {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.accountId) || !/^[a-z0-9-]{1,64}$/.test(input.gatewayId) || !TTS_MODELS.includes(input.model) || !TTS_VOICES.includes(input.voice)) throw validationFailed('TTS Gateway 或模型配置无效');
   if (!input.text.trim() || input.text.length > 8000) throw validationFailed('朗读正文必须为 1 至 8000 字符，不会截断');
-  if (![input.apiKey, input.gatewayToken].every(value => value && !/[\x00-\x20\x7f]/.test(value))) throw validationFailed('TTS 认证配置无效');
+  if (!input.gatewayToken || /[\x00-\x20\x7f]/.test(input.gatewayToken)) throw validationFailed('TTS Gateway 认证配置无效');
   const url = `https://gateway.ai.cloudflare.com/v1/${input.accountId}/${input.gatewayId}/google-ai-studio/v1beta/interactions`;
   let response: Response;
   try {
     response = await request(url, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(90_000),
-      headers: { 'content-type': 'application/json', 'cf-aig-authorization': `Bearer ${input.gatewayToken}`, 'x-goog-api-key': input.apiKey, 'cf-aig-skip-cache': 'true', 'cf-aig-collect-log': 'false' },
+      headers: { 'content-type': 'application/json', 'cf-aig-authorization': `Bearer ${input.gatewayToken}`, 'cf-aig-skip-cache': 'true', 'cf-aig-collect-log': 'false' },
       body: JSON.stringify({ model: input.model, input: [{ type: 'user_input', content: [{ type: 'text', text: input.text }] }], response_format: { type: 'audio', mime_type: 'audio/wav' }, generation_config: { speech_config: [{ voice: input.voice }] } }),
     });
   } catch { throw aiUnavailable('TTS Gateway 请求失败或超时；本次结果未知', { cause: 'network_error' }); }

@@ -57,6 +57,18 @@ it('a provider redirect is observed once and rejected without following or forwa
   expect(safeDiagnosticTarget('https://custom.example/private-key')).toEqual({ finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted' });
 });
 
+it('stores successful model-call metadata without storing prompts, answers, or credentials', async () => {
+  await env.DB.prepare('DELETE FROM ai_diagnostics').run();
+  const requestId = crypto.randomUUID();
+  const prompt = 'fixture-private-prompt';
+  const answer = 'fixture-private-answer';
+  const mock = vi.fn(async () => Response.json({ choices: [{ message: { content: answer } }] }));
+  await gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages: [{ role: 'user', content: prompt }], diagnosticRequestId: requestId }, mock);
+  const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
+  expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ operation: 'model_call', status: 'succeeded', errorCode: 'NONE', httpStatus: 200, finalHost: 'api.deepseek.com' });
+  expect(JSON.stringify(events)).not.toMatch(/fixture-private-prompt|fixture-private-answer|fixture-provider-key|authorization/);
+});
+
 describe('outgoing provider protocol contracts (mocked only)', () => {
   it.each([
     ['openai', 'gpt-5.4', 'responses'], ['openai', 'gpt-4.1-mini', 'chat-completions'],
@@ -219,7 +231,7 @@ const adminHeaders = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': '
 async function putConfig(model: AiModelConfig, apiKey?: string, enabled = false) {
   const { apiKeyEncrypted: _encrypted, ...editable } = model;
   const withKey = { ...editable, ...(apiKey ? { apiKey } : {}) };
-  return SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ textEconomy: withKey, visionEconomy: withKey, review: withKey, enabled }) });
+  return SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ routingMode: 'unified', unified: withKey, textEconomy: withKey, visionEconomy: withKey, review: withKey, enabled }) });
 }
 describe('versioned configuration, authorization, and reservations', () => {
   it('does not pay for a same-budget repair when DeepSeek exhausts output tokens', async () => {
@@ -248,6 +260,7 @@ describe('versioned configuration, authorization, and reservations', () => {
     expect(JSON.parse(String((mock.mock.calls[0] as unknown as [string, RequestInit])[1].body)).reasoning).toEqual({ effort: 'low' });
     expect((await putConfig({ ...original, reasoningEffort: 'high' }, undefined, true)).status).toBe(201);
     expect((await putConfig(config('deepseek', 'deepseek-flash'))).status).toBe(400);
+    expect((await putConfig(config('deepseek', 'deepseek-flash'), 'new-deepseek-fixture-key')).status).toBe(201);
   });
 
   it('Go repair retains session and 2-call accounting; provider 403 is not retried', async () => {

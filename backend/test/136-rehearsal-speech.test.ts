@@ -16,10 +16,10 @@ function wav() {
   text(0,'RIFF'); v.setUint32(4,b.length-8,true); text(8,'WAVE'); text(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,24000,true); v.setUint32(28,48000,true); v.setUint16(32,2,true); v.setUint16(34,16,true); text(36,'data'); v.setUint32(40,2000,true); return b;
 }
 function result() { return {status:'completed',steps:[{type:'model_output',content:[{type:'audio',mime_type:'audio/wav',data:btoa(String.fromCharCode(...wav()))}]}],usage:{total_tokens:42}}; }
-const input = {accountId:'account',gatewayId:'speech',gatewayToken:'gateway-secret',apiKey:'google-secret',model:'gemini-3.8-flash-lite-tts' as const,voice:'Kore' as const,text:'请解释项目目标。'};
+const input = {accountId:'account',gatewayId:'speech',gatewayToken:'gateway-secret',model:'gemini-3.8-flash-lite-tts' as const,voice:'Kore' as const,text:'请解释项目目标。'};
 async function fixture() {
   const owner=await seedUser(), projectId=await seedProject(owner.userId), rehearsalId=newId(), turnId=newId(), config=(await loadAiConfig(env.DB))!, now=nowIso();
-  const raw={...config.config,realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'speech',apiKeyEncrypted:await seal('google-secret',env.AUTH_SECRET),gatewayTokenEncrypted:await seal('gateway-secret',env.AUTH_SECRET)},rehearsalSpeech:{model:input.model,voice:'Kore'},processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'}};
+  const raw={...config.config,realtimeAudioTranscription:{provider:'google-ai-studio',model:'gemini-3.5-transcribe-live',gatewayId:'speech',gatewayTokenEncrypted:await seal('gateway-secret',env.AUTH_SECRET)},rehearsalSpeech:{model:input.model,voice:'Kore'},processingStrategies:{audioFiles:'whisper-first',rehearsal:'voice-with-text-fallback'}};
   await env.DB.batch([
     env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(config.id,JSON.stringify(raw)),
     env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,created_by,created_at) VALUES(?1,?2,'all',?3,?4)").bind(rehearsalId,projectId,owner.userId,now),
@@ -37,6 +37,7 @@ describe('Gateway-only TTS transport',()=>{
     const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
       expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/account/speech/google-ai-studio/v1beta/interactions'); expect(init?.redirect).toBe('manual');
       expect(new Headers(init?.headers).get('cf-aig-authorization')).toBe('Bearer gateway-secret');
+      expect(new Headers(init?.headers).has('x-goog-api-key')).toBe(false);
       expect(JSON.parse(String(init?.body))).toEqual({model:input.model,input:[{type:'user_input',content:[{type:'text',text:input.text}]}],response_format:{type:'audio',mime_type:'audio/wav'},generation_config:{speech_config:[{voice:'Kore'}]}});
       return Response.json(result());
     });

@@ -8825,7 +8825,40 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** 取消未结束的答辩演练并删除本场记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    rehearsalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已取消并删除本场记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalCancelResponse"];
+                    };
+                };
+                /** @description 演练已结束或状态已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -10555,8 +10588,6 @@ export interface paths {
                             model: "gemini-3.5-transcribe-live";
                             gatewayId: string;
                             languageCodes?: string[];
-                            apiKey?: string;
-                            clearKey?: boolean;
                             gatewayToken?: string;
                             clearGatewayToken?: boolean;
                         };
@@ -10991,7 +11022,27 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
+        /** 清除尚未开始的失败 AI 请求重试记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅删除 pending 队列项；原失败作业、日志和已领取条目保留 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAiRetriesCleared"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -11004,7 +11055,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 超级管理员读取最后1000条、最多1MB的无内容AI诊断记录 */
+        /** 超级管理员读取最后1000条、最多1MB的AI诊断记录 */
         get: {
             parameters: {
                 query?: never;
@@ -11014,7 +11065,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description 固定状态和阶段；无业务内容或密钥 */
+                /** @description 固定状态、阶段和错误原因；不包含请求内容或密钥 */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -11027,7 +11078,27 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** 超级管理员清空AI诊断记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 记录已清空 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiDiagnosticsClearedResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -16013,6 +16084,16 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        RehearsalCancelResponse: {
+            data: {
+                /** Format: uuid */
+                rehearsalId: string;
+                /** @enum {boolean} */
+                cancelled: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         RehearsalVoiceReadiness: {
             data: {
                 configured: boolean;
@@ -16885,6 +16966,7 @@ export interface components {
         AdminAiRetries: {
             data: {
                 failedCount: number;
+                pendingRetryCount: number;
                 activeBatch: {
                     /** Format: uuid */
                     batchId: string;
@@ -16944,6 +17026,14 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        AdminAiRetriesCleared: {
+            data: {
+                deletedItems: number;
+                completedBatches: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         AiDiagnosticsResponse: {
             data: {
                 items: {
@@ -16960,6 +17050,7 @@ export interface components {
                     durationMs: number;
                     /** @enum {string} */
                     errorCode: "NONE" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "VALIDATION_FAILED" | "VERSION_CONFLICT" | "INVALID_STATE" | "AI_UNAVAILABLE" | "AI_OUTPUT_INVALID" | "QUOTA_EXCEEDED" | "TIMEOUT" | "PROBE_FAILED" | "PROVIDER_FAILED" | "REDIRECT_BLOCKED" | "FETCH_FAILED" | "INTERNAL";
+                    errorReason?: string;
                     httpStatus?: number;
                     configVersion?: number;
                     expectedVersion?: number;
@@ -16992,6 +17083,13 @@ export interface components {
                     retainedEntries: number;
                     retainedBytes: number;
                 };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiDiagnosticsClearedResponse: {
+            data: {
+                deleted: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

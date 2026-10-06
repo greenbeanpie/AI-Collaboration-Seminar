@@ -17762,6 +17762,38 @@
           "requestId"
         ]
       },
+      "RehearsalCancelResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rehearsalId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "cancelled": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "rehearsalId",
+              "cancelled"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "RehearsalVoiceReadiness": {
         "type": "object",
         "properties": {
@@ -21436,6 +21468,9 @@
               "failedCount": {
                 "type": "number"
               },
+              "pendingRetryCount": {
+                "type": "number"
+              },
               "activeBatch": {
                 "type": [
                   "object",
@@ -21573,6 +21608,7 @@
             },
             "required": [
               "failedCount",
+              "pendingRetryCount",
               "activeBatch",
               "latestBatch"
             ]
@@ -21676,6 +21712,36 @@
           "requestId"
         ]
       },
+      "AdminAiRetriesCleared": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "deletedItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "completedBatches": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "deletedItems",
+              "completedBatches"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AiDiagnosticsResponse": {
         "type": "object",
         "properties": {
@@ -21750,6 +21816,10 @@
                         "FETCH_FAILED",
                         "INTERNAL"
                       ]
+                    },
+                    "errorReason": {
+                      "type": "string",
+                      "maxLength": 240
                     },
                     "httpStatus": {
                       "type": "integer",
@@ -21935,6 +22005,31 @@
             "required": [
               "items",
               "retention"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiDiagnosticsClearedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "deleted": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "deleted"
             ]
           },
           "requestId": {
@@ -34995,6 +35090,56 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "取消未结束的答辩演练并删除本场记录",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已取消并删除本场记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalCancelResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "演练已结束或状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/answers": {
@@ -37266,14 +37411,6 @@
                         },
                         "maxItems": 8
                       },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
-                      },
                       "gatewayToken": {
                         "type": "string",
                         "maxLength": 4096,
@@ -38274,6 +38411,24 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "清除尚未开始的失败 AI 请求重试记录",
+        "responses": {
+          "200": {
+            "description": "仅删除 pending 队列项；原失败作业、日志和已领取条目保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiRetriesCleared"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/admin/ai-diagnostics": {
@@ -38281,14 +38436,32 @@
         "tags": [
           "admin"
         ],
-        "summary": "超级管理员读取最后1000条、最多1MB的无内容AI诊断记录",
+        "summary": "超级管理员读取最后1000条、最多1MB的AI诊断记录",
         "responses": {
           "200": {
-            "description": "固定状态和阶段；无业务内容或密钥",
+            "description": "固定状态、阶段和错误原因；不包含请求内容或密钥",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AiDiagnosticsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "超级管理员清空AI诊断记录",
+        "responses": {
+          "200": {
+            "description": "记录已清空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDiagnosticsClearedResponse"
                 }
               }
             }

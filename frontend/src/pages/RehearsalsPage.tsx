@@ -2,7 +2,7 @@ import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
+import { Ban, Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
 import { RehearsalVoicePanel } from './RehearsalVoicePanel';
 import { ReferencePicker } from './ReferencePicker';
 import { api, projectPath, listAllItems } from '../api/client';
@@ -52,6 +52,8 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const [sendingAnswer, setSendingAnswer] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [retryingJob, setRetryingJob] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<unknown>(null);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
 
   const rehearsalQuery = useQuery({
@@ -162,6 +164,36 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
     }
   };
 
+  const handleCancel = async () => {
+    if (!rehearsal || !rehearsal.canOperate || rehearsal.status !== 'active' || cancelling) return;
+    if (!window.confirm('取消并删除本场答辩演练？本场问答和未完成评分不会保存，取消后无法恢复。')) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await api.delete<'RehearsalCancelResponse'>(projectPath(projectId, `/rehearsals/${encodeURIComponent(rehearsal.rehearsalId)}`));
+      if (pendingRehearsalJob?.entityId === rehearsal.rehearsalId) {
+        clearPendingJob(pendingJobKey(projectId), pendingRehearsalJob.jobId);
+        setPendingRehearsalJob(null);
+      }
+      const nextRecent = recentIds.filter(id => id !== rehearsal.rehearsalId);
+      setRecentIds(nextRecent);
+      try { localStorage.setItem(recentIdsKey(projectId), JSON.stringify(nextRecent)); } catch { /* The server has already deleted this rehearsal. */ }
+      setSelectedRehearsalId(nextRecent[0] ?? '');
+      setAnswerText('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rehearsals', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['assessments', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['assessment', projectId] }),
+        queryClient.removeQueries({ queryKey: ['rehearsal', projectId, rehearsal.rehearsalId] }),
+      ]);
+    } catch (error) {
+      setCancelError(error);
+      if (error instanceof Error && 'status' in error && (error as { status?: number }).status === 409) void rehearsalQuery.refetch();
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const handleRetryJob = async () => {
     if (!aiEnabled || !rehearsal?.canOperate || !visiblePending || job.job?.status !== 'failed' || retryingJob) return;
     setRetryingJob(true);
@@ -241,7 +273,8 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
               </Field>
               {Boolean(answerError) && <ErrorNotice error={answerError} onRetry={() => void rehearsalQuery.refetch()} />}
               {Boolean(finishError) && <ErrorNotice error={finishError} onRetry={() => void rehearsalQuery.refetch()} />}
-              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!canAnswer || !aiEnabled || sendingAnswer || voiceBusy || !answerText.trim()}><Send size={15} />{sendingAnswer ? '正在提交回答' : '提交回答'}</button><button className="button button-quiet" type="button" onClick={() => void handleFinish()} disabled={!aiEnabled || hasPendingJob || voiceBusy || finishing || isFinishPending || rehearsal.turns.length === 0}><Check size={15} />{finishing || isFinishPending ? '正在生成总结' : '结束并生成总结'}</button>{!canAnswer && rehearsal.status === 'active' && <span className="muted">等候后端保存的问题后再提交回答。</span>}</div>
+              {Boolean(cancelError) && <ErrorNotice error={cancelError} onRetry={() => void rehearsalQuery.refetch()} />}
+              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!canAnswer || !aiEnabled || sendingAnswer || voiceBusy || !answerText.trim()}><Send size={15} />{sendingAnswer ? '正在提交回答' : '提交回答'}</button><button className="button button-quiet" type="button" onClick={() => void handleFinish()} disabled={!aiEnabled || hasPendingJob || voiceBusy || finishing || isFinishPending || rehearsal.turns.length === 0}><Check size={15} />{finishing || isFinishPending ? '正在生成总结' : '结束并生成总结'}</button><button className="button button-quiet" type="button" onClick={() => void handleCancel()} disabled={cancelling}><Ban size={15} />{cancelling ? '正在取消' : '取消本场演练（不保存）'}</button>{!canAnswer && rehearsal.status === 'active' && <span className="muted">等候后端保存的问题后再提交回答。</span>}</div>
             </form>}
           </> : <EmptyState title="选择一场最近的演练" detail="演练记录只从真实服务端按其 ID 恢复。" />}
         </div> : <EmptyState title="还没有答辩演练" detail="创建演练后，可在此处和其他设备恢复。" />}

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AdminAiRetries } from './AdminAiRetries';
 const batch = { batchId: 'batch-1', status: 'completed', total: 4, pending: 0, queued: 3, skipped: 1, createdAt: '', updatedAt: '', skipReasons: [{ reason: '请求已恢复', count: 1 }] };
-const status = { failedCount: 4, activeBatch: null, latestBatch: null };
+const status = { failedCount: 4, pendingRetryCount: 2, activeBatch: null, latestBatch: null };
 const response = (data: unknown) => new Response(JSON.stringify({ data, requestId: 'fixture' }));
 function setup(superAdmin = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); const onDenied = vi.fn();
@@ -39,6 +39,19 @@ it('reuses the idempotency key after uncertain network failure', async () => {
 it('ordinary admin reads status without a global retry button', async () => {
   const mock = vi.fn(async () => response(status)); vi.stubGlobal('fetch', mock); setup(false); await screen.findByText('当前失败请求：');
   expect(screen.queryByRole('button', { name: '将所有失败请求排队重试' })).not.toBeInTheDocument(); expect(mock).toHaveBeenCalledTimes(1);
+});
+it('super-admin clears only pending retry rows and refreshes the persisted batch state', async () => {
+  let pendingRetryCount = 2;
+  const mock = vi.fn(async (_path: string, options?: RequestInit) => {
+    if (options?.method === 'DELETE') { pendingRetryCount = 0; return response({ deletedItems: 2, completedBatches: 1 }); }
+    return response({ ...status, pendingRetryCount, latestBatch: pendingRetryCount ? { ...batch, status: 'running', pending: 2 } : { ...batch, total: 0, queued: 0, skipped: 0, pending: 0 } });
+  });
+  vi.stubGlobal('fetch', mock); setup();
+  fireEvent.click(await screen.findByRole('button', { name: '清除待重试记录（2）' }));
+  await screen.findByText('已清除 2 条待重试记录；失败任务、原始日志和正在处理的条目均已保留。');
+  await waitFor(() => expect(screen.getByRole('button', { name: '清除待重试记录（0）' })).toBeDisabled());
+  expect(screen.getByText('当前失败请求：')).toBeInTheDocument();
+  expect(mock.mock.calls.map(([, options]) => options?.method ?? 'GET')).toEqual(['GET', 'DELETE', 'GET']);
 });
 it.each([0, 4])('disables submission when empty or batch active (failed=%s)', async failedCount => {
   vi.stubGlobal('fetch', vi.fn(async () => response({ ...status, failedCount, activeBatch: failedCount ? { ...batch, status: 'running', pending: 4 } : null })));

@@ -34,6 +34,9 @@ Thumbs.db
 
 .agent-worktrees/
 
+# Local conversation attachments; preserve privately, outside source control.
+.codex-remote-attachments/
+
 .local-backups/
 
 deploy/vps/.env
