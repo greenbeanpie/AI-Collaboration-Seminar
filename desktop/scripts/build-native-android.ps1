@@ -50,6 +50,18 @@ try {
     $gradleTasks+="assemble$flavor$profile"
     $skipTasks+=@('-x',"rustBuild$flavor$profile")
   }
+  # tauri-build normally generates these from dependency build metadata. Recover
+  # them explicitly when a cached target tree outlives ignored generated files.
+  if (!(Test-Path (Join-Path $project 'tauri.settings.gradle')) -or !(Test-Path (Join-Path $project 'app/tauri.build.gradle.kts'))) {
+    $metadata = & cargo metadata --locked --format-version 1 --filter-platform "$($Targets[0])-linux-android" --manifest-path (Join-Path $tauri 'Cargo.toml') | ConvertFrom-Json
+    if ($LASTEXITCODE) { throw 'Cannot resolve Tauri Android library metadata' }
+    $package = $metadata.packages | Where-Object name -EQ 'tauri' | Select-Object -First 1
+    if (!$package) { throw 'Tauri package missing from Cargo dependency graph' }
+    $libraryDirectory = (Join-Path (Split-Path $package.manifest_path) 'mobile/android').Replace('\','/')
+    $settings = "include ':tauri-android'`nproject(':tauri-android').projectDir = new File('$($libraryDirectory.Replace("'","\'"))')`n"
+    [IO.File]::WriteAllText((Join-Path $project 'tauri.settings.gradle'), $settings)
+    [IO.File]::WriteAllText((Join-Path $project 'app/tauri.build.gradle.kts'), 'dependencies { implementation(project(":tauri-android")) }')
+  }
   Push-Location $project
   try {
     & ./gradlew.bat @gradleTasks @skipTasks --no-daemon --no-configuration-cache
