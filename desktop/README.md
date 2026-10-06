@@ -49,6 +49,8 @@ node ./desktop/scripts/update-smoke-server.mjs ./desktop/src-tauri/target/debug/
 
 验收顺序：安装 A，保存登录 Cookie、离线编辑及附件缓存清单；启动共享 fixture，确认状态 `ready`/版本 B；先篡改缓存 `updates/installer.bin`，手动“重启更新”必须拒绝安装；再次检查会重新下载完整签名包；恢复安全保存握手后手动“重启更新”执行实际 B NSIS 安装。重新打开客户端后检查版本 B，及原 Cookie、IndexedDB 编辑和缓存文件哈希保持一致。手动安装复用自动安装同一保存握手，但不能替代托盘 5 分钟自动触发测试。
 
+已安装 A 并启动共享 fixture 后，可以仅通过 CLI 与原始 CDP `Runtime`/`Network` API 执行上述安装验收：`node desktop/scripts/update-smoke-verify.mjs`。脚本没有点击、截图或系统窗口控制；断开调试连接后等待 NSIS 自动安装并重启 B，输出 `output/desktop-smoke/update-smoke-report.json`。先运行附件缓存测试准备真实缓存文件。升级检测包含签名篡改拒绝、脏数据保存拒绝、账号 B 的持久 HttpOnly Cookie、localStorage/IndexedDB 标记、缓存清单及文件哈希、自动重启偏好。测试 fixture 的 IndexedDB 标记不能代替正式前端离线业务队列的完整验收。
+
 ## 资源测量
 
 在相同测试用户、项目和 WebView2 版本下，分别测量启动耗时、安装包大小和前台空闲/项目页面/托盘/单文件传输。每个场景稳定 30 秒后采样 60 秒：
