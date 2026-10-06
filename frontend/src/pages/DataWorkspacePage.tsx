@@ -1,4 +1,6 @@
 import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
+import { usePagedItems, usePagedRecords } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { archiveFile } from './task-files-client';
 import { collaborationApi } from '../api/collaboration';
@@ -8,8 +10,8 @@ import { resilientLazy } from '../resilient-lazy';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Upload } from 'lucide-react';
-import { api, listAllItems, projectPath } from '../api/client';
-import { projectRequest, resourceLibrary, resourcePurposeLabels, type ResourceEntry, type ResourcePurpose } from '../api/simplification';
+import { api, projectPath } from '../api/client';
+import { projectRequest, resourcePurposeLabels, type ResourceEntry, type ResourcePurpose } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Spinner, StatusPill } from '../components/ui';
 import { SourcesPage } from './SourcesPage';
@@ -31,8 +33,8 @@ export function DataWorkspacePage() {
   const [purpose, setPurpose] = useState<ResourcePurpose | 'all'>('all');
   const [title, setTitle] = useState('');
   const [newPurpose, setNewPurpose] = useState<ResourcePurpose>('output');
-  const uploadedFiles = useQuery({ queryKey: ['files', projectId, archived ? 'archived' : 'active'], queryFn: () => listAllItems<'FileListResponse'>(projectPath(projectId, '/files'), { ...(archived ? { archived: true } : {}) }) });
-  const library = useQuery({ queryKey: archived ? ['resource-library', projectId, 'archived'] : ['resource-library', projectId], queryFn: ({ signal }) => resourceLibrary(projectId, signal, archived) });
+  const uploadedFiles = usePagedItems<'FileListResponse'>({ queryKey: ['files', projectId, archived ? 'archived' : 'active'], path: projectPath(projectId, '/files'), query: { ...(archived ? { archived: true } : {}) } });
+  const library = usePagedRecords<ResourceEntry>({ queryKey: archived ? ['resource-library', projectId, 'archived'] : ['resource-library', projectId], path: projectPath(projectId, '/resource-library'), query: { archived, q: search, purpose: purpose === 'all' ? undefined : purpose } });
   const resources = library.data ?? [];
   const mode = params.get('mode');
   const selectedFile = mode === 'file' ? uploadedFiles.data?.find(file => file.fileId === params.get('fileId')) : undefined;
@@ -40,14 +42,16 @@ export function DataWorkspacePage() {
   const sourceHash = hash.startsWith('#source-page-') ? hash.slice(13).replace(/-\d+$/, '') : hash.startsWith('#source-') ? hash.slice(8) : null;
   const requestedId = params.get('resourceId') ?? params.get('materialId') ?? params.get('material') ?? sourceHash;
   const sourceVersionId = params.get('sourceVersionId');
-  const selected = requestedId ? resources.find(resource => resource.resourceId === requestedId && (!requestedType || resource.resourceType === requestedType)) : sourceVersionId ? resources.find(resource => resource.currentVersionId === sourceVersionId) : resources.find(resource => !requestedType || resource.resourceType === requestedType);
+  const detailType = requestedType === 'source' || sourceHash ? 'source' : 'material';
+  const resourceDetail = useQuery({ queryKey: ['resource-detail', projectId, detailType, requestedId], queryFn: () => projectRequest<ResourceEntry>(projectId, `/resource-library/${detailType}/${encodeURIComponent(requestedId!)}`), enabled: Boolean(requestedId) });
+  const selected = requestedId ? resourceDetail.data ?? resources.find(resource => resource.resourceId === requestedId && (!requestedType || resource.resourceType === requestedType)) : sourceVersionId ? resources.find(resource => resource.currentVersionId === sourceVersionId) : resources.find(resource => !requestedType || resource.resourceType === requestedType);
   const visible = resources.filter(resource => (purpose === 'all' || resource.purpose === purpose) && resource.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   const choose = (resource: ResourceEntry) => setParams({ resourceType: resource.resourceType, resourceId: resource.resourceId, ...(archived ? { archived: 'true' } : {}) });
   const uploaded = visible.filter(resource => resource.fileId);
   const publicFiles = (uploadedFiles.data ?? []).filter(file => !resources.some(resource => resource.fileId === file.fileId) && file.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   const folders = [...dependencyOrder(tasks.data?.items ?? []).map(task => ({ id: task.taskId, title: task.title, files: uploaded.filter(resource => resource.taskId === task.taskId) })), { id: 'public', title: '公共文件', files: uploaded.filter(resource => !resource.taskId || !tasks.data?.items.some(task => task.taskId === resource.taskId)) }];
   const renderResource = (resource: ResourceEntry) => <button key={`${resource.resourceType}:${resource.resourceId}`} className={`resource-list-entry ${!mode && selected?.resourceId === resource.resourceId && selected.resourceType === resource.resourceType ? 'active' : ''}`} aria-current={selected?.resourceId === resource.resourceId ? 'page' : undefined} onClick={() => choose(resource)}><strong>{resource.title}<AiReferenceBadge ariaHidden /></strong><small>{resourcePurposeLabels[resource.purpose]}{resource.archivedAt ? ' · 已归档' : ''}</small></button>;
-  const refresh = async () => { await client.invalidateQueries({ queryKey: ['resource-library', projectId] }); };
+  const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ['resource-library', projectId] }), client.invalidateQueries({ queryKey: ['resource-detail', projectId] })]); };
   const create = useMutation({ mutationFn: () => api.post<'MaterialResponse'>(projectPath(projectId, '/materials'), { title: title.trim(), kind: newPurpose === 'background' ? 'background' : 'document', purpose: newPurpose }), onSuccess: async material => { setTitle(''); setParams({ resourceType: 'material', resourceId: material.materialId }); await Promise.all([refresh(), client.invalidateQueries({ queryKey: ['materials', projectId] })]); } });
   const updatePurpose = useMutation({ mutationFn: ({ resource, purpose }: { resource: ResourceEntry; purpose: ResourcePurpose }) => projectRequest<ResourceEntry>(projectId, `/resource-library/${resource.resourceType}/${encodeURIComponent(resource.resourceId)}`, { method: 'PATCH', body: { purpose, expectedRevision: resource.revision } }), onSuccess: refresh, onError: refresh });
   const fileArchive = useMutation({ mutationFn: () => archiveFile(projectId, selectedFile!.fileId, selectedFile!.lifecycleVersion, !!selectedFile!.archivedAt), onSuccess: async () => { await Promise.all([refresh(), client.invalidateQueries({ queryKey: ['files', projectId] }), client.invalidateQueries({ queryKey: ['material', projectId] })]); setParams(archived ? { archived: 'true' } : {}); } });
@@ -55,8 +59,10 @@ export function DataWorkspacePage() {
           {updatePurpose.error && <ErrorNotice error={updatePurpose.error} />}</> : null;
   return <div className="page-stack resource-workspace"><ProjectFlowReturn />
 
+    {resourceDetail.error && <ErrorNotice error={resourceDetail.error} onRetry={() => void resourceDetail.refetch()} />}
     {library.error && <ErrorNotice error={library.error} onRetry={() => void library.refetch()} />}
-    {uploadedFiles.error && <ErrorNotice error={uploadedFiles.error} onRetry={() => void uploadedFiles.refetch()} />}
+    {uploadedFiles.error && <ErrorNotice error={uploadedFiles.error} onRetry={() => void uploadedFiles.refetch()} />}<LoadMore query={uploadedFiles} />
+    <LoadMore query={library} label="资料" />
     <div className="resource-workspace-layout">
       <aside className="card resource-list-panel" aria-label="项目资料列表">
         <h2 className="resource-browser-title">资料浏览</h2>

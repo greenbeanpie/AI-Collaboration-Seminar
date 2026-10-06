@@ -1,9 +1,12 @@
+import { completeTaskGraph } from '../features/pagination/taskGraph';
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import './CompactSettings.css';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Plus, ShieldCheck, UserMinus } from 'lucide-react';
-import { api, listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { useCapabilities, useSession } from '../auth';
 import { ConfirmButton, EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { invitationStatus } from './invitation-status';
@@ -21,8 +24,8 @@ export function TeamPage() {
   const session = useSession();
   const teamManage = can('teamManage');
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  const members = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members'), { limit: 100 }) });
-  const tasks = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) });
+  const members = usePagedItems<'MemberListResponse'>({ queryKey: ['members', projectId], path: projectPath(projectId, '/members'), query: { limit: 100 } });
+  const tasks = useQuery({ queryKey: ['tasks', projectId], queryFn: () => completeTaskGraph(projectId) });
   const invitations = useQuery({ queryKey: ['invitations', projectId], queryFn: () => api.get<'InvitationListResponse'>(projectPath(projectId, '/invitations')), enabled: teamManage });
   const [maxUses, setMaxUses] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('7');
@@ -35,9 +38,11 @@ export function TeamPage() {
   async function copyCode() { if (!createdCode) return; try { await navigator.clipboard.writeText(createdCode); setCopied(true); } catch { setCopied(false); } }
   const editingMember = members.data?.find(member => member.userId === editingMemberId) ?? null;
   return <div className="page-stack team-page">
-    <PageHeading title="团队成员" detail="管理角色、邀请与当前任务负荷。分工、提交和验收统一在任务工作区进行。" action={<StatusPill tone="blue">{members.data?.length ?? '—'} 位成员</StatusPill>} />
+    
+    <LoadMore query={members} />
+    <PageHeading title="团队成员" detail="管理角色、邀请与当前任务负荷。分工、提交和验收统一在任务工作区进行。" action={<StatusPill tone="blue">{members.data?.length ?? '—'} 位已加载成员</StatusPill>} />
     {[members, tasks].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
-    <div className="compact-team-grid"><SectionCard title="成员与任务负荷" detail="负荷依据未完成任务的预计工时计算。">
+    <div className="compact-team-grid"><SectionCard title="成员与任务负荷" detail="负荷依据项目完整任务图中未完成任务的预计工时计算。">
       {members.isLoading && <Spinner label="正在读取成员" />}
       {members.data?.length ? <div className="team-member-list">{members.data.map(member => {
         const assigned = tasks.data?.filter(task => task.assigneeId === member.userId && task.status !== 'done') ?? [];

@@ -1,3 +1,5 @@
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,8 +22,8 @@ export function ReviewsPage() {
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
   const standardQuery = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const reviewListQuery = useQuery({ queryKey: ['reviews', projectId], queryFn: () => listAllItems<'ReviewListResponse'>(projectPath(projectId, '/reviews')) });
+  const materialQuery = usePagedItems<'MaterialListResponse'>({ searchable: true, queryKey: ['materials', projectId], path: projectPath(projectId, '/materials'), query: { limit: 100 } });
+  const reviewListQuery = usePagedItems<'ReviewListResponse'>({ searchable: true, queryKey: ['reviews', projectId], path: projectPath(projectId, '/reviews') });
   const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
   const standard = standardQuery.data?.standard;
   const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
@@ -151,7 +153,8 @@ export function ReviewsPage() {
   const inputLoading = standardQuery.isLoading || materialQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
-    <PageHeading eyebrow="复核 / 预审" title="按生效项目标准检查材料" detail="每份报告会保留使用的要求集、评分标准和材料版本 ID。AI 预审意见供团队内部讨论，不构成官方评审结论。" />
+    <LoadMore query={reviewListQuery} />
+    <PageHeading eyebrow="复核 / 预审" title="成果检查" detail="依据项目生效标准核验成果。每份报告会保留使用的要求集、评分标准和材料版本 ID。AI 预审意见供团队内部讨论，不构成官方评审结论。" />
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会开始预审。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 新预审不会生成模拟报告；已有后端报告仍可查看。</div>}
 
@@ -161,7 +164,7 @@ export function ReviewsPage() {
           <p>生效标准：{standard ? `${standard.title} · v${standard.version}` : '尚未保存项目标准'}</p>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">当前材料版本 <small>至少选择 1 个，最多 10 个。报告会固定这些版本 ID。</small></div>
-            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
+            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} />
             {historyState.errors.map((error, index) => <ErrorNotice key={index} error={error} />)}
             <div className="ai-workflow-choice-list">
               {currentMaterialVersions.length === 0 ? <EmptyState title="没有当前材料版本" detail="先保存至少一份材料的正式版本。" /> : currentMaterialVersions.map((version) => {

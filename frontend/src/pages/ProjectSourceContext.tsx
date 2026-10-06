@@ -1,27 +1,21 @@
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { api, listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { ErrorNotice, Spinner, StatusPill } from '../components/ui';
 import { idempotencyKeyForIntent, completeIntent, useVisibleJobPoller } from './aiWorkflowSupport';
 import type { DataOf } from '../api/types';
 
 export function ProjectSourceContext({ projectId, enabled, selected, onSelection, onReady }: { projectId: string; enabled: boolean; selected: string[]; onSelection: (versionId: string, checked: boolean) => void; onReady: (versionId: string, ready: boolean) => void }) {
-  const sources = useQuery({ queryKey: ['project-assistant-sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) });
-  useEffect(() => {
-    if (!sources.data) return;
-    const activeVersions = new Set(sources.data.map(source => source.currentVersionId).filter(Boolean));
-    for (const versionId of selected) if (!activeVersions.has(versionId)) {
-      onSelection(versionId, false);
-      onReady(versionId, false);
-    }
-  }, [sources.data, selected, onSelection, onReady]);
+  const sources = usePagedItems<'SourceListResponse'>({ searchable: true, queryKey: ['project-assistant-sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
   return <section className="stack">
     <strong>优先参考来源（可选固定版本）</strong>
 
     {sources.isLoading && <Spinner label="读取项目资料" />}
-    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}
+    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}<LoadMore query={sources} />
     {sources.data?.length === 0 && <p className="form-note">尚无项目来源；可先上传资料，也可仅按你填写的目标发起拆解。</p>}
     {sources.data?.map(source => <SourceContextRow key={source.sourceId} projectId={projectId} source={source} enabled={enabled} selected={source.currentVersionId ? selected.includes(source.currentVersionId) : false} selectionFull={selected.length >= 5} onSelection={onSelection} onReady={onReady} />)}
     <Link className="button button-quiet button-small" to={`/app/projects/${projectId}/sources`}>查看原文件、缺页处理与文件总结</Link>

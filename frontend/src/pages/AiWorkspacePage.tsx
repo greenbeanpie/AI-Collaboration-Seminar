@@ -1,9 +1,12 @@
+import { FixedMaterialVersions } from './FixedMaterialVersions';
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { ProjectSearchOption,ProjectToolCalls,ProjectSearchCitations } from './ProjectAiTools';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, FileText, Play, RefreshCw, Send } from 'lucide-react';
-import { api, ApiError, projectPath, listAllItems } from '../api/client';
+import { api, ApiError, projectPath } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -18,7 +21,7 @@ type AdoptionIntent = { signature: string; body: { materialId: string; expectedR
 const modeOptions = [
   { value: 'do', label: '代做', detail: '生成可编辑草稿' },
   { value: 'guide', label: '带做', detail: '逐步提问并共同形成成果' },
-  { value: 'review_only', label: '只审', detail: '检查已有材料并给出意见' },
+  { value: 'review_only', label: '自由审阅', detail: '检查已有材料并给出意见；不依据项目标准评分' },
 ] as const;
 
 const pendingJobKey = (projectId: string) => `ai-office:pending-agent-job:${projectId}`;
@@ -47,21 +50,12 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const [searchQuery,setSearchQuery]=useState('');
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const taskQuery = useQuery({ queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }) });
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const sourceQuery = useQuery({ queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }) });
-  const sessionListQuery = useQuery({
-    queryKey: ['agentSessions', projectId],
-    queryFn: () => listAllItems<'AgentSessionListResponse'>(projectPath(projectId, '/agent-sessions'), { status: 'all', limit: 100 }, { requireNextCursor: true }),
-    staleTime: 10_000,
-  });
+  const taskQuery = usePagedItems<'TaskListResponse'>({ queryKey: ['tasks', projectId], path: projectPath(projectId, '/tasks'), query: { limit: 100 } });
+  const materialQuery = usePagedItems<'MaterialListResponse'>({ queryKey: ['materials', projectId], path: projectPath(projectId, '/materials'), query: { limit: 100 } });
+  const sourceQuery = usePagedItems<'SourceListResponse'>({ queryKey: ['sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
+  const sessionListQuery = usePagedItems<'AgentSessionListResponse'>({ queryKey: ['agentSessions', projectId], staleTime: 10_000, path: projectPath(projectId, '/agent-sessions'), query: { status: 'all', limit: 100 } });
   const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
   const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
-  const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
-    queryKey: ['materialVersions', projectId, material.materialId],
-    queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
-    staleTime: 15_000,
-  })) });
   const sourceVersionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({
     queryKey: ['sourceVersion', projectId, source.sourceId, source.currentVersionId],
     queryFn: () => api.get<'SourceVersionResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/versions/${encodeURIComponent(source.currentVersionId!)}`)),
@@ -96,15 +90,6 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const currentJobId = pendingAgentJob?.entityId === selectedSessionId ? pendingAgentJob.jobId : null;
   const job = useVisibleJobPoller(currentJobId);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
-  const selectedMaterials = useMemo(() => materials.flatMap((material, index) => (materialVersionQueries[index]?.data ?? []).map((version) => ({
-    versionId: version.versionId,
-    materialId: material.materialId,
-    title: material.title,
-    revision: version.revision,
-    current: version.versionId === material.currentVersionId,
-    origin: version.origin,
-    createdAt: version.createdAt,
-  }))), [materials, materialVersionQueries]);
   const selectedSources = useMemo(() => sources.filter((source) => source.currentVersionId).map((source) => {
     const queryIndex = sources.filter((item) => item.currentVersionId).findIndex((item) => item.sourceId === source.sourceId);
     return { ...source, version: sourceVersionQueries[queryIndex]?.data };
@@ -223,18 +208,19 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
         ? null
         : <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 生成和答辩辅导已停用；此处不会展示或生成模拟 AI 内容。已有真实会话仍可查看。</div>;
 
-  const materialErrors = materialVersionQueries.filter((query) => query.error);
   const sourceErrors = sourceVersionQueries.filter((query) => query.error);
   const isLoadingInputs = taskQuery.isLoading || materialQuery.isLoading || sourceQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
+    <LoadMore query={sessionListQuery} />
+    <LoadMore query={taskQuery} />
     {!embedded && <PageHeading eyebrow="资料 / 成果材料" title="AI 协助成果" detail="选择真实任务、材料和来源版本。AI 输出始终是待复核草稿，不会自动完成任务或覆盖正式材料。" />}
     {capabilityStatus}
 
     <div className="ai-workflow-grid">
       <SectionCard title="发起 AI 补位" detail="输入会发送至项目服务端，并由当前后端模型能力处理。">
         {isLoadingInputs ? <Spinner label="正在读取项目任务、材料和来源" /> : <form className="ai-workflow-form-grid" onSubmit={(event) => void handleCreateSession(event)}>
-          <Field aiReference label="协作方式" hint="代做和带做产出草稿；只审只给出审阅意见。">
+          <Field aiReference label="协作方式" hint="代做和带做产出草稿；自由审阅只给出意见，不依据项目标准核验。">
             <select className="ai-workflow-select" value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
               {modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.detail}</option>)}
             </select>
@@ -254,21 +240,12 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
           </Field>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">材料版本 <small>选择后会传入这些不可变版本 ID；最多选择 10 个。</small></div>
-            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}
-            {materialErrors.map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
-            <div className="ai-workflow-choice-list">
-              {selectedMaterials.length === 0 ? <EmptyState title="没有可选的材料版本" detail="先到材料中心创建材料并保存一个正式版本。" /> : selectedMaterials.map((version) => {
-                const checked = selectedMaterialVersionIds.includes(version.versionId);
-                return <label className="ai-workflow-choice" key={version.versionId}><AiReferenceBadge ariaHidden />
-                  <input type="checkbox" checked={checked} disabled={!checked && selectedMaterialVersionIds.length >= 10} onChange={() => setSelectedMaterialVersionIds((current) => checked ? current.filter((id) => id !== version.versionId) : [...current, version.versionId])} />
-                  <span className="ai-workflow-choice-copy"><strong>{version.title} · v{version.revision}{version.current ? '（当前）' : ''}</strong><small>{version.origin === 'ai_adoption' ? 'AI 草稿采纳' : '人工版本'} · {formatWorkflowDate(version.createdAt)} · {version.versionId}</small></span>
-                </label>;
-              })}
-            </div>
+            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} />
+            <FixedMaterialVersions projectId={projectId} selected={selectedMaterialVersionIds} onChange={setSelectedMaterialVersionIds} />
           </div>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">通知与项目来源版本 <small>当前后端只提供每个来源的当前版本。</small></div>
-            {sourceQuery.error && <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} />}
+            {sourceQuery.error && <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} />}<LoadMore query={sourceQuery} />
             {sourceErrors.map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
             <div className="ai-workflow-choice-list">
               {selectedSources.length === 0 ? <EmptyState title="没有可选的来源版本" detail="来源导入后会在这里显示当前版本。" /> : selectedSources.map((source) => {

@@ -1,3 +1,5 @@
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -5,7 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Ban, Check, MessageSquareText, Play, RefreshCw, Send } from 'lucide-react';
 import { RehearsalVoicePanel } from './RehearsalVoicePanel';
 import { ReferencePicker } from './ReferencePicker';
-import { api, projectPath, listAllItems } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { projectPermission } from '../project-permissions';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
@@ -25,8 +27,8 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const [params] = useSearchParams();
   const linkedId = requestedId ?? params.get('rehearsalId') ?? params.get('rehearsal') ?? '';
   const capabilities = useCapabilities();
-  const materialQuery = useQuery({ queryKey: ['materials', projectId], queryFn: () => listAllItems<'MaterialListResponse'>(projectPath(projectId, '/materials'), { limit: 100 }) });
-  const memberQuery = useQuery({ queryKey: ['members', projectId], queryFn: () => listAllItems<'MemberListResponse'>(projectPath(projectId, '/members')) });
+  const materialQuery = usePagedItems<'MaterialListResponse'>({ searchable: true, queryKey: ['materials', projectId], path: projectPath(projectId, '/materials'), query: { limit: 100 } });
+  const memberQuery = usePagedItems<'MemberListResponse'>({ searchable: true, queryKey: ['members', projectId], path: projectPath(projectId, '/members') });
 
   const members = useMemo(() => memberQuery.data ?? [], [memberQuery.data]);
 
@@ -35,7 +37,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const [memberId, setMemberId] = useState('');
   const [selectedMaterialVersionIds, setSelectedMaterialVersionIds] = useState<string[]>([]);
   const [selectedSourceVersionIds, setSelectedSourceVersionIds] = useState<string[]>([]);
-  const historyQuery = useQuery({ queryKey: ['rehearsals', projectId], queryFn: () => listAllItems<'RehearsalListResponse'>(projectPath(projectId, '/rehearsals')) });
+  const historyQuery = usePagedItems<'RehearsalListResponse'>({ searchable: true, queryKey: ['rehearsals', projectId], path: projectPath(projectId, '/rehearsals') });
   const [localRecentIds, setRecentIds] = useState(() => readRecentIds(recentIdsKey(projectId)));
   const recentIds = Array.from(new Set([...(linkedId ? [linkedId] : []), ...(historyQuery.data ?? []).map(r => r.rehearsalId), ...localRecentIds]));
   const [selectedRehearsalId, setSelectedRehearsalId] = useState(() => linkedId || readRecentIds(recentIdsKey(projectId))[0] || '');
@@ -219,6 +221,8 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const createDisabled = !canInitiate || !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || (scope === 'member' && !memberId);
 
   return <div className="page-stack ai-workflow-layout">
+    <LoadMore query={memberQuery} />
+    <LoadMore query={materialQuery} />
     {!embedded && <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />}
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会发起演练。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 不会创建模拟问题、追问或总结；已有真实演练可继续查看。</div>}
@@ -246,7 +250,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
       </SectionCard>}
 
       <SectionCard title={embedded ? '答辩问答与反馈' : '最近的真实演练'} detail="问答由后端保存，结束后冻结本轮证据。">
-        {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}
+        {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}<LoadMore query={historyQuery} />
         {recentIds.length > 0 ? <div className="stack">
           {!embedded && <div className="ai-workflow-session-picker">
             <select className="ai-workflow-select" aria-label="选择最近的答辩演练" value={selectedRehearsalId} onChange={(event) => setSelectedRehearsalId(event.target.value)}>

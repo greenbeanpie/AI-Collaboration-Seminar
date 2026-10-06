@@ -1,6 +1,9 @@
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
+import { completeTaskGraph } from '../features/pagination/taskGraph';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useMemo, useState } from 'react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, CalendarDays, CheckCheck, Clock3, FolderKanban, LayoutGrid, List, Plus, UsersRound } from 'lucide-react';
 import { listAllItems } from '../api/client';
@@ -50,10 +53,10 @@ export function DashboardPage() {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [searchParams, setSearchParams] = useSearchParams();
   const archiveOpen = searchParams.get('archive') === '1';
-  const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => listAllItems<'ProjectListResponse'>('/api/v1/projects', { status: 'all', limit: 100 }, { requireNextCursor: true }) });
+  const projectsQuery = usePagedItems<'ProjectListResponse'>({ queryKey: ['projects'], path: '/api/v1/projects', query: { status: 'all', limit: 100 } });
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const taskQueries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['tasks', project.id], queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/tasks`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000,
+    queryKey: ['tasks', project.id], queryFn: () => completeTaskGraph(project.id), staleTime: 10_000,
   })) });
   const memberQueries = useQueries({ queries: projects.map(project => ({
     queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`), staleTime: 10_000, enabled: project.status !== 'archived',
@@ -61,7 +64,7 @@ export function DashboardPage() {
   const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data ? uniqueProjectTasks(taskQueries[index].data) : undefined, members: memberQueries[index]?.data, error: taskQueries[index]?.error, memberError: memberQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
   const current = entries.filter(entry => entry.status !== 'archived');
   const archived = entries.filter(entry => entry.status === 'archived');
-  const available = !projectsQuery.error && current.every(entry => entry.tasks !== undefined && !entry.error);
+  const available = !projectsQuery.error && !projectsQuery.hasNextPage && current.every(entry => entry.tasks !== undefined && !entry.error);
   const allTasks = current.flatMap(entry => entry.tasks ?? []);
   const actionableAvailable = available && current.every(entry => entry.members !== undefined && !entry.memberError);
   const pendingProjects = pendingProjectGroups(current);
@@ -76,8 +79,9 @@ export function DashboardPage() {
 
   if (projectsQuery.isLoading) return <div className="content-wrap"><Spinner label="正在加载项目" /></div>;
   return <div className="page-stack dashboard-page">
+    {projectsQuery.hasNextPage && <p className="form-note">还有项目尚未加载；跨项目统计将在加载全部项目后显示。</p>}
     <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="让每个项目有序向前，让下一步清晰可见。" action={<Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link>} />
-    {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}
+    {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}<LoadMore query={projectsQuery} />
     <div className="dashboard-metrics">
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>
       <DeadlineMetric tasks={pending} available={actionableAvailable} />

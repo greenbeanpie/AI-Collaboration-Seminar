@@ -8,7 +8,7 @@ vi.mock('./FixedMaterialVersions', () => ({ FixedMaterialVersions: () => <p>材�
 afterEach(cleanup);
 it('returns from its independent page with selections and parent draft intact, preserving historical source versions', () => {
   const client=new QueryClient({defaultOptions:{queries:{staleTime:Infinity,retry:false}}});
-  client.setQueryData(['project-assistant-sources','p'],[{sourceId:'source',title:'通知',currentVersionId:'new'}]);
+  client.setQueryData(['project-assistant-sources','p','pages',{limit:100},''],{pages:[{items:[{sourceId:'source',title:'通知',currentVersionId:'new'}],nextCursor:null}],pageParams:[null]});
   function Harness(){const [selection,setSelection]=useState<ReferenceSelection>({sourceVersionIds:['old'],materialVersionIds:[]});return <><input aria-label="目标草稿" defaultValue="保留我的目标"/><ReferencePicker projectId="p" {...selection} onChange={setSelection}/><p>{selection.sourceVersionIds.join(',')}</p></>;}
   render(<QueryClientProvider client={client}><MemoryRouter><Harness/></MemoryRouter></QueryClientProvider>);
   fireEvent.click(screen.getByRole('button',{name:'选择优先参考文件'}));

@@ -1,3 +1,4 @@
+import { completeTaskGraph } from '../features/pagination/taskGraph';
 import { useSession } from '../auth';
 import { PendingTaskPreview } from '../components/PendingTaskPreview';
 import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
@@ -19,7 +20,7 @@ export function ProjectOverviewPage() {
   const invitationRequests = useQuery({ queryKey: ['invitation-requests', projectId], queryFn: () => projectRequest<{ items: { status: string }[] }>(projectId, '/invitation-requests'), enabled: projectPermission(project, 'teamManage') && navigator.onLine !== false });
   const pendingInvitations = invitationRequests.data?.items.filter(item => item.status === 'pending').length ?? 0;
   const queries = useQueries({ queries: [
-    { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
+    { queryKey: ['tasks', projectId], queryFn: () => completeTaskGraph(projectId) },
     { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) },
     { queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) },
   ] });
