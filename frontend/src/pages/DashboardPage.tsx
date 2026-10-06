@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, CalendarDays, CheckCheck, Clock3, FolderKanban, LayoutGrid, List, Plus, UsersRound } from 'lucide-react';
-import { listAllItems } from '../api/client';
+import { projectRequest } from '../api/simplification';
 import type { ProjectSummary, Task } from '../api/types';
 import { ErrorNotice, EmptyState, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
 import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
@@ -60,7 +60,7 @@ export function DashboardPage() {
     queryKey: ['tasks', project.id], queryFn: () => completeTaskGraph(project.id), staleTime: 10_000,
   })) });
   const memberQueries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`), staleTime: 10_000, enabled: project.status !== 'archived',
+    queryKey: ['members', project.id], queryFn: async () => { const graph = await projectRequest<{ memberIds: string[] }>(project.id, '/tasks/graph'); if (!Array.isArray(graph.memberIds)) throw new Error('完整成员统计尚未读取。'); return graph.memberIds.map(userId => ({ userId })); }, staleTime: 10_000, enabled: project.status !== 'archived',
   })) });
   const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data ? uniqueProjectTasks(taskQueries[index].data) : undefined, members: memberQueries[index]?.data, error: taskQueries[index]?.error, memberError: memberQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
   const current = entries.filter(entry => entry.status !== 'archived');

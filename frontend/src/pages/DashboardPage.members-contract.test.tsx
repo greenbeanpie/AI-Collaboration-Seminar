@@ -6,13 +6,13 @@ import { DashboardPage } from './DashboardPage';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('loads actionable totals on a cold cache with the real unpaginated member response', async () => {
+it('loads actionable totals on a cold cache with the complete graph membership read model', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), 'http://localhost').pathname;
     let data: unknown;
     if (path === '/api/v1/projects') data = { items: [{ id: 'p', name: '真实成员格式', status: 'active', myRole: 'owner', deadlineDate: null, deadlinePrecision: 'unknown' }], nextCursor: null };
     else if (path.endsWith('/members')) data = { items: [{ userId: 'member' }] };
-    else if (path.endsWith('/tasks/graph')) data = { items: [{ taskId: 't', title: '已分配待推进', status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', dependsOnTaskIds: [], unfinishedDependencyIds: [], revision: 1, dueDate: null, duePrecision: 'unknown' }], nextCursor: null };
+    else if (path.endsWith('/tasks/graph')) data = { memberIds: ['member'], items: [{ taskId: 't', title: '已分配待推进', status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', dependsOnTaskIds: [], unfinishedDependencyIds: [], revision: 1, dueDate: null, duePrecision: 'unknown' }], nextCursor: null };
     else throw new Error(`Unexpected request ${path}`);
     return new Response(JSON.stringify({ data, requestId: 'contract-fixture' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
