@@ -1,6 +1,6 @@
 # Android API-only smoke verification
 
-Run only against an isolated **debug** APK built with `desktop/tauri.android.smoke.conf.json` and `BUWEI_NATIVE_SMOKE=1`. Its fixed loopback entry is `http://127.0.0.1:5173`; a release APK always uses the production HTTPS entry. Never enable WebView debugging or loopback entry in a distributed APK.
+Run only against an isolated **debug** APK built with `desktop/scripts/build-android.ps1 -Debug -Smoke -Targets x86_64`. The build script injects `BUWEI_DESKTOP_DEV_ORIGIN` and a matching capability for that build process only. Its fixed loopback entry is `http://127.0.0.1:5173`; a release APK always uses the production HTTPS entry. Never enable WebView debugging or loopback entry in a distributed APK.
 
 ## Run
 
@@ -19,3 +19,11 @@ Reports are written to `output/android-smoke/android-smoke-report.json` and `ser
 ## Acceptance boundaries
 
 System SAF selection/export, Android permission prompts, real production login credentials, physical-device behavior, true airplane-mode offline entry, APK coverage on other Android versions, and long-term battery use require separate acceptance. BlueStacks metrics do not represent a phone. No paid provider or production backend is exercised by this fixture suite.
+
+## Actual frontend/PWA offline restart
+
+After the native fixture suite, stop its port-5173 server. Run `node desktop/scripts/android-web-smoke.mjs` with the same debug APK. Set `BUWEI_FRONTEND_DIST` to the integrated build's `frontend/dist` if running the script from a separate verification worktree.
+
+This script serves the actual compiled React/PWA with a local synthetic backend, waits for the application's real `prepareProject` and Workbox precache, visits the real task page, then completely stops the HTTP server. It commits an explicit synthetic pending edit into the application's existing IndexedDB schema, force-stops/restarts the Android app, and verifies the real cached shell, cached project, pending edit and optimistic task display still work with no server. It does not toggle airplane mode or manipulate any UI. The seeded edit is described separately from normal form creation, so this is evidence for offline entry/durability/consumption rather than an end-to-end form editing claim.
+
+The report is `output/android-web-smoke/android-web-smoke-report.json`. This leaves only synthetic cache/queue data in the debug app. The script never clears real app storage or calls production APIs. The native fixture suite must precede this suite because the installed ServiceWorker subsequently intercepts the same loopback origin's application navigation.
