@@ -4,6 +4,7 @@ import type { Env, SessionUser } from '../env';
 import { hmacSha256Hex, newId, nowIso, sha256Hex } from '../core/db';
 import { invalidState, rateLimited, unauthenticated, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
+import { verifyTurnstile } from './turnstile';
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from './password';
 
 export const SESSION_TTL_SECONDS = LIMITS.sessionTtlDays * 86_400;
@@ -31,8 +32,9 @@ async function sessionValues(userId: string) {
   return { id: newId(), userId, token, hash: await sha256Hex(token), expiresAt: new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString(), createdAt: nowIso() };
 }
 
-export async function registerPasswordAccount(env: Env, input: { username: string; password: string; invitationCode: string; email?: string | null }, ip: string): Promise<{ user: SessionUser; token: string }> {
+export async function registerPasswordAccount(env: Env, input: { username: string; password: string; invitationCode: string; email?: string | null; turnstileToken?: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
   await consumePasswordRateLimit(env, 'register-ip', ip, 10, 3600);
+  await verifyTurnstile(env, input.turnstileToken, 'register', ip);
   const username = input.username.trim(); const usernameNorm = normalizeUsername(username); const email = normalizeEmail(input.email);
   const codeHash = await sha256Hex(input.invitationCode.trim().toUpperCase());
   const invitation = await env.DB.prepare('SELECT id FROM account_invitations WHERE code_hash = ?1 AND used_at IS NULL').bind(codeHash).first();
@@ -66,10 +68,11 @@ export async function registerPasswordAccount(env: Env, input: { username: strin
   return { user: { id: userId, username, email, displayName: username, role: 'user', isAdmin: false }, token: session.token };
 }
 
-export async function loginPasswordAccount(env: Env, input: { account: string; password: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
+export async function loginPasswordAccount(env: Env, input: { account: string; password: string; turnstileToken?: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
   const identity = input.account.trim().toLowerCase();
   await consumePasswordRateLimit(env, 'login-ip', ip, 30, 3600);
   await consumePasswordRateLimit(env, 'login-account', identity, 10, 900);
+  await verifyTurnstile(env, input.turnstileToken, 'login', ip);
   const row = await env.DB.prepare(`SELECT a.user_id, a.username, a.contact_email, a.password_hash, a.is_admin, a.account_role, u.display_name
     FROM auth_accounts a JOIN users u ON u.id = a.user_id
     WHERE (a.username_norm = ?1 OR a.contact_email_norm = ?1) AND a.password_hash IS NOT NULL`)

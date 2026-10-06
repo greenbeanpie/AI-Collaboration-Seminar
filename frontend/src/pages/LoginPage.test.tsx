@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './LoginPage';
@@ -9,9 +9,9 @@ const capabilities: Capability = { apiVersion: 'v1', environment: 'local', featu
   limits: { maxMediaBytes:null, recommendedCloudFileBytes: 10485760, recommendedCloudPdfPages: 30, uploadPartBytes: 8388608, maxFileBytes: 10485760, maxPdfPages: 30, pageImageMaxEdge: 2000, pageImageMaxBytes: 2097152, listDefaultPageSize: 20, listMaxPageSize: 100, concurrentAiTasksPerProject: 2, assignmentSuggestionMaxTasks: 20 },
   competitionTemplate: { teamSizeLimit: 5 }, authentication: { passwordEnabled: true, invitationRequired: true, passwordMinLength: 12, mode: 'password', turnstileRequired: false, emailReady: false } };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify({ data, requestId: 'test-request' }), { status, headers: { 'content-type': 'application/json' } });
-function setup(fail = false) {
+function setup(fail = false, configuration: Capability = capabilities) {
   const mock = vi.fn(async (path: string) => {
-    if (path.endsWith('/capabilities')) return response(capabilities);
+    if (path.endsWith('/capabilities')) return response(configuration);
     if (path.endsWith('/auth/sessions') || path.endsWith('/auth/register')) {
       if (fail) return new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: '账号或密码错误', retryable: false }, requestId: 'login-trace' }), { status: 401, headers: { 'content-type': 'application/json' } });
       return response({ user: { id: 'account-1', email: null, username: 'team_member', displayName: 'team_member', isAdmin: false } }, 201);
@@ -20,7 +20,7 @@ function setup(fail = false) {
   });
   vi.stubGlobal('fetch', mock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter><Routes><Route path="/" element={<LoginPage capabilities={capabilities} />} /><Route path="/app" element={<h1>真实工作区</h1>} /></Routes></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter><Routes><Route path="/" element={<LoginPage capabilities={configuration} />} /><Route path="/app" element={<h1>真实工作区</h1>} /></Routes></MemoryRouter></QueryClientProvider>);
   return { mock, client };
 }
 function fillRegistration(email?: string) {
@@ -30,7 +30,7 @@ function fillRegistration(email?: string) {
   fireEvent.change(screen.getByLabelText('16 位注册邀请码', { exact: false }), { target: { value: 'ABCD1234EFGH5678' } });
   if (email) fireEvent.change(screen.getByLabelText('邮箱地址（选填）'), { target: { value: email } });
 }
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); delete window.turnstile; vi.unstubAllGlobals(); });
 
 describe('password login and invitation registration', () => {
   it('submits account/password and restores the real session on keyboard submission', async () => {
@@ -82,5 +82,48 @@ describe('password login and invitation registration', () => {
     expect(screen.getByLabelText('密码')).toHaveValue('');
     fireEvent.click(screen.getByRole('tab', { name: '注册' }));
     expect(screen.getByLabelText('16 位注册邀请码', { exact: false })).toHaveValue('');
+  });
+});
+
+
+describe('Turnstile password protection', () => {
+  it('gates login, submits a token, and resets after rejection', async () => {
+    const renderWidget = vi.fn<NonNullable<typeof window.turnstile>['render']>(() => 'login-widget');
+    const remove = vi.fn(); window.turnstile = { render: renderWidget, remove };
+    const { mock } = setup(true, { ...capabilities, authentication: { ...capabilities.authentication, turnstileRequired: true, turnstileSiteKey: 'public-site-key' } });
+    fireEvent.change(screen.getByLabelText('用户名或邮箱'), { target: { value: 'team_member' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'wrong-password' } });
+    expect(screen.getByRole('button', { name: '登录工作区' })).toBeDisabled();
+    await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(1));
+    expect(renderWidget.mock.calls[0]![1].action).toBe('login');
+    act(() => renderWidget.mock.calls[0]![1].callback('fresh-token'));
+    fireEvent.click(screen.getByRole('button', { name: '登录工作区' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('账号或密码错误');
+    const call = mock.mock.calls.find(([path]) => path.endsWith('/auth/sessions')) as unknown as [string, RequestInit];
+    expect(JSON.parse(String(call[1].body)).turnstileToken).toBe('fresh-token');
+    await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(2));
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '登录工作区' })).toBeDisabled();
+  });
+  it('uses registration action and clears tokens when changing modes', async () => {
+    const renderWidget = vi.fn<NonNullable<typeof window.turnstile>['render']>(() => 'widget');
+    window.turnstile = { render: renderWidget, remove: vi.fn() };
+    const { mock } = setup(false, { ...capabilities, authentication: { ...capabilities.authentication, turnstileRequired: true, turnstileSiteKey: 'public-site-key' } });
+    await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(1));
+    act(() => renderWidget.mock.calls[0]![1].callback('login-token'));
+    fillRegistration();
+    expect(screen.getByRole('button', { name: '注册并登录' })).toBeDisabled();
+    await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(2));
+    expect(renderWidget.mock.calls[1]![1].action).toBe('register');
+    act(() => renderWidget.mock.calls[1]![1].callback('register-token'));
+    fireEvent.click(screen.getByRole('button', { name: '注册并登录' }));
+    await screen.findByRole('heading', { name: '真实工作区' });
+    const call = mock.mock.calls.find(([path]) => path.endsWith('/auth/register')) as unknown as [string, RequestInit];
+    expect(JSON.parse(String(call[1].body)).turnstileToken).toBe('register-token');
+  });
+  it('fails closed when required without a site key', () => {
+    setup(false, { ...capabilities, authentication: { ...capabilities.authentication, turnstileRequired: true, turnstileSiteKey: null } });
+    expect(screen.getByRole('alert')).toHaveTextContent('人机验证尚未配置');
+    expect(screen.getByRole('button', { name: '登录工作区' })).toBeDisabled();
   });
 });

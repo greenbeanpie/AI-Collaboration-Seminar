@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import type { Capability, User } from '../api/types';
 import { useCapabilities } from '../auth';
 import { ErrorNotice, Field, Spinner } from '../components/ui';
+import { TurnstileChallenge } from '../components/TurnstileChallenge';
 import { ThemeSelector } from '../components/ThemeSelector';
 
 type Props = { capabilities?: Capability; capabilityError?: unknown; onRetryCapabilities?: () => unknown };
@@ -25,19 +26,26 @@ export function LoginPage(props: Props) {
   const [invitationCode, setInvitationCode] = useState('');
   const [email, setEmail] = useState('');
   const [error, setError] = useState<unknown>(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
+  const turnstileRequired = capabilities?.authentication?.turnstileRequired === true;
+  const turnstileSiteKey = capabilities?.authentication?.turnstileSiteKey;
   const minPasswordLength = capabilities?.authentication?.passwordMinLength ?? 12;
   const authenticationUnavailable = capabilities?.authentication?.passwordEnabled === false;
   const authenticate = useMutation({
     mutationFn: async () => {
       if (authenticationUnavailable) throw new Error('密码登录服务尚未启用，请联系系统管理员。');
+      if (!capabilities) throw new Error('请等待系统能力加载完成后重试。');
+      if (turnstileRequired && (!turnstileSiteKey || !turnstileToken)) throw new Error('请先完成人机验证。');
+      const challenge = turnstileRequired ? { turnstileToken } : {};
       if (mode === 'register') {
         if (!/^[A-Za-z0-9_-]{3,32}$/.test(username.trim())) throw new Error('用户名须为 3–32 位字母、数字、下划线或连字符。');
         if (password.length < minPasswordLength || password.length > 128) throw new Error(`密码须为 ${minPasswordLength}–128 位。`);
         if (!/^[A-Za-z0-9]{16}$/.test(invitationCode.trim())) throw new Error('请输入管理员提供的 16 位注册邀请码。');
-        return api.post<'AuthSessionResponse'>('/api/v1/auth/register', { username: username.trim(), password, invitationCode: invitationCode.trim(), ...(email.trim() ? { email: email.trim() } : {}) });
+        return api.post<'AuthSessionResponse'>('/api/v1/auth/register', { ...challenge, username: username.trim(), password, invitationCode: invitationCode.trim(), ...(email.trim() ? { email: email.trim() } : {}) });
       }
       if (!account.trim() || !password) throw new Error('请输入账号与密码。');
-      return api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { account: account.trim(), password });
+      return api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { ...challenge, account: account.trim(), password });
     },
     onSuccess: (result) => {
       setPassword(''); setInvitationCode(''); setError(null);
@@ -47,9 +55,10 @@ export function LoginPage(props: Props) {
       navigate(returnTo && /^\/app\/agent-bridges\/connect\?pairing=[a-zA-Z0-9-]+$/.test(returnTo) ? returnTo : '/app', { replace: true });
     },
     onError: setError,
+    onSettled: () => { setTurnstileToken(''); setChallengeAttempt(attempt => attempt + 1); },
   });
   function switchMode(next: 'login' | 'register') {
-    setMode(next); setPassword(''); setInvitationCode(''); setError(null);
+    setTurnstileToken(''); setChallengeAttempt(attempt => attempt + 1); setMode(next); setPassword(''); setInvitationCode(''); setError(null);
   }
   return <main className="auth-page">
     <div className="auth-orb orb-one" /><div className="auth-orb orb-two" />
@@ -63,6 +72,7 @@ export function LoginPage(props: Props) {
           <h2>{mode === 'login' ? '欢迎回来' : '创建协作账户'}</h2><p className="auth-subtitle">{mode === 'login' ? '使用用户名或已绑定邮箱与密码登录。' : '注册需要系统管理员提供的单次邀请码；邮箱可选。'}</p>
           {capabilityError !== null && capabilityError !== undefined && <ErrorNotice error={capabilityError} onRetry={() => { void (props.onRetryCapabilities ?? capabilityQuery.refetch)(); }} />}
           {authenticationUnavailable && <p role="alert">密码登录服务尚未启用，请联系系统管理员。</p>}
+          {searchParams.get('localLogout') === '1' && <p role="status">已退出本机工作区；离线时无法撤销服务端会话，请联网后重新登录并退出。</p>}
           {searchParams.get('passwordChanged') === '1' && <p role="status">密码已修改，全部设备已退出。请使用新密码登录。</p>}
       <form onSubmit={(event) => { event.preventDefault(); if (!authenticate.isPending) { setError(null); authenticate.mutate(); } }}>
             <fieldset className="auth-fields" disabled={authenticate.isPending}>
@@ -72,7 +82,8 @@ export function LoginPage(props: Props) {
               </>}
               <Field label="密码" hint={mode === 'register' ? `${minPasswordLength}–128 位；请使用独立密码并妥善保存。` : undefined}><input className="input" name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'register' ? minPasswordLength : undefined} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /></Field>
               {mode === 'register' && <Field label="16 位注册邀请码" hint="由系统管理员提供，成功注册后即失效；与项目邀请不同。"><input className="input code-input" name="invitationCode" autoComplete="off" pattern="[A-Za-z0-9]{16}" minLength={16} maxLength={16} required value={invitationCode} onChange={event => setInvitationCode(event.target.value.trim())} /></Field>}
-              <button className="button button-primary button-wide" type="submit" disabled={authenticationUnavailable}>{authenticate.isPending ? <Spinner label={mode === 'login' ? '正在登录' : '正在注册'} /> : mode === 'login' ? '登录工作区' : '注册并登录'}</button>
+              {turnstileRequired && (turnstileSiteKey ? <TurnstileChallenge key={mode} siteKey={turnstileSiteKey} action={mode} reset={challengeAttempt} onToken={setTurnstileToken} onError={setError} /> : <p role="alert">人机验证尚未配置，请联系系统管理员。</p>)}
+              <button className="button button-primary button-wide" type="submit" disabled={authenticationUnavailable || !capabilities || (turnstileRequired && !turnstileToken)}>{authenticate.isPending ? <Spinner label={mode === 'login' ? '正在登录' : '正在注册'} /> : mode === 'login' ? '登录工作区' : '注册并登录'}</button>
             </fieldset>
           </form>
           {error !== null && <ErrorNotice error={error} />}
