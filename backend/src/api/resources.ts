@@ -22,7 +22,7 @@ const resourceSchema = z.object({
 const resourceResponse = apiEnvelope(resourceSchema, 'ResourceLibraryItemResponse');
 const listRoute = createRoute({ method: 'get', path: '/api/v1/projects/{projectId}/resource-library', tags: ['resources'],
   summary: '统一项目资料列表，保留来源和成果版本身份',
-  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), purpose: resourcePurposeSchema.optional(), deleted: z.enum(['true', 'false']).default('false'),archived:z.enum(['true','false']).default('false') }) },
+  request: { params: projectParams, query: z.object({ q:z.string().trim().max(200).optional(), cursor: z.string().optional(), limit: z.string().optional(), purpose: resourcePurposeSchema.optional(), deleted: z.enum(['true', 'false']).default('false'),archived:z.enum(['true','false']).default('false') }) },
   responses: { 200: { description: '统一资料列表', content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(resourceSchema), nextCursor: z.string().nullable() }), 'ResourceLibraryListResponse') } } } },
 });
 const getRoute = createRoute({ method: 'get', path: '/api/v1/projects/{projectId}/resource-library/{resourceType}/{resourceId}', tags: ['resources'],
@@ -76,10 +76,11 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const query = c.req.valid('query'), paging = parsePaging(query);
     const rows = await c.env.DB.prepare(`SELECT * FROM (${resourceUnion})
       WHERE (deleted_at IS NOT NULL)=?4 AND (archived_at IS NOT NULL)=?9 AND (?5 IS NULL OR purpose=?5)
+        AND (?10='' OR instr(lower(title),lower(?10))>0)
         AND (?6 IS NULL OR created_at<?6 OR (created_at=?6 AND sort_key<?7))
       ORDER BY created_at DESC,sort_key DESC LIMIT ?8`)
       .bind(member.projectId, +(member.permissions.resourceManage), member.userId, +(query.deleted === 'true'), query.purpose ?? null,
-        paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1,+(query.archived==='true')).all<ResourceRow>();
+        paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1,+(query.archived==='true'),query.q??'').all<ResourceRow>();
     const items = rows.results.slice(0, paging.limit), last = items.at(-1);
     return c.json(apiData(c, { items: items.map(toResource), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.sort_key } : undefined) ?? null }), 200);
   });

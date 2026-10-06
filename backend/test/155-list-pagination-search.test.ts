@@ -30,4 +30,14 @@ describe('server list search and aggregates',()=>{
     const search=await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/sources?q=NEEDLE&limit=1`,{headers:{cookie}});expect(search.status).toBe(200);expect((await search.json() as any).data.items).toHaveLength(1);
     expect((await SELF.fetch(`${BASE}/api/v1/projects/${foreignId}/sources/${sourceId}`,{headers:{cookie}})).status).toBe(404);
   });
+  it('resource library combines q/purpose filters and direct detail remains project-scoped',async()=>{
+    const owner=await seedUser(),projectId=await seedProject(owner.userId),foreignId=await seedProject(owner.userId),cookie=authCookie(owner.token),id=newId();
+    await env.DB.prepare("INSERT INTO sources(id,project_id,kind,title,purpose,created_by,created_at,updated_at) VALUES(?1,?2,'paste','Needle resource','reference',?3,?4,?4)").bind(id,projectId,owner.userId,nowIso()).run();
+    const url=`${BASE}/api/v1/projects/${projectId}/resource-library?q=NEEDLE&purpose=reference&limit=1`;
+    const result=await SELF.fetch(url,{headers:{cookie}});expect(result.status).toBe(200);expect((await result.json() as any).data.items).toHaveLength(1);
+    const noMatch=await SELF.fetch(url.replace('purpose=reference','purpose=output'),{headers:{cookie}});expect((await noMatch.json() as any).data.items).toHaveLength(0);
+    const detail=await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/resource-library/source/${id}`,{headers:{cookie}});expect(detail.status).toBe(200);expect((await detail.json() as any).data.resourceId).toBe(id);
+    expect((await SELF.fetch(`${BASE}/api/v1/projects/${foreignId}/resource-library/source/${id}`,{headers:{cookie}})).status).toBe(404);
+  });
+
 });
