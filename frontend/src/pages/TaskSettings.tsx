@@ -12,7 +12,7 @@ const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b
 export type SettingsCloseGuard = RefObject<(() => Promise<boolean>) | null>;
 
 export function TaskSettings({ projectId, task, tasks, graphRevision, canManage, meId, members, onChanged, closeGuard, stateLabel, statusContent }: {
-  projectId: string; task: CollaborationTask; tasks: CollaborationTask[]; graphRevision?: number; canManage: boolean; meId?: string;
+  projectId: string; task: CollaborationTask; tasks: Pick<CollaborationTask, 'taskId' | 'title'>[]; graphRevision?: number; canManage: boolean; meId?: string;
   members: { userId: string; displayName: string }[]; onChanged: () => Promise<void>; closeGuard?: SettingsCloseGuard; stateLabel: string; statusContent: ReactNode;
 }) {
   const [draft, setDraft] = useState(() => draftOf(task));

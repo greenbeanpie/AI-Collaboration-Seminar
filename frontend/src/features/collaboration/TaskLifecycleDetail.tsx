@@ -16,7 +16,7 @@ import { RemovedSourceNotice } from '../../pages/RemovedSourceNotice';
 import { decisionLabels, taskStateLabel } from './labels';
 import { JobProgress } from './JobProgress';
 
-export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRevision, owner, meId, members, onChanged }: { closeGuard?: SettingsCloseGuard; view: 'submit' | 'settings'; projectId: string; task: CollaborationTask; tasks: CollaborationTask[]; graphRevision?: number; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; onChanged: () => Promise<void> }) {
+export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRevision, owner, meId, members, onChanged }: { closeGuard?: SettingsCloseGuard; view: 'submit' | 'settings'; projectId: string; task: CollaborationTask; tasks: Pick<CollaborationTask, 'taskId' | 'title'>[]; graphRevision?: number; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; onChanged: () => Promise<void> }) {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const historyPage = searchParams.get('view') === 'history' && searchParams.get('historyType') === 'submissions';

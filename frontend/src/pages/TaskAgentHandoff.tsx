@@ -35,8 +35,7 @@ function LegacyTaskAgentHandoff({ projectId, task, tasks }: { projectId: string;
         const id = pending.pop()!;
         if (seen.has(id)) continue;
         seen.add(id);
-        const dependency = tasks.find(item => item.taskId === id);
-        if (!dependency) throw new Error('部分前置任务尚未读取，请刷新任务列表后重试。');
+        const dependency = tasks.find(item => item.taskId === id) ?? await projectRequest<CollaborationTask>(projectId, `/tasks/${encodeURIComponent(id)}`, { networkOnly: navigator.onLine !== false });
         dependencies.push(dependency); pending.push(...dependency.dependsOnTaskIds);
       }
       const dependencyContext = await Promise.all(dependencies.map(async dependency => {
