@@ -63,7 +63,8 @@ try {
     $certificate | Set-Content "$destination.signature.txt"
     $reports += [pscustomobject]@{ ABI=$abi; Path=$destination; Bytes=(Get-Item $destination).Length; SHA256=(Get-FileHash $destination -Algorithm SHA256).Hash }
   }
-  $reports | ConvertTo-Json | Set-Content (Join-Path $output 'artifacts.json') -Encoding utf8
+  $reports | ConvertTo-Json | Set-Content (Join-Path $output "$mode-artifacts.json") -Encoding utf8
+  if (!$Debug) { Copy-Item (Join-Path $output 'release-artifacts.json') (Join-Path $output 'artifacts.json') -Force }
   $reports | Format-Table
 } finally {
   foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name,$previous[$name],'Process') }
