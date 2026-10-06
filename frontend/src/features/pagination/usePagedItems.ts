@@ -1,5 +1,5 @@
 import { useMemo, useState, useDeferredValue } from 'react';
-import { useInfiniteQuery, type QueryKey } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api, ApiError, type RequestOptions } from '../../api/client';
 import type { DataOf, SchemaName } from '../../api/types';
 
@@ -12,20 +12,22 @@ export function usePagedItems<Name extends SchemaName>(options: PagedOptions) {
 export function usePagedRecords<Value>({ queryKey, path, query, enabled = true, staleTime, searchable = false }: PagedOptions) {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
+  const client = useQueryClient();
+  const pageKey = [...queryKey, 'pages', query ?? {}, deferredSearch];
   const result = useInfiniteQuery({
-    queryKey: [...queryKey, 'pages', query ?? {}, deferredSearch],
+    queryKey: pageKey,
     enabled, ...(staleTime !== undefined ? { staleTime } : {}),
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
       const response = await api.get<'ProjectListResponse'>(path, { ...query, limit: 50, cursor: pageParam, ...(searchable ? { q: deferredSearch } : {}) }, signal);
       const page = response as unknown as { items: Value[]; nextCursor?: string | null };
-      if (!Array.isArray(page.items) || page.nextCursor && page.nextCursor === pageParam) throw new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应无效，请重试。', retryable: true } });
+      const previous = client.getQueryData<{ pages: { nextCursor?: string | null }[] }>(pageKey);
+      const precedingIndex = pageParam ? previous?.pages.findIndex(previousPage => previousPage.nextCursor === pageParam) ?? -1 : -1;
+      const repeatsEarlierPage = Boolean(page.nextCursor && precedingIndex >= 0 && previous?.pages.slice(0, precedingIndex + 1).some(previousPage => previousPage.nextCursor === page.nextCursor));
+      if (!Array.isArray(page.items) || repeatsEarlierPage || page.nextCursor && page.nextCursor === pageParam) throw new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应无效，请重试。', retryable: true } });
       return page;
     },
-    getNextPageParam: (page, pages) => {
-      const cursor = page.nextCursor;
-      return cursor && !pages.slice(0, -1).some(previous => previous.nextCursor === cursor) ? cursor : undefined;
-    },
+    getNextPageParam: page => page.nextCursor || undefined,
   });
   const data = useMemo(() => result.data?.pages.flatMap(page => page.items), [result.data]);
   return { ...result, data, ...(searchable ? { search, setSearch } : {}) };

@@ -80,6 +80,7 @@ export function DashboardPage() {
 
   if (projectsQuery.isLoading) return <div className="content-wrap"><Spinner label="正在加载项目" /></div>;
   return <div className="page-stack dashboard-page">
+    {projectsQuery.search?.trim() && <p className="form-note">统计与待响应事项仅包含当前搜索匹配的项目。</p>}
     {projectsQuery.hasNextPage && <p className="form-note">还有项目尚未加载；跨项目统计将在加载全部项目后显示。</p>}
     <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="让每个项目有序向前，让下一步清晰可见。" action={<Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link>} />
     {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}<LoadMore query={projectsQuery} label="项目" />

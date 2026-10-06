@@ -34,3 +34,14 @@ it('rejects a repeated cursor rather than appending the same page', async () => 
   await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
   expect(api.get).toHaveBeenCalledTimes(2);
 });
+it('rejects a longer cursor cycle and retains the pages already loaded', async () => {
+  vi.mocked(api.get).mockResolvedValueOnce({ items: [{ id: 'p1', name: '保留第一页' }], nextCursor: 'a' } as never)
+    .mockResolvedValueOnce({ items: [{ id: 'p2', name: '保留第二页' }], nextCursor: 'b' } as never)
+    .mockResolvedValueOnce({ items: [], nextCursor: 'a' } as never);
+  setup(); fireEvent.click(await screen.findByRole('button', { name: '加载更多项目' }));
+  await screen.findByText('保留第二页');
+  fireEvent.click(screen.getByRole('button', { name: '加载更多项目' }));
+  await screen.findByRole('alert');
+  expect(screen.getByText('保留第一页')).toBeInTheDocument();
+  expect(screen.getByText('保留第二页')).toBeInTheDocument();
+});
