@@ -1,0 +1,1 @@
+{"identifier":"main","description":"Only the fixed production app can invoke scoped desktop commands","windows":["main"],"remote":{"urls":["https://greenbp-team-office.hddhp.workers.dev/*"]},"local":false,"permissions":["desktop-commands"]}
