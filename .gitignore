@@ -59,3 +59,7 @@ output/*
 
 # Wrangler dry-run output relative to backend config
 /backend/output/
+
+!/desktop/src-tauri/gen/
+/desktop/src-tauri/gen/*
+!/desktop/src-tauri/gen/android/
