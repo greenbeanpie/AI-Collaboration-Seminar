@@ -627,6 +627,7 @@ pub async fn desktop_transfer_files(
 }
 async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
     let (client, _) = runtime::session_client(app, &row.account_id).await?;
+    still_active(app, row)?;
     if row.direction == "download" {
         return download(app, &client, row).await;
     }
@@ -649,6 +650,7 @@ async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
         ),
     );
     if row.session_id.is_none() {
+        still_active(app, row)?;
         let init = api(client
             .post(&base)
             .json(&json!({"sizeBytes":row.size_bytes})))
@@ -660,6 +662,7 @@ async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
     valid_id(&session)?;
     let path = format!("{base}/{session}");
     // Every attempt reconciles accepted parts before sending any bytes, including uncertain previous failures.
+    still_active(app, row)?;
     let status = api(client.get(&path)).await?;
     if status["status"] != "complete" {
         let part_bytes = status["partBytes"]
@@ -680,8 +683,16 @@ async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
                     .seek(std::io::SeekFrom::Start((part - 1) * part_bytes))
                     .await
                     .map_err(|e| e.to_string())?;
-                let stream =
-                    tokio_util::io::ReaderStream::with_capacity(input.take(size), 64 * 1024);
+                let stream_app = app.clone();
+                let stream_row = row.clone();
+                let stream = tokio_util::io::ReaderStream::with_capacity(
+                    input.take(size),
+                    64 * 1024,
+                )
+                .map(move |chunk| {
+                    still_active(&stream_app, &stream_row).map_err(std::io::Error::other)?;
+                    chunk
+                });
                 api(client
                     .put(format!("{path}/parts/{part}"))
                     .header("x-part-size", size)
@@ -723,6 +734,7 @@ async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
     Ok(())
 }
 async fn download(app: &AppHandle, client: &reqwest::Client, row: &mut NativeFile) -> Result<()> {
+    still_active(app, row)?;
     let path = blob(app, row)?;
     let saved = tokio::fs::metadata(&path)
         .await
