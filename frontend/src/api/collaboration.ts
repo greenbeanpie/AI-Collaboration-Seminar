@@ -1,4 +1,4 @@
-import { api, request, projectPath } from './client';
+import { ApiError, api, request, projectPath } from './client';
 import type { DataOf, SchemaName } from './types';
 import { idempotencyKeyForIntent, completeIntent } from '../pages/aiWorkflowSupport';
 import { projectRequest } from './simplification';
@@ -27,7 +27,8 @@ export const collaborationApi = {
   saveSettings: async (id: string, body: Partial<Omit<CollaborationSettingsData, 'revision'>> & { expectedRevision: number }) => api.patch<'CollaborationSettingsResponse'>(path(id, '/settings'), body) as Promise<CollaborationSettingsData>,
   tasks: async (id: string, options: { networkOnly?: boolean; signal?: AbortSignal; cursor?: string | null; q?: string; lifecycleState?: string; pendingReview?: boolean } = {}) => {
     const { networkOnly, signal, ...query } = options;
-    return request<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { query: { limit: 50, ...query }, networkOnly, signal }) as Promise<{ items: CollaborationTask[]; nextCursor?: string | null }>;
+    const page = await request<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { query: { limit: 50, ...query }, networkOnly, signal });
+    return requireCursor(page) as { items: CollaborationTask[]; nextCursor?: string | null };
   },
   graph: (id: string) => projectRequest<TaskGraph>(id, '/tasks/graph'),
   summary: (id: string, taskId: string, retry = false) => projectRequest<TaskSummary>(id, `/collaboration/tasks/${encodeURIComponent(taskId)}/summary`, { method: 'POST', body: retry ? { retry: true } : {} }),
@@ -42,7 +43,7 @@ export const collaborationApi = {
   adjustTasks: (id: string, brief: string, taskIds: string[], sourceVersionIds?: string[], search?:{allowSearch:boolean;searchQuery:string}, materialVersionIds?: string[]) => post<'CollaborationJobResponse'>(id, '/decompose', { brief, ...(search?.allowSearch?search:{}), taskIds, ...(sourceVersionIds?.length ? { sourceVersionIds } : {}), ...(materialVersionIds?.length ? { materialVersionIds } : {}) }),
   overrideScores: (id: string, submission: TaskSubmission, scores: Array<{ key: string; score: number }>, reason: string) => post<'CollaborationSubmissionResponse'>(id, `/submissions/${encodeURIComponent(submission.submissionId)}/scores`, { expectedRevision: submission.revision, scores, reason }),
   suggestAssignments: (id: string, taskIds: string[]) => post<'CollaborationJobResponse'>(id, '/assign', { taskIds }),
-  proposals: (id: string, cursor?: string | null) => api.get<'CollaborationProposalListResponse'>(path(id, '/proposals'), { limit: 50, cursor }),
+  proposals: async (id: string, cursor?: string | null) => requireCursor(await api.get<'CollaborationProposalListResponse'>(path(id, '/proposals'), { limit: 50, cursor })),
   apply: (id: string, proposal: CollaborationProposal) => post<'CollaborationApplyResponse'>(id, `/proposals/${encodeURIComponent(proposal.proposalId)}/apply`, { expectedRevision: proposal.revision }),
 };
 async function taskPost<T>(id: string, tail: string, body: unknown): Promise<T> {
@@ -51,4 +52,9 @@ async function taskPost<T>(id: string, tail: string, body: unknown): Promise<T> 
   const result = await projectRequest<T>(id, tail, { method: 'POST', body, idempotencyKey });
   completeIntent(namespace);
   return result;
+}
+
+function requireCursor<T extends { items: unknown[] }>(page: T): T {
+  if (!Array.isArray(page.items) || !('nextCursor' in page)) throw new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应缺少游标，请重试。', retryable: true } });
+  return page;
 }

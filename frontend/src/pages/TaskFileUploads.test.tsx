@@ -5,8 +5,8 @@ import { TaskFileUploads } from './TaskFileUploads';
 import { projectRequest } from '../api/simplification';
 import { uploadProjectFile } from './source-workflows';
 import type { TaskFile } from './task-files-client';
-import { listAllItems } from '../api/client';
-vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn() }));
+import { api } from '../api/client';
+vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), api: { ... (await importOriginal<typeof import('../api/client')>()).api, get: vi.fn() } }));
 vi.mock('../api/simplification', () => ({ projectRequest: vi.fn() }));
 vi.mock('./source-workflows', () => ({ uploadProjectFile: vi.fn() }));
 const request = vi.mocked(projectRequest), upload = vi.mocked(uploadProjectFile);
@@ -46,7 +46,7 @@ it('replaces an existing file using the material revision and new immutable byte
 it('recovers an upload whose completion response was lost without uploading again', async () => {
   show(); await waitFor(() => expect(screen.getByLabelText('上传成果文件')).toBeEnabled());
   upload.mockImplementationOnce(async (_project, _file, _key, initialized) => { initialized?.('confirmed-file'); throw new Error('上传响应丢失'); });
-  vi.mocked(listAllItems).mockResolvedValue([{ fileId: 'confirmed-file', name: '已上传.pdf', status: 'available', sizeBytes: 10, createdAt: '2026-10-04', deletedAt: null, lifecycleVersion: 1, canDelete: true, sourceIds: [] }]);
+  vi.mocked(api.get).mockResolvedValue({ items: [{ fileId: 'confirmed-file', name: '已上传.pdf', status: 'available', sizeBytes: 10, createdAt: '2026-10-04', deletedAt: null, lifecycleVersion: 1, canDelete: true, sourceIds: [] }], nextCursor: null } as never);
   fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['bytes'], '已上传.pdf')] } });
   await screen.findByText('上传响应丢失'); fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/tasks/t/files', expect.objectContaining({ body: { fileId: 'confirmed-file' } })));

@@ -18,7 +18,7 @@ function cachedProject() {
   client.setQueryData(['collaboration-proposals', 'project-1'], { items: [] });
   client.setQueryData(['member-me', 'project-1'], { userId: 'member-1' });
   client.setQueryData(['project-assistant-sources', 'project-1'], []);
-  client.setQueryData(['members', 'project-1'], [{ userId: 'member-1', displayName: '真实成员甲', skills: [], hoursPerWeek: null, role: 'owner' }]);
+  client.setQueryData(['members', 'project-1', 'pages', {}, ''], { pages: [{ items: [{ userId: 'member-1', displayName: '真实成员甲', skills: [], hoursPerWeek: null, role: 'owner' }], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['requirementSets', 'project-1'], []);
   client.setQueryData(['materials', 'project-1'], []);
   client.setQueryData(['sources', 'project-1'], []);

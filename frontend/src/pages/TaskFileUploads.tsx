@@ -1,7 +1,7 @@
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { projectRequest } from '../api/simplification';
 import { ErrorNotice, Spinner } from '../components/ui';
 import { uploadProjectFile } from './source-workflows';
@@ -30,8 +30,8 @@ export function TaskFileUploads({ projectId, taskId, disabled, onBusy }: { proje
           // A successfully uploaded object is reused when registration needs retrying.
           let storedId = row.uploadedId;
           if (!storedId && row.initializedId) {
-            const existing = await listAllItems<'FileListResponse'>(projectPath(projectId, '/files'));
-            if (existing.some(file => file.fileId === row.initializedId && file.status === 'available' && !file.archivedAt)) storedId = row.initializedId;
+            const existing = await api.get<'FileListResponse'>(projectPath(projectId, '/files'), { fileId: row.initializedId, limit: 1 });
+            if (existing.items.some(file => file.fileId === row.initializedId && file.status === 'available' && !file.archivedAt)) storedId = row.initializedId;
           }
           const fileId = storedId ?? await uploadProjectFile(projectId, row.file, row.key, initializedId => { row.initializedId = initializedId; setRow(row.key, { initializedId }); });
           row.uploadedId = fileId; setRow(row.key, { uploadedId: fileId });

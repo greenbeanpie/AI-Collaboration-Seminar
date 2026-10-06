@@ -28,8 +28,9 @@ export function AssessmentWorkspacePage() {
   const { projectId } = useProject();
   const [params] = useSearchParams();
   const section = params.get('section') ?? 'standards';
+  const session = useSession();
   return <div className="page-stack assessment-workspace">
-    {section === 'standards' ? <StandardsEditor /> : <AssessmentRunner key={`${projectId}:${section}`} kind={section === 'rehearsals' ? 'rehearsal' : 'material_review'} />}
+    {section === 'standards' ? <StandardsEditor /> : <AssessmentRunner key={`${session.data?.id ?? ''}:${projectId}:${section}`} kind={section === 'rehearsals' ? 'rehearsal' : 'material_review'} />}
   </div>;
 }
 function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
@@ -101,7 +102,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     setPending(current => current?.entityId === activeEntityId && current.jobId === activeJobId ? null : current);
     void client.invalidateQueries({ queryKey: ['assessments', projectId] });
     void client.invalidateQueries({ queryKey: ['assessment', projectId, activeEntityId] });
-  }, [activeEntityId, activeJobId, job.job?.jobId, job.job?.status, client, projectId]);
+  }, [activeEntityId, activeJobId, job.job?.jobId, job.job?.status, client, projectId, session.data?.id]);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
   return <div className="page-stack">
     {!aiEnabled && <p className="notice notice-warn">AI 当前不可用，可以继续维护标准、人工评分及修正历史结果。</p>}

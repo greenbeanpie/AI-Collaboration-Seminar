@@ -29,6 +29,18 @@ export function usePagedRecords<Value>({ queryKey, path, query, enabled = true, 
     },
     getNextPageParam: page => page.nextCursor || undefined,
   });
-  const data = useMemo(() => result.data?.pages.flatMap(page => page.items), [result.data]);
+  const data = useMemo(() => {
+    if (!result.data) return undefined;
+    const seen = new Set<string>();
+    return result.data.pages.flatMap(page => page.items).filter(item => {
+      if (!item || typeof item !== 'object') return true;
+      const record = item as Record<string, unknown>;
+      const idKey = ['id', 'taskId', 'sourceId', 'fileId', 'userId', 'versionId', 'materialId', 'proposalId', 'assessmentId', 'reviewId', 'rehearsalId', 'sessionId', 'fragmentId'].find(key => typeof record[key] === 'string');
+      if (!idKey) return true;
+      const key = `${idKey}:${record[idKey]}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }, [result.data]);
   return { ...result, data, ...(searchable ? { search, setSearch } : {}) };
 }

@@ -1,3 +1,4 @@
+import { defaultTaskDraft as defaultDraft, useTaskOperations } from '../features/collaboration/useTaskOperations';
 import { useCollaborationQueries } from '../features/collaboration/useCollaborationQueries';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { VirtualList } from '../components/VirtualList';
@@ -32,7 +33,6 @@ import { ProposalCorrection } from './ProposalCorrection';
 import { AiClarificationCard } from '../components/AiClarificationCard';
 import { clarificationApi, clarificationFromJob, clarificationQueryKey, type ProjectClarification, type ClarificationAnswer } from '../api/clarifications';
 
-const defaultDraft = { title: '', detail: '', criteria: '', effortHours: '1', dueDate: '', assigneeId: '' };
 
 export function CollaborationWorkspace() {
   const { projectId } = useProject();
@@ -154,10 +154,8 @@ function ProjectCollaborationWorkspace() {
   const detailId = selectedId || lastSelectedId;
   const taskDetail = useQuery({ queryKey: ['collaboration-task', projectId, detailId], queryFn: () => projectRequest<CollaborationTask>(projectId, `/tasks/${encodeURIComponent(detailId)}`), enabled: Boolean(detailId) && !(graph.data?.items ?? []).some(row => row.taskId === detailId) });
   const selected = rows.find(row => row.taskId === detailId) ?? taskDetail.data;
-  const invalidate = async () => { await Promise.all([client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }), client.invalidateQueries({ queryKey: ['collaboration-proposals', projectId] }), client.invalidateQueries({ queryKey: ['tasks', projectId] }), client.invalidateQueries({ queryKey: ['task-graph', projectId] }), client.invalidateQueries({ queryKey: ['project-goal', projectId] })]); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-proposals', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId] }); } }, [job.isSettled, jobId, client, projectId]);
-  const create = useMutation({ mutationFn: () => collaborationApi.createTask(projectId, { ...draft, title: draft.title.trim(), criteria: draft.criteria.trim(), effortHours: Number(draft.effortHours), dueDate: draft.dueDate || null, assigneeId: draft.assigneeId || null, dependsOnTaskIds: createDependencies, expectedGraphRevision: createGraphRevision }), onSuccess: async () => { setCreateOpen(false); setDraft(defaultDraft); setCreateDependencies([]); await invalidate(); }, onError: invalidate });
-  const claim = useMutation({ mutationFn: (task: CollaborationTask) => collaborationApi.claim(projectId, task), onSuccess: invalidate, onError: invalidate });
+  const { create, claim, invalidate } = useTaskOperations(projectId, draft, createDependencies, createGraphRevision, () => { setCreateOpen(false); setDraft(defaultDraft); setCreateDependencies([]); });
   const ai = useMutation({ mutationFn: async (action: 'decompose' | 'adjust' | 'assign') => { if (!graph.data) throw new Error('完整依赖图尚未读取，请稍后重试'); if(action === 'decompose' && !canRegenerate) throw new Error('已有任务曾开始，只能提出调整或补充建议'); if(feedbackAdmin && brief !== feedback.data?.feedback) await saveFeedback.mutateAsync(); return action === 'decompose' ? collaborationApi.decompose(projectId, '依据项目主目标与已保存的持续项目反馈生成任务拆解方案', sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : action === 'adjust' ? collaborationApi.adjustTasks(projectId, '依据已保存的持续项目反馈提出当前任务调整方案', (graph.data?.items ?? []).filter(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)).map(row => row.taskId), sourceVersions,{allowSearch,searchQuery}, contextMaterialVersions) : collaborationApi.suggestAssignments(projectId, (graph.data?.items ?? []).filter(row => !row.assigneeId && row.lifecycleState === 'open').map(row => row.taskId)); }, onSuccess: result => { setHandoffNotice(''); setJobId(result.jobId); } });
   const renderProposal = (proposal: CollaborationProposal, readOnly = false) => (<article key={proposal.proposalId} className="collab-proposal"><AiReferenceBadge /><div className="collab-toolbar"><strong>{proposal.kind === 'decompose' ? proposal.payload.updates?.length ? '任务调整建议' : '任务拆解建议' : '团队分工建议'}</strong><StatusPill>{proposal.status === 'applied' ? '已应用' : proposal.status === 'stale' ? '已过期' : '待确认'}</StatusPill></div>{!readOnly && owner && <ProposalCorrection key={proposal.proposalId} projectId={projectId} proposal={proposal} members={members.data ?? []} onChanged={invalidate} canApprove={owner} />}<RemovedSourceNotice payload={proposal.payload} /><ProposalPreview payload={proposal.payload} members={members.data ?? []} tasks={rows} /></article>);
   return <SectionCard title={historyPage ? '任务历史' : '任务'} detail={historyPage ? '每页展示一条记录，保留提交时的内容与固定版本引用。' : '按前置依赖顺序显示。依赖仅作提示，可提前认领、执行和提交成果。'}>

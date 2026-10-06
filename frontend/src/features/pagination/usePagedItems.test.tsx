@@ -45,3 +45,12 @@ it('rejects a longer cursor cycle and retains the pages already loaded', async (
   expect(screen.getByText('保留第一页')).toBeInTheDocument();
   expect(screen.getByText('保留第二页')).toBeInTheDocument();
 });
+it('deduplicates optimistic entities repeated in cached pages and permits a failed page retry', async () => {
+  vi.mocked(api.get).mockResolvedValueOnce({ items: [{ id: 'pending', name: '离线草稿' }], nextCursor: 'next' } as never)
+    .mockRejectedValueOnce(new Error('网络中断'))
+    .mockResolvedValueOnce({ items: [{ id: 'pending', name: '离线草稿' }, { id: 'saved', name: '后续项目' }], nextCursor: null } as never);
+  setup(); fireEvent.click(await screen.findByRole('button', { name: '加载更多项目' }));
+  await screen.findByRole('alert'); expect(screen.getAllByText('离线草稿')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '加载更多项目' })); await screen.findByText('后续项目');
+  expect(screen.getAllByText('离线草稿')).toHaveLength(1);
+});

@@ -6,7 +6,7 @@ import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, RefreshCw, ShieldAlert } from 'lucide-react';
-import { api, projectPath, listAllItems } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -30,7 +30,7 @@ export function ReviewsPage() {
   const standard = standardQuery.data?.standard;
   const materialVersionQueries = useQueries({ queries: materials.map((material) => ({
     queryKey: ['materialVersions', projectId, material.materialId],
-    queryFn: () => listAllItems<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 100 }),
+    queryFn: () => api.get<'MaterialVersionListResponse'>(projectPath(projectId, `/materials/${encodeURIComponent(material.materialId)}/versions`), { limit: 50 }).then(page => page.items),
     staleTime: 15_000,
   })) });
 
