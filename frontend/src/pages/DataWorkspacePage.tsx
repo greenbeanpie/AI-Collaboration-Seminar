@@ -1,3 +1,4 @@
+import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { archiveFile } from './task-files-client';
 import { collaborationApi } from '../api/collaboration';
@@ -52,7 +53,7 @@ export function DataWorkspacePage() {
   const fileArchive = useMutation({ mutationFn: () => archiveFile(projectId, selectedFile!.fileId, selectedFile!.lifecycleVersion, !!selectedFile!.archivedAt), onSuccess: async () => { await Promise.all([refresh(), client.invalidateQueries({ queryKey: ['files', projectId] }), client.invalidateQueries({ queryKey: ['material', projectId] })]); setParams(archived ? { archived: 'true' } : {}); } });
   const detailHeader = selected ? <><header className="resource-detail-heading"><div><h2>{selected.title}<AiReferenceBadge ariaHidden /></h2><StatusPill>{selected.systemManaged ? '系统背景 · 自动同步' : resourcePurposeLabels[selected.purpose]}</StatusPill></div>{selected.canManage && !selected.archivedAt && <Field aiReference label="修改资料用途"><select className="input" value={selected.purpose} disabled={updatePurpose.isPending} onChange={event => updatePurpose.mutate({ resource: selected, purpose: event.target.value as ResourcePurpose })}>{Object.entries(resourcePurposeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}</header>
           {updatePurpose.error && <ErrorNotice error={updatePurpose.error} />}</> : null;
-  return <div className="page-stack resource-workspace">
+  return <div className="page-stack resource-workspace"><ProjectFlowReturn />
 
     {library.error && <ErrorNotice error={library.error} onRetry={() => void library.refetch()} />}
     {uploadedFiles.error && <ErrorNotice error={uploadedFiles.error} onRetry={() => void uploadedFiles.refetch()} />}

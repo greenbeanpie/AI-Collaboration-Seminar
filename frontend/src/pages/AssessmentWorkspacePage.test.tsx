@@ -8,7 +8,7 @@ import type { Assessment, AssessmentReport } from '../api/simplification';
 const authState = vi.hoisted(() => ({ enabled: false }));
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project: { myRole: 'owner' } }) }));
-vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: authState.enabled } } }) }));
+vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: authState.enabled } } }), useSession: () => ({ data: { id: 'user' } }) }));
 vi.mock('./FixedMaterialVersions', () => ({ FixedMaterialVersions: () => <p>固定文档选择</p> }));
 vi.mock('./RehearsalsPage', () => ({ RehearsalsPage: ({ rehearsalId }: { rehearsalId?: string }) => <p>保留真实问答 {rehearsalId}</p> }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear(); authState.enabled = false; });
@@ -25,7 +25,8 @@ it('routes an old rehearsal ID to its historical feedback and offers both scorin
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(['project-goal', 'p'], { title: '共同目标', revision: 3 });
   client.setQueryData(['standards', 'p'], { items: [] }); client.setQueryData(['current-standard', 'p'], { standard: null });
-  client.setQueryData(['assessments', 'p'], [{ assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, createdAt: '2026-10-01', rehearsalId: 'old', standardsVersion: null }]);
+  client.setQueryData(['assessments', 'p', 'pages', { kind: 'material_review' }, ''], { pages: [{ items: [{ assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, createdAt: '2026-10-01', rehearsalId: 'old', standardsVersion: null }], nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['assessments', 'p', 'pages', { kind: 'rehearsal' }, ''], { pages: [{ items: [{ assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, createdAt: '2026-10-01', rehearsalId: 'old', standardsVersion: null }], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['assessment', 'p', 'old'], { assessmentId: 'old', kind: 'rehearsal', status: 'finished', historical: true, rehearsalId: 'old', goal: null, standardsVersion: null, report: null, materialVersionIds: [] });
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/app/projects/p/assessment?section=rehearsals&rehearsalId=old']}><ProjectSectionNavigation projectId="p" canManage/><AssessmentWorkspacePage /></MemoryRouter></QueryClientProvider>);
   expect(await screen.findByText('保留真实问答 old')).toBeInTheDocument();
@@ -42,7 +43,8 @@ it('recovers a failed assessment job from server history and retries its real jo
   const assessment = { assessmentId: 'failed', kind: 'material_review', status: 'failed', goal: { title: '冻结目标', detail: '原始目标说明' }, goalRevision: 2, standardsVersionId: 's', standardsVersion: 1, materialVersionIds: ['v1'], rehearsalId: null, jobId: 'j-failed', jobError: '评分作业失败，请重试', historical: false, report: null, createdAt: '2026-10-01' };
   client.setQueryData(['project-goal', 'p'], { title: '共同目标', revision: 3 });
   client.setQueryData(['standards', 'p'], { items: [] }); client.setQueryData(['current-standard', 'p'], { standard: { standardsVersionId: 's', title: '规则', version: 1, rubric: { weights: [] } } });
-  client.setQueryData(['assessments', 'p'], [assessment]);
+  client.setQueryData(['assessments', 'p', 'pages', { kind: 'material_review' }, ''], { pages: [{ items: [assessment], nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['assessments', 'p', 'pages', { kind: 'rehearsal' }, ''], { pages: [{ items: [assessment], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['assessment', 'p', 'failed'], assessment);
   const writes: string[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -66,7 +68,7 @@ function showRecords(records: Assessment[], entry: string) {
   const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
   client.setQueryData(['project-goal','p'],{title:'共同目标',revision:1});
   client.setQueryData(['standards','p'],{items:[]});client.setQueryData(['current-standard','p'],{standard:{standardsVersionId:'s',title:'生效规则',version:1,rubric:{weights:[]}}});
-  client.setQueryData(['assessments','p'],records);
+  for (const kind of ['material_review', 'rehearsal']) client.setQueryData(['assessments','p', 'pages', { kind }, ''], { pages: [{ items: records, nextCursor: null }], pageParams: [null] });
   for (const item of records) client.setQueryData(['assessment','p',item.assessmentId],item);
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry.replace(/^\/assessment/, '/app/projects/p/assessment')]}><ProjectSectionNavigation projectId="p" canManage/><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
   return client;
@@ -88,7 +90,7 @@ it.each(['assessmentId','reviewId','rehearsalId','review','rehearsal'])('rejects
   expect(await screen.findByText('right-summary',{selector:'p'})).toBeInTheDocument();
   expect(screen.queryByText('wrong-summary')).toBeNull();
   expect(screen.queryByText('wrong-goal')).toBeNull();
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
   await waitFor(()=>expect(new URLSearchParams(screen.getByTestId('location').textContent!).get('assessmentId')).toBe('right'));
 });
 it('maps a valid rehearsal session deep link to the correct assessment record',async()=>{
@@ -103,7 +105,7 @@ it('ignores a legacy failed pending job for another entity while viewing success
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   expect(screen.queryByText(/本轮评分任务/)).toBeNull();
   expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
 });
 it('keeps a saved score authoritative when its original job failed and explains that failure as history',async()=>{
   const saved=record('saved','material_review','succeeded',{jobId:'original-failed',jobError:'评分作业失败，请重试'});
@@ -114,7 +116,7 @@ it('keeps a saved score authoritative when its original job failed and explains 
   expect(screen.getByText('本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。')).toBeInTheDocument();
   expect(screen.queryByText('评分未完成，服务端失败状态与已有证据已保留。')).toBeNull();
   expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
 });
 it('retries only the selected real failure even when another kind owns the old local pending job',async()=>{
   authState.enabled=true;
@@ -149,7 +151,7 @@ it('shows no foreign detail or correction when a deep link has no record of the 
   expect(await screen.findByText('尚无此形式的评分记录')).toBeInTheDocument();
   expect(screen.queryByText('foreign-goal')).toBeNull();
   expect(screen.queryByRole('heading',{name:'修正本轮评分'})).toBeNull();
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
 });
 it('keeps a retry response attached to its originating record after selection changes',async()=>{
   authState.enabled=true;

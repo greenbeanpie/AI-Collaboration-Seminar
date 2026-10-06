@@ -1,3 +1,4 @@
+import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
 import { DateInput } from '../components/DateInput';
 import { useEffect, useState } from 'react';
 import { ProjectGoalSettings } from './ProjectGoalSettings';
@@ -49,7 +50,7 @@ export function ProjectSettingsPage() {
     },
   });
 
-  return <div className="page-stack settings-page">
+  return <div className="page-stack settings-page"><ProjectFlowReturn />
     <PageHeading eyebrow="项目配置" title="项目设置" detail="修改项目资料时使用 revision 乐观锁。" action={<StatusPill tone={owner ? 'blue' : 'neutral'}>{owner ? '负责人' : '成员只读'}</StatusPill>} />
     <SectionCard title="项目基本信息" detail={`当前数据版本 revision ${project.revision} · 最近更新 ${new Date(project.updatedAt).toLocaleString('zh-CN')}`}>
       <form className="settings-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>

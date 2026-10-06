@@ -1,5 +1,6 @@
+import { LoadMore } from '../pagination/LoadMore';
 import { useCallback, useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ApiError, api, projectPath } from '../../api/client';
 import { collaborationApi, type CollaborationTask, type SubmissionDecision, type TaskSubmission } from '../../api/collaboration';
@@ -31,7 +32,8 @@ export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, 
   const [jobId, setJobId] = useState<string | null>(null);
   const [evaluationNotice, setEvaluationNotice] = useState('');
   const job = useVisibleJobPoller(jobId);
-  const history = useQuery({ queryKey: ['collaboration-submissions', projectId, task.taskId], queryFn: () => collaborationApi.submissions(projectId, task.taskId) });
+  const historyPages = useInfiniteQuery({ queryKey: ['collaboration-submissions', projectId, task.taskId, 'pages'], initialPageParam: null as string | null, queryFn: ({ pageParam }) => collaborationApi.submissions(projectId, task.taskId, pageParam), getNextPageParam: page => ('nextCursor' in page ? page.nextCursor as string | null : null) ?? undefined });
+  const history = { ...historyPages, data: historyPages.data ? { items: historyPages.data.pages.flatMap(page => page.items) } : undefined };
   const refresh = async () => { await onChanged(); await client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); } }, [job.isSettled, jobId, projectId, task.taskId, client]);
   const submit = useMutation({ mutationFn: async () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); if (filesBusy) throw new Error('请等待文件上传或处理失败项。'); const files = await client.fetchQuery({ queryKey: taskFilesKey(projectId, task.taskId), queryFn: () => listTaskFiles(projectId, task.taskId), staleTime: 0 }); const active = files.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt); if (active.length > 10) throw new Error('每轮最多提交 10 个文件，请归档不参与本轮的文件。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), active.map(file => file.versionId)); }, onSuccess: async result => { setBody(''); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
@@ -84,6 +86,7 @@ export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, 
     {history.data?.items.length === 0 && <p className="muted">{task.lifecycleState === 'accepted' && !task.currentSubmissionId ? '历史完成状态已保留，未补造提交与验收记录。' : '尚未提交成果。'}</p>}
     {selectedHistory && <><div className="collab-history-pager"><button className="button button-small" disabled={historyIndex === 0} onClick={() => setHistoryId(orderedHistory[historyIndex - 1]!.submissionId)}>上一页</button><Field label="选择提交轮次"><select className="input" value={selectedHistory.submissionId} onChange={event => setHistoryId(event.target.value)}>{orderedHistory.map(item => <option key={item.submissionId} value={item.submissionId}>第 {item.round} 轮</option>)}</select></Field><span aria-live="polite">第 {historyIndex + 1} / {orderedHistory.length} 页</span><button className="button button-small" disabled={historyIndex === orderedHistory.length - 1} onClick={() => setHistoryId(orderedHistory[historyIndex + 1]!.submissionId)}>下一页</button></div>{renderSubmission(selectedHistory, true)}</>}
     </section>}
+    <LoadMore query={historyPages} label="提交历史" />
     <JobProgress job={job} />
   </div>;
 }

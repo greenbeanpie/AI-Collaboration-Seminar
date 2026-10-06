@@ -1,0 +1,4 @@
+import { ErrorNotice } from '../../components/ui';
+export function LoadMore({ query, label = '记录' }: { query: { hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => Promise<unknown>; error: unknown; search?: string; setSearch?: (value: string) => void }; label?: string }) {
+  return <>{query.setSearch && <label className="field"><span>搜索{label}</span><input className="input" type="search" value={query.search ?? ''} onChange={event => query.setSearch?.(event.target.value)} placeholder={`搜索${label}`} /></label>}{query.hasNextPage && <button type="button" className="button button-quiet button-small" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{query.isFetchingNextPage ? '正在加载…' : `加载更多${label}`}</button>}{query.error && <ErrorNotice error={query.error} />}</>;
+}

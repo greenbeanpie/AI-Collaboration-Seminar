@@ -1,3 +1,6 @@
+import { usePagedRecords } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
+import { VirtualList } from '../components/VirtualList';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { useEffect, useState } from 'react';
@@ -6,7 +9,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Play, RefreshCw } from 'lucide-react';
 import { projectRequest, type Assessment, type AssessmentReport, type AssessmentEvidence, type ProjectGoal, type StandardVersion } from '../api/simplification';
 import { projectPermission } from '../project-permissions';
-import { useCapabilities } from '../auth';
+import { useCapabilities, useSession } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { clearPendingJob, completeIntent, idempotencyKeyForIntent, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
@@ -21,11 +24,6 @@ const selectionParameters = ['assessmentId', 'reviewId', 'rehearsalId', 'review'
 const activeAssessmentStatuses = ['pending', 'running', 'active', 'finishing', 'failed'];
 const pendingKey = (id: string) => `ai-office:pending-assessment-job:${id}`;
 function isScoringReport(report: Assessment['report']): report is AssessmentReport { return Boolean(report && (report.status === 'scored' || report.status === 'unscorable') && Array.isArray(report.scores)); }
-async function assessmentHistory(projectId: string, signal?: AbortSignal) {
-  const items: Assessment[] = []; const seen = new Set<string>(); let cursor: string | null = null;
-  do { const page: { items: Assessment[]; nextCursor: string | null } = await projectRequest(projectId, '/assessments', { signal, query: { cursor, limit: 100 } }); items.push(...page.items); cursor = page.nextCursor; if (cursor && seen.has(cursor)) throw new Error('评分历史返回重复游标。'); if (cursor) seen.add(cursor); } while (cursor);
-  return items;
-}
 export function AssessmentWorkspacePage() {
   const { projectId } = useProject();
   const [params] = useSearchParams();
@@ -43,14 +41,21 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const linkedId = params.get('assessmentId') ?? params.get('reviewId') ?? params.get('rehearsalId') ?? params.get('review') ?? params.get('rehearsal');
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   const standards = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
-  const history = useQuery({ queryKey: ['assessments', projectId], queryFn: ({ signal }) => assessmentHistory(projectId, signal) });
-  const [materialVersions, setMaterialVersions] = useState<string[]>([]);
-  const [sourceVersions, setSourceVersions] = useState<string[]>([]);
+  const history = usePagedRecords<Assessment>({ queryKey: ['assessments', projectId], path: `/api/v1/projects/${encodeURIComponent(projectId)}/assessments`, query: { kind } });
+  const session = useSession();
+  const draftKey = session.data?.id ? `ai-office:assessment-draft:${session.data.id}:${projectId}:${kind}` : null;
+  const readDraft = () => { try { return draftKey ? JSON.parse(sessionStorage.getItem(draftKey) ?? '{}') as { materialVersions?: string[]; sourceVersions?: string[] } : {}; } catch { return {}; } };
+  const [materialVersions, setMaterialVersions] = useState<string[]>(() => readDraft().materialVersions?.filter(item => typeof item === 'string') ?? []);
+  const [sourceVersions, setSourceVersions] = useState<string[]>(() => readDraft().sourceVersions?.filter(item => typeof item === 'string') ?? []);
+  useEffect(() => { if (draftKey) { try { sessionStorage.setItem(draftKey, JSON.stringify({ materialVersions, sourceVersions })); } catch { /* In-memory selections remain usable when storage is unavailable. */ } } }, [draftKey, materialVersions, sourceVersions]);
+  const returnTo = `/app/projects/${encodeURIComponent(projectId)}/assessment?section=${kind === 'rehearsal' ? 'rehearsals' : 'reviews'}`;
+  const supplement = (path: string) => `${path}${path.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(returnTo)}`;
+
   const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId)));
   const rows = (history.data ?? []).filter(item => item.kind === kind);
   const linkedRecord = (history.data ?? []).find(item => item.assessmentId === linkedId || item.rehearsalId === linkedId);
   const newlyCreatedId = pending?.kind === kind && pending.action === 'create' && pending.entityId === linkedId ? pending.entityId : '';
-  const selectedId = linkedRecord?.kind === kind ? linkedRecord.assessmentId : newlyCreatedId || rows[0]?.assessmentId || '';
+  const selectedId = linkedRecord?.kind === kind ? linkedRecord.assessmentId : newlyCreatedId || (!linkedRecord && linkedId && !history.isLoading ? linkedId : '') || rows[0]?.assessmentId || '';
   const selected = useQuery({ queryKey: ['assessment', projectId, selectedId], queryFn: () => projectRequest<Assessment>(projectId, `/assessments/${encodeURIComponent(selectedId)}`), enabled: Boolean(selectedId), refetchInterval: query => query.state.data && !query.state.data.historical && ['pending', 'running', 'active', 'finishing'].includes(query.state.data.status) ? 4000 : false, refetchIntervalInBackground: false });
   const currentStandard = standards.data?.standard;
   const select = (id: string) => { const next = new URLSearchParams(params); for (const key of selectionParameters) next.delete(key); next.set('assessmentId', id); setParams(next); };
@@ -75,6 +80,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
     const result = await projectRequest<{ assessmentId: string; jobId: string; rehearsalId?: string }>(projectId, '/assessments', { method: 'POST', body, idempotencyKey }); completeIntent(namespace); return result;
   }, onSuccess: async result => {
+    if (draftKey) sessionStorage.removeItem(draftKey);
     const next = { entityId: result.assessmentId, jobId: result.jobId, action: 'create', kind }; writePendingJob(pendingKey(projectId), next); setPending(next);
     if (result.rehearsalId) writePendingJob(`ai-office:pending-rehearsal-job:${projectId}`, { entityId: result.rehearsalId, jobId: result.jobId, action: 'create' });
     select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] });
@@ -100,11 +106,12 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   return <div className="page-stack">
     {!aiEnabled && <p className="notice notice-warn">AI 当前不可用，可以继续维护标准、人工评分及修正历史结果。</p>}
     <div className="assessment-layout">
-      <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起材料检查评分'} detail="固定主目标与标准；所选文件优先参考，系统发现并冻结实际成果版本。答辩评分依据本轮真实回答。">
+      <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起成果检查'} detail="依据项目标准核验成果，与自由审阅区分。固定主目标与标准；所选文件优先参考，系统发现并冻结实际成果版本。答辩评分依据本轮真实回答。">
         {[goal, standards].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
         {goal.isLoading || standards.isLoading ? <Spinner label="读取目标与评分标准" /> : <form className="stack" onSubmit={event => { event.preventDefault(); if(canInitiate)create.mutate(); }}>
-          <div className="callout"><strong>本轮主目标：{goal.data?.title || '尚未填写'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${encodeURIComponent(projectId)}/tasks`}>编辑主目标</Link></div>
-          {currentStandard ? <p>生效标准：{currentStandard.title} · v{currentStandard.version}</p> : <p className="notice notice-warn">先在“项目标准”中保存标准，再开始评分。</p>}
+          <div className="callout"><strong>本轮主目标：{goal.data?.title || '尚未填写'}</strong><p>{goal.data?.detail}</p>{project.myRole === 'owner' ? <Link to={supplement(`/app/projects/${encodeURIComponent(projectId)}/settings`)}>补齐项目主目标</Link> : <span>需要项目负责人维护主目标。</span>}</div>
+          {currentStandard ? <p>生效标准：{currentStandard.title} · v{currentStandard.version}</p> : <div className="notice notice-warn">先保存项目标准，再开始成果检查。{project.myRole === 'owner' ? <Link to={supplement(`/app/projects/${encodeURIComponent(projectId)}/assessment?section=standards`)}>补齐项目标准</Link> : <span>需要负责人或拥有标准管理权限的成员补齐。</span>}</div>}
+          {!materialVersions.length && <p className="form-note">成果检查需要可核对的成果版本。{projectPermission(project, 'resourceManage') ? <Link to={supplement(`/app/projects/${encodeURIComponent(projectId)}/data?resourceType=material`)}>上传或编写成果后返回</Link> : <span>请联系负责人补齐成果；也可在下方选择已有成果版本。</span>}</p>}
           <ReferencePicker projectId={projectId} sourceVersionIds={sourceVersions} materialVersionIds={materialVersions} onChange={selection => { setSourceVersions(selection.sourceVersionIds); setMaterialVersions(selection.materialVersionIds); }} disabled={create.isPending} />
           {create.error && <ErrorNotice error={create.error} />}
           <button className="button button-primary" disabled={!canInitiate || !aiEnabled || !goal.data?.title.trim() || !currentStandard || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
@@ -112,7 +119,8 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </SectionCard>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">
         {history.isLoading && <Spinner label="读取评分历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
-        <div className="assessment-history">{rows.map(row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{row.status}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>)}</div>
+        <VirtualList label="评分历史" className="assessment-history" items={rows} getKey={row => row.assessmentId} renderItem={row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{row.status}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>} />
+        <LoadMore query={history} label="评分记录" />
         {!history.isLoading && !history.error && !rows.length && <EmptyState title="尚无此形式的评分记录" detail="完成一轮检查或演练后，反馈会独立保存。" />}
     {(assessment && !assessment.historical && projectPermission(project,'scoreCorrect') && ['succeeded','failed'].includes(assessment.status)) && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={currentStandard ?? undefined} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
       </SectionCard>

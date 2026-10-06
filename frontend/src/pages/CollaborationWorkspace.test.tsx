@@ -16,16 +16,17 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
   client.setQueryData(['project-feedback-history','p1'],{items:[]});
   client.setQueryData(['project-assistant-sources', 'p1'], []);
   client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
-  client.setQueryData(['collaboration-tasks', 'p1'], { items: tasks });
+  client.setQueryData(['collaboration-tasks', 'p1', 'pages', '', 'all'], { pages: [{ items: tasks, nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['task-graph', 'p1'], { items: tasks, graphRevision: 9, canRegenerate: tasks.every(task => !task.startedAt && !task.assigneeId && !task.currentSubmissionId && task.status === 'todo'), totals: { total: tasks.length, done: tasks.filter(task => task.lifecycleState === 'accepted').length } });
   client.setQueryData(['collaboration-settings', 'p1'], { aiCollaborationEnabled: false, assignmentMode: 'manual', evaluationMode: 'manual', revision: 7 });
-  client.setQueryData(['collaboration-proposals', 'p1'], { items: proposals });
-  client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: submissions });
-  client.setQueryData(['members', 'p1'], [{ userId: 'm1', displayName: '成员甲' }, { userId: 'm2', displayName: '成员乙' }]);
+  client.setQueryData(['collaboration-proposals', 'p1', 'pages'], { pages: [{ items: proposals, nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['collaboration-submissions', 'p1', 't1', 'pages'], { pages: [{ items: submissions, nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['members', 'p1', 'pages', {}, ''], { pages: [{ items: [{ userId: 'm1', displayName: '成员甲' }, { userId: 'm2', displayName: '成员乙' }], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['member-me', 'p1'], { userId: 'm1' });
   client.setQueryData(['task-files', 'p1', 't1'], []);
   client.setQueryData(['materials', 'p1'], [{ materialId: 'mat1', title: '原型说明' }]);
   client.setQueryData(['materialVersions', 'p1', 'mat1'], [{ versionId: 'v1', revision: 4, createdAt: '2026-10-01T00:00:00Z', attachments: [] }]);
-  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: String(_url).endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: 'AI 判断任务需要真人参与或现场操作', jobId: 'j1' } : options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const fetchMock = vi.fn(async (_url: unknown, options?: RequestInit) => new Response(JSON.stringify({ data: String(_url).endsWith('/tasks/graph') ? { items: tasks, canRegenerate: false, totals: { total: tasks.length, done: tasks.filter(task => task.lifecycleState === 'accepted').length } } : new URL(String(_url), 'https://test.invalid').pathname.endsWith('/tasks') && !options?.method ? { items: tasks, nextCursor: null } : String(_url).endsWith('/agent-eligibility') ? { status: 'ready', taskRevision: task.revision, sourceHash: 'fixture', eligible: false, reason: 'AI 判断任务需要真人参与或现场操作', jobId: 'j1' } : options?.method === 'PATCH' ? { aiCollaborationEnabled: false, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 8 } : { ...task, items: [], nextCursor: null, ...submission }, requestId: 'r1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}><NavigationProbe />{component === 'settings' ? <CollaborationSettings /> : <CollaborationWorkspace />}</MemoryRouter></QueryClientProvider>);
   return { client, fetchMock, view };
@@ -35,7 +36,7 @@ describe('collaboration lifecycle', () => {
   it('submits text without attachments against the latest revision of an empty draft', async () => {
     const { client, fetchMock } = setup();
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
-    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '新的验收标准' }] }));
+    act(() => client.setQueryData(['collaboration-tasks', 'p1', 'pages', '', 'all'], { pages: [{ items: [{ ...task, revision: 4, criteria: '新的验收标准' }], nextCursor: null }], pageParams: [null] }));
     await waitFor(() => expect(screen.queryByRole('button', { name: '已核对标准，重新填写本轮提交' })).toBeNull());
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '仅文字成果' } });
     expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeEnabled();
@@ -153,7 +154,7 @@ describe('collaboration lifecycle', () => {
     const pending = { ...task, pendingHumanReview: true, lifecycleState: 'accepted', status: 'done' as const, currentSubmissionId: 's1' };
     const approved = { ...task, taskId: 't2', title: '正式审核通过的成果', lifecycleState: 'accepted', status: 'done' as const };
     setup({ tasks: [pending, approved], submissions: [{ ...submission, status: 'accept', decision: 'accept', aiDecision: 'accept', pendingHumanReview: true }] });
-    expect(screen.getByText('共 2 项 · 已完成 2 项')).toBeInTheDocument();
+    expect(screen.getByText(/共 2 项 · 已完成 2 项/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'pending_review' } });
     expect(screen.getByRole('button', { name: task.title })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: approved.title })).toBeNull();
@@ -286,7 +287,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s1');
     expect(screen.getByRole('button', { name: '上一页' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '下一页' })).toBeDisabled();
-    act(() => client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: [submission, { ...submission, submissionId: 's2', round: 2 }] }));
+    act(() => client.setQueryData(['collaboration-submissions', 'p1', 't1', 'pages'], { pages: [{ items: [submission, { ...submission, submissionId: 's2', round: 2 }], nextCursor: null }], pageParams: [null] }));
     expect(screen.getByLabelText('选择提交轮次')).toHaveValue('s1');
     await waitFor(() => expect(screen.getByRole('button', { name: '上一页' })).toBeEnabled());
     expect(screen.queryByRole('button', { name: '确认验收决定' })).toBeNull();
@@ -318,7 +319,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-new');
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-old');
-    act(() => client.setQueryData(['collaboration-proposals', 'p1'], { items: [oldProposal, { ...oldProposal, proposalId: 'p-later', createdAt: '2026-10-03T00:00:00Z' }] }));
+    act(() => client.setQueryData(['collaboration-proposals', 'p1', 'pages'], { pages: [{ items: [oldProposal, { ...oldProposal, proposalId: 'p-later', createdAt: '2026-10-03T00:00:00Z' }], nextCursor: null }], pageParams: [null] }));
     expect(screen.getByLabelText('选择建议记录')).toHaveValue('p-old');
     expect(within(region).queryByRole('button', { name: '应用选中条目' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '返回任务操作' }));
@@ -368,7 +369,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
     fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));
     fireEvent.change(screen.getByLabelText('修正理由或重新反馈'), { target: { value: '未保存的方案修正' } });
-    act(() => client.setQueryData(['collaboration-proposals', 'p1'], { items: [old, latest, { ...old, proposalId: 'newest', createdAt: '2026-10-03T00:00:00Z' }] }));
+    act(() => client.setQueryData(['collaboration-proposals', 'p1', 'pages'], { pages: [{ items: [old, latest, { ...old, proposalId: 'newest', createdAt: '2026-10-03T00:00:00Z' }], nextCursor: null }], pageParams: [null] }));
     await waitFor(() => expect(screen.getByLabelText('修正理由或重新反馈')).toHaveValue('未保存的方案修正'));
     fireEvent.click(screen.getByRole('button', { name: '历史记录' }));
     fireEvent.change(screen.getByLabelText('选择建议记录'), { target: { value: 'older' } });
@@ -415,7 +416,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '校对文稿' } });
     fireEvent.change(screen.getByLabelText(/^验收标准/), { target: { value: '无错字并保留核对清单' } });
     fireEvent.change(screen.getByLabelText('预计投入（小时）'), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认新建任务' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')).toBe(true));
     const call = fetchMock.mock.calls.find(([url, opts]) => String(url).endsWith('/projects/p1/tasks') && opts?.method === 'POST')!;
     expect(String(call[0])).toContain('/projects/p1/tasks');
@@ -511,7 +512,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '任务设置' }));
     fireEvent.click(screen.getByRole('button', { name: '修改任务内容' }));
     fireEvent.change(screen.getByLabelText('验收标准'), { target: { value: '旧版草稿' } });
-    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '另一成员的新标准' }] }));
+    act(() => client.setQueryData(['collaboration-tasks', 'p1', 'pages', '', 'all'], { pages: [{ items: [{ ...task, revision: 4, criteria: '另一成员的新标准' }], nextCursor: null }], pageParams: [null] }));
     await screen.findByRole('button', { name: '使用最新内容' });
     expect(screen.getByLabelText('验收标准')).toHaveValue('旧版草稿');
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
@@ -525,7 +526,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '修改分工' }));
     fireEvent.change(screen.getByLabelText('任务执行人'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('分工理由'), { target: { value: '原分工理由' } });
-    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, assigneeId: 'someone-else' }] }));
+    act(() => client.setQueryData(['collaboration-tasks', 'p1', 'pages', '', 'all'], { pages: [{ items: [{ ...task, revision: 4, assigneeId: 'someone-else' }], nextCursor: null }], pageParams: [null] }));
     await screen.findByRole('button', { name: '使用最新内容' });
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/assign'))).toBe(false);
@@ -536,7 +537,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '旧标准成果' } });
     act(() => { client.setQueryData(['project-goal', 'p1'], { projectId: 'p1', title: '共同目标', detail: '', revision: 1, graphRevision: 9 });
-  client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '增加无障碍检查' }] }); });
+  client.setQueryData(['collaboration-tasks', 'p1', 'pages', '', 'all'], { pages: [{ items: [{ ...task, revision: 4, criteria: '增加无障碍检查' }], nextCursor: null }], pageParams: [null] }); });
     await waitFor(() => expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeDisabled());
     expect(screen.getByLabelText('成果说明')).toHaveValue('旧标准成果');
     fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
@@ -548,7 +549,7 @@ describe('collaboration lifecycle', () => {
     const { client, fetchMock } = setup({ tasks: [{ ...task, lifecycleState: 'submitted', currentSubmissionId: 's1' }], submissions: [submission] });
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('第 1 轮验收理由'), { target: { value: '旧评价结论' } });
-    act(() => { client.setQueryData(['collaboration-submissions', 'p1', 't1'], { items: [{ ...submission, revision: 3, status: 'evaluated', aiDecision: 'improve', aiFeedback: '新增缺口' }] }); });
+    act(() => { client.setQueryData(['collaboration-submissions', 'p1', 't1', 'pages'], { pages: [{ items: [{ ...submission, revision: 3, status: 'evaluated', aiDecision: 'improve', aiFeedback: '新增缺口' }], nextCursor: null }], pageParams: [null] }); });
     await waitFor(() => expect(screen.getByRole('button', { name: '确认验收决定' })).toBeDisabled());
     fireEvent.click(screen.getByRole('button', { name: '确认验收决定' }));
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/decide'))).toBe(false);

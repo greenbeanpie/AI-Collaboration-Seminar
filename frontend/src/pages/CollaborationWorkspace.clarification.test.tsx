@@ -26,6 +26,7 @@ function setup({ failAnswer = false } = {}) {
     if (path.endsWith('/cancel')) { questions = []; jobStatus = 'cancelled'; return response({ jobId: question.jobId, status: 'cancelled' }); }
     if (path === '/api/v1/jobs/existing-job') return response({ jobId: question.jobId, status: jobStatus, result: jobStatus === 'waiting_input' ? { clarification: question } : {} });
     if (init?.method && init.method !== 'GET') throw new Error(`Unexpected mutation: ${path}`);
+    if (path.endsWith('/tasks/graph')) return response({ items: [], totals: { total: 0, done: 0 }, canRegenerate: true });
     if (path.endsWith('/goal')) return response({ title: '项目目标', detail: '', revision: 1, graphRevision: 1 });
     return response({ items: [], nextCursor: null });
   });
@@ -34,7 +35,7 @@ function setup({ failAnswer = false } = {}) {
   client.setQueryData(['project-goal', 'project-1'], { title: '项目目标', detail: '', revision: 1, graphRevision: 1 });
   client.setQueryData(['collaboration-tasks', 'project-1'], { items: [] });
   client.setQueryData(['collaboration-settings', 'project-1'], { aiCollaborationEnabled: true, assignmentMode: 'automatic', evaluationMode: 'manual', revision: 1 });
-  client.setQueryData(['collaboration-proposals', 'project-1'], { items: [] });
+  client.setQueryData(['collaboration-proposals', 'project-1', 'pages'], { pages: [{ items: [], nextCursor: null }], pageParams: [null] });
   client.setQueryData(['members', 'project-1'], []);
   client.setQueryData(['member-me', 'project-1'], { userId: 'owner' });
   const mount = () => render(<QueryClientProvider client={client}><MemoryRouter><CollaborationWorkspace /></MemoryRouter></QueryClientProvider>);
