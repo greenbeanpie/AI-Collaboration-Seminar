@@ -32,6 +32,62 @@ function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] a
 }
 function NavigationProbe() { const location = useLocation(); const navigate = useNavigate(); return <><output data-testid="location">{location.search}</output><button onClick={() => navigate(-1)}>返回前页</button></>; }
 describe('collaboration lifecycle', () => {
+  it('submits text without attachments against the latest revision of an empty draft', async () => {
+    const { client, fetchMock } = setup();
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    act(() => client.setQueryData(['collaboration-tasks', 'p1'], { items: [{ ...task, revision: 4, criteria: '新的验收标准' }] }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '已核对标准，重新填写本轮提交' })).toBeNull());
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '仅文字成果' } });
+    expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) => String(url).endsWith('/submissions') && options?.method === 'POST')).toBe(true));
+    const call = fetchMock.mock.calls.find(([url, options]) => String(url).endsWith('/submissions') && options?.method === 'POST')!;
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ expectedRevision: 4, body: '仅文字成果', materialVersionIds: [] });
+  });
+  it('starts the next round from the new task revision after a successful text submission', async () => {
+    const { fetchMock } = setup();
+    const fallback = fetchMock.getMockImplementation()!;
+    let saved = false;
+    fetchMock.mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/submissions') && options?.method === 'POST') { saved = true; return Response.json({ data: submission }); }
+      if (String(url).includes('/tasks?')) return Response.json({ data: { items: [{ ...task, revision: saved ? 5 : 3, lifecycleState: saved ? 'improve' : 'in_progress', currentSubmissionId: saved ? 's1' : null }], nextCursor: null } });
+      return fallback(url, options);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '第一轮说明' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await screen.findByRole('heading', { name: '提交新一轮成果' });
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '第二轮说明' } });
+    expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url, options]) => String(url).endsWith('/submissions') && options?.method === 'POST')).toHaveLength(2));
+    const calls = fetchMock.mock.calls.filter(([url, options]) => String(url).endsWith('/submissions') && options?.method === 'POST');
+    expect(JSON.parse(calls[1][1]!.body as string)).toMatchObject({ expectedRevision: 5, materialVersionIds: [] });
+  });
+  it('keeps explicit server conflicts locked even if the text is cleared', async () => {
+    const { fetchMock } = setup(); const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, options) => String(url).endsWith('/submissions') && options?.method === 'POST'
+      ? Response.json({ error: { code: 'INVALID_STATE', message: '任务版本冲突' }, requestId: 'r' }, { status: 409 }) : String(url).includes('/tasks?') ? Response.json({ data: { items: [task], nextCursor: null } }) : fallback(url, options));
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '保留冲突保护' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await screen.findByRole('button', { name: '已核对标准，重新填写本轮提交' });
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '重新输入仍须核对' } });
+    expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeDisabled();
+  });
+  it('preserves text and explains the block when the final file check fails', async () => {
+    const { fetchMock } = setup(); const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, options) => String(url).endsWith('/tasks/t1/files')
+      ? Response.json({ error: { code: 'SERVICE_UNAVAILABLE', message: '文件列表读取失败' }, requestId: 'r' }, { status: 503 }) : String(url).includes('/tasks?') ? Response.json({ data: { items: [task], nextCursor: null } }) : fallback(url, options));
+    fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
+    fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '已有附件不能被忽略' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
+    await screen.findByText('任务文件读取失败，请重试后提交，避免遗漏已有附件。');
+    expect(screen.getByLabelText('成果说明')).toHaveValue('已有附件不能被忽略');
+    expect(screen.getByRole('button', { name: '提交本轮成果' })).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([url, options]) => String(url).endsWith('/submissions') && options?.method === 'POST')).toBe(false);
+  });
   it('opens inquiry notification links on the corresponding task and shows red unread counts', async () => {
     const { client } = setup({ entries: ['/tasks?task=t1&taskAction=inquiries'] });
     expect(screen.getByRole('dialog', { name: '任务质询' })).toBeInTheDocument();

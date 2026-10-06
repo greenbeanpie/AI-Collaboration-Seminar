@@ -202,14 +202,16 @@ type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Item
 export async function listAllItems<Name extends SchemaName>(
   path: string,
   query: RequestOptions['query'] = {},
-  options: { requireNextCursor?: boolean; signal?: AbortSignal } = {},
+  options: { requireNextCursor?: boolean; signal?: AbortSignal; networkOnly?: boolean } = {},
 ): Promise<ItemsOf<Name>> {
   const all: unknown[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
   let pageCount = 0;
   do {
-    const page: DataOf<Name> = await api.get<Name>(path, { ...query, cursor }, options.signal);
+    const page: DataOf<Name> = options.networkOnly
+      ? await request<Name>(path, { query: { ...query, cursor }, signal: options.signal, networkOnly: true })
+      : await api.get<Name>(path, { ...query, cursor }, options.signal);
     if (!page || typeof page !== 'object' || !('items' in page) || !Array.isArray(page.items)) {
       throw new ApiError(200, {
         error: { code: 'INVALID_PAGINATION', message: '服务端列表响应缺少 items 字段。', retryable: false },

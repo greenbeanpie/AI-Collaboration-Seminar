@@ -31,7 +31,7 @@ it('reuses successfully uploaded bytes when registration fails and is retried', 
   let fail = true;
   request.mockImplementation(async (_project, _path, options) => { if (options?.method) { if (fail) throw new Error('入库失败'); return file; } return { items: [] }; });
   fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['bytes'], '新文件.pdf')] } });
-  await screen.findByText('入库失败'); expect(onBusy).toHaveBeenLastCalledWith(true);
+  await screen.findByText('入库失败'); expect(onBusy).toHaveBeenLastCalledWith(true, '请重试或移除失败的待上传文件。');
   fail = false; fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await waitFor(() => expect(screen.queryByText('入库失败')).toBeNull());
   expect(upload).toHaveBeenCalledTimes(1);
@@ -60,4 +60,13 @@ it('hides archived files by default and supports restoring material and file sep
   expect(screen.queryByLabelText('更新文件：报告.pdf')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '撤销材料归档' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/materials/m/unarchive', { method: 'POST', body: { expectedRevision: 3 } }));
+});
+it('blocks submission with an explicit reason until a failed upload is removed', async () => {
+  show(); await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false, ''));
+  upload.mockRejectedValueOnce(new Error('上传失败'));
+  fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['bytes'], '失败.pdf')] } });
+  await screen.findByText('上传失败');
+  await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(true, '请重试或移除失败的待上传文件。'));
+  fireEvent.click(screen.getByRole('button', { name: '移除待上传项' }));
+  await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false, ''));
 });

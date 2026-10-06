@@ -8,13 +8,16 @@ import { uploadProjectFile } from './source-workflows';
 import { archiveFile, archiveMaterial, listTaskFiles, taskFilesKey, type TaskFile } from './task-files-client';
 
 type PendingUpload = { key: string; file: File; initializedId?: string; uploadedId?: string; replace?: TaskFile; state: 'waiting' | 'uploading' | 'failed' | 'done'; error?: unknown };
-export function TaskFileUploads({ projectId, taskId, disabled, onBusy }: { projectId: string; taskId: string; disabled: boolean; onBusy: (busy: boolean) => void }) {
+export function TaskFileUploads({ projectId, taskId, disabled, onBusy }: { projectId: string; taskId: string; disabled: boolean; onBusy: (busy: boolean, reason?: string) => void }) {
   const client = useQueryClient();
   const files = useQuery({ queryKey: taskFilesKey(projectId, taskId), queryFn: () => listTaskFiles(projectId, taskId) });
   const [pending, setPending] = useState<PendingUpload[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(), [archived, setArchived] = useState(false);
   const executing = useRef(false);
   const unresolved = pending.some(item => item.state !== 'done');
-  useEffect(() => { onBusy(busy || unresolved || files.isPending || files.isError); }, [busy, unresolved, files.isPending, files.isError, onBusy]);
+  useEffect(() => {
+    const reason = busy ? '文件正在上传或更新，请稍候。' : unresolved ? '请重试或移除失败的待上传文件。' : files.isPending ? '正在读取任务文件，请稍候。' : files.isError ? '任务文件读取失败，请重试后提交，避免遗漏已有附件。' : '';
+    onBusy(Boolean(reason), reason);
+  }, [busy, unresolved, files.isPending, files.isError, onBusy]);
   const refresh = async () => { await Promise.all(['task-files', 'material', 'materials', 'materialVersions', 'resource-library', 'files'].map(key => client.invalidateQueries({ queryKey: [key, projectId] }))); };
   const setRow = (key: string, changes: Partial<PendingUpload>) => setPending(rows => rows.map(row => row.key === key ? { ...row, ...changes } : row));
   const upload = async (rows: PendingUpload[]) => {

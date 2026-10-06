@@ -10,7 +10,7 @@ import { TaskFileUploads } from './TaskFileUploads';
 import { listTaskFiles, taskFilesKey } from './task-files-client';
 import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, UserRound } from 'lucide-react';
@@ -55,7 +55,7 @@ function ProjectCollaborationWorkspace() {
   const feedbackHistory = useQuery({queryKey:['project-feedback-history',projectId],queryFn:()=>projectRequest<{items:FeedbackSnapshot[]}>(projectId,'/collaboration/feedback/history')});
   const capabilities = useCapabilities();
   const modelEnabled = capabilities.data?.features.aiEnabled === true;
-  const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: () => collaborationApi.tasks(projectId), refetchInterval: 30_000 });
+  const tasks = useQuery({ queryKey: ['collaboration-tasks', projectId], queryFn: ({ signal }) => collaborationApi.tasks(projectId, { networkOnly: navigator.onLine !== false, signal }), refetchInterval: 30_000 });
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   const settings = useQuery({ queryKey: ['collaboration-settings', projectId], queryFn: () => collaborationApi.settings(projectId) });
   const aiEnabled = modelEnabled && settings.data?.aiCollaborationEnabled === true;
@@ -257,6 +257,8 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   const submissionOutdated = submissionConflict || submissionBase !== task.revision;
   const [body, setBody] = useState('');
   const [filesBusy, setFilesBusy] = useState(false);
+  const [filesBlockedReason, setFilesBlockedReason] = useState('');
+  const updateFilesStatus = useCallback((busy: boolean, reason = '') => { setFilesBusy(busy); setFilesBlockedReason(reason); }, []);
   const [jobId, setJobId] = useState<string | null>(null);
   const [evaluationNotice, setEvaluationNotice] = useState('');
   const job = useVisibleJobPoller(jobId);
@@ -264,6 +266,10 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   const refresh = async () => { await onChanged(); await client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); } }, [job.isSettled, jobId, projectId, task.taskId, client]);
   const submit = useMutation({ mutationFn: async () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); if (filesBusy) throw new Error('请等待文件上传或处理失败项。'); const files = await client.fetchQuery({ queryKey: taskFilesKey(projectId, task.taskId), queryFn: () => listTaskFiles(projectId, task.taskId), staleTime: 0 }); const active = files.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt); if (active.length > 10) throw new Error('每轮最多提交 10 个文件，请归档不参与本轮的文件。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), active.map(file => file.versionId)); }, onSuccess: async result => { setBody(''); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
+  useEffect(() => {
+    if (!body && !submissionConflict && !submit.isPending) setSubmissionBase(task.revision);
+  }, [body, submissionConflict, submit.isPending, task.revision]);
+  const submitBlockedReason = submissionOutdated ? '任务或验收标准已更新，请先核对。' : filesBusy ? filesBlockedReason || '请等待文件上传或处理失败项。' : !body.trim() ? '请填写成果说明。' : '';
   const current = history.data?.items.find(submission => submission.submissionId === task.currentSubmissionId);
   useEffect(() => { if (!jobId && current?.evaluationJobId && !current.decision) setJobId(current.evaluationJobId); }, [current?.evaluationJobId, current?.decision, jobId]);
   const canSubmit = task.assigneeId === meId && ['in_progress', 'improve', 'rework'].includes(task.lifecycleState);
@@ -292,9 +298,10 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
     {canSubmit && <section className="collab-submit"><h3>{task.currentSubmissionId ? '提交新一轮成果' : '提交成果'}</h3><form className="stack" onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
       {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请到任务设置核对最新标准，再重新填写成果说明与文件；当前草稿尚未提交。</div>}
       {submissionOutdated && <button type="button" className="button button-quiet" onClick={() => { setBody(''); setSubmissionBase(task.revision); setSubmissionConflict(false); submit.reset(); }}>已核对标准，重新填写本轮提交</button>}
-      <Field aiReference label="成果说明"><textarea className="input" required rows={4} maxLength={12000} value={body} onChange={event => setBody(event.target.value)} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
-      <TaskFileUploads projectId={projectId} taskId={task.taskId} disabled={submit.isPending} onBusy={setFilesBusy} />
-      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" disabled={submit.isPending || submissionOutdated || filesBusy || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
+      <Field aiReference label="成果说明"><textarea className="input" required rows={4} maxLength={12000} value={body} onChange={event => { if (!body && !submissionConflict && !submit.isPending) setSubmissionBase(task.revision); setBody(event.target.value); }} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
+      <TaskFileUploads projectId={projectId} taskId={task.taskId} disabled={submit.isPending} onBusy={updateFilesStatus} />
+      {submitBlockedReason && <p className="form-note" role="status">{submitBlockedReason}</p>}
+      {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" title={submitBlockedReason || undefined} disabled={submit.isPending || submissionOutdated || filesBusy || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
     </form></section>}
     {!task.assigneeId && <p className="form-note">请先认领任务或由安排分工，再提交成果。</p>}
     {evaluationNotice && <div className="notice notice-warn">成果已保存，AI 评价未启动：{evaluationNotice}。可由项目负责人或拥有任务管理权限的成员手动验收。</div>}

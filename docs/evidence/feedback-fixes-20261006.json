@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-06",
+  "status": "passed",
+  "baseCommit": "2bb3ecbc3cebfc426196895569dd7ec420fbd1aa",
+  "scope": "Local implementation of the three screenshot feedback items; no production deployment or database change",
+  "changes": [
+    "Synchronize empty submission drafts with current task revisions while preserving dirty-draft and HTTP 409 review guards",
+    "Read task and task-file lists from the network while online, preventing stale offline snapshots from reverting saved task revisions or omitting uploaded attachments",
+    "Explain why submission is disabled, retaining upload and file-list failure protection",
+    "Preview PDF pages, including scans, and DOCX text with parsing warnings using the existing authenticated original-file endpoint",
+    "Keep existing material text, local drafts, immutable versions and downloads; historical previews use historical attachments",
+    "Move the single owner-only manual standard revision action into the section header"
+  ],
+  "verification": {
+    "frontendTests": { "command": "npm test --prefix frontend", "files": 130, "passed": 805 },
+    "backendTests": { "command": "npm test --prefix backend -- test/134-task-files.test.ts test/10-files.test.ts test/124-resource-index.test.ts", "files": 3, "passed": 19 },
+    "checks": ["npm run typecheck", "npm run lint", "npm run build", "git diff --check"],
+    "browser": {
+      "script": "scripts/verify-feedback-fixes-ui.cjs",
+      "report": "output/feedback-fixes/verification.json",
+      "boundary": "Real React application, Chromium, PDF.js and DOCX Worker against an isolated loopback API fixture; backend D1/R2 behavior covered separately by tests",
+      "widths": [1440, 390],
+      "checksPerWidth": ["Edit task then submit text without attachments using its latest revision", "Upload PDF and multipart DOCX, submit both immutable versions, then preview both files", "Render the non-text second PDF page", "Display DOCX warnings and escape literal script markup", "Manual standard action above content and present once", "No horizontal page overflow or browser runtime errors"],
+      "runtimeErrors": [],
+      "screenshots": ["pdf-1440.png", "pdf-scan-1440.png", "docx-1440.png", "standards-1440.png", "pdf-390.png", "pdf-scan-390.png", "docx-390.png", "standards-390.png"]
+    }
+  },
+  "modifiedFiles": [
+    "frontend/src/api/client.ts",
+    "frontend/src/api/client.offline.test.ts",
+    "frontend/src/api/collaboration.ts",
+    "frontend/src/pages/CollaborationWorkspace.tsx",
+    "frontend/src/pages/CollaborationWorkspace.test.tsx",
+    "frontend/src/pages/TaskFileUploads.tsx",
+    "frontend/src/pages/TaskFileUploads.test.tsx",
+    "frontend/src/pages/task-files-client.ts",
+    "frontend/src/pages/StandardsEditor.tsx",
+    "frontend/src/pages/StandardsEditor.test.tsx",
+    "frontend/src/pages/FilePreview.tsx",
+    "frontend/src/pages/FilePreview.css",
+    "frontend/src/pages/FilePreview.test.tsx",
+    "frontend/src/pages/MaterialsPage.tsx",
+    "frontend/src/pages/MaterialsPage.test.tsx",
+    "frontend/src/pages/DataWorkspacePage.tsx",
+    "frontend/src/pages/DataWorkspacePage.test.tsx",
+    "scripts/verify-feedback-fixes-ui.cjs",
+    "docs/evidence/feedback-fixes-20261006.json"
+  ],
+  "remainingBoundaries": [
+    "The original reported project and file were not provided; individual missing objects, damaged files or permission errors remain unverified",
+    "DOCX preview shows readable text, not complete Word layout or embedded objects",
+    "Other formats retain download and support guidance; PPT and Excel previews are outside this change",
+    "No production deployment performed"
+  ]
+}

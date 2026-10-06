@@ -22,6 +22,12 @@ it('preserves unmapped existing rubric dimensions in the same editor while keepi
   expect(screen.getByLabelText('评分权重（%）')).toHaveValue(70);
   expect(screen.queryByLabelText('评分维度标识')).toBeNull();
 });
+it('places the single manual revision action in the header before the standard content', () => {
+  show([version]);
+  const action = screen.getByRole('button', { name: '修订生效标准' });
+  expect(action.closest('.section-head')).not.toBeNull();
+  expect(action.compareDocumentPosition(screen.getByText('生效标准 v1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
 it('saves only scoring dimensions without checklist fields, descriptions or dates', async () => {
   const writes: unknown[] = [];
   vi.stubGlobal('fetch', vi.fn(async (path: unknown, init?: RequestInit) => { if(init?.method==='POST')writes.push(JSON.parse(String(init.body)));return Response.json({data:init?.method==='POST'?version:String(path).endsWith('/current')?{standard:version}:{items:[version]},requestId:'r'}); }));
