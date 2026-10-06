@@ -17,3 +17,13 @@ it('does not overwrite endpoint-specific API policy', async () => {
   expect(await worker.fetch(new Request('https://app.test/api/v1/x'),{ASSETS:{fetch:assets},API:{fetch}})).toBe(original);
   expect(assets).not.toHaveBeenCalled();
 });
+it('assigns fresh HTML CSP nonces for Cloudflare injection and prevents cached reuse', async () => {
+ const fetch=vi.fn(async()=>new Response('<div id="root"></div>',{headers:{'Content-Type':'text/html'}}));
+ const first=await worker.fetch(new Request('https://app.test/login'),{ASSETS:{fetch},API:{fetch}});
+ const second=await worker.fetch(new Request('https://app.test/login'),{ASSETS:{fetch},API:{fetch}});
+ expect(first.headers.get('Cache-Control')).toBe('no-store');
+ const policy=first.headers.get('Content-Security-Policy')!;
+ expect(policy).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);expect(policy).toContain("frame-src 'self' https://challenges.cloudflare.com");
+ expect(second.headers.get('Content-Security-Policy')).not.toBe(policy);
+ expect(await first.text()).toBe('<div id="root"></div>');
+});
