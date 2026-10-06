@@ -153,7 +153,7 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
                                 output.write(buffer, 0, count)
                             }
                         }
-                        output.fd.sync()
+                        output.flush() // Provider-owned pipe commits on close; private imports require fsync.
                     }
                 } ?: error("无法写入导出位置")
                 invoke.resolve()
