@@ -22,7 +22,7 @@ import { ManualAssessmentEditor } from './ManualAssessmentEditor';
 type PendingAssessment = { jobId: string; entityId: string; action: string; kind?: Assessment['kind']; previousJobId?: string };
 const selectionParameters = ['assessmentId', 'reviewId', 'rehearsalId', 'review', 'rehearsal'] as const;
 const activeAssessmentStatuses = ['pending', 'running', 'active', 'finishing', 'failed'];
-const pendingKey = (id: string) => `ai-office:pending-assessment-job:${id}`;
+const pendingKey = (id: string, accountId: string) => `ai-office:account:${accountId}:pending-assessment-job:${id}`;
 function isScoringReport(report: Assessment['report']): report is AssessmentReport { return Boolean(report && (report.status === 'scored' || report.status === 'unscorable') && Array.isArray(report.scores)); }
 export function AssessmentWorkspacePage() {
   const { projectId } = useProject();
@@ -51,7 +51,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const returnTo = `/app/projects/${encodeURIComponent(projectId)}/assessment?section=${kind === 'rehearsal' ? 'rehearsals' : 'reviews'}`;
   const supplement = (path: string) => `${path}${path.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(returnTo)}`;
 
-  const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId)));
+  const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId, session.data?.id ?? 'anonymous')));
   const rows = (history.data ?? []).filter(item => item.kind === kind);
   const linkedRecord = (history.data ?? []).find(item => item.assessmentId === linkedId || item.rehearsalId === linkedId);
   const newlyCreatedId = pending?.kind === kind && pending.action === 'create' && pending.entityId === linkedId ? pending.entityId : '';
@@ -81,8 +81,8 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     const result = await projectRequest<{ assessmentId: string; jobId: string; rehearsalId?: string }>(projectId, '/assessments', { method: 'POST', body, idempotencyKey }); completeIntent(namespace); return result;
   }, onSuccess: async result => {
     if (draftKey) sessionStorage.removeItem(draftKey);
-    const next = { entityId: result.assessmentId, jobId: result.jobId, action: 'create', kind }; writePendingJob(pendingKey(projectId), next); setPending(next);
-    if (result.rehearsalId) writePendingJob(`ai-office:pending-rehearsal-job:${projectId}`, { entityId: result.rehearsalId, jobId: result.jobId, action: 'create' });
+    const next = { entityId: result.assessmentId, jobId: result.jobId, action: 'create', kind }; writePendingJob(pendingKey(projectId, session.data?.id ?? 'anonymous'), next); setPending(next);
+    if (result.rehearsalId) writePendingJob(`ai-office:account:${session.data?.id ?? 'anonymous'}:pending-rehearsal-job:${projectId}`, { entityId: result.rehearsalId, jobId: result.jobId, action: 'create' });
     select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] });
   } });
   const retry = useMutation({ mutationFn: async () => {
@@ -91,13 +91,13 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
     const jobId = await retryBackendJob(projectId, target.jobId);
     return { ...target, jobId };
   }, onSuccess: next => {
-    writePendingJob(pendingKey(projectId), next); setPending(next);
+    writePendingJob(pendingKey(projectId, session.data?.id ?? 'anonymous'), next); setPending(next);
     void client.invalidateQueries({ queryKey: ['assessments', projectId] });
     void client.invalidateQueries({ queryKey: ['assessment', projectId, next.entityId] });
   } });
   useEffect(() => {
     if (!activeEntityId || !activeJobId || job.job?.jobId !== activeJobId || job.job.status !== 'succeeded') return;
-    clearPendingJob(pendingKey(projectId), activeJobId);
+    clearPendingJob(pendingKey(projectId, session.data?.id ?? 'anonymous'), activeJobId);
     setPending(current => current?.entityId === activeEntityId && current.jobId === activeJobId ? null : current);
     void client.invalidateQueries({ queryKey: ['assessments', projectId] });
     void client.invalidateQueries({ queryKey: ['assessment', projectId, activeEntityId] });

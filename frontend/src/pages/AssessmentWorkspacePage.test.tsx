@@ -56,7 +56,7 @@ it('recovers a failed assessment job from server history and retries its real jo
   expect(screen.getByText('评分作业失败，请重试')).toBeInTheDocument(); expect(retry).not.toBeDisabled();
   fireEvent.click(retry);
   await waitFor(() => expect(writes).toEqual(['/api/v1/jobs/j-failed/retry']));
-  await waitFor(() => expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!).jobId).toBe('j-retry'));
+  await waitFor(() => expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!).jobId).toBe('j-retry'));
 });
 
 const aliases = ['assessmentId', 'reviewId', 'rehearsalId', 'review', 'rehearsal'];
@@ -99,7 +99,7 @@ it('maps a valid rehearsal session deep link to the correct assessment record',a
   await waitFor(()=>expect(new URLSearchParams(screen.getByTestId('location').textContent!).get('assessmentId')).toBe('right'));
 });
 it('ignores a legacy failed pending job for another entity while viewing successful history',async()=>{
-  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'other',jobId:'other-failed',action:'create'}));
+  localStorage.setItem('ai-office:account:user:pending-assessment-job:p',JSON.stringify({entityId:'other',jobId:'other-failed',action:'create'}));
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
   showRecords([record('saved','material_review')],'/assessment?section=checks&assessmentId=saved');
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
@@ -109,7 +109,7 @@ it('ignores a legacy failed pending job for another entity while viewing success
 });
 it('keeps a saved score authoritative when its original job failed and explains that failure as history',async()=>{
   const saved=record('saved','material_review','succeeded',{jobId:'original-failed',jobError:'评分作业失败，请重试'});
-  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'saved',jobId:'original-failed',action:'create'}));
+  localStorage.setItem('ai-office:account:user:pending-assessment-job:p',JSON.stringify({entityId:'saved',jobId:'original-failed',action:'create'}));
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
   showRecords([saved],'/assessment?section=checks&assessmentId=saved');
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
@@ -121,7 +121,7 @@ it('keeps a saved score authoritative when its original job failed and explains 
 it('retries only the selected real failure even when another kind owns the old local pending job',async()=>{
   authState.enabled=true;
   const failed=record('failed','material_review','failed',{jobId:'current-failed',report:null});
-  localStorage.setItem('ai-office:pending-assessment-job:p',JSON.stringify({entityId:'other-rehearsal',jobId:'foreign-failed',action:'create'}));
+  localStorage.setItem('ai-office:account:user:pending-assessment-job:p',JSON.stringify({entityId:'other-rehearsal',jobId:'foreign-failed',action:'create'}));
   const requests:string[]=[];
   vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
     const path=String(url);requests.push(path);
@@ -134,7 +134,7 @@ it('retries only the selected real failure even when another kind owns the old l
   fireEvent.click(await screen.findByRole('button',{name:'重试本轮任务'}));
   await waitFor(()=>expect(requests).toContain('/api/v1/jobs/current-failed/retry'));
   expect(requests.some(path=>path.includes('foreign-failed'))).toBe(false);
-  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'current-retry',kind:'material_review',previousJobId:'current-failed'}));
+  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'current-retry',kind:'material_review',previousJobId:'current-failed'}));
 });
 it('continues reading the selected running record after refresh without a local pending entry',async()=>{
   const running=record('running','material_review','running',{jobId:'current-running',report:null});
@@ -172,7 +172,7 @@ it('keeps a retry response attached to its originating record after selection ch
   fireEvent.click(screen.getAllByRole('button',{name:/材料检查 ·/})[1]!);
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   releaseRetry!(Response.json({data:{jobId:'retried-job'}}));
-  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
+  await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
   expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
   expect(screen.queryByText(/本轮评分任务/)).toBeNull();
 });

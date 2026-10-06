@@ -10,9 +10,9 @@ it('defaults to me and supports full, empty and partial selection', async () => 
   const view=render(ui());
   expect(await screen.findByLabelText('Alice')).toBeChecked();
   expect(screen.getByLabelText('Bob')).not.toBeChecked();
-  expect((screen.getByLabelText('全选组员') as HTMLInputElement).indeterminate).toBe(true);
-  fireEvent.click(screen.getByLabelText('全选组员'));expect(onChange).toHaveBeenLastCalledWith(['a','b']);
-  view.rerender(ui(['a','b']));fireEvent.click(screen.getByLabelText('全选组员'));expect(onChange).toHaveBeenLastCalledWith([]);
+  expect((screen.getByLabelText('全选已载入组员') as HTMLInputElement).indeterminate).toBe(true);
+  fireEvent.click(screen.getByLabelText('全选已载入组员'));expect(onChange).toHaveBeenLastCalledWith(['a','b']);
+  view.rerender(ui(['a','b']));fireEvent.click(screen.getByLabelText('全选已载入组员'));expect(onChange).toHaveBeenLastCalledWith([]);
   view.rerender(ui([]));expect(screen.getByRole('alert')).toHaveTextContent('请至少选择');
   vi.restoreAllMocks();
 });
