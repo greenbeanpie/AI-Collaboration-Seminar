@@ -24,6 +24,7 @@ pub struct NativeState {
     pub exiting: AtomicBool,
     pub hidden_since: Mutex<Option<Instant>>,
     pub nonce: AtomicU64,
+    pub auth_epoch: AtomicU64,
     pub preparing: AtomicBool,
 }
 impl Default for NativeState {
@@ -34,6 +35,7 @@ impl Default for NativeState {
             exiting: AtomicBool::new(false),
             hidden_since: Mutex::new(None),
             nonce: AtomicU64::new(0),
+            auth_epoch: AtomicU64::new(0),
             preparing: AtomicBool::new(false),
         }
     }
@@ -222,5 +224,28 @@ mod tests {
         ] {
             assert!(!safe_route(bad));
         }
+    }
+}
+
+pub fn open_external(url: &url::Url) {
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return;
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows::{
+            core::PCWSTR,
+            Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        };
+        let verb: Vec<u16> = "open\0".encode_utf16().collect();
+        let target: Vec<u16> = format!("{}\0", url).encode_utf16().collect();
+        let _ = ShellExecuteW(
+            None,
+            PCWSTR(verb.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        );
     }
 }
