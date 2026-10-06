@@ -251,6 +251,8 @@ A04/A05/A06/A09/A10/A11/A12 安装入口/A13 本地机制/A15 均有实现和本
 
 线上首次 PBKDF2 600000 返回 NotSupportedError：本地新运行时与线上100000上限存在差异。最终使用原生 scrypt N32768/r8/p3、16字节随机盐、32字节输出，拒绝弱参数；同密码升级管理员哈希后，重新部署并通过生产与本地实测。参考 [Cloudflare Node crypto支持](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/) 与 [OWASP密码存储参数](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)。
 
-最终生产版本：后端 `85f011b9-7c7e-4be1-992c-8a1510a31e8c`，前端 `54b06f48-c0e8-44ec-936b-f4d93350a95c`。安全证据 [password-auth-readiness.json](evidence/password-auth-readiness.json)，网页截图 [password-admin-accounts.png](evidence/password-admin-accounts.png)。此前邮箱认证记录是历史状态。
+最终生产版本：后端 `85f011b9-7c7e-4be1-992c-8a1510a31e8c`，前端 `54b06f48-c0e8-44ec-936b-f4d93350a95c`。安全证据 [password-auth-readiness.json](evidence/password-auth-readiness.json)，网页截图 [password-admin-accounts.png（历史证据已归档）](EVIDENCE-ARCHIVE.md)。此前邮箱认证记录是历史状态。
 
 剩余边界：无自助密码找回/普通旧账号密码配置界面；邮箱可填但未验证，不能用于自动认领或找回。邀请码记录仅最新100条。自定义域名挑战、真模型/OCR、云端恢复和告警配置仍按此前边界保留。Workers测试池仍有取消请求/RPC释放收尾告警，未隐藏。
+
+> 历史截图与输出已核验归档；原采集路径通过[归档清单与恢复说明](EVIDENCE-ARCHIVE.md)查找。本报告保留原验收结论，未重新执行浏览器测试。

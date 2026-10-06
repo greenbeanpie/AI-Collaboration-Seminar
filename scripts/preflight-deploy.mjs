@@ -18,6 +18,7 @@ const api = backend.env?.[environment];
 const web = frontend.env?.[environment];
 const problems = [];
 const check = (condition, message) => { if (!condition) problems.push(message); };
+check(/^[0-9a-f]{7,40}$/.test(process.env.VITE_BUILD_VERSION ?? ''), '发布必须显式提供 Git SHA: VITE_BUILD_VERSION');
 check(api && web, '缺少目标环境配置');
 check(api?.vars?.ENV_NAME === environment, 'ENV_NAME 与目标环境不符');
 check(api?.vars?.AUTH_MODE === 'password', '云端必须启用密码登录与一次性邀请码注册');

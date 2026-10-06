@@ -15,6 +15,10 @@
     "preflight:deploy": "node scripts/preflight-deploy.mjs",
     "backup:drill:local": "node scripts/backup-drill-local.mjs",
     "bootstrap:admin:local": "node scripts/bootstrap-password-admin.mjs --local",
-    "bootstrap:admin:production": "node scripts/bootstrap-password-admin.mjs --production"
+    "bootstrap:admin:production": "node scripts/bootstrap-password-admin.mjs --production",
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "test:engineering": "node --test scripts/test/*.test.mjs",
+    "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs"
   }
 }

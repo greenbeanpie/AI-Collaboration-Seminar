@@ -1,0 +1,56 @@
+name: Verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      VITE_BUILD_VERSION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm run install:all
+      - run: npm run test:engineering
+      - run: npm run check:secrets
+      - name: Validate immutable migrations
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ] && git cat-file -e "$BASE_REF^{commit}" 2>/dev/null; then
+            npm run check:migrations -- "$BASE_REF"
+          else
+            npm run check:migrations
+          fi
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:backend
+      - run: npm run test:frontend
+      - name: Check generated contract
+        run: |
+          npm run export:openapi --prefix backend
+          npm run typegen --prefix frontend
+          git diff --exit-code -- backend/openapi/openapi.json frontend/src/api/openapi.ts
+      - run: npm run verify:reproducible-build
+      - run: npm run preflight:deploy -- production
+      - name: Backend deployment dry-run
+        working-directory: backend
+        run: npx --no-install wrangler deploy --env production --dry-run --outdir ../.wrangler/dry-run/backend
+      - name: Frontend deployment dry-run
+        working-directory: frontend
+        run: npx --no-install wrangler deploy --env production --dry-run --outdir ../.wrangler/dry-run/frontend
