@@ -138,7 +138,13 @@ fn persist(app: &AppHandle, account: &str, rows: &[NativeFile]) -> Result<()> {
     file.write_all(&serde_json::to_vec(&value).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
-    std::fs::rename(temp, path).map_err(|e| e.to_string())
+    std::fs::rename(temp, &path).map_err(|e| e.to_string())?;
+    // Android/Linux rename durability requires syncing the containing directory too.
+    #[cfg(target_os = "android")]
+    std::fs::File::open(path.parent().ok_or("缓存目录不可用")?)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 fn change<F: FnOnce(&mut Vec<NativeFile>) -> Result<()>>(
     app: &AppHandle,
@@ -197,6 +203,10 @@ fn update(app: &AppHandle, row: &NativeFile) -> Result<()> {
 }
 fn still_active(app: &AppHandle, row: &NativeFile) -> Result<()> {
     let native = app.state::<NativeState>();
+    #[cfg(target_os = "android")]
+    if !crate::android::is_foreground() || !native.foreground.load(Ordering::Acquire) {
+        return Err("网络传输已在后台暂停，返回前台后恢复".into());
+    }
     if native.exiting.load(Ordering::Relaxed)
         || native
             .page
@@ -276,85 +286,180 @@ pub async fn desktop_stage_files(
         valid_id(id)?;
     }
     let _activity = TransferActivity::start(&app);
-    let paths = rfd::AsyncFileDialog::new()
-        .set_title("选择离线附件")
-        .pick_files()
+    #[cfg(target_os = "android")]
+    {
+        stage_android(
+            &app,
+            &window,
+            &account,
+            &project_id,
+            task_id,
+            replace_material_id,
+            expected_revision,
+            max_files,
+        )
         .await
-        .unwrap_or_default();
-    if paths.len() > max_files.unwrap_or(10).min(10) {
-        return Err("每轮最多提交10个文件".into());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let paths = rfd::AsyncFileDialog::new()
+            .set_title("选择离线附件")
+            .pick_files()
+            .await
+            .unwrap_or_default();
+        if paths.len() > max_files.unwrap_or(10).min(10) {
+            return Err("每轮最多提交10个文件".into());
+        }
+        if replace_material_id.is_none()
+            && task_id.is_some()
+            && list(&app, &account, &project_id)?
+                .iter()
+                .filter(|r| {
+                    r.direction == "upload" && r.task_id == task_id && r.status != "complete"
+                })
+                .count()
+                + paths.len()
+                > 10
+        {
+            return Err("待上传附件不能超过10个".into());
+        }
+        let mut staged = vec![];
+        for path in paths {
+            if account != self::account(&app, &window, &project_id)? {
+                return Err("登录账户已变化".into());
+            }
+            let name = path.file_name();
+            if name.len() > 255 {
+                return Err("文件名过长".into());
+            }
+            let before = tokio::fs::metadata(path.path())
+                .await
+                .map_err(|e| e.to_string())?;
+            let size = before.len();
+            if size == 0 {
+                return Err("不能上传空文件".into());
+            }
+            let row = NativeFile {
+                id: uuid::Uuid::new_v4().to_string(),
+                account_id: account.clone(),
+                project_id: project_id.clone(),
+                task_id: task_id.clone(),
+                replace_material_id: replace_material_id.clone(),
+                expected_revision,
+                file_id: None,
+                name,
+                size_bytes: size,
+                direction: "upload".into(),
+                status: "waiting".into(),
+                transferred_bytes: 0,
+                error: None,
+                session_id: None,
+            };
+            let target = blob(&app, &row)?;
+            tokio::fs::copy(path.path(), &target)
+                .await
+                .map_err(|e| e.to_string())?;
+            let copied = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&target)
+                .await
+                .map_err(|e| e.to_string())?;
+            copied.sync_all().await.map_err(|e| e.to_string())?;
+            let after = tokio::fs::metadata(path.path())
+                .await
+                .map_err(|e| e.to_string())?;
+            if copied.metadata().await.map_err(|e| e.to_string())?.len() != size
+                || after.len() != size
+                || before.modified().ok() != after.modified().ok()
+            {
+                drop(copied);
+                let _ = tokio::fs::remove_file(&target).await;
+                return Err("源文件在复制期间变化，请关闭编辑后重新添加".into());
+            }
+            drop(copied);
+            if let Err(error) = change(&app, &account, |rows| {
+                rows.push(row.clone());
+                Ok(())
+            }) {
+                let _ = tokio::fs::remove_file(blob(&app, &row)?).await;
+                return Err(error);
+            }
+            staged.push(row);
+        }
+        Ok(staged)
+    }
+}
+#[cfg(target_os = "android")]
+#[allow(clippy::too_many_arguments)]
+async fn stage_android(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    account_id: &str,
+    project: &str,
+    task_id: Option<String>,
+    replace_material_id: Option<String>,
+    expected_revision: Option<u64>,
+    max_files: Option<usize>,
+) -> Result<Vec<NativeFile>> {
+    struct Imports(Vec<crate::android::PickedFile>);
+    impl Drop for Imports {
+        fn drop(&mut self) {
+            for file in &self.0 {
+                let _ = std::fs::remove_file(&file.path);
+            }
+        }
+    }
+    let picked = Imports(crate::android::pick_files(app, max_files.unwrap_or(10).min(10)).await?);
+    if account_id != account(app, window, project)? {
+        return Err("登录账户已变化".into());
     }
     if replace_material_id.is_none()
         && task_id.is_some()
-        && list(&app, &account, &project_id)?
+        && list(app, account_id, project)?
             .iter()
             .filter(|r| r.direction == "upload" && r.task_id == task_id && r.status != "complete")
             .count()
-            + paths.len()
+            + picked.0.len()
             > 10
     {
         return Err("待上传附件不能超过10个".into());
     }
-    let mut staged = vec![];
-    for path in paths {
-        if account != self::account(&app, &window, &project_id)? {
+    let mut staged = Vec::new();
+    for file in &picked.0 {
+        if account_id != account(app, window, project)? {
             return Err("登录账户已变化".into());
-        }
-        let name = path.file_name();
-        if name.len() > 255 {
-            return Err("文件名过长".into());
-        }
-        let before = tokio::fs::metadata(path.path())
-            .await
-            .map_err(|e| e.to_string())?;
-        let size = before.len();
-        if size == 0 {
-            return Err("不能上传空文件".into());
         }
         let row = NativeFile {
             id: uuid::Uuid::new_v4().to_string(),
-            account_id: account.clone(),
-            project_id: project_id.clone(),
+            account_id: account_id.into(),
+            project_id: project.into(),
             task_id: task_id.clone(),
             replace_material_id: replace_material_id.clone(),
             expected_revision,
             file_id: None,
-            name,
-            size_bytes: size,
+            name: file.name.clone(),
+            size_bytes: file.size_bytes,
             direction: "upload".into(),
             status: "waiting".into(),
             transferred_bytes: 0,
             error: None,
             session_id: None,
         };
-        let target = blob(&app, &row)?;
-        tokio::fs::copy(path.path(), &target)
+        let target = blob(app, &row)?;
+        tokio::fs::rename(&file.path, &target)
             .await
             .map_err(|e| e.to_string())?;
-        let copied = tokio::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&target)
-            .await
-            .map_err(|e| e.to_string())?;
-        copied.sync_all().await.map_err(|e| e.to_string())?;
-        let after = tokio::fs::metadata(path.path())
-            .await
-            .map_err(|e| e.to_string())?;
-        if copied.metadata().await.map_err(|e| e.to_string())?.len() != size
-            || after.len() != size
-            || before.modified().ok() != after.modified().ok()
-        {
-            drop(copied);
+        if let Err(error) = (|| {
+            if account_id != account(app, window, project)? {
+                return Err("登录账户已变化".into());
+            }
+            change(app, account_id, |rows| {
+                rows.push(row.clone());
+                Ok(())
+            })
+        })() {
             let _ = tokio::fs::remove_file(&target).await;
-            return Err("源文件在复制期间变化，请关闭编辑后重新添加".into());
-        }
-        drop(copied);
-        if let Err(error) = change(&app, &account, |rows| {
-            rows.push(row.clone());
-            Ok(())
-        }) {
-            let _ = tokio::fs::remove_file(blob(&app, &row)?).await;
             return Err(error);
         }
         staged.push(row);
@@ -499,19 +604,26 @@ pub async fn desktop_export_file(
         .ok_or("文件名无效")?
         .to_string_lossy()
         .into_owned();
-    if let Some(path) = rfd::AsyncFileDialog::new()
-        .set_file_name(name)
-        .save_file()
-        .await
+    #[cfg(target_os = "android")]
     {
-        if account != self::account(&app, &window, &project_id)? {
-            return Err("登录账户已变化，导出已取消".into());
-        }
-        tokio::fs::copy(blob(&app, &row)?, path.path())
-            .await
-            .map_err(|e| e.to_string())?;
+        crate::android::export_file(&app, &blob(&app, &row)?, &name).await
     }
-    Ok(())
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Some(path) = rfd::AsyncFileDialog::new()
+            .set_file_name(name)
+            .save_file()
+            .await
+        {
+            if account != self::account(&app, &window, &project_id)? {
+                return Err("登录账户已变化，导出已取消".into());
+            }
+            tokio::fs::copy(blob(&app, &row)?, path.path())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
 }
 #[tauri::command]
 pub async fn desktop_cache_usage(
