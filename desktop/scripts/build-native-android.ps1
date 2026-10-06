@@ -5,11 +5,16 @@ $tauri=Join-Path $repo 'desktop/src-tauri'
 $project=Join-Path $tauri 'gen/android'
 $ndkbin=Join-Path $env:NDK_HOME 'toolchains/llvm/prebuilt/windows-x86_64/bin'
 $mode=if($Debug){'debug'}else{'release'}
-$names=@('TAURI_ANDROID_PROJECT_PATH','TARGET_AR','TARGET_CC','TARGET_CXX','ANDROID_NATIVE_API_LEVEL','CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER','CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS','CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER','CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS')
+$names=@('TAURI_ANDROID_PROJECT_PATH','WRY_ANDROID_PACKAGE','WRY_ANDROID_LIBRARY','WRY_ANDROID_KOTLIN_FILES_OUT_DIR','TAURI_ANDROID_PACKAGE_UNESCAPED','TARGET_AR','TARGET_CC','TARGET_CXX','ANDROID_NATIVE_API_LEVEL','CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER','CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS','CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER','CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS')
 $previous=@{}
 foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
 try {
   $env:TAURI_ANDROID_PROJECT_PATH=$project
+  $env:WRY_ANDROID_PACKAGE='cn.buwei.mobile'
+  $env:TAURI_ANDROID_PACKAGE_UNESCAPED='cn.buwei.mobile'
+  $env:WRY_ANDROID_LIBRARY='buwei_desktop_core'
+  $env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR=Join-Path $project 'app/src/main/java/cn/buwei/mobile/generated'
+  New-Item -ItemType Directory $env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR -Force | Out-Null
   $env:TARGET_AR=Join-Path $ndkbin 'llvm-ar.exe'
   $env:ANDROID_NATIVE_API_LEVEL='26'
   $config=Get-Content (Join-Path $tauri 'tauri.conf.json') -Raw | ConvertFrom-Json
@@ -26,7 +31,7 @@ try {
     $env:TARGET_CXX=Join-Path $ndkbin "$($triple)26-clang++.cmd"
     [Environment]::SetEnvironmentVariable("CARGO_TARGET_${key}_LINKER",$compiler,'Process')
     [Environment]::SetEnvironmentVariable("CARGO_TARGET_${key}_RUSTFLAGS",'-Clink-arg=-landroid -Clink-arg=-llog -Clink-arg=-lOpenSLES','Process')
-    $cargoArgs=@('build','--locked','--lib','--manifest-path',(Join-Path $tauri 'Cargo.toml'),'--target',$triple)
+    $cargoArgs=@('build','--locked','--lib','--manifest-path',(Join-Path $tauri 'Cargo.toml'),'--target',$triple,'--features','tauri/custom-protocol')
     if(!$Debug){$cargoArgs+='--release'}
     & cargo @cargoArgs
     if($LASTEXITCODE){throw "Rust Android build failed for $triple"}
