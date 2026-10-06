@@ -3,13 +3,15 @@ param(
   [string]$JavaRoot = 'C:\Program Files\Android\Android Studio\jbr',
   [string]$SigningDirectory,
   [ValidateSet('aarch64','x86_64')][string[]]$Targets = @('aarch64','x86_64'),
-  [switch]$Debug
+  [switch]$Debug,
+  [switch]$Smoke
 )
 $ErrorActionPreference = 'Stop'
+if ($Smoke -and !$Debug) { throw 'Smoke fixture requires -Debug; production APK never permits loopback fixture.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if (!$SigningDirectory) { $SigningDirectory = Join-Path $repo '.local-secrets/android-signing' }
 & (Join-Path $PSScriptRoot 'check-android.ps1') -SdkRoot $SdkRoot -JavaRoot $JavaRoot
-$environmentNames = @('PATH','JAVA_HOME','ANDROID_HOME','ANDROID_SDK_ROOT','NDK_HOME','ANDROID_NDK_HOME')
+$environmentNames = @('PATH','JAVA_HOME','ANDROID_HOME','ANDROID_SDK_ROOT','NDK_HOME','ANDROID_NDK_HOME','BUWEI_DESKTOP_DEV_ORIGIN','TAURI_CONFIG')
 $previous = @{}
 foreach ($name in $environmentNames) { $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
 try {
@@ -19,6 +21,10 @@ try {
   $env:ANDROID_SDK_ROOT = $SdkRoot
   $env:NDK_HOME = "$SdkRoot\ndk\30.0.16248370"
   $env:ANDROID_NDK_HOME = $env:NDK_HOME
+  if ($Smoke) {
+    $env:BUWEI_DESKTOP_DEV_ORIGIN = '1'
+    $env:TAURI_CONFIG = @{ app = @{ security = @{ capabilities = @(@{ identifier='main-smoke'; description='Debug loopback fixture only'; windows=@('main'); remote=@{urls=@('http://127.0.0.1:5173/*')}; local=$false; permissions=@('desktop-commands') }) } } } | ConvertTo-Json -Depth 10 -Compress
+  }
   if (!(Test-Path -LiteralPath $SigningDirectory)) { New-Item -ItemType Directory -Path $SigningDirectory | Out-Null }
   $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
   & icacls.exe $SigningDirectory /inheritance:r /grant:r "${user}:(OI)(CI)F" | Out-Null

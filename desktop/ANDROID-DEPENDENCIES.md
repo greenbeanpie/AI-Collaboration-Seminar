@@ -17,3 +17,5 @@ Tauri 2.12.1 Android 模板仍依赖旧 DSL 和独立 Kotlin 插件，所以保�
 签名密钥与随机密码在 `.local-secrets/android-signing/` 自动生成，并应用当前用户专有 NTFS ACL。必须备份该目录；后续覆盖升级用同一密钥。可传 `-SigningDirectory` 指向受保护的现有目录。不将签名密码打印、提交或包含在交付包中。APK 最低 Android8，使用 zipalign 16KiB native library 页对齐。
 
 构建在没有 Windows Developer Mode 的系统采用 portable 流程：同样的 Cargo/NDK 参数编译，普通文件复制 JNI .so，Gradle 排除已执行的 Rust 子任务。无需符号链接权限或系统设置修改；Tauri build.rs 仍生成插件依赖。
+
+仅在自动验收时使用 `build-android.ps1 -Debug -Smoke -Targets x86_64`；脚本在当前进程生成 loopback 权限和测试入口配置，结束恢复环境，不修改生产能力。`-Smoke` 与 Release 不兼容。
