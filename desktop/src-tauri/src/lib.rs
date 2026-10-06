@@ -42,6 +42,8 @@ fn desktop_report_state(
         let mut page = native.page.lock().unwrap();
         if page.account_id != state.account_id {
             native.auth_epoch.fetch_add(1, Ordering::SeqCst);
+            #[cfg(target_os = "android")]
+            android::invalidate_session();
         }
         *page = state;
     }
