@@ -51,7 +51,11 @@ pub fn run() {
             cache::desktop_pending_files
         ])
         .setup(|app| {
-            runtime::diagnostic(app.handle(), "Android lifecycle", "Starting foreground client; background transfers pause");
+            runtime::diagnostic(
+                app.handle(),
+                "Android lifecycle",
+                "Starting foreground client; background transfers pause",
+            );
             tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
