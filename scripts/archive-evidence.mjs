@@ -13,15 +13,19 @@ for (const entry of manifest.files) {
   const archived = resolve(target, entry.path);
   if (!source.startsWith(root) || !archived.startsWith(target + sep)) throw new Error(`Unsafe path: ${entry.path}`);
   if (mode === '--archive') {
-    let bytes;
-    try { bytes = readFileSync(source); } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      bytes = readFileSync(archived); // Repeat is safe after cleanup only if verified archive already exists.
+    let exists = false;
+    try {
+      const bytes = readFileSync(archived);
+      if (bytes.length !== entry.bytes || hash(bytes) !== entry.sha256) throw new Error(`Existing archive mismatch: ${entry.path}`);
+      exists = true;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    // Never replace an existing verified baseline archive with newer reports.
+    if (!exists) {
+      const bytes = readFileSync(source);
+      if (hash(bytes) !== entry.sha256) throw new Error(`Source mismatch: ${entry.path}`);
+      mkdirSync(dirname(archived), { recursive: true });
+      copyFileSync(source, archived);
     }
-    if (hash(bytes) !== entry.sha256) throw new Error(`Source mismatch: ${entry.path}`);
-    mkdirSync(dirname(archived), { recursive: true });
-    try { if (hash(readFileSync(archived)) !== entry.sha256) throw new Error(`Existing archive mismatch: ${entry.path}`); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; copyFileSync(source, archived); }
   }
   const bytes = readFileSync(archived);
   if (bytes.length !== entry.bytes || hash(bytes) !== entry.sha256) throw new Error(`Archive mismatch: ${entry.path}`);
