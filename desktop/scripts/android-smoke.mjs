@@ -104,6 +104,15 @@ try {
   await invoke('mobile_set_foreground',{foreground:true});
   for(let attempt=0;attempt<60&&(await rows()).some(row=>row.direction==='download'&&row.status!=='complete');attempt++)await wait(500);
   assert.ok((await rows()).filter(row=>row.direction==='download').every(row=>row.status==='complete'));check('foreground resumes queued download',true);
+  const lifecycleRows=(await rows()).filter(row=>row.direction==='download');
+  for(const row of lifecycleRows)await invoke('desktop_remove_file',{projectId:fixture.projectId,id:row.id,discard:false});
+  invokeAdb(['shell','am','start','-a','android.intent.action.MAIN','-c','android.intent.category.HOME']);await wait(700);
+  // Page has no visibility handler: native JNI lifecycle must independently deny transfer.
+  await invoke('desktop_cache_project',{projectId:fixture.projectId,files:[{fileId:fixture.downloadId,name:'lifecycle-download.txt',sizeBytes:fixture.sizeBytes}]});
+  await reject('native Activity pause independently blocks transfer','desktop_transfer_files',{projectId:fixture.projectId});
+  start();await wait(700);await invoke('mobile_set_foreground',{foreground:true});
+  for(let attempt=0;attempt<60&&(await rows()).some(row=>row.direction==='download'&&row.status!=='complete');attempt++)await wait(500);
+  assert.ok((await rows()).filter(row=>row.direction==='download').every(row=>row.status==='complete'));check('native Activity resume permits recovery',true);
   if(!process.argv.includes('--skip-upload')) {
     const row={id:randomUUID(),accountId:fixture.accountA,projectId:fixture.projectId,taskId:fixture.taskId,name:'synthetic-spool-upload.txt',sizeBytes:fixture.sizeBytes,direction:'upload',status:'waiting',transferredBytes:0,error:null,sessionId:null,fileId:null};
     const manifestPath='attachments/'+fixture.accountA+'/manifest.json';
