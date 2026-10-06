@@ -59,10 +59,14 @@ impl TransferActivity {
 }
 impl Drop for TransferActivity {
     fn drop(&mut self) {
-        self.0
-            .state::<NativeState>()
-            .active_transfers
-            .fetch_sub(1, Ordering::Relaxed);
+        let native = self.0.state::<NativeState>();
+        let previous = native.active_transfers.fetch_sub(1, Ordering::Relaxed);
+        if previous == 1 {
+            let mut hidden_since = native.hidden_since.lock().unwrap();
+            if hidden_since.is_some() {
+                *hidden_since = Some(std::time::Instant::now());
+            }
+        }
     }
 }
 fn valid_id(id: &str) -> Result<()> {

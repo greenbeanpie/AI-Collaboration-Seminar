@@ -42,6 +42,7 @@
   },
   "plugins": {
     "updater": {
+      "windows": { "installMode": "passive" },
       "endpoints": [
         "https://github.com/greenbeanpie/AI-Colleboration-Seminar/releases/latest/download/latest.json"
       ],

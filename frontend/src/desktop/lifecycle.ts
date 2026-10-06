@@ -3,6 +3,7 @@ import { DESKTOP_PROTOCOL, desktopInvoke, isDesktop } from './bridge';
 const dirtyOwners = new Set<string>();
 let active = 0;
 let storageSafe = true;
+let bridgeReady = false;
 let accountId: string | null = null;
 let report: (() => void) | undefined;
 
@@ -16,8 +17,9 @@ export function beginDesktopActivity(): () => void {
   return () => { if (!finished) { finished = true; active--; report?.(); } };
 }
 export function setDesktopAccount(id: string | null): void { accountId = id; report?.(); }
+export function markDesktopReady(): void { bridgeReady = true; report?.(); }
 export function desktopPageState() {
-  return { protocol: DESKTOP_PROTOCOL, accountId, dirty: dirtyOwners.size > 0, busy: active > 0, durable: storageSafe };
+  return { protocol: DESKTOP_PROTOCOL, accountId, dirty: dirtyOwners.size > 0, busy: active > 0, durable: storageSafe && (!isDesktop() || bridgeReady) };
 }
 export function desktopSafeToReload(): boolean {
   const state = desktopPageState();
@@ -29,6 +31,7 @@ export function desktopSafeToReload(): boolean {
 /** No timers are needed in the hidden renderer. Native code requests a fresh acknowledgement. */
 export function startDesktopLifecycle(): () => void {
   if (!isDesktop()) return () => {};
+  bridgeReady = false;
   let scheduled = false, disposed = false;
   const send = async (requestId?: number) => {
     if (disposed) return;

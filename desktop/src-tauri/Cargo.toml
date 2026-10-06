@@ -3,8 +3,8 @@ name = "buwei-desktop"
 version = "0.1.0"
 edition = "2021"
 [lib]
-name = "buwei_desktop"
-crate-type = ["staticlib", "cdylib", "rlib"]
+name = "buwei_desktop_core"
+crate-type = ["rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 [dependencies]
@@ -26,6 +26,13 @@ uuid = { version = "1", features = ["v4"] }
 tauri-winrt-notification = "0.8"
 webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
 
 
 

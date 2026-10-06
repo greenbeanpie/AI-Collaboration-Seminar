@@ -37,7 +37,11 @@ async function snapshotNative() {
   await walk(path.join(appData, 'attachments')); return result;
 }
 try {
-  session = await connect(); await session.evaluate('window.smoke.ready');
+  for (let attempt = 0; !session && attempt < 30; attempt++) {
+    try { session = await connect(); } catch { await sleep(500); }
+  }
+  assert.ok(session, 'Native smoke client must start its loopback CDP endpoint');
+  await session.evaluate('window.smoke.ready');
   const beforeHello = await invoke('desktop_hello'); assert.equal(beforeHello.version, '0.1.0');
   pass('installed A connected through raw CDP', { version: beforeHello.version });
   await session.evaluate("window.smoke.login('b')"); // B must survive restart without fixture auto-login replacing it.

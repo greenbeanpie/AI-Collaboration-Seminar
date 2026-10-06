@@ -4,6 +4,8 @@
 
 ## 可复现构建
 
+启动参数 `--tray` 可直接进入托盘，网页完成兼容性和保存握手后再挂起 WebView2。它不会启用开机启动。资源与验收边界见 [Windows 客户端验收记录](../docs/WINDOWS-CLIENT-ACCEPTANCE.md)。
+
 Windows 上安装 Node.js 22+、稳定版 Rust MSVC 工具链、Visual Studio C++ Build Tools 和 Windows SDK。桌面工程使用 `npm ci` 和 Cargo.lock 固定依赖。
 
 ```powershell

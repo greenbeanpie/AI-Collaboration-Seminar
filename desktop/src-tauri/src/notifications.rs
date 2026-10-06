@@ -137,7 +137,9 @@ fn toast(app: AppHandle, account: String, epoch: u64, count: u32, route: String)
         std::thread::spawn(move || {
             let title = "补位";
             let body = format!("收到 {count} 条新通知");
-            let toast = tauri_winrt_notification::Toast::new("cn.buwei.desktop")
+            let identity = app.config().identifier.clone();
+            let diagnostic_app = app.clone();
+            let toast = tauri_winrt_notification::Toast::new(&identity)
                 .title(title)
                 .text1(&body)
                 .on_activated(move |_| {
@@ -155,7 +157,9 @@ fn toast(app: AppHandle, account: String, epoch: u64, count: u32, route: String)
                     }
                     Ok(())
                 });
-            let _ = toast.show();
+            if let Err(error) = toast.show() {
+                runtime::diagnostic(&diagnostic_app, "system notification", &error.to_string());
+            }
         });
     }
 }

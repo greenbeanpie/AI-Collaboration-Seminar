@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { DESKTOP_PROTOCOL, desktopInvoke, isDesktop, type DesktopHello } from './bridge';
-import { desktopSafeToReload } from './lifecycle';
+import { desktopSafeToReload, markDesktopReady } from './lifecycle';
 
 export function DesktopRuntime() {
   const location = useLocation();
@@ -12,6 +12,7 @@ export function DesktopRuntime() {
     let mounted = true;
     void desktopInvoke<DesktopHello>('desktop_hello').then(hello => {
       if (mounted && hello.protocol !== DESKTOP_PROTOCOL) setError('网页与客户端版本不兼容，请通过托盘菜单更新客户端。');
+      if (mounted && hello.protocol === DESKTOP_PROTOCOL) markDesktopReady();
     }).catch(() => { if (mounted) setError('客户端连接未完成，请更新或重新打开客户端。'); });
     const failure = (event: Event) => setError(String((event as CustomEvent<string>).detail));
     const blocked = (event: Event) => setError((event as CustomEvent<{ message?: string }>).detail?.message ?? '请先保存编辑并等待传输完成，再从托盘退出。');

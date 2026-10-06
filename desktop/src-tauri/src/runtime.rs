@@ -74,6 +74,30 @@ pub fn validate_source(window: &WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
+pub fn diagnostic(app: &AppHandle, area: &str, message: &str) {
+    use std::io::Write;
+    if let Ok(root) = app.path().app_local_data_dir() {
+        let path = root.join("desktop-diagnostics.log");
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > 1024 * 1024) {
+            let _ = std::fs::remove_file(&path);
+        }
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(
+                file,
+                "{area}: {}",
+                message
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(1000)
+                    .collect::<String>()
+            );
+        }
+    }
+}
 pub fn dispatch(app: &AppHandle, name: &str, detail: serde_json::Value) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.eval(
@@ -97,6 +121,7 @@ pub fn resume(app: &AppHandle) {
                 }) {
                     let _ = v.Resume();
                 }
+                let _ = webview.controller().SetIsVisible(true);
             }
         });
     }
@@ -130,7 +155,8 @@ pub fn suspend(app: &AppHandle) {
         return;
     }
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.with_webview(|webview| {
+        let handle = app.clone();
+        let _ = w.with_webview(move |webview| {
             #[cfg(windows)]
             unsafe {
                 use webview2_com::{
@@ -142,7 +168,16 @@ pub fn suspend(app: &AppHandle) {
                     .CoreWebView2()
                     .and_then(|c| c.cast::<ICoreWebView2_3>())
                 {
-                    let callback = TrySuspendCompletedHandler::create(Box::new(|_, _| Ok(())));
+                    let _ = webview.controller().SetIsVisible(false);
+                    let callback =
+                        TrySuspendCompletedHandler::create(Box::new(move |result, suspended| {
+                            diagnostic(
+                                &handle,
+                                "webview suspension",
+                                &format!("status={result:?}; accepted={suspended}"),
+                            );
+                            Ok(())
+                        }));
                     let _ = v.TrySuspend(&callback);
                 }
             }

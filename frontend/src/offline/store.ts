@@ -1,4 +1,5 @@
 import type { User } from '../api/types';
+import { setDesktopAccount } from '../desktop/lifecycle';
 
 export type Snapshot = { key: string; accountId: string; url: string; data: unknown; savedAt: string };
 export type PendingOperation = {
@@ -16,8 +17,10 @@ export function offlineAccount(): User | null {
 }
 export function rememberAccount(user: User): void {
   localStorage.setItem(accountKey, JSON.stringify(user));
+  setDesktopAccount(user.id);
 }
 export function forgetAccount(): void {
+  setDesktopAccount(null);
   try { localStorage.removeItem(accountKey); } catch { /* Clearing the in-memory session still proceeds. */ }
 }
 function open(): Promise<IDBDatabase> {

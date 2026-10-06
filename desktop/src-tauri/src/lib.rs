@@ -28,12 +28,19 @@ fn desktop_report_state(
         return Err("Unsupported desktop protocol".into());
     }
     let native = app.state::<NativeState>();
+    let previously_safe = native.safe();
     {
         let mut page = native.page.lock().unwrap();
         if page.account_id != state.account_id {
             native.auth_epoch.fetch_add(1, Ordering::SeqCst);
         }
         *page = state;
+    }
+    if !previously_safe && native.safe() {
+        let mut hidden_since = native.hidden_since.lock().unwrap();
+        if hidden_since.is_some() {
+            *hidden_since = Some(std::time::Instant::now());
+        }
     }
     if native.hidden_since.lock().unwrap().is_some() && !native.preparing.load(Ordering::SeqCst) {
         runtime::suspend(&app);
@@ -151,8 +158,10 @@ fn desktop_set_auto_restart(
 }
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            runtime::show(app, None)
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !args.iter().any(|arg| arg == "--tray") {
+                runtime::show(app, None);
+            }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(NativeState::default())
@@ -176,8 +185,29 @@ pub fn run() {
             cache::desktop_pending_files
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            unsafe {
+                let id: Vec<u16> = app
+                    .config()
+                    .identifier
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .collect();
+                if let Err(error) =
+                    windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+                        windows::core::PCWSTR(id.as_ptr()),
+                    )
+                {
+                    runtime::diagnostic(app.handle(), "notification identity", &error.to_string());
+                }
+            }
             let data = app.path().app_local_data_dir()?.join("webview");
             std::fs::create_dir_all(&data)?;
+            let start_in_tray = std::env::args().any(|arg| arg == "--tray");
+            if start_in_tray {
+                *app.state::<NativeState>().hidden_since.lock().unwrap() =
+                    Some(std::time::Instant::now());
+            }
             tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -191,6 +221,7 @@ pub fn run() {
                 },
             )
             .title("补位")
+            .visible(!start_in_tray)
             .inner_size(1120., 780.)
             .min_inner_size(760., 520.)
             .data_directory(data)

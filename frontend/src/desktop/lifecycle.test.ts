@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { beginDesktopActivity, desktopPageState, desktopSafeToReload, setDesktopDirty, startDesktopLifecycle } from './lifecycle';
+import { beginDesktopActivity, desktopPageState, desktopSafeToReload, markDesktopReady, setDesktopDirty, startDesktopLifecycle } from './lifecycle';
 
 afterEach(() => { setDesktopDirty('test', false); vi.unstubAllGlobals(); });
 describe('desktop restart protection', () => {
+  it('keeps initial desktop startup unsafe until the compatible bridge is ready', () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: { invoke: vi.fn(async () => undefined) } });
+    const stop = startDesktopLifecycle();
+    expect(desktopPageState().durable).toBe(false);
+    markDesktopReady(); expect(desktopPageState().durable).toBe(true);
+    stop(); delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
   it('requires every active request to finish and ignores duplicate completion', () => {
     const a = beginDesktopActivity(), b = beginDesktopActivity();
     a(); a(); expect(desktopPageState().busy).toBe(true);

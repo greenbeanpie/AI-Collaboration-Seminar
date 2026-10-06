@@ -9,8 +9,10 @@ import { RouteErrorPage } from './components/WorkspaceErrorBoundary';
 import './styles/app.css';
 import './styles/theme.css';
 import './styles/readability.css';
-import { startDesktopLifecycle } from './desktop/lifecycle';
+import { setDesktopAccount, startDesktopLifecycle } from './desktop/lifecycle';
+import { offlineAccount } from './offline/store';
 
+setDesktopAccount(offlineAccount()?.id ?? null);
 startDesktopLifecycle();
 
 const queryClient = new QueryClient({
