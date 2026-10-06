@@ -34,14 +34,7 @@ try {
     if ($LASTEXITCODE) { throw 'Key generation failed' }
   }
   if (!(Test-Path -LiteralPath $passwordFile)) { throw 'Signing password missing; recover it before building.' }
-  Push-Location (Join-Path $repo 'desktop')
-  try {
-    if (!(Test-Path node_modules/@tauri-apps/cli)) { npm ci; if ($LASTEXITCODE) { throw 'npm ci failed' } }
-    $arguments = @('tauri','android','build','--apk','--split-per-abi','--target') + $Targets
-    if ($Debug) { $arguments += '--debug' }
-    npx @arguments
-    if ($LASTEXITCODE) { throw 'Tauri Android build failed' }
-  } finally { Pop-Location }
+  & (Join-Path $PSScriptRoot 'build-native-android.ps1') -Targets $Targets -Debug:$Debug
   $mode = if ($Debug) { 'debug' } else { 'release' }
   $output = Join-Path $repo 'output/android-client'
   New-Item -ItemType Directory -Path $output -Force | Out-Null
