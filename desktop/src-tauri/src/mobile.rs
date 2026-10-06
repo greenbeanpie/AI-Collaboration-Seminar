@@ -66,6 +66,8 @@ pub fn run() {
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    // Navigation clears identity before the next page reports it. Stop old exports immediately.
+                    crate::android::invalidate_session();
                     *window.state::<NativeState>().page.lock().unwrap() =
                         runtime::PageState::default();
                 }
