@@ -10,12 +10,12 @@ import { fileURLToPath } from 'node:url';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const dist=path.resolve(process.env.BUWEI_FRONTEND_DIST??path.join(repo,'frontend/dist'));
 await access(path.join(dist,'index.html'));await access(path.join(dist,'sw.js'));
-const output=path.join(repo,'output/android-web-smoke');await mkdir(output,{recursive:true});
+const output=path.resolve(process.env.BUWEI_ANDROID_WEB_OUTPUT_DIR??path.join(repo,'output/android-web-smoke'));await mkdir(output,{recursive:true});
 const appId=process.env.BUWEI_ANDROID_APP_ID??'cn.buwei.mobile';assert.match(appId,/^[a-z][a-z0-9_.]+$/);
 const adb=process.env.BUWEI_ADB_PATH??'D:/Android/Sdk/platform-tools/adb.exe';let serial=process.env.BUWEI_ADB_SERIAL;
-function adbCall(args){const result=spawnSync(adb,[...(serial?['-s',serial]:[]),...args],{encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024});if(result.status!==0)throw new Error(String(result.stderr));return result.stdout;}
+function adbCall(args){const result=spawnSync(adb,[...(serial?['-s',serial]:[]),...args],{encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024,timeout:10000});if(result.status!==0)throw new Error(String(result.error??result.stderr));return result.stdout;}
 if(!serial){const devices=adbCall(['devices']).split(/\r?\n/).map(line=>line.match(/^(\S+)\s+device$/)?.[1]).filter(Boolean);assert.equal(devices.length,1);serial=devices[0];}
-adbCall(['shell','run-as',appId,'pwd']);adbCall(['reverse','tcp:5173','tcp:5173']);
+assert.match(adbCall(['shell','dumpsys','package',appId]),/(?:pkgFlags|flags)=\[[^\]]*DEBUGGABLE/,'Only debug APKs are permitted');adbCall(['reverse','tcp:5173','tcp:5173']);
 const origin='http://127.0.0.1:5173',now=new Date().toISOString();
 const userId='55555555-5555-4555-8555-555555555555',projectId='66666666-6666-4666-8666-666666666666',taskId='77777777-7777-4777-8777-777777777777';
 const user={id:userId,displayName:'Android 离线验证账户',username:'android-offline-fixture',email:null,isAdmin:false,role:'user'};
@@ -39,11 +39,11 @@ const server=http.createServer(async(req,res)=>{try{
     else if(url.pathname.endsWith('/tasks'))data={items:[task],nextCursor:null};
     else if(url.pathname.endsWith('/tasks/'+taskId))data=task;
     else if(url.pathname.includes('/feedback'))data={version:0,feedback:'',history:[],items:[],nextCursor:null};
-    else if(url.pathname.endsWith('/unread'))data={count:0,unreadCount:0};
+    else if(url.pathname.endsWith('/unread'))data={items:[],count:0,unreadCount:0};
     if(url.pathname.endsWith('/offline-sync')){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{code:'SYNTHETIC_SYNC_HOLD',message:'Synthetic queue intentionally retained',retryable:true},requestId:'android-web-fixture'}));return;}
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({data,requestId:'android-web-fixture'}));return;
   }
-  const relative=url.pathname==='/'||url.pathname.startsWith('/app')||url.pathname==='/login'?'index.html':decodeURIComponent(url.pathname).slice(1);
+  const relative=url.pathname==='/'||(url.pathname==='/app'||url.pathname.startsWith('/app/'))||url.pathname==='/login'?'index.html':decodeURIComponent(url.pathname).slice(1);
   const file=path.resolve(dist,relative);if(file!==dist&&!file.startsWith(dist+path.sep)){res.writeHead(403);res.end();return;}
   const body=await readFile(file);res.writeHead(200,{'Content-Type':types[path.extname(file)]??'application/octet-stream','Cache-Control':'no-store','Service-Worker-Allowed':'/'});res.end(body);
 }catch{res.writeHead(404);res.end('Not found');}});
@@ -51,7 +51,7 @@ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(5
 const report={startedAt:now,appId,serial,dist,frontendIndexSha256:createHash('sha256').update(await readFile(path.join(dist,'index.html'))).digest('hex'),checks:[],limitations:['Loopback backend stopped; no airplane-mode/network setting or UI automation used.','Queued edit is seeded through the existing IndexedDB schema; this tests durability and frontend optimistic consumption, not a form interaction.','Synthetic prepared project only; real account and production API untouched.','BlueStacks only, no physical Android device acceptance.']};
 const check=(name,evidence)=>{report.checks.push({name,passed:true,evidence});console.log('PASS '+name);};
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let socket,pending=new Map(),nextId=0;
-async function connect(){let target;for(let attempt=0;attempt<45;attempt++){try{const pid=adbCall(['shell','pidof',appId]).trim().split(' ')[0],unix=adbCall(['shell','cat','/proc/net/unix']),remote=unix.match(new RegExp('@(webview_devtools_remote_'+pid+')\\b'))?.[1];if(remote){adbCall(['forward','tcp:9224','localabstract:'+remote]);const targets=await(await fetch('http://127.0.0.1:9224/json')).json();target=targets.find(row=>row.url.startsWith(origin));if(target)break;}}catch{}await delay(1000);}assert.ok(target,'Actual app WebView target must start');socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});socket.addEventListener('message',e=>{const response=JSON.parse(e.data),request=pending.get(response.id);if(request){pending.delete(response.id);response.error?request.reject(new Error(response.error.message)):request.resolve(response.result);}});socket.addEventListener('close',()=>{for(const request of pending.values())request.reject(new Error('CDP closed'));pending.clear();});}
+async function connect(){let target;for(let attempt=0;attempt<45;attempt++){try{const pid=adbCall(['shell','pidof',appId]).trim().split(' ')[0],unix=adbCall(['shell','cat','/proc/net/unix']),remote=unix.match(new RegExp('@(webview_devtools_remote_'+pid+')\\b'))?.[1];if(remote){adbCall(['forward','tcp:9224','localabstract:'+remote]);const targets=await(await fetch('http://127.0.0.1:9224/json',{signal:AbortSignal.timeout(2500)})).json();target=targets.find(row=>row.url.startsWith(origin));if(target)break;}}catch{}await delay(1000);}assert.ok(target,'Actual app WebView target must start');socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});socket.addEventListener('message',e=>{const response=JSON.parse(e.data),request=pending.get(response.id);if(request){pending.delete(response.id);response.error?request.reject(new Error(response.error.message)):request.resolve(response.result);}});socket.addEventListener('close',()=>{for(const request of pending.values())request.reject(new Error('CDP closed'));pending.clear();});}
 function cdp(method,params={}){const id=++nextId;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error('CDP timeout '+method));},120000);pending.set(id,{resolve:r=>{clearTimeout(timer);resolve(r);},reject:e=>{clearTimeout(timer);reject(e);}});socket.send(JSON.stringify({id,method,params}));});}
 async function evaluate(expression){const value=await cdp('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(value.exceptionDetails)throw new Error(value.exceptionDetails.exception?.description??value.exceptionDetails.text);return value.result.value;}
 async function until(expression,label,attempts=90){for(let i=0;i<attempts;i++){try{const value=await evaluate(expression);if(value)return value;}catch{}await delay(1000);}throw new Error('Timed out: '+label);}
@@ -63,6 +63,7 @@ async function stopServer(){if(stopped)return;stopped=true;const finished=new Pr
 try{
   start();await connect();
   // Previous native fixture has no SW; navigate to real compiled page, not test HTML.
+  await cdp('Page.navigate',{url:origin+'/app'});await until(`document.body?.textContent.includes(${JSON.stringify(project.name)})`,'online dashboard cache');check('real dashboard list prepared for offline cold startup',true);
   await cdp('Page.navigate',{url:origin+'/app/projects/'+projectId});
   await until(`document.body?.textContent.includes(${JSON.stringify(project.name)})`,'project rendered by actual frontend');check('actual compiled React renders synthetic project',project.name);
   const hello=await native('desktop_hello');assert.equal(hello.platform,'android');check('actual frontend retains native Android bridge',hello.platform);
