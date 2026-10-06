@@ -53,6 +53,7 @@ async fn poll(
     account: &str,
     seen: &mut HashMap<String, HashSet<String>>,
 ) -> Result<(), String> {
+    let epoch = app.state::<NativeState>().auth_epoch.load(Ordering::SeqCst);
     let (client, _) = runtime::session_client(app, account).await?;
     let settings: serde_json::Value = client
         .get(format!(
@@ -96,6 +97,7 @@ async fn poll(
         .account_id
         .as_deref()
         != Some(account)
+        || app.state::<NativeState>().auth_epoch.load(Ordering::SeqCst) != epoch
     {
         return Ok(());
     }
@@ -125,11 +127,11 @@ async fn poll(
             .collect();
     }
     if count > 0 && enabled {
-        toast(app.clone(), account.to_string(), count, route);
+        toast(app.clone(), account.to_string(), epoch, count, route);
     }
     Ok(())
 }
-fn toast(app: AppHandle, account: String, count: u32, route: String) {
+fn toast(app: AppHandle, account: String, epoch: u64, count: u32, route: String) {
     #[cfg(windows)]
     {
         std::thread::spawn(move || {
@@ -147,6 +149,7 @@ fn toast(app: AppHandle, account: String, count: u32, route: String) {
                         .account_id
                         .as_deref()
                         == Some(account.as_str())
+                        && app.state::<NativeState>().auth_epoch.load(Ordering::SeqCst) == epoch
                     {
                         runtime::show(&app, Some(&route));
                     }

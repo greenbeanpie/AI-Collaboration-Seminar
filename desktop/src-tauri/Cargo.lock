@@ -398,6 +398,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-winrt-notification",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
  "webview2-com",
