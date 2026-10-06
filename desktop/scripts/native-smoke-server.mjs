@@ -49,7 +49,7 @@ document.querySelector('#retry').onclick=()=>run(()=>window.smoke.invoke('deskto
 document.querySelector('#switch').onclick=()=>run(()=>window.smoke.login(window.smoke.accountId===window.smoke.ids.accountA?'b':'a'));
 document.querySelector('#state').onclick=()=>run(()=>window.smoke.invoke('desktop_list_files',{projectId:window.smoke.ids.projectId}));
 document.querySelector('#download').onclick=()=>run(async()=>{await window.smoke.invoke('desktop_cache_project',{projectId:window.smoke.ids.projectId,files:[{fileId:window.smoke.ids.downloadId,name:'native-download.txt',sizeBytes:${bytes}}]});await window.smoke.invoke('desktop_transfer_files',{projectId:window.smoke.ids.projectId});});
-window.smoke.ready=(async()=>{await window.smoke.login('a');const hello=await window.smoke.invoke('desktop_hello');log({hello,account:'A'});return hello;})();
+window.smoke.ready=(async()=>{const session=await fetch('/api/v1/auth/session');if(session.ok){const value=await session.json();window.smoke.accountId=value.data.user.id;document.querySelector('#account').textContent=window.smoke.accountId===window.smoke.ids.accountA?'A':'B';await window.smoke.report();}else await window.smoke.login('a');const hello=await window.smoke.invoke('desktop_hello');log({hello,account:window.smoke.accountId});return hello;})();
 </script></html>`;
 
 const server = http.createServer(async (req, res) => {
@@ -59,7 +59,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/_smoke/fixture') return json(res, 200, fixture);
     if (pathname === '/_smoke/stats') return json(res, 200, { events, controls, files: [...files.values()].map(({ path: _path, ...file }) => file), sessions: [...sessions.values()].map(session => ({ sessionId: session.sessionId, fileId: session.fileId, status: session.status, parts: [...session.parts.values()].map(part => ({ partNumber: part.partNumber, sizeBytes: part.sizeBytes, accepts: part.accepts })) })) });
     if (pathname === '/_smoke/control' && req.method === 'POST') { controls = { ...controls, ...await bodyJson(req) }; return json(res, 200, controls); }
-    if (pathname === '/_smoke/login' && req.method === 'POST') { const value = await bodyJson(req); const letter = value.account === 'b' ? 'b' : 'a'; res.setHeader('Set-Cookie', 'ai_office_session=smoke-' + letter + '; HttpOnly; Path=/; SameSite=Lax'); return json(res, 200, { loggedIn: true }); }
+    if (pathname === '/_smoke/login' && req.method === 'POST') { const value = await bodyJson(req); const letter = value.account === 'b' ? 'b' : 'a'; res.setHeader('Set-Cookie', 'ai_office_session=smoke-' + letter + '; HttpOnly; Path=/; SameSite=Lax; Max-Age=86400'); return json(res, 200, { loggedIn: true }); }
     if (pathname === '/_smoke/notification' && req.method === 'POST') { const value = await bodyJson(req); const id = value.account === 'b' ? ids.accountB : ids.accountA; notifications.get(id).push({ id: randomUUID(), readAt: null, dismissedAt: null, url: '/app/settings/notifications' }); return json(res, 200, { count: notifications.get(id).length }); }
     if (!pathname.startsWith('/api/')) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(html); }
     const actor = account(req); record(req, actor, { range: req.headers.range ?? null }); if (!actor) return failure(res, 'Smoke session required', 401);
