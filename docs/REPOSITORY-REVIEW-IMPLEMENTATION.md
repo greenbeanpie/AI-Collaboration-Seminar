@@ -32,3 +32,5 @@
 实际构建哈希、云端版本、生产 HTTP 结果及 CI 结果写入同目录 release evidence；本文件的本地验证不能替代生产验收。
 
 生产 HTTP 已核对两个域名的应用入口、静态资源 SHA、安全头、Service Binding、验证码能力与拒绝路径。自定义域名的 Cloudflare 注入脚本携带本次 CSP nonce，依据官方说明 https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/ 配置；这仅证明返回 HTML/策略匹配，不代表已做浏览器执行验收。
+
+CI 使用 npm 10；本机默认 npm 12。已将 sharp 补丁约束改为全局 override，并用 npm 10 验证两个锁文件的 dry-run 和实际干净安装、类型检查及针对性回归，避免嵌套 override 的跨版本差异。
