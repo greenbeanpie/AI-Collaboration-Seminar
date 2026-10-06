@@ -15,6 +15,9 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install desktop CLI
+        working-directory: desktop
+        run: npm ci
       - name: Check native client
         working-directory: desktop/src-tauri
         run: cargo test --locked
