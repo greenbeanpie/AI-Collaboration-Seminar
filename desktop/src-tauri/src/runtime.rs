@@ -205,28 +205,6 @@ pub async fn session_client(
     }
     Ok((client, cookie))
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn safe_defaults() {
-        assert!(!NativeState::default().safe());
-    }
-    #[test]
-    fn routes() {
-        assert!(safe_route("/app/projects/123"));
-        for bad in [
-            "//evil.test",
-            "/application",
-            "/app\\evil",
-            "/app\n",
-            "https://evil.test",
-        ] {
-            assert!(!safe_route(bad));
-        }
-    }
-}
-
 pub fn open_external(url: &url::Url) {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return;
@@ -247,5 +225,27 @@ pub fn open_external(url: &url::Url) {
             None,
             SW_SHOWNORMAL,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn safe_defaults() {
+        assert!(!NativeState::default().safe());
+    }
+    #[test]
+    fn routes() {
+        assert!(safe_route("/app/projects/123"));
+        for bad in [
+            "//evil.test",
+            "/application",
+            "/app\\evil",
+            "/app\n",
+            "https://evil.test",
+        ] {
+            assert!(!safe_route(bad));
+        }
     }
 }
