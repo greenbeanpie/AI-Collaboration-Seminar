@@ -21,3 +21,4 @@ keystore.properties
 /app/src/main/jniLibs/
 /app/src/main/assets/
 /app/tauri.properties
+/app/src/main/java/cn/buwei/mobile/generated/
