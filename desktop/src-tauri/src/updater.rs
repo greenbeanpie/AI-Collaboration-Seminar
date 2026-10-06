@@ -126,9 +126,6 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn(async move { loop { let _ = check(&app).await; tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await; } }); Ok(())
 }
 pub async fn check(app: &AppHandle) -> Result<UpdateStatus, String> { check_update(app, &app.state::<UpdateManager>()).await }
-pub async fn restart(app: &AppHandle) -> Result<(), String> { install_update(app, &app.state::<UpdateManager>()).await }
-pub fn status(app: &AppHandle) -> UpdateStatus { app.state::<UpdateManager>().status() }
-pub fn set_auto_restart(app: &AppHandle, enabled: bool) -> Result<(), String> { app.state::<UpdateManager>().set_auto_restart(app, enabled) }
 
 #[cfg(test)]
 mod tests {

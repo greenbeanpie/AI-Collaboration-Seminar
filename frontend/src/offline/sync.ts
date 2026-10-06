@@ -1,6 +1,8 @@
 import { ApiError, request } from '../api/client';
 import { offlineAccount, operations, putOperation, readSnapshot, removeOperation, snapshots, writeSnapshot, type PendingOperation } from './store';
 import { replaceLocalIds } from './queue';
+import { isDesktop } from '../desktop/bridge';
+import { beginDesktopActivity } from '../desktop/lifecycle';
 
 let syncing: Promise<void> | undefined;
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' ? value as Record<string, unknown> : {}; }
@@ -33,6 +35,15 @@ async function performSync(): Promise<void> {
     if (!row) continue;
     try {
       const tail = row.url.split(`/projects/${row.projectId}/`)[1]!;
+      const submissionTask = tail.match(/^(?:collaboration\/)?tasks\/([^/]+)\/submissions$/)?.[1];
+      if (submissionTask && isDesktop() && !row.desktopAttachmentsResolved) {
+        const { hasPendingTaskFiles } = await import('../desktop/attachments');
+        if (await hasPendingTaskFiles(row.projectId, submissionTask)) { blockedProjects.add(row.projectId); continue; }
+        const files = await request<'TaskFileListResponse'>(`/projects/${row.projectId}/tasks/${submissionTask}/files`, { networkOnly: true });
+        row.body = { ...row.body, materialVersionIds: files.items.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt).map(file => file.versionId) };
+        row.desktopAttachmentsResolved = true;
+        await putOperation(row);
+      }
       const saved = await request<'ProjectResponse'>(`/projects/${row.projectId}/offline-sync`, { method: 'POST', networkOnly: true, idempotencyKey: row.key, body: { method: row.method, tail, body: row.body } });
       const result = object(saved);
       const actualId = result.submissionId ?? result.commentId ?? result.versionId ?? result.materialVersionId ?? result.taskId;
@@ -70,12 +81,15 @@ async function performSync(): Promise<void> {
 export async function synchronizeOffline(): Promise<void> {
   if (syncing) return syncing;
   const run = async () => {
+    const finish = beginDesktopActivity();
+    try {
     const execute = async () => {
       await performSync();
       if ((await operations()).some(row => row.state === 'pending' && row.error === 'safe-merge')) await performSync();
     };
     if (navigator.locks) await navigator.locks.request('buwei-offline-sync', { ifAvailable: true }, async lock => { if (lock) await execute(); });
     else await execute();
+    } finally { finish(); }
   };
   syncing = run().finally(() => { syncing = undefined; });
   return syncing;

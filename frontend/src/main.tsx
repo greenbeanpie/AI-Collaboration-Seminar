@@ -9,6 +9,9 @@ import { RouteErrorPage } from './components/WorkspaceErrorBoundary';
 import './styles/app.css';
 import './styles/theme.css';
 import './styles/readability.css';
+import { startDesktopLifecycle } from './desktop/lifecycle';
+
+startDesktopLifecycle();
 
 const queryClient = new QueryClient({
   defaultOptions: {

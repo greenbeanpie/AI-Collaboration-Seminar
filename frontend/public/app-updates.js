@@ -80,6 +80,7 @@ export class UpdateController {
     catch { this.set('error'); return; }
     finally { this.confirming = false; }
     if (!confirmed || this.applying || !['ready', 'refresh'].includes(this.state)) return;
+    if (this.env.safeToReload && !this.env.safeToReload()) { this.set('ready'); return; }
     const worker = this.registration?.waiting;
     const confirmedRefresh = this.state === 'refresh' && this.resourcesMissing;
     if (!worker && !this.changedElsewhere && !confirmedRefresh) { this.set('error'); return; }
@@ -210,6 +211,7 @@ export function mountUpdates() {
   const panelHistoryKey = `notifications-${Date.now()}`;
   const env = { sw: navigator.serviceWorker, enabled: !document.querySelector('script[src*="/@vite/client"]') && window.isSecureContext,
     online: () => navigator.onLine, confirm: confirmInPage,
+    safeToReload: () => window.dispatchEvent(new Event('app-before-update', { cancelable: true })),
     setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: timer => window.clearTimeout(timer),
     reload: () => { window.dispatchEvent(new Event('app-update-reload')); location.reload(); } };
   const controller = new UpdateController(env, state => {

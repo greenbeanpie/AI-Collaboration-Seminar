@@ -5,6 +5,7 @@ export type PendingOperation = {
   key: string; accountId: string; projectId: string; url: string; method: string;
   body: Record<string, unknown>; localId: string; base: unknown; createdAt: string;
   state: 'pending' | 'conflict' | 'blocked'; error?: string; server?: unknown;
+  desktopAttachmentsResolved?: boolean;
 };
 const accountKey = 'buwei:offline-account';
 let database: Promise<IDBDatabase> | undefined;

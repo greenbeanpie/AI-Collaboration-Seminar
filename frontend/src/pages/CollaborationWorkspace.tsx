@@ -7,6 +7,7 @@ import { TaskAiAssistance } from './TaskAiAssistance';
 import { TaskAgentAction } from './TaskAgentAction';
 import { TaskSettings, type SettingsCloseGuard } from './TaskSettings';
 import { TaskFileUploads } from './TaskFileUploads';
+import { useSettingsDirty } from './settings-dirty';
 import { listTaskFiles, taskFilesKey } from './task-files-client';
 import { TaskInquiries } from './TaskInquiries';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
@@ -256,6 +257,7 @@ function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRe
   const [submissionConflict, setSubmissionConflict] = useState(false);
   const submissionOutdated = submissionConflict || submissionBase !== task.revision;
   const [body, setBody] = useState('');
+  useSettingsDirty(Boolean(body));
   const [filesBusy, setFilesBusy] = useState(false);
   const [filesBlockedReason, setFilesBlockedReason] = useState('');
   const updateFilesStatus = useCallback((busy: boolean, reason = '') => { setFilesBusy(busy); setFilesBlockedReason(reason); }, []);

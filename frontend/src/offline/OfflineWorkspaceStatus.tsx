@@ -51,12 +51,14 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
     window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
     window.addEventListener('offline-data-changed', onChanged); window.addEventListener('offline-sync-completed', onChanged);
     window.addEventListener('offline-storage-failed', onFailure); window.addEventListener('offline-sync-retry', refresh);
+    window.addEventListener('desktop-transfer-refresh', refresh);
     refresh();
     return () => {
       window.removeEventListener('online', refresh); window.removeEventListener('offline', onOffline);
       window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('offline-data-changed', onChanged); window.removeEventListener('offline-sync-completed', onChanged);
       window.removeEventListener('offline-storage-failed', onFailure); window.removeEventListener('offline-sync-retry', refresh);
+      window.removeEventListener('desktop-transfer-refresh', refresh);
     };
   }, [reload, sync]);
   const resolve = async (row: PendingOperation, choice: 'server' | 'local') => {
