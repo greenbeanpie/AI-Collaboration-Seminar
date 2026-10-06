@@ -84,12 +84,17 @@ pub async fn check_update(app: &AppHandle, manager: &UpdateManager) -> Result<Up
 async fn check_inner(app: &AppHandle, manager: &UpdateManager) -> Result<(), String> {
     { let mut s = manager.status.lock().unwrap(); s.phase = "checking".into(); s.error = None; }
     publish(app, manager);
-    let updater = app.updater_builder().timeout(Duration::from_secs(300)).build().map_err(|e| e.to_string())?;
+    let mut builder = app.updater_builder().timeout(Duration::from_secs(300));
+    // This branch is eliminated in release builds, even if the environment variable is set.
+    if smoke_enabled() {
+        builder = builder.endpoints(vec!["http://127.0.0.1:5173/latest.json".parse().map_err(|e: url::ParseError| e.to_string())?]).map_err(|e| e.to_string())?;
+    }
+    let updater = builder.build().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
         manager.status.lock().unwrap().phase = "current".into(); return Ok(());
     };
     // The fixed release repository is the only permitted download source.
-    if update.download_url.scheme() != "https" || update.download_url.host_str() != Some("github.com") || !update.download_url.path().starts_with("/greenbeanpie/AI-Colleboration-Seminar/releases/download/") { return Err("Untrusted update location".into()); }
+    if !trusted_download_url(&update.download_url, smoke_enabled()) { return Err("Untrusted update location".into()); }
     let dir = cache_dir(app)?;
     let cached: Option<Cached> = std::fs::read(dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let reuse = cached.as_ref().is_some_and(|c| c.version == update.version && c.signature == update.signature);
@@ -126,6 +131,12 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn(async move { loop { let _ = check(&app).await; tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await; } }); Ok(())
 }
 pub async fn check(app: &AppHandle) -> Result<UpdateStatus, String> { check_update(app, &app.state::<UpdateManager>()).await }
+fn smoke_enabled() -> bool { cfg!(debug_assertions) && option_env!("BUWEI_DESKTOP_SMOKE") == Some("1") }
+fn trusted_download_url(url: &url::Url, smoke: bool) -> bool {
+    let github = url.scheme() == "https" && url.host_str() == Some("github.com") && url.path().starts_with("/greenbeanpie/AI-Colleboration-Seminar/releases/download/") && url.username().is_empty() && url.password().is_none();
+    let loopback = smoke && url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(5173) && url.path().starts_with("/updates/") && url.path().ends_with(".exe") && url.username().is_empty() && url.password().is_none() && url.query().is_none() && url.fragment().is_none();
+    github || loopback
+}
 
 #[cfg(test)]
 mod tests {
@@ -144,5 +155,10 @@ mod tests {
         let path = std::env::temp_dir().join(format!("buwei-update-{}.json", std::process::id()));
         atomic_write(&path, b"old").unwrap(); atomic_write(&path, b"new").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"new"); std::fs::remove_file(path).unwrap();
+    }
+    #[test] fn smoke_downloads_remain_strictly_loopback_and_release_rejects_http() {
+        let good = url::Url::parse("http://127.0.0.1:5173/updates/buwei.exe").unwrap();
+        assert!(trusted_download_url(&good, true)); assert!(!trusted_download_url(&good, false));
+        for bad in ["http://localhost:5173/updates/buwei.exe", "http://127.0.0.1:5174/updates/buwei.exe", "http://127.0.0.1:5173/updates/buwei.exe?redirect=evil", "https://example.com/updates/buwei.exe"] { assert!(!trusted_download_url(&url::Url::parse(bad).unwrap(), true)); }
     }
 }
