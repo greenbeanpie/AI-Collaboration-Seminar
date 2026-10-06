@@ -7,7 +7,7 @@ import { buildProviderRequest } from '../src/ai/transport';
 import { providerOptionErrors, FIXED_MAX_OUTPUT_TOKENS, type ApiProtocol } from '../../shared/ai-providers';
 
 const messages = [{ role: 'user' as const, content: 'Fixture' }];
-const model = (extra: Record<string, unknown> = {}) => aiModelConfigSchema.parse({ provider: 'openai-compatible', model: 'fixture', timeoutMs: 10000, maxInputChars: 1000, supportsJson: false, supportsVision: false, ...extra });
+const model = (extra: Record<string, unknown> = {}) => aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: 'custom', gatewayProviderSlug: 'fixture-provider', model: 'fixture', timeoutMs: 10000, maxInputChars: 1000, supportsJson: false, supportsVision: false, ...extra });
 
 describe('fixed output cap', () => {
   it('discards legacy output settings from parsed configs', async () => {
@@ -52,16 +52,17 @@ describe('fixed output cap', () => {
   it('omits cap fields from the admin API and normalizes legacy database values', async () => {
     const current = (await loadAiConfig(env.DB, undefined, false))!;
     const headers = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
+    const keylessConfig = Object.fromEntries(Object.entries(current.config).map(([key, value]) => [key, value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).filter(([field]) => !['apiKeyEncrypted', 'maxOutputTokens', 'enabledOutputLimit'].includes(field))) : value]));
     const body = {
-      ...current.config,
+      ...keylessConfig,
       expectedVersion: current.version,
-      unified: { ...current.config.textEconomy, maxOutputTokens: 17, enabledOutputLimit: false },
-      textEconomy: { ...current.config.textEconomy, maxOutputTokens: 23, enabledOutputLimit: false },
-      visionEconomy: { ...current.config.visionEconomy, maxOutputTokens: 31 },
-      review: { ...current.config.review, maxOutputTokens: 47 },
+      unified: keylessConfig.textEconomy,
+      textEconomy: keylessConfig.textEconomy,
+      visionEconomy: keylessConfig.visionEconomy,
+      review: keylessConfig.review,
     };
     const saved = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers, body: JSON.stringify(body) });
-    expect(saved.status).toBe(201);
+    expect(saved.status, await saved.clone().text()).toBe(201);
     const data = (await saved.json() as { data: { id: string; version: number } }).data;
     const normalized = (await loadAiConfig(env.DB, data.id, false))!.config;
     for (const config of [normalized.unified!, normalized.textEconomy, normalized.visionEconomy, normalized.review]) {

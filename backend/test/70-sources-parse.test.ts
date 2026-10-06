@@ -214,7 +214,7 @@ describe('来源解析流水线', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.startsWith('https://opencode.ai/zen/go/v1/')) {
+        if (url.startsWith('https://gateway.ai.cloudflare.com/v1/') && url.includes('/custom-opencode-go/zen/go/v1/')) {
           return gateway(input, init);
         }
         if (url.startsWith('https://example.com/')) {

@@ -96,6 +96,18 @@ const finishRoute = createRoute({
   },
 });
 
+const cancelRoute = createRoute({
+  method: 'delete',
+  path: '/api/v1/projects/{projectId}/rehearsals/{rehearsalId}',
+  tags: ['rehearsals'],
+  summary: '取消未结束的答辩演练并删除本场记录',
+  request: { params: rehearsalParams },
+  responses: {
+    200: { content: { 'application/json': { schema: apiEnvelope(z.object({ rehearsalId: z.string().uuid(), cancelled: z.literal(true) }), 'RehearsalCancelResponse') } }, description: '已取消并删除本场记录' },
+    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '演练已结束或状态已变化' },
+  },
+});
+
 interface RehearsalRow {
   id: string;
   project_id: string;
@@ -301,5 +313,31 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
       return { jobId };
     });
     return c.json(apiData(c, result), 202);
+  });
+
+  app.openapi(cancelRoute, async (c) => {
+    const { projectId, rehearsalId } = c.req.valid('param');
+    const userId = c.get('user')!.id;
+    const rehearsal = await c.env.DB.prepare('SELECT created_by,status FROM rehearsals WHERE id=?1 AND project_id=?2').bind(rehearsalId, projectId).first<{created_by:string;status:string}>();
+    if (!rehearsal) throw notFound('答辩演练不存在');
+    if (rehearsal.created_by !== userId) throw permissionDenied('只有本轮发起人可以取消');
+    if (rehearsal.status !== 'active') throw invalidState('已结束的演练不能取消');
+
+    const now = nowIso();
+    const cancelToken = JSON.stringify({ cancelToken: newId() });
+    const relatedJobs = "(j.project_id=?1 AND ((j.kind='rehearsal_turn' AND json_extract(j.input_json,'$.rehearsalId')=?2) OR j.id IN (SELECT job_id FROM rehearsal_speech WHERE rehearsal_id=?2)))";
+    const writes = await c.env.DB.batch([
+      // Claim the still-active rehearsal first. This serializes cancellation against answer/finish publication.
+      c.env.DB.prepare("UPDATE rehearsals SET status='finished',finished_at=?3,finish_snapshot_json=?4 WHERE id=?2 AND project_id=?1 AND created_by=?5 AND status='active' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?5)").bind(projectId,rehearsalId,now,cancelToken,userId),
+      c.env.DB.prepare(`UPDATE jobs AS j SET status='cancelled',error_json=json_object('code','INVALID_STATE','message','答辩演练已取消'),finished_at=?3,updated_at=?3 WHERE ${relatedJobs} AND j.status IN ('queued','running','waiting_input') AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?4 AND created_by=?5)`).bind(projectId,rehearsalId,now,cancelToken,userId),
+      c.env.DB.prepare(`UPDATE job_outbox SET status='failed',last_error='REHEARSAL_CANCELLED',updated_at=?3 WHERE job_id IN (SELECT j.id FROM jobs j WHERE ${relatedJobs}) AND status IN ('pending','dispatched') AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?4 AND created_by=?5)`).bind(projectId,rehearsalId,now,cancelToken,userId),
+      c.env.DB.prepare(`UPDATE usage_reservations SET status=CASE WHEN attempts_started=0 THEN 'released' ELSE 'settled' END,settled_at=?3 WHERE status='reserved' AND job_id IN (SELECT j.id FROM jobs j WHERE ${relatedJobs}) AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?4 AND created_by=?5)`).bind(projectId,rehearsalId,now,cancelToken,userId),
+      c.env.DB.prepare("DELETE FROM assessment_corrections WHERE assessment_id IN (SELECT id FROM assessments WHERE project_id=?1 AND kind='rehearsal' AND entity_id=?2) AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?3 AND created_by=?4)").bind(projectId,rehearsalId,cancelToken,userId),
+      c.env.DB.prepare("DELETE FROM assessments WHERE project_id=?1 AND kind='rehearsal' AND entity_id=?2 AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?3 AND created_by=?4)").bind(projectId,rehearsalId,cancelToken,userId),
+      c.env.DB.prepare("DELETE FROM rehearsal_speech WHERE rehearsal_id=?2 AND project_id=?1 AND EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND project_id=?1 AND status='finished' AND finish_snapshot_json=?3 AND created_by=?4)").bind(projectId,rehearsalId,cancelToken,userId),
+      c.env.DB.prepare("DELETE FROM rehearsals WHERE id=?2 AND project_id=?1 AND created_by=?4 AND status='finished' AND finish_snapshot_json=?3").bind(projectId,rehearsalId,cancelToken,userId),
+    ]);
+    if (!writes[0]?.meta.changes) throw invalidState('演练状态已变化，请刷新后重试');
+    return c.json(apiData(c, { rehearsalId, cancelled: true as const }), 200);
   });
 }

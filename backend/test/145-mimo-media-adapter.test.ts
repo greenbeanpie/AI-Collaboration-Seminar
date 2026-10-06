@@ -11,7 +11,7 @@ function response(output: unknown = summary, usage: unknown = { prompt_tokens: 1
 const mediaUrl = 'https://backend.example/media/file?token=private';
 function client(output: unknown = summary, usage?: unknown, finish?: string) {
   const request = vi.fn<typeof fetch>().mockResolvedValue(response(output, usage, finish));
-  return { client: new MimoMediaClient(model, 'private-key', request), request };
+  return { client: new MimoMediaClient(model, 'test-cf-token', request), request };
 }
 
 describe('official MiMo media adapter (mock provider only)', () => {
@@ -25,11 +25,12 @@ describe('official MiMo media adapter (mock provider only)', () => {
     const f = client();
     const result = await f.client.summarize(mediaUrl, 'audio/wav');
     const [url, init] = f.request.mock.calls[0]!;
-    expect(url).toBe(MIMO_MEDIA_ENDPOINT + '/chat/completions');
+    expect(url).toBe('https://gateway.ai.cloudflare.com/v1/account/default/custom-xiaomi-mimo/v1/chat/completions');
     expect(init?.redirect).toBe('error');
-    expect(new Headers(init?.headers).get('api-key')).toBe('private-key');
+    expect(new Headers(init?.headers).get('cf-aig-authorization')).toBe('Bearer test-cf-token');
+    expect(new Headers(init?.headers).has('api-key')).toBe(false);
     const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ model: MIMO_MEDIA_MODEL, response_format: { type: 'json_object' }, thinking: { type: 'disabled' }, max_completion_tokens: FIXED_MAX_OUTPUT_TOKENS, stream: false });
+    expect(body).toMatchObject({ model: `custom-xiaomi-mimo/${MIMO_MEDIA_MODEL}`, response_format: { type: 'json_object' }, thinking: { type: 'disabled' }, max_completion_tokens: FIXED_MAX_OUTPUT_TOKENS, stream: false });
     expect(body.messages[1].content[0]).toEqual({ type: 'input_audio', input_audio: { data: mediaUrl } });
     expect(result).toMatchObject({ summary, promptTokens: 100, completionTokens: 40, cachedTokens: 20, audioTokens: 60, videoTokens: 0 });
     expect(f.request).toHaveBeenCalledTimes(1);
@@ -44,7 +45,7 @@ describe('official MiMo media adapter (mock provider only)', () => {
   it('probes model metadata without a generation call', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ id: MIMO_MEDIA_MODEL }] }));
     expect(await new MimoMediaClient(model, 'private-key', request).probe()).toBe(true);
-    expect(request.mock.calls[0]![0]).toBe(MIMO_MEDIA_ENDPOINT + '/models');
+    expect(request.mock.calls[0]![0]).toBe('https://gateway.ai.cloudflare.com/v1/account/default/custom-xiaomi-mimo/v1/models');
     expect(request.mock.calls[0]![1]?.method).toBe('GET');
   });
   it.each([
@@ -66,14 +67,14 @@ describe('official MiMo media adapter (mock provider only)', () => {
     await expect(new MimoMediaClient(model, 'key', request).summarize(mediaUrl, 'audio/wav')).rejects.toThrow(/格式/);
   });
   it('never retries unknown network failures and redacts keys and signed URLs', async () => {
-    const request = vi.fn<typeof fetch>().mockRejectedValue(new Error(mediaUrl + ' private-key'));
-    await expect(new MimoMediaClient(model, 'private-key', request).summarize(mediaUrl, 'audio/wav')).rejects.toThrow(/受理状态未知/);
+    const request = vi.fn<typeof fetch>().mockRejectedValue(new Error(mediaUrl + ' test-cf-token'));
+    await expect(new MimoMediaClient(model, 'test-cf-token', request).summarize(mediaUrl, 'audio/wav')).rejects.toThrow(/受理状态未知/);
     expect(request).toHaveBeenCalledTimes(1);
-    try { await new MimoMediaClient(model, 'private-key', request).summarize(mediaUrl, 'audio/wav'); } catch (error) { expect(String(error)).not.toMatch(/private-key|token=private|backend.example/); }
+    try { await new MimoMediaClient(model, 'test-cf-token', request).summarize(mediaUrl, 'audio/wav'); } catch (error) { expect(String(error)).not.toMatch(/test-cf-token|token=private|backend.example/); }
   });
   it.each([302, 400, 429, 500])('does not replay HTTP %s or expose provider error bodies', async status => {
-    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response('private-key ' + mediaUrl, { status }));
-    await expect(new MimoMediaClient(model, 'private-key', request).summarize(mediaUrl, 'audio/wav')).rejects.toThrow('HTTP ' + status);
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response('test-cf-token ' + mediaUrl, { status }));
+    await expect(new MimoMediaClient(model, 'test-cf-token', request).summarize(mediaUrl, 'audio/wav')).rejects.toThrow('HTTP ' + status);
     expect(request).toHaveBeenCalledTimes(1);
   });
   it('rejects invalid signed URL input before sending', async () => {

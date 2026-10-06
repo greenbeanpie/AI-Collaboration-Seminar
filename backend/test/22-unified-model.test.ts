@@ -30,7 +30,7 @@ describe('unified routing', () => {
     const projectId = await seedProject(owner.userId);
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
     for (const provider of ['workers-ai', 'openai-compatible']) {
-      const unified = { ...current.config.textEconomy, provider };
+      const unified = { ...current.config.textEconomy, provider, ...(provider==='openai-compatible'?{providerPreset:'custom',gatewayProviderSlug:'custom-models'}:{}) };
       expect((await put({ ...current.config, routingMode: 'unified', unified })).status).toBe(201);
       const runtime = (await loadAiConfig(env.DB))!;
       for (const purpose of ['unified', 'textEconomy', 'visionEconomy', 'review'] as const) {
@@ -73,15 +73,14 @@ describe('unified routing', () => {
     const replies = await Promise.all([put({ ...current.config, expectedVersion: current.version }), put({ ...current.config, expectedVersion: current.version })]);
     expect(replies.map(r => r.status).sort()).toEqual([201, 409]);
   });
-  it('redacts and destination-binds the independent unified key', async () => {
+  it('uses Gateway stored provider keys for the independent unified route', async () => {
     const current = await get();
-    const unified = { ...current.config.textEconomy, provider: 'openai-compatible', apiUrl: 'https://one.example.com/v1/chat/completions', model: 'one', apiKey: 'fixture-unified-key' };
+    const unified = { ...current.config.textEconomy, provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'custom-models', apiUrl: 'https://one.example.com/v1/chat/completions', model: 'one' };
     expect((await put({ ...current.config, routingMode: 'unified', unified })).status).toBe(201);
     const read = await get();
-    expect(read.config.unified.keyConfigured).toBe(true);
+    expect(read.config.unified.keyConfigured).toBeUndefined();
     expect(JSON.stringify(read)).not.toContain('apiKeyEncrypted');
-    expect(JSON.stringify(read)).not.toContain('fixture-unified-key');
-    expect((await put({ ...read.config, unified: { ...read.config.unified, apiUrl: 'https://other.example.com/v1/chat/completions' } })).status).toBe(400);
+    expect((await put({ ...read.config, unified: { ...read.config.unified, apiKey:'visitor-key' } })).status).toBe(400);
     expect((await loadAiConfig(env.DB, undefined, false))!.config.textEconomy.apiKeyEncrypted).toBeUndefined();
   });
   it('allows inactive advanced options, but validates them on activation', async () => {

@@ -1,10 +1,9 @@
 import { MULTIMODAL_LIMITS } from './multimodal-limits';
 import { feedbackForJob } from '../services/project-feedback';
 import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
-import { unseal } from './secrets';
 import type { AiModelConfig } from './config';
 import { AppError, aiUnavailable } from '../core/errors';
-import { GO_DEFAULT_USER_AGENT, providerOptionErrors } from '../../../shared/ai-providers';
+import { GO_DEFAULT_USER_AGENT, protocolForConfig, providerOptionErrors } from '../../../shared/ai-providers';
 import { buildProviderRequest, normalizeProviderResponse } from './transport';
 import { classifyFetchFailure, diagnosticErrorCode, recordAiDiagnostic, safeBackendErrorReason, safeDiagnosticTarget, safeProviderErrorReason } from './diagnostics';
 import type { Env } from '../env';
@@ -172,19 +171,16 @@ async function gatewayChatAttempt(
   }
   const optionErrors = providerOptionErrors(input.config);
   if (optionErrors.length) throw new AppError('AI_UNAVAILABLE', optionErrors.join('；'), 503, false);
-  const custom = input.config.provider !== 'workers-ai';
-  if (!custom && (!endpoint.apiToken || !endpoint.accountId || !endpoint.gatewayId)) {
+  const workersAi = input.config.provider === 'workers-ai';
+  if (!endpoint.apiToken || !endpoint.accountId || !endpoint.gatewayId) {
     throw aiUnavailable('AI Gateway 未配置（缺少 Account/Gateway/Token）');
   }
-  const url = custom ? input.config.apiUrl : `https://api.cloudflare.com/client/v4/accounts/${endpoint.accountId}/ai/v1/chat/completions`;
-  let token = endpoint.apiToken;
-  if (custom) {
-    if (!url || !input.config.apiKeyEncrypted || !input.config.model) throw aiUnavailable('请填写 API URL、key 和模型名称');
-    if (!isAllowedModelEndpoint(url, endpoint.envName)) throw aiUnavailable('模型 API 必须使用公开 HTTPS 域名且不能包含查询参数');
-    try { token = await unseal(input.config.apiKeyEncrypted, endpoint.authSecret ?? ''); }
-    catch { throw new AppError('AI_UNAVAILABLE', '模型密钥解密失败，请重新配置', 503, false); }
-    if (/[\x00-\x1f\x7f]/.test(token)) throw new AppError('AI_UNAVAILABLE', '模型密钥含无效控制字符，请重新配置', 503, false);
-  }
+  const url = workersAi
+    ? `https://api.cloudflare.com/client/v4/accounts/${endpoint.accountId}/ai/v1/chat/completions`
+    : gatewayProviderUrl(endpoint, input.config);
+  // Third-party provider credentials come from AI Gateway BYOK. Never read or
+  // forward the legacy application-stored provider API keys.
+  const token = workersAi ? endpoint.apiToken : '';
   const textChars = input.messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
   if (textChars > input.config.maxInputChars || input.messages.length > 32) {
     throw new AppError('QUOTA_EXCEEDED', '模型输入（含完整持续项目反馈）超过已预占的文本上限，请缩短反馈或提高输入上限', 429, false);
@@ -199,6 +195,10 @@ async function gatewayChatAttempt(
   }
   // Everything from this point to fetch is synchronous: never add config/key/reservation reads here.
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode));
+  if (!workersAi && (input.config.providerPreset === 'custom' || input.config.providerPreset === 'opencode-go' || input.config.providerPreset === 'opencode-zen')) {
+    const slug = customGatewayProviderSlug(input.config);
+    if (typeof body.model === 'string') body.model = `custom-${slug}/${body.model}`;
+  }
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
   const serializedBody = JSON.stringify(body);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
@@ -224,7 +224,8 @@ async function gatewayChatAttempt(
     headers['user-agent'] = input.config.goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT;
     headers['x-opencode-session'] = input.config.goHeaders?.sessionPrefix ? `${input.config.goHeaders.sessionPrefix}:${sessionId}` : sessionId;
   }
-  if (!custom) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
+  if (workersAi) headers['cf-aig-gateway-id'] = endpoint.gatewayId;
+  else headers['cf-aig-authorization'] = `Bearer ${endpoint.apiToken}`;
   if (input.privateContext) {
     headers['cf-aig-skip-cache'] = 'true';
     headers['cf-aig-collect-log'] = 'false';
@@ -298,6 +299,39 @@ async function gatewayChatAttempt(
     catch {throw new AppError('AI_OUTPUT_INVALID','模型工具响应未通过校验：'+JSON.stringify(toolResponseShape(data)),502,false);}
   }
   return { ...normalizeProviderResponse(protocol, data), latencyMs };
+}
+
+function customGatewayProviderSlug(config: AiModelConfig): string {
+  if (config.providerPreset === 'opencode-go') return 'opencode-go';
+  if (config.providerPreset === 'opencode-zen') return 'opencode-zen';
+  const slug = config.gatewayProviderSlug;
+  if (!slug || !/^[a-z0-9-]{1,64}$/.test(slug)) throw aiUnavailable('请填写已在 Cloudflare AI Gateway 中配置的自定义 Provider slug');
+  return slug;
+}
+
+function gatewayProviderUrl(endpoint: GatewayEndpoint, config: AiModelConfig): string {
+  if (!config.model || !/^[A-Za-z0-9._/-]{1,160}$/.test(config.model)) throw aiUnavailable('模型名称无效');
+  const base = `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(endpoint.accountId)}/${encodeURIComponent(endpoint.gatewayId)}`;
+  const protocol = protocolForConfig(config);
+  const suffix = protocol === 'chat-completions' ? 'chat/completions' : protocol;
+  switch (config.providerPreset) {
+    case 'openai': return `${base}/openai/${suffix}`;
+    case 'anthropic': return `${base}/anthropic/v1/messages`;
+    case 'deepseek-anthropic': return `${base}/deepseek/anthropic/v1/messages`;
+    case 'deepseek': return `${base}/deepseek/${suffix}`;
+    case 'gemini': return `${base}/google-ai-studio/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
+    case 'openrouter': return `${base}/openrouter/v1/${suffix}`;
+    case 'opencode-go': return `${base}/custom-opencode-go/zen/go/v1/${suffix}`;
+    case 'opencode-zen': return `${base}/custom-opencode-zen/zen/v1/${suffix}`;
+    case 'custom': {
+      const slug = customGatewayProviderSlug(config);
+      if (!config.apiUrl || !isAllowedModelEndpoint(config.apiUrl, endpoint.envName)) throw aiUnavailable('自定义供应商 API URL 必须使用公开 HTTPS 地址');
+      const path = new URL(config.apiUrl).pathname.replace(/^\/+/, '');
+      if (!path || path.includes('..')) throw aiUnavailable('自定义供应商 API URL 路径无效');
+      return `${base}/custom-${slug}/${path}`;
+    }
+    default: throw aiUnavailable('此供应商尚未配置 Cloudflare AI Gateway Provider 路由');
+  }
 }
 
 async function readProviderErrorBody(response: Response): Promise<unknown> {

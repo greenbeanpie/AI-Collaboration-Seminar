@@ -17762,6 +17762,38 @@
           "requestId"
         ]
       },
+      "RehearsalCancelResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rehearsalId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "cancelled": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "rehearsalId",
+              "cancelled"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "RehearsalVoiceReadiness": {
         "type": "object",
         "properties": {
@@ -21436,6 +21468,9 @@
               "failedCount": {
                 "type": "number"
               },
+              "pendingRetryCount": {
+                "type": "number"
+              },
               "activeBatch": {
                 "type": [
                   "object",
@@ -21573,6 +21608,7 @@
             },
             "required": [
               "failedCount",
+              "pendingRetryCount",
               "activeBatch",
               "latestBatch"
             ]
@@ -21664,6 +21700,36 @@
             "required": [
               "batch",
               "replayed"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AdminAiRetriesCleared": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "deletedItems": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "completedBatches": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "deletedItems",
+              "completedBatches"
             ]
           },
           "requestId": {
@@ -35024,6 +35090,56 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "rehearsals"
+        ],
+        "summary": "取消未结束的答辩演练并删除本场记录",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "rehearsalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已取消并删除本场记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RehearsalCancelResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "演练已结束或状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/answers": {
@@ -37295,14 +37411,6 @@
                         },
                         "maxItems": 8
                       },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
-                      },
                       "gatewayToken": {
                         "type": "string",
                         "maxLength": 4096,
@@ -37392,6 +37500,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37461,14 +37574,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37478,7 +37583,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "expectedVersion": {
                     "type": "integer",
@@ -37505,6 +37611,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37574,14 +37685,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37591,7 +37694,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "visionEconomy": {
                     "type": "object",
@@ -37614,6 +37718,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37683,14 +37792,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37700,7 +37801,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "review": {
                     "type": "object",
@@ -37723,6 +37825,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37792,14 +37899,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37809,7 +37908,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "mediaUnderstanding": {
                     "type": "object",
@@ -37832,6 +37932,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37901,14 +38006,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37918,7 +38015,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "clearMediaUnderstanding": {
                     "type": "boolean"
@@ -37944,6 +38042,11 @@
                           "opencode-go"
                         ]
                       },
+                      "gatewayProviderSlug": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[a-z0-9-]+$"
+                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -38013,14 +38116,6 @@
                           }
                         },
                         "additionalProperties": false
-                      },
-                      "apiKey": {
-                        "type": "string",
-                        "maxLength": 4096,
-                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
-                      },
-                      "clearKey": {
-                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -38030,7 +38125,8 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   "clearMimoMediaUnderstanding": {
                     "type": "boolean"
@@ -38298,6 +38394,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminAiRetryBatch"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "清除尚未开始的失败 AI 请求重试记录",
+        "responses": {
+          "200": {
+            "description": "仅删除 pending 队列项；原失败作业、日志和已领取条目保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiRetriesCleared"
                 }
               }
             }

@@ -23,7 +23,7 @@ env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,c
 ]);return {projectId,fileId,sourceId,versionId,jobId};}
 function mockProvider(options:{duration?:number;truncate?:boolean;complete?:boolean;cleanupFail?:boolean;generateError?:boolean;afterGenerate?:()=>Promise<void>}={}){
 return vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
- const value=String(url);expect(new Headers(init?.headers).get('x-goog-api-key')).toBe('fixture-media-key');
+ const value=String(url);expect(new Headers(init?.headers).get('cf-aig-authorization')).toMatch(/^Bearer /);expect(new Headers(init?.headers).has('x-goog-api-key')).toBe(false);expect(value).toContain('/google-ai-studio/');
  if(init?.method==='DELETE'){if(options.cleanupFail)return new Response('',{status:500});return new Response('{}');}
  if(value.endsWith('/upload/v1beta/files'))return new Response('{}',{headers:{'x-goog-upload-url':'https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=fixture'}});
  if(value.includes('upload_id=')){expect(init?.body).toBeInstanceOf(ReadableStream);return Response.json({file:{name:'files/fixture',uri:'https://generativelanguage.googleapis.com/v1beta/files/fixture',state:'ACTIVE'}});}
@@ -55,7 +55,7 @@ describe('Gemini media processing',()=>{
   const f=await sourceFixture();vi.stubGlobal('fetch',mockProvider());await runMediaJob(env,f.jobId,f.versionId);
   await configureGoFixture();const config=(await loadAiConfig(env.DB))!,jobId=newId();
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_at,updated_at) VALUES(?1,?2,'parse_source','running',?3,0,?4,?4)").bind(jobId,f.projectId,JSON.stringify({sourceVersionId:f.versionId,sourceLifecycleVersion:1,phase:'extract',configVersionId:config.id}),nowIso()).run();
-  const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{expect(String(url)).toContain('opencode.ai/zen/go');const input=JSON.parse(String(init?.body));expect(input.model).toBe('glm-5.2');expect(input.messages[0].content).toContain('音视频 AI 摘要');return Response.json({choices:[{message:{content:JSON.stringify({requirements:[]})}}],usage:{prompt_tokens:42,completion_tokens:17}});});
+  const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{expect(String(url)).toContain('/custom-opencode-go/zen/go/v1/chat/completions');const headers=new Headers(init?.headers);expect(headers.get('cf-aig-authorization')).toBe('Bearer test-cf-token');expect(headers.has('authorization')).toBe(false);const input=JSON.parse(String(init?.body));expect(input.model).toBe('custom-opencode-go/glm-5.2');expect(input.messages[0].content).toContain('音视频 AI 摘要');return Response.json({choices:[{message:{content:JSON.stringify({requirements:[]})}}],usage:{prompt_tokens:42,completion_tokens:17}});});
   vi.stubGlobal('fetch',request);expect(await runParseJob(env,jobId)).toEqual({status:'succeeded'});expect(request).toHaveBeenCalledTimes(1);expect(await env.DB.prepare('SELECT requirements_status,summary_status FROM source_processing WHERE source_version_id=?1').bind(f.versionId).first()).toEqual({requirements_status:'ready',summary_status:'ready'});expect(await env.DB.prepare('SELECT COUNT(*) n FROM requirement_sets WHERE source_version_id=?1').bind(f.versionId).first()).toEqual({n:1});
  });
 });

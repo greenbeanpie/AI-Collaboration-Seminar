@@ -6,7 +6,7 @@ import { unseal } from './secrets';
 export const TRANSCRIBE_LIVE_MODEL='gemini-3.5-transcribe-live';
 export interface RealtimeTranscriptionConfig {
   provider:'google-ai-studio';model:typeof TRANSCRIBE_LIVE_MODEL;gatewayId:string;
-  apiKeyEncrypted?:string;gatewayTokenEncrypted?:string;languageCodes?:string[];
+  gatewayTokenEncrypted?:string;languageCodes?:string[];
 }
 export const VOICE_FRAME_BYTES=48*1024;
 export const VOICE_PCM_BYTES=32*1024;
@@ -54,11 +54,10 @@ export function parseTranscriptionEvent(raw:unknown):{ready?:boolean;partial?:st
 }
 /** Worker-only handshake: provider credentials never appear in a browser response. */
 export async function connectTranscribeGateway(env:Env,config:RealtimeTranscriptionConfig,guard:()=>Promise<void>,fetchImpl:typeof fetch=fetch):Promise<WebSocket> {
-  if(config.model!==TRANSCRIBE_LIVE_MODEL || config.provider!=='google-ai-studio' || !/^[a-z0-9-]{1,64}$/.test(config.gatewayId) || !/^[a-zA-Z0-9_-]+$/.test(env.CLOUDFLARE_ACCOUNT_ID) || !config.apiKeyEncrypted || !config.gatewayTokenEncrypted)throw aiUnavailable('实时转录Gateway配置不完整');
-  const apiKey=await unseal(config.apiKeyEncrypted,env.AUTH_SECRET),token=await unseal(config.gatewayTokenEncrypted,env.AUTH_SECRET);
-  if(!apiKey || !token || /[\x00-\x1f\x7f]/.test(apiKey+token))throw aiUnavailable('实时转录凭据无效');
+  if(config.model!==TRANSCRIBE_LIVE_MODEL || config.provider!=='google-ai-studio' || !/^[a-z0-9-]{1,64}$/.test(config.gatewayId) || !/^[a-zA-Z0-9_-]+$/.test(env.CLOUDFLARE_ACCOUNT_ID) || !config.gatewayTokenEncrypted)throw aiUnavailable('实时转录Gateway配置不完整');
+  const token=await unseal(config.gatewayTokenEncrypted,env.AUTH_SECRET);
+  if(!token || /[\x00-\x1f\x7f]/.test(token))throw aiUnavailable('实时转录Gateway认证令牌无效');
   const url=new URL(`https://gateway.ai.cloudflare.com/v1/${env.CLOUDFLARE_ACCOUNT_ID}/${config.gatewayId}/google`);
-  url.searchParams.set('api_key',apiKey);
   await guard();
   let response:Response;
   try {response=await fetchImpl(url,{headers:{Upgrade:'websocket','cf-aig-authorization':`Bearer ${token}`,'cf-aig-skip-cache':'true','cf-aig-collect-log':'false'},redirect:'manual',signal:AbortSignal.timeout(15000)});}

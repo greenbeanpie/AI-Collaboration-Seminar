@@ -21,6 +21,8 @@ const check = (condition, message) => { if (!condition) problems.push(message); 
 check(api && web, '缺少目标环境配置');
 check(api?.vars?.ENV_NAME === environment, 'ENV_NAME 与目标环境不符');
 check(api?.vars?.AUTH_MODE === 'password', '云端必须启用密码登录与一次性邀请码注册');
+check(/^[0-9a-f]{32}$/i.test(api?.vars?.CLOUDFLARE_ACCOUNT_ID ?? ''), '配置真实 CLOUDFLARE_ACCOUNT_ID');
+check(/^[a-z0-9-]{1,64}$/.test(api?.vars?.AI_GATEWAY_ID ?? ''), '配置已启用 BYOK Provider Keys 的 AI_GATEWAY_ID');
 check(api?.d1_databases?.some(db => db.binding === 'DB' && /^[0-9a-f-]{36}$/i.test(db.database_id)), '填写真实 D1 database_id');
 check(api?.r2_buckets?.some(bucket => bucket.binding === 'FILES' && bucket.bucket_name && !bucket.bucket_name.includes('local')), '填写云端私有 R2 绑定');
 check(api?.workflows?.some(w => w.binding === 'PARSE_WORKFLOW') && api?.workflows?.some(w => w.binding === 'AGENT_WORKFLOW'), '两个 Workflow 绑定必须齐全');

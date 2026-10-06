@@ -8825,7 +8825,40 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** 取消未结束的答辩演练并删除本场记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    rehearsalId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已取消并删除本场记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RehearsalCancelResponse"];
+                    };
+                };
+                /** @description 演练已结束或状态已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -10555,8 +10588,6 @@ export interface paths {
                             model: "gemini-3.5-transcribe-live";
                             gatewayId: string;
                             languageCodes?: string[];
-                            apiKey?: string;
-                            clearKey?: boolean;
                             gatewayToken?: string;
                             clearGatewayToken?: boolean;
                         };
@@ -10578,6 +10609,7 @@ export interface paths {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10596,14 +10628,13 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         expectedVersion?: number;
                         textEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10622,13 +10653,12 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         visionEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10647,13 +10677,12 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         review?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10672,13 +10701,12 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         mediaUnderstanding?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10697,14 +10725,13 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         clearMediaUnderstanding?: boolean;
                         mimoMediaUnderstanding?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
+                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10723,8 +10750,6 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
-                            apiKey?: string;
-                            clearKey?: boolean;
                         };
                         clearMimoMediaUnderstanding?: boolean;
                         enabled?: boolean;
@@ -10991,7 +11016,27 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
+        /** 清除尚未开始的失败 AI 请求重试记录 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅删除 pending 队列项；原失败作业、日志和已领取条目保留 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminAiRetriesCleared"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -16033,6 +16078,16 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        RehearsalCancelResponse: {
+            data: {
+                /** Format: uuid */
+                rehearsalId: string;
+                /** @enum {boolean} */
+                cancelled: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         RehearsalVoiceReadiness: {
             data: {
                 configured: boolean;
@@ -16905,6 +16960,7 @@ export interface components {
         AdminAiRetries: {
             data: {
                 failedCount: number;
+                pendingRetryCount: number;
                 activeBatch: {
                     /** Format: uuid */
                     batchId: string;
@@ -16960,6 +17016,14 @@ export interface components {
                     }[];
                 };
                 replayed: boolean;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AdminAiRetriesCleared: {
+            data: {
+                deletedItems: number;
+                completedBatches: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

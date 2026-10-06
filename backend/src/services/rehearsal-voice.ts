@@ -25,7 +25,7 @@ async function ownedRehearsal(env:Env,binding:VoiceBinding) {
 export async function readRehearsalVoice(env:Env,binding:VoiceBinding) {
   const rehearsal=await ownedRehearsal(env,binding);
   const cfg=await loadAiConfig(env.DB),voice=cfg?.config as VoiceConfig|undefined,slot=voice?.realtimeAudioTranscription;
-  const configured=Boolean(cfg?.enabled && slot?.provider==='google-ai-studio' && slot.model===TRANSCRIBE_LIVE_MODEL && /^[a-z0-9-]{1,64}$/.test(slot.gatewayId) && slot.apiKeyEncrypted && slot.gatewayTokenEncrypted);
+  const configured=Boolean(cfg?.enabled && slot?.provider==='google-ai-studio' && slot.model===TRANSCRIBE_LIVE_MODEL && /^[a-z0-9-]{1,64}$/.test(slot.gatewayId) && slot.gatewayTokenEncrypted);
   const mode=voice?.processingStrategies?.rehearsal??'text';
   let reason:string|null=null;
   if(mode==='text')reason='本项目使用文字答辩模式';

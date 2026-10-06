@@ -9,8 +9,9 @@ type RetryBatch = {
   queued: number; skipped: number; createdAt: string; updatedAt: string;
   skipReasons: { reason: string; count: number }[];
 };
-type RetryStatus = { failedCount: number; activeBatch: RetryBatch | null; latestBatch: RetryBatch | null };
+type RetryStatus = { failedCount: number; pendingRetryCount: number; activeBatch: RetryBatch | null; latestBatch: RetryBatch | null };
 type RetryResult = { batch: RetryBatch; replayed: boolean };
+type ClearResult = { deletedItems: number; completedBatches: number };
 const batchLabels = { queued: '等待排队', running: '正在排队', completed: '排队完成' };
 
 export function AdminAiRetries({ userId, superAdmin, onDenied }: { userId: string; superAdmin: boolean; onDenied: (error: unknown) => void }) {
@@ -41,14 +42,21 @@ export function AdminAiRetries({ userId, superAdmin, onDenied }: { userId: strin
     onSettled: () => { submitting.current = false; },
     retry: false,
   });
+  const clearPending = useMutation({
+    mutationFn: () => adminRequest<ClearResult>('/api/v1/admin/ai-retries', { method: 'DELETE' }),
+    onSuccess: async () => { enqueue.reset(); await client.invalidateQueries({ queryKey: ['admin-ai-retries'] }); },
+    onError: handleError,
+    retry: false,
+  });
   if (denied) return null;
   const active = status.data?.activeBatch;
   const batch = active ?? status.data?.latestBatch ?? enqueue.data?.batch;
-  const disabled = !superAdmin || enqueue.isPending || status.isLoading || status.isFetching || status.isError || Boolean(active) || !status.data?.failedCount;
-  return <SectionCard title="失败 AI 请求重试" detail="保留调用内的模型回退；失败后每隔 1 分钟重新请求，连续 3 次回退全部失败时自动停止。手动重试会重新开启停止的请求，并可能产生模型费用。">
+  const disabled = !superAdmin || enqueue.isPending || clearPending.isPending || status.isLoading || status.isFetching || status.isError || Boolean(active) || !status.data?.failedCount;
+  return <SectionCard title="失败 AI 请求重试" detail="保留调用内的模型回退；失败后每隔 1 分钟重新请求，连续 3 次回退全部失败时自动停止。手动重试会重新开启停止的请求，并可能产生模型费用。清除操作只删除尚未领取的待重试队列项，保留失败任务、日志和正在处理或已排队的记录。">
     {status.isLoading && <Spinner label="正在读取失败 AI 请求" />}
     {status.error && <ErrorNotice error={status.error} onRetry={() => void status.refetch()} />}
     {status.data && <p>当前失败请求：<strong>{status.data.failedCount}</strong></p>}
+    {status.data && <p>待重试队列记录：<strong>{status.data.pendingRetryCount}</strong></p>}
     <div className="button-row">
       {superAdmin ? <button type="button" className="button button-primary" disabled={disabled} onClick={() => {
         if (disabled || submitting.current) return;
@@ -57,8 +65,11 @@ export function AdminAiRetries({ userId, superAdmin, onDenied }: { userId: strin
         enqueue.mutate();
       }}>{enqueue.isPending ? '正在提交重试批次……' : '将所有失败请求排队重试'}</button> : <p className="muted">只有超级管理员可以将所有失败请求排队重试。</p>}
       <button type="button" className="button button-quiet" disabled={status.isFetching || enqueue.isPending} onClick={() => void status.refetch()}>刷新重试状态</button>
+      {superAdmin && <button type="button" className="button button-quiet" disabled={status.isFetching || enqueue.isPending || clearPending.isPending || !status.data?.pendingRetryCount} onClick={() => clearPending.mutate()}>{clearPending.isPending ? '正在清除待重试记录……' : `清除待重试记录（${status.data?.pendingRetryCount ?? 0}）`}</button>}
     </div>
     {enqueue.error !== null && <ErrorNotice error={enqueue.error} />}
+    {Boolean(clearPending.error) && <ErrorNotice error={clearPending.error} />}
+    {clearPending.data && <p role="status">已清除 {clearPending.data.deletedItems} 条待重试记录；失败任务、原始日志和正在处理的条目均已保留。</p>}
     {enqueue.data && <p role="status">{enqueue.data.replayed ? '已读取原重试批次，未重复排队。' : '重试批次已提交。'}</p>}
     {batch && <div className="stack" role="status">
       <p><StatusPill tone={batch.status === 'completed' ? 'good' : 'blue'}>{batchLabels[batch.status]}</StatusPill> · 批次编号 <code>{batch.batchId}</code></p>

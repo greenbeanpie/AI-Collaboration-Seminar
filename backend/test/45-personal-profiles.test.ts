@@ -75,7 +75,7 @@ describe('private profile AI boundary',()=>{
   expect(resolved.config.textEconomy).toBe(resolved.config.unified);
   expect((await loadAiConfig(env.DB,f.config.id,false))!.config.textEconomy.model).toBe('glm-5.2');
   const fetch=vi.fn(async(_url,init)=>{
-   const body=JSON.parse(String(init?.body));expect(body.model).toBe('single-private-model');
+   const body=JSON.parse(String(init?.body));expect(body.model).toBe('custom-opencode-go/single-private-model');
    expect(String(init?.body)).toContain(blank.bio);expect(String(init?.body)).not.toContain('OUTSIDE-SECRET');
    expect(new Headers(init?.headers).get('cf-aig-skip-cache')).toBe('true');
    expect(new Headers(init?.headers).get('cf-aig-collect-log')).toBe('false');

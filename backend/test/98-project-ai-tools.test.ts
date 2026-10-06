@@ -274,7 +274,11 @@ describe('authorized native search (fixtures only)', () => {
     const { f, cfg } = await setup();
     let round = 0;
     const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('https://api.deepseek.com/anthropic/v1/messages');
+      expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/test-account-id/test-gateway-id/deepseek/anthropic/v1/messages');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('cf-aig-authorization')).toBe('Bearer test-cf-token');
+      expect(headers.has('authorization')).toBe(false);
+      expect(headers.has('x-api-key')).toBe(false);
       const body = JSON.parse(String(init?.body));
       if (round++ === 0) {
         return Response.json({
