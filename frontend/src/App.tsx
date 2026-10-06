@@ -18,6 +18,7 @@ import { ProjectRouteRedirect } from './components/ProjectRouteRedirect';
 import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState } from './pwa-install';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { DesktopRuntime } from './desktop/DesktopRuntime';
 
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
 const SupportTicketDetailPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketDetailPage })));
@@ -107,6 +108,7 @@ function PwaStatus() {
 
 export default function App() {
   return <WorkspaceErrorBoundary>
+    <DesktopRuntime />
     <PwaStatus />
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />

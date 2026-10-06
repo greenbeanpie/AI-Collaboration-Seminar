@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationRequest } from './api';
+import { isDesktop } from '../desktop/bridge';
 import { mergeNotificationPage, notificationPermission, safeNotificationUrl, subscribeDevice, unsubscribeDevice, type DeliverySettings, type NotificationItem, type NotificationPage, type PushStatus } from './core';
 
 export function NotificationSettings({ userId, enabled = true }: { userId: string; enabled?: boolean }) {
@@ -43,7 +44,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
         ]);
         if (!active) return;
         setSettings(preferences); setStatus(push); if(generation===snapshotGeneration)applyPage(page);
-        const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
+        const registration = !isDesktop() && 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : undefined;
         const subscription = await registration?.pushManager?.getSubscription();
         if (subscription) {
           const owned = await notificationRequest<{ id: string | null }>('/notifications/push/lookup', 'POST', { endpoint: subscription.endpoint }, abort.signal);
@@ -78,6 +79,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
     });
   }
   function enablePush() {
+    if (isDesktop()) return;
     if (lock.current || !status?.configured || permission === 'unsupported' || permission === 'denied') return;
     // Start the permission request inside this click before awaiting HTTP or SW.
     const requested = permission === 'granted' ? Promise.resolve('granted' as const) : Notification.requestPermission();
@@ -104,7 +106,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
       <label className="delivery-toggle"><input type="checkbox" disabled={busy || !settings} checked={settings?.inAppEnabled ?? true} onChange={event => save('inAppEnabled', event.target.checked)}/><span><strong>网页顶部提醒</strong><small>应用内默认开启；打开页面时定时补拉，网络恢复后自动补拉，不重复弹出旧通知。</small></span></label>
       <label className="delivery-toggle"><input type="checkbox" disabled={busy || !settings} checked={settings?.pushEnabled ?? true} onChange={event => save('pushEnabled', event.target.checked)}/><span><strong>系统推送</strong><small>账户投递偏好默认开启；仍需本设备单独授权和订阅，其他设备互不影响。</small></span></label>
     </section>
-    <section className="delivery-card"><h2>当前设备的系统通知</h2>
+    {isDesktop() ? <section className="delivery-card"><h2>当前设备的系统通知</h2><p>Windows 客户端每分钟检查更新摘要，退到托盘后仍可接收。可在 Windows 系统设置中管理通知权限；退出客户端后停止接收。</p></section> : <section className="delivery-card"><h2>当前设备的系统通知</h2>
       <p>浏览器权限：{permission === 'granted' ? '已允许' : permission === 'denied' ? '已拒绝' : permission === 'unsupported' ? '当前环境不支持' : '尚未选择'} · 设备订阅：{subscribed ? '已订阅' : '未订阅'}</p>
       {status?.configured === false && <p role="status">后台推送尚未配置。网页提醒和通知历史可正常使用，关闭网页后的系统推送暂不可用。</p>}
       {permission === 'denied' && <p>已尊重你的拒绝，不会再次弹出授权。若想开启，请在浏览器的网站权限或系统通知设置中允许本站，然后刷新此页。</p>}
@@ -112,7 +114,7 @@ export function NotificationSettings({ userId, enabled = true }: { userId: strin
       {subscribed && <button type="button" disabled={busy} onClick={() => void run(async () => { await unsubscribeDevice(userId, notificationRequest); setSubscribed(false); setMessage('当前设备已取消系统推送，历史记录仍保留。'); })}>取消当前设备订阅</button>}</div>
       <p className="delivery-help">需要 HTTPS 和支持 Web Push 的浏览器。iPhone/iPad 通常需 iOS/iPadOS 16.4 或更高，并先添加到主屏幕。浏览器关闭、系统节电或专注模式可能限制送达；不能保证每个平台实时收到。</p>
       <p className="delivery-help">系统通知只显示更新摘要，不显示要求、工单或资料正文。退出登录会取消当前设备订阅。</p>
-    </section>
+    </section>}
     {message && <p role="status" className="notification-feedback" style={{whiteSpace:'pre-wrap'}}>{message}</p>}
     <section className="delivery-card"><h2>通知历史</h2>{!items.length && <p>暂无通知。</p>}
       {items.map(item => <article className="delivery-entry" key={item.id}><div><strong>{item.title}</strong><small>{new Date(item.createdAt).toLocaleString('zh-CN')} · {item.dismissedAt ? '已收起' : item.readAt ? '已读' : '未读'}</small></div><p>{item.body}</p><div className="notification-buttons"><button type="button" onClick={() => navigate(safeNotificationUrl(item.url, './'))}>查看相关内容</button>{!item.readAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'read')}>标记已读</button>}{!item.dismissedAt && <button type="button" disabled={busy} onClick={() => changeState(item.id, 'dismiss')}>收起提醒</button>}</div></article>)}

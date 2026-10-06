@@ -8,6 +8,7 @@
  */
 
 /** lib.dom 尚未提供 beforeinstallprompt 的事件类型，这里按规范自定义。 */
+import { isDesktop } from './desktop/bridge';
 export interface BeforeInstallPromptEvent extends Event {
   readonly platforms: readonly string[];
   readonly userChoice: Promise<{ readonly outcome: 'accepted' | 'dismissed'; readonly platform: string }>;
@@ -32,6 +33,7 @@ let listening = false;
 let snapshot: InstallState = Object.freeze({ installed: false, canInstall: false });
 
 function isStandalone(): boolean {
+  if (isDesktop()) return true;
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   try {
     return window.matchMedia(STANDALONE_QUERY).matches;

@@ -4,6 +4,8 @@ node_modules/
 # build output
 dist/
 *.tsbuildinfo
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
 
 # wrangler / cloudflare local state and secrets
 .wrangler/
