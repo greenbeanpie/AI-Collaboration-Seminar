@@ -398,12 +398,12 @@ DSH 桥接设备在设置中授权项目并选择默认设备，本机工作目�
 
 | 协议 | 请求和工具历史 | 返回与限制 |
 | --- | --- | --- |
-| Chat Completions | Bearer；messages；如发送输出字段则固定为 65535；tools.function + role=tool/tool_call_id | choices.message.content、usage.prompt_tokens/completion_tokens；拒绝截断/拒答；达到固定输出上限时提示缩短任务或降低思考强度 |
-| Responses | Bearer；input，store=false，max_output_tokens 固定为 65535；function_call_output/call_id | output 中 assistant output_text；input_tokens/output_tokens；必须 completed；工具 adapter 另处理 function call |
-| Anthropic Messages | x-api-key、anthropic-version；system 单独；必填 max_tokens 固定为 65535；tool_use/tool_result | end_turn/stop_sequence；usage 将 cache_creation/cache_read 算入输入；thinking 不当答案 |
-| Gemini | x-goog-api-key；contents/model、systemInstruction、inlineData、generationConfig.maxOutputTokens 固定为 65535；functionDeclarations/functionResponse | STOP；忽略 thought；候选输出与 thoughtsTokenCount 合计输出用量；grounding 搜索引用另外处理 |
+| Chat Completions | `cf-aig-authorization`；messages；如发送输出字段则固定为 65535；tools.function + role=tool/tool_call_id | choices.message.content、usage.prompt_tokens/completion_tokens；拒绝截断/拒答；达到固定输出上限时提示缩短任务或降低思考强度 |
+| Responses | `cf-aig-authorization`；input，store=false，max_output_tokens 固定为 65535；function_call_output/call_id | output 中 assistant output_text；input_tokens/output_tokens；必须 completed；工具 adapter 另处理 function call |
+| Anthropic Messages | `cf-aig-authorization`、anthropic-version；system 单独；必填 max_tokens 固定为 65535；tool_use/tool_result | end_turn/stop_sequence；usage 将 cache_creation/cache_read 算入输入；thinking 不当答案 |
+| Gemini | `cf-aig-authorization`；contents/model、systemInstruction、inlineData、generationConfig.maxOutputTokens 固定为 65535；functionDeclarations/functionResponse | STOP；忽略 thought；候选输出与 thoughtsTokenCount 合计输出用量；grounding 搜索引用另外处理 |
 
-`workers-ai` 使用 `https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions` + Bearer + `cf-aig-gateway-id`。自定义供应商由 apiUrl/apiKeyEncrypted 指定，解密密钥仅用于当前请求；生产要求公网 HTTPS 域名，禁查询、用户信息、本地/内网地址，local 才允许回环 stub。设置 `redirect:'manual'`，任何 3xx 都不会跟随或转发凭据。不支持视觉输入时拒绝，不回落其他端点。输入最多 32 条消息、`maxInputChars`，序列化工具 body 还有大小界限；JSON 响应最多 4 MiB。敏感上下文设置 `cf-aig-skip-cache=true/cf-aig-collect-log=false`，但不能据此替外部自定义供应商承诺隐私行为。
+第三方供应商均通过 Cloudflare AI Gateway 的 provider-native endpoint 路由，并使用 Gateway 默认 Provider Key；应用请求省略供应商认证头，只发送 `cf-aig-authorization`。旧配置中保留的 `apiKeyEncrypted` 仅为兼容历史版本，不会解密或作为供应商凭据发送。Workers AI 使用 Cloudflare 账户服务凭据和 `cf-aig-gateway-id`。自定义供应商由已在 Gateway 创建的 Custom Provider slug 路由；其上游 host 和密钥由 Gateway 管理。设置 `redirect:'manual'`，任何 3xx 都不会跟随或转发凭据。不支持视觉输入时拒绝，不回落其他端点。输入最多 32 条消息、`maxInputChars`，序列化工具 body 还有大小界限；JSON 响应最多 4 MiB。敏感上下文设置 `cf-aig-skip-cache=true/cf-aig-collect-log=false`，但不能据此替外部自定义供应商承诺隐私行为。
 
 OpenCode Go 额外要求稳定 opaque session ID，生成 `x-opencode-session` 和已验证 user-agent；不能把用户输入直接当 header。模型 JSON 能力不足时不强行发送不支持字段，仍通过明确 JSON 提示和 Zod 验证。业务最终 JSON 错误由 `aiJsonCall` 至多增加一次修复请求；工具调查结束的修复关闭工具，保留完整输出和已读 ID，提示只纠正字段，且重复原权限/配置/授权检查。输入过大直接拒绝，不静默截掉报告末尾。评分评价可指定 `maxAttempts:1` 禁止修复改变判断。
 
