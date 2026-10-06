@@ -10609,7 +10609,6 @@ export interface paths {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10628,13 +10627,14 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         expectedVersion?: number;
                         textEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10653,12 +10653,13 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         visionEconomy?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10677,12 +10678,13 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         review?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10701,12 +10703,13 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         mediaUnderstanding?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10725,13 +10728,14 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         clearMediaUnderstanding?: boolean;
                         mimoMediaUnderstanding?: {
                             provider: string;
                             /** @enum {string} */
                             providerPreset?: "custom" | "openai" | "anthropic" | "deepseek-anthropic" | "gemini" | "deepseek" | "openrouter" | "opencode-zen" | "opencode-go";
-                            gatewayProviderSlug?: string;
                             /** @enum {string} */
                             apiProtocol?: "chat-completions" | "responses" | "messages" | "gemini";
                             model: string;
@@ -10750,6 +10754,8 @@ export interface paths {
                                 userAgent?: string;
                                 sessionPrefix?: string;
                             };
+                            apiKey?: string;
+                            clearKey?: boolean;
                         };
                         clearMimoMediaUnderstanding?: boolean;
                         enabled?: boolean;

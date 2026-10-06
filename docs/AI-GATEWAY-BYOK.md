@@ -1,11 +1,9 @@
 # Cloudflare AI Gateway Provider Keys
 
-All third-party model requests must go through the configured Cloudflare AI Gateway. The application sends the Gateway authentication token and omits provider authentication headers, so Gateway BYOK injects the provider key stored for the default alias. Provider keys are never submitted through AI settings or forwarded from an application configuration.
+AI Gateway BYOK applies only to features whose own configuration explicitly uses Cloudflare AI Gateway, such as realtime Google transcription and Gateway-backed speech generation. For those routes, add a default Google Provider Key under Cloudflare Dashboard → AI → AI Gateway → the configured gateway → Provider Keys. The application sends its Gateway authentication token and does not send a Google API key on those requests.
 
-Before enabling AI, add a default Provider Key in Cloudflare Dashboard → AI → AI Gateway → the configured gateway → Provider Keys for every provider used by the application. The gateway token used by the Worker must have AI Gateway Run permission.
+Ordinary AI model settings are independent: their API URL and provider API key are configured in the application settings, and requests go directly to that provider. Gemini media summaries and MiMo media summaries also use their separately configured API URL and encrypted provider key. Configuring a default key in AI Gateway does not change these routes.
 
-Built-in provider routes are used for OpenAI, Anthropic, Google AI Studio, DeepSeek, and OpenRouter. OpenCode Go and OpenCode Zen use Cloudflare Custom Providers `opencode-go` and `opencode-zen`, each with `https://opencode.ai` as its upstream base URL. MiMo media uses the Custom Provider `xiaomi-mimo` with `https://api.xiaomimimo.com` as its upstream base URL. Add a default provider key to each custom provider as well.
+Workers AI remains a Cloudflare account service and uses the server-side Cloudflare token plus the configured Gateway ID. Its authentication is separate from third-party Provider Keys.
 
-The generic Custom preset requires its Cloudflare Custom Provider slug in AI settings. Configure that provider and its default key in Cloudflare first. The stored API URL contributes only the request path; the Cloudflare Custom Provider owns the upstream host and secret.
-
-Do not configure the same provider key in the application. Existing encrypted provider keys in older AI configuration versions are ignored by runtime requests; saving a new version strips them from the active configuration. Historical versions remain available for audit and are never used as provider credentials.
+The realtime Gateway token is an application credential for authorizing requests to Cloudflare AI Gateway. It is not the Google model API key; store it only in the dedicated Gateway token field. Provider keys for Gateway-backed requests stay in Cloudflare and are never submitted in the application form.

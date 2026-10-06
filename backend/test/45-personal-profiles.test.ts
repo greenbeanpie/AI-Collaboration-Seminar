@@ -75,10 +75,10 @@ describe('private profile AI boundary',()=>{
   expect(resolved.config.textEconomy).toBe(resolved.config.unified);
   expect((await loadAiConfig(env.DB,f.config.id,false))!.config.textEconomy.model).toBe('glm-5.2');
   const fetch=vi.fn(async(_url,init)=>{
-   const body=JSON.parse(String(init?.body));expect(body.model).toBe('custom-opencode-go/single-private-model');
+   const body=JSON.parse(String(init?.body));expect(body.model).toBe('single-private-model');
    expect(String(init?.body)).toContain(blank.bio);expect(String(init?.body)).not.toContain('OUTSIDE-SECRET');
-   expect(new Headers(init?.headers).get('cf-aig-skip-cache')).toBe('true');
-   expect(new Headers(init?.headers).get('cf-aig-collect-log')).toBe('false');
+   expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-go-job-key');
+   expect(new Headers(init?.headers).has('cf-aig-authorization')).toBe(false);
    return Response.json({choices:[{message:{content:JSON.stringify({assignments:[{taskId:f.taskId,assigneeId:f.a.userId,reason:blank.bio}],considerations:[blank.major]})}}]});
   });
   vi.stubGlobal('fetch',fetch);
@@ -90,7 +90,7 @@ describe('private profile AI boundary',()=>{
  });
  it('uses only current project profiles, redacts input/output snapshots, templates all external text',async()=>{
   const f=await assignmentFixture();let captured='';
-  vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{captured=String(init?.body);expect(new Headers(init?.headers).get('cf-aig-skip-cache')).toBe('true');expect(new Headers(init?.headers).get('cf-aig-collect-log')).toBe('false');return Response.json({choices:[{message:{content:JSON.stringify({assignments:[{taskId:f.taskId,assigneeId:f.a.userId,reason:blank.bio}],considerations:[blank.major]})}}]});}));
+  vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{captured=String(init?.body);expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-go-job-key');expect(new Headers(init?.headers).has('cf-aig-authorization')).toBe(false);return Response.json({choices:[{message:{content:JSON.stringify({assignments:[{taskId:f.taskId,assigneeId:f.a.userId,reason:blank.bio}],considerations:[blank.major]})}}]});}));
   const result=await generateAssignmentSuggestions(env,undefined as unknown as string,f.input,f.config);
   expect(captured).toContain(blank.bio);expect(captured).not.toContain('OUTSIDE-SECRET');expect(JSON.stringify(result)).not.toContain('private-');
   const calls=await env.DB.prepare('SELECT input_r2_key,output_r2_key FROM ai_calls WHERE project_id=?1').bind(f.projectId).all<{input_r2_key:string;output_r2_key:string}>();expect(calls.results).toHaveLength(1);

@@ -38,7 +38,6 @@ export const providerPresets: Record<ProviderPreset, { label: string; apiUrl: st
 export interface ProviderOptions {
   provider: string;
   providerPreset?: ProviderPreset;
-  gatewayProviderSlug?: string;
   apiUrl?: string;
   apiProtocol?: ApiProtocol;
   supportsJson?: boolean;
@@ -120,7 +119,6 @@ export function providerOptionErrors(config: ProviderOptions): string[] {
   if (protocolForConfig(config) === 'messages' && config.supportsJson) errors.push('Messages 协议请取消 JSON response_format；仍会使用 JSON 提示和输出校验');
   if (requiresExplicitApiProtocol(config)) errors.push('该 OpenCode 模型尚未核实，请显式选择协议；思考参数保持默认');
   if (preset === 'opencode-go' && !config.goUsageAcknowledged) errors.push('请先确认 OpenCode Go 套餐适用于本应用用途');
-  if (config.provider !== 'workers-ai' && config.model && preset === 'custom' && (!config.gatewayProviderSlug || !/^[a-z0-9-]{1,64}$/.test(config.gatewayProviderSlug))) errors.push('请填写已在 Cloudflare AI Gateway 中配置的自定义 Provider slug');
   if (preset === 'opencode-go' && config.goHeaders?.userAgent !== undefined && !isSafeGoUserAgent(config.goHeaders.userAgent)) errors.push('Go User-Agent 需为真实应用名/版本，不能模拟 OpenCode、Codex 或 Claude 客户端');
   if (preset === 'opencode-go' && config.goHeaders?.sessionPrefix !== undefined && !/^[A-Za-z0-9_.-]{0,32}$/.test(config.goHeaders.sessionPrefix)) errors.push('Go 会话前缀只能含字母、数字、点、下划线或连字符，最多32位');
   const caps = modelCapabilities(config);

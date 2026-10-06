@@ -73,15 +73,15 @@ describe('unified routing', () => {
     const replies = await Promise.all([put({ ...current.config, expectedVersion: current.version }), put({ ...current.config, expectedVersion: current.version })]);
     expect(replies.map(r => r.status).sort()).toEqual([201, 409]);
   });
-  it('uses Gateway stored provider keys for the independent unified route', async () => {
+  it('stores ordinary unified provider keys encrypted and keeps the API URL independent', async () => {
     const current = await get();
-    const unified = { ...current.config.textEconomy, provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'custom-models', apiUrl: 'https://one.example.com/v1/chat/completions', model: 'one' };
+    const unified = { ...current.config.textEconomy, provider: 'openai-compatible', providerPreset:'custom', apiUrl: 'https://one.example.com/v1/chat/completions', model: 'one', apiKey: 'fixture-unified-provider-key' };
     expect((await put({ ...current.config, routingMode: 'unified', unified })).status).toBe(201);
     const read = await get();
-    expect(read.config.unified.keyConfigured).toBeUndefined();
+    expect(read.config.unified.keyConfigured).toBe(true);
     expect(JSON.stringify(read)).not.toContain('apiKeyEncrypted');
-    expect((await put({ ...read.config, unified: { ...read.config.unified, apiKey:'visitor-key' } })).status).toBe(400);
-    expect((await loadAiConfig(env.DB, undefined, false))!.config.textEconomy.apiKeyEncrypted).toBeUndefined();
+    expect((await put({ ...read.config, unified: { ...read.config.unified, apiKey:'', keyConfigured: true } })).status).toBe(201);
+    expect((await loadAiConfig(env.DB, undefined, false))!.config.unified!.apiKeyEncrypted).toBeTruthy();
   });
   it('allows inactive advanced options, but validates them on activation', async () => {
     const current = await get();

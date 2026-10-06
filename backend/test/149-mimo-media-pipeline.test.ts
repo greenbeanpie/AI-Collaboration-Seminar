@@ -37,9 +37,8 @@ async function fixture(source=false){
 }
 function provider(options:{complete?:boolean;error?:boolean;after?:()=>Promise<void>}={}){
  return vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
-  expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/test-account-id/test-gateway-id/custom-xiaomi-mimo/v1/chat/completions');
-  expect(new Headers(init?.headers).get('cf-aig-authorization')).toBe('Bearer test-cf-token');
-  expect(new Headers(init?.headers).has('api-key')).toBe(false);
+  expect(String(url)).toBe('https://api.xiaomimimo.com/v1/chat/completions');
+  expect(new Headers(init?.headers).get('api-key')).toBe('mimo-fixture-key');
   const body=JSON.parse(String(init?.body));expect(body.messages[1].content[0].type).toBe('input_audio');
   const grant=new Request(body.messages[1].content[0].input_audio.data);const fetched=await readMediaGrant(testEnv,grant,new URL(grant.url).pathname.split('/').at(-1)!);
   expect(fetched.status).toBe(200);expect((await fetched.arrayBuffer()).byteLength).toBe(12);
@@ -98,10 +97,10 @@ describe('MiMo admin configuration compatibility',()=>{
   const f=await fixture(),app=createApp();const {apiKeyEncrypted,...publicModel}=f.model;void apiKeyEncrypted;
   const request=(body:unknown)=>app.request('/api/v1/admin/ai-config',{method:'PUT',headers:{authorization:'Bearer test-admin-token','content-type':'application/json'},body:JSON.stringify(body)},testEnv);
   await env.DB.prepare('UPDATE ai_config_versions SET config_json=json_set(config_json,\'$.processingStrategies.audioFiles\',\'whisper-first\') WHERE id=?1').bind(f.config.id).run();
-  const saved=await request({expectedVersion:f.config.version,mimoMediaUnderstanding:publicModel});expect(saved.status).toBe(201);expect((await saved.json() as {data:{enabled:boolean}}).data.enabled).toBe(true);
-  const latest=(await loadAiConfig(env.DB))!;expect(latest.config.mimoMediaUnderstanding?.apiKeyEncrypted).toBeUndefined();expect(latest.config.processingStrategies?.audioFiles).toBe('whisper-first');
-  const read=await app.request('/api/v1/admin/ai-config',{headers:{authorization:'Bearer test-admin-token'}},testEnv);const serialized=await read.text();expect(serialized).not.toContain('apiKeyEncrypted');expect(serialized).not.toContain('mimo-fixture-key');expect(serialized).not.toContain('keyConfigured');
+  const saved=await request({expectedVersion:f.config.version,mimoMediaUnderstanding:{...publicModel,apiKey:''}});expect(saved.status).toBe(201);expect((await saved.json() as {data:{enabled:boolean}}).data.enabled).toBe(true);
+  const latest=(await loadAiConfig(env.DB))!;expect(latest.config.mimoMediaUnderstanding?.apiKeyEncrypted).toBe(f.model.apiKeyEncrypted);expect(latest.config.processingStrategies?.audioFiles).toBe('whisper-first');
+  const read=await app.request('/api/v1/admin/ai-config',{headers:{authorization:'Bearer test-admin-token'}},testEnv);const serialized=await read.text();expect(serialized).not.toContain('apiKeyEncrypted');expect(serialized).not.toContain('mimo-fixture-key');expect(serialized).toContain('keyConfigured');
   const cleared=await request({expectedVersion:latest.version,clearMimoMediaUnderstanding:true});expect(cleared.status).toBe(201);expect((await loadAiConfig(env.DB))!.config.mimoMediaUnderstanding).toBeUndefined();
  });
- it('MiMo capability is independent of Whisper and readonly probe uses Gateway BYOK',async()=>{const f=await fixture(),app=createApp();const capabilities=await app.request('/api/v1/capabilities',{},testEnv);expect((await capabilities.json() as {data:{features:Record<string,unknown>}}).data.features).toMatchObject({audioSummaryEnabled:true,audioTranscriptionEnabled:false,audioMediaProvider:'mimo'});const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/test-account-id/test-gateway-id/custom-xiaomi-mimo/v1/models');expect(new Headers(init?.headers).get('cf-aig-authorization')).toBe('Bearer test-cf-token');expect(new Headers(init?.headers).has('api-key')).toBe(false);return Response.json({data:[{id:'mimo-v2.6-pro'}]});});vi.stubGlobal('fetch',request);const probe=await app.request('/api/v1/admin/ai-config/mimo-media-probe',{method:'POST',headers:{authorization:'Bearer test-admin-token'}},testEnv);expect(probe.status).toBe(200);expect(request).toHaveBeenCalledTimes(1);expect(f.config.config.processingStrategies?.audioFiles).toBe('mimo-only');});
+ it('MiMo capability is independent of Whisper and readonly probe does no inference',async()=>{const f=await fixture(),app=createApp();const capabilities=await app.request('/api/v1/capabilities',{},testEnv);expect((await capabilities.json() as {data:{features:Record<string,unknown>}}).data.features).toMatchObject({audioSummaryEnabled:true,audioTranscriptionEnabled:false,audioMediaProvider:'mimo'});const request=vi.fn(async(url:RequestInfo|URL)=>{expect(String(url)).toBe('https://api.xiaomimimo.com/v1/models');return Response.json({data:[{id:'mimo-v2.6-pro'}]});});vi.stubGlobal('fetch',request);const probe=await app.request('/api/v1/admin/ai-config/mimo-media-probe',{method:'POST',headers:{authorization:'Bearer test-admin-token'}},testEnv);expect(probe.status).toBe(200);expect(request).toHaveBeenCalledTimes(1);expect(f.config.config.processingStrategies?.audioFiles).toBe('mimo-only');});
 });

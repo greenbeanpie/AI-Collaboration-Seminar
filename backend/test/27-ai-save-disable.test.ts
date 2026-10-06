@@ -18,8 +18,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 it('ordinary save and explicit enable do not require a successful connection probe', async () => {
   const loaded = await loadAiConfig(env.DB, undefined, false);
-  const text = { ...loaded!.config.textEconomy, provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'test-models', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions' };
-  const initial = await request('PUT', '', { ...loaded!.config, routingMode:'unified', unified: text, enabled: false, expectedVersion: loaded!.version });
+  const text = { ...loaded!.config.textEconomy, provider: 'openai-compatible', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-only-key' };
+  const initial = await request('PUT', '', { ...loaded!.config, routingMode: 'unified', unified: text, enabled: false, expectedVersion: loaded!.version });
   expect(initial.status).toBe(201);
   const network = vi.fn(async () => new Response('unavailable', { status: 500 }));
   vi.stubGlobal('fetch', network);
@@ -47,24 +47,24 @@ it('saving an unchanged enabled config preserves enabled without probes; changin
   expect(kept.status).toBe(201);
   expect((await kept.json() as { data: { enabled: boolean } }).data.enabled).toBe(true);
   const newest = await readConfig();
-  const unified = newest.config.unified as Record<string, unknown>;
-  const changed = await request('PUT', '', { ...newest.config, unified: { ...unified, model: 'changed-model' }, expectedVersion: newest.version });
+  const text = newest.config.textEconomy as Record<string, unknown>;
+  const changed = await request('PUT', '', { ...newest.config, unified: { ...(newest.config.unified as Record<string, unknown>), model: 'changed-model' }, expectedVersion: newest.version });
   expect(changed.status).toBe(201);
   expect((await changed.json() as { data: { enabled: boolean } }).data.enabled).toBe(false);
   expect(network).not.toHaveBeenCalled();
 });
 
-it('API URL can change only when the unified supplier changes; custom Provider settings remain validated', async () => {
+it('ordinary save retains URL, credential destination and provider option validation', async () => {
   const current = await readConfig();
   const text = current.config.textEconomy as Record<string, unknown>;
-  const first = await request('PUT', '', { ...current.config, routingMode:'unified', unified: { ...text, provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'test-models', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions' }, expectedVersion: current.version });
+  const first = await request('PUT', '', { ...current.config, routingMode: 'unified', unified: { ...text, provider: 'openai-compatible', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-only-key' }, expectedVersion: current.version });
   expect(first.status).toBe(201);
   const stored = await readConfig();
   const storedText = stored.config.unified as Record<string, unknown>;
   for (const patch of [
     { apiUrl: 'https://other.example.com/v1/chat/completions' },
     { apiUrl: 'https://model.example.com/v1/chat/completions?key=bad' },
-    { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', apiUrl: 'https://opencode.ai/zen/go/v1/messages', goUsageAcknowledged: false },
+    { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', apiUrl: 'https://opencode.ai/zen/go/v1/messages', clearKey: true, goUsageAcknowledged: false },
   ]) {
     const response = await request('PUT', '', { ...stored.config, unified: { ...storedText, ...patch }, expectedVersion: stored.version });
     expect(response.status).toBe(400);
@@ -75,7 +75,7 @@ it('API URL can change only when the unified supplier changes; custom Provider s
 it('disable copies persisted encrypted config and notes with an audited new version, without a key or model call', async () => {
   const current = await readConfig();
   const text = current.config.textEconomy as Record<string, unknown>;
-  const saved = await request('PUT', '', { ...current.config, textEconomy: { ...text, provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'test-models', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions' }, notes: 'retained audit note', expectedVersion: current.version });
+  const saved = await request('PUT', '', { ...current.config, routingMode: 'unified', unified: { ...text, provider: 'openai-compatible', model: 'fixture-model', apiUrl: 'https://model.example.com/v1/chat/completions', apiKey: 'fixture-only-key' }, notes: 'retained audit note', expectedVersion: current.version });
   expect(saved.status).toBe(201);
   const before = await env.DB.prepare('SELECT version, config_json, notes FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{ version: number; config_json: string; notes: string }>();
   await env.DB.prepare('UPDATE ai_config_versions SET enabled = 1 WHERE version = ?1').bind(before!.version).run();

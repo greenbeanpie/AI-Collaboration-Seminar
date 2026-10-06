@@ -37500,11 +37500,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37574,6 +37569,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37583,8 +37586,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "expectedVersion": {
                     "type": "integer",
@@ -37611,11 +37613,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37685,6 +37682,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37694,8 +37699,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "visionEconomy": {
                     "type": "object",
@@ -37718,11 +37722,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37792,6 +37791,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37801,8 +37808,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "review": {
                     "type": "object",
@@ -37825,11 +37831,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -37899,6 +37900,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -37908,8 +37917,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "mediaUnderstanding": {
                     "type": "object",
@@ -37932,11 +37940,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -38006,6 +38009,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -38015,8 +38026,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "clearMediaUnderstanding": {
                     "type": "boolean"
@@ -38042,11 +38052,6 @@
                           "opencode-go"
                         ]
                       },
-                      "gatewayProviderSlug": {
-                        "type": "string",
-                        "maxLength": 64,
-                        "pattern": "^[a-z0-9-]+$"
-                      },
                       "apiProtocol": {
                         "type": "string",
                         "enum": [
@@ -38116,6 +38121,14 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "maxLength": 4096,
+                        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+                      },
+                      "clearKey": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -38125,8 +38138,7 @@
                       "maxInputChars",
                       "supportsJson",
                       "supportsVision"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   "clearMimoMediaUnderstanding": {
                     "type": "boolean"

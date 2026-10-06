@@ -19,19 +19,6 @@ const encrypted = await seal('fixture-provider-key', env.AUTH_SECRET);
 function config(preset: ProviderPreset, model: string, extra: Partial<AiModelConfig> = {}): AiModelConfig {
   return aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: preset, model, apiUrl: presetEndpoint(preset, model, extra.apiProtocol), apiKeyEncrypted: encrypted, timeoutMs: 90000, maxInputChars: 48000, supportsJson: providerPresets[preset].supportsJson, supportsVision: true, goUsageAcknowledged: preset === 'opencode-go', ...extra });
 }
-function gatewayUrl(preset: ProviderPreset, model: string, protocol: string): string {
-  const base = 'https://gateway.ai.cloudflare.com/v1/account/gateway';
-  const suffix = protocol === 'chat-completions' ? 'chat/completions' : protocol;
-  if (preset === 'openai') return `${base}/openai/${suffix}`;
-  if (preset === 'anthropic') return `${base}/anthropic/v1/messages`;
-  if (preset === 'deepseek-anthropic') return `${base}/deepseek/anthropic/v1/messages`;
-  if (preset === 'gemini') return `${base}/google-ai-studio/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  if (preset === 'deepseek') return `${base}/deepseek/${suffix}`;
-  if (preset === 'openrouter') return `${base}/openrouter/v1/${suffix}`;
-  if (preset === 'opencode-go') return `${base}/custom-opencode-go/zen/go/v1/${suffix}`;
-  if (preset === 'opencode-zen') return `${base}/custom-opencode-zen/zen/v1/${suffix}`;
-  throw new Error('custom test must provide its own route');
-}
 function response(protocol: ApiProtocol) {
   if (protocol === 'responses') return { status: 'completed', output: [{ type: 'reasoning', summary: [{ text: 'not the answer' }] }, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '{"ok":true}' }] }], usage: { input_tokens: 9, output_tokens: 6, output_tokens_details: { reasoning_tokens: 4 } } };
   if (protocol === 'messages') return { content: [{ type: 'thinking', thinking: 'not the answer' }, { type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn', usage: { input_tokens: 3, cache_creation_input_tokens: 2, cache_read_input_tokens: 4, output_tokens: 6 } };
@@ -48,9 +35,9 @@ it.each([
   expect(classifyFetchFailure(error, false)).toEqual({ failureKind, exceptionType: 'type_error' });
   const requestId = crypto.randomUUID();
   const mock = vi.fn(async () => { throw error; });
-  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ details: { failureKind, exceptionType: 'type_error', finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted' } });
+  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ details: { failureKind, exceptionType: 'type_error', finalHost: 'api.deepseek.com', finalPath: '/chat/completions' } });
   const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
-  expect(events.find(entry => entry.phase === 'fetch_failed')).toMatchObject({ failureKind, errorCode: 'FETCH_FAILED', finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted' });
+  expect(events.find(entry => entry.phase === 'fetch_failed')).toMatchObject({ failureKind, errorCode: 'FETCH_FAILED', finalHost: 'api.deepseek.com', finalPath: '/chat/completions' });
   expect(JSON.stringify(events)).not.toMatch(/fixture-provider-key|fixture-private-cause|fixture-secret-code/);
   expect(mock).toHaveBeenCalledOnce();
 });
@@ -61,7 +48,7 @@ it('a provider redirect is observed once and rejected without following or forwa
     expect(init?.redirect).toBe('manual');
     return new Response('', { status: 302, headers: { location: 'https://api.deepseek.com/v1/chat/completions?key=fixture-provider-key' } });
   });
-  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ retryable: false, details: { status: 302, failureKind: 'redirect', finalHost: 'custom-host-redacted', finalPath: 'custom-path-redacted', redirectHost: 'api.deepseek.com', redirectPath: 'custom-path-redacted' } });
+  await expect(gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages, diagnosticRequestId: requestId }, mock)).rejects.toMatchObject({ retryable: false, details: { status: 302, failureKind: 'redirect', finalHost: 'api.deepseek.com', finalPath: '/chat/completions', redirectHost: 'api.deepseek.com', redirectPath: 'custom-path-redacted' } });
   expect(mock).toHaveBeenCalledOnce();
   const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
   expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ httpStatus: 302, errorCode: 'REDIRECT_BLOCKED', failureKind: 'redirect' });
@@ -78,7 +65,7 @@ it('stores successful model-call metadata without storing prompts, answers, or c
   const mock = vi.fn(async () => Response.json({ choices: [{ message: { content: answer } }] }));
   await gatewayChat({ ...endpoint, diagnostics: env }, { config: config('deepseek', 'deepseek-flash'), messages: [{ role: 'user', content: prompt }], diagnosticRequestId: requestId }, mock);
   const events = (await readAiDiagnostics(env)).items.filter(entry => entry.requestId === requestId);
-  expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ operation: 'model_call', status: 'succeeded', errorCode: 'NONE', httpStatus: 200, finalHost: 'custom-host-redacted' });
+  expect(events.find(entry => entry.phase === 'fetch_received')).toMatchObject({ operation: 'model_call', status: 'succeeded', errorCode: 'NONE', httpStatus: 200, finalHost: 'api.deepseek.com' });
   expect(JSON.stringify(events)).not.toMatch(/fixture-private-prompt|fixture-private-answer|fixture-provider-key|authorization/);
 });
 
@@ -97,23 +84,21 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
     expect(out).toMatchObject({ content: '{"ok":true}', promptTokens: 9, completionTokens: 6 });
     expect(beforeFetch).toHaveBeenCalledOnce(); expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(gatewayUrl(preset, model, protocol));
+    expect(url).toBe(presetEndpoint(preset, model));
     expect(init.redirect).toBe('manual');
     const headers = new Headers(init.headers); const body = JSON.parse(String(init.body));
     expect(headers.get('content-type')).toBe('application/json');
-    expect(headers.get('cf-aig-authorization')).toBe('Bearer workers-key');
     expect(headers.get('cf-aig-gateway-id')).toBeNull();
-    expect(headers.has('authorization')).toBe(false); expect(headers.has('x-api-key')).toBe(false); expect(headers.has('x-goog-api-key')).toBe(false);
     if (protocol === 'messages') {
-      expect(headers.get('anthropic-version')).toBe('2023-06-01');
-      const routedModel = preset === 'opencode-go' || preset === 'opencode-zen' ? `custom-${preset}/${model}` : model;
-      expect(body).toMatchObject({ model: routedModel, max_tokens: FIXED_MAX_OUTPUT_TOKENS, system: 'Only JSON', messages: [{ role: 'user', content: 'Reply JSON' }] }); expect(body.response_format).toBeUndefined();
+      expect(headers.get('x-api-key')).toBe('fixture-provider-key'); expect(headers.get('anthropic-version')).toBe('2023-06-01'); expect(headers.has('authorization')).toBe(false);
+      expect(body).toMatchObject({ model, max_tokens: FIXED_MAX_OUTPUT_TOKENS, system: 'Only JSON', messages: [{ role: 'user', content: 'Reply JSON' }] }); expect(body.response_format).toBeUndefined();
     } else if (protocol === 'gemini') {
+      expect(headers.get('x-goog-api-key')).toBe('fixture-provider-key'); expect(headers.has('authorization')).toBe(false);
       expect(body).toMatchObject({ generationConfig: { maxOutputTokens: FIXED_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' }, systemInstruction: { parts: [{ text: 'Only JSON' }] }, contents: [{ role: 'user', parts: [{ text: 'Reply JSON' }] }] });
     } else {
-      const routedModel = preset === 'opencode-go' || preset === 'opencode-zen' ? `custom-${preset}/${model}` : model;
-      if (protocol === 'responses') { expect(body).toMatchObject({ model: routedModel, max_output_tokens: FIXED_MAX_OUTPUT_TOKENS, store: false, input: messages }); expect(body.messages).toBeUndefined(); }
-      else { expect(body.model).toBe(routedModel); expect(body.messages).toEqual(messages); expect(body.max_tokens ?? body.max_completion_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS); }
+      expect(headers.get('authorization')).toBe('Bearer fixture-provider-key');
+      if (protocol === 'responses') { expect(body).toMatchObject({ model, max_output_tokens: FIXED_MAX_OUTPUT_TOKENS, store: false, input: messages }); expect(body.messages).toBeUndefined(); }
+      else { expect(body.messages).toEqual(messages); expect(body.max_tokens ?? body.max_completion_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS); }
     }
     if (preset === 'opencode-go') { expect(headers.get('user-agent')).toBe('AI-Collaboration-Seminar/1.0'); expect(headers.get('x-opencode-session')).toBe('stable-job-123'); }
     else expect(headers.has('x-opencode-session')).toBe(false);
@@ -196,12 +181,12 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
   it('uses a manually configured preset URL while retaining Go protocol and headers', async () => {
     const cfg = config('opencode-go', 'minimax-m3', { apiUrl: 'https://proxy.example/v1/messages', apiProtocol: 'messages', goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/account/gateway/custom-opencode-go/zen/go/v1/messages');
+      expect(String(url)).toBe(cfg.apiUrl);
       const headers = new Headers(init?.headers);
       expect(headers.get('user-agent')).toBe('MyOffice/1.2');
       expect(headers.get('x-opencode-session')).toBe('office:job');
       const body = JSON.parse(String(init?.body));
-      expect(body.model).toBe('custom-opencode-go/minimax-m3');
+      expect(body.model).toBe('minimax-m3');
       expect(body.max_tokens).toBe(FIXED_MAX_OUTPUT_TOKENS);
       return Response.json(response('messages'));
     });
@@ -210,15 +195,14 @@ describe('outgoing provider protocol contracts (mocked only)', () => {
   });
 
   it('legacy worker/custom configs keep exact Chat behavior and omit all new options', async () => {
-    const cfg = aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'legacy-provider', model: 'old-model', apiUrl: 'https://legacy.example/v1/chat/completions', apiKeyEncrypted: encrypted, timeoutMs: 60000, maxInputChars: 10000, maxOutputTokens: 1024, supportsJson: true, supportsVision: false, temperature: 0.3 });
+    const cfg = aiModelConfigSchema.parse({ provider: 'legacy-provider-name', model: 'old-model', apiUrl: 'https://legacy.example/v1/chat/completions', apiKeyEncrypted: encrypted, timeoutMs: 60000, maxInputChars: 10000, maxOutputTokens: 1024, supportsJson: true, supportsVision: false, temperature: 0.3 });
     for (const c of [cfg, { ...cfg, provider: 'workers-ai' }]) {
       const mock = vi.fn(async () => new Response(JSON.stringify(response('chat-completions'))));
       await gatewayChat(endpoint, { config: c, messages, jsonMode: true }, mock);
       const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
-      expect(url).toBe(c.provider === 'workers-ai' ? 'https://api.cloudflare.com/client/v4/accounts/account/ai/v1/chat/completions' : 'https://gateway.ai.cloudflare.com/v1/account/gateway/custom-legacy-provider/v1/chat/completions');
-      expect(JSON.parse(String(init.body))).toEqual({ model: c.provider === 'workers-ai' ? 'old-model' : 'custom-legacy-provider/old-model', messages, max_tokens: FIXED_MAX_OUTPUT_TOKENS, temperature: 0.3, response_format: { type: 'json_object' } });
+      expect(url).toBe(c.provider === 'workers-ai' ? 'https://api.cloudflare.com/client/v4/accounts/account/ai/v1/chat/completions' : cfg.apiUrl);
+      expect(JSON.parse(String(init.body))).toEqual({ model: 'old-model', messages, max_tokens: FIXED_MAX_OUTPUT_TOKENS, temperature: 0.3, response_format: { type: 'json_object' } });
       expect(new Headers(init.headers).get('cf-aig-gateway-id')).toBe(c.provider === 'workers-ai' ? 'gateway' : null);
-      if(c.provider!=='workers-ai') { expect(new Headers(init.headers).get('cf-aig-authorization')).toBe('Bearer workers-key'); expect(new Headers(init.headers).has('authorization')).toBe(false); }
     }
   });
 
@@ -247,12 +231,12 @@ const adminHeaders = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': '
 async function putConfig(model: AiModelConfig, apiKey?: string, enabled = false) {
   const { apiKeyEncrypted: _encrypted, ...editable } = model;
   const withKey = { ...editable, ...(apiKey ? { apiKey } : {}) };
-  return SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ routingMode:'unified', unified:withKey, enabled }) });
+  return SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { method: 'PUT', headers: adminHeaders, body: JSON.stringify({ routingMode: 'unified', unified: withKey, textEconomy: withKey, visionEconomy: withKey, review: withKey, enabled }) });
 }
 describe('versioned configuration, authorization, and reservations', () => {
   it('does not pay for a same-budget repair when DeepSeek exhausts output tokens', async () => {
     const cfg = config('deepseek', 'deepseek-flash', { reasoningEffort: 'high' });
-    expect((await putConfig(cfg)).status).toBe(201);
+    expect((await putConfig(cfg, 'fixture-provider-key')).status).toBe(201);
     const loaded = (await loadAiConfig(env.DB))!;
     const user = await seedUser(); const projectId = await seedProject(user.userId); const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId, jobId, purpose: 'agent_run', configVersionId: loaded.id });
@@ -264,7 +248,7 @@ describe('versioned configuration, authorization, and reservations', () => {
   });
   it('new options round-trip without exposing keys and freeze across later edits', async () => {
     const original = config('openai', 'gpt-5', { reasoningEffort: 'low' });
-    expect((await putConfig(original)).status).toBe(201);
+    expect((await putConfig(original, 'fixture-provider-key')).status).toBe(201);
     const frozen = (await loadAiConfig(env.DB))!;
     const read = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers: adminHeaders });
     const result = await read.text(); expect(result).toContain('reasoningEffort'); expect(result).not.toContain('fixture-provider-key'); expect(result).not.toContain('apiKeyEncrypted');
@@ -280,7 +264,7 @@ describe('versioned configuration, authorization, and reservations', () => {
 
   it('Go repair retains session and 2-call accounting; provider 403 is not retried', async () => {
     const cfg = config('opencode-go', 'glm-5.2');
-    expect((await putConfig(cfg)).status).toBe(201);
+    expect((await putConfig(cfg, 'fixture-provider-key')).status).toBe(201);
     const loaded = (await loadAiConfig(env.DB))!;
     const user = await seedUser(); const projectId = await seedProject(user.userId); const jobId = crypto.randomUUID();
     await reserveAiSlot(env, { projectId, jobId, purpose: 'agent_run', configVersionId: loaded.id });
@@ -302,8 +286,7 @@ it('unknown Go models require explicit supported protocol and retain no speculat
   const mock = vi.fn(async () => new Response(JSON.stringify(response('responses'))));
   await gatewayChat(endpoint, { config: cfg, messages, sessionId: 'stable-session' }, mock);
   const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit];
-  expect(url).toBe('https://gateway.ai.cloudflare.com/v1/account/gateway/custom-opencode-go/zen/go/v1/responses');
-  expect(JSON.parse(String(init.body)).model).toBe('custom-opencode-go/future-model');
+  expect(url).toBe('https://opencode.ai/zen/go/v1/responses');
   expect(new Headers(init.headers).get('user-agent')).toBe('MyOffice/2.0');
   expect(new Headers(init.headers).get('x-opencode-session')).toBe('demo:stable-session');
   expect(JSON.parse(String(init.body)).reasoning).toBeUndefined();
@@ -343,7 +326,7 @@ it('control characters and unsafe Go header keys are rejected and network errors
   const good = config('opencode-go', 'glm-5.2');
   expect((await putConfig(good, 'key\r\ninjected')).status).toBe(400);
   const unsafe = { ...good, goHeaders: { authorization: 'Bearer injected' } } as unknown as AiModelConfig;
-  expect((await putConfig(unsafe)).status).toBe(400);
+  expect((await putConfig(unsafe, 'fixture-key')).status).toBe(400);
   const mock = vi.fn(async () => { throw new Error('network failure contains fixture-provider-key'); });
   try { await gatewayChat(endpoint, { config: good, messages, sessionId: 'job' }, mock); throw new Error('should fail'); }
   catch (error) { expect(JSON.stringify(error)).not.toContain('fixture-provider-key'); expect(String(error)).toContain('网络请求失败'); }
@@ -359,7 +342,7 @@ it('malformed provider bodies never expose parser snippets and oversized bodies 
 
 
 it('an explicit Go capability probe shares one stable session across text, JSON and vision requests', async () => {
-  expect((await putConfig(config('opencode-go', 'glm-5.2'))).status).toBe(201);
+  expect((await putConfig(config('opencode-go', 'glm-5.2'), 'fixture-provider-key')).status).toBe(201);
   const loaded = (await loadAiConfig(env.DB))!;
   const mock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));

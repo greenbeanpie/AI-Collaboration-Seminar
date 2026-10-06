@@ -18,7 +18,6 @@ export const aiModelConfigSchema = z.object({
   provider: z.string().min(1),
   // Optional so old saved/frozen configurations retain their original adapter semantics.
   providerPreset: z.enum(PROVIDER_PRESETS).optional(),
-  gatewayProviderSlug: z.string().max(64).regex(/^[a-z0-9-]+$/).optional(),
   apiProtocol: z.enum(API_PROTOCOLS).optional(),
   model: z.string(),
   apiUrl: z.string().default(''),

@@ -8,7 +8,7 @@ import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { nowIso, newId, timingSafeEqual } from '../core/db';
-import { seal } from '../ai/secrets';
+import { seal, unseal } from '../ai/secrets';
 import { loadSessionUser, parseCookies, SESSION_COOKIE } from '../core/auth';
 import { createAccountInvitation } from '../services/accounts';
 import { AppError, versionConflict, permissionDenied, unauthenticated, invalidState, validationFailed, notFound } from '../core/errors';
@@ -45,8 +45,8 @@ export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).strict();
-const editableMediaModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).strict();
+const editableModel = aiModelConfigSchema.omit({ apiKeyEncrypted: true }).extend({ apiKey: z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/).optional(), clearKey: z.boolean().optional() });
+const editableMediaModel = editableModel;
 const editableRealtimeTranscription = realtimeAudioTranscriptionSchema.omit({apiKeyEncrypted:true,gatewayTokenEncrypted:true}).extend({gatewayToken:z.string().max(4096).regex(/^[^\x00-\x1f\x7f]*$/).optional(),clearGatewayToken:z.boolean().optional()}).strict();
 const configShape = z.object({
   rehearsalSpeech:rehearsalSpeechSchema.optional(),
@@ -208,16 +208,18 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
   app.use('/api/v1/admin/*', requireAdmin);
   app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/media-probe',tags:['admin'],summary:'只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用）',responses:{200:{description:'模型元数据检查，不等同真实媒体质量验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MediaProbeResponse')}}}}}),async c=>{
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mediaUnderstanding;
-    if(!loaded||!model)throw invalidState('请先保存音视频模型配置');
-    const passed=await new GeminiMediaClient(model,c.env.CLOUDFLARE_API_TOKEN,fetch,c.env,c.get('requestId'),c.env.CLOUDFLARE_ACCOUNT_ID,c.env.AI_GATEWAY_ID).probe();
+    const encrypted=model?.apiKeyEncrypted;
+    if(!loaded||!model||!encrypted)throw invalidState('请先保存音视频模型及 API key');
+    const passed=await new GeminiMediaClient(model,await unseal(encrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'官方模型元数据可访问，支持 generateContent；音视频摘要质量需真实样本核对':'官方模型未声明 generateContent'}),200);
   });
 
   registerAdminAccountRoutes(app);
   app.openapi(createRoute({method:'post',path:'/api/v1/admin/ai-config/mimo-media-probe',tags:['admin'],summary:'只读检查小米官方模型列表，不产生识别费用',responses:{200:{description:'模型可访问性，不等同真实识别验证',content:{'application/json':{schema:apiEnvelope(z.object({passed:z.boolean(),model:z.string(),configVersion:z.number().int(),detail:z.string()}),'MimoMediaProbeResponse')}}}}}),async c=>{
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mimoMediaUnderstanding;
-    if(!loaded||!model)throw invalidState('请先保存 MiMo 模型配置');
-    const passed=await new MimoMediaClient(model,c.env.CLOUDFLARE_API_TOKEN,fetch,c.env,c.get('requestId'),c.env.CLOUDFLARE_ACCOUNT_ID,c.env.AI_GATEWAY_ID).probe();
+    const encrypted=model?.apiKeyEncrypted;
+    if(!loaded||!model||!encrypted)throw invalidState('请先保存 MiMo 模型及 API key');
+    const passed=await new MimoMediaClient(model,await unseal(encrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'小米官方模型列表可访问；音频识别质量需真实样本核对':'当前密钥不可访问 mimo-v2.6-pro'}),200);
   });
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
@@ -251,7 +253,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
             if (!entry) return [];
             const { apiKeyEncrypted, ...model } = entry;
             void apiKeyEncrypted;
-            return [[purpose, model]];
+            return [[purpose, { ...model, keyConfigured: Boolean(apiKeyEncrypted) }]];
           })),
         },
         notes: null,
@@ -274,8 +276,6 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const parsed = aiConfigSchema.safeParse({ ...body, textEconomy:body.textEconomy??latest?.config.textEconomy,visionEconomy:body.visionEconomy??latest?.config.visionEconomy,review:body.review??latest?.config.review,rehearsalSpeech:body.rehearsalSpeech??latest?.config.rehearsalSpeech, audioFileTranscription:body.audioFileTranscription??latest?.config.audioFileTranscription, realtimeAudioTranscription:realtime, processingStrategies:strategies, audioProcessingStrategy:strategies.audioFiles==='media-only'?'gemini-only':'whisper-first', searchEnabled: body.searchEnabled ?? latest?.config.searchEnabled, routingMode: body.routingMode ?? latest?.config.routingMode, unified: body.unified ?? latest?.config.unified, mediaUnderstanding: body.clearMediaUnderstanding ? undefined : body.mediaUnderstanding ?? latest?.config.mediaUnderstanding, mimoMediaUnderstanding:body.clearMimoMediaUnderstanding?undefined:body.mimoMediaUnderstanding??latest?.config.mimoMediaUnderstanding });
     if (!parsed.success) throw validationFailed('统一模式需要完整模型配置');
     const config = parsed.data;
-    for (const purpose of ['textEconomy','visionEconomy','review','unified'] as const) if (config[purpose]) config[purpose]!.apiKeyEncrypted = undefined;
-    if (config.realtimeAudioTranscription) config.realtimeAudioTranscription.apiKeyEncrypted = undefined;
     for (const purpose of ['textEconomy', 'visionEconomy', 'review', 'unified', 'mediaUnderstanding', 'mimoMediaUnderstanding'] as const) {
       if (config.routingMode === 'unified' && purpose !== 'unified' && purpose !== 'mediaUnderstanding' && purpose !== 'mimoMediaUnderstanding') {
         config[purpose] = latest?.config[purpose] ?? config[purpose];
@@ -294,7 +294,9 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       if (input.apiUrl && !isAllowedModelEndpoint(input.apiUrl, c.env.ENV_NAME)) {
         throw validationFailed('API URL 必须使用公开 HTTPS 域名且不能包含查询参数（本地环境允许回环地址）');
       }
-      if (purpose === 'mediaUnderstanding' || purpose === 'mimoMediaUnderstanding') config[purpose]!.apiKeyEncrypted = undefined;
+      const modelConfig = config[purpose];
+      if (!modelConfig) continue;
+      modelConfig.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
     if(config.realtimeAudioTranscription&&realtimeInput&&!body.clearRealtimeAudioTranscription){
       const previous=latest?.config.realtimeAudioTranscription;

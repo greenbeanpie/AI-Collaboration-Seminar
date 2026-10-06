@@ -6,7 +6,7 @@ import { AiSettings } from './AiSettings';
 async function setup(admin = true, advanced = true) { const client = new QueryClient(); client.setQueryData(['session'], { id: 'account', username: 'member', email: null, displayName: 'member', isAdmin: admin, role: admin ? 'super_admin' : 'user' }); render(<QueryClientProvider client={client}><AiSettings /></QueryClientProvider>); if (admin) await waitFor(() => expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled()); if (advanced && admin) fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } }); }
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('routes Gemini and MiMo media through Gateway-owned provider keys', async () => {
+it('keeps Gemini and MiMo keys independent, saves MiMo drafts without switching routes, then persists explicit routes', async () => {
   const writes: Record<string, unknown>[] = [];
   const media = { ...savedModel, model: 'gemini-2.5-flash', apiUrl: 'https://generativelanguage.googleapis.com' };
   const mimo = { ...savedModel, provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiUrl: 'https://api.xiaomimimo.com/v1', pricePerMTokens: [1, 2], cachedInputPricePerMTokens: .1 };
@@ -16,22 +16,21 @@ it('routes Gemini and MiMo media through Gateway-owned provider keys', async () 
   expect(screen.getByLabelText(/视频文件处理策略/)).toHaveValue('gemini');
   expect(screen.getByLabelText('MiMo 模型')).toHaveAttribute('readonly');
   expect(screen.getByLabelText('MiMo 官方端点')).toHaveAttribute('readonly');
-  expect(screen.getByText(/自定义 Provider「xiaomi-mimo」/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/^MiMo API key/)).toHaveValue('');
   fireEvent.change(screen.getByLabelText('MiMo 超时（毫秒）'), { target: { value: '120000' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes[0]).toMatchObject({ processingStrategies: { audioFiles: 'whisper-first' }, mediaUnderstanding: { model: media.model }, mimoMediaUnderstanding: { model: mimo.model, timeoutMs: 120000 }, clearMimoMediaUnderstanding: false });
-  expect(JSON.stringify(writes[0])).not.toMatch(/apiKey|clearKey/);
+  expect(writes[0]).toMatchObject({ processingStrategies: { audioFiles: 'whisper-first' }, mediaUnderstanding: { model: media.model, apiKey: '' }, mimoMediaUnderstanding: { model: mimo.model, apiKey: '', timeoutMs: 120000 }, clearMimoMediaUnderstanding: false });
   expect(JSON.stringify(writes[0])).not.toMatch(/pricePerMTokens|cachedInputPricePerMTokens|mediaInputPricePerMTokens/);
   fireEvent.change(screen.getByLabelText(/音频文件处理策略/), { target: { value: 'mimo-only' } });
   fireEvent.change(screen.getByLabelText(/视频文件处理策略/), { target: { value: 'mimo' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1]).toMatchObject({ processingStrategies: { audioFiles: 'mimo-only', videoFiles: 'mimo' }, audioProcessingStrategy: 'whisper-first', mimoMediaUnderstanding: { model: 'mimo-v2.6-pro' } });
+  expect(writes[1]).toMatchObject({ processingStrategies: { audioFiles: 'mimo-only', videoFiles: 'mimo' }, audioProcessingStrategy: 'whisper-first', mimoMediaUnderstanding: { apiKey: '' } });
   expect(localStorage.length).toBe(0);
 });
 
-it('saves a MiMo Gateway route, probes metadata only after saving, and explicitly removes its configuration', async () => {
+it('saves an incomplete MiMo draft, probes metadata only after saving, and explicitly removes its configuration', async () => {
   const writes: Record<string, unknown>[] = []; const urls: string[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     urls.push(url);
@@ -42,8 +41,7 @@ it('saves a MiMo Gateway route, probes metadata only after saving, and explicitl
   await setup(true, false); fireEvent.click(screen.getByLabelText('配置 MiMo 音视频摘要模型'));
   expect(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await screen.findByText('配置已保存，AI 保持启用。');
-  expect(writes[0]).toMatchObject({ mimoMediaUnderstanding: { provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro' }, processingStrategies: { audioFiles: 'whisper-first' } });
-  expect(JSON.stringify(writes[0])).not.toMatch(/apiKey|clearKey/);
+  expect(writes[0]).toMatchObject({ mimoMediaUnderstanding: { provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', apiKey: '' }, processingStrategies: { audioFiles: 'whisper-first' } });
   expect(writes[0].mimoMediaUnderstanding).not.toHaveProperty('apiUrl');
   fireEvent.click(screen.getByRole('button', { name: '测试 MiMo 模型元数据（不生成）' })); await screen.findByText('MiMo 元数据通过');
   expect(urls.filter(url => url.endsWith('/mimo-media-probe'))).toHaveLength(1);
@@ -52,7 +50,7 @@ it('saves a MiMo Gateway route, probes metadata only after saving, and explicitl
   await waitFor(() => expect(writes).toHaveLength(2)); expect(writes[1]).toMatchObject({ clearMimoMediaUnderstanding: true }); expect(writes[1]).not.toHaveProperty('mimoMediaUnderstanding');
 });
 
-it('enabling separate Gemini and MiMo media models never asks for provider Keys', async () => {
+it('enabling separate Gemini and MiMo media models does not set either API URL', async () => {
   let saved: Record<string, unknown> | undefined;
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return Response.json({ data: { version: 8, enabled: false, config: savedConfig } });
@@ -66,7 +64,6 @@ it('enabling separate Gemini and MiMo media models never asks for provider Keys'
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(saved?.mediaUnderstanding).not.toHaveProperty('apiUrl');
   expect(saved?.mimoMediaUnderstanding).not.toHaveProperty('apiUrl');
-  expect(JSON.stringify(saved)).not.toMatch(/apiKey|clearKey/);
 });
 
 it('defaults legacy audio strategy to Whisper and saves strategy independently without paid probes', async () => {
@@ -81,8 +78,7 @@ it('defaults legacy audio strategy to Whisper and saves strategy independently w
   fireEvent.change(screen.getByLabelText(/音频文件处理策略/), {target:{value:'media-only'}});
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));
   await screen.findByText('配置已保存，AI 保持启用。');
-  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({processingStrategies:{audioFiles:'media-only',rehearsal:'text'},audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model}});
-  expect(calls[0].unified).not.toHaveProperty('apiKey');
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({processingStrategies:{audioFiles:'media-only',rehearsal:'text'},audioProcessingStrategy:'gemini-only',expectedVersion:8,unified:{model:savedConfig.unified.model,apiKey:''}});
 });
 it.each(['deepseek-flash', 'deepseek-v4-pro'])('saved unified %s offers every supported DeepSeek effort without consulting advanced drafts', async modelId => {
   const deepseek = { provider: 'openai-compatible', providerPreset: 'deepseek', model: modelId, apiUrl: 'https://api.deepseek.com/chat/completions', keyConfigured: true, timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: false };
@@ -116,10 +112,10 @@ it('system admin can enable a saved configuration despite a failed optional prob
     expect(new Headers(init?.headers).has('authorization')).toBe(false); expect(init?.credentials).toBe('same-origin');
     if (init?.method === 'PUT') {
       if (body.enabled === true) return new Response(JSON.stringify({ data: { version: 3, enabled: true } }));
-    expect(body.unified).toBeUndefined(); expect(body.enabled).toBeUndefined(); expect(JSON.stringify(body)).not.toMatch(/apiKey/);
+      expect(body.textEconomy.apiUrl).toBe(''); expect(body.textEconomy.apiKey).toBe(''); expect(body.enabled).toBeUndefined();
       return new Response(JSON.stringify({ data: { version: 2, enabled: false } }));
     }
-    return new Response(JSON.stringify({ data: { passed: false, configVersion: 2, checks: [{ name: 'chinese_text', passed: false, detail: 'Gateway 默认 Provider Key 尚未配置' }] } }));
+    return new Response(JSON.stringify({ data: { passed: false, configVersion: 2, checks: [{ name: 'chinese_text', passed: false, detail: '请填写 API URL、key 和模型名称' }] } }));
   });
   vi.stubGlobal('fetch', fetchMock); await setup();
   const enable = screen.getByRole('button', { name: '启用 AI' }); expect(enable).toBeDisabled();
@@ -127,7 +123,7 @@ it('system admin can enable a saved configuration despite a failed optional prob
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   fireEvent.click(screen.getByRole('button', { name: /测试.*文本与要求提取.*连接与能力/ }));
-  await waitFor(() => expect(screen.getByText(/Gateway 默认 Provider Key 尚未配置/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/请填写 API URL、key 和模型名称/)).toBeInTheDocument());
   expect(enable).toBeEnabled(); expect(fetchMock).toHaveBeenCalledTimes(3);
   fireEvent.click(enable);
   await screen.findByText('AI 已启用。');
@@ -151,14 +147,15 @@ it('Go has independent manual protocol and bounded headers, never automatically 
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
     const body = JSON.parse(String(init?.body));
     expect(init?.method).toBe('PUT');
-    expect(body.textEconomy).toMatchObject({ providerPreset: 'opencode-go', apiProtocol: 'messages', model: 'minimax-m3', goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
-    expect(body.textEconomy).not.toHaveProperty('apiKey'); expect(body.textEconomy).not.toHaveProperty('clearKey');
+    expect(body.textEconomy).toMatchObject({ providerPreset: 'opencode-go', apiProtocol: 'messages', model: 'minimax-m3', apiUrl: 'https://opencode.ai/zen/go/v1/messages', apiKey: 'new-key', clearKey: false, goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } });
     expect(body.textEconomy.supportsJson).toBe(false); expect(body.enabled).toBeUndefined();
     return new Response(JSON.stringify({ data: { version: 2, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup();
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-go' } });
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  const url = screen.getByLabelText(/文本与要求提取 API URL/);
+  expect(url).toHaveValue('');
+  fireEvent.change(url, { target: { value: 'https://opencode.ai/zen/go/v1/messages' } });
   expect(mock).toHaveBeenCalledOnce(); // Initial sanitized configuration load only.
   expect(screen.getByText(/本应用含项目写作、分工和验收/)).toBeInTheDocument();
   const save = screen.getByRole('button', { name: '保存配置' }); expect(save).toBeEnabled();
@@ -171,10 +168,11 @@ it('Go has independent manual protocol and bounded headers, never automatically 
   expect(save).toBeEnabled();
   fireEvent.change(screen.getByLabelText(/文本与要求提取 Go User-Agent/), { target: { value: 'MyOffice/1.2' } });
   fireEvent.change(screen.getByLabelText(/文本与要求提取 Go 会话前缀/), { target: { value: 'office' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'new-key' } });
   expect(save).toBeEnabled(); fireEvent.click(save);
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(2); expect(localStorage.length).toBe(0);
-  expect(screen.getByText(/Cloudflare AI Gateway Custom Provider/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('');
 });
 
 it('OpenAI options follow model capability and explicit protocol; invalid hidden effort is cleared on model switch', async () => {
@@ -188,7 +186,7 @@ it('OpenAI options follow model capability and explicit protocol; invalid hidden
   fireEvent.change(screen.getByLabelText(/文本与要求提取思考强度/), { target: { value: 'none' } });
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API 协议/), { target: { value: 'chat-completions' } });
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/文本与要求提取 API URL/)).toHaveValue('');
   fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'gpt-4.1-mini' } });
   expect(screen.getByLabelText(/文本与要求提取思考强度/)).toHaveValue('');
 });
@@ -234,12 +232,13 @@ it.each([
   expect(writes[0]?.unified).toMatchObject({ model: modelId, reasoningEffort: 'high' });
 });
 
-it('old saved custom config is preserved without exposing its legacy key; changing providers does not enable AI', async () => {
-  const model = { provider: 'old-vendor', providerPreset: 'custom', gatewayProviderSlug: 'legacy-provider', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, temperature: 0.4, supportsJson: false, supportsVision: false };
-  let savedBody: Record<string, unknown> | undefined;
+it('old saved custom config is preserved; changing providers clears key reuse and does not enable AI', async () => {
+  const model = { provider: 'old-vendor', model: 'private-model', apiUrl: 'https://private.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, temperature: 0.4, supportsJson: false, supportsVision: false };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 5, enabled: true, config: { textEconomy: model, visionEconomy: model, review: model } } }));
-    savedBody = JSON.parse(String(init?.body));
+    const body = JSON.parse(String(init?.body));
+    expect(body.textEconomy).toMatchObject({ providerPreset: 'deepseek', apiKey: '', clearKey: true });
+    expect(body.review).toMatchObject({ provider: model.provider, model: model.model, apiUrl: model.apiUrl }); expect(body.review).not.toHaveProperty('keyConfigured'); expect(body.enabled).toBeUndefined();
     return new Response(JSON.stringify({ data: { version: 6, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup();
@@ -247,36 +246,33 @@ it('old saved custom config is preserved without exposing its legacy key; changi
   expect(screen.getByLabelText('文本与要求提取模型名称')).toHaveValue('private-model');
   expect(screen.getByLabelText(/文本与要求提取 temperature/)).toHaveValue(0.4);
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'deepseek' } });
+  expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(savedBody?.textEconomy).toMatchObject({ providerPreset: 'deepseek' });
-  expect(savedBody?.textEconomy).not.toHaveProperty('apiKey');
-  expect(savedBody?.review).toMatchObject({ provider: model.provider, model: model.model, apiUrl: model.apiUrl, timeoutMs: model.timeoutMs });
-  expect(savedBody?.review).not.toHaveProperty('apiKey'); expect(savedBody?.enabled).toBeUndefined();
   expect(mock).toHaveBeenCalledTimes(2);
 });
 
 it('unified mode preserves advanced drafts, sends one independent model and version, and does not probe automatically', async () => {
-  let savedBody: Record<string, unknown> | undefined;
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
-    savedBody = JSON.parse(String(init?.body));
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({ routingMode: 'unified', expectedVersion: 0, unified: { model: 'one-model', apiKey: 'test-only-key' } });
+    expect(body).not.toHaveProperty('textEconomy');
     return new Response(JSON.stringify({ data: { version: 1, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   expect(screen.queryByLabelText('文本与要求提取模型名称')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'one-model' } });
-  fireEvent.change(screen.getByLabelText(/统一模型 Cloudflare Gateway 自定义 Provider slug/), { target: { value: 'test-provider' } });
+  fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'test-only-key' } });
   fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'advanced' } });
   fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'advanced-draft' } });
   fireEvent.change(screen.getByLabelText('模型路由模式'), { target: { value: 'unified' } });
   expect(screen.getByLabelText('统一模型模型名称')).toHaveValue('one-model');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('test-only-key');
   expect(mock).toHaveBeenCalledOnce(); // Initial sanitized configuration load only.
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(savedBody).toMatchObject({ routingMode: 'unified', expectedVersion: 0, unified: { model: 'one-model' } });
-  expect(savedBody).not.toHaveProperty('textEconomy');
-  expect(JSON.stringify(savedBody)).not.toMatch(/apiKey|clearKey/);
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
   expect(localStorage.length).toBe(0);
 });
 
@@ -310,11 +306,12 @@ it('loads sanitized unified config and retains draft on optimistic version confl
   const model = { provider: 'openai-compatible', model: 'saved-unified', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false };
   const mock = vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 7, enabled: false, config: { routingMode: 'unified', unified: model, textEconomy: model, visionEconomy: model, review: model } } }));
-    const body = JSON.parse(String(init?.body)); expect(body.expectedVersion).toBe(7); expect(body.unified).not.toHaveProperty('apiKey');
+    const body = JSON.parse(String(init?.body)); expect(body.expectedVersion).toBe(7); expect(body.unified.apiKey).toBe('');
     return new Response(JSON.stringify({ error: { message: '配置版本已变化，请重新读取' } }), { status: 409 });
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   await screen.findByText('当前 AI 未启用。');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'unsaved-change' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByRole('alert');
@@ -323,23 +320,30 @@ it('loads sanitized unified config and retains draft on optimistic version confl
   expect(screen.queryByText(/^配置已保存/)).not.toBeInTheDocument();
 });
 
-const savedModel = { provider: 'openai-compatible', providerPreset:'custom', gatewayProviderSlug:'test-provider', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false };
+const savedModel = { provider: 'openai-compatible', model: 'saved-model', apiUrl: 'https://test.example/v1/chat/completions', keyConfigured: true, timeoutMs: 30000, maxInputChars: 42000, supportsJson: false, supportsVision: false };
 const savedConfig = { routingMode: 'unified', unified: savedModel, textEconomy: savedModel, visionEconomy: savedModel, review: savedModel };
 
-it('supplier and model settings do not expose API URL controls', async () => {
+it('only changing the unified supplier updates its API URL; model and protocol changes preserve it', async () => {
   const unified = { ...savedModel, providerPreset: 'openai', model: 'gpt-4.1-mini', apiProtocol: 'chat-completions', apiUrl: 'https://api.openai.com/v1/chat/completions' };
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'GET'
     ? Response.json({ data: { version: 8, enabled: false, config: { ...savedConfig, unified } } })
     : Response.json({ data: { version: 9, enabled: false } })));
   await setup(true, false);
 
-  expect(screen.queryByLabelText(/统一模型 API URL/)).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'anthropic' } });
+  const unifiedGroup = within(screen.getByRole('group', { name: '统一模型' }));
+  fireEvent.change(unifiedGroup.getAllByRole('combobox')[0]!, { target: { value: 'anthropic' } });
+  const url = unifiedGroup.getByRole('textbox', { name: /API URL/ });
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'claude-opus-5-5' } });
-  expect(screen.queryByLabelText(/统一模型 API URL/)).not.toBeInTheDocument();
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+  fireEvent.change(screen.getByLabelText(/统一模型 API 协议/), { target: { value: 'messages' } });
+  expect(url).toHaveValue('https://api.anthropic.com/v1/messages');
+  fireEvent.change(url, { target: { value: 'https://proxy.example/v1/messages' } });
+  expect(url).toHaveValue('https://proxy.example/v1/messages');
 });
 
-it('advanced supplier settings do not expose API URL controls', async () => {
+it('changing an advanced supplier, model or protocol leaves its API URL unchanged', async () => {
   const advanced = {
     ...savedConfig,
     routingMode: 'advanced' as const,
@@ -349,11 +353,15 @@ it('advanced supplier settings do not expose API URL controls', async () => {
     ? Response.json({ data: { version: 8, enabled: false, config: advanced } })
     : Response.json({ data: { version: 9, enabled: false } })));
   await setup(true, true);
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  const url = screen.getByLabelText(/文本与要求提取 API URL/);
+  expect(url).toHaveValue('https://proxy.example/text');
+
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'deepseek' } });
+  expect(url).toHaveValue('https://proxy.example/text');
   fireEvent.change(screen.getByLabelText('文本与要求提取模型名称'), { target: { value: 'deepseek-v4-pro' } });
+  expect(url).toHaveValue('https://proxy.example/text');
   fireEvent.change(screen.getByLabelText(/文本与要求提取 API 协议/), { target: { value: 'messages' } });
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  expect(url).toHaveValue('https://proxy.example/text');
 });
 
 it('removes all user output-limit controls and omits legacy cap fields when saving', async () => {
@@ -414,7 +422,7 @@ it('edited enabled config saves independently and displays the safely disabled s
   expect(mock).toHaveBeenCalledTimes(2);
 });
 
-it('disable sends only the saved version and false, preserving invalid supplier drafts', async () => {
+it('disable sends only the saved version and false, preserving invalid provider drafts and unsaved keys', async () => {
   const mock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 7, enabled: true, config: savedConfig } }));
     expect(url).toBe('/api/v1/admin/ai-config/disable');
@@ -424,11 +432,13 @@ it('disable sends only the saved version and false, preserving invalid supplier 
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   await screen.findByText('当前 AI 已启用。');
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-go' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-go' } });
+  fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'unsaved-key' } });
   expect(screen.getByRole('button', { name: '停用 AI' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: '停用 AI' }));
   await screen.findByText('AI 已停用。未保存的表单修改已保留，请点击保存配置后再测试。');
-  expect(screen.getByLabelText(/统一模型供应商/)).toHaveValue('opencode-go');
+  expect(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]).toHaveValue('opencode-go');
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('unsaved-key');
   expect(screen.getByLabelText('我已确认套餐适用于本应用用途')).not.toBeChecked();
   expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
   expect(screen.getByRole('button', { name: /测试文本/ })).toBeDisabled();
@@ -454,12 +464,14 @@ it('disable CAS failure leaves enabled status, version and the unsaved form inta
 
 it('save validation is explicit and leaves the button and form available without a fake success', async () => {
   const mock = vi.fn(async () => new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }))); vi.stubGlobal('fetch', mock); await setup(true, false);
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-go' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-go' } });
+  fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'unsaved-key' } });
   const save = screen.getByRole('button', { name: '保存配置' });
   expect(save).toBeEnabled();
   fireEvent.click(save);
   expect(await screen.findByRole('alert')).toHaveTextContent('配置未保存');
   expect(save).toBeEnabled();
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('unsaved-key');
   expect(screen.queryByText(/^配置已保存/)).not.toBeInTheDocument();
   expect(mock).toHaveBeenCalledOnce(); // Initial sanitized configuration load only.
   expect(localStorage.length).toBe(0);
@@ -474,7 +486,7 @@ it('lets admins explicitly choose the fallback protocol for an unverified OpenCo
   }));
   await setup(true, false);
 
-  fireEvent.change(screen.getByLabelText(/统一模型供应商/), { target: { value: 'opencode-zen' } });
+  fireEvent.change(within(screen.getByRole('group', { name: '统一模型' })).getAllByRole('combobox')[0]!, { target: { value: 'opencode-zen' } });
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'future-model' } });
   const protocol = screen.getByLabelText(/统一模型 API 协议/);
   expect(protocol).toHaveValue('');
@@ -544,16 +556,18 @@ it('disabling with a draft advances expectedVersion and a later save retains the
     if (init?.method === 'POST') { expect(body).toEqual({ expectedVersion: 7, enabled: false }); return new Response(JSON.stringify({ data: { version: 8, enabled: false } })); }
     expect(body.expectedVersion).toBe(8);
     expect(body.unified.model).toBe('retained-draft');
-    expect(body.unified).not.toHaveProperty('apiKey');
+    expect(body.unified.apiKey).toBe('retained-key');
     return new Response(JSON.stringify({ data: { version: 9, enabled: false } }));
   });
   vi.stubGlobal('fetch', mock); await setup(true, false);
   fireEvent.change(screen.getByLabelText('统一模型模型名称'), { target: { value: 'retained-draft' } });
+  fireEvent.change(screen.getByLabelText(/统一模型 API key/), { target: { value: 'retained-key' } });
   fireEvent.click(screen.getByRole('button', { name: '停用 AI' }));
   await screen.findByText('AI 已停用。未保存的表单修改已保留，请点击保存配置后再测试。');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
   expect(mock).toHaveBeenCalledTimes(3);
+  expect(screen.getByLabelText(/统一模型 API key/)).toHaveValue('');
 });
 
 it('failed initial load blocks blind version-zero writes and can retry explicitly', async () => {
@@ -622,7 +636,7 @@ it('keeps Messages output cap fixed in the backend and removes its setting from 
   expect((saved?.unified as Record<string, unknown>)).not.toHaveProperty('enabledOutputLimit');
 });
 
-it('OpenCode preset uses Gateway configuration and keeps provider and protocol selectable', async () => {
+it('editing an OpenCode preset URL preserves its provider, explicit key, model and inferred protocol', async () => {
   const requests: Record<string, unknown>[] = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return new Response(JSON.stringify({ data: { version: 0, enabled: false, config: {} } }));
@@ -631,14 +645,14 @@ it('OpenCode preset uses Gateway configuration and keeps provider and protocol s
   }));
   await setup();
   fireEvent.change(screen.getByLabelText(/文本与要求提取供应商/), { target: { value: 'opencode-zen' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'explicit-draft-key' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API URL/), { target: { value: 'https://proxy.example/v1/chat/completions' } });
   expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('opencode-zen');
   expect(screen.getByLabelText(/文本与要求提取 API 协议/)).toHaveValue('chat-completions');
-  expect(screen.queryByLabelText(/文本与要求提取 API key/)).not.toBeInTheDocument();
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/文本与要求提取 API key/)).toHaveValue('explicit-draft-key');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-zen' } });
-  expect(requests[0].textEconomy).not.toHaveProperty('apiKey');
+  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-zen', apiKey: 'explicit-draft-key', apiUrl: 'https://proxy.example/v1/chat/completions' } });
 });
 
  it('preserves independent media config in unified mode and probes only free metadata',async()=>{
@@ -652,7 +666,7 @@ it('OpenCode preset uses Gateway configuration and keeps provider and protocol s
   fireEvent.change(screen.getByLabelText('统一模型模型名称'),{target:{value:'deepseek-v4-pro'}});
   expect(screen.getByLabelText('音视频 Gemini 模型')).toHaveValue('gemini-2.5-flash');
   fireEvent.click(screen.getByRole('button',{name:'保存配置'}));await screen.findByText('配置已保存，AI 保持启用。');
-  expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash'},clearMediaUnderstanding:false});
+  expect(calls[0]).toMatchObject({mediaUnderstanding:{model:'gemini-2.5-flash',apiKey:''},clearMediaUnderstanding:false});
   expect(JSON.stringify(calls[0])).not.toMatch(/pricePerMTokens|cachedInputPricePerMTokens|mediaInputPricePerMTokens/);
  });
 
@@ -697,8 +711,9 @@ it('clears loaded realtime credentials and disables audio controls when administ
   const client=new QueryClient();client.setQueryData(['session'],{id:'account',role:'super_admin'});
   render(<QueryClientProvider client={client}><AiSettings/></QueryClientProvider>);
   await waitFor(()=>expect(screen.getByRole('button',{name:'保存配置'})).toBeEnabled());
+  fireEvent.change(screen.getByLabelText(/^实时语音 Cloudflare AI Gateway 认证令牌/),{target:{value:'in-memory-only'}});
   const {act}=await import('@testing-library/react');await act(async()=>{client.setQueryData(['session'],{id:'account',role:'user'});});
-  await waitFor(()=>expect(screen.queryByLabelText(/^实时语音 Google API key/)).not.toBeInTheDocument());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
+  await waitFor(()=>expect(screen.getByLabelText(/^实时语音 Cloudflare AI Gateway 认证令牌/)).toBeDisabled());expect(screen.getByRole('button',{name:'保存配置'})).toBeDisabled();
 });
 
 it('normalizes legacy cloud TTS to local defaults and sends only local speech fields',async()=>{
@@ -712,7 +727,7 @@ it('normalizes legacy cloud TTS to local defaults and sends only local speech fi
   expect(writes[0].rehearsalSpeech).toEqual({provider:'system-local',lang:'en-US',rate:1,volume:1});expect(writes[0]).not.toHaveProperty('fileTranscriptionRuntime');expect(writes[0]).not.toHaveProperty('enabled');
 });
 
-it('OpenCode Go settings preserve acknowledgement, headers, protocol and model when saved', async () => {
+it('editing the Go URL preserves acknowledgement, headers, protocol and model when saved', async () => {
   const requests: Record<string, unknown>[] = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
     if (init?.method === 'GET') return Response.json({ data: { version: 0, enabled: false, config: {} } });
@@ -726,8 +741,9 @@ it('OpenCode Go settings preserve acknowledgement, headers, protocol and model w
   fireEvent.click(screen.getByLabelText('我已确认套餐适用于本应用用途'));
   fireEvent.change(screen.getByLabelText(/文本与要求提取 Go User-Agent/), { target: { value: 'MyOffice/1.2' } });
   fireEvent.change(screen.getByLabelText(/文本与要求提取 Go 会话前缀/), { target: { value: 'office' } });
-  expect(screen.queryByLabelText(/文本与要求提取 API key/)).not.toBeInTheDocument();
-  expect(screen.queryByLabelText(/文本与要求提取 API URL/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API key/), { target: { value: 'new-endpoint-key' } });
+  fireEvent.change(screen.getByLabelText(/文本与要求提取 API URL/), { target: { value: ' https://proxy.example/v1/messages ' } });
+  expect(screen.getByLabelText(/文本与要求提取 API URL/)).toHaveValue('https://proxy.example/v1/messages');
   expect(screen.getByLabelText(/文本与要求提取供应商/)).toHaveValue('opencode-go');
   expect(screen.getByLabelText(/文本与要求提取 API 协议/)).toHaveValue('messages');
   expect(screen.getByLabelText('文本与要求提取模型名称')).toHaveValue('minimax-m3');
@@ -736,6 +752,5 @@ it('OpenCode Go settings preserve acknowledgement, headers, protocol and model w
   expect(screen.getByLabelText(/文本与要求提取 Go 会话前缀/)).toHaveValue('office');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
-  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } } });
-  expect(requests[0].textEconomy).not.toHaveProperty('apiKey');
+  expect(requests[0]).toMatchObject({ textEconomy: { providerPreset: 'opencode-go', model: 'minimax-m3', apiProtocol: 'messages', apiUrl: 'https://proxy.example/v1/messages', apiKey: 'new-endpoint-key', goUsageAcknowledged: true, goHeaders: { userAgent: 'MyOffice/1.2', sessionPrefix: 'office' } } });
 });

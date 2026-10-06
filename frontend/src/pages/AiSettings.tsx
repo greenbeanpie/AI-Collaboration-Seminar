@@ -15,7 +15,7 @@ const labels = { unified: '统一模型', textEconomy: '文本与要求提取', 
 type Model = ProviderOptions & { model: string; apiUrl?: string; apiKey?: string; keyConfigured?: boolean; clearKey?: boolean; timeoutMs: number; maxInputChars: number; supportsJson: boolean; supportsVision: boolean };
 type Config = Record<ModelSlot, Model> & AudioSettingsView & { routingMode: 'advanced' | 'unified'; searchEnabled?: boolean; audioProcessingStrategy?: 'whisper-first' | 'gemini-only'; mediaUnderstanding?:Model; mimoMediaUnderstanding?:Model };
 type Report = { passed: boolean; configVersion: number; checks: { name: string; passed: boolean; detail: string }[] };
-const blank = (): Config => ({ ...blankAudioSettings(), routingMode: 'unified', audioProcessingStrategy: 'whisper-first', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: p === 'visionEconomy' }])) }) as Config;
+const blank = (): Config => ({ ...blankAudioSettings(), routingMode: 'unified', audioProcessingStrategy: 'whisper-first', ...Object.fromEntries(modelSlots.map(p => [p, { provider: 'openai-compatible', model: '', apiUrl: '', apiKey: '', timeoutMs: 90000, maxInputChars: 48000, supportsJson: true, supportsVision: p === 'visionEconomy' }])) }) as Config;
 function withoutApiUrl(model: Model): Model {
   const { apiUrl, ...rest } = model;
   void apiUrl;
@@ -26,7 +26,7 @@ function withoutLegacyModelSettings(model: Model): Model {
   void _enabledOutputLimit; void _maxOutputTokens; void _price; void _cachedPrice; void _mediaPrices;
   return rest;
 }
-function withoutGatewayKey(model: Model): Model { const { apiKey:_apiKey, keyConfigured:_keyConfigured, clearKey:_clearKey, ...rest }=model; void _apiKey; void _keyConfigured; void _clearKey; return rest; }
+function withoutKeyStatus(model: Model): Model { const { keyConfigured: _keyConfigured, ...rest } = model; void _keyConfigured; return rest; }
 export function AiSettings() {
   const qc = useQueryClient();
   const session = useSession();
@@ -73,7 +73,7 @@ export function AiSettings() {
   function applyLoaded(data: { config: Config; version: number; enabled: boolean }, revision: number) {
     const preserveDraft = draftRevision.current !== revision;
     if (!preserveDraft) {
-      setConfig(data.version ? { ...blankAudioSettings(), processingStrategies: data.config.processingStrategies ?? { audioFiles: data.config.audioProcessingStrategy === 'gemini-only' ? 'media-only' : 'whisper-first', rehearsal: 'text' }, rehearsalSpeech: localSpeechSettings(data.config.rehearsalSpeech), realtimeAudioTranscription: data.config.realtimeAudioTranscription ? { ...data.config.realtimeAudioTranscription, apiKey: '', gatewayToken: '' } : undefined, audioProcessingStrategy: data.config.audioProcessingStrategy ?? 'whisper-first', mediaUnderstanding:data.config.mediaUnderstanding?{...withoutLegacyModelSettings(data.config.mediaUnderstanding),apiKey:''}:undefined, mimoMediaUnderstanding:data.config.mimoMediaUnderstanding?{...withoutLegacyModelSettings(data.config.mimoMediaUnderstanding),apiKey:''}:undefined, searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => { const model = withoutLegacyModelSettings(data.config[p] ?? blank()[p]); delete model.apiKey; delete model.keyConfigured; delete model.clearKey; return [p, model]; })) } as Config : blank());
+      setConfig(data.version ? { ...blankAudioSettings(), processingStrategies: data.config.processingStrategies ?? { audioFiles: data.config.audioProcessingStrategy === 'gemini-only' ? 'media-only' : 'whisper-first', rehearsal: 'text' }, rehearsalSpeech: localSpeechSettings(data.config.rehearsalSpeech), realtimeAudioTranscription: data.config.realtimeAudioTranscription ? { ...data.config.realtimeAudioTranscription, gatewayToken: '' } : undefined, audioProcessingStrategy: data.config.audioProcessingStrategy ?? 'whisper-first', mediaUnderstanding:data.config.mediaUnderstanding?{...withoutLegacyModelSettings(data.config.mediaUnderstanding),apiKey:''}:undefined, mimoMediaUnderstanding:data.config.mimoMediaUnderstanding?{...withoutLegacyModelSettings(data.config.mimoMediaUnderstanding),apiKey:''}:undefined, searchEnabled: data.config.searchEnabled === true, routingMode: data.config.routingMode ?? 'advanced', ...Object.fromEntries(modelSlots.map(p => { const model = withoutLegacyModelSettings(data.config[p] ?? blank()[p]); return [p, { ...model, apiKey: '', clearKey: false }]; })) } as Config : blank());
       setDirty(false); setEdited(false);
       hasSavedUnified.current = Boolean(data.config.unified);
       unifiedEdited.current = false;
@@ -107,8 +107,8 @@ export function AiSettings() {
     const apiUrl = p === 'unified' && preset !== 'custom' ? presetEndpoint(preset, model) : config[p].apiUrl;
     const changedDestination = apiUrl !== config[p].apiUrl;
     const changedSupplier = preset !== (config[p].providerPreset ?? 'custom') || (value === 'workers-ai') !== (config[p].provider === 'workers-ai');
-    edit(p, { provider: value === 'workers-ai' ? 'workers-ai' : 'openai-compatible', providerPreset: preset, model, apiUrl, apiProtocol: undefined, gatewayProviderSlug: preset === 'custom' ? config[p].gatewayProviderSlug : undefined, reasoningEffort: undefined, temperature: undefined, topP: undefined, goUsageAcknowledged: false, goHeaders: undefined, supportsJson: spec.supportsJson });
-    if (changedSupplier || changedDestination) setMessage(changedDestination ? '统一模型供应商已切换 API 地址；供应商密钥统一由 Cloudflare AI Gateway 提供。' : '供应商已切换；请求将由 Cloudflare AI Gateway 的默认 Provider Key 鉴权。');
+    edit(p, { provider: value === 'workers-ai' ? 'workers-ai' : 'openai-compatible', providerPreset: preset, model, apiUrl, apiProtocol: undefined, reasoningEffort: undefined, temperature: undefined, topP: undefined, goUsageAcknowledged: false, goHeaders: undefined, supportsJson: spec.supportsJson, ...(changedSupplier || changedDestination ? { apiKey: '', clearKey: Boolean(config[p].keyConfigured) } : {}) });
+    if (changedSupplier || changedDestination) setMessage(changedDestination ? '统一模型供应商已切换 API 地址；请为新地址重新填写供应商 API key。' : '供应商已切换，请确认 API URL 和供应商 API key。');
   }
   function chooseModel(p: ModelSlot, model: string) {
     const next = { ...config[p], model };
@@ -129,9 +129,9 @@ export function AiSettings() {
     // Do not materialize an untouched optional legacy slot just by opening the UI.
     const sanitizedConfig = {
       ...config,
-      ...Object.fromEntries(modelSlots.map(p => { const model = withoutLegacyModelSettings(config[p]); delete model.apiKey; delete model.keyConfigured; delete model.clearKey; return [p, model]; })),
-      ...(config.mediaUnderstanding ? { mediaUnderstanding: withoutGatewayKey(withoutLegacyModelSettings(config.mediaUnderstanding)) } : {}),
-      ...(config.mimoMediaUnderstanding ? { mimoMediaUnderstanding: withoutGatewayKey(withoutLegacyModelSettings(config.mimoMediaUnderstanding)) } : {}),
+      ...Object.fromEntries(modelSlots.map(p => [p, withoutKeyStatus(withoutLegacyModelSettings(config[p]))])),
+      ...(config.mediaUnderstanding ? { mediaUnderstanding: withoutKeyStatus(withoutLegacyModelSettings(config.mediaUnderstanding)) } : {}),
+      ...(config.mimoMediaUnderstanding ? { mimoMediaUnderstanding: withoutKeyStatus(withoutLegacyModelSettings(config.mimoMediaUnderstanding)) } : {}),
     } as Config;
     const { unified, mediaUnderstanding, mimoMediaUnderstanding, ...settings } = sanitizedConfig;
     const { textEconomy, visionEconomy, review, ...sharedSettings } = settings;
@@ -141,7 +141,7 @@ export function AiSettings() {
     const data = await call<{ version: number; enabled: boolean }>('PUT', '', { ...advanced, realtimeAudioTranscription: realtimePayload, mediaUnderstanding, mimoMediaUnderstanding, clearMediaUnderstanding:!mediaUnderstanding, clearMimoMediaUnderstanding:!mimoMediaUnderstanding, clearRealtimeAudioTranscription:!config.realtimeAudioTranscription, audioProcessingStrategy:config.processingStrategies.audioFiles === 'mimo-only' ? config.audioProcessingStrategy ?? 'whisper-first' : config.processingStrategies.audioFiles === 'media-only' ? 'gemini-only' : 'whisper-first', ...(includeUnified ? { unified } : {}), ...(activate ? { enabled: true } : {}), expectedVersion: version });
     setVersion(data.version); setSavedEnabled(data.enabled); setDirty(false); setEdited(false); setReports({});
     hasSavedUnified.current = includeUnified; unifiedEdited.current = false;
-    setConfig(c => ({ ...c, realtimeAudioTranscription:c.realtimeAudioTranscription?{...c.realtimeAudioTranscription,keyConfigured:false,gatewayTokenConfigured:Boolean(c.realtimeAudioTranscription.gatewayToken)||(!c.realtimeAudioTranscription.clearGatewayToken&&Boolean(c.realtimeAudioTranscription.gatewayTokenConfigured)),apiKey:'',gatewayToken:'',clearKey:false,clearGatewayToken:false}:undefined, mimoMediaUnderstanding:c.mimoMediaUnderstanding?{...withoutLegacyModelSettings(c.mimoMediaUnderstanding),keyConfigured:Boolean(c.mimoMediaUnderstanding.apiKey)||(!c.mimoMediaUnderstanding.clearKey&&Boolean(c.mimoMediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, mediaUnderstanding:c.mediaUnderstanding?{...withoutLegacyModelSettings(c.mediaUnderstanding),keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => { const model = withoutLegacyModelSettings(c[p]); delete model.apiKey; delete model.keyConfigured; delete model.clearKey; return [p, model]; })) }) as Config);
+    setConfig(c => ({ ...c, realtimeAudioTranscription:c.realtimeAudioTranscription?{...c.realtimeAudioTranscription,gatewayTokenConfigured:Boolean(c.realtimeAudioTranscription.gatewayToken)||(!c.realtimeAudioTranscription.clearGatewayToken&&Boolean(c.realtimeAudioTranscription.gatewayTokenConfigured)),gatewayToken:'',clearGatewayToken:false}:undefined, mimoMediaUnderstanding:c.mimoMediaUnderstanding?{...withoutLegacyModelSettings(c.mimoMediaUnderstanding),keyConfigured:Boolean(c.mimoMediaUnderstanding.apiKey)||(!c.mimoMediaUnderstanding.clearKey&&Boolean(c.mimoMediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, mediaUnderstanding:c.mediaUnderstanding?{...withoutLegacyModelSettings(c.mediaUnderstanding),keyConfigured:Boolean(c.mediaUnderstanding.apiKey)||(!c.mediaUnderstanding.clearKey&&Boolean(c.mediaUnderstanding.keyConfigured)),apiKey:'',clearKey:false}:undefined, ...Object.fromEntries(modelSlots.map(p => [p, { ...withoutLegacyModelSettings(c[p]), keyConfigured: Boolean(c[p].apiKey) || (!c[p].clearKey && Boolean(c[p].keyConfigured)), apiKey: '', clearKey: false }])) }) as Config);
     setMessage(activate ? 'AI 已启用。' : data.enabled ? '配置已保存，AI 保持启用。' : '配置已保存，AI 未启用。测试结果仅供诊断参考，不影响保存或启用。');
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
@@ -153,7 +153,7 @@ export function AiSettings() {
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
   const requiredProbes = config.routingMode === 'unified' && !config.unified.supportsVision ? purposes.filter(p => p !== 'visionEconomy') : purposes;
-  return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。供应商密钥由 Cloudflare AI Gateway 统一托管；设置影响所有项目。">
+  return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。普通供应商使用各自 API URL 与加密保存的 API key；仅 Workers AI 和单独配置的 Gateway 功能经过 Cloudflare AI Gateway。设置影响所有项目。">
     <div className="stack">
       {session.data?.role !== 'super_admin' && <p className="muted">需要超级管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
       <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { loadSequence.current++; setToken(e.target.value); setReady(false); setEdited(true); setReports({}); setError(undefined); setMessage('请先读取当前令牌可访问的已保存配置。'); }} /></Field></details>
@@ -175,8 +175,11 @@ export function AiSettings() {
 
         {preset === 'opencode-go' && <div role="note"><p>{GO_USAGE_NOTICE} <a href="https://opencode.ai/docs/go/#where-can-i-use-it" target="_blank" rel="noreferrer">官方使用说明</a></p><label><input type="checkbox" checked={config[p].goUsageAcknowledged ?? false} onChange={e => edit(p, { goUsageAcknowledged: e.target.checked })} /> 我已确认套餐适用于本应用用途</label><p className="muted">使用本应用真实 User-Agent 和稳定会话 ID；不模拟官方客户端，不绕过服务限制。</p><fieldset><legend>OpenCode Go 专用请求头</legend><Field label={`${labels[p]} Go User-Agent`} hint="仅填写你实际应用的名称/版本；不能填写官方客户端身份或密钥。"><input className="input" value={config[p].goHeaders?.userAgent ?? GO_DEFAULT_USER_AGENT} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, userAgent: e.target.value } })} /></Field><Field label={`${labels[p]} Go 会话前缀`} hint="x-opencode-session 默认自动按会话/任务生成，重试保持一致。可选非敏感前缀；不填 key、姓名或用户资料。"><input className="input" maxLength={32} value={config[p].goHeaders?.sessionPrefix ?? ''} onChange={e => edit(p, { goHeaders: { ...config[p].goHeaders, sessionPrefix: e.target.value } })} /></Field><p className="muted">鉴权头由后端密钥生成，不允许编辑 Authorization、x-api-key、Cookie、Host 或任意请求头。</p></fieldset></div>}
         <Field label={`${labels[p]} API 协议`} hint={requiresExplicitProtocol ? '此 OpenCode 模型尚未核实，请显式选择其支持的协议；思考参数保持默认。' : '切换协议不会更改 API URL；请确认当前地址支持所选协议。'}><select className="input" value={requiresExplicitProtocol ? '' : protocol} disabled={config[p].provider === 'workers-ai'} onChange={e => { const apiProtocol = e.target.value as ApiProtocol; edit(p, { apiProtocol, supportsJson: apiProtocol === 'messages' ? false : config[p].supportsJson }); }}><option value="" disabled>请选择协议</option>{API_PROTOCOLS.map(style => <option key={style} value={style}>{style}</option>)}</select></Field>
-        {preset === 'custom' && <Field label={`${labels[p]} Cloudflare Gateway 自定义 Provider slug`} hint="先在 Cloudflare AI Gateway 创建 Custom Provider，并为其添加默认 Provider Key。请求只带 Gateway 认证，不会带供应商密钥。"><input className="input" maxLength={64} value={config[p].gatewayProviderSlug ?? ''} onChange={e => edit(p, { gatewayProviderSlug: e.target.value.trim().toLowerCase() })} /></Field>}
-        {preset === 'opencode-go' || preset === 'opencode-zen' ? <p className="muted">此供应商通过 Cloudflare AI Gateway Custom Provider（custom-{preset}）转发；需先在 Gateway 建立对应 Provider 并配置默认存储密钥。</p> : <p className="muted">供应商 Provider Key 从 Cloudflare AI Gateway 的默认密钥读取。此表单不接收或发送供应商 API Key。</p>}
+        {config[p].provider !== 'workers-ai' && <>
+          <Field label={`${labels[p]} API URL`} hint="模型或协议变化不会自动更改 API URL；仅切换统一模型供应商时会应用预设 API URL。"><input className="input" type="url" autoComplete="off" value={config[p].apiUrl ?? ''} onChange={e => edit(p, { apiUrl: e.target.value.trim() })} /></Field>
+          <Field label={`${labels[p]} API key`} hint={config[p].keyConfigured ? '已加密保存，留空保留；不会回显。' : '尚未填写。密钥仅在后端加密保存。'}><input className="input" type="password" autoComplete="off" value={config[p].apiKey ?? ''} onChange={e => edit(p, { apiKey: e.target.value, clearKey: false })} /></Field>
+          {config[p].keyConfigured && <label><input type="checkbox" checked={config[p].clearKey ?? false} onChange={e => edit(p, { clearKey: e.target.checked })} /> 清除已保存的 API key</label>}
+        </>}
         <Field label={`${labels[p]}模型名称`}><input className="input" value={config[p].model} list={`models-${p}`} onChange={e => chooseModel(p, e.target.value.trim())} /></Field>
         <datalist id={`models-${p}`}>{providerPresets[preset].models.map(model => <option key={model} value={model} />)}</datalist>
         <Field label={`${labels[p]}思考强度`} hint={caps.reasoning.length ? '默认不发送该参数，沿用供应商默认值；各模型可选范围不同。' : '此模型未核实思考参数支持，保持默认，不发送参数。'}><select className="input" value={config[p].reasoningEffort ?? ''} onChange={e => changeEffort(p, e.target.value as Model['reasoningEffort'] | '')}><option value="">默认（不发送）</option>{caps.reasoning.map(effort => <option key={effort} value={effort}>{effort}</option>)}{config[p].reasoningEffort && !caps.reasoning.includes(config[p].reasoningEffort!) && <option value={config[p].reasoningEffort}>不支持：{config[p].reasoningEffort}</option>}</select></Field>
@@ -193,23 +196,27 @@ export function AiSettings() {
       </fieldset>; })}
       <SectionCard title="音视频理解模型" detail="现有 Gemini 音视频理解与摘要配置，与文件转录和实时语音转录独立。"><fieldset disabled={!access || busy || !ready}><legend>音视频摘要模型（可选）</legend>
         <p className="muted">与图文模型分开配置，统一模型模式不会覆盖。支持 MP3、WAV、M4A、MP4、WebM，单文件 50 MiB。只生成 AI 摘要；视频同时理解画面与声音。长音频会分窗口处理。</p>
-        <p className="muted">媒体文件上传、模型检查与摘要均通过 Cloudflare AI Gateway 的 Google AI Studio Provider。Google 默认 Provider Key 必须预先存储在 Gateway；应用不接收供应商密钥。</p>
+        <p className="muted">媒体文件上传、模型检查与摘要使用此处加密保存的 Google API key，直接访问 Google 官方端点。实时转录等单独标注 Gateway 的功能仍由 Gateway 认证。</p>
         <label><input type="checkbox" checked={Boolean(config.mediaUnderstanding)} onChange={e=>{draftRevision.current++;setConfig(c=>({...c,mediaUnderstanding:e.target.checked?{...withoutApiUrl(blank().textEconomy),provider:'openai-compatible',providerPreset:'gemini',model:'gemini-2.5-flash',supportsVision:true}:undefined}));setDirty(true);setEdited(true);}} /> 配置音视频摘要模型</label>
         {config.mediaUnderstanding && <>
           <button className="button button-quiet" type="button" disabled={busy||dirty||!version} onClick={()=>void run(async()=>{const result=await call<{passed:boolean;detail:string}>('POST','/media-probe');setMessage(result.detail);if(!result.passed)throw new Error(result.detail);})}>测试音视频模型元数据（不生成）</button>
           <Field label="音视频 Gemini 模型"><input className="input" value={config.mediaUnderstanding.model} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,model:e.target.value}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>
           <Field label="音视频官方端点"><input className="input" readOnly value="https://generativelanguage.googleapis.com" /></Field>
+          <Field label="音视频 API key" hint={config.mediaUnderstanding.keyConfigured ? '已加密保存，留空保留。' : '尚未配置。'}><input className="input" type="password" autoComplete="off" value={config.mediaUnderstanding.apiKey ?? ''} onChange={e => { setConfig(c => ({...c, mediaUnderstanding: {...c.mediaUnderstanding!, apiKey:e.target.value, clearKey:false}})); draftRevision.current++; setDirty(true); setEdited(true); }} /></Field>
+          {config.mediaUnderstanding.keyConfigured && <label><input type="checkbox" checked={config.mediaUnderstanding.clearKey ?? false} onChange={e => { setConfig(c => ({...c, mediaUnderstanding: {...c.mediaUnderstanding!, clearKey:e.target.checked}})); draftRevision.current++; setDirty(true); setEdited(true); }} /> 清除音视频 API key</label>}
           <Field label="音视频超时（毫秒）"><input className="input" type="number" min="1000" max="600000" value={config.mediaUnderstanding.timeoutMs} onChange={e=>{setConfig(c=>({...c,mediaUnderstanding:{...c.mediaUnderstanding!,timeoutMs:Number(e.target.value)}}));draftRevision.current++;setDirty(true);setEdited(true);}} /></Field>
         </>}
       </fieldset></SectionCard>
       <SectionCard title="MiMo 音视频理解模型" detail="小米官方独立配置；保存草稿不会切换策略，也不影响 Gemini。"><fieldset disabled={!access || busy || !ready}><legend>MiMo 摘要模型（可选）</legend>
-        <p className="muted">上传资料和草稿经 Cloudflare AI Gateway 自定义 Provider「xiaomi-mimo」生成 AI 摘要。请先在 Gateway 创建 Custom Provider 并添加默认 Provider Key。支持 MP3、WAV、M4A、MP4，单文件 50 MiB；WebM 请使用现有路径。视频默认每秒 2 帧。</p>
+        <p className="muted">上传资料和草稿使用此处加密保存的小米 API key，直接访问小米官方端点。支持 MP3、WAV、M4A、MP4，单文件 50 MiB；WebM 请使用现有路径。视频默认每秒 2 帧。</p>
         <label><input type="checkbox" checked={Boolean(config.mimoMediaUnderstanding)} onChange={event => { draftRevision.current++; setConfig(current => ({ ...current, mimoMediaUnderstanding: event.target.checked ? { ...withoutApiUrl(blank().textEconomy), provider: 'xiaomi-mimo', model: 'mimo-v2.6-pro', supportsVision: true } : undefined })); setDirty(true); setEdited(true); setReports({}); }} /> 配置 MiMo 音视频摘要模型</label>
         {config.mimoMediaUnderstanding && <>
           <button className="button button-quiet" type="button" disabled={busy || dirty || !version} onClick={() => void run(async () => { const result = await call<{ passed: boolean; detail: string }>('POST', '/mimo-media-probe'); setMessage(result.detail); if (!result.passed) throw new Error(result.detail); })}>测试 MiMo 模型元数据（不生成）</button>
           <p className="muted">元数据测试仅检查访问权限，不代表音频识别质量或视频理解已验证。真实音频识别需上传样本验证。</p>
           <Field label="MiMo 模型"><input className="input" readOnly value="mimo-v2.6-pro" /></Field>
           <Field label="MiMo 官方端点"><input className="input" readOnly value="https://api.xiaomimimo.com/v1" /></Field>
+          <Field label="MiMo API key" hint={config.mimoMediaUnderstanding.keyConfigured ? '已加密保存，留空保留。' : '尚未配置。'}><input className="input" type="password" autoComplete="off" value={config.mimoMediaUnderstanding.apiKey ?? ''} onChange={event => editMimo({apiKey:event.target.value,clearKey:false})} /></Field>
+          {config.mimoMediaUnderstanding.keyConfigured && <label><input type="checkbox" checked={config.mimoMediaUnderstanding.clearKey ?? false} onChange={event => editMimo({clearKey:event.target.checked})} /> 清除 MiMo API key</label>}
           <Field label="MiMo 超时（毫秒）"><input className="input" type="number" min="1000" max="600000" value={config.mimoMediaUnderstanding.timeoutMs} onChange={event => editMimo({ timeoutMs: Number(event.target.value) })} /></Field>
         </>}
       </fieldset></SectionCard>
@@ -221,7 +228,7 @@ export function AiSettings() {
         })}>测试{labels[p]}（连接与能力）</button>
         {reports[p] && <div role="status"><strong>{reports[p]?.passed ? '测试通过' : '测试失败'} · 配置 v{reports[p]?.configVersion}</strong><ul>{reports[p]?.checks.map(c => <li key={c.name}>{c.passed ? '✓' : '✗'} {c.name}：{c.detail}</li>)}</ul></div>}
       </div>)}</div>
-      <p className="muted">所有供应商请求通过 Cloudflare AI Gateway。请在 Gateway 的 Provider Keys 中为所用供应商配置默认存储密钥；保存配置、停用 AI 和启用 AI 不发请求。测试按钮会发起少量真实模型请求，可能产生费用；测试结果仅作诊断。</p>
+      <p className="muted">普通模型配置使用独立供应商 API URL 与加密保存的 API key；Workers AI、实时语音等明确标注的功能使用 Cloudflare AI Gateway。保存配置、停用 AI 和启用 AI 不发请求。测试按钮会发起少量真实模型请求，可能产生费用；测试结果仅作诊断。</p>
       <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || !version || dirty || savedEnabled} onClick={() => void run(() => save(true))}>{savedEnabled ? 'AI 已启用' : '启用 AI'}</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
     </div>
