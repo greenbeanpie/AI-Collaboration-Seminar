@@ -7,6 +7,7 @@
 - 正式当前用户 NSIS 安装包：`output/windows-client/补位_0.1.0_x64-setup.exe`，2,311,852 字节（2.2 MiB）。
 - SHA-256：`F78ADACDF5F187581B619CB3BBF4D96D8D317D25C1DE91FA3320E20398FF1B4A`。
 - 同目录包含更新签名 `.exe.sig`、`latest.json`、测试日志及资源采样 CSV。二进制和本机证据由 GitHub 草稿 Release 与本机输出目录保存，不纳入源码 Git。
+- GitHub 分发文件名使用 `buwei-0.1.0-windows-x64-setup.exe`，避免服务器归一化非 ASCII 名称使更新清单链接失效；安装后的产品中文名保持「补位」。
 - 安装包使用更新签名；未配置 Windows Authenticode 发布者证书，系统签名检查结果为 `NotSigned`。两者不能混同。
 - 源码位于独立 `codex/windows-client` 工作区。原工作区 Office 修改先备份，再复制为隔离基线；本任务未改动原工作区的分支、源码和业务数据；其 Office 修改随后在主分支独立提交，内容与隔离基线完全一致。
 - 更新私钥位于忽略目录，并另存原工作区 `.local-secrets/desktop-updater/`，目录 ACL 仅当前 Windows 用户可访问。没有把私钥或账号凭据写入 Git、安装包或发布附件。
@@ -31,7 +32,7 @@
 | 前端全量测试 | 135 文件 / 836 项通过 |
 | Rust 单元测试 | 10 项通过 |
 | Rust Clippy `-D warnings`、Rustfmt | 通过，无告警 |
-| 发布清单、受限更新路由测试 | 3 项通过 |
+| 发布清单、受限更新路由测试 | 4 项通过 |
 | Release x64 NSIS 构建与更新签名生成 | 通过 |
 | 真实 WebView2 + Rust 下载 / 账户 / 权限边界脚本 | 17 项通过 |
 | 真实签名 A 0.1.0 → B 0.1.1 安装升级脚本 | 9 项通过 |
