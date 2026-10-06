@@ -47,7 +47,7 @@ try {
     if ($matching.Count) {
         $release = $matching[0]
         if ($ReplaceDraftAssets) {
-            $updatedPayload = @{ target_commitish = $TargetCommitish; body = $notes; draft = $true } | ConvertTo-Json
+            $updatedPayload = @{ tag_name = "desktop-v$version"; target_commitish = $TargetCommitish; body = $notes; draft = $true } | ConvertTo-Json
             $release = Invoke-RestMethod -Method Patch -Uri "$baseUri/releases/$($release.id)" -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($updatedPayload))
         }
     } else {
