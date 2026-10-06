@@ -84,4 +84,15 @@ try {
   assert.equal(hello.autoRestart, false); pass('update restart preference retained', { autoRestart: false });
   report.passed = true; report.completedAt = new Date().toISOString();
 } catch (error) { report.passed = false; report.error = String(error); process.exitCode = 1; }
-finally { session?.close(); await writeFile(path.join(output, 'update-smoke-report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify({ passed: report.passed, checks: report.checks.length, error: report.error, output })); }
+finally {
+  session?.close();
+  const primary = path.join(output, 'update-smoke-report.json');
+  let existing;
+  try { existing = JSON.parse(await readFile(primary, 'utf8')); } catch { /* First run. */ }
+  // A repeat invocation after a successful A -> B upgrade cannot rerun the A precondition.
+  // Keep that acceptance report and record this attempt separately.
+  const reportPath = existing?.passed && !report.passed && report.checks.length === 0
+    ? path.join(output, `update-smoke-attempt-${Date.now()}.json`) : primary;
+  await writeFile(reportPath, JSON.stringify(report, null, 2));
+  console.log(JSON.stringify({ passed: report.passed, checks: report.checks.length, error: report.error, reportPath }));
+}
