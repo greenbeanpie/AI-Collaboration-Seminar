@@ -55,10 +55,10 @@ try {
     $aligned = Join-Path $output "$abi-aligned.tmp.apk"
     & "$SdkRoot\build-tools\37.0.0\zipalign.exe" -P 16 -f 4 $apk.FullName $aligned
     if ($LASTEXITCODE) { throw 'APK alignment failed' }
-    & "$SdkRoot\build-tools\37.0.0\apksigner.bat" sign --ks $keystore --ks-key-alias buwei --ks-pass "file:$passwordFile" --key-pass "file:$passwordFile" --out $destination $aligned
+    & "$JavaRoot\bin\java.exe" --enable-native-access=ALL-UNNAMED -jar "$SdkRoot\build-tools\37.0.0\lib\apksigner.jar" sign --ks $keystore --ks-key-alias buwei --ks-pass "file:$passwordFile" --out $destination $aligned
     if ($LASTEXITCODE) { throw 'APK signing failed' }
     Remove-Item -LiteralPath $aligned
-    $certificate = & "$SdkRoot\build-tools\37.0.0\apksigner.bat" verify --verbose --print-certs $destination
+    $certificate = & "$JavaRoot\bin\java.exe" --enable-native-access=ALL-UNNAMED -jar "$SdkRoot\build-tools\37.0.0\lib\apksigner.jar" verify --verbose --print-certs $destination
     if ($LASTEXITCODE) { throw 'APK signature verification failed' }
     $certificate | Set-Content "$destination.signature.txt"
     $reports += [pscustomobject]@{ ABI=$abi; Path=$destination; Bytes=(Get-Item $destination).Length; SHA256=(Get-FileHash $destination -Algorithm SHA256).Hash }
