@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "补位",
+  "version": "0.1.0",
+  "identifier": "cn.buwei.desktop",
+  "build": {
+    "frontendDist": "../static"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [
+        "main"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/greenbeanpie/AI-Colleboration-Seminar/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY2NTY2NTIwREE0RUE2MjkKUldRcHBrN2FJR1ZXOXVuRWU3WVZyWno3QkFBUzBEYThmODdsTkJ1YVhLMUlzSjYyWGIrbzIvaUIK"
+    }
+  }
+}
