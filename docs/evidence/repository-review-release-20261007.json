@@ -1,0 +1,78 @@
+{
+  "releaseSha": "68d4319b3ac01503fa1c469b085e2a6d0da5f086",
+  "checkedAt": "2026-10-06T16:47:44.741Z",
+  "browserUsed": false,
+  "checks": [
+    "Deployed asset headers and SHA-256: /assets/index-D6W5fnJd.js",
+    "Deployed asset headers and SHA-256: /sw.js",
+    "Deployed asset headers and SHA-256: /guest/index.html",
+    "Deployed asset headers and SHA-256: /guest/demo.js",
+    "Production Service Binding and enabled authentication capabilities",
+    "Unauthenticated project access rejected",
+    "Missing Turnstile rejected without session cookie: /auth/sessions",
+    "Missing Turnstile rejected without session cookie: /auth/register",
+    "Custom domain matches deployed application"
+  ],
+  "customDomain": {
+    "status": 200,
+    "challenge": false,
+    "verified": true,
+    "cloudflareInjectedScriptNonceVerified": true
+  },
+  "limitations": [
+    "No browser/visual verification",
+    "No real human Turnstile success or replay verification",
+    "No paid provider calls or production business-data mutations"
+  ],
+  "deployments": {
+    "backend": {
+      "versionId": "c74d75e7-09b2-49a8-bdc4-396bbd24a5ed",
+      "codeSha": "f04b074b427753528bc1b1d6880fe815088e0c11",
+      "turnstileRequired": true
+    },
+    "frontend": {
+      "versionId": "316d5cb9-5ac1-4628-a7c6-7d52e2bfa19e",
+      "buildSha": "68d4319b3ac01503fa1c469b085e2a6d0da5f086"
+    }
+  },
+  "localVerification": {
+    "backendTests": 1209,
+    "frontendTests": 845,
+    "httpChecks": 104,
+    "productionChecks": 9,
+    "engineeringTests": 4,
+    "migrationFiles": 60,
+    "reproducibleArtifacts": 102,
+    "backendAuditTotal": 0,
+    "frontendAuditModerate": 3,
+    "highOrCritical": 0
+  },
+  "archives": {
+    "evidenceFiles": 189,
+    "removedBinaries": 106,
+    "businessTables": 114,
+    "sqliteIntegrity": "ok",
+    "backupDirectory": "/Users/hddhp/Documents/AI-Colleboration-Seminar-archives/review-release-20261006"
+  },
+  "rollback": {
+    "compatibleBackendWithoutTurnstile": "57afe08d-31d1-4be7-b239-06c0bcc0d8d7",
+    "previousNonceFrontend": "3b56b076-4c38-4cae-916e-b52f15d6b9fe",
+    "note": "Compatible backend reads v2 ciphertext. No schema migrations applied."
+  },
+  "ci": {
+    "commit": "68d4319b3ac01503fa1c469b085e2a6d0da5f086",
+    "verify": {
+      "conclusion": "success",
+      "url": "https://github.com/greenbeanpie/AI-Colleboration-Seminar/actions/runs/37498263799"
+    },
+    "codeql": {
+      "conclusion": "success",
+      "url": "https://github.com/greenbeanpie/AI-Colleboration-Seminar/actions/runs/37498263644"
+    }
+  },
+  "dependabot": {
+    "openHighOrCritical": 0,
+    "openMedium": 1,
+    "package": "sprintf-js"
+  }
+}

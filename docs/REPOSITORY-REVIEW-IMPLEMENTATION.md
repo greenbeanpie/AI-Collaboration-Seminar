@@ -17,7 +17,7 @@
 
 ## 验证
 
-- 最终全量后端：135 文件，1209 项通过；前端：139 文件，844 项通过。新增流式 ETag 在后续针对性回归中再次验证。
+- 最终全量后端：135 文件，1209 项通过；前端：139 文件，845 项通过。新增流式 ETag 在后续针对性回归中再次验证。
 - 前后端类型检查、全量前端 ESLint、4 项工程检查、60 个迁移保护、生成 OpenAPI/类型一致性、Service Binding 命令行验证通过。
 - 本机真实 HTTP：104 项检查通过；涵盖账号权限、持久化、版本冲突、文件、权限撤销、完整导出、真实失败与自动重试。验证脚本已更新为“保存即生效”的项目标准契约及实际自动重试状态，不把排队重试当作 AI 成功。
 - 复现：先在 backend 应用本地迁移，再运行 `node scripts/bootstrap-password-admin.mjs --local`；配置仅本地 AUTH_SECRET，启动 `wrangler dev --local --port 8799 --test-scheduled`；frontend 以 AI_OFFICE_API_TARGET 指向该端口启动 5199；运行 INTEGRATION_URL=http://127.0.0.1:5199 及 INTEGRATION_CRON_URL=http://127.0.0.1:8799/__scheduled?cron=%2A%20%2A%20%2A%20%2A%20%2A 的 `node scripts/verify-integration.mjs`。整个流程仅 HTTP，不启动浏览器。
@@ -34,3 +34,16 @@
 生产 HTTP 已核对两个域名的应用入口、静态资源 SHA、安全头、Service Binding、验证码能力与拒绝路径。自定义域名的 Cloudflare 注入脚本携带本次 CSP nonce，依据官方说明 https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/ 配置；这仅证明返回 HTML/策略匹配，不代表已做浏览器执行验收。
 
 CI 使用 npm 10；本机默认 npm 12。已将 sharp 补丁约束改为全局 override，并用 npm 10 验证两个锁文件的 dry-run 和实际干净安装、类型检查及针对性回归，避免嵌套 override 的跨版本差异。
+
+离线清除增加账号请求 epoch 和清除屏障：清除之前发出的迟到请求，即使同账号再次登录，也不能恢复旧缓存。新增竞争回归通过；最终前端全量 845 项通过。最终 68d4319 的完整 CI 与 CodeQL 均成功。
+
+
+## 最终生产版本
+
+- 后端 c74d75e7-09b2-49a8-bdc4-396bbd24a5ed（f04b074，验证码已开启）。
+- 前端 316d5cb9-5ac1-4628-a7c6-7d52e2bfa19e（68d4319，迟到响应隔离修正）。
+- [完整 CI](https://github.com/greenbeanpie/AI-Colleboration-Seminar/actions/runs/37498263799) 与 [CodeQL](https://github.com/greenbeanpie/AI-Colleboration-Seminar/actions/runs/37498263644) 成功；包含 Linux npm 10 干净安装、所有测试和两个 dry-run。
+- 两个公开域名应用正常；生产 9 项 HTTP 检查通过；本地重复构建 102 个产物哈希一致。GitHub 依赖告警只剩 sprintf-js 的一条 medium，npm audit 因依赖链计为 3 项 moderate。
+- 后续提交仅保存本报告和验收 JSON，不改变已发布产品代码。完整改动文件清单见 repository-review-changed-files-20261007.txt。
+
+回滚使用兼容版本：后端 57afe08d-31d1-4be7-b239-06c0bcc0d8d7（保留 v2 密文读取，验证码关闭），前端可退至 3b56b076-4c38-4cae-916e-b52f15d6b9fe。在对应目录执行 wrangler rollback <版本ID> --env production，再重做 HTTP 检查；本轮没有执行回滚。已有 v2 密文写入后，不应直接退回不支持 v2 的原始后端。
