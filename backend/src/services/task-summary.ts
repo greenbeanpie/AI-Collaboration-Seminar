@@ -25,17 +25,39 @@ async function enabled(env: Env, projectId: string) {
   return project?.ai_collaboration_enabled === 1 && project.status === 'active' && config?.enabled && config.config.textEconomy.model.trim() ? config : null;
 }
 
+export async function readTaskSummaries(env: Env, tasks: CollaborationTask[]): Promise<Map<string, Summary>> {
+  const result = new Map<string, Summary>();
+  const pending: Array<{task: CollaborationTask; summarySourceHash: string}> = [];
+  for (const task of tasks) {
+    const summarySourceHash = await hash(task), text = source(task);
+    if (Array.from(text).length <= 60) result.set(task.id, {summary:text,summaryStatus:'ready',summarySourceHash});
+    else pending.push({task,summarySourceHash});
+  }
+  if (!pending.length) return result;
+  const projectId = pending[0]!.task.project_id;
+  if (pending.some(({task}) => task.project_id !== projectId)) throw invalidState('摘要任务必须属于同一项目');
+  const rows = await env.DB.prepare(`SELECT s.*,j.status AS job_status FROM task_summaries s LEFT JOIN jobs j ON j.id=s.job_id
+    JOIN json_each(?2) wanted ON s.task_id=json_extract(wanted.value,'$.taskId') AND s.source_hash=json_extract(wanted.value,'$.hash') WHERE s.project_id=?1`)
+    .bind(projectId, JSON.stringify(pending.map(({task,summarySourceHash})=>({taskId:task.id,hash:summarySourceHash})))).all<Cache & {task_id:string}>();
+  const cache = new Map(rows.results.map(row=>[row.task_id,row]));
+  const hasUnready = pending.some(({task})=>cache.get(task.id)?.status !== 'ready');
+  const active = hasUnready ? await enabled(env,projectId) : null;
+  for (const {task,summarySourceHash} of pending) {
+    const cached = cache.get(task.id);
+    if (cached?.status === 'ready') result.set(task.id,{summary:cached.summary!,summaryStatus:'ready',summarySourceHash});
+    else if (!active) result.set(task.id,{summaryStatus:'disabled',summarySourceHash});
+    else if (!cached) result.set(task.id,{summaryStatus:'missing',summarySourceHash});
+    else {
+      const abandoned = !cached.job_status && cached.updated_at < new Date(Date.now()-300_000).toISOString();
+      const summaryStatus = abandoned || ['failed','cancelled','succeeded'].includes(cached.job_status ?? '') ? 'failed' : cached.status;
+      result.set(task.id,{summaryStatus,summaryJobId:cached.job_id,summarySourceHash});
+    }
+  }
+  return result;
+}
+
 export async function readTaskSummary(env: Env, task: CollaborationTask): Promise<Summary> {
-  const summarySourceHash = await hash(task), text = source(task);
-  if (Array.from(text).length <= 60) return {summary:text,summaryStatus:'ready',summarySourceHash};
-  const cached = await env.DB.prepare(`SELECT s.*,j.status AS job_status FROM task_summaries s LEFT JOIN jobs j ON j.id=s.job_id WHERE s.project_id=?1 AND s.task_id=?2 AND s.source_hash=?3`).bind(task.project_id, task.id, summarySourceHash).first<Cache>();
-  if (cached?.status === 'ready') return {summary:cached.summary!,summaryStatus:'ready',summarySourceHash};
-  if (!await enabled(env, task.project_id)) return {summaryStatus:'disabled',summarySourceHash};
-  if (!cached) return {summaryStatus:'missing',summarySourceHash};
-  // A process may stop between claiming the cache and creating its durable job.
-  const abandoned = !cached.job_status && cached.updated_at < new Date(Date.now()-300_000).toISOString();
-  const summaryStatus = abandoned || ['failed','cancelled','succeeded'].includes(cached.job_status ?? '') ? 'failed' : cached.status;
-  return {summaryStatus,summaryJobId:cached.job_id,summarySourceHash};
+  return (await readTaskSummaries(env,[task])).get(task.id)!;
 }
 
 export async function enqueueTaskSummary(env: Env, projectId: string, taskId: string, userId: string, retry = false): Promise<Summary> {
