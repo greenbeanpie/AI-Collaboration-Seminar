@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import { runAudioPipeline,whisperEnabled,audioFallbackConfigId } from './audio-pipeline';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
@@ -68,7 +69,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       const routeError=mediaRouteError(env,config,file.mime);if(routeError)throw invalidState(routeError);
       const mimoModel=config.config.mimoMediaUnderstanding!;
       if (!mimoModel.apiKeyEncrypted) throw new AppError('AI_UNAVAILABLE','MiMo API key 尚未配置',503,false);
-      const mimo=new MimoMediaClient(mimoModel,await unseal(mimoModel.apiKeyEncrypted,env.AUTH_SECRET),fetch,env,jobId);
+      const mimo=new MimoMediaClient(mimoModel,await unseal(mimoModel.apiKeyEncrypted,aiSecret(env)),fetch,env,jobId);
       if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId,purpose:'media_summary',configVersionId:config.id,maxCalls:2});
       await assertActive();
       const claim=await env.DB.prepare("UPDATE media_processing SET stage='generating',updated_at=?3 WHERE id=?1 AND lease_token=?2 AND stage IN ('pending','processing')").bind(state.id,leaseToken,nowIso()).run();
@@ -88,7 +89,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     if(!summary){
     if(!model)throw new AppError('AI_UNAVAILABLE','音视频 Gemini 模型尚未配置；原文件已保留',503,false);
     if (!model.apiKeyEncrypted) throw new AppError('AI_UNAVAILABLE','Gemini API key 尚未配置',503,false);
-    client=new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,env.AUTH_SECRET),fetch,env,jobId);
+    client=new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,aiSecret(env)),fetch,env,jobId);
     if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId,purpose:'media_summary',configVersionId:mediaConfig!.id,maxCalls:24});
     if(!state.provider_name){
       const claim=await env.DB.prepare("UPDATE media_processing SET stage='uploading',updated_at=?2 WHERE id=?1 AND stage IN ('pending','processing')").bind(state.id,nowIso()).run();if(!claim.meta.changes)throw invalidState('媒体上传已在运行');
@@ -178,5 +179,5 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
 }
 export async function cleanupMediaFiles(env:Env):Promise<void>{
   const rows=await env.DB.prepare("SELECT m.* FROM media_processing m JOIN jobs j ON j.id=m.job_id WHERE m.provider='gemini' AND m.cleanup_pending=1 AND j.status IN ('succeeded','failed','cancelled') ORDER BY m.updated_at LIMIT 20").all<State>();
-  for(const row of rows.results){try{const loaded=await loadAiConfig(env.DB,row.config_version_id),model=loaded?.config.mediaUnderstanding;if(!model?.apiKeyEncrypted||!row.provider_name)continue;await new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,env.AUTH_SECRET),fetch,env,row.id).remove(row.provider_name);await env.DB.prepare('UPDATE media_processing SET cleanup_pending=0 WHERE id=?1').bind(row.id).run();}catch{/* Persisted for the next bounded cron pass. */}}
+  for(const row of rows.results){try{const loaded=await loadAiConfig(env.DB,row.config_version_id),model=loaded?.config.mediaUnderstanding;if(!model?.apiKeyEncrypted||!row.provider_name)continue;await new GeminiMediaClient(model,await unseal(model.apiKeyEncrypted,aiSecret(env)),fetch,env,row.id).remove(row.provider_name);await env.DB.prepare('UPDATE media_processing SET cleanup_pending=0 WHERE id=?1').bind(row.id).run();}catch{/* Persisted for the next bounded cron pass. */}}
 }

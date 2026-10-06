@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import { discoverableFileSql } from './archive-policy';
 import { askUserQuestionDefinition, clarificationRule, executeClarification, UserClarificationPending } from './ai-clarifications';
 import { projectPermissionSql, projectAccess } from './project-permissions';
@@ -315,7 +316,7 @@ export async function projectToolConversation(env: Env, params: {
     }
   };
   const endpoint = {
-    accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: env.AUTH_SECRET, envName: env.ENV_NAME, diagnostics: env
+    accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: aiSecret(env), envName: env.ENV_NAME, diagnostics: env
   };
   const guard = async () => {
     if(await activeStandardId()!==effectiveStandardsVersionId)throw new ToolLifecycleChanged('本轮项目标准已更新，工具调用已停止；请重新发起');

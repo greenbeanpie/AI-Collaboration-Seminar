@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import { invalidateResourceIndex } from './resource-index';
 import { ocrBatchSize, ocrContext, parseOcrBatch, removeOcrDuplicates } from './ocr-batches';
 import { runMediaJob } from './media-summary';
@@ -250,7 +251,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
   if (!config?.enabled) throw new AppError('AI_UNAVAILABLE', 'AI 功能未启用或配置缺失', 503, false);
   const vision = config.config.visionEconomy;
   if (!vision.supportsVision) throw new AppError('AI_UNAVAILABLE', '当前模型不支持图像 OCR；不会使用其他端点', 503, false);
-  const endpoint = { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: env.AUTH_SECRET, envName: env.ENV_NAME, diagnostics: env };
+  const endpoint = { accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: aiSecret(env), envName: env.ENV_NAME, diagnostics: env };
   const modelKey = await sha256Hex(JSON.stringify([vision.provider, vision.apiUrl, vision.apiProtocol, vision.model]));
   const capability = await env.DB.prepare('SELECT single_image_only FROM ocr_model_capabilities WHERE endpoint_model_hash = ?1').bind(modelKey).first<{ single_image_only: number }>();
   let singleOnly = env.OCR_BATCH_ENABLED==='false'||Boolean(capability?.single_image_only);

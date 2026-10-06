@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import type { Env } from '../env';
 import { loadAiConfig, type LoadedAiConfig, type AiPurpose } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
@@ -61,7 +62,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
   const llm=async(purpose:AiPurpose,stage:string,index:number,prompt:string):Promise<unknown>=>{
   const model=config.config[purpose],callId=await claim(stage,index);let dispatched=false,recorded=false;
   try{
-    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME,diagnostics:env},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,diagnosticRequestId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
+    const result=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:aiSecret(env),envName:env.ENV_NAME,diagnostics:env},{config:model,messages:[{role:'user',content:prompt}],jsonMode:true,privateContext:true,sessionId:jobId,diagnosticRequestId:jobId,providerRetry:{attempt:LIMITS.aiCallExtraRetries,deadline:Date.now()+model.timeoutMs,nextAttemptAt:0},beforeFetch:assertActive,onDispatch:()=>{dispatched=true;}});
    await recordAiCall(env,{projectId:job.project_id,draftId:input.draftId,jobId,purpose,configVersionId:config.id,promptVersion:'audio-pipeline-v1',model:model.model,input:{stage,index},output:result.content.slice(0,512),promptTokens:result.promptTokens,completionTokens:result.completionTokens,latencyMs:result.latencyMs,status:'ok'});recorded=true;
    await env.DB.prepare("UPDATE audio_pipeline_calls SET status='ok' WHERE id=?1").bind(callId).run();return JSON.parse(result.content);
   }catch(error){

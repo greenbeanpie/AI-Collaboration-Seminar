@@ -1,3 +1,4 @@
+import type { SecretKeyring } from './secrets';
 import { MULTIMODAL_LIMITS } from './multimodal-limits';
 import { feedbackForJob } from '../services/project-feedback';
 import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
@@ -56,7 +57,7 @@ export interface GatewayEndpoint {
   accountId: string;
   apiToken: string;
   gatewayId: string;
-  authSecret?: string;
+  authSecret?: string | SecretKeyring;
   /** 当前环境；仅 local 允许回环模型地址，用于零费用本地联调 */
   envName?: string;
   diagnostics?: Pick<Env, 'DB'>;

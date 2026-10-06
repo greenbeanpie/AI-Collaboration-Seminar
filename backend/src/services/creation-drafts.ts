@@ -1,3 +1,4 @@
+import { aiSecret, checkpointSecret } from '../ai/secrets';
 import { scheduleAutomaticDraftRetry } from './ai-automatic-retries';
 import { readAudioPipelineStatus } from './audio-pipeline';
 import { validateDocx } from './docx-validation';
@@ -281,7 +282,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         if(!state.pendingOutput) {
           let out:Awaited<ReturnType<typeof gatewayChat>>|undefined,failure:unknown,callDispatched=false;
           try {
-            out=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:env.AUTH_SECRET,envName:env.ENV_NAME,diagnostics:env},{
+            out=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:aiSecret(env),envName:env.ENV_NAME,diagnostics:env},{
               config:model,messages,jsonMode:true,privateContext:true,sessionId:attempt,
               toolMode:{definitions:[askUserQuestionDefinition,draftReadTool],exchanges:state.exchanges},
               beforeFetch:async()=>{await guard();state.pendingDispatch=true;await save();await guard();},
@@ -353,7 +354,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
 export async function commitDraft(env: Env, id: string, userId: string, revision: number, expectedPreviewAttemptId?: string) {
   const row = await getDraft(env, id, userId);
   if (row.status === 'committed' && row.result_encrypted) {
-    return JSON.parse(await unseal(row.result_encrypted, env.AUTH_SECRET)) as {
+    return JSON.parse(await unseal(row.result_encrypted, checkpointSecret(env))) as {
       projectId: string;
       invitations: Array<{
         label: string;
@@ -388,7 +389,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
       label, code, expiresAt
     }))
   };
-  const encrypted = await seal(JSON.stringify(response), env.AUTH_SECRET);
+  const encrypted = await seal(JSON.stringify(response), checkpointSecret(env));
   const guard = "EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND commit_token=?3 AND status='committed')";
   const stmt = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(id, userId, token, ...binds);
   const batch = [env.DB.prepare("UPDATE project_creation_drafts SET status='committed',commit_token=?4,result_encrypted=?5,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='ready' AND preview_revision=?3 AND preview_attempt_id IS ?7 AND preview_json IS ?8").bind(id, userId, revision, token, encrypted, now,row.preview_attempt_id,row.preview_json),

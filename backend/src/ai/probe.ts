@@ -1,3 +1,4 @@
+import { aiSecret } from './secrets';
 import type { Env } from '../env';
 import { AppError } from '../core/errors';
 import { gatewayChat, type ChatMessage, type GatewayCallOutput } from './gateway';
@@ -55,7 +56,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
-    authSecret: env.AUTH_SECRET,
+    authSecret: aiSecret(env),
     envName: env.ENV_NAME,
     diagnostics: env,
   };

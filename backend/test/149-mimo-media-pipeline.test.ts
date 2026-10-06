@@ -3,7 +3,7 @@ import { env } from './helpers/env';
 import { seedUser, seedProject } from './helpers/seed';
 import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
-import { newId, nowIso } from '../src/core/db';
+import { hmacSha256Hex, newId, nowIso } from '../src/core/db';
 import { createApp } from '../src/app';
 import { createMediaFetchUrl, readMediaGrant } from '../src/services/media-fetch';
 import { runMediaJob, cleanupMediaFiles } from '../src/services/media-summary';
@@ -48,6 +48,18 @@ function provider(options:{complete?:boolean;error?:boolean;after?:()=>Promise<v
  });
 }
 describe('MiMo private audio grants',()=>{
+ it('accepts live legacy grants, requires separated v2 signatures and rejects unknown versions',async()=>{
+  const f=await fixture();await f.insertState();const url=new URL(await createMediaFetchUrl(testEnv,f.jobId));
+  expect(url.searchParams.get('v')).toBe('2');
+  const expires=url.searchParams.get('expires')!;
+  const message=JSON.stringify(['mimo-media-v1',f.jobId,f.stateId,f.fileId,f.key,'audio/wav',12,0,expires]);
+  const legacySignature=await hmacSha256Hex(env.AUTH_SECRET,message);
+  const legacy=new URL(url);legacy.searchParams.delete('v');legacy.searchParams.set('signature',legacySignature);
+  expect((await readMediaGrant(testEnv,new Request(legacy),f.jobId)).status).toBe(200);
+  legacy.searchParams.set('v','2');expect((await readMediaGrant(testEnv,new Request(legacy),f.jobId)).status).toBe(404);
+  url.searchParams.set('v','3');expect((await readMediaGrant(testEnv,new Request(url),f.jobId)).status).toBe(404);
+ });
+
  it('streams full bytes, HEAD, bounded and suffix ranges with no-store',async()=>{
   const f=await fixture();await f.insertState();const url=await createMediaFetchUrl(testEnv,f.jobId),app=createApp();
   const full=await app.request(url,{},testEnv);expect(full.status).toBe(200);expect((await full.arrayBuffer()).byteLength).toBe(12);expect(full.headers.get('cache-control')).toBe('no-store');

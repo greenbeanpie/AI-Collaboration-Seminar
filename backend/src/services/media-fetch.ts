@@ -1,3 +1,4 @@
+import { purposeSecret } from '../ai/secrets';
 import type { Env } from '../env';
 import { hmacSha256Hex, timingSafeEqual } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -31,9 +32,9 @@ export async function createMediaFetchUrl(env:Env,jobId:string):Promise<string> 
   if(!env.MEDIA_FETCH_BASE_URL||base.protocol!=='https:'||base.username||base.password||base.search||base.hash||base.pathname!=='/')throw invalidState('MiMo 文件读取地址必须配置为 HTTPS Origin');
   const file=await grantFile(env,jobId);if(!file)throw invalidState('MiMo 文件读取授权已失效');
   const expires=String(Math.floor(Date.now()/1000)+MEDIA_GRANT_SECONDS);
-  const signature=await hmacSha256Hex(env.AUTH_SECRET,grantMessage(jobId,file,expires));
+  const signature=await hmacSha256Hex(await purposeSecret(env, 'media-grant'),grantMessage(jobId,file,expires));
   const url=new URL('/api/v1/media-fetch/'+jobId,base);
-  url.searchParams.set('expires',expires);url.searchParams.set('signature',signature);
+  url.searchParams.set('v','2');url.searchParams.set('expires',expires);url.searchParams.set('signature',signature);
   return url.href;
 }
 
@@ -55,7 +56,10 @@ export async function readMediaGrant(env:Env,request:Request,jobId:string):Promi
   const now=Math.floor(Date.now()/1000),expiry=Number(expires);
   if(!/^\d{10}$/.test(expires)||!Number.isSafeInteger(expiry)||expiry<=now||expiry>now+MEDIA_GRANT_SECONDS||!/^[0-9a-f]{64}$/.test(signature))return denied();
   const file=await grantFile(env,jobId);if(!file)return denied();
-  if(!await timingSafeEqual(signature,await hmacSha256Hex(env.AUTH_SECRET,grantMessage(jobId,file,expires))))return denied();
+  const version=url.searchParams.get('v');
+  if(version!==null&&version!=='2')return denied();
+  const grantSecret=version==='2'?await purposeSecret(env,'media-grant'):env.AUTH_SECRET;
+  if(!await timingSafeEqual(signature,await hmacSha256Hex(grantSecret,grantMessage(jobId,file,expires))))return denied();
   const metadata=await env.FILES.head(file.r2_key);if(!metadata||metadata.size!==file.size_bytes)return denied();
   headers.set('content-type',file.mime);headers.set('accept-ranges','bytes');headers.set('etag',metadata.httpEtag);
   let range:{offset:number;length:number}|undefined;

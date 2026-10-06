@@ -1,3 +1,4 @@
+import { purposeSecret } from '../ai/secrets';
 import { accountRole, type AccountRole } from '../core/account-role';
 import type { Env, SessionUser } from '../env';
 import { hmacSha256Hex, newId, nowIso, sha256Hex } from '../core/db';
@@ -13,7 +14,11 @@ export const normalizeEmail = (value: string | null | undefined): string | null 
 export async function consumePasswordRateLimit(env: Env, scope: string, identity: string, limit: number, seconds: number): Promise<void> {
   await env.DB.prepare('DELETE FROM auth_password_rate_limits WHERE bucket_key IN (SELECT bucket_key FROM auth_password_rate_limits WHERE expires_at <= ?1 LIMIT 100)').bind(nowIso()).run();
   const window = Math.floor(Date.now() / (seconds * 1000));
-  const key = await hmacSha256Hex(env.AUTH_SECRET, `${scope}|${identity.toLowerCase()}|${window}`);
+  const message = `${scope}|${identity.toLowerCase()}|${window}`;
+  const legacyKey = await hmacSha256Hex(env.AUTH_SECRET, message);
+  // Honor an existing legacy window until expiry; no fresh allowance on upgrade.
+  const legacy = await env.DB.prepare('SELECT attempts FROM auth_password_rate_limits WHERE bucket_key = ?1').bind(legacyKey).first();
+  const key = legacy ? legacyKey : await hmacSha256Hex(await purposeSecret(env, 'rate-limit'), message);
   const expiresAt = new Date((window + 1) * seconds * 1000).toISOString();
   const claim = await env.DB.prepare(`INSERT INTO auth_password_rate_limits (bucket_key, attempts, expires_at) VALUES (?1, 1, ?2)
     ON CONFLICT (bucket_key) DO UPDATE SET attempts = attempts + 1 WHERE attempts < ?3 RETURNING attempts`)

@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
@@ -150,7 +151,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: env.CLOUDFLARE_API_TOKEN,
     gatewayId: env.AI_GATEWAY_ID,
-    authSecret: env.AUTH_SECRET,
+    authSecret: aiSecret(env),
     envName: env.ENV_NAME,
     diagnostics: env,
   };

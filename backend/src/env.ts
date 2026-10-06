@@ -17,6 +17,11 @@ export interface Env {
   /** 逗号分隔的写请求 Origin 白名单 */
   ALLOWED_ORIGINS: string;
   AUTH_SECRET: string;
+  AI_CONFIG_SECRET?: string;
+  CHECKPOINT_SECRET?: string;
+  MEDIA_GRANT_SECRET?: string;
+  RATE_LIMIT_SECRET?: string;
+  TURNSTILE_HOSTNAMES?: string;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;
   AI_GATEWAY_ID: string;
