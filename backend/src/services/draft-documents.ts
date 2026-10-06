@@ -1,5 +1,5 @@
 import { enqueueDraftMedia } from './media-summary';
-import { validateDocx } from './docx-validation';
+import { validateOfficePackage, isOfficeExtension } from './docx-validation';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { getDraft,draftView,type DraftFile } from './creation-drafts';
@@ -26,7 +26,7 @@ export async function beginDraftUpload(env:Env,draftId:string,userId:string,file
  const existing=await env.DB.prepare('SELECT * FROM draft_document_uploads WHERE file_id=?1 AND draft_id=?2').bind(fileId,draftId).first<Upload>();
  if(existing){if(existing.name!==name||existing.size_bytes!==size||existing.status==='cancelled')throw invalidState('上传标识不能复用于其他文件或已取消的会话');return draftUploadStatus(env,draftId,userId,fileId);}
  const ext=extOf(name);
- if(!['.pdf','.docx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
+ if(!['.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
  const limit=uploadLimit(ext);if(limit!==null&&size>limit)throw validationFailed('文件超过该类型的上传限制');
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM creation_draft_files WHERE draft_id=?1 AND removed=0').bind(draftId).first<{n:number}>();if((count?.n??0)>=10)throw validationFailed('每份草稿最多10个文件');
  const key=`creation-drafts/${draftId}/${fileId}${ext}`,multipart=await env.FILES.createMultipartUpload(key,{httpMetadata:{contentType:'application/octet-stream'}});
@@ -73,7 +73,7 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
  if(stored.size!==row.size_bytes)throw invalidState('原文件长度校验失败');
  const first=await env.FILES.get(row.r2_key,{range:{offset:0,length:16}}),head=new Uint8Array(await first!.arrayBuffer());
  try {
-  if(row.ext==='.docx')await validateDocx(stored.size,async(offset,length)=>{const object=await env.FILES.get(row.r2_key,{range:{offset,length}});if(!object)throw notFound('DOCX对象不存在');return new Uint8Array(await object.arrayBuffer());});
+  if(isOfficeExtension(row.ext))await validateOfficePackage(row.ext, stored.size,async(offset,length)=>{const object=await env.FILES.get(row.r2_key,{range:{offset,length}});if(!object)throw notFound('DOCX对象不存在');return new Uint8Array(await object.arrayBuffer());});
   else if(row.ext==='.txt'||row.ext==='.md'){
    const object=await env.FILES.get(row.r2_key);if(!object)throw notFound('原文件不存在');
    const reader=object.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true,ignoreBOM:false});
@@ -83,7 +83,7 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
   await env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND status='completing' AND operation_token=?2").bind(fileId,token).run();
   throw error;
  }
- const mime=({'.pdf':'application/pdf','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.txt':'text/plain','.md':'text/markdown','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4','.mp4':'video/mp4','.webm':'video/webm'} as Record<string,string>)[row.ext]!;
+ const mime=({'.pdf':'application/pdf','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation','.txt':'text/plain','.md':'text/markdown','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4','.mp4':'video/mp4','.webm':'video/webm'} as Record<string,string>)[row.ext]!;
  const time=nowIso();
  const result=await env.DB.batch([
   env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',updated_at=?4,preview_attempt_id=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND (SELECT count(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10 AND EXISTS(SELECT 1 FROM draft_document_uploads WHERE file_id=?5 AND status='completing' AND operation_token=?6)").bind(draftId,userId,row.revision,time,fileId,token),
@@ -105,7 +105,7 @@ async function importAccess(env:Env,draftId:string,userId:string,fileId:string) 
  const draft=await active(env,draftId,userId);const file=await env.DB.prepare('SELECT * FROM creation_draft_files WHERE id=?1 AND draft_id=?2 AND removed=0').bind(fileId,draftId).first<DraftFile>();if(!file)throw notFound('草稿文件不存在或已移除');return {draft,file};
 }
 export async function importDraftBlocks(env:Env,draftId:string,userId:string,fileId:string,revision:number,blocks:z.infer<typeof draftBlockSchema>[]) {
- const {draft}=await importAccess(env,draftId,userId,fileId);if(draft.revision!==revision)throw versionConflict(draft.revision);
+ const {draft,file}=await importAccess(env,draftId,userId,fileId);if(isOfficeExtension(file.ext)&&blocks.some(b=>b.pageNumber!==null))throw invalidState('Office 文档不提供真实页码');if(draft.revision!==revision)throw versionConflict(draft.revision);
  if(blocks.length<1||blocks.length>10||blocks.reduce((n,b)=>n+b.text.length,0)>24000)throw validationFailed('每批正文最多24000字符和10个文本块');
  const existing=await env.DB.prepare('SELECT revision,status FROM draft_document_imports WHERE file_id=?1').bind(fileId).first<{revision:number;status:string;operation_token:string|null;operation_expires_at:string|null}>();
  if(existing&&(existing.revision!==revision||existing.status!=='importing'))throw invalidState('导入会话已变化或完成');

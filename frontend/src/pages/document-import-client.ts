@@ -19,7 +19,7 @@ export async function uploadMultipartFile(projectId:string,fileId:string,file:Fi
 }
 export async function importBrowserFile(projectId:string,sourceVersionId:string,file:File,signal?:AbortSignal,onProgress?:(message:string)=>void) {
  const path=projectPath(projectId,'/document-imports');
- const init=await documentRequest<{sessionId:string}>(path,{method:'POST',body:{sourceVersionId,method:/\.docx$/i.test(file.name)?'browser-docx':'browser-pdf'},signal});
+ const init=await documentRequest<{sessionId:string}>(path,{method:'POST',body:{sourceVersionId,method:/\.docx$/i.test(file.name)?'browser-docx':/\.xlsx$/i.test(file.name)?'browser-xlsx':/\.pptx$/i.test(file.name)?'browser-pptx':'browser-pdf'},signal});
  const state=await documentRequest<{nextBatch:number}>(path+'/'+init.sessionId,{signal});
  const {parseBrowserDocument}=await import('./browser-document');
  let batch=0;

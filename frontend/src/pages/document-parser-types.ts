@@ -10,7 +10,7 @@ export type DocumentBatch = { batchId: number; blocks: DocumentBlock[] };
 export type DocumentProgress = { phase: 'reading' | 'parsing'; completed: number; total: number | null };
 export type BrowserDocumentResult = {
   status: 'complete' | 'partial';
-  format: 'pdf' | 'docx';
+  format: 'pdf' | 'docx' | 'xlsx' | 'pptx';
   pages: number | null;
   blocks: number;
   warnings: DocumentWarning[];

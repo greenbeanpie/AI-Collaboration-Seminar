@@ -100,3 +100,9 @@ describe('creation file reconciliation', () => {
 });
 
 it('accepts 50 MiB media while retaining the existing ordinary file cap',()=>{expect(validateCreationFiles([{name:'recording.mp4',size:50*1024*1024}],10*1024*1024)).toBeNull();expect(validateCreationFiles([{name:'audio.mp3',size:50*1024*1024+1}],10*1024*1024)).toContain('50.0 MiB');expect(validateCreationFiles([{name:'notes.pdf',size:11*1024*1024}],10*1024*1024)).toContain('10.0 MiB');});
+
+it('accepts modern Office documents while requiring conversion of legacy formats',()=>{
+  expect(validateCreationFiles([{name:'表格.XLSX',size:100},{name:'幻灯片.pptx',size:100}],null)).toBeNull();
+  expect(validateCreationFiles([{name:'旧表格.xls',size:100}],null)).toContain('不支持');
+  expect(validateCreationFiles([{name:'旧幻灯片.ppt',size:100}],null)).toContain('不支持');
+});

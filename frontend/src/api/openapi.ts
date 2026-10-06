@@ -9850,7 +9850,7 @@ export interface paths {
                         /** Format: uuid */
                         sourceVersionId: string;
                         /** @enum {string} */
-                        method: "browser-pdf" | "browser-docx";
+                        method: "browser-pdf" | "browser-docx" | "browser-xlsx" | "browser-pptx";
                     };
                 };
             };
