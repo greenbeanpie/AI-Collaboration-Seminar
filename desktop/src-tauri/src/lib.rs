@@ -46,10 +46,7 @@ fn desktop_update_state(
     app: AppHandle,
 ) -> Result<serde_json::Value, String> {
     runtime::validate_source(&window)?;
-    Ok(
-        serde_json::to_value(app.state::<updater::UpdateManager>().status())
-            .map_err(|e| e.to_string())?,
-    )
+    serde_json::to_value(app.state::<updater::UpdateManager>().status()).map_err(|e| e.to_string())
 }
 #[tauri::command]
 async fn desktop_check_update(
