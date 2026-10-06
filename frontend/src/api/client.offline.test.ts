@@ -68,10 +68,10 @@ it('ignores a late session refresh after a deliberate account switch', async () 
   window.removeEventListener('auth-expired', expired);
 });
 it('reads fresh paginated task revisions when the online submission workspace requests them', async () => {
-  state.cached.set(`a:${url}?limit=100`, { items: [{ taskId: 't', revision: 1 }], nextCursor: null });
+  state.cached.set(`a:${url}?limit=50`, { items: [{ taskId: 't', revision: 1 }], nextCursor: null });
   const fetcher = vi.fn().mockResolvedValue(Response.json({ data: { items: [{ taskId: 't', revision: 2 }], nextCursor: null } }));
   vi.stubGlobal('fetch', fetcher);
-  expect(await collaborationApi.tasks('p', { networkOnly: true })).toEqual({ items: [{ taskId: 't', revision: 2 }] });
+  expect(await collaborationApi.tasks('p', { networkOnly: true })).toEqual({ items: [{ taskId: 't', revision: 2 }], nextCursor: null });
   expect(fetcher).toHaveBeenCalledOnce();
 });
 it('does not omit newly uploaded task files because of a cached empty attachment list', async () => {
@@ -84,10 +84,10 @@ it('does not omit newly uploaded task files because of a cached empty attachment
 });
 it('keeps task lists and attachment lists readable from snapshots while explicitly offline', async () => {
   vi.stubGlobal('navigator', { onLine: false });
-  state.cached.set(`a:${url}?limit=100`, { items: [{ taskId: 'cached-task', revision: 1 }], nextCursor: null });
+  state.cached.set(`a:${url}?limit=50`, { items: [{ taskId: 'cached-task', revision: 1 }], nextCursor: null });
   state.cached.set('a:/api/v1/projects/p/tasks/t/files', { items: [{ fileId: 'cached-file' }] });
   const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
-  expect(await collaborationApi.tasks('p', { networkOnly: false })).toEqual({ items: [{ taskId: 'cached-task', revision: 1 }] });
+  expect(await collaborationApi.tasks('p', { networkOnly: false })).toEqual({ items: [{ taskId: 'cached-task', revision: 1 }], nextCursor: null });
   expect(await listTaskFiles('p', 't')).toEqual([{ fileId: 'cached-file' }]);
   expect(fetcher).not.toHaveBeenCalled();
 });

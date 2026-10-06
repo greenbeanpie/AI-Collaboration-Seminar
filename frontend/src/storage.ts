@@ -50,17 +50,26 @@ export function getRecentSessions(accountId: string, projectId: string): string[
   catch { return []; }
 }
 
-export function clearAccountStorage(accountId: string): void {
+export function clearAccountStorage(accountId: string, strict = false): void {
   const storage = browserStorage();
-  if (!storage) return;
+  if (!storage) { if (strict) throw new Error('无法清除本机草稿，请检查存储权限后重试'); return; }
   const keys: string[] = [];
   try {
     for (let i = 0; i < storage.length; i += 1) {
       const key = storage.key(i);
-      if (key?.startsWith(`${prefix}draft:${accountId}:`) || key?.startsWith(`${prefix}sessions:${accountId}:`)) keys.push(key);
+      if (key?.startsWith(`${prefix}draft:${accountId}:`) || key?.startsWith(`${prefix}sessions:${accountId}:`) || key === 'buwei:ai-reference-badges:' + accountId || key === 'app-push-introduction:' + accountId || key?.startsWith('agent-bridge-device:' + accountId + ':') || key?.startsWith('ai-office:account:' + accountId + ':')) keys.push(key);
     }
-  } catch { return; }
-  keys.forEach((key) => { try { storage.removeItem(key); } catch { /* Logout must not fail because browser storage is unavailable. */ } });
+  } catch (error) { if (strict) throw error; return; }
+  keys.forEach((key) => { try { storage.removeItem(key); } catch (error) { if (strict) throw error; } });
+  if (strict) {
+    const sessionKeys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith('ai-office:account:' + accountId + ':') || key?.startsWith('ai-office:source-jobs:' + accountId + ':') || key?.startsWith('ai-office:source-files:' + accountId + ':') || key?.startsWith('ai-office:assessment-draft:' + accountId + ':') || key === 'ai-office:creation-wizard:' + encodeURIComponent(accountId) || key === 'ai-office:v1:' + encodeURIComponent(accountId) + ':project-creation') sessionKeys.push(key);
+    }
+    for (const key of sessionKeys) sessionStorage.removeItem(key);
+    window.dispatchEvent(new CustomEvent('account-device-cleared', { detail: { accountId } }));
+  }
 }
 
 function draftKey(accountId: string, projectId: string, materialId: string) {

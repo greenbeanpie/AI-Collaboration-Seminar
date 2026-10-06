@@ -1,3 +1,4 @@
+import { snapshotEtag } from './core/snapshot-etag';
 import { registerAdminAiRetryRoutes } from './api/admin-ai-retries';
 import { registerMediaFetchRoutes } from './api/media-fetch';
 import { registerTaskFileRoutes } from './api/task-files';
@@ -61,6 +62,17 @@ export function createApp(): OpenAPIHono<AppEnv> {
   });
 
   app.use('*', requestIdMiddleware);
+  app.use('*', snapshotEtag);
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    if (/\/files\/[^/]+\/content$/.test(c.req.path)) {
+      c.header('Cross-Origin-Resource-Policy', 'same-origin');
+      c.header('Content-Security-Policy', "default-src 'none'; sandbox");
+      if (!c.res.headers.has('Content-Disposition')) c.header('Content-Disposition', 'inline');
+    }
+  });
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
     if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:files|sources|resource-library|goal|standards|assessments|ai-tools|ai\/clarifications|username-invitations|invitation-requests|offline-sync|collaboration\/(?:proposals|feedback))(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');

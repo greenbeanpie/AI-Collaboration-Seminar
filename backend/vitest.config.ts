@@ -1,5 +1,9 @@
+import { createRequire } from 'node:module';
 import { defineConfig } from 'vitest/config';
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
+
+// Test the deployed compatibility date using the explicitly pinned runtime.
+process.env.MINIFLARE_WORKERD_PATH = createRequire(import.meta.url)('workerd').default;
 
 export default defineConfig({
   plugins: [
@@ -17,6 +21,7 @@ export default defineConfig({
     }),
   ],
   test: {
+    maxWorkers: 4,
     // Dispose Workflow instances from setup before per-file fetch mocks are removed.
     sequence: { hooks: 'list' },
     // setup 在 worker 运行时内执行：按序应用 migrations/ 下的 D1 迁移

@@ -16,33 +16,56 @@ import { releaseStaleReservations, settleReservation } from './services/ai-reser
 import { gcExpiredRecords, gcOrphanObjects } from './services/gc';
 import { dispatchProjectProgression } from './services/project-progression';
 
-/**
- * 定时维护（crons 每分钟触发）：
- * 1. 任务恢复器：补投 outbox 中待派发/租约过期的任务（确定性实例 ID 防重复）。
- * 2. 回收到期的隔离文件（校验失败暂存的 R2 对象）。
- * 3. 清理过期会话与验证码挑战。
- */
-export async function handleScheduled(env: Env): Promise<void> {
-  try { await retireCloudRehearsalSpeechJobs(env); } catch { console.error('[cron] Legacy speech retirement failed'); }
-  try { await cleanupExpiredRehearsalVoiceSessions(env); } catch { console.error('[cron] Voice session cleanup failed'); }
-  try { await backfillTaskAgentEligibility(env); } catch { console.error('[cron] task eligibility backfill failed'); }
-  try { await cleanupMediaFiles(env); } catch { console.error('[cron] Media cleanup failed'); }
-  try { await invalidateStaleProjectClarifications(env); } catch { console.error('[cron] Clarification cleanup failed'); }
-  try { await dispatchProjectProgression(env); } catch(error) { console.error('[cron] progression failed',error); }
-  try { await dispatchNotifications(env); } catch { console.error('[cron] Notification dispatch failed'); }
+export const CRON_GROUPS = {
+  recovery: '* * * * *',
+  backfill: '*/10 * * * *',
+  cleanup: '0 * * * *',
+  orphan: '0 3 * * *',
+} as const;
+export function scheduledGroups(cron?: string): Array<keyof typeof CRON_GROUPS> {
+  // Direct callers historically run all maintenance (tests and explicit operator checks).
+  if (cron === undefined) return Object.keys(CRON_GROUPS) as Array<keyof typeof CRON_GROUPS>;
+  return (Object.keys(CRON_GROUPS) as Array<keyof typeof CRON_GROUPS>).filter(group => CRON_GROUPS[group] === cron);
+}
+async function attempt(name: string, task: () => Promise<unknown>): Promise<boolean> {
+  try { await task(); return true; } catch { console.error(JSON.stringify({ event: 'cron_operation_failed', operation: name })); return false; }
+}
+export async function handleScheduled(env: Env, cron?: string): Promise<void> {
   const now = nowIso();
-  try { await recoverAdminAiRetries(env); } catch { console.error('[cron] Admin AI retry recovery failed'); }
-  try { await recoverAutomaticAiRetries(env, (retryEnv, jobId, rootId) => retryFailedAiJob(retryEnv, jobId, undefined, rootId)); } catch { console.error('[cron] Automatic AI retry recovery failed'); }
-  const staleRunning = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10").bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{ id: string }>();
-  for (const job of staleRunning.results) {
-    try { await reconcileWorkflowJob(env, job.id); } catch (error) { console.error('[cron] Workflow 状态核对失败', job.id, error); }
+  for (const group of scheduledGroups(cron)) {
+    const started = Date.now();
+    let failures = 0;
+    const run = async (name: string, task: () => Promise<unknown>) => { if (!await attempt(name, task)) failures++; };
+    try {
+      if (group === 'recovery') {
+        await run('progression', () => dispatchProjectProgression(env));
+        await run('notifications', () => dispatchNotifications(env));
+        await run('admin_retry', () => recoverAdminAiRetries(env));
+        await run('automatic_retry', () => recoverAutomaticAiRetries(env, (retryEnv, jobId, rootId) => retryFailedAiJob(retryEnv, jobId, undefined, rootId)));
+        await run('workflow_reconcile', async () => {
+          const stale = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10")
+            .bind(new Date(new Date(now).getTime() - 5 * 60_000).toISOString()).all<{id: string}>();
+          for (const job of stale.results) await run('workflow_job', () => reconcileWorkflowJob(env, job.id));
+        });
+        await run('execution_slices', () => recoverExecutionSlices(env));
+        await run('draft_previews', () => recoverDraftPreviews(env));
+        await recoverJobs(env, nowIso());
+        await run('reservations', () => releaseStaleReservations(env, now));
+      } else if (group === 'backfill') {
+        await run('task_eligibility', () => backfillTaskAgentEligibility(env));
+        await run('resource_indexes', () => backfillResourceIndexes(env, 5));
+        await run('clarifications', () => invalidateStaleProjectClarifications(env));
+      } else if (group === 'cleanup') {
+        await run('legacy_speech', () => retireCloudRehearsalSpeechJobs(env));
+        await run('voice_sessions', () => cleanupExpiredRehearsalVoiceSessions(env));
+        await run('media_files', () => cleanupMediaFiles(env));
+        await cleanupRecords(env, now);
+      } else await cleanupOrphans(env, now);
+    } catch { failures++; console.error(JSON.stringify({event: 'cron_group_failed', group})); }
+    finally { console.log(JSON.stringify({event: 'cron_group_completed', group, failures, elapsedMs: Date.now() - started})); }
   }
-  // Requeue missing instances before selecting the due outbox, so recovery dispatches in this run.
-  await recoverExecutionSlices(env);
-  try { await backfillResourceIndexes(env,5); } catch { console.error('[cron] resource index backfill failed'); }
-  try { await recoverDraftPreviews(env); } catch { console.error('[cron] Draft preview recovery failed'); }
-  await recoverJobs(env, nowIso());
-  await releaseStaleReservations(env, now);
+}
+async function cleanupRecords(env: Env, now: string): Promise<void> {
   try {
     const quarantined = await env.DB
       .prepare("SELECT id, r2_key FROM files WHERE status = 'quarantined' AND deleted_at IS NULL AND gc_after IS NOT NULL AND gc_after <= ?1")
@@ -67,6 +90,17 @@ export async function handleScheduled(env: Env): Promise<void> {
     console.error('[cron] 定时维护失败（迁移未应用或依赖暂不可用时不致命）:', err);
   }
 
+  // 数据保留：已完成的幂等回放记录到期清理（processing 保留给运维核对）
+  try {
+    const retention = await gcExpiredRecords(env, now);
+    if (retention.idempotencyDeleted > 0) {
+      console.log('[cron] 幂等记录清理', JSON.stringify(retention));
+    }
+  } catch (err) {
+    console.error('[cron] 幂等记录清理失败:', err);
+  }
+}
+async function cleanupOrphans(env: Env, now: string): Promise<void> {
   // 孤儿 R2 对象回收（只删超过宽限期且数据库无引用的受管对象）
   try {
     const orphan = await gcOrphanObjects(env, now);
@@ -77,15 +111,7 @@ export async function handleScheduled(env: Env): Promise<void> {
     console.error('[cron] 孤儿对象回收失败:', err);
   }
 
-  // 数据保留：已完成的幂等回放记录到期清理（processing 保留给运维核对）
-  try {
-    const retention = await gcExpiredRecords(env, now);
-    if (retention.idempotencyDeleted > 0) {
-      console.log('[cron] 幂等记录清理', JSON.stringify(retention));
-    }
-  } catch (err) {
-    console.error('[cron] 幂等记录清理失败:', err);
-  }
+
 }
 
 /** 恢复器：抢占到期租约 → 重建 Workflow 实例（实例已存在则核对状态，不重复创建） */

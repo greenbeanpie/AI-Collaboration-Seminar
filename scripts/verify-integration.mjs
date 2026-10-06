@@ -8,6 +8,16 @@ assert(['localhost', '127.0.0.1'].includes(base.hostname), 'Only loopback verifi
 const origin = base.origin;
 const runId = randomUUID();
 let checks = 0;
+const cronUrl = process.env.INTEGRATION_CRON_URL ? new URL(process.env.INTEGRATION_CRON_URL) : null;
+if (cronUrl) assert(['localhost', '127.0.0.1'].includes(cronUrl.hostname), 'Scheduled verification must be local');
+async function recoverLocalJobs(attempt) {
+  if (cronUrl && attempt % 8 === 0) {
+    const response = await fetch(cronUrl, { signal: AbortSignal.timeout(15_000) });
+    assert.equal(response.status, 200, 'Local scheduled recovery must run successfully');
+    await response.text();
+  }
+}
+
 async function call(account, path, { method = 'GET', body, status = 200, code, headers: additionalHeaders = {} } = {}) {
   const headers = { Origin: origin, 'X-Request-Id': randomUUID(), 'CF-Connecting-IP': `198.51.100.${1 + Math.floor(Math.random() * 250)}`, ...additionalHeaders };
   // 写请求统一携带幂等键（冻结写请求强制要求，见 A08）
@@ -94,7 +104,10 @@ const attached = await call(owner, `${p}/materials/${material.materialId}`, { me
 assert.deepEqual(attached.attachments.map(({fileId,name})=>({fileId,name})), [{ fileId: file.fileId, name: 'integration.txt' }]);
 const detached = await call(owner, `${p}/materials/${material.materialId}`, { method: 'PUT', body: { expectedRevision: 3, doc, attachmentIds: [] }, status: 201 });
 assert.deepEqual(detached.attachments, []);
-assert.deepEqual((await call(member, `${p}/materials/${material.materialId}/versions/${attached.versionId}`)).attachments, attached.attachments);
+const memberAttachments = (await call(member, `${p}/materials/${material.materialId}/versions/${attached.versionId}`)).attachments;
+assert.deepEqual(memberAttachments.map(({canManage, ...attachment}) => attachment), attached.attachments.map(({canManage, ...attachment}) => attachment));
+assert.equal(memberAttachments[0].canManage, false, 'Attachment management remains actor-scoped');
+assert.equal(attached.attachments[0].canManage, true, 'Owner may manage the attachment');
 const template = await call(owner, `${p}/materials`, { method: 'POST', body: { title: '作品介绍模板', kind: 'work-introduction' }, status: 201 });
 assert.match(template.currentVersion.markdown, /实现与验证/);
 await call(owner, `${p}/materials/${template.materialId}/versions/${attached.versionId}`, { status: 404, code: 'NOT_FOUND' });
@@ -116,11 +129,12 @@ assert.equal(clearedRubric.notes, null, 'Rubric notes can be explicitly cleared'
 await call(member, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST', status: 403, code: 'PERMISSION_DENIED' });
 const confirmedRubric = await call(owner, `${p}/rubrics/${rubric.rubricId}/confirm`, { method: 'POST' });
 assert.equal(confirmedRubric.status, 'confirmed');
-const standards = await call(owner, `${p}/standards`, { method: 'POST', body: { title: '统一验收标准', requirements: [{ title: '可复核成果', detail: '提供已保存成果及真实验证记录', category: 'deliverable', dimensionKey: 'quality' }, { title: '提交日期', detail: '核对日期', category: 'deadline', dueDate: '2026-10-08', duePrecision: 'date' }], weights: [{ key: 'quality', label: '材料质量', weight: 100 }] }, status: 201 });
-await call(member, `${p}/standards/${standards.standardsVersionId}/confirm`, { method: 'POST', body: { expectedRevision: standards.revision }, status: 403 });
-const publishedStandard = await call(owner, `${p}/standards/${standards.standardsVersionId}/confirm`, { method: 'POST', body: { expectedRevision: standards.revision } });
-assert.equal(publishedStandard.status, 'confirmed');
-assert.equal(publishedStandard.requirements.length, 2);
+const standardBody = { title: '统一验收标准', requirements: [{ title: '材料质量', detail: '', category: 'scoring', dimensionKey: 'quality' }], weights: [{ key: 'quality', label: '材料质量', weight: 100 }] };
+await call(member, p + '/standards', { method: 'POST', body: standardBody, status: 403 });
+const publishedStandard = await call(owner, p + '/standards', { method: 'POST', body: standardBody, status: 201 });
+const standards = publishedStandard;
+assert.equal(publishedStandard.status, 'confirmed', 'Saving project scoring standards activates the saved version');
+assert.equal(publishedStandard.requirements.length, 1);
 const library = await call(owner, `${p}/resource-library`);
 const background = library.items.find(item => item.purpose === 'background');
 assert(background && background.resourceType === 'material' && background.currentVersionId, 'Project background must be a saved version');
@@ -144,7 +158,8 @@ assert(Array.isArray((await call(owner, `${p}/assessments`)).items));
 if (!capabilities.features.aiEnabled) {
   const attempt = await call(owner, `${p}/assessments`, { method: 'POST', body: { kind: 'material_review', standardsVersionId: publishedStandard.standardsVersionId, materialVersionIds: [version.versionId] }, status: 202 });
   let record;
-  for (let retry = 0; retry < 40; retry++) {
+  for (let retry = 0; retry < 80; retry++) {
+    await recoverLocalJobs(retry);
     record = await call(owner, `${p}/assessments/${attempt.assessmentId}`);
     if (record.status === 'failed' && record.jobError) break;
     await new Promise(resolve => setTimeout(resolve, 250));
@@ -173,23 +188,27 @@ assert(!JSON.stringify(exported).includes('本地验证专业'), 'Global profile
 if (!capabilities.features.aiEnabled) {
   const pending = await call(owner, `${p}/agent-sessions`, { method: 'POST', body: { mode: 'do', instruction: '验证不可用状态' }, status: 202 });
   let job;
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    await recoverLocalJobs(attempt);
     job = await call(owner, `/jobs/${pending.jobId}`);
-    if (['failed', 'succeeded', 'cancelled'].includes(job.status)) break;
+    if (['failed', 'succeeded', 'cancelled'].includes(job.status) || job.error?.code === 'AI_UNAVAILABLE') break;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  assert.equal(job.status, 'failed', 'Disabled AI must fail explicitly');
+  assert(job.status === 'failed' || job.status === 'queued' && ['pending','dispatching'].includes(job.retry?.status), 'Unavailable AI must expose failure or an explicit queued retry');
+  assert.equal(job.result, null, 'Unavailable AI must not fabricate a result');
   assert.equal(job.error.code, 'AI_UNAVAILABLE');
   await call(null, `/jobs/${pending.jobId}/retry`, { method: 'POST', body: {}, status: 401, code: 'UNAUTHENTICATED' });
   await call(outsider, `/jobs/${pending.jobId}/retry`, { method: 'POST', body: {}, status: 403, code: 'PERMISSION_DENIED' });
   const suggestion = await call(owner, `${p}/assignment-suggestions`, { method: 'POST', body: { taskIds: [task.taskId] }, status: 202 });
   let assignment;
-  for (let attempt = 0; attempt < 40; attempt++) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    await recoverLocalJobs(attempt);
     assignment = await call(owner, `/jobs/${suggestion.jobId}`);
-    if (['failed', 'succeeded', 'cancelled'].includes(assignment.status)) break;
+    if (['failed', 'succeeded', 'cancelled'].includes(assignment.status) || assignment.error?.code === 'AI_UNAVAILABLE') break;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
-  assert.equal(assignment.status, 'failed');
+  assert(assignment.status === 'failed' || assignment.status === 'queued' && ['pending','dispatching'].includes(assignment.retry?.status));
+  assert.equal(assignment.result, null);
   assert.equal(assignment.error.code, 'AI_UNAVAILABLE');
 }
 await call(owner, `${p}/members/${member.user.id}`, { method: 'DELETE' });

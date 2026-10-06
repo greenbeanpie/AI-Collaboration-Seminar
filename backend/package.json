@@ -23,6 +23,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0",
+    "workerd": "1.20260926.1",
     "wrangler": "^4.143.0"
   },
   "allowScripts": {

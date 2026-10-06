@@ -38,6 +38,8 @@ export type RequestOptions = {
   /** Internal sync/revalidation path: never read a local snapshot or enqueue work. */
   networkOnly?: boolean;
   requireOfflinePersistence?: boolean;
+  /** Background conditional request bound to the originating account snapshot. */
+  conditionalSnapshot?: { accountId: string; data: unknown; etag?: string };
 };
 
 function makeRequestId(): string {
@@ -52,13 +54,14 @@ function revalidate(url: string, accountId: string): void {
     try {
       const previous = await readSnapshot(url, accountId);
       if (offlineAccount()?.id !== accountId) return;
-      const data = await request(url, { networkOnly: true, signal: AbortSignal.timeout(15_000) });
+      const data = await request(url, { networkOnly: true, signal: AbortSignal.timeout(15_000), ...(previous ? { conditionalSnapshot: { accountId, data: previous.data, etag: previous.etag } } : {}) });
       const sessionId = (data as { user?: { id?: string } }).user?.id;
       if (url === '/api/v1/auth/session' && sessionId && sessionId !== accountId && offlineAccount()?.id === sessionId) {
         window.dispatchEvent(new Event('auth-expired'));
         return;
       }
-      if (offlineAccount()?.id === accountId && JSON.stringify(previous?.data) !== JSON.stringify(data)) {
+      const updated = await readSnapshot(url, accountId);
+      if (offlineAccount()?.id === accountId && (!previous?.etag || !updated?.etag || previous.etag !== updated.etag)) {
         window.dispatchEvent(new CustomEvent('offline-snapshot-updated', { detail: { accountId } }));
       }
     } catch { /* Keep the visible snapshot when background refresh is unavailable. */ }
@@ -105,6 +108,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
   }
   const headers = new Headers(options.headers);
   headers.set('X-Request-Id', requestId);
+  if (method === 'GET' && options.conditionalSnapshot && options.conditionalSnapshot.accountId === accountAtStart && options.conditionalSnapshot.etag) headers.set('If-None-Match', options.conditionalSnapshot.etag);
   const hasJsonBody = options.body !== undefined;
   if (hasJsonBody) headers.set('Content-Type', 'application/json');
   if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
@@ -128,6 +132,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     });
   }
 
+  if (response.status === 304 && options.conditionalSnapshot?.etag && options.conditionalSnapshot.accountId === accountAtStart && offlineAccount()?.id === accountAtStart) return options.conditionalSnapshot.data as DataOf<Name>;
   const returnedRequestId = response.headers.get('X-Request-Id') ?? requestId;
   const responseText = await response.text();
   let payload: unknown = null;
@@ -168,7 +173,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
   }
   const currentAccount = offlineAccount()?.id;
   if (method === 'GET' && cacheable(url) && currentAccount && (url === '/api/v1/auth/session' || currentAccount === accountAtStart)) {
-    try { await writeSnapshot(url, data, currentAccount); }
+    try { await writeSnapshot(url, data, currentAccount, response.headers.get('ETag') ?? undefined); }
     catch (failure) { window.dispatchEvent(new Event('offline-storage-failed')); if (options.requireOfflinePersistence) throw failure; }
     if (!options.networkOnly) {
       try { return await offlineView(url, data) as DataOf<Name>; }

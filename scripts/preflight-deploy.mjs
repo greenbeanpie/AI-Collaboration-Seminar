@@ -22,6 +22,13 @@ check(/^[0-9a-f]{7,40}$/.test(process.env.VITE_BUILD_VERSION ?? ''), '发布必�
 check(api && web, '缺少目标环境配置');
 check(api?.vars?.ENV_NAME === environment, 'ENV_NAME 与目标环境不符');
 check(api?.vars?.AUTH_MODE === 'password', '云端必须启用密码登录与一次性邀请码注册');
+if (api?.vars?.TURNSTILE_REQUIRED === 'true') {
+  check(Boolean(api.vars.TURNSTILE_SITE_KEY), '启用 Turnstile 必须配置站点键');
+  const hosts = (api.vars.TURNSTILE_HOSTNAMES ?? '').split(',').map(host => host.trim()).filter(Boolean);
+  const expected = (api.vars.ALLOWED_ORIGINS ?? '').split(',').flatMap(origin => { try { return [new URL(origin.trim()).hostname]; } catch { return []; } });
+  check(hosts.length > 0 && expected.every(host => hosts.includes(host)) && !hosts.some(host => ['localhost','127.0.0.1'].includes(host)), '验证码域名必须覆盖生产 Origin，不能放行本机地址');
+}
+
 check(/^[0-9a-f]{32}$/i.test(api?.vars?.CLOUDFLARE_ACCOUNT_ID ?? ''), '配置真实 CLOUDFLARE_ACCOUNT_ID');
 // Direct provider configurations do not need an account-level Gateway. Validate
 // an optional ID without provisioning resources or changing saved model routing.

@@ -82,7 +82,7 @@ const versionResponse = apiEnvelope(
 
 const fragmentsRoute = createRoute({
   method: 'get', path: '/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments', tags: ['sources'],
-  summary: '来源全文引用片段', request: { params: versionParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  summary: '来源全文引用片段', request: { params: versionParams, query: z.object({ q: z.string().trim().max(200).optional(), fragmentId: z.string().min(1).max(100).optional(), cursor: z.string().optional(), limit: z.string().optional() }) },
   responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(z.object({ fragmentId: z.string(), pageNumber: z.number().nullable(), content: z.string(), kind: z.string(), seq: z.number() })), nextCursor: z.string().nullable() }), 'SourceFragmentListResponse') } }, description: '可引用片段' } },
 });
 
@@ -412,7 +412,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const limit = parsePaging(query).limit;
     const after = Number(query.cursor ?? 0);
     if (!Number.isSafeInteger(after) || after < 0) throw validationFailed('片段游标无效');
-    const rows = await c.env.DB.prepare('SELECT id, page_number, content, kind, seq FROM source_fragments WHERE source_version_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(sourceVersionId, after, limit + 1).all<{ id: string; page_number: number | null; content: string; kind: string; seq: number }>();
+    const rows = await c.env.DB.prepare("SELECT id, page_number, content, kind, seq FROM source_fragments WHERE source_version_id = ?1 AND seq > ?2 AND (?4='' OR instr(lower(content),lower(?4))>0) AND (?5 IS NULL OR id=?5) AND project_id=?6 ORDER BY seq LIMIT ?3").bind(sourceVersionId, after, limit + 1, query.q ?? '', query.fragmentId ?? null, c.get('member')!.projectId).all<{ id: string; page_number: number | null; content: string; kind: string; seq: number }>();
     const page = rows.results.slice(0, limit);
     return c.json(apiData(c, { items: page.map(r => ({ fragmentId: r.id, pageNumber: r.page_number, content: r.content, kind: r.kind, seq: r.seq })), nextCursor: rows.results.length > limit ? String(page.at(-1)!.seq) : null }), 200);
   });

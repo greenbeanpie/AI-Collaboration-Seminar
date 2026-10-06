@@ -23,7 +23,9 @@ describe('frontend Worker routing', () => {
 
     const response = await worker.fetch(request, { API: { fetch: apiFetch }, ASSETS: { fetch: assetsFetch } });
 
-    expect(response).toBe(assetResponse);
+    expect(await response.text()).toBe('react-app');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
     expect(assetsFetch).toHaveBeenCalledWith(request);
     expect(apiFetch).not.toHaveBeenCalled();
   });

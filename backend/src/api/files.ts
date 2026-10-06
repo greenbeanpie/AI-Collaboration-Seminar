@@ -87,7 +87,7 @@ const fileListResponse = apiEnvelope(z.object({ items:z.array(z.object({
 const lifecycleBody=z.object({expectedLifecycleVersion:z.number().int().positive()}).strict();
 const lifecycleResponse=apiEnvelope(z.object({fileId:z.string().uuid(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),affectedSourceIds:z.array(z.string().uuid())}),'FileLifecycleResponse');
 const listRoute=createRoute({method:'get',path:'/api/v1/projects/{projectId}/files',tags:['files'],summary:'文件库和回收站（含未完成上传）',
-  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),archived:z.enum(['true','false']).optional(),q:z.string().trim().max(200).optional(),cursor:z.string().optional(),limit:z.string().optional()})},
+  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),archived:z.enum(['true','false']).optional(),q:z.string().trim().max(200).optional(),fileId:z.string().uuid().optional(),cursor:z.string().optional(),limit:z.string().optional()})},
   responses:{200:{description:'文件列表',content:{'application/json':{schema:fileListResponse}}}}});
 const deleteRoute=createRoute({method:'delete',path:'/api/v1/projects/{projectId}/files/{fileId}',tags:['files'],summary:'移入回收站并取消相关来源任务，保留原文件和历史',
   request:{params:paramsFile,body:{required:true,content:{'application/json':{schema:lifecycleBody}}}},
@@ -113,9 +113,10 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
         AND (archived_at IS NOT NULL)=?7
         AND (?7=1 OR NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id WHERE u.file_id=files.id AND m.archived_at IS NOT NULL))
         AND NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id JOIN material_versions v ON v.id=m.current_version_id WHERE u.file_id=files.id AND files.id!=json_extract(v.attachments_json,'$[0].fileId'))
+        AND (?9 IS NULL OR id=?9)
         AND (?8='' OR instr(lower(COALESCE(original_name,'')),lower(?8))>0)
         AND (?3 IS NULL OR created_at<?3 OR (created_at=?3 AND id<?4)) ORDER BY created_at DESC,id DESC LIMIT ?5`)
-      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1,member.userId,query.archived==='true'?1:0,query.q??'')
+      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1,member.userId,query.archived==='true'?1:0,query.q??'',query.fileId??null)
       .all<{id:string;original_name:string|null;ext:string;status:'pending'|'available'|'quarantined'|'discarded';size_bytes:number|null;created_at:string;deleted_at:string|null;lifecycle_version:number;uploader_user_id:string;archived_at:string|null;allowed:number}>();
     const page=rows.results.slice(0,limit);
     const contributors=await fileContributorsForFiles(c.env,member.projectId,page.map(r=>r.id));

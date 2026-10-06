@@ -9,7 +9,7 @@ const app = createApp();
 export default {
   fetch: (request, env, ctx) => app.fetch(request, env, ctx),
   scheduled: (event, env, ctx) => {
-    ctx.waitUntil(handleScheduled(env));
+    ctx.waitUntil(handleScheduled(env, event.cron));
   },
 } satisfies ExportedHandler<Env>;
 
