@@ -25,7 +25,7 @@ export function TeamPage() {
   const session = useSession();
   const teamManage = can('teamManage');
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  const members = usePagedItems<'MemberListResponse'>({ queryKey: ['members', projectId], path: projectPath(projectId, '/members'), query: { limit: 100 } });
+  const members = usePagedItems<'MemberListResponse'>({ searchable: true, queryKey: ['members', projectId], path: projectPath(projectId, '/members'), query: { limit: 100 } });
   const tasks = useQuery({ queryKey: ['tasks', projectId], queryFn: () => completeTaskGraph(projectId) });
   const invitations = useQuery({ queryKey: ['invitations', projectId], queryFn: () => api.get<'InvitationListResponse'>(projectPath(projectId, '/invitations')), enabled: teamManage });
   const [maxUses, setMaxUses] = useState('');

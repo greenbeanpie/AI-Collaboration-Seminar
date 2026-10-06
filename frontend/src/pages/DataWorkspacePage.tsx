@@ -34,7 +34,7 @@ export function DataWorkspacePage() {
   const [purpose, setPurpose] = useState<ResourcePurpose | 'all'>('all');
   const [title, setTitle] = useState('');
   const [newPurpose, setNewPurpose] = useState<ResourcePurpose>('output');
-  const uploadedFiles = usePagedItems<'FileListResponse'>({ queryKey: ['files', projectId, archived ? 'archived' : 'active'], path: projectPath(projectId, '/files'), query: { ...(archived ? { archived: true } : {}) } });
+  const uploadedFiles = usePagedItems<'FileListResponse'>({ queryKey: ['files', projectId, archived ? 'archived' : 'active'], path: projectPath(projectId, '/files'), query: { ...(archived ? { archived: true } : {}), q: search } });
   const library = usePagedRecords<ResourceEntry>({ queryKey: archived ? ['resource-library', projectId, 'archived'] : ['resource-library', projectId], path: projectPath(projectId, '/resource-library'), query: { archived, q: search, purpose: purpose === 'all' ? undefined : purpose } });
   const resources = library.data ?? [];
   const mode = params.get('mode');

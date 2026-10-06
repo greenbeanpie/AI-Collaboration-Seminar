@@ -15,7 +15,7 @@ const entry = (id: string, type: 'source' | 'material', purpose: ResourceEntry['
 function show(url = '/data', files: Array<{ fileId: string; name: string; status: string; canManage: boolean }> = []) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(['collaboration-tasks', 'p'], { items: [] });
-  client.setQueryData(['files', 'p', 'active', 'pages', {}, ''], { pages: [{ items: files, nextCursor: null }], pageParams: [null] });
+  client.setQueryData(['files', 'p', 'active', 'pages', { q: '' }, ''], { pages: [{ items: files, nextCursor: null }], pageParams: [null] });
   const items = [entry('background', 'material', 'background', '研究背景'), entry('source', 'source', 'reference', '原文通知'), entry('result', 'material', 'output', '最终方案')];
   for (const q of ['', '最终']) client.setQueryData(['resource-library', 'p', 'pages', { archived: false, q, purpose: undefined }, ''], { pages: [{ items: items.filter(item => item.title.includes(q)), nextCursor: null }], pageParams: [null] });
   for (const item of items) client.setQueryData(['resource-detail', 'p', item.resourceType, item.resourceId], item);

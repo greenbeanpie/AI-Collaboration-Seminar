@@ -51,10 +51,10 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const [searchQuery,setSearchQuery]=useState('');
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
-  const taskQuery = usePagedItems<'TaskListResponse'>({ queryKey: ['tasks', projectId], path: projectPath(projectId, '/tasks'), query: { limit: 100 } });
-  const materialQuery = usePagedItems<'MaterialListResponse'>({ queryKey: ['materials', projectId], path: projectPath(projectId, '/materials'), query: { limit: 100 } });
-  const sourceQuery = usePagedItems<'SourceListResponse'>({ queryKey: ['sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
-  const sessionListQuery = usePagedItems<'AgentSessionListResponse'>({ queryKey: ['agentSessions', projectId], staleTime: 10_000, path: projectPath(projectId, '/agent-sessions'), query: { status: 'all', limit: 100 } });
+  const taskQuery = usePagedItems<'TaskListResponse'>({ searchable: true, queryKey: ['tasks', projectId], path: projectPath(projectId, '/tasks'), query: { limit: 100 } });
+  const materialQuery = usePagedItems<'MaterialListResponse'>({ searchable: true, queryKey: ['materials', projectId], path: projectPath(projectId, '/materials'), query: { limit: 100 } });
+  const sourceQuery = usePagedItems<'SourceListResponse'>({ searchable: true, queryKey: ['sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
+  const sessionListQuery = usePagedItems<'AgentSessionListResponse'>({ searchable: true, queryKey: ['agentSessions', projectId], staleTime: 10_000, path: projectPath(projectId, '/agent-sessions'), query: { status: 'all', limit: 100 } });
   const materials = useMemo(() => materialQuery.data ?? [], [materialQuery.data]);
   const sources = useMemo(() => sourceQuery.data ?? [], [sourceQuery.data]);
   const sourceVersionQueries = useQueries({ queries: sources.filter((source) => source.currentVersionId).map((source) => ({

@@ -54,7 +54,7 @@ export function DashboardPage() {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [searchParams, setSearchParams] = useSearchParams();
   const archiveOpen = searchParams.get('archive') === '1';
-  const projectsQuery = usePagedItems<'ProjectListResponse'>({ queryKey: ['projects'], path: '/api/v1/projects', query: { status: 'all', limit: 100 } });
+  const projectsQuery = usePagedItems<'ProjectListResponse'>({ searchable: true, queryKey: ['projects'], path: '/api/v1/projects', query: { status: 'all', limit: 100 } });
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const taskQueries = useQueries({ queries: projects.map(project => ({
     queryKey: ['tasks', project.id], queryFn: () => completeTaskGraph(project.id), staleTime: 10_000,
