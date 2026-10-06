@@ -34,3 +34,10 @@
   .sources-record-actions { width: 100%; }
   .sources-record-actions .button { flex: 1; }
 }
+
+.source-relationship { display: grid; justify-items: start; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.source-relationship > p { margin: 0; line-height: 1.6; }
+.source-technical-details { font-size: 12px; color: var(--muted); }
+.source-technical-details summary { cursor: pointer; }
+.source-technical-details dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; }
+.source-technical-details dd { margin: 0; overflow-wrap: anywhere; }
