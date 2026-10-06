@@ -63,6 +63,61 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => cancelPageDialog()); cleanup(); });
 
 describe('project file recycle library', () => {
+  it('fetches one bounded file page and advances only after loading more', async () => {
+    mocked.get.mockImplementation(async (path: string, query?: { cursor?: string | null }) => {
+      if (!path.endsWith('/files')) throw new Error(`Unexpected GET ${path}`);
+      return query?.cursor === 'second' ? { items: [{ ...pendingFile, fileId: 'f2', name: '第二页.pdf' }], nextCursor: null } : { items: [pendingFile], nextCursor: 'second' };
+    });
+    mount();
+    await screen.findByText('未完成.pdf');
+    expect(mocked.get).toHaveBeenCalledTimes(1);
+    expect(mocked.get.mock.calls[0][1]).toMatchObject({ limit: 2, cursor: null, deleted: false });
+    fireEvent.click(screen.getByRole('button', { name: '加载更多文件' }));
+    await screen.findByText('第二页.pdf');
+    expect(screen.getByText('未完成.pdf')).toBeInTheDocument();
+    expect(mocked.get.mock.calls[1][1]).toMatchObject({ cursor: 'second' });
+    expect(screen.queryByRole('button', { name: '加载更多文件' })).not.toBeInTheDocument();
+  });
+
+  it('starts a new bounded cursor chain when searching', async () => {
+    mount();
+    await screen.findByText('未完成.pdf');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '目标' } });
+    await waitFor(() => expect(mocked.get.mock.calls.at(-1)?.[1]).toMatchObject({ q: '目标', cursor: null, limit: 2 }));
+  });
+
+  it('preserves the loaded file page when loading the next page fails', async () => {
+    mocked.get.mockImplementation(async (_path: string, query?: { cursor?: string | null }) => {
+      if (query?.cursor) throw new Error('后续页读取失败');
+      return { items: [pendingFile], nextCursor: 'second' };
+    });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多文件' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('后续页读取失败');
+    expect(screen.getByText('未完成.pdf')).toBeInTheDocument();
+  });
+
+  it('uses explicit pagination for recycled sources even when one page only contains file-linked sources', async () => {
+    mocked.get.mockImplementation(async (path: string, query?: { cursor?: string | null }) => {
+      if (path.endsWith('/files')) return { items: [], nextCursor: null };
+      return query?.cursor === 'texts' ? { items: [{ purpose: 'reference', revision: 1, sourceId: 'text-source', kind: 'paste', fileId: null, title: '下一页文字来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 1, canDelete: true }], nextCursor: null } : { items: [{ purpose: 'reference', revision: 1, sourceId: 'file-source', kind: 'file', fileId: 'f', title: '文件来源', currentVersionId: null, createdAt: now, deletedAt: now, lifecycleVersion: 1, canDelete: true }], nextCursor: 'texts' };
+    });
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: '回收站' }));
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多回收站来源' }));
+    expect(await screen.findByRole('button', { name: '恢复来源：下一页文字来源' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '恢复来源：文件来源' })).not.toBeInTheDocument();
+  });
+
+  it('windows more than 100 loaded file rows and keeps the last row keyboard reachable', async () => {
+    files = Array.from({ length: 101 }, (_, index) => ({ ...pendingFile, fileId: `f${index}`, name: `文件${index}.pdf` }));
+    mount();
+    const list = await screen.findByRole('list', { name: '项目文件' });
+    expect(screen.getAllByRole('article').length).toBeLessThan(101);
+    fireEvent.keyDown(list, { key: 'End' });
+    expect(await screen.findByText('文件100.pdf')).toBeInTheDocument();
+  });
+
   it('shows an unfinished upload without a source and cancel leaves it untouched', async () => {
     mount();
     expect(await screen.findByText('上传未完成')).toBeInTheDocument();
@@ -125,11 +180,25 @@ describe('project file recycle library', () => {
     const { client } = mount();
     fireEvent.click(await screen.findByRole('button', { name: '移入回收站：未完成.pdf' }));
     await screen.findByRole('dialog');
-    await act(async () => { client.setQueryData(['files', 'p', 'active'], [{ ...pendingFile, lifecycleVersion: 2, canDelete: false }]); });
+    await act(async () => { client.setQueryData(['files', 'p', 'active', 'pages', ''], { pages: [{ items: [{ ...pendingFile, lifecycleVersion: 2, canDelete: false }], nextCursor: null }], pageParams: [null] }); });
     await waitFor(() => expect(screen.queryByRole('button', { name: '移入回收站：未完成.pdf' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: '确认移入回收站' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('状态或操作权限已变化');
     expect(mocked.delete).not.toHaveBeenCalled();
+  });
+
+  it('removes stale file/source controls from array and paginated caches while keeping cursors', async () => {
+    files = [{ ...pendingFile, sourceIds: ['s'] }];
+    const { client } = mount();
+    const source = { sourceId: 's' };
+    const retained = { sourceId: 'retained' };
+    client.setQueryData(['project-assistant-sources', 'p'], [source, retained]);
+    client.setQueryData(['sources', 'p', 'inactive-pages'], { pages: [{ items: [source], nextCursor: 'second' }, { items: [retained], nextCursor: null }], pageParams: [null, 'second'] });
+    fireEvent.click(await screen.findByRole('button', { name: '移入回收站：未完成.pdf' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认移入回收站' }));
+    await screen.findByText('资料已移入回收站，原文件和历史已保留。');
+    expect(client.getQueryData(['project-assistant-sources', 'p'])).toEqual([retained]);
+    expect(client.getQueryData(['sources', 'p', 'inactive-pages'])).toEqual({ pages: [{ items: [], nextCursor: 'second' }, { items: [retained], nextCursor: null }], pageParams: [null, 'second'] });
   });
 
   it('reports a conflict without automatically retrying a lifecycle mutation', async () => {

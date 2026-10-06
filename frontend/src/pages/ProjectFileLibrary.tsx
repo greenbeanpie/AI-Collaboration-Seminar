@@ -1,11 +1,12 @@
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { ContributorNames } from '../components/FileContributors';
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDeferredValue, useState } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { ArchiveRestore, FileText, Trash2 } from 'lucide-react';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
-import { listAllProjectItems } from './source-workflows';
+import { api, ApiError, projectPath } from '../api/client';
+import { VirtualList } from '../components/VirtualList';
 import { useSourceLifecycle, type LifecycleChange, type LifecycleResource } from './source-lifecycle';
 import { archiveFile } from './task-files-client';
 
@@ -15,27 +16,41 @@ const statusLabels: Record<ProjectFile['status'], string> = { pending: '上传�
 export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { projectId: string; pageSize: number; onChanged: (change: LifecycleChange) => void }) {
   const [view, setView] = useState<'active' | 'recycle' | 'archived'>('active');
   const client = useQueryClient();
+  const [search, setSearch] = useState('');
+  const filter = useDeferredValue(search.trim());
   const [archiveBusy, setArchiveBusy] = useState(false), [archiveError, setArchiveError] = useState<unknown>();
   const deleted = view === 'recycle';
-  const filesQuery = useQuery({
-    queryKey: ['files', projectId, view],
-    queryFn: ({ signal }) => listAllProjectItems<'FileListResponse'>(projectId, '/files', pageSize, signal, { deleted, ...(view === 'archived' ? { archived: true } : {}) }),
+  const filesQuery = useInfiniteQuery({
+    queryKey: ['files', projectId, view, 'pages', filter],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await api.get<'FileListResponse'>(projectPath(projectId, '/files'), { limit: pageSize, cursor: pageParam, q: filter, deleted, ...(view === 'archived' ? { archived: true } : {}) }, signal);
+      if (page.nextCursor && page.nextCursor === pageParam) throw invalidPagination();
+      return page;
+    },
+    getNextPageParam: (page, pages) => nextCursor(page, pages),
     retry: false,
   });
-  const recycledSourcesQuery = useQuery({
-    queryKey: ['sources', projectId, 'recycle'],
-    queryFn: ({ signal }) => listAllProjectItems<'SourceListResponse'>(projectId, '/sources', pageSize, signal, { deleted: true }),
+  const recycledSourcesQuery = useInfiniteQuery({
+    queryKey: ['sources', projectId, 'recycle', 'pages', filter],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: pageSize, cursor: pageParam, q: filter, deleted: true }, signal);
+      if (page.nextCursor && page.nextCursor === pageParam) throw invalidPagination();
+      return page;
+    },
+    getNextPageParam: (page, pages) => nextCursor(page, pages),
     enabled: deleted,
     retry: false,
   });
   // File-linked sources are managed once through their original file, using the file lifecycle version.
-  const recycledSources = (recycledSourcesQuery.data ?? []).filter(source => source.kind !== 'file' && !source.fileId);
-  const files = filesQuery.data ?? [];
+  const recycledSources = (recycledSourcesQuery.data?.pages.flatMap(page => page.items) ?? []).filter(source => source.kind !== 'file' && !source.fileId);
+  const files = filesQuery.data?.pages.flatMap(page => page.items) ?? [];
   const resources: LifecycleResource[] = [
     ...files.map(file => ({ kind: 'file' as const, id: file.fileId, name: file.name, lifecycleVersion: file.lifecycleVersion, canDelete: file.canDelete, deletedAt: file.deletedAt })),
     ...recycledSources.map(source => ({ kind: 'source' as const, id: source.sourceId, name: source.title, lifecycleVersion: source.lifecycleVersion, canDelete: source.canDelete, deletedAt: source.deletedAt })),
   ];
-  const lifecycle = useSourceLifecycle(projectId, view, resources, onChanged);
+  const lifecycle = useSourceLifecycle(projectId, `${view}:${filter}`, resources, onChanged);
   const changeArchive = async (file: ProjectFile) => {
     setArchiveBusy(true); setArchiveError(undefined);
     try { await archiveFile(projectId, file.fileId, file.lifecycleVersion, !!file.archivedAt); await Promise.all(['files', 'material', 'materials', 'resource-library', 'task-files'].map(key => client.invalidateQueries({ queryKey: [key, projectId] }))); }
@@ -50,11 +65,11 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
       <button type="button" className="sources-intake-tab" aria-pressed={deleted} onClick={() => setView('recycle')}><Trash2 size={15} /> 回收站</button>
     </div>
   }>
+    <label className="field"><span>搜索文件与来源</span><input className="input" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="按名称搜索当前视图" /></label>
     {lifecycle.error ? <ErrorNotice error={lifecycle.error} /> : null}
     {lifecycle.message && <div className="notice notice-success" role="status"><div className="notice-copy"><strong>{lifecycle.message}</strong></div></div>}
     {deleted && <p className="sources-inline-note">恢复只恢复资料的可用状态，不会启动解析、OCR、要求提取或总结。已取消的任务不会自动重启。</p>}
-    {filesQuery.isLoading ? <Spinner label={deleted ? '正在读取回收站文件' : '正在读取项目文件'} /> : filesQuery.error ? <ErrorNotice error={filesQuery.error} onRetry={() => void filesQuery.refetch()} /> : <div className="sources-library-list">
-      {files.map(file => <article className="sources-library-record" key={file.fileId} aria-label={`文件：${file.name}`}>
+    {filesQuery.isLoading ? <Spinner label={deleted ? '正在读取回收站文件' : '正在读取项目文件'} /> : filesQuery.error && !files.length ? <ErrorNotice error={filesQuery.error} onRetry={() => void filesQuery.refetch()} /> : <VirtualList className="sources-library-list" items={files} getKey={file => file.fileId} label="项目文件" renderItem={file => <article className="sources-library-record" key={file.fileId} aria-label={`文件：${file.name}`}>
         <div className="sources-library-copy"><h3>{file.name}<AiReferenceBadge ariaHidden /></h3><ContributorNames contributors={file.contributors} /><div className="sources-record-meta"><StatusPill tone={file.status === 'available' ? 'good' : file.status === 'pending' ? 'warn' : 'neutral'}>{statusLabels[file.status]}</StatusPill><span>{file.sizeBytes === null ? '大小待上传后确认' : formatBytes(file.sizeBytes)}</span><span>{deleted && file.deletedAt ? `移入于 ${new Date(file.deletedAt).toLocaleString('zh-CN')}` : `创建于 ${new Date(file.createdAt).toLocaleString('zh-CN')}`}</span></div>
           {!deleted && <p className="sources-inline-note">{file.sourceIds.length ? `关联 ${file.sourceIds.length} 条来源；处理状态见下方来源记录` : '尚未关联来源，可直接移入回收站'}</p>}
         </div>
@@ -62,16 +77,17 @@ export function ProjectFileLibrary({ projectId, pageSize, onChanged }: { project
         {file.canDelete && view !== 'archived' && <button type="button" className={`button button-small ${deleted ? 'button-quiet' : 'button-danger'}`} disabled={lifecycle.busy} onClick={() => void lifecycle.changeLifecycle(resources.find(item => item.kind === 'file' && item.id === file.fileId)!, deleted)} aria-label={`${deleted ? '恢复文件' : '移入回收站'}：${file.name}`}>
           {deleted ? <ArchiveRestore size={14} /> : <Trash2 size={14} />}{lifecycle.pendingKey === `file:${file.fileId}` ? '正在确认或处理…' : deleted ? '恢复文件' : '移入回收站'}
         </button>}
-      </article>)}
-    </div>}
+      </article>} />}
+    {filesQuery.hasNextPage && <button type="button" className="button button-quiet button-small" disabled={filesQuery.isFetchingNextPage} onClick={() => void filesQuery.fetchNextPage()}>{filesQuery.isFetchingNextPage ? '正在加载文件…' : '加载更多文件'}</button>}
+    {filesQuery.error && files.length > 0 && <ErrorNotice error={filesQuery.error} onRetry={() => void filesQuery.fetchNextPage()} />}
     {archiveError != null && <ErrorNotice error={archiveError}/>}
-    {deleted && (recycledSourcesQuery.isLoading ? <Spinner label="正在读取回收站文本与网页来源" /> : recycledSourcesQuery.error ? <ErrorNotice error={recycledSourcesQuery.error} onRetry={() => void recycledSourcesQuery.refetch()} /> : <div className="sources-library-list">
-      {recycledSources.map(source => <article className="sources-library-record" key={source.sourceId} aria-label={`来源：${source.title}`}>
+    {deleted && (recycledSourcesQuery.isLoading ? <Spinner label="正在读取回收站文本与网页来源" /> : recycledSourcesQuery.error && !recycledSources.length ? <ErrorNotice error={recycledSourcesQuery.error} onRetry={() => void recycledSourcesQuery.refetch()} /> : <VirtualList className="sources-library-list" items={recycledSources} getKey={source => source.sourceId} label="回收站来源" renderItem={source => <article className="sources-library-record" key={source.sourceId} aria-label={`来源：${source.title}`}>
         <div className="sources-library-copy"><h3>{source.title}<AiReferenceBadge ariaHidden /></h3><div className="sources-record-meta"><StatusPill>{source.kind === 'web' ? '网页' : '粘贴文本'}</StatusPill>{source.deletedAt && <span>移入于 {new Date(source.deletedAt).toLocaleString('zh-CN')}</span>}</div></div>
         {source.canDelete && <button type="button" className="button button-quiet button-small" disabled={lifecycle.busy} aria-label={`恢复来源：${source.title}`} onClick={() => void lifecycle.changeLifecycle(resources.find(item => item.kind === 'source' && item.id === source.sourceId)!, true)}><ArchiveRestore size={14} />{lifecycle.pendingKey === `source:${source.sourceId}` ? '正在确认或处理…' : '恢复来源'}</button>}
-      </article>)}
-    </div>)}
-    {!filesQuery.isLoading && !filesQuery.error && (!deleted || (!recycledSourcesQuery.isLoading && !recycledSourcesQuery.error)) && files.length === 0 && (!deleted || recycledSources.length === 0) && <EmptyState title={deleted ? '回收站为空' : '还没有上传文件'} detail={deleted ? '移入回收站的原文件、文本与网页来源会显示在这里，可按权限恢复。' : '已初始化但尚未上传完成的文件也会显示在这里，无需等解析完成。'} />}
+      </article>} />)}
+    {deleted && recycledSourcesQuery.hasNextPage && <button type="button" className="button button-quiet button-small" disabled={recycledSourcesQuery.isFetchingNextPage} onClick={() => void recycledSourcesQuery.fetchNextPage()}>{recycledSourcesQuery.isFetchingNextPage ? '正在加载来源…' : '加载更多回收站来源'}</button>}
+    {deleted && recycledSourcesQuery.error && recycledSources.length > 0 && <ErrorNotice error={recycledSourcesQuery.error} onRetry={() => void recycledSourcesQuery.fetchNextPage()} />}
+    {!filesQuery.isLoading && !filesQuery.error && (!deleted || (!recycledSourcesQuery.isLoading && !recycledSourcesQuery.error)) && files.length === 0 && !filesQuery.hasNextPage && (!deleted || (recycledSources.length === 0 && !recycledSourcesQuery.hasNextPage)) && <EmptyState title={deleted ? '回收站为空' : '还没有上传文件'} detail={deleted ? '移入回收站的原文件、文本与网页来源会显示在这里，可按权限恢复。' : '已初始化但尚未上传完成的文件也会显示在这里，无需等解析完成。'} />}
   </SectionCard>;
 }
 
@@ -79,4 +95,9 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function invalidPagination() { return new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应无效，请重试。', retryable: true } }); }
+function nextCursor(page: { nextCursor: string | null }, pages: Array<{ nextCursor: string | null }>) {
+  return page.nextCursor && !pages.slice(0, -1).some(previous => previous.nextCursor === page.nextCursor) ? page.nextCursor : undefined;
 }

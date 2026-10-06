@@ -68,13 +68,13 @@ export function useSourceLifecycle(
         queryClient.cancelQueries({ queryKey: ['project-assistant-source-version', projectId] }),
         queryClient.cancelQueries({ queryKey: ['project-assistant-source-processing', projectId] }),
       ]);
-      queryClient.setQueriesData<Array<{ sourceId: string }>>({ queryKey: ['sources', projectId] }, items => items?.filter(item => !sourceIds.includes(item.sourceId)));
-      queryClient.setQueriesData<Array<{ sourceId: string }>>({ queryKey: ['project-assistant-sources', projectId] }, items => items?.filter(item => !sourceIds.includes(item.sourceId)));
+      queryClient.setQueriesData({ queryKey: ['sources', projectId] }, data => removeCachedRecords(data, 'sourceId', sourceIds));
+      queryClient.setQueriesData({ queryKey: ['project-assistant-sources', projectId] }, data => removeCachedRecords(data, 'sourceId', sourceIds));
       for (const sourceId of sourceIds) {
         // Restored records must reload server-cancelled job metadata before showing retry controls.
         for (const key of ['sourceVersion', 'sourceProcessing', 'project-assistant-source-version', 'project-assistant-source-processing']) queryClient.removeQueries({ queryKey: [key, projectId, sourceId] });
       }
-      if (resource.kind === 'file') queryClient.setQueriesData<Array<{ fileId: string }>>({ queryKey: ['files', projectId] }, items => items?.filter(item => item.fileId !== resource.id));
+      if (resource.kind === 'file') queryClient.setQueriesData({ queryKey: ['files', projectId] }, data => removeCachedRecords(data, 'fileId', [resource.id]));
       current.current.onChanged({ projectId, fileId: resource.kind === 'file' ? resource.id : undefined, sourceIds, restored });
       if (current.current.projectId === projectId && current.current.scope === scope) {
         setFeedback({ ...actionScope, message: restored ? '资料已恢复。未自动启动任何 AI 处理，请按需手动开始。' : '资料已移入回收站，原文件和历史已保留。' });
@@ -100,4 +100,14 @@ export function useSourceLifecycle(
     error: inScope(feedback) ? feedback?.error : undefined,
     message: inScope(feedback) ? feedback?.message : undefined,
   };
+}
+
+/** Preserve pagination metadata while hiding stale lifecycle controls in every loaded page. */
+function removeCachedRecords(data: unknown, key: 'sourceId' | 'fileId', ids: string[]): unknown {
+  if (Array.isArray(data)) return data.filter(item => !ids.includes(item?.[key]));
+  if (!data || typeof data !== 'object') return data;
+  const record = data as Record<string, unknown>;
+  if (Array.isArray(record.pages)) return { ...record, pages: record.pages.map(page => removeCachedRecords(page, key, ids)) };
+  if (Array.isArray(record.items)) return { ...record, items: removeCachedRecords(record.items, key, ids) };
+  return data;
 }
