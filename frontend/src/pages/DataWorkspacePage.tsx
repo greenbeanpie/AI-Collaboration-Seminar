@@ -1,4 +1,5 @@
 import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
+import { VirtualList } from '../components/VirtualList';
 import { usePagedItems, usePagedRecords } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
@@ -61,7 +62,7 @@ export function DataWorkspacePage() {
 
     {resourceDetail.error && <ErrorNotice error={resourceDetail.error} onRetry={() => void resourceDetail.refetch()} />}
     {library.error && <ErrorNotice error={library.error} onRetry={() => void library.refetch()} />}
-    {uploadedFiles.error && <ErrorNotice error={uploadedFiles.error} onRetry={() => void uploadedFiles.refetch()} />}<LoadMore query={uploadedFiles} />
+    {uploadedFiles.error && <ErrorNotice error={uploadedFiles.error} onRetry={() => void uploadedFiles.refetch()} />}<LoadMore query={uploadedFiles} label="文件" />
     <LoadMore query={library} label="资料" />
     <div className="resource-workspace-layout">
       <aside className="card resource-list-panel" aria-label="项目资料列表">
@@ -72,7 +73,7 @@ export function DataWorkspacePage() {
         {library.isLoading && <Spinner label="读取资料列表" />}
         <div className="form-actions"><button className="button button-quiet button-small" aria-pressed={!archived} onClick={() => setParams({})}>当前资料</button><button className="button button-quiet button-small" aria-pressed={archived} onClick={() => setParams({ archived: 'true' })}>已归档</button></div>
         {folders.filter(folder => folder.files.length || folder.id === 'public').map(folder => <details className="resource-task-folder" open key={folder.id}><summary>{folder.title}</summary>{folder.files.map(renderResource)}{folder.id === 'public' && publicFiles.map(file => <button className="resource-list-entry" key={file.fileId} onClick={() => setParams({ mode: 'file', fileId: file.fileId, ...(archived ? { archived: 'true' } : {}) })}><strong>{file.name}<AiReferenceBadge ariaHidden /></strong><small>{file.archivedAt ? '已归档 · 只读' : '上传文件'}</small></button>)}</details>)}
-        {visible.filter(resource => !resource.fileId).map(renderResource)}
+        <VirtualList label="资料列表" items={visible.filter(resource => !resource.fileId)} getKey={resource => `${resource.resourceType}:${resource.resourceId}`} renderItem={renderResource} />
         {!library.isLoading && !library.error && !visible.length && <p className="muted">{search || purpose !== 'all' ? '没有匹配的资料。' : '尚无资料，请导入或新建文档。'}</p>}
         <button className="button button-quiet button-small" onClick={() => setParams({ mode: 'files' })}>附件与回收站</button>
       </aside>

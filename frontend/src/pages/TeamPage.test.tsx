@@ -32,7 +32,7 @@ function renderTeam(members: unknown[], options: { role?: string; permissions?: 
   state.permissions = options.permissions;
   state.canManagePermissions = options.canManagePermissions ?? false;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  client.setQueryData(['members', 'p'], members);
+  client.setQueryData(['members', 'p', 'pages', { limit: 100 }, ''], { pages: [{ items: members, nextCursor: null }], pageParams: [null] });
   client.setQueryData(['tasks', 'p'], []);
   client.setQueryData(['invitations', 'p'], { items: [] });
   client.setQueryData(['invitation-requests', 'p'], { items: [] });

@@ -212,8 +212,8 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const isLoadingInputs = taskQuery.isLoading || materialQuery.isLoading || sourceQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
-    <LoadMore query={sessionListQuery} />
-    <LoadMore query={taskQuery} />
+    <LoadMore query={sessionListQuery} label="AI 会话" />
+    <LoadMore query={taskQuery} label="任务" />
     {!embedded && <PageHeading eyebrow="资料 / 成果材料" title="AI 协助成果" detail="选择真实任务、材料和来源版本。AI 输出始终是待复核草稿，不会自动完成任务或覆盖正式材料。" />}
     {capabilityStatus}
 
@@ -240,12 +240,12 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
           </Field>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">材料版本 <small>选择后会传入这些不可变版本 ID；最多选择 10 个。</small></div>
-            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} />
+            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} label="文档" />
             <FixedMaterialVersions projectId={projectId} selected={selectedMaterialVersionIds} onChange={setSelectedMaterialVersionIds} />
           </div>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">通知与项目来源版本 <small>当前后端只提供每个来源的当前版本。</small></div>
-            {sourceQuery.error && <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} />}<LoadMore query={sourceQuery} />
+            {sourceQuery.error && <ErrorNotice error={sourceQuery.error} onRetry={() => void sourceQuery.refetch()} />}<LoadMore query={sourceQuery} label="来源" />
             {sourceErrors.map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
             <div className="ai-workflow-choice-list">
               {selectedSources.length === 0 ? <EmptyState title="没有可选的来源版本" detail="来源导入后会在这里显示当前版本。" /> : selectedSources.map((source) => {

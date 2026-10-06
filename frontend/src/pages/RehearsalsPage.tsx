@@ -1,3 +1,4 @@
+import { VirtualList } from '../components/VirtualList';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
@@ -221,8 +222,8 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
   const createDisabled = !canInitiate || !aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || (scope === 'member' && !memberId);
 
   return <div className="page-stack ai-workflow-layout">
-    <LoadMore query={memberQuery} />
-    <LoadMore query={materialQuery} />
+    <LoadMore query={memberQuery} label="成员" />
+    <LoadMore query={materialQuery} label="文档" />
     {!embedded && <PageHeading eyebrow="练习 / 答辩演练" title="围绕项目真实材料进行答辩练习" detail="按项目或成员负责部分开始文字演练。每轮问答由后端保存；结束后由后端生成总结。" />}
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会发起演练。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 不会创建模拟问题、追问或总结；已有真实演练可继续查看。</div>}
@@ -250,7 +251,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
       </SectionCard>}
 
       <SectionCard title={embedded ? '答辩问答与反馈' : '最近的真实演练'} detail="问答由后端保存，结束后冻结本轮证据。">
-        {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}<LoadMore query={historyQuery} />
+        {historyQuery.error && <ErrorNotice error={historyQuery.error} onRetry={() => void historyQuery.refetch()} />}<LoadMore query={historyQuery} label="演练记录" />
         {recentIds.length > 0 ? <div className="stack">
           {!embedded && <div className="ai-workflow-session-picker">
             <select className="ai-workflow-select" aria-label="选择最近的答辩演练" value={selectedRehearsalId} onChange={(event) => setSelectedRehearsalId(event.target.value)}>
@@ -264,10 +265,10 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
             {visiblePending && <JobPanel jobId={visiblePending.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={rehearsal.canOperate && aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={visiblePending.action} onRetry={() => void handleRetryJob()} />}
             {job.job?.status === 'waiting_input' && <div className="ai-workflow-note is-warning">后端任务正在等待补充信息，当前页面不会补造问题或回答。</div>}
             {rehearsal.turns.length === 0 && <div className="ai-workflow-note">第一问由后端生成中。问题到达后会出现在下方对话记录中。</div>}
-            {rehearsal.turns.length > 0 && <div className="ai-workflow-transcript" aria-live="polite">{rehearsal.turns.map((turn) => <article className={`ai-workflow-transcript-turn ${turn.role === 'user' ? 'is-user' : ''} ${turn.kind === 'summary' ? 'is-summary' : ''}`} key={`${rehearsal.rehearsalId}-${turn.sequence}`}>
+            {rehearsal.turns.length > 0 && <VirtualList className="ai-workflow-transcript" label="演练对话" items={rehearsal.turns} getKey={turn => String(turn.sequence)} renderItem={turn => <article className={`ai-workflow-transcript-turn ${turn.role === 'user' ? 'is-user' : ''} ${turn.kind === 'summary' ? 'is-summary' : ''}`} key={`${rehearsal.rehearsalId}-${turn.sequence}`}>
               <header><strong>{turn.role === 'user' ? '答辩人回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><AiReferenceBadge /><span>{formatWorkflowDate(turn.createdAt)}</span></header>
               <p>{turn.content}</p>
-            </article>)}</div>}
+            </article>} />}
             {rehearsal.status === 'finished' && <div className="ai-workflow-note"><strong>演练结果已保存。</strong> 下方总结来自后端已保存的 summary 回合。</div>}
             {!rehearsal.canOperate && <div className="notice">本轮由 {members.find(m=>m.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId} 发起并答辩，其他成员只读，进展会自动刷新。</div>}
             {rehearsal.status === 'active' && rehearsal.canOperate && <form className="stack" onSubmit={(event) => void handleAnswer(event)}>

@@ -1,3 +1,4 @@
+import { VirtualList } from '../components/VirtualList';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
@@ -153,7 +154,7 @@ export function ReviewsPage() {
   const inputLoading = standardQuery.isLoading || materialQuery.isLoading;
 
   return <div className="page-stack ai-workflow-layout">
-    <LoadMore query={reviewListQuery} />
+    <LoadMore query={reviewListQuery} label="检查记录" />
     <PageHeading eyebrow="复核 / 预审" title="成果检查" detail="依据项目生效标准核验成果。每份报告会保留使用的要求集、评分标准和材料版本 ID。AI 预审意见供团队内部讨论，不构成官方评审结论。" />
     {!capabilities.data && (capabilities.isLoading ? <div className="ai-workflow-note">正在读取后端 AI 能力，状态确认前不会开始预审。</div> : capabilities.error ? <ErrorNotice error={capabilities.error} onRetry={() => void capabilities.refetch()} /> : null)}
     {capabilities.data && !aiEnabled && <div className="ai-workflow-note is-warning"><strong>后端 AI 当前未启用。</strong> 新预审不会生成模拟报告；已有后端报告仍可查看。</div>}
@@ -164,7 +165,7 @@ export function ReviewsPage() {
           <p>生效标准：{standard ? `${standard.title} · v${standard.version}` : '尚未保存项目标准'}</p>
           <div className="ai-workflow-field ai-workflow-field-wide">
             <div className="field-label">当前材料版本 <small>至少选择 1 个，最多 10 个。报告会固定这些版本 ID。</small></div>
-            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} />
+            {materialQuery.error && <ErrorNotice error={materialQuery.error} onRetry={() => void materialQuery.refetch()} />}<LoadMore query={materialQuery} label="文档" />
             {historyState.errors.map((error, index) => <ErrorNotice key={index} error={error} />)}
             <div className="ai-workflow-choice-list">
               {currentMaterialVersions.length === 0 ? <EmptyState title="没有当前材料版本" detail="先保存至少一份材料的正式版本。" /> : currentMaterialVersions.map((version) => {
@@ -187,8 +188,7 @@ export function ReviewsPage() {
       </SectionCard>
 
       <SectionCard title="预审历史" detail="报告均由后端读取；版本变化时标记报告是否已过期。">
-        {reviewListQuery.isLoading ? <Spinner label="正在读取预审记录" /> : reviewListQuery.error ? <ErrorNotice error={reviewListQuery.error} onRetry={() => void reviewListQuery.refetch()} /> : reviews.length === 0 ? <EmptyState title="还没有预审报告" detail="保存项目标准并选择材料版本后发起第一份预审。" /> : <div className="ai-workflow-report-list">
-          {reviews.map((item) => {
+        {reviewListQuery.isLoading ? <Spinner label="正在读取预审记录" /> : reviewListQuery.error ? <ErrorNotice error={reviewListQuery.error} onRetry={() => void reviewListQuery.refetch()} /> : reviews.length === 0 ? <EmptyState title="还没有预审报告" detail="保存项目标准并选择材料版本后发起第一份预审。" /> : <VirtualList className="ai-workflow-report-list" label="预审历史" items={reviews} getKey={item => item.reviewId} renderItem={item => {
             const state = freshness(item.materialVersionIds);
             return <button className="ai-workflow-report-button" key={item.reviewId} aria-current={selectedReviewId === item.reviewId} onClick={() => setSelectedReviewId(item.reviewId)}>
               <strong>预审 · {formatWorkflowDate(item.createdAt)}</strong>
@@ -196,8 +196,7 @@ export function ReviewsPage() {
               <FreshnessStatus state={state} />
               <small className="mono">报告 ID {item.reviewId}</small>
             </button>;
-          })}
-        </div>}
+          }} />}
       </SectionCard>
     </div>
 

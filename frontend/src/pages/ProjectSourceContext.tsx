@@ -24,7 +24,7 @@ export function ProjectSourceContext({ projectId, enabled, selected, onSelection
     <strong>优先参考来源（可选固定版本）</strong>
 
     {sources.isLoading && <Spinner label="读取项目资料" />}
-    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}<LoadMore query={sources} />
+    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}<LoadMore query={sources} label="来源" />
     {sources.data?.length === 0 && <p className="form-note">尚无项目来源；可先上传资料，也可仅按你填写的目标发起拆解。</p>}
     {sources.data?.map(source => <SourceContextRow key={source.sourceId} projectId={projectId} source={source} enabled={enabled} selected={source.currentVersionId ? selected.includes(source.currentVersionId) : false} selectionFull={selected.length >= 5} onSelection={onSelection} onReady={onReady} />)}
     <Link className="button button-quiet button-small" to={`/app/projects/${projectId}/sources`}>查看原文件、缺页处理与文件总结</Link>

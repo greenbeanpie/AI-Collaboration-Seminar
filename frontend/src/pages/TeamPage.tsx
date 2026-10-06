@@ -1,3 +1,4 @@
+import { VirtualList } from '../components/VirtualList';
 import { completeTaskGraph } from '../features/pagination/taskGraph';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -39,12 +40,12 @@ export function TeamPage() {
   const editingMember = members.data?.find(member => member.userId === editingMemberId) ?? null;
   return <div className="page-stack team-page">
     
-    <LoadMore query={members} />
+    <LoadMore query={members} label="成员" />
     <PageHeading title="团队成员" detail="管理角色、邀请与当前任务负荷。分工、提交和验收统一在任务工作区进行。" action={<StatusPill tone="blue">{members.data?.length ?? '—'} 位已加载成员</StatusPill>} />
     {[members, tasks].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
     <div className="compact-team-grid"><SectionCard title="成员与任务负荷" detail="负荷依据项目完整任务图中未完成任务的预计工时计算。">
       {members.isLoading && <Spinner label="正在读取成员" />}
-      {members.data?.length ? <div className="team-member-list">{members.data.map(member => {
+      {members.data?.length ? <VirtualList className="team-member-list" label="成员列表" items={members.data} getKey={member => member.userId} renderItem={member => {
         const assigned = tasks.data?.filter(task => task.assigneeId === member.userId && task.status !== 'done') ?? [];
         const hours = assigned.reduce((total, task) => total + ((task as { effortHours?: number }).effortHours ?? 0), 0);
         // 只有负责人权限由项目身份决定；其他成员均可由负责人授权。
@@ -65,7 +66,7 @@ export function TeamPage() {
             {removable && <ConfirmButton className="icon-button" aria-label={`移除成员 ${member.displayName}`} disabled={remove.isPending} onClick={() => remove.mutate(member.userId)}><UserMinus size={17} /></ConfirmButton>}
           </div>
         </div>;
-      })}</div> : !members.isLoading && !members.error && <EmptyState title="暂无成员" detail="项目成员数据尚未返回记录。" />}
+      }} /> : !members.isLoading && !members.error && <EmptyState title="暂无成员" detail="项目成员数据尚未返回记录。" />}
       {remove.error && <ErrorNotice error={remove.error} />}
       {!canManagePermissions && <p className="form-note">只有项目负责人可以调整成员的项目权限。系统管理员身份不影响项目权限。</p>}
       {project.myRole !== 'owner' && <div className="form-actions"><ConfirmButton disabled={leave.isPending} onClick={() => leave.mutate()}>退出项目</ConfirmButton>{leave.error && <ErrorNotice error={leave.error} />}</div>}
