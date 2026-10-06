@@ -1,20 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listAllItems, projectPath } from '../api/client';
 import { ErrorNotice } from '../components/ui';
 import { cacheProjectFiles, estimateCache, exportDesktopFile, listDesktopFiles, pauseDesktopFile, removeDesktopFile, resumeDesktopFile, stageDesktopFiles, transferDesktopFiles, type CacheFile, type DesktopFile } from './attachments';
 
 export function DesktopFilesPanel({ projectId, taskId, disabled = false, onBusy, onComplete }: { projectId: string; taskId?: string; disabled?: boolean; onBusy?: (busy: boolean, reason?: string) => void; onComplete?: () => void }) {
   const [rows, setRows] = useState<DesktopFile[]>([]), [error, setError] = useState<unknown>(), [running, setRunning] = useState(false), [preview, setPreview] = useState<CacheFile[] | null>(null);
+  const completed = useRef(onComplete);
+  useEffect(() => { completed.current = onComplete; }, [onComplete]);
   useEffect(() => {
     let live = true;
-    const refresh = () => void listDesktopFiles(projectId).then(next => { if (live) setRows(next); }).catch(failure => { if (live) setError(failure); });
+    let signature: string | undefined;
+    const refresh = () => void listDesktopFiles(projectId).then(next => { if (live) { setRows(next); const nextSignature = next.filter(row => row.direction === 'upload' && row.status === 'complete').map(row => row.id).sort().join(','); if (signature !== undefined && signature !== nextSignature) completed.current?.(); signature = nextSignature; } }).catch(failure => { if (live) setError(failure); });
     refresh(); window.addEventListener('desktop-transfer-refresh', refresh); const timer = setInterval(refresh, 3000); return () => { live = false; clearInterval(timer); window.removeEventListener('desktop-transfer-refresh', refresh); };
   }, [projectId]);
   const pending = rows.some(row => row.direction === 'upload' && row.taskId === taskId && row.status !== 'complete');
   useEffect(() => { onBusy?.(running || pending, pending ? '本机附件尚未上传并入库，提交将保存在本机等待附件完成。' : running ? '正在保存附件。' : ''); }, [onBusy, pending, running]);
   const run = async (action: () => Promise<unknown>) => { setError(undefined); setRunning(true); try { await action(); setRows(await listDesktopFiles(projectId)); onComplete?.(); } catch (failure) { setError(failure); } finally { setRunning(false); } };
   const downloadPreview = async () => { const files = await listAllItems<'FileListResponse'>(projectPath(projectId, '/files')); setPreview(files.filter(file => file.status === 'available' && !file.deletedAt).map(file => ({ fileId: file.fileId, name: file.name, sizeBytes: file.sizeBytes ?? 0 }))); };
-  const shown = rows.filter(row => !taskId || row.taskId === taskId);
+  const shown = rows.filter(row => !taskId || row.taskId === taskId || row.direction === 'download');
   return <section className="stack" aria-label="本机离线文件"><h3>本机离线文件</h3><p className="form-note">文件存放在此设备，按登录账户隔离。上传完成并加入材料库后才会参与任务提交。</p><div className="form-actions">
     <button type="button" className="button" disabled={disabled || running} onClick={() => void run(async () => { await stageDesktopFiles(projectId, taskId); if (navigator.onLine) await transferDesktopFiles(projectId); })}>添加本机附件</button>
     <button type="button" className="button button-quiet" disabled={running || !navigator.onLine} onClick={() => void run(() => transferDesktopFiles(projectId))}>继续传输</button>
