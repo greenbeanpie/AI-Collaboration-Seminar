@@ -19,7 +19,7 @@
     "@tiptap/extension-table-cell": "^3.10.7",
     "@tiptap/extension-table-header": "^3.10.7",
     "@tiptap/extension-table-row": "^3.10.7",
-    "@tiptap/react": "^3.10.7",
+    "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.10.7",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.13.0",
