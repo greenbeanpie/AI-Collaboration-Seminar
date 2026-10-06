@@ -23,6 +23,8 @@ import java.util.concurrent.Executors
 class PickArgs { var maxFiles: Int = 10 }
 @InvokeArg
 class ExportArgs { lateinit var path: String; lateinit var name: String }
+@InvokeArg
+class SessionArgs { var origin: String = "https://greenbp-team-office.hddhp.workers.dev" }
 data class PickedFile(val path: String, val name: String, val sizeBytes: Long)
 data class Session(val cookie: String, val foreground: Boolean)
 
@@ -45,10 +47,16 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun session(invoke: Invoke) {
+        val args = invoke.parseArgs(SessionArgs::class.java)
+        if (args.origin != "https://greenbp-team-office.hddhp.workers.dev" && !(BuildConfig.DEBUG && args.origin == "http://127.0.0.1:5173")) {
+            invoke.reject("Invalid session origin"); return
+        }
         activity.runOnUiThread {
             // CookieManager includes HttpOnly cookies. Fixed origin, never returned to JavaScript.
             CookieManager.getInstance().flush()
-            invoke.resolveObject(Session(CookieManager.getInstance().getCookie("https://greenbp-team-office.hddhp.workers.dev") ?: "", foreground))
+            val sessionCookie = (CookieManager.getInstance().getCookie(args.origin) ?: "").split(';')
+                .map { it.trim() }.filter { it.startsWith("ai_office_session=") }.joinToString("; ")
+            invoke.resolveObject(Session(sessionCookie, foreground))
         }
     }
     @Command

@@ -1,11 +1,11 @@
+#[cfg(target_os = "android")]
+mod android;
 mod cache;
 #[cfg(desktop)]
 mod notifications;
 mod runtime;
 #[cfg(desktop)]
 mod updater;
-#[cfg(target_os = "android")]
-mod android;
 pub use runtime::{NativeState, PRODUCTION_ORIGIN};
 #[cfg(target_os = "android")]
 mod mobile;
@@ -340,4 +340,6 @@ pub fn run() {
 
 #[cfg(target_os = "android")]
 #[tauri::mobile_entry_point]
-pub fn run() { mobile::run(); }
+pub fn run() {
+    mobile::run();
+}

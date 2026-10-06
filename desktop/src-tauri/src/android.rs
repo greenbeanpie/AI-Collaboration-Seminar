@@ -47,7 +47,7 @@ pub struct Session {
 pub async fn session(app: &AppHandle) -> Result<Session, String> {
     app.state::<AndroidAdapter>()
         .0
-        .run_mobile_plugin_async("session", ())
+        .run_mobile_plugin_async("session", json!({"origin": crate::PRODUCTION_ORIGIN}))
         .await
         .map_err(|e| e.to_string())
 }

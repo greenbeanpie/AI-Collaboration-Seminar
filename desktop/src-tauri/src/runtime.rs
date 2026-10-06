@@ -202,12 +202,24 @@ pub async fn session_client(
     let cookie = {
         let origin = url::Url::parse(PRODUCTION_ORIGIN).map_err(|e| e.to_string())?;
         let cookies = tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(origin))
-            .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-        cookies.iter().filter(|c| c.name() == "ai_office_session")
-            .map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; ")
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        cookies
+            .iter()
+            .filter(|c| c.name() == "ai_office_session")
+            .map(|c| format!("{}={}", c.name(), c.value()))
+            .collect::<Vec<_>>()
+            .join("; ")
     };
     #[cfg(target_os = "android")]
-    let cookie = crate::android::session(app).await?.cookie;
+    let cookie = {
+        let session = crate::android::session(app).await?;
+        if !session.foreground {
+            return Err("网络传输已暂停，返回前台后继续".into());
+        }
+        session.cookie
+    };
     if cookie.is_empty() {
         return Err("Not authenticated".into());
     }
