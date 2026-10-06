@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
 @InvokeArg
 class PickArgs { var maxFiles: Int = 10 }
 @InvokeArg
-class ExportArgs { lateinit var path: String; lateinit var name: String }
+class ExportArgs { lateinit var path: String; lateinit var name: String; var accountEpoch: Long = -1 }
 data class PickedFile(val path: String, val name: String, val sizeBytes: Long)
 data class Session(val cookie: String, val foreground: Boolean)
 
@@ -33,6 +33,7 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var foreground = true
     private external fun foregroundChanged(active: Boolean)
+    private external fun accountEpoch(): Long
     override fun load(webView: WebView) {
         foregroundChanged(true)
         // Interrupted imports are disposable: only Rust manifest-owned blobs survive restart.
@@ -126,7 +127,7 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
     fun exported(invoke: Invoke, result: ActivityResult) {
         if (result.resultCode != Activity.RESULT_OK) { invoke.resolve(); return }
         val uri = result.data?.data ?: run { invoke.reject("未选择导出位置"); return }
-        if (exportCookie != CookieManager.getInstance().getCookie("https://greenbp-team-office.hddhp.workers.dev")) {
+        if (invoke.parseArgs(ExportArgs::class.java).accountEpoch != accountEpoch() || exportCookie != CookieManager.getInstance().getCookie("https://greenbp-team-office.hddhp.workers.dev")) {
             invoke.reject("登录会话已变化，导出取消"); return
         }
         worker.execute {
@@ -134,7 +135,16 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
                 val source = File(invoke.parseArgs(ExportArgs::class.java).path)
                 activity.contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
                     FileOutputStream(descriptor.fileDescriptor).use { output ->
-                        source.inputStream().use { it.copyTo(output, 64 * 1024) }
+                        val expectedEpoch = invoke.parseArgs(ExportArgs::class.java).accountEpoch
+                        source.inputStream().use { input ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                check(expectedEpoch == accountEpoch()) { "登录账户已变化" }
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
+                        }
                         output.fd.sync()
                     }
                 } ?: error("无法写入导出位置")

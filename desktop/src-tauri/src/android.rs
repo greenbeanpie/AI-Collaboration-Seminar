@@ -1,12 +1,13 @@
 //! Internal Android adapter. No plugin command is exposed by a web capability.
 use serde::Deserialize;
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{
     plugin::{Builder, PluginHandle, TauriPlugin},
     AppHandle, Manager, Wry,
 };
 
+static ACCOUNT_EPOCH: AtomicU64 = AtomicU64::new(0);
 static FOREGROUND: AtomicBool = AtomicBool::new(true);
 
 // JNI arguments are opaque; only the JVM boolean is read. Invoked from Activity callbacks.
@@ -17,6 +18,16 @@ pub extern "system" fn Java_cn_buwei_mobile_NativeFilesPlugin_foregroundChanged(
     foreground: u8,
 ) {
     FOREGROUND.store(foreground != 0, Ordering::Release);
+}
+pub fn invalidate_session() {
+    ACCOUNT_EPOCH.fetch_add(1, Ordering::AcqRel);
+}
+#[no_mangle]
+pub extern "system" fn Java_cn_buwei_mobile_NativeFilesPlugin_accountEpoch(
+    _env: *mut std::ffi::c_void,
+    _this: *mut std::ffi::c_void,
+) -> i64 {
+    ACCOUNT_EPOCH.load(Ordering::Acquire) as i64
 }
 pub fn is_foreground() -> bool {
     FOREGROUND.load(Ordering::Acquire)
@@ -65,7 +76,7 @@ pub async fn export_file(
 ) -> Result<(), String> {
     app.state::<AndroidAdapter>()
         .0
-        .run_mobile_plugin_async("exportFile", json!({"path":path, "name": name}))
+        .run_mobile_plugin_async("exportFile", json!({"path":path, "name": name, "accountEpoch":ACCOUNT_EPOCH.load(Ordering::Acquire)}))
         .await
         .map_err(|e| e.to_string())
 }
