@@ -3,7 +3,7 @@ import { SELF } from 'cloudflare:test';
 import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
 import { aiModelConfigSchema, loadAiConfig, type AiModelConfig } from '../src/ai/config';
-import { seal } from '../src/ai/secrets';
+import { aiSecret, seal } from '../src/ai/secrets';
 import { gatewayChat } from '../src/ai/gateway';
 import { normalizeProviderResponse } from '../src/ai/transport';
 import { aiJsonCall } from '../src/services/agent';
@@ -14,7 +14,7 @@ import { seedProject, seedUser } from './helpers/seed';
 import { FIXED_MAX_OUTPUT_TOKENS, presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
 import { z } from 'zod';
 
-const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: env.AUTH_SECRET, envName: 'local' };
+const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: aiSecret(env), envName: 'local' };
 const encrypted = await seal('fixture-provider-key', env.AUTH_SECRET);
 function config(preset: ProviderPreset, model: string, extra: Partial<AiModelConfig> = {}): AiModelConfig {
   return aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: preset, model, apiUrl: presetEndpoint(preset, model, extra.apiProtocol), apiKeyEncrypted: encrypted, timeoutMs: 90000, maxInputChars: 48000, supportsJson: providerPresets[preset].supportsJson, supportsVision: true, goUsageAcknowledged: preset === 'opencode-go', ...extra });
