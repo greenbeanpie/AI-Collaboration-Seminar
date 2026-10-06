@@ -34,6 +34,21 @@ GitHub Actions 手动运行 `Windows desktop draft release`。配置受保护的
 
 两版本验收必须在可恢复的 Windows 测试用户或虚拟机中完成：安装版本 A，登录并保存离线编辑及待上传附件；构建版本 B（相同公钥）；用受控测试更新端点或发布候选版本检查 B；验证使用中不重启、托盘安全空闲 5 分钟才重启、关闭自动重启后仅手动重启。检查升级后 Cookie、IndexedDB、附件清单与文件完整保留。分别篡改签名、缓存安装包以及断网，确认失败不运行安装器、原版本仍可启动。更新下载后重启 A，重新检查后应复用完整缓存。未执行这些实机步骤时不得宣称升级验收通过。
 
+### 独立测试安装的双版本升级
+
+`update-smoke-build.ps1` 生成名称为「补位测试」、数据标识为 `cn.buwei.desktop.smoke` 的 Debug NSIS 安装包，避免覆盖正式客户端。仅 Debug 编译且编译时 `BUWEI_DESKTOP_SMOKE=1` 才接受固定 `http://127.0.0.1:5173/latest.json` 与该端口 `/updates/*.exe`，仍验证相同公钥和每份安装包签名。Release 编译始终只接受正式 GitHub 地址。
+
+```powershell
+./desktop/scripts/update-smoke-build.ps1 -Version 0.1.0 -SigningKeyPath ./.local-secrets/desktop-updater.key
+# 将 A 的安装包、签名复制到私有验收输出目录，安装并保存测试数据后再构建 B。
+./desktop/scripts/update-smoke-build.ps1 -Version 0.1.1 -SigningKeyPath ./.local-secrets/desktop-updater.key
+node ./desktop/scripts/update-smoke-server.mjs ./desktop/src-tauri/target/debug/bundle/nsis/补位测试_0.1.1_x64-setup.exe
+```
+
+独立更新服务器只提供更新路由；完整界面验收应在附件 smoke server 挂载 `createUpdateSmokeHandler`，通过 `BUWEI_SMOKE_INSTALLER` 指定 B 安装包、`BUWEI_SMOKE_UPDATE_VERSION=0.1.1` 指定版本，以及可选 `BUWEI_SMOKE_SIGNATURE` 指定故意损坏的签名。不能同时启动两个占用 5173 的服务器。
+
+验收顺序：安装 A，保存登录 Cookie、离线编辑及附件缓存清单；启动共享 fixture，确认状态 `ready`/版本 B；先篡改缓存 `updates/installer.bin`，手动“重启更新”必须拒绝安装；再次检查会重新下载完整签名包；恢复安全保存握手后手动“重启更新”执行实际 B NSIS 安装。重新打开客户端后检查版本 B，及原 Cookie、IndexedDB 编辑和缓存文件哈希保持一致。手动安装复用自动安装同一保存握手，但不能替代托盘 5 分钟自动触发测试。
+
 ## 资源测量
 
 在相同测试用户、项目和 WebView2 版本下，分别测量启动耗时、安装包大小和前台空闲/项目页面/托盘/单文件传输。每个场景稳定 30 秒后采样 60 秒：
