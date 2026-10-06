@@ -20,3 +20,14 @@ tasks.register("clean").configure {
     delete("build")
 }
 
+
+// Use the already installed stable SDK for Tauri's included Android library too.
+subprojects {
+    plugins.withId("com.android.library") {
+        afterEvaluate {
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+                compileSdk = 37
+            }
+        }
+    }
+}

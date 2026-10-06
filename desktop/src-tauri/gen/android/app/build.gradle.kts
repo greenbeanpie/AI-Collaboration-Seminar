@@ -14,7 +14,7 @@ val tauriProperties = Properties().apply {
     }
 }
 
-android {
+extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
     sourceSets.getByName("main").java.srcDir("../../../../android-plugin/src/main/java")
     compileSdk = 37
     buildToolsVersion = "37.0.0"
