@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Rust JNI and Tauri plugin registration look up these classes and methods by name.
+-keep class cn.buwei.mobile.NativeFilesPlugin { *; }
+-keep class cn.buwei.mobile.MainActivity { *; }
