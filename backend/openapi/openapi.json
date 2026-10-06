@@ -36441,7 +36441,9 @@
                     "type": "string",
                     "enum": [
                       "browser-pdf",
-                      "browser-docx"
+                      "browser-docx",
+                      "browser-xlsx",
+                      "browser-pptx"
                     ]
                   }
                 },

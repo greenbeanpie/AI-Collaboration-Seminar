@@ -21,12 +21,15 @@
     "@tiptap/extension-table-row": "^3.10.7",
     "@tiptap/react": "^3.10.7",
     "@tiptap/starter-kit": "^3.10.7",
+    "@zip.js/zip.js": "^2.23.0",
+    "fast-xml-parser": "^5.11.2",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.13.0",
     "pdfjs-dist": "^6.2.108",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.4"
+    "react-router-dom": "^7.9.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

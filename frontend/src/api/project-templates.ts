@@ -44,7 +44,7 @@ async function uploadTemplateMultipart(userId:string,draftId:string,expectedRevi
  const session=await templateRequest<{partBytes:number;status:string;parts?:Array<{partNumber:number;sizeBytes:number}>}>(templateDraftPath(draftId,tail),{method:'POST',body:{expectedRevision,name:file.name,sizeBytes:file.size},signal});
  if(session.status==='uploading')for(let offset=0,part=1;offset<file.size;offset+=session.partBytes,part++){const size=Math.min(session.partBytes,file.size-offset);if(session.parts?.some(p=>p.partNumber===part&&p.sizeBytes===size))continue;await templateRequest(templateDraftPath(draftId,`${tail}/${part}`),{method:'PUT',rawBody:file.slice(offset,offset+session.partBytes),signal});}
  const draft=await templateRequest<TemplateDraft>(templateDraftPath(draftId,`${tail}/complete`),{method:'POST',signal});
- const result=/\.(pdf|docx|txt|md)$/i.test(file.name)?await importTemplateDocument(draftId,fileId,draft,file,signal):draft;
+ const result=/\.(pdf|docx|xlsx|pptx|txt|md)$/i.test(file.name)?await importTemplateDocument(draftId,fileId,draft,file,signal):draft;
  completeIntent(namespace);return result;
 }
 export const projectTemplateApi = {
@@ -61,7 +61,7 @@ export const projectTemplateApi = {
       const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
       try{if((await task.promise).numPages>30)parsingMode='browser';}finally{await task.destroy();}
     }
-    if(file.size>10*1024*1024||/\.docx$/i.test(file.name)||(parsingMode==='browser'&&/\.(pdf|txt|md)$/i.test(file.name)))return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
+    if(file.size>10*1024*1024||/\.(docx|xlsx|pptx)$/i.test(file.name)||(parsingMode==='browser'&&/\.(pdf|txt|md)$/i.test(file.name)))return uploadTemplateMultipart(userId,draftId,expectedRevision,file,signal);
     const sha256 = await creationFileHash(file);
     const identity = { name: file.name, size: file.size, sha256 };
     const namespace = `template-upload:${userId}:${draftId}:${sha256}:${encodeURIComponent(file.name)}`;

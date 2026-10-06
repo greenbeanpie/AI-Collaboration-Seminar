@@ -20,9 +20,9 @@ it('reuses the same private file ID after a lost upload and reconciliation respo
   const response = await projectTemplateApi.upload('owner', 'draft', 1, reselected);
   expect(paths).toHaveLength(2); expect(new Set(paths).size).toBe(1); expect(response.files).toHaveLength(1); expect(response.revision).toBe(2);
 });
-it('uploads DOCX as streamed parts and splits client text batches without hashing the whole original',async()=>{
+it.each(['docx','xlsx','pptx'])('uploads %s as streamed parts and splits client text batches without hashing the whole original',async(extension)=>{
  vi.stubGlobal('crypto',webcrypto);
- const file=new File(['fake fixture bytes'],'资料.docx',{lastModified:1}),calls:Array<{path:string;body:unknown}>=[];
+ const file=new File(['fake fixture bytes'],`资料.${extension}`,{lastModified:1}),calls:Array<{path:string;body:unknown}>=[];
  vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
   const path=String(url);calls.push({path,body:init?.body});
   if(path.endsWith('/multipart')&&init?.method==='POST')return Response.json({requestId:'x',data:{partBytes:8*1024*1024,status:'uploading'}});

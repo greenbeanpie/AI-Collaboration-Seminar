@@ -3,7 +3,7 @@ import { AppError, invalidState, notFound, validationFailed, unsupportedMediaTyp
 import { nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
 import { validateUploadBytes } from './files';
-import { validateDocx } from './docx-validation';
+import { validateOfficePackage, isOfficeExtension } from './docx-validation';
 
 interface Upload { id:string;file_id:string;project_id:string;actor_id:string;lifecycle_version:number;upload_id:string;r2_key:string;size_bytes:number;part_bytes:number;status:string;operation_token:string|null;operation_expires_at:string|null }
 const LEASE_MS=15*60*1000;
@@ -90,7 +90,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
   completed=true;if(object.size!==s.size_bytes)throw unsupportedMediaType('上传对象大小与登记大小不符');
   const read=async(offset:number,length:number)=>{const o=await env.FILES.get(s.r2_key,{range:{offset,length}});if(!o)throw notFound('文件内容缺失');return new Uint8Array(await o.arrayBuffer());};
   const f=await activeFile(env,project,file,user);let mime:string;
-  if(f.ext==='.docx')mime=await validateDocx(object.size,read);
+  if(isOfficeExtension(f.ext))mime=await validateOfficePackage(f.ext, object.size,read);
   else if(f.ext==='.txt'||f.ext==='.md') {
    const obj=await env.FILES.get(s.r2_key);if(!obj)throw notFound('文件内容缺失');
    const reader=obj.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true,ignoreBOM:false});
