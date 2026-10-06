@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-06",
+  "status": "pushed-and-deployed",
+  "initialMain": "0eb2d6cea9b11a74c4d3ddf167d4d538d80cbd37",
+  "initialOriginMain": "9b6544a54bfdd753bf3549f8e2911ffc20416cac",
+  "deployedCommit": "aa53234",
+  "repositoryAudit": {
+    "worktrees": ["main checkout", "a89b: codex/ai-call-logs, clean", "d3f0: detached at 9b6544a, clean"],
+    "mergedBranch": "codex/ai-call-logs",
+    "mergedTip": "9721ade492ca5e4f0d7b8b44a35f642da2bad838",
+    "mergedCommits": ["391f37a", "49ef66f", "121ed49", "9721ade"],
+    "priorUnpushedMainCommits": ["2bb3ecb", "df9bcb0", "0eb2d6c"],
+    "unmergedBranchesAfterIntegration": [],
+    "localAttachments": "Preserved on disk and ignored via .gitignore; no feedback photo published to Git",
+    "sourceChangesPendingAfterFinalRecord": false
+  },
+  "integrationCorrections": [
+    "Retain sameCredentialDestination protection: changing provider destination requires a new key or explicit clearKey",
+    "Remove the branch restriction that rejected deliberate advanced-mode API URL edits",
+    "Validate account-level AI_GATEWAY_ID only when supplied; direct-provider configurations do not require Gateway provisioning",
+    "Use a fixed diagnostic message for JSON response parsing failures",
+    "Regenerate backend OpenAPI and frontend API types"
+  ],
+  "stashAudit": {
+    "action": "Retained as historical backups; no missing active implementation found, so none applied or dropped",
+    "privatePatchCopies": ".local-backups/stash-review-20261006/stash-0.patch through stash-2.patch",
+    "items": [
+      {
+        "ref": "stash@{0}",
+        "id": "376b57708ac9b015b37edf368279052a454db25c",
+        "name": "mimo-ui-pending",
+        "files": ["frontend/src/pages/AiSettings.tsx", "frontend/src/pages/AudioModelSettings.tsx", "frontend/src/pages/audio-settings-view.ts"],
+        "content": "MiMo configuration card, save/read/clear key, audio and video strategy selection and typing",
+        "resolution": "Included by 552d3c7. Old output-cap and price inputs were intentionally removed by 2bb3ecb and must not be restored"
+      },
+      {
+        "refs": ["stash@{1}", "stash@{2}"],
+        "ids": ["84af4aea33d21ee2ec1e9ac426f3750038a89d69", "d19a9b722f58af0310dafa391518d2f5d024f0e1"],
+        "names": ["preserve-original-work-before-template-preview", "preserve-original-work-before-project-simplification"],
+        "content": "Dashboard redesign, archive entry, deadline indicators, view filters and action list; seven source/test/style files and old visual evidence",
+        "resolution": "Both source patches and untracked trees are identical. Implementation matches already-merged c4b43e6; restoring would overwrite later task deduplication, actionable-task filters, invitations, progress colors, offline support and AI reference indicators",
+        "trackedPatchId": "be3c51937c8c94f1e8a7b99b96b5d2d0af84aad0",
+        "untrackedTree": "7b95ecb1f44e6a8d86dd8f4f431d4628e95ec7f1",
+        "artifacts": "Six preview PNGs and twenty-one audit JPGs already exist on disk with identical bytes. Four audit text files match main. The static design HTML differs only by seven blank lines"
+      }
+    ]
+  },
+  "verification": {
+    "backend": { "files": 129, "testsPassed": 1171, "log": "output/integrated-release/backend-tests.log" },
+    "frontend": { "files": 130, "testsPassed": 809 },
+    "focusedIntegrationRegression": { "files": 4, "testsPassed": 96 },
+    "checks": ["backend and frontend typecheck", "frontend lint", "frontend production build", "OpenAPI export/typegen", "production preflight", "both Worker deployment dry-runs", "git diff --check"],
+    "localBrowser": { "report": "output/feedback-fixes/verification.json", "status": "passed", "widths": [1440, 390], "boundary": "Real React, PDF.js and DOCX Worker with loopback API fixtures; edit task, text-only submit, file upload, immutable version binding and preview" },
+    "testRuntimeNotes": "The full Workers test pool emitted RPC disposal and cancelled/disconnected-request teardown diagnostics; tests completed with exit code 0. The isolated 96-test integration regression also passed"
+  },
+  "deployment": {
+    "backend": { "name": "greenbp-team-office-backend", "versionId": "f20b4936-8b7f-41e6-ac08-ec953b290dfa", "log": "output/integrated-release/backend-deploy.log" },
+    "frontend": { "name": "greenbp-team-office", "versionId": "55e39cf1-81d7-4423-9280-f6d1bbf06ede", "log": "output/integrated-release/frontend-deploy.log" },
+    "buildVersion": "release-20261006-integrated",
+    "resourcePolicy": "Existing D1/R2/Workflow IDs and credentials preserved; deployment uses --keep-vars. No pending migrations, no database writes or resource provisioning performed for release",
+    "d1RecoveryBookmark": "000000d8-0000066e-000050fc-7dd30670ea745d8a840bcf8bd000288a",
+    "existingRealtimeTranscription": "Absent in current production configuration version 29; no Gateway provider-key configuration changed"
+  },
+  "productionAcceptance": {
+    "script": "scripts/verify-integrated-release-production.mjs",
+    "origin": "https://greenbp-team-office.hddhp.workers.dev",
+    "ordinaryReport": "output/integrated-release/production-ordinary-verification.json",
+    "administratorReport": "output/integrated-release/production-verification.json",
+    "passed": ["Frontend service binding and backend health", "D1 and R2 health", "Five deployed JS artifacts match verified local build SHA-256", "Ordinary account password login", "Ordinary account receives 403 for administrator configuration and diagnostics", "No browser runtime errors"],
+    "boundaries": ["Saved administrator credentials from October 1 returned HTTP 401; no password reset or account change performed. Current private credentials are needed for administrator-specific acceptance", "The ordinary account had no owned project with an active standard or accessible PDF/DOCX task attachment in the first twelve projects, so those online screens remain covered only by the local fixture", "The custom domain returned HTTP 403 to automated health requests; equivalent workers.dev verification passed", "No paid model probes or inference performed"]
+  }
+}

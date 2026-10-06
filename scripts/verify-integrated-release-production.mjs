@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
@@ -11,7 +12,8 @@ const saved = JSON.parse(readFileSync(new URL('../.local-secrets/admin-credentia
 const origin = new URL(process.env.RELEASE_URL || 'https://greenbp-team-office.hddhp.workers.dev').origin;
 assert(['https://team.greenbp.dpdns.org', 'https://greenbp-team-office.hddhp.workers.dev'].includes(origin));
 const output = resolve('output/integrated-release'); mkdirSync(output, { recursive: true });
-const report = { origin, boundary: 'Authenticated production GET checks and browser rendering; no model probes, project changes, cancellations or diagnostic deletions', checks: [], limitations: [], browserErrors: [], blockedUiWrites: [] };
+const ordinary = process.argv.includes('--ordinary');
+const report = { origin, accountScope: ordinary ? 'ordinary' : 'administrator', boundary: 'Authenticated production GET checks and browser rendering; no model probes, project changes, cancellations or diagnostic deletions', checks: [], limitations: [], browserErrors: [], blockedUiWrites: [] };
 const browser = await chromium.launch({ executablePath: process.env.UI_CHROMIUM_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block' });
@@ -29,8 +31,18 @@ try {
     const health = await get('/health'), deps = await get('/health/deps');
     assert.equal(health.status, 'ok'); assert.deepEqual(deps, { d1: 'ok', r2: 'ok' });
     report.checks.push({ name: 'frontend service binding, backend, D1 and R2', passed: true });
+    const assetFiles = readdirSync(new URL('../frontend/dist/assets/', import.meta.url));
+    const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+    for (const prefix of ['index-', 'MaterialsPage-', 'AssessmentWorkspacePage-', 'SystemOverviewPage-', 'pdf.worker.min-']) {
+      const file = assetFiles.find(name => name.startsWith(prefix) && /\.(?:js|mjs)$/.test(name));
+      assert(file, `Built artifact missing: ${prefix}`);
+      const response = await context.request.get(`${origin}/assets/${file}`);
+      assert.equal(response.status(), 200, file);
+      assert.equal(sha(await response.body()), sha(readFileSync(new URL(`../frontend/dist/assets/${file}`, import.meta.url))), `Deployed bytes differ: ${file}`);
+      report.checks.push({ name: `deployed ${prefix} artifact matches verified local build`, passed: true });
+    }
     await page.goto(origin + '/login');
-    const account = saved.accounts.production;
+    const account = ordinary ? saved.acceptanceAccounts.at(-1) : saved.accounts.production;
     assert(account?.username && account?.password, 'Saved production credential missing');
     await page.getByRole('textbox', { name: '用户名或邮箱', exact: true }).fill(account.username);
     await page.getByLabel('密码', { exact: true }).fill(account.password);
@@ -39,10 +51,18 @@ try {
     assert.equal((await login).status(), 201); await page.waitForURL(origin + '/app');
     const session = await get('/auth/session');
     report.checks.push({ name: 'production password login', passed: true, role: session.user.role });
-    const config = await get('/admin/ai-config');
-    assert(!JSON.stringify(config).includes('apiKeyEncrypted'));
-    assert(!JSON.stringify(config).includes('gatewayTokenEncrypted'));
-    report.checks.push({ name: 'current AI configuration remains readable and keys masked', passed: true, version: config.version });
+    if (session.user.isAdmin) {
+      const config = await get('/admin/ai-config');
+      assert(!JSON.stringify(config).includes('apiKeyEncrypted'));
+      assert(!JSON.stringify(config).includes('gatewayTokenEncrypted'));
+      report.checks.push({ name: 'current AI configuration remains readable and keys masked', passed: true, version: config.version });
+    } else {
+      for (const tail of ['/admin/ai-config', '/admin/ai-diagnostics']) {
+        assert.equal((await context.request.get(origin + '/api/v1' + tail)).status(), 403, tail);
+      }
+      report.checks.push({ name: 'ordinary account cannot read administrator config or diagnostic logs', passed: true });
+      report.limitations.push('Administrator-specific browser acceptance requires current administrator credentials');
+    }
     if (session.user.role === 'super_admin') {
       const diagnostics = await get('/admin/ai-diagnostics');
       assert(Array.isArray(diagnostics.items)); assert.equal(diagnostics.retention.maxEntries, 1000);
@@ -99,5 +119,5 @@ try {
   assert.deepEqual(report.browserErrors, []);
   report.status = 'passed';
 } catch (error) { report.status = 'failed'; report.failure = error.message; process.exitCode = 1; }
-finally { await browser.close(); writeFileSync(resolve(output, 'production-verification.json'), JSON.stringify(report, null, 2)); }
+finally { await browser.close(); writeFileSync(resolve(output, ordinary ? 'production-ordinary-verification.json' : 'production-verification.json'), JSON.stringify(report, null, 2)); }
 console.log(JSON.stringify(report, null, 2));
