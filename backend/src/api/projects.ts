@@ -76,6 +76,7 @@ const projectListRoute = createRoute({
   summary: '我参与的项目列表（游标分页）',
   request: {
     query: z.object({
+      q: z.string().trim().max(200).optional(),
       cursor: z.string().optional(),
       limit: z.string().optional(),
       status: z.enum(['active', 'archived', 'all']).optional(),
@@ -190,6 +191,8 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       binds.push(status);
       conditions.push(`p.status = ?${binds.length}`);
     }
+    const search=c.req.valid('query').q;
+    if(search){binds.push(search);conditions.push(`instr(lower(p.name),lower(?${binds.length}))>0`);}
     if (paging.cursor) {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
       conditions.push('(p.created_at < ? OR (p.created_at = ? AND p.id < ?))');

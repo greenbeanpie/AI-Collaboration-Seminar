@@ -1,3 +1,4 @@
+import type { Paging } from '../core/pagination';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied, versionConflict } from '../core/errors';
@@ -17,17 +18,22 @@ export function fileManageSql(project: string, actor: string, file = 'files'): s
       EXISTS(SELECT 1 FROM task_file_uploads upload JOIN materials material ON material.id=upload.material_id JOIN tasks task ON task.id=material.task_id WHERE upload.file_id=${file}.id AND task.project_id=${project} AND task.assignee_id=${actor}))`;
 }
 const taskGuard = `EXISTS(SELECT 1 FROM tasks task JOIN project_members member ON member.project_id=task.project_id AND member.user_id=?3 WHERE task.id=?2 AND task.project_id=?1 AND (task.assignee_id=?3 OR ${projectPermissionSql('?1','?3','resourceManage')}))`;
-export async function readTaskFile(env: Env, projectId: string, taskId: string, materialId: string, actorId: string) {
-  const row = await env.DB.prepare(`SELECT m.id materialId,m.task_id taskId,m.revision,m.current_version_id versionId,m.archived_at materialArchivedAt,
+/** Shared list/detail projection preserves archive and per-actor management semantics. */
+export async function readTaskFiles(env: Env, projectId: string, taskId: string, actorId: string, materialId?: string, paging?: Paging) {
+  const rows = await env.DB.prepare(`SELECT m.created_at createdAt,m.id materialId,m.task_id taskId,m.revision,m.current_version_id versionId,m.archived_at materialArchivedAt,
     f.id fileId,f.original_name name,f.archived_at archivedAt,f.deleted_at deletedAt,f.lifecycle_version lifecycleVersion,
     CASE WHEN ${materialManageSql('?1','?4','m')} THEN 1 ELSE 0 END can_manage
     FROM materials m JOIN material_versions version ON version.id=m.current_version_id
     JOIN files f ON f.id=json_extract(version.attachments_json,'$[0].fileId')
-    WHERE m.project_id=?1 AND m.task_id=?2 AND m.id=?3 AND m.kind='task-file'`)
-    .bind(projectId,taskId,materialId,actorId).first<{materialId:string;taskId:string;revision:number;versionId:string;materialArchivedAt:string|null;fileId:string;name:string;archivedAt:string|null;deletedAt:string|null;lifecycleVersion:number;can_manage:number}>();
-  if (!row) throw notFound('任务文件不存在');
-  const { can_manage, ...item } = row;
-  return { ...item, canManage: Boolean(can_manage) };
+    WHERE m.project_id=?1 AND m.task_id=?2 AND (?3 IS NULL OR m.id=?3) AND m.kind='task-file'
+    AND (?5 IS NULL OR m.created_at>?5 OR (m.created_at=?5 AND m.id>?6)) ORDER BY m.created_at,m.id LIMIT ?7`)
+    .bind(projectId,taskId,materialId??null,actorId,paging?.cursor?.createdAt??null,paging?.cursor?.id??null,paging ? paging.limit+1 : -1).all<{createdAt:string;materialId:string;taskId:string;revision:number;versionId:string;materialArchivedAt:string|null;fileId:string;name:string;archivedAt:string|null;deletedAt:string|null;lifecycleVersion:number;can_manage:number}>();
+  return rows.results.map(({can_manage,...item})=>({...item,canManage:Boolean(can_manage)}));
+}
+export async function readTaskFile(env: Env, projectId: string, taskId: string, materialId: string, actorId: string) {
+  const item=(await readTaskFiles(env,projectId,taskId,actorId,materialId))[0];
+  if(!item) throw notFound('任务文件不存在');
+  return item;
 }
 export async function saveTaskFile(env: Env, params: {projectId:string;taskId:string;actorId:string;fileId:string;materialId?:string;expectedRevision?:number}) {
   const {projectId,taskId,actorId,fileId}=params;

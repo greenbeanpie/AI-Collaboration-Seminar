@@ -2,6 +2,7 @@ import { effectiveStandard, effectiveStandardGuardSql } from '../services/effect
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
 import { snapshotRequirementSources } from '../services/source-inputs';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { parsePaging, nextCursor } from '../core/pagination';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
@@ -49,7 +50,7 @@ const reviewSchema = z.object({
   createdAt: z.string(),
 });
 const reviewResponse = apiEnvelope(reviewSchema, 'ReviewResponse');
-const reviewListResponse = apiEnvelope(z.object({ items: z.array(reviewSchema) }), 'ReviewListResponse');
+const reviewListResponse = apiEnvelope(z.object({ items: z.array(reviewSchema), nextCursor:z.string().nullable() }), 'ReviewListResponse');
 
 const reviewCreateRoute = createRoute({
   method: 'post',
@@ -78,7 +79,7 @@ const listRoute = createRoute({
   path: '/api/v1/projects/{projectId}/reviews',
   tags: ['reviews'],
   summary: '预审记录列表',
-  request: { params: projectParams },
+  request: { params: projectParams, query:z.object({cursor:z.string().optional(),limit:z.string().optional(),q:z.string().trim().max(200).optional()}) },
   responses: { 200: { content: { 'application/json': { schema: reviewListResponse } }, description: '列表' } },
 });
 
@@ -171,9 +172,12 @@ export function registerReviewRoutes(app: OpenAPIHono<AppEnv>): void {
   });
 
   app.openapi(listRoute, async (c) => {
-    const rows = await c.env.DB.prepare('SELECT * FROM reviews WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 100')
-      .bind(c.get('member')!.projectId)
-      .all<ReviewRow>();
-    return c.json(apiData(c, { items: rows.results.map(toReview) }), 200);
+    const query=c.req.valid('query'),paging=parsePaging(query);
+    const rows = await c.env.DB.prepare(`SELECT * FROM reviews WHERE project_id=?1
+      AND (?2 IS NULL OR created_at<?2 OR (created_at=?2 AND id<?3))
+      AND (?5='' OR instr(lower(COALESCE(report_json,'')),lower(?5))>0) ORDER BY created_at DESC,id DESC LIMIT ?4`)
+      .bind(c.get('member')!.projectId,paging.cursor?.createdAt??null,paging.cursor?.id??null,paging.limit+1,query.q??'').all<ReviewRow>();
+    const page=rows.results.slice(0,paging.limit),last=page.at(-1);
+    return c.json(apiData(c,{items:page.map(toReview),nextCursor:nextCursor(rows.results.length>paging.limit,last&&{createdAt:last.created_at,id:last.id})??null}),200);
   });
 }

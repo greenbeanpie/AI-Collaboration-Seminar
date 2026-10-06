@@ -89,7 +89,7 @@ const listRoute = createRoute({
   path: '/api/v1/projects/{projectId}/materials',
   tags: ['materials'],
   summary: '材料列表（游标分页）',
-  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), archived:z.enum(['true','false']).optional() }) },
+  request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), q:z.string().trim().max(200).optional(), archived:z.enum(['true','false']).optional() }) },
   responses: { 200: { content: { 'application/json': { schema: materialListResponse } }, description: '列表' } },
 });
 
@@ -279,6 +279,8 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
       cursorSql = ' AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))';
     }
+    const search=c.req.valid('query').q;
+    if(search){binds.push(search);cursorSql += ` AND instr(lower(m.title),lower(?${binds.length}))>0`;}
     binds.push(paging.limit + 1);
     const rows = await c.env.DB.prepare(
       `SELECT m.*,CASE WHEN ${materialManageSql('?1','?2','m')} THEN 1 ELSE 0 END allowed FROM materials m WHERE m.project_id = ?1 AND (m.archived_at IS NOT NULL)=${archived?1:0}${cursorSql} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,

@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { parsePaging, nextCursor } from '../core/pagination';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
@@ -22,7 +23,7 @@ const memberSchema = z.object({
   /** 该成员是否是本项目内的权限管理员（仅 owner），与权限管理入口的可用性一致。 */
   canManagePermissions: z.boolean(),
 });
-const memberListResponse = apiEnvelope(z.object({ items: z.array(memberSchema) }), 'MemberListResponse');
+const memberListResponse = apiEnvelope(z.object({ items: z.array(memberSchema), totalCount:z.number().int().nonnegative(), workload:z.record(z.string(),z.number().int().nonnegative()), nextCursor:z.string().nullable() }), 'MemberListResponse');
 const memberResponse = apiEnvelope(memberSchema, 'MemberResponse');
 const memberRemoveResponse = apiEnvelope(z.object({ removed: z.boolean() }), 'MemberRemoveResponse');
 const memberLeaveResponse = apiEnvelope(z.object({ left: z.boolean() }), 'MemberLeaveResponse');
@@ -38,7 +39,7 @@ const memberListRoute = createRoute({
   path: '/api/v1/projects/{projectId}/members',
   tags: ['members'],
   summary: '成员身份、项目角色与加入信息',
-  request: { params: projectParams },
+  request: { params: projectParams, query:z.object({cursor:z.string().optional(),limit:z.string().optional(),q:z.string().trim().max(200).optional()}) },
   responses: { 200: { content: { 'application/json': { schema: memberListResponse } }, description: '成员列表' } },
 });
 
@@ -141,10 +142,15 @@ export function registerMemberRoutes(app: OpenAPIHono<AppEnv>): void {
   );
 
   app.openapi(memberListRoute, async (c) => {
-    const rows = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id = ?1 ORDER BY pm.joined_at`)
-      .bind(c.get('member')!.projectId)
-      .all<MemberRow>();
-    return c.json(apiData(c, { items: rows.results.map(toMember) }), 200);
+    const query=c.req.valid('query'),paging=parsePaging(query);
+    const rows = await c.env.DB.prepare(`${memberSelect} WHERE pm.project_id=?1 AND (?5='' OR instr(lower(u.display_name),lower(?5))>0)
+      AND (?2 IS NULL OR pm.joined_at>?2 OR (pm.joined_at=?2 AND pm.user_id>?3)) ORDER BY pm.joined_at,pm.user_id LIMIT ?4`)
+      .bind(c.get('member')!.projectId,paging.cursor?.createdAt??null,paging.cursor?.id??null,paging.limit+1,query.q??'').all<MemberRow>();
+    const page=rows.results.slice(0,paging.limit),last=page.at(-1);
+    const total=await c.env.DB.prepare(`SELECT COUNT(*) total FROM project_members pm JOIN users u ON u.id=pm.user_id WHERE pm.project_id=?1 AND (?2='' OR instr(lower(u.display_name),lower(?2))>0)`).bind(c.get('member')!.projectId,query.q??'').first<{total:number}>();
+    const workloads=await c.env.DB.prepare(`SELECT assignee_id userId,COUNT(*) count FROM tasks WHERE project_id=?1 AND archived_at IS NULL AND status!='done' AND assignee_id IS NOT NULL GROUP BY assignee_id`).bind(c.get('member')!.projectId).all<{userId:string;count:number}>();
+    const workload=Object.fromEntries(workloads.results.map(row=>[row.userId,row.count]));
+    return c.json(apiData(c,{items:page.map(toMember),totalCount:total?.total??0,workload,nextCursor:nextCursor(rows.results.length>paging.limit,last&&{createdAt:last.joined_at,id:last.user_id})??null}),200);
   });
 
   app.openapi(memberGetMeRoute, async (c) => {

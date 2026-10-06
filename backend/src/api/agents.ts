@@ -129,6 +129,7 @@ const listRoute = createRoute({
   request: {
     params: projectParams,
     query: z.object({
+      q: z.string().trim().max(200).optional(),
       cursor: z.string().optional(),
       limit: z.string().optional(),
       status: z.enum(['active', 'closed', 'all']).optional(),
@@ -367,6 +368,8 @@ export function registerAgentRoutes(app: OpenAPIHono<AppEnv>): void {
       binds.push(query.capability);
       conditions.push(`s.capability = ?${binds.length}`);
     }
+    const search=c.req.valid('query').q;
+    if(search){binds.push(search);conditions.push(`instr(lower(s.title),lower(?${binds.length}))>0`);}
     if (paging.cursor) {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
       conditions.push(`(s.created_at < ?${binds.length - 2} OR (s.created_at = ?${binds.length - 1} AND s.id < ?${binds.length}))`);

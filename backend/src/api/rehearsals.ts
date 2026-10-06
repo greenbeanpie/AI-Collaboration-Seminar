@@ -59,7 +59,7 @@ const rehearsalCreateRoute = createRoute({
 
 const listRoute = createRoute({
   method: 'get', path: '/api/v1/projects/{projectId}/rehearsals', tags: ['rehearsals'],
-  summary: '跨设备答辩历史列表', request: { params: projectParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  summary: '跨设备答辩历史列表', request: { params: projectParams, query: z.object({ q:z.string().trim().max(200).optional(), cursor: z.string().optional(), limit: z.string().optional() }) },
   responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(rehearsalSchema.omit({ turns: true })), nextCursor: z.string().nullable() }), 'RehearsalListResponse') } }, description: '演练历史' } },
 });
 
@@ -240,8 +240,8 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(listRoute, async (c) => {
     const { projectId } = c.req.valid('param');
     const paging = parsePaging(c.req.valid('query'));
-    const rows = await c.env.DB.prepare('SELECT r.*, (SELECT status FROM jobs WHERE id=r.processing_job_id) AS processing_status FROM rehearsals r WHERE project_id = ?1 AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4')
-      .bind(projectId, paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1).all<RehearsalRow>();
+    const rows = await c.env.DB.prepare(`SELECT r.*, (SELECT status FROM jobs WHERE id=r.processing_job_id) AS processing_status FROM rehearsals r WHERE project_id = ?1 AND (?5='' OR instr(lower(r.status),lower(?5))>0) AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4`)
+      .bind(projectId, paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1,c.req.valid('query').q??'').all<RehearsalRow>();
     const page = rows.results.slice(0, paging.limit);
     const items = page.map(r => { const { turns: _turns, ...metadata }=toRehearsal(r, [], c.get('user')!.id); return metadata; });
     const last = page.at(-1);
