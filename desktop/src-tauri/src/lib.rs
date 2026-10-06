@@ -89,6 +89,25 @@ async fn safe_install(app: AppHandle, interactive: bool) -> Result<(), String> {
 }
 async fn safe_exit(app: AppHandle) -> Result<(), String> {
     let native = app.state::<NativeState>();
+    if native.page.lock().unwrap().protocol == 0 {
+        let confirmed = tauri::async_runtime::spawn_blocking(|| {
+            rfd::MessageDialog::new()
+                .set_title("退出补位")
+                .set_description(
+                    "页面尚未连接桌面客户端，请确认网页中的编辑已经保存。退出将关闭客户端。",
+                )
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show()
+                == rfd::MessageDialogResult::Yes
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        if confirmed {
+            native.exiting.store(true, Ordering::SeqCst);
+            app.exit(0);
+        }
+        return Ok(());
+    }
     if native.preparing.swap(true, Ordering::SeqCst) {
         return Err("Save preparation already active".into());
     }
@@ -163,6 +182,13 @@ pub fn run() {
                 app,
                 "main",
                 tauri::WebviewUrl::External(PRODUCTION_ORIGIN.parse()?),
+            )
+            .additional_browser_args(
+                if cfg!(debug_assertions) && option_env!("BUWEI_DESKTOP_SMOKE") == Some("1") {
+                    "--remote-debugging-port=9223"
+                } else {
+                    ""
+                },
             )
             .title("补位")
             .inner_size(1120., 780.)
