@@ -24,6 +24,11 @@ tasks.register("clean").configure {
 // Use the already installed stable SDK for Tauri's included Android library too.
 subprojects {
     afterEvaluate {
-        extensions.findByType(com.android.build.api.dsl.LibraryExtension::class.java)?.compileSdk = 37
+        extensions.findByType(com.android.build.api.dsl.LibraryExtension::class.java)?.apply {
+            compileSdk = 37
+            compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+            compileOptions.targetCompatibility = JavaVersion.VERSION_17
+        }
+        extensions.findByType(org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension::class.java)?.compilerOptions?.jvmTarget?.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
