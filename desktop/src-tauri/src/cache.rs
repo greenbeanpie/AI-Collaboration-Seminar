@@ -271,6 +271,7 @@ pub async fn desktop_stage_files(
     if let Some(id) = &replace_material_id {
         valid_id(id)?;
     }
+    let _activity = TransferActivity::start(&app);
     let paths = rfd::AsyncFileDialog::new()
         .set_title("选择离线附件")
         .pick_files()
@@ -290,7 +291,6 @@ pub async fn desktop_stage_files(
     {
         return Err("待上传附件不能超过10个".into());
     }
-    let _activity = TransferActivity::start(&app);
     let mut staged = vec![];
     for path in paths {
         if account != self::account(&app, &window, &project_id)? {
@@ -485,6 +485,7 @@ pub async fn desktop_export_file(
     id: String,
 ) -> Result<()> {
     let account = account(&app, &window, &project_id)?;
+    let _activity = TransferActivity::start(&app);
     let row = list(&app, &account, &project_id)?
         .into_iter()
         .find(|r| r.id == id && r.status == "complete")
@@ -499,6 +500,9 @@ pub async fn desktop_export_file(
         .save_file()
         .await
     {
+        if account != self::account(&app, &window, &project_id)? {
+            return Err("登录账户已变化，导出已取消".into());
+        }
         tokio::fs::copy(blob(&app, &row)?, path.path())
             .await
             .map_err(|e| e.to_string())?;
