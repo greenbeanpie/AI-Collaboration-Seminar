@@ -15,6 +15,7 @@ val tauriProperties = Properties().apply {
 }
 
 android {
+    sourceSets.getByName("main").java.srcDir("../../../../android-plugin/src/main/java")
     compileSdk = 37
     buildToolsVersion = "37.0.0"
     ndkVersion = "30.0.16248370"
