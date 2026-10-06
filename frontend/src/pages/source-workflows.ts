@@ -1,6 +1,7 @@
 import { uploadMultipartFile } from './document-import-client';
 import { ApiError, responseError, api, apiUrl, projectPath, request, type RequestOptions } from '../api/client';
 import type { DataOf, SchemaName } from '../api/types';
+import { offlineAccount } from '../offline/store';
 
 export type TrackedSourceJob = {
   jobId: string;
@@ -64,8 +65,8 @@ export async function listAllProjectItems<Name extends SchemaName>(
   throw paginationError('PAGINATION_LIMIT', `列表超过 ${maxPageCount} 页安全读取上限，未显示不完整结果。`);
 }
 
-const jobsStorageKey = (projectId: string) => `ai-office:v1:${projectId}:source-jobs`;
-const filesStorageKey = (projectId: string) => `ai-office:v1:${projectId}:source-files`;
+const jobsStorageKey = (projectId: string) => `ai-office:source-jobs:${offlineAccount()?.id ?? 'anonymous'}:${projectId}`;
+const filesStorageKey = (projectId: string) => `ai-office:source-files:${offlineAccount()?.id ?? 'anonymous'}:${projectId}`;
 
 export function createIntentKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
