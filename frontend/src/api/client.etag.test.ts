@@ -23,3 +23,13 @@ it('never accepts a conditional result after switching identity',async()=>{
  const pending=request(url,{networkOnly:true,conditionalSnapshot:{accountId:'a',data:{items:[{private:'a'}]},etag:'"one"'}});state.account='b';finish(new Response(null,{status:304}));
  await expect(pending).rejects.toMatchObject({status:304});expect(state.cache.has('b:'+url)).toBe(false);
 });
+it('rejects in-flight account data after device clearing even when the same account logs back in',async()=>{
+ let finish!:(response:Response)=>void;
+ vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;})));
+ const pending=request(url,{networkOnly:true});
+ window.dispatchEvent(new CustomEvent('account-device-cleared',{detail:{accountId:'a'}}));
+ state.account='a';
+ finish(Response.json({data:{items:[{private:'old-session'}]}},{headers:{ETag:'"old"'}}));
+ await expect(pending).rejects.toMatchObject({code:'AUTH_CONTEXT_CHANGED'});
+ expect(state.cache.has('a:'+url)).toBe(false);
+});

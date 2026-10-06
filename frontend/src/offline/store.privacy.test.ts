@@ -9,5 +9,6 @@ it('atomically deletes snapshots and pending intents for one account only and pr
  rememberAccount(user('b'));await writeSnapshot('/api/v1/projects/p',{private:'b'},'b','"other"');
  await clearOfflineAccount('a');expect(await readSnapshot('/api/v1/projects/p','a')).toBeUndefined();expect(await operations('a')).toEqual([]);expect((await readSnapshot('/api/v1/projects/p','b'))?.data).toEqual({private:'b'});
  await writeSnapshot('/api/v1/projects/p',{private:'late'},'a');expect(await readSnapshot('/api/v1/projects/p','a')).toBeUndefined();
- rememberAccount(user('a'));await writeSnapshot('/api/v1/projects/p',{private:'fresh'},'a','"fresh"');expect((await readSnapshot('/api/v1/projects/p','a'))?.etag).toBe('"fresh"');await clearOfflineAccount('a');await clearOfflineAccount('b');
+ expect(rememberAccount(user('a'))).toBe(false);
+ rememberAccount(user('a'), true);await writeSnapshot('/api/v1/projects/p',{private:'fresh'},'a','"fresh"');expect((await readSnapshot('/api/v1/projects/p','a'))?.etag).toBe('"fresh"');await clearOfflineAccount('a');await clearOfflineAccount('b');
 });

@@ -14,9 +14,11 @@ export function offlineAccount(): User | null {
   try { return JSON.parse(localStorage.getItem(accountKey) ?? 'null') as User | null; }
   catch { return null; }
 }
-export function rememberAccount(user: User): void {
+export function rememberAccount(user: User, newSession = false): boolean {
+  if (clearingAccounts.has(user.id) && !newSession) return false;
   localStorage.setItem(accountKey, JSON.stringify(user));
-  clearingAccounts.delete(user.id);
+  if (newSession) clearingAccounts.delete(user.id);
+  return true;
 }
 export function forgetAccount(): void {
   try { localStorage.removeItem(accountKey); } catch { /* Clearing the in-memory session still proceeds. */ }
