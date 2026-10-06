@@ -7,7 +7,12 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, WebviewWindow};
-pub const PRODUCTION_ORIGIN: &str = "https://greenbp-team-office.hddhp.workers.dev";
+pub const PRODUCTION_ORIGIN: &str =
+    if cfg!(debug_assertions) && option_env!("BUWEI_DESKTOP_DEV_ORIGIN").is_some() {
+        "http://127.0.0.1:5173"
+    } else {
+        "https://greenbp-team-office.hddhp.workers.dev"
+    };
 #[derive(Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PageState {
