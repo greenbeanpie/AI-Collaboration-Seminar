@@ -28,7 +28,13 @@ fn desktop_report_state(
         return Err("Unsupported desktop protocol".into());
     }
     let native = app.state::<NativeState>();
-    *native.page.lock().unwrap() = state;
+    {
+        let mut page = native.page.lock().unwrap();
+        if page.account_id != state.account_id {
+            native.auth_epoch.fetch_add(1, Ordering::SeqCst);
+        }
+        *page = state;
+    }
     if native.hidden_since.lock().unwrap().is_some() && !native.preparing.load(Ordering::SeqCst) {
         runtime::suspend(&app);
     }
@@ -84,6 +90,34 @@ async fn safe_install(app: AppHandle, interactive: bool) -> Result<(), String> {
     runtime::suspend(&app);
     Err("请先保存编辑并等待传输完成".into())
 }
+async fn safe_exit(app: AppHandle) -> Result<(), String> {
+    let native = app.state::<NativeState>();
+    if native.preparing.swap(true, Ordering::SeqCst) {
+        return Err("Save preparation already active".into());
+    }
+    let nonce = native.nonce.fetch_add(1, Ordering::SeqCst) + 1;
+    runtime::show(&app, None);
+    runtime::dispatch(
+        &app,
+        "desktop-prepare-update",
+        serde_json::json!({"requestId":nonce}),
+    );
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if native.page.lock().unwrap().request_id == Some(nonce) && native.safe() {
+            native.exiting.store(true, Ordering::SeqCst);
+            app.exit(0);
+            return Ok(());
+        }
+    }
+    native.preparing.store(false, Ordering::SeqCst);
+    runtime::dispatch(
+        &app,
+        "desktop-exit-blocked",
+        serde_json::json!({"message":"请先保存编辑并等待传输完成后退出"}),
+    );
+    Err("Unsaved work prevents exit".into())
+}
 #[tauri::command]
 async fn desktop_restart_update(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
     runtime::validate_source(&window)?;
@@ -137,7 +171,18 @@ pub fn run() {
             .inner_size(1120., 780.)
             .min_inner_size(760., 520.)
             .data_directory(data)
-            .on_navigation(|url| url.origin().ascii_serialization() == PRODUCTION_ORIGIN)
+            .on_navigation(|url| {
+                if url.origin().ascii_serialization() == PRODUCTION_ORIGIN {
+                    true
+                } else {
+                    runtime::open_external(url);
+                    false
+                }
+            })
+            .on_new_window(|url, _| {
+                runtime::open_external(&url);
+                tauri::webview::NewWindowResponse::Deny
+            })
             .on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Started {
                     *window.state::<NativeState>().page.lock().unwrap() =
@@ -161,12 +206,12 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => runtime::show(app, None),
-                    "notifications" => runtime::show(app, Some("/app/notifications")),
+                    "notifications" => runtime::show(app, Some("/app/settings/notifications")),
                     "exit" => {
-                        app.state::<NativeState>()
-                            .exiting
-                            .store(true, Ordering::SeqCst);
-                        app.exit(0);
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = safe_exit(app).await;
+                        });
                     }
                     "check" => {
                         let app = app.clone();

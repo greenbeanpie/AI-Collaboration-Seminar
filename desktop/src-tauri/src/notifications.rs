@@ -8,7 +8,8 @@ use tauri::{AppHandle, Manager};
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut seen: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut blocked: Option<String> = None;
+        let mut blocked: Option<(String, u64)> = None;
+        let mut previous: Option<(String, u64)> = None;
         let mut delay = 60;
         loop {
             tokio::time::sleep(Duration::from_secs(delay)).await;
@@ -26,13 +27,20 @@ pub fn start(app: AppHandle) {
                 blocked = None;
                 continue;
             };
-            if blocked.as_deref() == Some(&account) {
+            let epoch = app.state::<NativeState>().auth_epoch.load(Ordering::SeqCst);
+            let identity = (account.clone(), epoch);
+            if previous.as_ref() != Some(&identity) {
+                seen.clear();
+                blocked = None;
+                previous = Some(identity.clone());
+            }
+            if blocked.as_ref() == Some(&identity) {
                 continue;
             }
             match poll(&app, &account, &mut seen).await {
                 Ok(()) => delay = 60,
                 Err(e) if e == "Session expired" => {
-                    blocked = Some(account);
+                    blocked = Some(identity);
                     delay = 60;
                 }
                 Err(_) => delay = (delay * 2).min(300),
@@ -46,6 +54,20 @@ async fn poll(
     seen: &mut HashMap<String, HashSet<String>>,
 ) -> Result<(), String> {
     let (client, _) = runtime::session_client(app, account).await?;
+    let settings: serde_json::Value = client
+        .get(format!(
+            "{}/api/v1/notifications/settings",
+            runtime::PRODUCTION_ORIGIN
+        ))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    let enabled = settings["data"]["pushEnabled"].as_bool().unwrap_or(false);
     let response = client
         .get(format!(
             "{}/api/v1/notifications?limit=100",
@@ -80,12 +102,16 @@ async fn poll(
     let first = !seen.contains_key(account);
     let ids = seen.entry(account.to_string()).or_default();
     let mut count = 0;
-    let mut route = "/app/notifications".to_string();
+    let mut route = "/app/settings/notifications".to_string();
     for item in items {
         let Some(id) = item["id"].as_str() else {
             continue;
         };
-        if ids.insert(id.to_string()) && !first && item["readAt"].is_null() {
+        if ids.insert(id.to_string())
+            && !first
+            && item["readAt"].is_null()
+            && item["dismissedAt"].is_null()
+        {
             count += 1;
             if let Some(path) = item["url"].as_str().filter(|p| runtime::safe_route(p)) {
                 route = path.into();
@@ -98,7 +124,7 @@ async fn poll(
             .filter_map(|i| i["id"].as_str().map(str::to_string))
             .collect();
     }
-    if count > 0 {
+    if count > 0 && enabled {
         toast(app.clone(), account.to_string(), count, route);
     }
     Ok(())
