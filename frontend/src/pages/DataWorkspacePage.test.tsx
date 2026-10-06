@@ -9,15 +9,28 @@ vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: '
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { limits: { listMaxPageSize: 100 } } }) }));
 vi.mock('./MaterialsPage', () => ({ MaterialsPage: ({ materialId, versionId, embedded, header }: { header?: ReactNode; materialId?: string; versionId?: string; embedded?: boolean }) => <div className="card">{header}<p>文档 {materialId} · 固定版本 {versionId || '当前'} · {embedded ? '详情编辑' : '完整页'}</p></div> }));
 vi.mock('./SourcesPage', () => ({ SourcesPage: ({ selectedSourceId, intakeOnly, header }: { header?: ReactNode; selectedSourceId?: string; intakeOnly?: boolean }) => <div className="card">{header}<p>{intakeOnly ? '单一导入表单' : `原文详情 ${selectedSourceId}`}</p></div> }));
+vi.mock('./FilePreview', () => ({ FilePreview: ({ fileId, name, availability }: { fileId: string; name: string; availability?: string }) => <section aria-label={`预览 ${name}`} data-file-id={fileId} data-availability={availability}>原文件预览</section> }));
 afterEach(cleanup);
 const entry = (id: string, type: 'source' | 'material', purpose: ResourceEntry['purpose'], title: string): ResourceEntry => ({ resourceId: id, resourceType: type, purpose, title, currentVersionId: `v-${id}`, revision: 1, lifecycleVersion: 1, deletedAt: null, fileId: null, canManage: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' });
-function show(url = '/data') {
+function show(url = '/data', files: Array<{ fileId: string; name: string; status: string; canManage: boolean }> = []) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(['collaboration-tasks', 'p'], { items: [] });
-  client.setQueryData(['files', 'p', 'active'], []);
+  client.setQueryData(['files', 'p', 'active'], files);
   client.setQueryData(['resource-library', 'p'], [entry('background', 'material', 'background', '研究背景'), entry('source', 'source', 'reference', '原文通知'), entry('result', 'material', 'output', '最终方案')]);
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><DataWorkspacePage /></MemoryRouter></QueryClientProvider>);
 }
+
+it('uses the original file preview for an uploaded public file and preserves archive controls', () => {
+  show('/data?mode=file&fileId=public-file', [{ fileId: 'public-file', name: '公共文件.pdf', status: 'available', canManage: true }]);
+  expect(screen.getByLabelText('预览 公共文件.pdf')).toHaveAttribute('data-file-id', 'public-file');
+  expect(screen.getByRole('button', { name: '归档文件' })).toBeInTheDocument();
+});
+
+it('marks pending public files unavailable instead of attempting their preview', () => {
+  show('/data?mode=file&fileId=pending-file', [{ fileId: 'pending-file', name: '上传中.pdf', status: 'pending', canManage: true }]);
+  expect(screen.getByLabelText('预览 上传中.pdf')).toHaveAttribute('data-availability', 'unavailable');
+  expect(screen.queryByRole('button', { name: '归档文件' })).toBeNull();
+});
 it('searches background, imported references and outputs in one list with one embedded detail', async () => {
   show();
   const list = screen.getByRole('complementary', { name: '项目资料列表' });

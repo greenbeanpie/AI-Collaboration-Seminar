@@ -1,0 +1,9 @@
+.file-preview { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-block: 1rem; }
+.file-preview-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.file-preview-heading h3 { margin: 0; overflow-wrap: anywhere; }
+.file-preview-heading a { flex-shrink: 0; }
+.file-preview-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .75rem; }
+.file-preview-canvas { display: block; width: 100%; height: auto; max-width: 100%; margin-inline: auto; }
+.file-preview-text { max-height: 65vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-preview-text p { margin-block: .5rem; }
+.file-preview-warnings { padding-inline-start: 1.25rem; overflow-wrap: anywhere; }

@@ -6,6 +6,7 @@ import { MaterialsPage } from './MaterialsPage';
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'project-1' }) }));
 vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'account-1' } }) }));
+vi.mock('./FilePreview', () => ({ FilePreview: ({ fileId, name }: { fileId: string; name: string }) => <section aria-label={`预览 ${name}`} data-file-id={fileId}>原文件预览 {name}</section> }));
 afterEach(async () => { await act(async()=>{cancelPageDialog();}); cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
 function renderMaterial(props: Parameters<typeof MaterialsPage>[0] = {}) {
@@ -77,6 +78,41 @@ function seedHistory(client: QueryClient, count = 11) {
   client.setQueryData(['materialVersions', 'project-1', 'material-1'], versions);
   return versions;
 }
+
+it('previews task attachments before the editable existing body and pins history to its attachment snapshot', async () => {
+  const client = renderMaterial();
+  const body = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '已有任务成果说明' }] }] };
+  act(() => {
+    client.setQueryData(['material', 'project-1', 'material-1'], { materialId: 'material-1', title: '任务成果', kind: 'task-file', canEdit: true, revision: 2, currentVersion: { versionId: 'current', revision: 2, createdAt: '2026-10-01', doc: body, attachments: [{ fileId: 'current-file', name: '新版.pdf' }] } });
+    const historical = { versionId: 'history', revision: 1, origin: 'manual', createdAt: '2026-10-01', doc: body, attachments: [{ fileId: 'old-file', name: '旧版.pdf' }] };
+    client.setQueryData(['materialVersions', 'project-1', 'material-1'], [historical]);
+    client.setQueryData(['materialVersion', 'project-1', 'material-1', 'history'], historical);
+  });
+  const preview = await screen.findByLabelText('预览 新版.pdf');
+  const editor = screen.getByLabelText('材料正文编辑器');
+  await waitFor(() => expect(editor).toHaveTextContent('已有任务成果说明'));
+  expect(editor).toHaveAttribute('contenteditable', 'true');
+  expect(preview.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText('内容与服务端版本一致')).toBeInTheDocument();
+  expect(localStorage.getItem('buwei:draft:account-1:project-1:material-1')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '版本历史' }));
+  const dialog = screen.getByRole('dialog', { name: '材料版本历史' });
+  expect(await within(dialog).findByLabelText('预览 旧版.pdf')).toHaveAttribute('data-file-id', 'old-file');
+  expect(within(dialog).queryByLabelText('预览 新版.pdf')).toBeNull();
+});
+
+it('preserves task-file draft recovery alongside its original preview', async () => {
+  const key = 'buwei:draft:account-1:project-1:material-1';
+  const draftDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '任务文件未同步说明' }] }] };
+  localStorage.setItem(key, JSON.stringify({ savedAt: '2026-10-01', value: { doc: draftDoc, baseRevision: 1, needsReconnectConfirmation: false } }));
+  const client = renderMaterial();
+  act(() => client.setQueryData(['material', 'project-1', 'material-1'], { materialId: 'material-1', title: '任务成果', kind: 'task-file', canEdit: true, revision: 1, currentVersion: { versionId: 'current', revision: 1, createdAt: '2026-10-01', doc: { type: 'doc', content: [] }, attachments: [{ fileId: 'current-file', name: '成果.pdf' }] } }));
+  fireEvent.click(await screen.findByRole('button', { name: '恢复草稿' }));
+  await waitFor(() => expect(screen.getByLabelText('材料正文编辑器')).toHaveTextContent('任务文件未同步说明'));
+  expect(screen.getByLabelText('预览 成果.pdf')).toHaveAttribute('data-file-id', 'current-file');
+  expect(screen.getByRole('button', { name: '保存新版本' })).toBeEnabled();
+  expect(JSON.parse(localStorage.getItem(key)!).value.doc).toEqual(draftDoc);
+});
 
 it('opens history from the top toolbar and pages one immutable snapshot at a time', async () => {
   const client = renderMaterial(); act(() => seedHistory(client));

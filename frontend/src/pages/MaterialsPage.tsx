@@ -3,6 +3,7 @@ import { MaterialArchiveActions } from './MaterialArchiveActions';
 import { ResourceIndexView } from './ResourceIndexView';
 import { usePageDialogs } from '../dialogs/usePageDialogs';
 import { MaterialAttachments } from './MaterialAttachments';
+import { FilePreview } from './FilePreview';
 import { MaterialAiAssistance } from './MaterialAiAssistance';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -429,6 +430,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 </div>
               </header>
               </>} />
+              {material.kind === 'task-file' && material.currentVersion?.attachments.map(attachment => <FilePreview key={attachment.fileId} projectId={projectId} {...attachment} />)}
               {dirty && !draftPersisted && <div className="tm-inline-notice tm-inline-error" role="alert"><AlertTriangle size={14} />浏览器无法保存本机草稿；当前编辑只留在此页面内存，切换页面或关闭标签后会丢失。请尽快连接服务并保存。</div>}
               {saveError ? <div className="tm-inline-notice"><AlertTriangle size={14} />保存失败，正文仍在编辑器{draftPersisted ? '和本机草稿中' : '内存中；本机草稿写入也未成功'}。修复连接后可以手动重试。</div> : null}
               {editNotice && <p className="tm-inline-notice" role="status">{editNotice}</p>}
@@ -500,6 +502,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                     {versionQuery.data && <>
                       <header><strong>不可变快照 · r{versionQuery.data.revision}</strong><time>{formatDate(versionQuery.data.createdAt)}</time></header>
                       <p className="muted">{versionQuery.data.origin === 'ai_adoption' ? '人工采纳的 AI 草稿' : '人工编辑'}</p>
+                      {material.kind === 'task-file' && versionQuery.data.attachments.map(attachment => <FilePreview key={attachment.fileId} projectId={projectId} {...attachment} />)}
                       <MaterialDocumentView doc={versionQuery.data.doc} className="tm-document-preview" />
                       <ul>{versionQuery.data.attachments?.map(a => <li key={a.fileId}><AiReferenceBadge />{a.availability === 'unavailable' ? <span>{a.name} · 原文件不可用{a.deletedAt ? '（已移入回收站，可恢复）' : ''}；历史关联保留</span> : <a href={projectPath(projectId, `/files/${encodeURIComponent(a.fileId)}/content`)} download={a.name}>{a.name}</a>}</li>)}</ul>
                     </>}
