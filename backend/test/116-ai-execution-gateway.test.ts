@@ -14,7 +14,7 @@ async function fixture() {
   const input: GatewayCallInput = { jobId, config: (await loadAiConfig(env.DB))!.config.textEconomy, messages: [{ role: 'user', content: 'fixture' }] };
   return { target, endpoint, input };
 }
-const ok = () => Response.json({ choices: [{ message: { content: '{"answer":"ready"}' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+const ok = async () => Response.json({ choices: [{ message: { content: '{"answer":"ready"}' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
 
 describe('gateway execution dispatch boundary', () => {
   it('counts provider rejections and successful retry as separate calls', async () => {
