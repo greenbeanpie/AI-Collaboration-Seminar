@@ -1,3 +1,4 @@
+import { checkpointRootId, checkpointFingerprint, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
@@ -178,7 +179,9 @@ export async function aiJsonCall<S extends z.ZodType>(
       status,
     });
 
-  const sessionId = params.sessionId ?? params.runId ?? params.jobId ?? crypto.randomUUID();
+  const root=params.jobId?await checkpointRootId(env,params.jobId):undefined;
+  const fingerprint=root?await checkpointFingerprint({projectId:params.projectId,promptVersion:params.promptVersion,configVersionId:params.configVersionId,modelConfig:params.modelConfig,messages:params.messages}):undefined;
+  const sessionId = params.sessionId ?? params.runId ?? root ?? crypto.randomUUID();
   let messages = params.messages;
   const maxAttempts=params.maxAttempts??2;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -186,14 +189,20 @@ export async function aiJsonCall<S extends z.ZodType>(
     let attempted = false;
     let out: Awaited<ReturnType<typeof gatewayChat>> | undefined;
     let failure: unknown;
+    const responseKey=root?`ai/responses/${root}/${fingerprint}/${attempt}.json`:undefined;
+    const saved=responseKey?await loadResponseCheckpoint<{pending:boolean;output?:Awaited<ReturnType<typeof gatewayChat>>}>(env,responseKey):null;
+    if(saved?.pending && !await allowsUncertainCheckpointRetry(env,params.jobId))throw new AppError('INVALID_STATE','上次模型请求结果未确认，请从停止处继续，该步骤可能再次计费',409,false);
+    const replayed=!!saved?.output;
     try {
-      out = await gatewayChat(endpoint, {
+      if(saved?.output) { await params.beforeCall?.();await params.prepareMessages?.();out=saved.output; }
+      else out = await gatewayChat(endpoint, {
         projectId: params.projectId, jobId: params.jobId, config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
         beforeFetch: async () => {
           await params.beforeCall?.();
           await markAiCallStarted(env, params.jobId);
           // Config/member preflight may yield; the final sensitive context read comes afterward.
           await params.beforeCall?.();
+          if(responseKey)await saveResponseCheckpoint(env,responseKey,{pending:true});
         },
         prepareMessages: params.prepareMessages ? async () => {
           const repairMessages = messages.slice(params.messages.length);
@@ -204,15 +213,20 @@ export async function aiJsonCall<S extends z.ZodType>(
         onDispatch: () => { attempted = true; },
       });
     } catch (error) {
-      if (!attempted) { if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
+      if (!attempted) { if(responseKey && !replayed)await saveResponseCheckpoint(env,responseKey,{pending:false}); if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
       failure = error;
+    }
+    // Persist the paid response before schema validation, ledger writes, or business writes.
+    if(out && responseKey && !replayed) {
+      if(await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(params.jobId!).first())throw new AppError('INVALID_STATE','任务已由新尝试继续，旧结果不会保存',409,false);
+      await saveResponseCheckpoint(env,responseKey,{pending:false,output:out});
     }
     let data: z.infer<S> | undefined;
     if (out) {
       try { data = params.schema.parse(extractJson(out.content)); } catch (error) { failure = error; }
     }
     // 每次已发出的请求都记录；账本/R2失败不触发第二次请求，尝试标记保留作恢复判断。
-    await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
+    if(!replayed)await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
     if (!failure) return { data: data!, repaired: attempt === 1 };

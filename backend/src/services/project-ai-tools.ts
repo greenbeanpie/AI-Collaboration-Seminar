@@ -1,3 +1,4 @@
+import { checkpointRootId, allowsUncertainCheckpointRetry } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { discoverableFileSql } from './archive-policy';
 import { askUserQuestionDefinition, clarificationRule, executeClarification, UserClarificationPending } from './ai-clarifications';
@@ -253,11 +254,13 @@ export async function projectToolConversation(env: Env, params: {
 }> {
   const { context, config } = params;
   const providerSessionId=params.sessionId ?? params.runId ?? context.jobId ?? newId();
-  const investigationId=context.jobId ? context.jobId+'-'+params.promptVersion.replace(/[^a-zA-Z0-9_-]/g,'_') : undefined;
-  let restored=investigationId ? await loadInvestigation(env,investigationId) : null;
+  const checkpointRoot=context.jobId?await checkpointRootId(env,context.jobId):undefined;
+  const allowUncertain=await allowsUncertainCheckpointRetry(env,context.jobId);
+  const investigationId=checkpointRoot ? checkpointRoot+'-'+params.promptVersion.replace(/[^a-zA-Z0-9_-]/g,'_') : undefined;
+  let restored=investigationId ? await loadInvestigation(env,investigationId,allowUncertain) : null;
   // A prompt upgrade must not discard an already-paid pending provider response.
   const previousPrompt:Record<string,string>={'collaboration-decompose-v4-clarification':'collaboration-decompose-v3-evidence','collaboration-adjust-v2-clarification':'collaboration-adjust-v1'};
-  if(!restored && context.jobId && previousPrompt[params.promptVersion])restored=await loadInvestigation(env,context.jobId+'-'+previousPrompt[params.promptVersion]);
+  if(!restored && context.jobId && previousPrompt[params.promptVersion])restored=await loadInvestigation(env,checkpointRoot+'-'+previousPrompt[params.promptVersion],allowUncertain);
   const activeStandardId=async()=> (await env.DB.prepare('SELECT id FROM standards_versions WHERE project_id=?1 ORDER BY version DESC LIMIT 1').bind(context.projectId).first<{id:string}>())?.id??null;
   const effectiveStandardsVersionId=restored ? restored.effectiveStandardsVersionId!==undefined ? restored.effectiveStandardsVersionId : restored.references.find(ref=>ref.resourceType==='standard')?.resourceId??null : await activeStandardId();
   let compacted=restored?.compacted??'';
@@ -363,6 +366,12 @@ export async function projectToolConversation(env: Env, params: {
     }
     catch (e) {
       error = e;
+    }
+    if(out) {
+      if(toolMode.definitions.length) pendingOutput=out;
+      if(toolMode.nativeSearch) pendingSearchOutput=out;
+      providerRetry=undefined;
+      await checkpoint(false);
     }
     if (dispatched) {
       await recordAiCall(env, {

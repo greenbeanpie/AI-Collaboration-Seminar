@@ -55,19 +55,21 @@ export function redactPrivateExchanges(exchanges:ToolExchange[]):ToolExchange[] 
   };
   return exchanges.map(e=>({...e,assistant:scrub(e.assistant)}));
 }
-export async function loadInvestigation(env: Env, id: string): Promise<InvestigationCheckpoint | null> {
+export async function loadInvestigation(env: Env, id: string, allowUncertainDispatch=false): Promise<InvestigationCheckpoint | null> {
   const stored=await env.FILES.get(`ai/investigations/${id}.json`);
   if(!stored) return null;
   const data=await stored.json<InvestigationCheckpoint|EncryptedCheckpoint>();
   const checkpoint='format' in data&&data.format==='encrypted-investigation-v1'
     ? await decryptCheckpoint(data,id,checkpointSecret(env)) : data as InvestigationCheckpoint;
-  if(checkpoint.pendingDispatch) throw invalidState('上次模型请求已派发但结果未确认；请核对调用后重新发起，避免重复付费');
+  if(checkpoint.pendingDispatch && !allowUncertainDispatch) throw invalidState('上次模型请求已派发但结果未确认；请从停止处继续，该步骤可能再次计费');
+  if(checkpoint.pendingDispatch) { checkpoint.pendingDispatch=false; checkpoint.providerRetry=undefined; }
   return checkpoint;
 }
 export async function saveInvestigation(env: Env, context:{projectId:string;userId:string;jobId?:string}, id:string, promptVersion:string, checkpoint:InvestigationCheckpoint, privateContext=false) {
+  if(context.jobId && await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(context.jobId).first())throw invalidState('任务已由新尝试继续，旧结果不会保存');
   const key=`ai/investigations/${id}.json`;
   const phase=checkpoint.content?'complete':'read';
-  const stored=privateContext?await encryptCheckpoint(checkpoint,id,checkpointSecret(env)):checkpoint;
+  const stored=await encryptCheckpoint(checkpoint,id,checkpointSecret(env));
   await env.FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
   await env.DB.prepare(`INSERT INTO ai_investigations(id,project_id,job_id,requested_by,prompt_version,checkpoint_key,phase,step,updated_at)
     VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET phase=excluded.phase,step=excluded.step,updated_at=excluded.updated_at`)
