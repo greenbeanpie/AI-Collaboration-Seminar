@@ -2,8 +2,12 @@ import {describe,it,expect} from 'vitest';
 import {env,BASE} from './helpers/env';
 import {SELF} from 'cloudflare:test';
 import {seedProject,seedUser,authCookie} from './helpers/seed';
-import {ensureFileProcessing,readFileProcessing,syncFileProcessingText} from '../src/services/file-processing';
+import {backfillFileProcessing,ensureFileProcessing,readFileProcessing,syncFileProcessingText} from '../src/services/file-processing';
+import {configureGoFixture} from './helpers/provider-config';
 import {newId,nowIso} from '../src/core/db';
+import type {Env} from '../src/env';
+// These tests inspect durable orchestration writes; model execution is covered by parse/summary suites.
+const orchestrationEnv={...env,PARSE_WORKFLOW:{create:async()=>undefined},AGENT_WORKFLOW:{create:async()=>undefined}} as unknown as Env;
 async function fixture(){
  const owner=await seedUser(),projectId=await seedProject(owner.userId),fileId=newId(),now=nowIso();
  await env.DB.prepare("INSERT INTO files(id,project_id,uploader_user_id,r2_key,ext,status,original_name,created_at) VALUES(?1,?2,?3,?4,'.txt','available','研究成果.txt',?5)").bind(fileId,projectId,owner.userId,'test/'+fileId,now).run();
@@ -42,6 +46,13 @@ describe('durable uploaded file processing',()=>{
   ]);await syncFileProcessingText(env,s.versionId);
   expect((await env.DB.prepare('SELECT current_version_id FROM materials WHERE id=?1').bind(materialId).first<{current_version_id:string}>())?.current_version_id).toBe(original);
   expect((await readFileProcessing(env,f.projectId,f.fileId,f.owner.userId)).materialIds).toHaveLength(1);
+  const derived=(await readFileProcessing(env,f.projectId,f.fileId,f.owner.userId)).materialIds[0]!;
+  await env.DB.prepare("UPDATE material_versions SET attachments_json='[]' WHERE id=?1").bind(original).run();await syncFileProcessingText(env,s.versionId);
+  expect(await env.DB.prepare("SELECT 1 FROM materials WHERE id=?1 AND purpose='reference' AND archived_at IS NOT NULL").bind(derived).first()).toBeTruthy();
+  await env.DB.prepare('UPDATE material_versions SET attachments_json=?2 WHERE id=?1').bind(original,attachments).run();await syncFileProcessingText(env,s.versionId);
+  expect(await env.DB.prepare("SELECT 1 FROM materials WHERE id=?1 AND purpose='output' AND archived_at IS NULL").bind(derived).first()).toBeTruthy();
+  await env.DB.prepare('UPDATE materials SET archived_at=?2 WHERE id=?1').bind(materialId,f.now).run();await syncFileProcessingText(env,s.versionId);
+  expect(await env.DB.prepare('SELECT 1 FROM materials WHERE id=?1 AND archived_at IS NOT NULL').bind(derived).first()).toBeTruthy();
  });
  it('restores empty attachment bodies with matching doc and markdown without changing historical snapshots',async()=>{
   const f=await fixture(),s=await ready(f),materialId=newId(),original=newId();
@@ -61,9 +72,43 @@ describe('durable uploaded file processing',()=>{
   await expect(ensureFileProcessing(env,f.projectId,f.fileId,f.owner.userId)).rejects.toThrow('文件不可用');
  });
  it('deduplicates concurrent manual requests and preserves one source and one parse job',async()=>{
-  const f=await fixture();await Promise.all([ensureFileProcessing(env,f.projectId,f.fileId,f.owner.userId),ensureFileProcessing(env,f.projectId,f.fileId,f.owner.userId)]);
+  const f=await fixture();await Promise.all([ensureFileProcessing(orchestrationEnv,f.projectId,f.fileId,f.owner.userId),ensureFileProcessing(orchestrationEnv,f.projectId,f.fileId,f.owner.userId)]);
   expect((await env.DB.prepare('SELECT COUNT(*) n FROM source_versions WHERE file_id=?1').bind(f.fileId).first<{n:number}>())?.n).toBe(1);
   expect((await env.DB.prepare("SELECT COUNT(*) n FROM jobs WHERE project_id=?1 AND kind='parse_source'").bind(f.projectId).first<{n:number}>())?.n).toBe(1);
+ });
+ it.each(['output','background'])('freezes upload purpose %s before attachment registration',async purpose=>{
+  const f=await fixture();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=0 WHERE id=?1').bind(f.projectId).run();await env.DB.prepare('UPDATE files SET processing_purpose=?2 WHERE id=?1').bind(f.fileId,purpose).run();
+  const result=await ensureFileProcessing(orchestrationEnv,f.projectId,f.fileId,f.owner.userId);
+  expect((await env.DB.prepare('SELECT purpose FROM sources WHERE id=?1').bind(result.sourceId).first<{purpose:string}>())?.purpose).toBe(purpose);expect(result.requirementsStatus).toBe('skipped');
+ });
+ it('automatically fills a pending summary on an already parsed source without re-extracting text',async()=>{
+  await configureGoFixture();const f=await fixture(),s=await ready(f);
+  await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();
+  await env.DB.prepare("UPDATE source_processing SET requirements_status='ready' WHERE source_version_id=?1").bind(s.versionId).run();
+  await ensureFileProcessing(orchestrationEnv,f.projectId,f.fileId,f.owner.userId,{automatic:true});await ensureFileProcessing(orchestrationEnv,f.projectId,f.fileId,f.owner.userId,{automatic:true});
+  const jobs=await env.DB.prepare('SELECT kind,input_json FROM jobs WHERE project_id=?1').bind(f.projectId).all<{kind:string;input_json:string}>();
+  expect(jobs.results).toHaveLength(1);expect(JSON.parse(jobs.results[0]!.input_json).operation).toBe('source.summary');
+ });
+ it('backfills old files with a current authorized actor after uploader membership is revoked',async()=>{
+  await configureGoFixture();const f=await fixture(),removed=await seedUser();
+  await env.DB.prepare('UPDATE files SET uploader_user_id=?2 WHERE id=?1').bind(f.fileId,removed.userId).run();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(f.projectId).run();
+  await backfillFileProcessing(orchestrationEnv,f.projectId,1);
+  expect((await env.DB.prepare('SELECT created_by FROM jobs WHERE project_id=?1').bind(f.projectId).first<{created_by:string}>())?.created_by).toBe(f.owner.userId);
+ });
+ it('recognizes legacy ready text with no processing row and preserves its extracted fragments',async()=>{
+  const f=await fixture(),s=await ready(f);await env.DB.prepare('DELETE FROM source_processing WHERE source_version_id=?1').bind(s.versionId).run();
+  await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=0 WHERE id=?1').bind(f.projectId).run();
+  const result=await ensureFileProcessing(env,f.projectId,f.fileId,f.owner.userId);
+  expect(result.textStatus).toBe('ready');expect((await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(f.projectId).first<{n:number}>())?.n).toBe(0);
+ });
+ it('does not block file garbage collection with new pipeline and derivation relationships',async()=>{
+  const f=await fixture(),parent=await fixture();
+  await env.DB.batch([
+   env.DB.prepare('INSERT INTO file_derivations(file_id,parent_file_id) VALUES(?1,?2)').bind(f.fileId,parent.fileId),
+   env.DB.prepare('INSERT INTO file_processing(file_id,lifecycle_version,project_id,source_id,source_version_id,updated_at) VALUES(?1,1,?2,?3,?4,?5)').bind(f.fileId,f.projectId,newId(),newId(),f.now),
+  ]);await env.DB.prepare('DELETE FROM files WHERE id=?1').bind(f.fileId).run();
+  expect(await env.DB.prepare('SELECT 1 FROM file_processing WHERE file_id=?1').bind(f.fileId).first()).toBeNull();
+  expect(await env.DB.prepare('SELECT 1 FROM file_derivations WHERE file_id=?1').bind(f.fileId).first()).toBeNull();
  });
  it('reuses file source for its owner and rejects unrelated members changing source purpose',async()=>{
   const f=await fixture(),s=await ready(f),other=await seedUser();await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),f.projectId,other.userId,f.now).run();
