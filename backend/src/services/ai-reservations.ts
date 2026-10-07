@@ -3,11 +3,12 @@ import { newId, nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
 import { quotaExceeded } from '../core/errors';
 import { loadAiConfig } from '../ai/config';
+import { loadExecutionPolicy } from './ai-execution-control';
 
 /**
  * AI 并发槽位与调用额度预占：
  * - 每项目并行 AI 任务上限 2（LIMITS.concurrentAiTasksPerProject）。
- * - 每个任务在首次模型请求前冻结有限调用额度，避免自动修复或调查无限扩张。
+ * - 模型轮次由独立执行窗口控制，本模块只管理项目并发槽位。
  * - 崩溃遗留的活动槽位由 cron 释放，但仍在排队/运行的任务不会被释放。
  */
 
@@ -30,22 +31,12 @@ export async function withReservedAiJob<T>(
 }
 
 /** 在真实 fetch 前持久化尝试标记，调用记录写失败也不能重放请求。 */
-export async function markAiCallStarted(env: Env, jobId: string | undefined, expandInvestigation=false): Promise<void> {
+export async function markAiCallStarted(env: Env, jobId: string | undefined, _expandInvestigation=false): Promise<void> {
   if (!jobId) return;
   const active = await findActiveReservation(env, jobId);
   if (!active) throw quotaExceeded('任务没有活动并发预占，拒绝发起模型请求');
-  const row=await env.DB.prepare('SELECT purpose,attempts_started,max_calls FROM usage_reservations WHERE id=?1').bind(active.id).first<{purpose:string;attempts_started:number;max_calls:number}>();
-  // A finite execution allowance is independent of how many files can be discovered.
-  // Never create another allowance automatically after exhaustion.
-  if(expandInvestigation && row && row.purpose!=='ocr_pages' && row.attempts_started>=row.max_calls && row.max_calls<24) {
-    const extended=await env.DB.prepare(`UPDATE usage_reservations SET max_calls=MIN(24,max_calls+2)
-      WHERE id=?1 AND status='reserved' AND max_calls=?2 AND max_calls<24
-      AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('running','queued'))
-      `).bind(active.id,row.max_calls,jobId).run();
-    if(!extended.meta.changes) throw quotaExceeded('无法扩展本次任务的调用额度；读取检查点已保存，可稍后重新发起');
-  }
-  const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved' AND (purpose = 'ocr_pages' OR attempts_started < max_calls)").bind(active.id).run();
-  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('已达到本次预占的模型调用次数上限；调查检查点已保存，请重新发起任务');
+  const claim = await env.DB.prepare("UPDATE usage_reservations SET attempts_started = attempts_started + 1 WHERE id = ?1 AND status = 'reserved'").bind(active.id).run();
+  if ((claim.meta?.changes ?? 0) === 0) throw quotaExceeded('任务并发槽位已变化，请刷新处理状态');
 }
 
 async function findActiveReservation(env: Env, jobId: string): Promise<{ id: string; created_at: string; attempts_started: number } | null> {
@@ -66,7 +57,7 @@ export async function reserveAiSlot(
 ): Promise<void> {
   if (await findActiveReservation(env, params.jobId)) return;
 
-  const maxCalls = Math.max(2, Math.min(params.purpose === 'audio_pipeline' ? 64 : 24, params.maxCalls ?? 2));
+  const maxCalls = (await loadExecutionPolicy(env)).maxModelCalls;
   const result = await env.DB.prepare(
     `INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at, max_calls)
      SELECT ?1, ?2, ?3, ?4, 'reserved', ?5, ?7

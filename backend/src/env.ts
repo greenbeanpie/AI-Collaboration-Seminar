@@ -4,6 +4,8 @@ export type EnvName = 'local' | 'staging' | 'production';
 export interface Env {
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
+  /** Invocation-local dispatch count. A new Workflow instance gets a fresh context. */
+  AI_EXECUTION_CONTEXT?: { modelCalls: number };
   AI?: Cloudflare.Env['AI'];
   DOCUMENT_IMPORTS_ENABLED?: string;
   RESOURCE_INDEX_ENABLED?: string;

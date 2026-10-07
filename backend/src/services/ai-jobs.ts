@@ -11,12 +11,18 @@ import { runRehearsalTurnJob } from './rehearsal';
 import { runRehearsalSpeechJob } from './rehearsal-speech';
 import { runAssignmentSuggestionJob } from './assignment';
 import { runCollaborationAiJob } from './collaboration-ai';
+import { runParseJob } from './parse';
 
 /** AI 类任务的统一入口（AgentRunWorkflow 按 job.kind 路由到对应执行器） */
 export async function runAiJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return;
   switch (job.kind) {
+    case 'parse_source':
+    case 'ocr_pages':
+    case 'requirement_extract':
+      await runParseJob(env, jobId);
+      return;
     case 'agent_run':
       if (JSON.parse(job.input_json).operation === 'rehearsal.tts') { await runRehearsalSpeechJob(env,jobId); return; }
       if (JSON.parse(job.input_json).operation === 'collaboration.assistance-plan') { await runTaskAssistancePlanJob(env,jobId); return; }
