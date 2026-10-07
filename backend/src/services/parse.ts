@@ -24,6 +24,8 @@ import { aiJsonCall } from './agent';
 import { extractPdfText, hasExtractableText } from './pdf-text';
 import { maybeEnqueueSourceSummary, runSourceSummary, setSourceStage } from './source-summary';
 import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
+import { extractOfficeText } from './office-text';
+import { syncFileProcessingText } from './file-processing';
 
 const AI_PROMPT_VERSION = 'parse-requirements-v1';
 const OCR_PROMPT_VERSION = 'ocr-pages-context-v2';
@@ -156,6 +158,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
 
   let perPage: Array<{ pageNumber: number; text: string }> = [];
   let pageCount = 0;
+  let office = false;
 
   if (version.origin === 'file' && version.file_id) {
     const file = await env.DB.prepare('SELECT r2_key, ext, mime_detected FROM files WHERE id = ?1')
@@ -163,12 +166,20 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
       .first<{ r2_key: string; ext: string; mime_detected: string | null }>();
     if (!file) throw new AppError('SOURCE_PARSE_FAILED', '来源文件缺失', 422, false);
     if (isMediaExtension(file.ext)) throw new AppError('INVALID_STATE', '音视频原文件必须通过媒体理解任务处理，不能使用正文文本提取', 409, false);
-    if (['.docx','.xlsx','.pptx'].includes(file.ext)) throw new AppError('SOURCE_PARSE_FAILED', 'Office 文档必须使用浏览器解析，请保留原文件并启动本机解析', 422, false, { parser: 'browser-'+file.ext.slice(1) });
     const obj = await env.FILES.get(file.r2_key);
     if (!obj) throw new AppError('SOURCE_PARSE_FAILED', '来源文件内容缺失', 422, false);
     const bytes = new Uint8Array(await obj.arrayBuffer());
 
-    if (file.ext === '.pdf') {
+    if (['.docx','.xlsx','.pptx'].includes(file.ext)) {
+      office=true;
+      const result = await extractOfficeText(bytes,file.ext);
+      if(!result.blocks.some(b=>b.text.trim()))throw new AppError('SOURCE_PARSE_FAILED','Office 文件没有可提取正文；请检查原文件内容',422,false);
+      // Office blocks have no real page numbers. A single logical unit is used only for progress.
+      pageCount=1;perPage=[{pageNumber:1,text:result.blocks.map(b=>b.text).join('\n\n')}];
+      await env.DB.prepare(`UPDATE source_versions SET extraction_method=?2,extraction_coverage='complete',extraction_warnings_json=?3 WHERE id=?1 AND ${processingGuard('?1','?4','?5')}`).bind(version.id,'server-'+file.ext.slice(1),JSON.stringify(result.warnings),version.lifecycleVersion,jobId??null).run();
+    } else if (['.png','.jpg','.jpeg','.webp'].includes(file.ext)) {
+      pageCount=1;perPage=[{pageNumber:1,text:''}];
+    } else if (file.ext === '.pdf') {
       const result = await extractPdfText(bytes);
       pageCount = result.totalPages;
       if (LIMITS.maxPdfPages !== null && pageCount > LIMITS.maxPdfPages) {
@@ -226,12 +237,13 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   await assertProcessingActive(env, version, jobId);
   await env.FILES.put(textKey, allText);
   if (pageRows.length > 0) await env.DB.batch(pageRows);
+  if(version.file_id){const image=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND ext IN ('.png','.jpg','.jpeg','.webp')").bind(version.file_id).first();if(image)await env.DB.prepare(`UPDATE source_pages SET image_file_id=?2,image_status='uploaded',ocr_status='pending' WHERE source_version_id=?1 AND ${processingGuard('?1','?3','?4')}`).bind(version.id,version.file_id,version.lifecycleVersion,jobId??null).run();}
 
   await insertFragments(
     env,
     version,
     perPage.filter((p) => hasExtractableText(p.text)).map((p) => ({
-      pageNumber: version.origin === 'file' ? p.pageNumber : null,
+      pageNumber: version.origin === 'file' && !office ? p.pageNumber : null,
       text: p.text,
       kind: (version.origin === 'web' ? 'web' : version.origin === 'paste' ? 'paste' : 'text') as FragmentRow['kind'],
     })),
@@ -521,12 +533,22 @@ async function withAiSlot<T>(
 
 export async function hasReadyMediaSummary(env:Env,versionId:string):Promise<boolean>{return Boolean(await env.DB.prepare("SELECT 1 FROM source_processing p WHERE p.source_version_id=?1 AND p.text_status='ready' AND p.summary_status='ready' AND EXISTS(SELECT 1 FROM media_processing m WHERE m.source_version_id=?1 AND m.stage='ready')").bind(versionId).first());}
 
+async function outputSource(env:Env,versionId:string):Promise<boolean>{
+ const row=await env.DB.prepare(`SELECT s.purpose,EXISTS(SELECT 1 FROM materials m JOIN material_versions mv ON mv.id=m.current_version_id,json_each(mv.attachments_json) a WHERE m.project_id=s.project_id AND m.purpose='output' AND m.archived_at IS NULL AND json_extract(a.value,'$.fileId')=v.file_id) output_attachment FROM sources s JOIN source_versions v ON v.source_id=s.id WHERE v.id=?1`).bind(versionId).first<{purpose:string;output_attachment:number}>();
+ return row?.purpose==='output'||!!row?.output_attachment;
+}
+
 /** 任务编排：按 job input 的阶段执行对应步骤（Workflow 与恢复器共用） */
 export async function runParseJob(env: Env, jobId: string): Promise<{ status: string }> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
   if ((JSON.parse(job.input_json) as { operation?: string }).operation === 'source.summary') return runSourceSummary(env, jobId);
   const input = JSON.parse(job.input_json) as ParseJobInput;
+  if((JSON.parse(job.input_json) as {operation?:string}).operation==='file.process'){
+    const project=await env.DB.prepare('SELECT ai_collaboration_enabled FROM projects WHERE id=?1').bind(job.project_id).first<{ai_collaboration_enabled:number}>();
+    const config=await loadAiConfig(env.DB);
+    if(!project?.ai_collaboration_enabled||!config?.enabled){await failJob(env,jobId,{code:'INVALID_STATE',message:'项目 AI 或全局模型已关闭；原文件和已提取正文保留'});return {status:'failed'};}
+  }
   if(input.phase==='extract'){
     const mediaFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(input.sourceVersionId).first<{ext:string}>();
     if(mediaFile&&isMediaExtension(mediaFile.ext)){
@@ -535,7 +557,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         const lifecycle=input.sourceLifecycleVersion??1;
         try{
           await loadActiveSourceVersion(env,input.sourceVersionId,lifecycle);await assertSourceJobActive(env,jobId);
-          if(operation==='source.text'){await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true,derived:true});}
+          if(operation==='source.text'||await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,lifecycle,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true,derived:true});}
           else{
             await setSourceStage(env,input.sourceVersionId,'requirements','processing',null,lifecycle,jobId);
             const result=await withAiSlot(env,jobId,job.project_id,'requirement_extract',()=>extractRequirements(env,input.sourceVersionId,input.configVersionId,jobId,lifecycle));
@@ -558,15 +580,8 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 
   if (input.phase === 'extract' || input.phase === 'analyze') {
     try {
-      if (input.phase === 'extract') {
-        const localFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(input.sourceVersionId).first<{ext:string}>();
-        if(localFile&&['.docx','.xlsx','.pptx'].includes(localFile.ext)){
-          await setSourceStage(env,input.sourceVersionId,'text','waiting_input','原文件已保留，等待浏览器正文解析',expectedLifecycleVersion,jobId);
-          await waitJobInput(env,jobId,{message:'请使用浏览器正文解析',parser:'browser-'+localFile.ext.slice(1)});
-          return {status:(await getJob(env,jobId)).status};
-        }
-      }
-      const { needsImages } = input.phase === 'analyze' ? { needsImages: 0 } : await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+      let { needsImages } = input.phase === 'analyze' ? { needsImages: 0 } : await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+      if(needsImages){const supplied=await env.DB.prepare("SELECT COUNT(*) n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND image_status!='uploaded'").bind(input.sourceVersionId).first<{n:number}>();if(!supplied?.n){const result=await withAiSlot(env,jobId,job.project_id,'ocr_pages',()=>ocrPendingPages(env,input.sourceVersionId,input.configVersionId,jobId,expectedLifecycleVersion));needsImages=result.stillMissing;}}
       if (input.phase === 'analyze') {
         const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(input.sourceVersionId).first<{n:number}>();
         if (incomplete?.n) throw new AppError('INVALID_STATE','正文尚未完整提取，请补齐页面后分析',409,false);
@@ -577,11 +592,13 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         return { status: (await getJob(env, jobId)).status };
       }
       await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+      await syncFileProcessingText(env,input.sourceVersionId,jobId);
       if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.text'){
         await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true});
         return {status:(await getJob(env,jobId)).status};
       }
       await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+      if(await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
       await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
         extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
@@ -607,8 +624,10 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
     await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+    await syncFileProcessingText(env,input.sourceVersionId,jobId);
     if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.ocr'){await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,ocrReady:true});return {status:(await getJob(env,jobId)).status};}
     await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+    if(await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
     await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
       extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
