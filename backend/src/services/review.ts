@@ -56,6 +56,20 @@ const reportSchema = z.object({
 
 const normalize = (s: string): string => s.replace(/\s+/g, '').toLowerCase();
 
+export function reviewSchemaFor(weights: Array<{key:string}>, materials: Array<{materialVersionId:string;markdown:string}>) {
+  return reportSchema.superRefine((data, ctx) => {
+    const expected = weights.map(weight => weight.key).sort();
+    if (JSON.stringify(expected) !== JSON.stringify(data.scores.map(score => score.key).sort()))
+      ctx.addIssue({code:'custom',path:['scores'],message:'必须覆盖所有评分维度一次，允许 key：'+JSON.stringify(expected)});
+    if (!normalize(data.overall.summary).length)
+      ctx.addIssue({code:'custom',path:['overall','summary'],message:'总体评价不能为空白'});
+    data.scores.forEach((score, index) => score.evidence.forEach((evidence, evidenceIndex) => {
+      if (!materials.find(material => material.materialVersionId === evidence.materialVersionId)?.markdown.includes(evidence.quote))
+        ctx.addIssue({code:'custom',path:['scores',index,'evidence',evidenceIndex],message:'引用必须对应输入材料版本及其逐字正文，允许 materialVersionId：'+JSON.stringify(materials.map(material => material.materialVersionId))});
+    }));
+  });
+}
+
 /** 预审执行（冻结写请求 #3 的运行端）：材料版本 × 评分版本 × 要求集 → 分项模拟分数 */
 export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   const job = await getJob(env, jobId);
@@ -133,22 +147,12 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       modelConfig: reviewModel,
       promptVersion: PROMPT_VERSION,
       messages,
-      schema: reportSchema,
+      schema: reviewSchemaFor(weights, materials),
       beforeCall: assertInputs,
     });
 
-    // 分项必须覆盖全部评分维度（防漏项与伪造维度）
-    const expectedKeys = weights.map((w) => w.key).sort().join(',');
-    const actualKeys = data.scores.map((s) => s.key).sort().join(',');
-    if (expectedKeys !== actualKeys) {
-      throw new AppError('AI_OUTPUT_INVALID', '模拟分数未覆盖全部评分维度', 502, false);
-    }
-    if (normalize(data.overall.summary).length === 0) {
-      throw new AppError('AI_OUTPUT_INVALID', '总体评价为空', 502, false);
-    }
     const limitations:string[]=[];
     for(const score of data.scores) {
-      for(const evidence of score.evidence)if(!materials.find(m=>m.materialVersionId===evidence.materialVersionId)?.markdown.includes(evidence.quote))throw new AppError('AI_OUTPUT_INVALID','预审引文与固定成果正文不符',502,false);
       if(score.score!==null&&(!score.evidence.length||score.confidence<0.6)) {
         score.score=null;
         limitations.push(`${score.key}缺少可靠的固定成果证据`);

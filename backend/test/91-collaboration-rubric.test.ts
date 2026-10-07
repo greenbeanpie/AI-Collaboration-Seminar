@@ -196,9 +196,10 @@ describe('bounded assistive rubric scores', () => {
         const output = report(f);
         output.scores![0]!.evidence = [{ materialVersionId: kind === 'version' ? id() : f.versionId, quote: kind === 'quote' ? '不存在的正文' : '成果包含三个验证案例。' }];
         vi.stubGlobal('fetch', model(output));
-        await runCollaborationAiJob(env, jobId);
-        await expectFailedUntouched(f, jobId);
-        expect(JSON.parse((await getJob(env, jobId)).error_json!).code).toBe('AI_OUTPUT_INVALID');
+        await expect(runCollaborationAiJob(env, jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        expect((await getJob(env, jobId)).status).toBe('waiting_input');
+        expect(await readExecution(env, {kind:'job',id:jobId})).toMatchObject({state:'paused',pauseReason:'output_invalid'});
+        await expectFailedUntouched(f, jobId, 'waiting_input');
     });
     it('new material version never replaces evidence from submitted immutable version', async () => {
         const f = await fixture();

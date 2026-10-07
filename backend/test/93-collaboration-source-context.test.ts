@@ -1,3 +1,4 @@
+import { profileStamp } from '../src/services/personal-profiles';
 import { ExecutionPaused, readExecution } from '../src/services/ai-execution-control';
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -215,27 +216,31 @@ describe('strict source citations and finite task outputs', () => {
         if (kind === 'task_privilege') Object.assign(output.tasks[0]!, { assigneeId: f.user.userId, grantOwner: true });
         if (kind === 'delete_project') Object.assign(output, { deleteProject: true });
         const mock = provider(output);
-        const correctableStructure = ['missing', 'citation_privilege', 'task_privilege', 'delete_project'].includes(kind);
-        if (correctableStructure) {
-            await expect(runCollaborationAiJob(offline, j.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
-            await noProposal(f, j.jobId, false, 'waiting_input');
-            expect(await readExecution(env, { kind: 'job', id: j.jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
-            expect(mock).toHaveBeenCalledTimes(2);
-            expect(JSON.parse(String(mock.mock.calls[1]![1]?.body)).tools).toBeUndefined();
-        } else {
-            await runCollaborationAiJob(offline, j.jobId);
-            await noProposal(f, j.jobId);
-            expect(mock).toHaveBeenCalledTimes(1);
-            expect(JSON.parse((await getJob(env, j.jobId)).error_json!).code).toBe('AI_OUTPUT_INVALID');
-        }
+        await expect(runCollaborationAiJob(offline, j.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        await noProposal(f, j.jobId, false, 'waiting_input');
+        expect(await readExecution(env, { kind: 'job', id: j.jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
+        expect(mock).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(String(mock.mock.calls[1]![1]?.body)).tools).toBeUndefined();
         expect((await env.DB.prepare('SELECT content FROM source_fragments WHERE id=?1').bind(s.fragmentId).first<{ content: string }>())?.content).toBe(s.text);
         expect((await env.DB.prepare('SELECT role FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, f.user.userId).first<{role:string}>())?.role).toBe('owner');
     });
+    it('assignment proposals with frozen sources do not require task-decomposition citation fields', async () => {
+        const f = await fixture(), s = await source(f), j = await job(f,[s],true);
+        const input={...j.input,operation:'collaboration.assign' as const,members:[{userId:f.user.userId,loadHours:0}],profileStamp:await profileStamp(env,f.projectId)};
+        await env.DB.prepare('UPDATE jobs SET input_json=?2 WHERE id=?1').bind(j.jobId,JSON.stringify(input)).run();
+        provider({assignments:[{taskId:j.taskId,assigneeId:null}]});
+        await runCollaborationAiJob(offline,j.jobId);
+        expect((await getJob(env,j.jobId)).status).toBe('succeeded');
+        const proposal=await env.DB.prepare('SELECT payload_json FROM collaboration_proposals WHERE job_id=?1').bind(j.jobId).first<{payload_json:string}>();
+        expect(JSON.parse(proposal!.payload_json)).toMatchObject({assignments:[{taskId:j.taskId,assigneeId:null}],sourceVersionIds:[s.versionId]});
+    });
     it('one correctly cited source cannot silently omit another selected source', async () => {
         const f = await fixture(), s = await source(f), second = await source(f, '另需核对结果展示'), j = await job(f, [s, second]);
-        provider({ tasks: [task([s])] });
-        await runCollaborationAiJob(offline, j.jobId);
-        await noProposal(f, j.jobId);
+        const mock = provider({ tasks: [task([s])] });
+        await expect(runCollaborationAiJob(offline, j.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        await noProposal(f, j.jobId, false, 'waiting_input');
+        expect(mock).toHaveBeenCalledTimes(3);
+        expect(JSON.parse(String(mock.mock.calls.at(-1)![1]?.body)).messages.at(-1).content).toContain('全部选定来源');
     });
     it('citation schema rejects omitted page, blank quote and unknown fields', () => {
         const valid = { sourceVersionId: id(), fragmentId: id(), pageNumber: null, quote: '原文' };

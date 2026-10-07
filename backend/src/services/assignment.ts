@@ -53,6 +53,24 @@ export const assignmentOutputSchema = z.object({
   considerations: z.array(z.string().max(1000)).optional(),
 }).strict().transform(value => ({ assignments: value.assignments.map(a => ({ taskId: a.taskId, assigneeId: a.assigneeId })) }));
 
+/** Snapshot-bound output checks participate in the model correction loop. */
+export function assignmentSchemaFor(input: Pick<AssignmentSuggestionInput, 'tasks' | 'members'>) {
+  const taskIds = new Set(input.tasks.map(task => task.taskId));
+  const memberIds = new Set(input.members.map(member => member.userId));
+  return assignmentOutputSchema.superRefine((data, ctx) => {
+    const seen = new Set<string>();
+    data.assignments.forEach((suggestion, index) => {
+      if (!taskIds.has(suggestion.taskId) || seen.has(suggestion.taskId))
+        ctx.addIssue({code:'custom',path:['assignments',index,'taskId'],message:'必须使用输入任务 ID，且每个任务只能出现一次；允许 ID：'+JSON.stringify([...taskIds])});
+      if (suggestion.assigneeId !== null && !memberIds.has(suggestion.assigneeId))
+        ctx.addIssue({code:'custom',path:['assignments',index,'assigneeId'],message:'必须使用项目成员 ID 或 null；允许 ID：'+JSON.stringify([...memberIds])});
+      seen.add(suggestion.taskId);
+    });
+    const missing = [...taskIds].filter(id => !seen.has(id));
+    if (missing.length) ctx.addIssue({code:'custom',path:['assignments'],message:'缺少任务：'+JSON.stringify(missing)});
+  });
+}
+
 async function assertCurrentMember(env: Env, projectId: string, userId: string): Promise<void> {
   const row = await env.DB.prepare('SELECT 1 AS present FROM project_members WHERE project_id = ?1 AND user_id = ?2')
     .bind(projectId, userId)
@@ -107,7 +125,7 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
         { role: 'system', content: ASSIGNMENT_SYSTEM_PROMPT },
         { role: 'user', content: JSON.stringify(modelInput) },
       ],
-      schema: assignmentOutputSchema,
+      schema: assignmentSchemaFor(input),
       privateContext: true,
       beforeCall: async () => {
         await beforeCall?.();
@@ -129,21 +147,6 @@ export async function generateAssignmentSuggestions(env: Env, jobId: string, inp
     const {data}=answer;
     const references=('references' in answer?answer.references:[]) as unknown[];
     const decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
-    const taskById = new Map(input.tasks.map((task) => [task.taskId, task]));
-    const memberIds = new Set(input.members.map((member) => member.userId));
-    const seen = new Set<string>();
-    for (const suggestion of data.assignments) {
-      if (!taskById.has(suggestion.taskId) || seen.has(suggestion.taskId)) {
-        throw new AppError('AI_OUTPUT_INVALID', '分工建议引用了未知或重复任务', 502, false);
-      }
-      if (suggestion.assigneeId !== null && !memberIds.has(suggestion.assigneeId)) {
-        throw new AppError('AI_OUTPUT_INVALID', '分工建议引用了非项目成员', 502, false);
-      }
-      seen.add(suggestion.taskId);
-    }
-    if (seen.size !== input.tasks.length) {
-      throw new AppError('AI_OUTPUT_INVALID', '分工建议未覆盖全部任务', 502, false);
-    }
 
   await assertAssignmentSources(env, input);
   await assertCurrentMember(env, input.projectId, input.requestedBy);
