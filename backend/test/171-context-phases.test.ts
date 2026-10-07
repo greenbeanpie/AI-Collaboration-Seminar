@@ -24,9 +24,9 @@ describe('stable context phases',()=>{
       const first=requests.length===1;
       return Response.json(preset==='deepseek'?{choices:[{finish_reason:first?'tool_calls':'stop',message:first?{content:null,reasoning_content:'mock thought',tool_calls:[{id:'overview',type:'function',function:{name:'get_project_overview',arguments:'{}'}}]}:{content:'{"summary":"完成","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:100,completion_tokens:10,prompt_cache_hit_tokens:80,prompt_cache_miss_tokens:20}}:{stop_reason:first?'tool_use':'end_turn',content:first?[{type:'thinking',thinking:'mock thought',signature:'mock signature'},{type:'tool_use',id:'overview',name:'get_project_overview',input:{}}]:[{type:'text',text:'{"summary":"完成","referenceIds":[],"decisionReferences":[]}'}],usage:{input_tokens:20,cache_read_input_tokens:80,output_tokens:10}});
     }));
-    let source='调查项目';
+    let source='authorized initial input';
     await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.feedbackSnapshot',json(?2)) WHERE id=?1").bind(jobId,JSON.stringify({version:1,versionId:'feedback1',feedback:'initial feedback'})).run();
-    const params={context:{projectId,userId:owner.userId,jobId},config:cfg.config.review,configVersionId:cfg.id,purpose:'review' as const,messages:[{role:'user' as const,content:'调查项目'}],prepareMessages:async()=>[{role:'user' as const,content:source}],promptVersion:'stable-phase-test'};
+    const params={context:{projectId,userId:owner.userId,jobId},config:cfg.config.review,configVersionId:cfg.id,purpose:'review' as const,messages:[{role:'user' as const,content:'never dispatch stale placeholder'}],prepareMessages:async()=>[{role:'user' as const,content:source}],promptVersion:'stable-phase-test'};
     const local={...env,AI_EXECUTION_SLICE:true as const};
     await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
     await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
@@ -34,6 +34,7 @@ describe('stable context phases',()=>{
     await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.feedbackSnapshot',json(?2)) WHERE id=?1").bind(jobId,JSON.stringify({version:2,versionId:'feedback2',feedback:'new feedback'})).run();
     await projectToolConversation(local,params);
     expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests)).not.toContain('never dispatch stale placeholder');
     expect(requests[1]!.messages.slice(0,requests[0]!.messages.length)).toEqual(requests[0]!.messages);
     expect(requests[1]!.system).toEqual(requests[0]!.system);
     expect(requests[1]!.tools).toEqual(requests[0]!.tools);
