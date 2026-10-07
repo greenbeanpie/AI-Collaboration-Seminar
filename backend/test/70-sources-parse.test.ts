@@ -1,3 +1,4 @@
+import { isExecutionPaused } from '../src/services/ai-execution-control';
 import { configureGoFixture } from './helpers/provider-config';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -65,7 +66,7 @@ async function ensureJobDone(cookie: string, jobId: string): Promise<{ status: s
     await new Promise((r) => setTimeout(r, 50));
   }
   // Workflow 引擎不可用时的兜底：直接同步执行
-  await runParseJob(env, jobId);
+  try{await runParseJob(env, jobId);}catch(error){if(!isExecutionPaused(error))throw error;}
   const res = await SELF.fetch(`${BASE}/api/v1/jobs/${jobId}`, { headers: { cookie } });
   const data = (await res.json() as { data: { status: string; result: unknown; error: unknown; execution: unknown } }).data;
   return data;
@@ -101,7 +102,7 @@ describe('来源解析流水线', () => {
     expect(call?.completion_tokens).toBeGreaterThan(0);
   });
 
-  it('伪造引用 → 任务失败 AI_OUTPUT_INVALID', async () => {
+  it('伪造引用自动反馈模型后暂停，不发布要求', async () => {
     vi.stubGlobal('fetch', mockGatewayFetch({ fabricatedCitation: true }));
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);
@@ -111,9 +112,9 @@ describe('来源解析流水线', () => {
     });
     const jobId = await startParse(authCookie(owner.token), pid, sourceId);
     const done = await ensureJobDone(authCookie(owner.token), jobId);
-    expect(done.status).toBe('queued'); // Failed attempt is retained while durable recovery waits.
-    expect((done.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
-    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first<{status:string}>())?.status).toBe('failed');
+    expect(done.status).toBe('waiting_input');
+    expect(done.execution).toMatchObject({state:'paused',pauseReason:'output_invalid'});
+    expect((await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first<{status:string}>())?.status).toBe('waiting_input');
   });
 
   it('非法 JSON 触发一次修复重试后成功', async () => {

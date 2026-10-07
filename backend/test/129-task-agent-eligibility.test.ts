@@ -53,7 +53,7 @@ describe('model based task Agent eligibility',()=>{
     await expect(runAiJob(env,a.jobId!)).rejects.toMatchObject({details:{executionPause:true}});
     expect(await f.read()).toMatchObject({status:'running',eligible:null});expect(provider).toHaveBeenCalledTimes(2);
     expect((await getJob(env,a.jobId!)).status).toBe('waiting_input');expect((await f.start()).jobId).toBe(a.jobId);
-    expect(await readExecution(env,{kind:'job',id:a.jobId!})).toMatchObject({state:'paused',pauseReason:'round_limit',windowCalls:2,totalCalls:2});
+    expect(await readExecution(env,{kind:'job',id:a.jobId!})).toMatchObject({state:'paused',pauseReason:'output_invalid',windowCalls:2,totalCalls:2});
     expect(await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls WHERE job_id=?1').bind(a.jobId).first()).toMatchObject({n:2});
     const continued=await createApp().request(BASE+`/api/v1/jobs/${a.jobId}/execution/continue`,{method:'POST',headers:{cookie:authCookie(f.user.token),'content-type':'application/json','idempotency-key':crypto.randomUUID()},body:JSON.stringify({expectedGeneration:1})},offline);
     expect(continued.status).toBe(202);const next=model();await runAiJob(env,a.jobId!);expect(next).toHaveBeenCalledOnce();expect((await f.read()).status).toBe('ready');

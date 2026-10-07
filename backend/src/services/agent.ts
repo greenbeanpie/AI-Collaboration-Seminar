@@ -126,7 +126,6 @@ export async function aiJsonCall<S extends z.ZodType>(
     await recordActivity(env,params.jobId,'validating');
     try { return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:decisionReferences(out.content,out.references),decisionReferences:extractDecisionReferences(out.content,out.references)}; }
     catch (validationError) { if(isExecutionPaused(validationError)||isBackgroundContinuation(validationError))throw validationError;
-      if(!params.jobId&&params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
       await recordActivity(env,params.jobId,'repairing');
       // Correct only the final output. Before each repair dispatch the original
       // consent/config/member checks and final sensitive-context read run again.
@@ -200,7 +199,7 @@ export async function aiJsonCall<S extends z.ZodType>(
   const firstAttempt=repairState?.attempt??0;if(repairState)messages=repairState.messages;
   const generation=executionTarget?(await readExecution(env,executionTarget))?.generation:undefined;
   const budgetStart=repairState && (repairState.generation??1)===(generation??1)?repairState.budgetStart??0:firstAttempt;
-  const maxAttempts=params.jobId?finalizing?1:params.maxAttempts??Number.POSITIVE_INFINITY:params.maxAttempts??2;
+  const maxAttempts=params.jobId?finalizing?1:params.maxAttempts??2:params.maxAttempts??2;
   const attemptLimit=finalizing?firstAttempt+1:budgetStart+maxAttempts;
   if(firstAttempt>=attemptLimit && executionTarget){await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);}
   for (let attempt = firstAttempt; attempt < attemptLimit; attempt++) {

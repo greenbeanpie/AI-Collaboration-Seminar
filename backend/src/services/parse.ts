@@ -456,7 +456,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
     if(cached){result=requirementOutputSchema.parse(await cached.json());}
     else {
       if(jobId && index>0)await reserveAiSlot(env,{projectId:version.project_id,jobId,purpose:'requirement_extract',configVersionId:config.id});
-      const call=await aiJsonCall(env,{projectId:version.project_id,jobId,sessionId:sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:textModel.model,modelConfig:textModel,promptVersion:single?AI_PROMPT_VERSION:'parse-requirements-chunks-v2',messages:[{role:'system',content:system},{role:'user',content:listing}],schema:requirementOutputSchema,beforeCall:()=>assertProcessingActive(env,version,jobId)});
+      const call=await aiJsonCall(env,{projectId:version.project_id,jobId,sessionId:sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:textModel.model,modelConfig:textModel,promptVersion:single?AI_PROMPT_VERSION:'parse-requirements-chunks-v2',messages:[{role:'system',content:system},{role:'user',content:listing}],schema:requirementOutputSchema.superRefine((data,ctx)=>{try{validateChunkCitations(chunk,data.requirements.flatMap(req=>req.citations));}catch(error){ctx.addIssue({code:'custom',path:['requirements'],message:error instanceof Error?error.message:'要求引用与已读取原文不符'});}}),beforeCall:()=>assertProcessingActive(env,version,jobId)});
       result=call.data;validateChunkCitations(chunk,result.requirements.flatMap(req=>req.citations));await assertProcessingActive(env,version,jobId);
       if(jobId && !single)await settleReservation(env,jobId,'settled');
       if(cacheKey)await env.FILES.put(cacheKey,JSON.stringify(result));

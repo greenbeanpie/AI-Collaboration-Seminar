@@ -41,3 +41,13 @@ describe('full document processing', () => {
         citations_json: string;
     }>(); expect(rows.results.some(row => row.detail.includes('尾部验证报告'))).toBe(true); expect(rows.results.some(row => row.citations_json.includes(f.tailId))).toBe(true); });
 });
+
+it('feeds forged requirement citations back to the model before publishing',async()=>{
+ const f=await fixture();await env.DB.prepare("UPDATE ai_config_versions SET config_json=json_set(config_json,'$.textEconomy.maxInputChars',48000) WHERE id=?1").bind(f.configId).run();
+ const valid=model();let first=true;const fetch=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
+ const response=await valid(url,init);if(!first)return response;first=false;
+ const body=await response.json() as {choices:Array<{message:{content:string}}>};const output=JSON.parse(body.choices[0]!.message.content);output.requirements[0].citations[0].fragmentId='not-a-read-fragment';body.choices[0]!.message.content=JSON.stringify(output);return Response.json(body);
+ });vi.stubGlobal('fetch',fetch);const result=await extractRequirements(env,f.sourceVersionId,f.configId);
+ expect(fetch).toHaveBeenCalledTimes(2);expect(String(fetch.mock.calls[1]![1]?.body)).toContain('not-a-read-fragment');
+ const rows=await env.DB.prepare('SELECT citations_json FROM requirements WHERE requirement_set_id=?1').bind(result.requirementSetId).all<{citations_json:string}>();expect(JSON.stringify(rows.results)).not.toContain('not-a-read-fragment');
+});
