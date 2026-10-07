@@ -1,0 +1,8 @@
+.assessment-followup-thread { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.assessment-followup-thread > li { padding: 16px; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 10px; min-width: 0; }
+.assessment-followup-thread p { margin: 0; overflow-wrap: anywhere; }
+.assessment-followup-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.assessment-followup-heading time, .assessment-followup-thread small { color: var(--ink-soft); font-size: 13px; }
+.assessment-followup-message { white-space: pre-wrap; }
+.assessment-followup-result { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.assessment-followup-result article { display: grid; gap: 5px; }

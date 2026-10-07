@@ -1,3 +1,4 @@
+import { AssessmentFollowups } from './AssessmentFollowups';
 import { JobAiActivity } from './JobAiActivity';
 import { AiActivityStatus } from '../components/AiActivityStatus';
 import { usePagedRecords } from '../features/pagination/usePagedItems';
@@ -145,6 +146,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
         {isScoringReport(assessment.report) ? <AssessmentReportView report={assessment.report} /> : assessment.report ? <div className="assessment-historical-feedback"><h3>历史文字反馈 <AiReferenceBadge ariaHidden /></h3><pre>{JSON.stringify(assessment.report, null, 2)}</pre></div> : <p className="muted">{assessment.historical ? '原有文字反馈保留在问答记录中。' : assessment.kind === 'rehearsal' ? '完成真实回答并结束本轮演练后，将依据冻结问答生成评分。' : '本轮评分尚未返回结果。'}</p>}
       </>}
     </SectionCard>}
+    {assessment && !assessment.historical && assessment.kind === 'material_review' && assessment.status === 'succeeded' && isScoringReport(assessment.report) && Boolean(assessment.revision && assessment.revision > 0) && <AssessmentFollowups key={assessment.assessmentId} projectId={projectId} assessment={assessment} canCorrect={projectPermission(project, 'scoreCorrect')} aiEnabled={aiEnabled} onChanged={async () => { await client.invalidateQueries({queryKey:['assessment',projectId,assessment.assessmentId]}); await client.invalidateQueries({queryKey:['assessments',projectId]}); }} />}
   </div>;
 }
 function Evidence({ items }: { items: AssessmentEvidence[] }) { return <>{items.map((evidence, index) => <blockquote className="quote-box" key={index}><small>{evidence.type === 'answer' ? `真实回答 · 第 ${evidence.turnSequence} 回合` : `固定文档版本 ${evidence.materialVersionId}`}</small><p>{evidence.quote} <AiReferenceBadge /></p></blockquote>)}</>; }
