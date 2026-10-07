@@ -487,7 +487,7 @@ export async function projectToolConversation(env: Env, params: {
     }
     const results: ToolExchange['results'] = [...pendingResults];
     for (const invocation of o.toolCalls.slice(results.length)) {
-      await recordActivity(env,context.jobId,'executing_tool','started',{completed:trace.length,unit:'step'});
+      await recordActivity(env,context.jobId,'executing_tool','started',{completed:trace.length,unit:'tool_call'});
       const operationKey=`${currentStep}:${invocation.id}`;
       await context.onOperation?.({key:operationKey,name:invocation.name,status:'running',args:invocation.args as Record<string,unknown>});
       usedTools++;
@@ -584,7 +584,7 @@ export async function projectToolConversation(env: Env, params: {
       if(invocation.name==='web_search')pendingSearchOutput=undefined;
       pendingResults=results;
       await checkpoint();
-      await recordActivity(env,context.jobId,'executing_tool',status==='ok'?'completed':'failed',{completed:trace.length,unit:'step'});
+      await recordActivity(env,context.jobId,'executing_tool',status==='ok'?'completed':'failed',{completed:trace.length,unit:'tool_call'});
       toolsInSlice++;
       if(env.AI_EXECUTION_SLICE && toolsInSlice>=4 && results.length<o.toolCalls.length) throw new InvestigationContinuation();
     }

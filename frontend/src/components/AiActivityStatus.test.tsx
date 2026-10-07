@@ -15,6 +15,25 @@ it('shows truthful running state and local reply time including seconds; queued 
   rerender(<AiActivityStatus job={job('queued')} />);
   expect(container.querySelector('.is-running')).toBeNull();
 });
+
+it('explains tool attempts and hides ambiguous legacy counters in other stages', async () => {
+ const known=job('running');
+ known.activity={...known.activity!,code:'executing_tool',progress:{completed:4,unit:'tool_call'}};
+ const {rerender}=render(<AiActivityStatus job={known}/>);
+ expect(screen.getByText('当前操作：执行工具 · 累计执行工具 4 次（含失败尝试）')).toBeInTheDocument();
+ rerender(<AiActivityStatus job={{...known,activity:{...known.activity!,code:'calling_model',progress:{completed:4,unit:'step'}}}}/>);
+ expect(screen.getByText('当前操作：调用模型')).toBeInTheDocument();
+ expect(screen.queryByText(/已完成 4/)).not.toBeInTheDocument();
+ read.mockResolvedValueOnce({items:[
+   {id:3,code:'executing_tool',state:'failed',at:'2026-10-07T02:03:04Z',progress:{completed:4,unit:'step'}},
+   {id:2,code:'reading_sources',state:'started',at:'2026-10-07T02:03:03Z',progress:{completed:4,unit:'step'}},
+   {id:1,code:'ocr',state:'completed',at:'2026-10-07T02:03:02Z',progress:{completed:2,total:5,unit:'page'}},
+ ],nextCursor:null});
+ await act(async()=>{const details=screen.getByText('操作记录').closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));});
+ await waitFor(()=>expect(screen.getByText('执行工具 · 失败 · 累计执行工具 4 次（含失败尝试）')).toBeInTheDocument());
+ expect(screen.getByText('读取资料 · 开始')).toBeInTheDocument();
+ expect(screen.getByText('识别文档页面 · 完成 · 已处理 2 / 5 页')).toBeInTheDocument();
+});
 it('does not invent a reply timestamp when missing and stops animation on read failure', () => {
   const known = job('running'); known.activity!.lastResponseAt = null;
   const refresh = vi.fn();

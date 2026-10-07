@@ -1,7 +1,7 @@
 import { ExecutionControlPanel } from './ExecutionControlPanel';
 import { executionOf, type ExecutionView } from '../api/ai-execution';
 import { useEffect, useRef, useState } from 'react';
-import { activityLabel, activityTime, readActivityEvents, type ActivityJob, type AiActivity, type AiActivityEvent } from '../api/ai-activity';
+import { activityLabel, activityProgressText, activityTime, readActivityEvents, type ActivityJob, type AiActivity, type AiActivityEvent } from '../api/ai-activity';
 import { errorMessage } from '../api/error-info';
 import { ErrorNotice } from './ui';
 import './ai-activity.css';
@@ -63,6 +63,7 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
   const failureMessage = errorMessage(job?.error, 'AI 执行失败。');
   const executing = status === 'running' && execution?.state !== 'paused' && !readError;
   const progress = activity?.progress;
+  const progressText = activityProgressText(activity?.code ?? '', progress);
   const result = job?.result as { partial?: boolean; complete?: boolean; summary?: string; caveats?: string[]; fragments?: Array<{ id: string; page_number: number | null; content: string }> } | null;
   const partial = result && typeof result === 'object' && result.partial === true && result.complete === false;
 
@@ -84,7 +85,7 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
     <div className="ai-activity-current" role="status" aria-live="polite" aria-atomic="true">
       <span className={`ai-activity-indicator${executing ? ' is-running' : ''}`} aria-hidden="true" />
       <div><strong>{resuming || resumePending ? '等待续跑' : execution?.state === 'paused' ? repairExhausted ? '自动修正未完成' : '已暂停' : activity?.code === 'waiting_retry' ? '等待重试' : activity?.code === 'repairing' && status === 'running' ? '正在核对并修正结果' : repairExhausted ? '自动修正未完成' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
-        <p>当前操作：{execution?.state === 'paused' ? '等待选择继续处理或输出当前结果' : submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
+        <p>当前操作：{execution?.state === 'paused' ? '等待选择继续处理或输出当前结果' : submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progressText && ` · ${progressText}`}</p>
         <p>AI 最后一次回复时间：<time dateTime={activity?.lastResponseAt ?? undefined}>{activityTime(activity?.lastResponseAt)}</time></p>
       </div>
     </div>
@@ -94,7 +95,7 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
     {status === 'succeeded' && partial && <section aria-label="部分 AI 结果"><p role="status">已输出当前部分结果；尚未处理的范围仍未完成，不能视为全文处理成功。</p>{result.caveats?.filter(value => typeof value === 'string').map((value, index) => <p key={index}>{value}</p>)}{typeof result.summary === 'string' && result.summary && <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{result.summary}</pre>}{Array.isArray(result.fragments) && <details><summary>已识别的正文片段</summary>{result.fragments.map(fragment => <div key={fragment.id}>{fragment.page_number !== null && <p>第 {fragment.page_number} 页</p>}<pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{fragment.content}</pre></div>)}</details>}</section>}
     {Boolean(resumeError) && <ErrorNotice error={resumeError} />}
     {showHistory && jobId && <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>操作记录</summary>
-      {currentHistory.items.length > 0 && <ol className="ai-activity-history">{currentHistory.items.map(event => <li key={event.id}><span>{activityLabel(event.code)} · {eventStates[event.state]}{event.progress ? ` · 已完成 ${event.progress.completed}${event.progress.total !== undefined ? ` / ${event.progress.total}` : ''}` : ''}</span><time dateTime={event.at}>{activityTime(event.at)}</time></li>)}</ol>}
+      {currentHistory.items.length > 0 && <ol className="ai-activity-history">{currentHistory.items.map(event => <li key={event.id}><span>{activityLabel(event.code)} · {eventStates[event.state]}{activityProgressText(event.code, event.progress) ? ` · ${activityProgressText(event.code, event.progress)}` : ''}</span><time dateTime={event.at}>{activityTime(event.at)}</time></li>)}</ol>}
       {historyLoading && <p role="status">读取操作记录…</p>}
       {Boolean(historyError) && <ErrorNotice error={historyError} onRetry={() => void loadMore()} />}
       {currentHistory.loaded && !currentHistory.items.length && <p>尚无操作记录。</p>}

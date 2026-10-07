@@ -5,7 +5,7 @@ import { nowIso } from '../core/db';
 export const activityCodes = ['preparing','reading_sources','calling_model','executing_tool','validating','repairing','saving','transcribing','summarizing','ocr','retrying','waiting_retry','waiting_input','completed','failed','cancelled'] as const;
 export type ActivityCode = typeof activityCodes[number];
 export type ActivityProgress = { completed: number; total?: number; unit?: string };
-export const activityProgressSchema = z.object({ completed:z.number().int().min(0),total:z.number().int().min(0).optional(),unit:z.enum(['step','page','chunk','window']).optional() });
+export const activityProgressSchema = z.object({ completed:z.number().int().min(0),total:z.number().int().min(0).optional(),unit:z.enum(['step','tool_call','page','chunk','window']).optional() });
 export const aiActivitySchema = z.object({ code:z.enum(activityCodes),updatedAt:z.string().nullable(),lastResponseAt:z.string().nullable(),progress:activityProgressSchema.nullable(),canResume:z.boolean(),resumeReason:z.string().nullable(),uncertain:z.boolean() });
 export type AiActivity = z.infer<typeof aiActivitySchema>;
 export const aiActivityEventSchema = z.object({id:z.number().int(),code:z.enum(activityCodes),state:z.enum(['started','completed','failed','resumed']),at:z.string(),progress:activityProgressSchema.nullable()});
@@ -20,7 +20,8 @@ export async function recordActivity(env:Pick<Env,'DB'>,targetId:string|undefine
  const safeCode=validCode(code),now=nowIso(),safeProgress=progress?activityProgressSchema.parse(progress):null,encoded=safeProgress?JSON.stringify(safeProgress):null;
  await env.DB.batch([
   env.DB.prepare(`INSERT OR IGNORE INTO ai_task_activities(target_id,code,updated_at) SELECT ?1,?2,?3 WHERE ${guard}`).bind(targetId,safeCode,now),
-  env.DB.prepare(`UPDATE ai_task_activities SET code=?2,updated_at=?3,progress_json=COALESCE(?4,progress_json) WHERE target_id=?1 AND (${guard})`).bind(targetId,safeCode,now,encoded),
+  // Tool attempts belong to the tool stage, never to a subsequent model/read stage.
+  env.DB.prepare(`UPDATE ai_task_activities SET code=?2,updated_at=?3,progress_json=CASE WHEN ?4 IS NOT NULL THEN ?4 WHEN ?2!='executing_tool' AND (json_extract(progress_json,'$.unit')='tool_call' OR (code='executing_tool' AND json_extract(progress_json,'$.unit')='step')) THEN NULL ELSE progress_json END WHERE target_id=?1 AND (${guard})`).bind(targetId,safeCode,now,encoded),
   env.DB.prepare(`INSERT INTO ai_activity_events(target_id,code,state,created_at,progress_json) SELECT ?1,?2,?3,?4,COALESCE(?5,progress_json) FROM ai_task_activities WHERE target_id=?1 AND updated_at=?4 AND (${guard})`).bind(targetId,safeCode,state,now,encoded),
  ]);
 }

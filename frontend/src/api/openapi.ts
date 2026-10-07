@@ -12725,7 +12725,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                     canResume: boolean;
                     resumeReason: string | null;
@@ -12955,7 +12955,7 @@ export interface components {
                             completed: number;
                             total?: number;
                             /** @enum {string} */
-                            unit?: "step" | "page" | "chunk" | "window";
+                            unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                         } | null;
                         canResume: boolean;
                         resumeReason: string | null;
@@ -13175,7 +13175,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                 }[];
                 nextCursor: number | null;
@@ -13354,7 +13354,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                     canResume: boolean;
                     resumeReason: string | null;
@@ -14608,7 +14608,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                     canResume: boolean;
                     resumeReason: string | null;
@@ -14850,7 +14850,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                     canResume: boolean;
                     resumeReason: string | null;
@@ -14892,7 +14892,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                 }[];
                 nextCursor: number | null;
@@ -15555,7 +15555,7 @@ export interface components {
                         completed: number;
                         total?: number;
                         /** @enum {string} */
-                        unit?: "step" | "page" | "chunk" | "window";
+                        unit?: "step" | "tool_call" | "page" | "chunk" | "window";
                     } | null;
                     canResume: boolean;
                     resumeReason: string | null;

@@ -66,3 +66,21 @@ it('loads latest events first, pages older history and catches up newer events',
  const body=await response.json() as {data:{items:Array<{id:number}>}};
  expect(body.data.items[0]!.id).toBe(fresh.items[0]!.id);
 });
+
+it('counts tool attempts explicitly and does not inherit the count in read or model events',async()=>{
+ const f=await job();
+ await recordActivity(env,f.id,'executing_tool','failed',{completed:4,unit:'tool_call'});
+ expect((await readActivity(env,f.id,'running')).progress).toEqual({completed:4,unit:'tool_call'});
+ await recordActivity(env,f.id,'reading_sources');
+ expect((await readActivity(env,f.id,'running')).progress).toBeNull();
+ await markModelDispatch(env,f.id);
+ const events=await readActivityEvents(env,f.id);
+ expect(events.items.find(e=>e.code==='executing_tool')?.progress).toEqual({completed:4,unit:'tool_call'});
+ expect(events.items.filter(e=>e.code!=='executing_tool').every(e=>e.progress===null)).toBe(true);
+ // An old persisted tool stage remains readable, but its inherited count is cleared.
+ await recordActivity(env,f.id,'executing_tool','completed',{completed:5,unit:'step'});
+ await markModelDispatch(env,f.id);
+ expect((await readActivity(env,f.id,'running')).progress).toBeNull();
+ const old=await readActivityEvents(env,f.id);
+ expect(old.items.find(e=>e.code==='executing_tool'&&e.progress?.completed===5)?.progress?.unit).toBe('step');
+});

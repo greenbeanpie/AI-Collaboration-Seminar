@@ -1064,6 +1064,7 @@
                         "type": "string",
                         "enum": [
                           "step",
+                          "tool_call",
                           "page",
                           "chunk",
                           "window"
@@ -2161,6 +2162,7 @@
                               "type": "string",
                               "enum": [
                                 "step",
+                                "tool_call",
                                 "page",
                                 "chunk",
                                 "window"
@@ -3202,6 +3204,7 @@
                           "type": "string",
                           "enum": [
                             "step",
+                            "tool_call",
                             "page",
                             "chunk",
                             "window"
@@ -3926,6 +3929,7 @@
                         "type": "string",
                         "enum": [
                           "step",
+                          "tool_call",
                           "page",
                           "chunk",
                           "window"
@@ -9498,6 +9502,7 @@
                         "type": "string",
                         "enum": [
                           "step",
+                          "tool_call",
                           "page",
                           "chunk",
                           "window"
@@ -10537,6 +10542,7 @@
                         "type": "string",
                         "enum": [
                           "step",
+                          "tool_call",
                           "page",
                           "chunk",
                           "window"
@@ -10741,6 +10747,7 @@
                           "type": "string",
                           "enum": [
                             "step",
+                            "tool_call",
                             "page",
                             "chunk",
                             "window"
@@ -13479,6 +13486,7 @@
                         "type": "string",
                         "enum": [
                           "step",
+                          "tool_call",
                           "page",
                           "chunk",
                           "window"
