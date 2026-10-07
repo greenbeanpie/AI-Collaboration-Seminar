@@ -1,10 +1,12 @@
 import type { User } from '../api/types';
+import { setDesktopAccount } from '../desktop/lifecycle';
 
 export type Snapshot = { key: string; accountId: string; url: string; data: unknown; savedAt: string; etag?: string };
 export type PendingOperation = {
   key: string; accountId: string; projectId: string; url: string; method: string;
   body: Record<string, unknown>; localId: string; base: unknown; createdAt: string;
   state: 'pending' | 'conflict' | 'blocked'; error?: string; server?: unknown;
+  desktopAttachmentsResolved?: boolean;
 };
 const accountKey = 'buwei:offline-account';
 let database: Promise<IDBDatabase> | undefined;
@@ -18,9 +20,11 @@ export function rememberAccount(user: User, newSession = false): boolean {
   if (clearingAccounts.has(user.id) && !newSession) return false;
   localStorage.setItem(accountKey, JSON.stringify(user));
   if (newSession) clearingAccounts.delete(user.id);
+  setDesktopAccount(user.id);
   return true;
 }
 export function forgetAccount(): void {
+  setDesktopAccount(null);
   try { localStorage.removeItem(accountKey); } catch { /* Clearing the in-memory session still proceeds. */ }
 }
 function open(): Promise<IDBDatabase> {

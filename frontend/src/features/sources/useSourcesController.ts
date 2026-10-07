@@ -261,14 +261,14 @@ export function useSourcesController(selectedSourceId?: string) {
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('仅支持 HTTP 或 HTTPS 网页地址。');
         body = { kind, url: parsedUrl.toString() };
       } else {
-        if (!file) throw new Error('请先选择 PDF、DOCX、TXT、Markdown 或音视频文件。');
+        if (!file) throw new Error('请先选择 PDF、DOCX、XLSX、PPTX、TXT、Markdown 或音视频文件。');
         const mediaFile = /\.(mp3|wav|m4a|mp4|webm)$/i.test(file.name);
         const uploadLimit = mediaFile ? capability.limits.maxMediaBytes : capability.limits.maxFileBytes;
         const audioFile = /\.(mp3|wav|m4a)$/i.test(file.name);
         const mediaEnabled = audioFile ? (capability.features.audioSummaryEnabled ?? capability.features.audioTranscriptionEnabled ?? capability.features.mediaEnabled) : (capability.features.videoSummaryEnabled ?? capability.features.mediaEnabled);
         if (mediaFile && mediaEnabled === false) throw new Error('该媒体所选处理路径尚未配置，请在管理员设置中配置 Whisper、Gemini 或 MiMo。原文件将保留。');
         if (uploadLimit != null && file.size > uploadLimit) throw new Error(`文件大小超过服务端上限 ${formatBytes(uploadLimit)}。`);
-        if (!/\.(pdf|docx|txt|md|mp3|wav|m4a|mp4|webm)$/i.test(file.name)) throw new Error('仅支持 PDF、DOCX、TXT、Markdown、MP3、WAV、M4A、MP4 或 WebM 文件。');
+        if (!/\.(pdf|docx|xlsx|pptx|txt|md|mp3|wav|m4a|mp4|webm)$/i.test(file.name)) throw new Error('仅支持 PDF、DOCX、XLSX、PPTX、TXT、Markdown、MP3、WAV、M4A、MP4 或 WebM 文件。');
         const pendingMatches = pendingUpload?.file === file;
         if (pendingMatches) {
           fileId = pendingUpload.fileId;
@@ -306,7 +306,7 @@ export function useSourcesController(selectedSourceId?: string) {
       await queryClient.invalidateQueries({ queryKey: ['resource-library', projectId] });
       setSubmitStage('启动解析任务…');
       let parseStarted=false;let browserNotice='';
-      let browserSelected=kind==='file'&&file&&/\.(pdf|docx)$/i.test(file.name)&&(/\.docx$/i.test(file.name)||parseMode==='browser'||(parseMode==='auto'&&file.size>10*1024*1024));
+      let browserSelected=kind==='file'&&file&&/\.(pdf|docx|xlsx|pptx)$/i.test(file.name)&&(/\.(docx|xlsx|pptx)$/i.test(file.name)||parseMode==='browser'||(parseMode==='auto'&&file.size>10*1024*1024));
       if(kind==='file'&&file&&/\.pdf$/i.test(file.name)&&parseMode==='auto'&&!browserSelected) {
         await import('../../pages/source-pdf-render');
         const {getDocument}=await import('pdfjs-dist');

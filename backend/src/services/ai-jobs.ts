@@ -1,3 +1,4 @@
+import { runProjectChatJob } from './project-ai-chat';
 import { runTaskAssistancePlanJob } from './task-assistance-plan';
 import { runMediaJob } from './media-summary';
 import { runTaskAgentEligibilityJob } from './task-agent-eligibility';
@@ -24,6 +25,7 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
       await runParseJob(env, jobId);
       return;
     case 'agent_run':
+      if(JSON.parse(job.input_json).operation==='project.chat'){await runProjectChatJob(env,jobId);return;}
       if (JSON.parse(job.input_json).operation === 'rehearsal.tts') { await runRehearsalSpeechJob(env,jobId); return; }
       if (JSON.parse(job.input_json).operation === 'collaboration.assistance-plan') { await runTaskAssistancePlanJob(env,jobId); return; }
       if(['media.draft','media.summary'].includes(JSON.parse(job.input_json).operation)){const input=JSON.parse(job.input_json);await runMediaJob(env,jobId,input.sourceVersionId);return;}

@@ -1,4 +1,5 @@
 import { executionSchema, readExecution, resolveExecutionTarget } from '../services/ai-execution-control';
+import { checkpointAttemptIds } from '../services/ai-checkpoints';
 import { aiActivitySchema, aiActivityEventsSchema, readActivity, readActivityEvents, recordActivity } from '../services/ai-activity';
 import { retryFailedAiJob } from '../services/admin-ai-retries';
 import { withIdempotency } from '../services/idempotency';
@@ -59,6 +60,8 @@ const retryRoute = createRoute({
 
 export async function authorizedJob(env: import('../env').Env,jobId:string,userId:string){
  const job=await getJob(env,jobId);
+ const privateInput=JSON.parse(job.input_json) as {operation?:string;questionId?:string;requestedBy?:string};
+ if(privateInput.operation==='project.chat'&&(privateInput.requestedBy!==userId||!await env.DB.prepare('SELECT 1 FROM project_ai_chat_questions WHERE id=?1 AND user_id=?2').bind(privateInput.questionId??null,userId).first()))throw permissionDenied('问答历史不存在或不属于当前用户');
  if(job.project_id){
   const member=await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(job.project_id,userId).first();
   if(!member)throw permissionDenied('不是项目成员');
@@ -97,6 +100,13 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         const eligibility=await retryFailedAiJob(c.env,job.id,job.updated_at,undefined,{actorId:c.get('user')!.id,allowUncertainDispatch:true,dryRun:true});
         if(eligibility.status!=='queued'){activity.canResume=false;activity.resumeReason=eligibility.reason??'当前任务无法继续，请重新发起';}
       }catch(error){activity.canResume=false;activity.resumeReason=error instanceof Error?error.message:'任务上下文已变化，请重新发起';}
+    }
+    if(input.operation==='project.chat'&&activity.canResume){
+      const chatInput=JSON.parse(job.input_json) as {questionId:string};
+      const attempts=await checkpointAttemptIds(c.env,job.id);
+      let saved=!!await c.env.DB.prepare('SELECT 1 FROM ai_investigations WHERE job_id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(attempts)).first();
+      if(!saved)for(const attempt of attempts){if(await c.env.FILES.head(`ai/project-chat/${chatInput.questionId}/${attempt}.json`)){saved=true;break;}}
+      activity.resumeReason=activity.uncertain?'上次模型请求已派发但结果未确认；继续该步骤可能再次计费。':saved?'将复用已保存进度继续。':'尚未保存检查点，继续时将重新执行本轮。';
     }
     if(job.status==='failed' && status==='queued')activity.code='waiting_retry';
     return c.json(

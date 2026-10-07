@@ -1,6 +1,7 @@
 import mammoth from 'mammoth/mammoth.browser';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { parseOfficeDocument } from './office-document';
 import type { BrowserDocumentResult, DocumentBlock, DocumentWarning, ParserRequest, ParserResponse } from './document-parser-types';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -53,8 +54,8 @@ export function* mammothBlocks(root: Node, warnings: DocumentWarning[]): Generat
 
 export async function parseWorkerDocument(file: File, emit: (message: ParserResponse) => void, sendBatch: (blocks: DocumentBlock[]) => Promise<void>, signal: AbortSignal): Promise<BrowserDocumentResult> {
   const check = () => { if (signal.aborted) throw abortError(); };
-  const format = /\.docx$/i.test(file.name) ? 'docx' : /\.pdf$/i.test(file.name) ? 'pdf' : null;
-  if (!format) throw new Error('浏览器读取仅支持 PDF 和 DOCX。');
+  const format = /\.docx$/i.test(file.name) ? 'docx' : /\.pdf$/i.test(file.name) ? 'pdf' : /\.xlsx$/i.test(file.name) ? 'xlsx' : /\.pptx$/i.test(file.name) ? 'pptx' : null;
+  if (!format) throw new Error('浏览器读取仅支持 PDF、DOCX、XLSX 和 PPTX。');
   const warnings: DocumentWarning[] = [];
   let blocks = 0;
   let pages: number | null = null;
@@ -62,6 +63,7 @@ export async function parseWorkerDocument(file: File, emit: (message: ParserResp
   check();
   const buffer = await file.arrayBuffer();
   check();
+  if (format === 'xlsx' || format === 'pptx') return parseOfficeDocument(buffer, format, sendBatch, signal, (completed, total) => emit({ type: 'progress', progress: { phase: 'parsing', completed, total } }));
   if (format === 'pdf') {
     const task = getDocument({ data: new Uint8Array(buffer) });
     const cancel = () => { void task.destroy(); };

@@ -1,3 +1,4 @@
+import { useSettingsDirty } from '../../pages/settings-dirty';
 import { LoadMore } from '../pagination/LoadMore';
 import { useCallback, useEffect, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,6 +27,7 @@ export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, 
   const [submissionConflict, setSubmissionConflict] = useState(false);
   const submissionOutdated = submissionConflict || submissionBase !== task.revision;
   const [body, setBody] = useState('');
+  useSettingsDirty(Boolean(body));
   const [filesBusy, setFilesBusy] = useState(false);
   const [filesBlockedReason, setFilesBlockedReason] = useState('');
   const updateFilesStatus = useCallback((busy: boolean, reason = '') => { setFilesBusy(busy); setFilesBlockedReason(reason); }, []);

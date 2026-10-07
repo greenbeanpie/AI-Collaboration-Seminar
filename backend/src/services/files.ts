@@ -1,4 +1,4 @@
-import { validateDocx, DOCX_MIME } from './docx-validation';
+import { validateOfficePackage, isOfficeExtension, OFFICE_PACKAGES } from './docx-validation';
 import { nowIso, newId, sha256Hex } from '../core/db';
 import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS, LIMITS } from '../core/limits';
@@ -65,7 +65,7 @@ export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
   if (!bytes.length) throw validationFailed('文件不能为空');
   const limit = uploadLimit(ext);
   if (limit !== null && bytes.byteLength > limit) throw fileTooLarge(limit);
-  if (ext === '.docx' && startsWith(bytes,[0x50,0x4b,0x03,0x04])) return DOCX_MIME;
+  if (isOfficeExtension(ext) && startsWith(bytes,[0x50,0x4b,0x03,0x04])) return OFFICE_PACKAGES[ext].mime;
   const spec = MAGIC_SPECS.find(m => m.exts.includes(ext) && m.detect(bytes));
   if (spec) return spec.mime;
   if (ext === '.txt' || ext === '.md') {
@@ -156,9 +156,9 @@ export async function storeFileContent(
 
   const spec = MAGIC_SPECS.find((m) => m.exts.includes(row.ext) && m.detect(params.bytes));
   let mimeDetected: string;
-  if (row.ext === '.docx') {
-    try { mimeDetected = await validateDocx(params.bytes.length, async (offset,length)=>params.bytes.slice(offset,offset+length)); }
-    catch { return await quarantine(env,row,params.bytes,'DOCX 包结构无效'); }
+  if (isOfficeExtension(row.ext)) {
+    try { mimeDetected = await validateOfficePackage(row.ext, params.bytes.length, async (offset,length)=>params.bytes.slice(offset,offset+length)); }
+    catch { return await quarantine(env,row,params.bytes,`${row.ext.slice(1).toUpperCase()} 包结构无效`); }
   } else if (spec) {
     mimeDetected = spec.mime;
   } else if (row.ext === '.txt' || row.ext === '.md') {

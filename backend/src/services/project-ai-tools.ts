@@ -20,7 +20,10 @@ import { markAiCallStarted } from './ai-reservations';
 import { loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
 import { sourceInputsGuard, toolFileInputsGuard, type ToolFileInputSnapshot } from './source-inputs';
 import { assertGuideHistoryAccess, executeGuideHistoryTool, guideHistoryDefinitions } from './guide-history';
+export interface ProjectToolOperation { key:string; name:string; status:'running'|'completed'|'failed'; args?:Record<string,unknown>; output?:Record<string,unknown> }
 export interface ProjectToolContext {
+  readOnly?:boolean;
+  onOperation?: (operation:ProjectToolOperation)=>Promise<void>;
   scoringOnly?: boolean;
   projectId: string;
   userId: string;
@@ -420,10 +423,11 @@ export async function projectToolConversation(env: Env, params: {
   }
   await guard();
   await recordActivity(env,context.jobId,'reading_sources');
-  const overview=context.scoringOnly?{}:await executeDiscoveryTool(env,context.projectId,'get_project_overview',{});
-  const directory=await executeDiscoveryTool(env,context.projectId,'list_project_resources',{});
-  const taskOverview=context.scoringOnly?{items:[]}:await executeDiscoveryTool(env,context.projectId,'list_tasks',{});
-  const standardOverview=context.scoringOnly?{standards:{items:[]},requirements:{items:[]},rubrics:{items:[]}}:await executeDiscoveryTool(env,context.projectId,'read_project_standards',{});
+  const readInitial=async(name:string)=>{await context.onOperation?.({key:'initial:'+name,name,status:'running'});try{const output=await executeDiscoveryTool(env,context.projectId,name,{});await context.onOperation?.({key:'initial:'+name,name,status:'completed',output});return output;}catch(error){await context.onOperation?.({key:'initial:'+name,name,status:'failed'});throw error;}};
+  const overview=context.scoringOnly?{}:await readInitial('get_project_overview');
+  const directory=await readInitial('list_project_resources');
+  const taskOverview=context.scoringOnly?{items:[]}:await readInitial('list_tasks');
+  const standardOverview=context.scoringOnly?{standards:{items:[]},requirements:{items:[]},rubrics:{items:[]}}:await readInitial('read_project_standards');
   if(context.scoringOnly)directory.items=(directory.items as Array<{resourceType:string}>).filter(item=>item.resourceType==='source');
   // Initial context is an index; full details remain available through paged tools.
   taskOverview.items=(taskOverview.items as Record<string,unknown>[]).map(t=>({id:t.id,title:t.title,status:t.status,lifecycle_state:t.lifecycle_state,revision:t.revision,dependencies:t.dependencies}));
@@ -464,6 +468,8 @@ export async function projectToolConversation(env: Env, params: {
     const results: ToolExchange['results'] = [...pendingResults];
     for (const invocation of o.toolCalls.slice(results.length)) {
       await recordActivity(env,context.jobId,'executing_tool','started',{completed:trace.length,unit:'step'});
+      const operationKey=`${currentStep}:${invocation.id}`;
+      await context.onOperation?.({key:operationKey,name:invocation.name,status:'running',args:invocation.args as Record<string,unknown>});
       usedTools++;
       let output: unknown, status: 'ok' | 'failed' = 'ok';
       let safeArgs: unknown = {
@@ -515,7 +521,7 @@ export async function projectToolConversation(env: Env, params: {
           } else if(discoveryDefinitions.some(([name])=>name===invocation.name)){
             safeArgs=parseDiscoveryArgs(invocation.name,invocation.args,context.projectId);
             if(context.scoringOnly&&(safeArgs as {resourceType?:string}).resourceType==='material')throw invalidState('评分方法必须读取原始来源，不能使用材料总结');
-            output=await executeDiscoveryTool(env,context.projectId,invocation.name,safeArgs);
+            output=await executeDiscoveryTool(env,context.projectId,invocation.name,safeArgs,{prepareText:!context.readOnly});
             if(context.scoringOnly&&invocation.name==='list_project_resources'){const listing=output as {items?:Array<{resourceType:string}>};listing.items=listing.items?.filter(item=>item.resourceType==='source');}
             const refs=referencesFromRead(output as Record<string,unknown>);references=uniqueReadReferences([...references,...refs]);
             (output as Record<string,unknown>).referenceIds=refs.map(r=>r.id);await guard();
@@ -530,6 +536,7 @@ export async function projectToolConversation(env: Env, params: {
       }
       catch (e) {
         if (e instanceof UserClarificationPending || e instanceof InvestigationContinuation || e instanceof ToolLifecycleChanged || (e instanceof AppError && ['PERMISSION_DENIED','AI_UNAVAILABLE','QUOTA_EXCEEDED'].includes(e.code))) {
+          await context.onOperation?.({key:operationKey,name:invocation.name,status:'failed'});
           throw e;
         }
         status = 'failed';
@@ -542,6 +549,7 @@ export async function projectToolConversation(env: Env, params: {
       }
       // Audit retains bounded metadata/provenance, never raw file bodies, queries, secrets or object keys.
       const metadata = output as Record<string, unknown>;
+      await context.onOperation?.({key:operationKey,name:invocation.name,status:status==='ok'?'completed':'failed',args:safeArgs as Record<string,unknown>,output:metadata});
       if(invocation.name!=='ask_user_question'||status==='failed'||metadata.status==='limit_reached')await env.DB.prepare('INSERT INTO ai_tool_calls(id,project_id,job_id,requested_by,name,args_json,result_json,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)').bind(newId(), context.projectId, context.jobId ?? null, context.userId, invocation.name.slice(0, 80), JSON.stringify(safeArgs), JSON.stringify({
         status: metadata.status, error: metadata.error, argumentErrors: metadata.argumentErrors, fileId: metadata.fileId, sourceVersionId: metadata.sourceVersionId, fileLifecycleVersion: metadata.fileLifecycleVersion, sourceLifecycleVersion: metadata.sourceLifecycleVersion, nextOffset: metadata.nextOffset, citations: metadata.citations, fragmentIds: Array.isArray(metadata.fragments) ? metadata.fragments.map(f => (f as Record<string, unknown>).fragmentId) : undefined
       }), status, nowIso()).run();

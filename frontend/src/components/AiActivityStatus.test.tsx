@@ -44,6 +44,14 @@ it('continues uncertain requests directly and blocks repeated click while pendin
   expect(resume).toHaveBeenCalledOnce();
   await act(async () => finish());
 });
+it('explains a missing checkpoint before allowing a fresh execution', () => {
+  const failed = job('failed');
+  failed.activity!.resumeReason = '尚未保存检查点，继续时将重新执行本轮。';
+  failed.activity!.uncertain = false;
+  render(<AiActivityStatus job={failed} onResume={vi.fn()} />);
+  expect(screen.getByText('尚未保存检查点，继续时将重新执行本轮。')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '从停止处继续' })).toBeEnabled();
+});
 it('refreshes expanded operation history when server activity advances', async () => {
   read.mockResolvedValueOnce({ items: [{ id: 1, code: 'calling_model', state: 'started', at: '2026-10-07T02:03:04Z', progress: null }], nextCursor: null }).mockResolvedValueOnce({ items: [{ id: 2, code: 'saving', state: 'started', at: '2026-10-07T02:03:05Z', progress: null }], nextCursor: null });
   const known = job('running');

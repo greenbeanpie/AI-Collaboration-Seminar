@@ -1,3 +1,4 @@
+import { recoverChatContextCleanup } from './services/project-ai-chat';
 import { backfillTaskAgentEligibility } from './services/task-agent-eligibility';
 import { backfillResourceIndexes } from './services/resource-index';
 import { cleanupMediaFiles } from './services/media-summary';
@@ -41,6 +42,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
         await run('progression', () => dispatchProjectProgression(env));
         await run('notifications', () => dispatchNotifications(env));
         await run('admin_retry', () => recoverAdminAiRetries(env));
+        await run('chat_context_cleanup', () => recoverChatContextCleanup(env));
         await run('automatic_retry', () => recoverAutomaticAiRetries(env, (retryEnv, jobId, rootId) => retryFailedAiJob(retryEnv, jobId, undefined, rootId)));
         await run('workflow_reconcile', async () => {
           const stale = await env.DB.prepare("SELECT id FROM jobs WHERE status = 'running' AND updated_at <= ?1 ORDER BY updated_at LIMIT 10")

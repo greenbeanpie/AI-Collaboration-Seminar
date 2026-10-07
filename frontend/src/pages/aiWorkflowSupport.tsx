@@ -34,7 +34,7 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
     setState(current => ({ jobId, job: current.jobId === jobId ? current.job : null, error: null, loading: true }));
 
     const schedule = () => {
-      if (!active || document.visibilityState !== 'visible') return;
+      if (!active || document.visibilityState !== 'visible' || navigator.onLine === false) return;
       if (timer !== undefined) window.clearTimeout(timer);
       const delay = pollDelays[Math.min(delayIndex, pollDelays.length - 1)] ?? 10_000;
       delayIndex += 1;
@@ -42,7 +42,7 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
     };
 
     const poll = async () => {
-      if (!active || document.visibilityState !== 'visible' || inFlight) return;
+      if (!active || document.visibilityState !== 'visible' || navigator.onLine === false || inFlight) return;
       inFlight = true;
       controller = new AbortController();
       try {
@@ -66,7 +66,7 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
     };
 
     const onVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
+      if (document.visibilityState !== 'visible' || navigator.onLine === false) {
         if (timer !== undefined) window.clearTimeout(timer);
         timer = undefined;
         controller?.abort();
@@ -83,11 +83,15 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
       if (inFlight) refreshWhenVisible = true; else void poll();
     };
     window.addEventListener('ai-job-refresh', onRefresh);
+    window.addEventListener('online', onRefresh);
+    window.addEventListener('offline', onVisibilityChange);
     document.addEventListener('visibilitychange', onVisibilityChange);
     if (document.visibilityState === 'visible') void poll();
     return () => {
       active = false;
       window.removeEventListener('ai-job-refresh', onRefresh);
+      window.removeEventListener('online', onRefresh);
+      window.removeEventListener('offline', onVisibilityChange);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (timer !== undefined) window.clearTimeout(timer);
       controller?.abort();

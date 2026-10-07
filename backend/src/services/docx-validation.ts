@@ -2,18 +2,28 @@ import { inflateRawSync } from 'node:zlib';
 import { unsupportedMediaType } from '../core/errors';
 
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+export const OFFICE_PACKAGES = {
+ '.docx': { mime: DOCX_MIME, part: 'word/document.xml', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml' },
+ '.xlsx': { mime: XLSX_MIME, part: 'xl/workbook.xml', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' },
+ '.pptx': { mime: PPTX_MIME, part: 'ppt/presentation.xml', contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml' },
+} as const;
+export function isOfficeExtension(ext: string): ext is keyof typeof OFFICE_PACKAGES { return Object.hasOwn(OFFICE_PACKAGES, ext); }
 type Reader = (offset: number, length: number) => Promise<Uint8Array>;
 
 /** Read ZIP directory and only package metadata, never inflate the document/media. */
-export async function validateDocx(size: number, source: Reader): Promise<string> {
+export async function validateDocx(size: number, source: Reader): Promise<string> { return validateOfficePackage('.docx', size, source); }
+export async function validateOfficePackage(ext: keyof typeof OFFICE_PACKAGES, size: number, source: Reader): Promise<string> {
+  const spec = OFFICE_PACKAGES[ext];
   let cache:Uint8Array = new Uint8Array(), cacheStart = -1;
   const read:Reader=async(offset,length)=>{
-    if(offset<0||length<0||offset+length>size)throw unsupportedMediaType('DOCX 包偏移无效');
+    if(offset<0||length<0||offset+length>size)throw unsupportedMediaType(`${ext.slice(1).toUpperCase()} 包偏移无效`);
     if(offset>=cacheStart&&offset+length<=cacheStart+cache.length)return cache.slice(offset-cacheStart,offset-cacheStart+length);
     cacheStart=offset;cache=await source(offset,Math.min(size-offset,Math.max(length,65536)));
     return cache.slice(0,length);
   };
-  const fail = () => { throw unsupportedMediaType('DOCX 包结构无效、加密或不支持的 ZIP 格式；原文件不能作为可用资料'); };
+  const fail = () => { throw unsupportedMediaType(`${ext.slice(1).toUpperCase()} 包结构无效、加密或不支持的 ZIP 格式；原文件不能作为可用资料`); };
   const tailStart = Math.max(0, size - 65557), tail = await read(tailStart, size - tailStart);
   const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   let eocd = -1;
@@ -31,7 +41,7 @@ export async function validateDocx(size: number, source: Reader): Promise<string
     const nameLength = h.getUint16(28, true), extra = h.getUint16(30, true), comment = h.getUint16(32, true);
     if (!nameLength || nameLength > 4096) return fail();
     const name = new TextDecoder().decode(await read(pos + 46, nameLength));
-    if (name === 'word/document.xml') document = true;
+    if (name === spec.part) document = true;
     if (name === '[Content_Types].xml') types = { offset: h.getUint32(42, true), compressed: h.getUint32(20, true), expanded: h.getUint32(24, true), method: h.getUint16(10, true) };
     pos += 46 + nameLength + extra + comment;
     if (pos > size) return fail();
@@ -43,6 +53,11 @@ export async function validateDocx(size: number, source: Reader): Promise<string
   let decoded: Uint8Array;
   try { decoded = types.method === 0 ? data : types.method === 8 ? inflateRawSync(data,{maxOutputLength:262144}) : fail(); } catch { return fail(); }
   const xml = new TextDecoder().decode(decoded);
-  if (!/PartName\s*=\s*["']\/word\/document\.xml["']/.test(xml) || !xml.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml')) return fail();
-  return DOCX_MIME;
+  const overrides = xml.match(/<(?:[\w.-]+:)?Override\b[^>]*>/g) ?? [];
+  if (!overrides.some(tag => {
+    const part = /\bPartName\s*=\s*(["'])(.*?)\1/.exec(tag)?.[2];
+    const type = /\bContentType\s*=\s*(["'])(.*?)\1/.exec(tag)?.[2];
+    return part === '/' + spec.part && type === spec.contentType;
+  })) return fail();
+  return spec.mime;
 }

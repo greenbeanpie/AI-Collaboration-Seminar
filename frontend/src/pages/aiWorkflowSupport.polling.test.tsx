@@ -56,3 +56,18 @@ it('keeps one polling timer when an explicit refresh arrives during an in-flight
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   expect(get).toHaveBeenCalledTimes(3);
 });
+it('pauses polling offline, retains known status, and reconnects to the same job', async () => {
+  const originalOnline = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  get.mockResolvedValue({ jobId: 'job', status: 'running' });
+  vi.useFakeTimers();
+  try {
+    const { result } = renderHook(() => useVisibleJobPoller('job'));
+    await act(async () => { await Promise.resolve(); }); expect(get).toHaveBeenCalledOnce();
+    await act(async () => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }); window.dispatchEvent(new Event('offline')); await vi.advanceTimersByTimeAsync(30_000); });
+    expect(get).toHaveBeenCalledOnce(); expect(result.current.job?.status).toBe('running');
+    await act(async () => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); window.dispatchEvent(new Event('online')); });
+    expect(get).toHaveBeenCalledTimes(2); expect(get.mock.calls[1][0]).toBe('/api/v1/jobs/job');
+  } finally { if (originalOnline) Object.defineProperty(navigator, 'onLine', originalOnline); else Reflect.deleteProperty(navigator, 'onLine'); }
+});

@@ -2,7 +2,7 @@ import { recordActivity, recordModelResponse, readActivity } from './ai-activity
 import { aiSecret, checkpointSecret } from '../ai/secrets';
 import { scheduleAutomaticDraftRetry } from './ai-automatic-retries';
 import { readAudioPipelineStatus } from './audio-pipeline';
-import { validateDocx } from './docx-validation';
+import { validateOfficePackage, isOfficeExtension } from './docx-validation';
 import { readDraftDocument } from './draft-documents';
 import { mediaSummaryText, type MediaSummary } from '../ai/gemini-media';
 import { enqueueDraftMedia } from './media-summary';
@@ -174,7 +174,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   if ((ext!=='.docx'&&!(ALLOWED_UPLOAD_EXTENSIONS as readonly string[]).includes(ext)) || !name || name.length > 255) {
     throw validationFailed('文件名或类型不支持');
   }
-  const mime = ext==='.docx'?await validateDocx(bytes.length,async(offset,length)=>bytes.slice(offset,offset+length)):validateUploadBytes(ext, bytes);
+  const mime = isOfficeExtension(ext)?await validateOfficePackage(ext, bytes.length,async(offset,length)=>bytes.slice(offset,offset+length)):validateUploadBytes(ext, bytes);
   let pages: string[] = [];
   let textError: string | null = null;
   try {
@@ -189,7 +189,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
       pages = [new TextDecoder().decode(bytes)];
     }
     else {
-      textError = ext==='.docx'?'DOCX原文件已保留，等待浏览器正文解析':isMediaExtension(ext)?'音视频摘要正在排队；处理完成后可用于预览':'图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
+      textError = isOfficeExtension(ext)?'Office原文件已保留，等待浏览器正文解析':isMediaExtension(ext)?'音视频摘要正在排队；处理完成后可用于预览':'图片仅保存原文件，尚未 OCR；请填写需求或创建后处理';
     }
 
   }
@@ -485,18 +485,20 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     const source = newId(), version = newId();
     versions.set(f.id, version);
     const pages = JSON.parse(f.pages_json) as string[];
-    const imported=await env.DB.prepare('SELECT count(*) n,COALESCE(sum(length(content)),0) chars,max(page_number) pages FROM draft_document_blocks WHERE file_id=?1').bind(f.id).first<{n:number;chars:number;pages:number|null}>();
+    const imported=await env.DB.prepare('SELECT count(*) n,COALESCE(sum(length(content)),0) chars,COALESCE(sum(length(trim(content))),0) textChars,max(page_number) pages FROM draft_document_blocks WHERE file_id=?1').bind(f.id).first<{n:number;chars:number;textChars:number;pages:number|null}>();
     const importState=await env.DB.prepare('SELECT status,interrupted,warnings_json FROM draft_document_imports WHERE file_id=?1').bind(f.id).first<{status:string;interrupted:number;warnings_json:string}>();
     const importComplete=!!imported?.n&&!!importState&&importState.status!=='importing'&&!importState.interrupted;
     const missingPages=!!imported?.n&&f.ext==='.pdf'&&!!(await env.DB.prepare('SELECT 1 FROM draft_document_blocks WHERE file_id=?1 GROUP BY page_number HAVING sum(length(trim(content)))=0 LIMIT 1').bind(f.id).first());
-    const ready = importComplete?!missingPages:!imported?.n&&pages.length>0&&!f.text_error;
+    const emptyOffice=isOfficeExtension(f.ext)&&!(imported?.textChars);
+    const ready = importComplete?!missingPages&&!emptyOffice:!imported?.n&&pages.length>0&&!f.text_error;
     const importWarnings=importState?JSON.parse(importState.warnings_json) as string[]:[];
     if(imported?.n&&!importComplete)importWarnings.push('正文导入未完成，已保存内容仅覆盖部分资料');
+    if(emptyOffice)importWarnings.push('未提取到可读取正文，原文件已保留');
     if(missingPages)importWarnings.push('PDF仍有未读取页面，需要补充OCR或确认空白页');
     if(f.text_error&&!importWarnings.includes(f.text_error))importWarnings.push(f.text_error);
     const coverage=ready&&!importWarnings.length?'complete':'partial';
     batch.push(stmt(`INSERT INTO files(id,project_id,uploader_user_id,r2_key,mime_detected,ext,size_bytes,sha256,status,created_at,original_name) SELECT ?4,?5,?2,?6,?7,?8,?9,?10,'available',?11,?12 WHERE ${guard}`, f.id, project, f.r2_key, f.mime, f.ext, f.size_bytes, f.sha256, now, f.name), stmt(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at) SELECT ?4,?5,'file',?6,?7,?2,?8,?8 WHERE ${guard}`, source, project, f.name, version, now), stmt(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,char_count,page_count,status,created_at) SELECT ?4,?5,?6,1,'file',?7,?8,?9,?10,?11 WHERE ${guard}`, version, source, project, f.id, imported?.chars || pages.join('').length, f.ext==='.pdf'?(imported?.pages||pages.length||null):null, ready ? 'ready' : 'pending', now), stmt(`INSERT INTO source_processing(source_version_id,project_id,text_status,updated_at) SELECT ?4,?5,?6,?7 WHERE ${guard}`, version, project, ready ? 'ready' : imported?.n?'waiting_input':'pending', now));
-    batch.push(stmt(`UPDATE source_versions SET extraction_method=?4,extraction_warnings_json=?5,extraction_coverage=?6,parse_error=?7 WHERE id=?8 AND `+guard,imported?.n?(f.ext==='.pdf'?'browser-pdf':f.ext==='.docx'?'browser-docx':'browser-text'):'cloud',JSON.stringify(importWarnings),coverage,ready?null:f.text_error||'正文读取尚未完成',version));
+    batch.push(stmt(`UPDATE source_versions SET extraction_method=?4,extraction_warnings_json=?5,extraction_coverage=?6,parse_error=?7 WHERE id=?8 AND `+guard,imported?.n?(f.ext==='.pdf'?'browser-pdf':isOfficeExtension(f.ext)?('browser-'+f.ext.slice(1)):'browser-text'):'cloud',JSON.stringify(importWarnings),coverage,ready?null:f.text_error||'正文读取尚未完成',version));
     if(imported?.n){
       batch.push(stmt(`INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at,heading_path) SELECT b.id,?4,?5,b.page_number,b.seq,'text',b.content,?6,b.heading_json FROM draft_document_blocks b WHERE b.file_id=?7 AND b.draft_id=?1 AND `+guard,version,project,now,f.id));
       batch.push(stmt(`INSERT INTO source_pages(id,source_version_id,project_id,page_number,text_status,ocr_status,updated_at) SELECT ?4||':'||b.page_number,?4,?5,b.page_number,CASE WHEN SUM(length(b.content))>0 THEN 'extracted' ELSE 'none' END,'none',?6 FROM draft_document_blocks b WHERE b.file_id=?7 AND b.page_number IS NOT NULL AND `+guard+` GROUP BY b.page_number`,version,project,now,f.id));

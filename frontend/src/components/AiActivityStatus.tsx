@@ -9,12 +9,12 @@ import './ai-activity.css';
 type Props = {
   job?: ActivityJob | null; activity?: AiActivity | null; status?: ActivityJob['status']; jobId?: string;
   eventsPath?: string; submitting?: boolean; loading?: boolean; readError?: unknown; onRefresh?: () => void;
-  onResume?: () => void | Promise<void>; resuming?: boolean; executionEnabled?: boolean;
+  onResume?: () => void | Promise<void>; resuming?: boolean; executionEnabled?: boolean; showHistory?: boolean;
 };
 const statuses: Record<ActivityJob['status'], string> = { queued: '排队中', running: 'AI 处理中', waiting_input: '等待补充信息', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
 const eventStates = { started: '开始', completed: '完成', failed: '失败', resumed: '继续执行' };
 
-export function AiActivityStatus({ job, activity: suppliedActivity, status: suppliedStatus, jobId: suppliedId, eventsPath, submitting = false, loading = false, readError, onRefresh, onResume, resuming = false, executionEnabled = true }: Props) {
+export function AiActivityStatus({ job, activity: suppliedActivity, status: suppliedStatus, jobId: suppliedId, eventsPath, submitting = false, loading = false, readError, onRefresh, onResume, resuming = false, executionEnabled = true, showHistory = true }: Props) {
   const activity = suppliedActivity ?? job?.activity;
   const status = suppliedStatus ?? job?.status;
   const jobId = suppliedId ?? job?.jobId;
@@ -74,10 +74,10 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
       </div>
     </div>
     {Boolean(readError) && <div><p>读取状态失败，保留最近一次已知状态。</p><ErrorNotice error={readError} onRetry={onRefresh} /></div>}
-    {status === 'failed' && !executionOf(job) && <div><p className="ai-activity-failure">{errorMessage(job?.error, 'AI 执行失败。')}</p>{activity?.uncertain && <p>上次请求结果不明，继续时将重新请求未完成步骤，可能再次计费。</p>}{activity?.canResume && onResume ? <button className="button button-quiet button-small" disabled={resuming || resumePending} onClick={() => void resume()}>{resuming || resumePending ? '正在续跑' : '从停止处继续'}</button> : <p>{activity?.resumeReason ?? '此任务暂不可续跑，请重新发起。'}</p>}</div>}
+    {status === 'failed' && <div><p className="ai-activity-failure">{errorMessage(job?.error, 'AI 执行失败。')}</p>{activity?.uncertain && <p>上次请求结果不明，继续时将重新请求未完成步骤，可能再次计费。</p>}{activity?.canResume && onResume && executionOf(job)?.state !== 'paused' ? <button className="button button-quiet button-small" disabled={resuming || resumePending} onClick={() => void resume()}>{resuming || resumePending ? '正在续跑' : '从停止处继续'}</button> : <p>{activity?.resumeReason ?? '此任务暂不可续跑，请重新发起。'}</p>}</div>}
     {job && jobId && <ExecutionControlPanel execution={executionOf(job)} enabled={executionEnabled} path={`/api/v1/jobs/${encodeURIComponent(jobId)}`} onUpdated={() => { onRefresh?.(); window.dispatchEvent(new Event('ai-job-refresh')); }} />}
     {Boolean(resumeError) && <ErrorNotice error={resumeError} />}
-    {jobId && <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>操作记录</summary>
+    {showHistory && jobId && <details open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>操作记录</summary>
       {currentHistory.items.length > 0 && <ol className="ai-activity-history">{currentHistory.items.map(event => <li key={event.id}><span>{activityLabel(event.code)} · {eventStates[event.state]}{event.progress ? ` · 已完成 ${event.progress.completed}${event.progress.total !== undefined ? ` / ${event.progress.total}` : ''}` : ''}</span><time dateTime={event.at}>{activityTime(event.at)}</time></li>)}</ol>}
       {historyLoading && <p role="status">读取操作记录…</p>}
       {Boolean(historyError) && <ErrorNotice error={historyError} onRetry={() => void loadMore()} />}

@@ -1,3 +1,4 @@
+import { assertChatJob,chatContextStampSql } from './project-ai-chat';
 import { readTaskAssistancePlan } from './task-assistance-plan';
 import { readTaskAgentEligibility } from './task-agent-eligibility';
 import { checkpointRootId } from './ai-checkpoints';
@@ -88,8 +89,10 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  if(input.tasks)for(const task of input.tasks){const current=await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1 AND project_id=?2').bind(task.taskId,job.project_id).first<{revision:number}>();if(current?.revision!==task.revision)return {status:'skipped',reason:'任务版本已变化'};}
  if(input.operation==='collaboration.assistance-plan' && (await readTaskAssistancePlan(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务、资料、标准或权限已变化，请重新生成计划'};
  if(input.operation==='collaboration.agent-eligibility' && (await readTaskAgentEligibility(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务内容或模型配置已变化，请重新检查'};
+ if(input.operation==='project.chat'){try{await assertChatJob(env,jobId,true);}catch(error){return {status:'skipped',reason:error instanceof Error?error.message:'问答上下文已失效'};}guards.push("EXISTS(SELECT 1 FROM project_ai_chat_questions q JOIN project_ai_chat_sessions s ON s.id=q.session_id AND s.generation=q.generation WHERE q.id=json_extract(old.input_json,'$.questionId') AND q.job_id=old.id AND s.job_id=old.id AND q.user_id=?4 AND EXISTS(SELECT 1 FROM projects WHERE id=old.project_id AND ai_collaboration_enabled=1) AND q.context_stamp=("+chatContextStampSql.replaceAll('?1','old.project_id')+"))");}
  const reset:Array<{table:string;pointer:string;extra?:string}>=[];
  const requireRow=async(table:string,pointer:string,condition:string)=>{guards.push(`EXISTS(SELECT 1 FROM ${table} WHERE ${pointer}=old.id AND ${condition})`);};
+ if(input.operation==='project.chat')reset.push({table:'project_ai_chat_questions',pointer:'job_id'},{table:'project_ai_chat_sessions',pointer:'job_id'});
  if(input.operation==='media.draft')guards.push("EXISTS(SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=json_extract(old.input_json,'$.fileId') AND d.id=json_extract(old.input_json,'$.draftId') AND f.removed=0 AND d.status='active' AND d.owner_id=?4)");
  if(input.operation==='source.summary'){await requireRow('source_processing','summary_job_id',"summary_status='failed'");reset.push({table:'source_processing',pointer:'summary_job_id',extra:"summary_status='queued',summary_error=NULL,"});}
  if(input.runId){await requireRow('agent_runs','job_id',"status='failed'");reset.push({table:'agent_runs',pointer:'job_id',extra:"status='running',output_json=NULL,"});}

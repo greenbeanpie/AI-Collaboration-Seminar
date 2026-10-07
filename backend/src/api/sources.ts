@@ -267,7 +267,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       if (!file || file.project_id !== member.projectId || file.deleted_at) throw notFound('文件不存在或已移入回收站');
       fileLifecycleVersion=file.lifecycle_version;
       if (file.status !== 'available') throw invalidState('文件尚未上传或不可用');
-      if (!['.pdf', '.docx', '.txt', '.md'].includes(file.ext)) throw validationFailed('来源文件仅支持 PDF/DOCX/TXT/Markdown');
+      if (!['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.md'].includes(file.ext)) throw validationFailed('来源文件仅支持 PDF/DOCX/XLSX/PPTX/TXT/Markdown');
     }
     if (body.kind === 'web') {
       try {

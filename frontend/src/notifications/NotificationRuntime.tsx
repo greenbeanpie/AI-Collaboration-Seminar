@@ -2,6 +2,7 @@ import { errorMessage } from '../api/error-info';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationRequest } from './api';
+import { isDesktop } from '../desktop/bridge';
 import { NotificationFeed, subscriptionPayload, notifyWorkerAccount, safeNotificationUrl, notificationPermission, subscribeDevice, type DeliverySettings, type NotificationPage, type PushStatus } from './core';
 
 export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { userId: string | null; enabled?: boolean; settingsUrl: string }) {
@@ -68,6 +69,7 @@ export function NotificationRuntime({ userId, enabled = true, settingsUrl }: { u
       if (event.data.type === 'APP_PUSH_OPEN') { navigate(safeNotificationUrl(event.data.url, settingsUrl)); refresh(); }
     };
     const intro = async () => {
+      if (isDesktop()) return;
       try {
         const [status, preferences] = await Promise.all([notificationRequest<PushStatus>('/notifications/push/status', 'GET', undefined, abort.signal), notificationRequest<DeliverySettings>('/notifications/settings', 'GET', undefined, abort.signal)]);
         if (!active) return;

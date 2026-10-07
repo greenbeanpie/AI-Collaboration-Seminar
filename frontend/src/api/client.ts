@@ -2,6 +2,8 @@ import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { errorMessage } from './error-info';
 import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
 import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
+import { beginDesktopActivity } from '../desktop/lifecycle';
+import { isDesktop } from '../desktop/bridge';
 
 export class ApiError extends Error {
   readonly diagnosticMessage: string;
@@ -84,11 +86,26 @@ export function apiUrl(path: string, query?: RequestOptions['query']): string {
 }
 
 export async function request<Name extends SchemaName>(path: string, options: RequestOptions = {}): Promise<DataOf<Name>> {
+  const finish = beginDesktopActivity();
+  try { return await performRequest<Name>(path, options); }
+  finally { finish(); }
+}
+
+async function performRequest<Name extends SchemaName>(path: string, options: RequestOptions): Promise<DataOf<Name>> {
   const method = options.method ?? 'GET';
   const requestId = makeRequestId();
   const url = apiUrl(path, options.query);
   const accountAtStart = offlineAccount()?.id;
   const epochAtStart = accountAtStart ? accountEpochs.get(accountAtStart) ?? 0 : 0;
+  const submission = url.match(/^\/api\/v1\/projects\/([^/]+)\/(?:collaboration\/)?tasks\/([^/]+)\/submissions$/);
+  if (submission && method === 'POST' && !options.networkOnly && isDesktop()) {
+    const { hasPendingTaskFiles } = await import('../desktop/attachments');
+    const pending = await hasPendingTaskFiles(submission[1]!, submission[2]!);
+    if (offlineAccount()?.id !== accountAtStart || (accountAtStart && (accountEpochs.get(accountAtStart) ?? 0) !== epochAtStart)) {
+      throw new ApiError(401, { requestId, error: { code: 'AUTH_CONTEXT_CHANGED', message: '本机账号数据已清除，请重新登录后操作。', retryable: false } });
+    }
+    if (pending) return await queueOffline(url, method, options.body, options.idempotencyKey) as DataOf<Name>;
+  }
   const local = async (): Promise<DataOf<Name>> => {
     const cached = cacheable(url) ? await readSnapshot(url) : undefined;
     if (cached) return await offlineView(url, cached.data) as DataOf<Name>;

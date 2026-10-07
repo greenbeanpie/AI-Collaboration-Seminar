@@ -2,7 +2,7 @@ import { uploadMultipartFile,importBrowserFile } from './document-import-client'
 import { ApiError, api, apiUrl, projectPath, request , responseError} from '../api/client';
 import { createIntentKey } from './source-workflows';
 
-export const creationFileExtensions = '.pdf,.docx,.png,.jpg,.jpeg,.webp,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm';
+export const creationFileExtensions = '.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm';
 export const creationFileLimit = 10;
 
 export type CreationPayload = {
@@ -118,7 +118,7 @@ export async function creationFileHash(file: File): Promise<string> {
 
 function contentType(fileName: string): string {
   const extension = fileName.toLowerCase().split('.').pop();
-  return ({ pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', txt: 'text/plain', md: 'text/markdown' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream';
+  return ({ docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', txt: 'text/plain', md: 'text/markdown' } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream';
 }
 
 /** Only reconcile the exact private file ID returned for this project. A 404 is not success. */
@@ -168,7 +168,7 @@ export async function completeCreationFile(
       if (stopped()) return file;
       update({ uploadAttempted: true });
       try {
-        if(original.size>8*1024*1024||/\.docx$/i.test(original.name)){await uploadMultipartFile(projectId,file.fileId!,original);update({uploadConfirmed:true});}
+        if(original.size>8*1024*1024||/\.(docx|xlsx|pptx)$/i.test(original.name)){await uploadMultipartFile(projectId,file.fileId!,original);update({uploadConfirmed:true});}
         else { const stored = await request<'FileStoredResponse'>(projectPath(projectId, `/files/${encodeURIComponent(file.fileId!)}/content`), {
           method: 'PUT', rawBody: original, headers: { 'Content-Type': contentType(file.name) },
         });
@@ -186,7 +186,7 @@ export async function completeCreationFile(
   update({ status: 'linking', error: undefined });
   const source = await api.post<'SourceCreateResponse'>(projectPath(projectId, '/sources'), { kind: 'file', fileId: file.fileId, title: file.name.slice(0, 200) }, { idempotencyKey: file.sourceKey });
   if (!source.sourceId || !source.sourceVersionId) throw new Error('来源响应尚未确认，请用原进度重试。');
-  if(original&&(/\.docx$/i.test(original.name)||(/\.pdf$/i.test(original.name)&&original.size>10*1024*1024)))await importBrowserFile(projectId,source.sourceVersionId,original);
+  if(original&&(/\.(docx|xlsx|pptx)$/i.test(original.name)||(/\.pdf$/i.test(original.name)&&original.size>10*1024*1024)))await importBrowserFile(projectId,source.sourceVersionId,original);
   update({ sourceId: source.sourceId, sourceVersionId: source.sourceVersionId, status: 'complete', error: undefined });
   return file;
 }

@@ -119,6 +119,8 @@ function contentTypeFor(file: File): string {
   if (file.type) return file.type;
   const extension = file.name.toLowerCase().split('.').pop();
   if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (extension === 'pptx') return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
   if (extension === 'pdf') return 'application/pdf';
   if (extension === 'md') return 'text/markdown';
   if (extension === 'txt') return 'text/plain';
@@ -141,7 +143,7 @@ export async function uploadProjectFile(
     ...attribution,
   }, { idempotencyKey: initIntentKey });
   onInitialized?.(init.fileId);
-  if (file.size > 8 * 1024 * 1024 || /\.docx$/i.test(file.name)) { await uploadMultipartFile(projectId,init.fileId,file); return init.fileId; }
+  if (file.size > 8 * 1024 * 1024 || /\.(docx|xlsx|pptx)$/i.test(file.name)) { await uploadMultipartFile(projectId,init.fileId,file); return init.fileId; }
   await request<'FileStoredResponse'>(init.upload.url, {
     method: 'PUT',
     rawBody: file,

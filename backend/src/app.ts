@@ -1,5 +1,6 @@
 import { registerAiExecutionPolicyRoutes } from './api/ai-execution-policy';
 import { registerJobExecutionRoutes } from './api/job-execution';
+import { registerProjectChatRoutes } from './api/project-ai-chat';
 import { snapshotEtag } from './core/snapshot-etag';
 import { registerAdminAiRetryRoutes } from './api/admin-ai-retries';
 import { registerMediaFetchRoutes } from './api/media-fetch';
@@ -118,6 +119,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerJobRoutes(app);
   registerJobExecutionRoutes(app);
   registerAiExecutionPolicyRoutes(app);
+  registerProjectChatRoutes(app);
   registerTaskRoutes(app);
   registerTaskFileRoutes(app);
   registerTaskInquiryRoutes(app);

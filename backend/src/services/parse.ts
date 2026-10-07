@@ -163,7 +163,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
       .first<{ r2_key: string; ext: string; mime_detected: string | null }>();
     if (!file) throw new AppError('SOURCE_PARSE_FAILED', '来源文件缺失', 422, false);
     if (isMediaExtension(file.ext)) throw new AppError('INVALID_STATE', '音视频原文件必须通过媒体理解任务处理，不能使用正文文本提取', 409, false);
-    if (file.ext === '.docx') throw new AppError('SOURCE_PARSE_FAILED', 'DOCX 必须使用浏览器解析，请保留原文件并启动本机解析', 422, false, { parser: 'browser-docx' });
+    if (['.docx','.xlsx','.pptx'].includes(file.ext)) throw new AppError('SOURCE_PARSE_FAILED', 'Office 文档必须使用浏览器解析，请保留原文件并启动本机解析', 422, false, { parser: 'browser-'+file.ext.slice(1) });
     const obj = await env.FILES.get(file.r2_key);
     if (!obj) throw new AppError('SOURCE_PARSE_FAILED', '来源文件内容缺失', 422, false);
     const bytes = new Uint8Array(await obj.arrayBuffer());
@@ -560,6 +560,14 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 
   if (input.phase === 'extract' || input.phase === 'analyze') {
     try {
+      if (input.phase === 'extract') {
+        const localFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(input.sourceVersionId).first<{ext:string}>();
+        if(localFile&&['.docx','.xlsx','.pptx'].includes(localFile.ext)){
+          await setSourceStage(env,input.sourceVersionId,'text','waiting_input','原文件已保留，等待浏览器正文解析',expectedLifecycleVersion,jobId);
+          await waitJobInput(env,jobId,{message:'请使用浏览器正文解析',parser:'browser-'+localFile.ext.slice(1)});
+          return {status:(await getJob(env,jobId)).status};
+        }
+      }
       const { needsImages } = input.phase === 'analyze' ? { needsImages: 0 } : await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
       if (input.phase === 'analyze') {
         const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(input.sourceVersionId).first<{n:number}>();

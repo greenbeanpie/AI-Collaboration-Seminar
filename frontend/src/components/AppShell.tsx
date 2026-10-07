@@ -16,8 +16,12 @@ import { ThemeSelector } from './ThemeSelector';
 import { OfflineWorkspaceStatus } from '../offline/OfflineWorkspaceStatus';
 import { clearOfflineAccount, forgetAccount, operations } from '../offline/store';
 import { AiReferencePreferencesProvider } from './AiReferencePreferencesProvider';
+import { setDesktopAccount } from '../desktop/lifecycle';
+import { desktopInvoke, isDesktop } from '../desktop/bridge';
+import { confirmPage } from '../dialogs/dialog-service';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
+  useEffect(() => { setDesktopAccount(user.id); return () => setDesktopAccount(null); }, [user.id]);
   const logoutLock = useRef(false);
   const sessionRevoked = useRef(false);
   const [clearCount, setClearCount] = useState<number | null>(null);
@@ -56,6 +60,10 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
     logoutLock.current = true;
     try {
       if (!await requestSettingsLeave()) return;
+      if (isDesktop()) {
+        const [pending, native] = await Promise.all([operations(user.id), desktopInvoke<{ pendingUploads: number }>('desktop_pending_files')]);
+        if ((pending.length || native.pendingUploads) && !await confirmPage(`本机还有 ${pending.length} 项待同步操作、${native.pendingUploads} 个待上传附件。退出登录会停止同步，内容保留供原账户下次登录继续。确定退出吗？`)) return;
+      }
       setBusy(true); setLogoutError(null);
       const offline = navigator.onLine === false;
       if (!offline && !sessionRevoked.current) {

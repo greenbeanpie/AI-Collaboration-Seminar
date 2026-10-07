@@ -4475,6 +4475,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/ai-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 个人问答历史 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectChatHistoryResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        content: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 问答已排队 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectChatEnqueuedResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 个人历史已清空 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectChatClearedResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/ai-chat/questions/{questionId}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                    questionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 安全资源操作记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectChatOperationsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/tasks": {
         parameters: {
             query?: never;
@@ -10097,7 +10224,7 @@ export interface paths {
                         /** Format: uuid */
                         sourceVersionId: string;
                         /** @enum {string} */
-                        method: "browser-pdf" | "browser-docx";
+                        method: "browser-pdf" | "browser-docx" | "browser-xlsx" | "browser-pptx";
                     };
                 };
             };
@@ -14485,6 +14612,68 @@ export interface components {
             data: {
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectChatHistoryResponse: {
+            data: {
+                items: {
+                    id: string;
+                    /** Format: uuid */
+                    questionId: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant";
+                    content: string;
+                    createdAt: string;
+                    /** Format: uuid */
+                    jobId: string | null;
+                    references?: {
+                        title: string;
+                        href: string | null;
+                        detail?: string;
+                    }[];
+                }[];
+                nextCursor: string | null;
+                /** Format: uuid */
+                pendingJobId: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectChatEnqueuedResponse: {
+            data: {
+                /** Format: uuid */
+                questionId: string;
+                /** Format: uuid */
+                jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectChatClearedResponse: {
+            data: {
+                /** @enum {boolean} */
+                cleared: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ProjectChatOperationsResponse: {
+            data: {
+                items: {
+                    id: string;
+                    /** @enum {string} */
+                    kind: "search" | "read" | "tasks" | "status";
+                    label: string;
+                    /** @enum {string} */
+                    status: "running" | "completed" | "failed";
+                    at: string;
+                    attempt: number;
+                    href: string | null;
+                    detail?: string;
+                }[];
+                nextCursor: string | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

@@ -204,7 +204,7 @@ export function SourceRecord({
       {version ? <span>来源版本 {version.revision}</span> : source.currentVersionId ? <span>正在读取来源版本</span> : <span>暂无可解析版本</span>}
       {version?.pageCount !== null && version?.pageCount !== undefined && <span>{version.pageCount} 页</span>}
       {version?.charCount !== null && version?.charCount !== undefined && <span>{version.charCount.toLocaleString()} 字符</span>}
-      {currentFileId && <span>已关联原文件，可继续渲染扫描页</span>}
+      {currentFileId && <span>已关联原文件，可下载核对</span>}
     </div>
     <section className="source-relationship" aria-label="文件、来源与引用关系">
       <p>{currentFileId ? '原文件 → 来源版本 → 解析正文 → 项目标准引用' : `${formatSourceKind(source.kind)} → 来源版本 → 解析正文 → 项目标准引用`}</p>

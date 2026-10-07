@@ -22,6 +22,13 @@ function setup({ controlled = true, online = true, enabled = true } = {}) {
 
 afterEach(() => { vi.useRealTimers(); });
 describe('application update lifecycle', () => {
+  it('does not activate an update while the desktop save guard vetoes reload', async () => {
+    const t = setup(); const worker = t.worker(); t.registration.waiting = worker;
+    await t.controller.start(); t.env.safeToReload = () => false;
+    await t.controller.apply();
+    expect(worker.postMessage).not.toHaveBeenCalled(); expect(t.env.reload).not.toHaveBeenCalled();
+    expect(t.controller.state).toBe('ready');
+  });
   it('offers honest confirmed recovery for missing resources without claiming a downloaded update', async () => {
     const t = setup(); await t.controller.start(); t.controller.resourcesMissing = true; await t.controller.check();
     expect(t.controller.state).toBe('refresh'); expect(t.states).not.toContain('ready');
