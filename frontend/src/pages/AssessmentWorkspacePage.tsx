@@ -121,7 +121,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
           {currentStandard ? <p>生效标准：{currentStandard.title} · v{currentStandard.version}</p> : <div className="notice notice-warn">先保存项目标准，再开始成果检查。{project.myRole === 'owner' ? <Link to={supplement(`/app/projects/${encodeURIComponent(projectId)}/assessment?section=standards`)}>补齐项目标准</Link> : <span>需要负责人或拥有标准管理权限的成员补齐。</span>}</div>}
           {!materialVersions.length && <p className="form-note">成果检查需要可核对的成果版本。{projectPermission(project, 'resourceManage') ? <Link to={supplement(`/app/projects/${encodeURIComponent(projectId)}/data?resourceType=material`)}>上传或编写成果后返回</Link> : <span>请联系负责人补齐成果；也可在下方选择已有成果版本。</span>}</p>}
           <ReferencePicker projectId={projectId} sourceVersionIds={sourceVersions} materialVersionIds={materialVersions} onChange={selection => { setSourceVersions(selection.sourceVersionIds); setMaterialVersions(selection.materialVersionIds); }} disabled={create.isPending} />
-          {create.error && <ErrorNotice error={create.error} />}
+          {create.error && <><ErrorNotice error={create.error} /><Link className="button button-quiet button-small" to={`/app/projects/${projectId}/data`}>打开资料并提取成果正文</Link></>}
           <button className="button button-primary" disabled={!canInitiate || !aiEnabled || !goal.data?.title.trim() || !currentStandard || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
         </form>}
       </SectionCard>

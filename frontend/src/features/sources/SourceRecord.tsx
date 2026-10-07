@@ -1,3 +1,4 @@
+import { FileProcessingActions } from '../../pages/FileProcessingActions';
 import { AiActivityStatus } from '../../components/AiActivityStatus';
 import { AiReferenceBadge } from '../../components/AiReferenceBadge';
 import { errorMessage } from '../../api/error-info';
@@ -117,7 +118,7 @@ function SourceJobProgress({
       <div className="sources-record-actions">
         {job?.status === 'waiting_input' && pagesToRender > 0 && (
           <button className="button button-primary button-small" type="button" disabled={scanning || !capability?.features.aiEnabled} onClick={() => onScan(tracked)}>
-            {scanning ? <><LoaderCircle className="spin" size={14} /> 正在处理页面</> : <><ScanText size={14} /> 渲染并上传扫描页</>}
+            {scanning ? <><LoaderCircle className="spin" size={14} /> 正在处理页面</> : <><ScanText size={14} /> 准备扫描页并识别</>}
           </button>
         )}
 
@@ -199,6 +200,7 @@ export function SourceRecord({
         {source.kind !== 'file' && !source.fileId && source.canDelete && onRemove && <button className="button button-danger button-small" type="button" disabled={lifecycleBusy} aria-label={`移入回收站：${source.title}`} onClick={() => onRemove(source)}><Trash2 size={14} />移入回收站</button>}
       </div>
     </div>
+    {currentFileId && <FileProcessingActions projectId={projectId} fileId={currentFileId} />}
     {waitingForImages && <p className="muted">若此 PDF 本来有文本层，可重新读取服务器保留的原文件，无需重复上传；文本完整后会继续使用当前任务模型配置提取要求，可能产生 AI 用量。</p>}
     <div className="sources-record-meta">
       {version ? <span>来源版本 {version.revision}</span> : source.currentVersionId ? <span>正在读取来源版本</span> : <span>暂无可解析版本</span>}

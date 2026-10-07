@@ -1,3 +1,4 @@
+import { getFileProcessing, startFileProcessing } from '../../pages/file-processing-client';
 import { importBrowserFile, documentRequest } from '../../pages/document-import-client';
 import { useSourceLifecycle, type LifecycleChange } from '../../pages/source-lifecycle';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,7 +12,7 @@ import { formatBytes } from './format';
 import { useSourceQueries } from './useSourceQueries';
 
 export function useSourcesController(selectedSourceId?: string) {
-  const { projectId } = useProject();
+  const { projectId, project } = useProject();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const targetSourceVersionId = searchParams.get('sourceVersionId');
@@ -142,6 +143,16 @@ export function useSourcesController(selectedSourceId?: string) {
     setSuccessMessage('');
     setParsingSourceId(source.sourceId);
     try {
+      const fileSource = sources.find(item => item.sourceId === source.sourceId && item.kind === 'file');
+      const fileId = fileSource?.fileId ?? sourceFileId(projectId, sourceVersionId);
+      if (fileId && fileSource) {
+        const state = await getFileProcessing(projectId, fileId);
+        await startFileProcessing(projectId, fileId, state.lifecycleVersion, ['failed', 'cancelled'].some(status => [state.textStatus, state.summaryStatus, state.requirementsStatus].includes(status)));
+        parseIntentKeys.current.delete(intentId);
+        setSuccessMessage('文件处理已提交，关闭页面仍会继续。请在文件处理状态中查看结果。');
+        await queryClient.invalidateQueries({ queryKey: ['fileProcessing', projectId, fileId] });
+        return true;
+      }
       const result = await api.post<'SourceParseResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(source.sourceId)}/parse`), { sourceVersionId }, { idempotencyKey: intentKey });
       if (currentProjectId.current !== projectId || unavailableSourceIds.current.has(source.sourceId) || (sourceLifecycleEpochs.current.get(source.sourceId) ?? 0) !== lifecycleEpoch) return false;
       parseIntentKeys.current.delete(intentId);
@@ -155,7 +166,7 @@ export function useSourcesController(selectedSourceId?: string) {
     } finally {
       setParsingSourceId(null);
     }
-  }, [projectId, queryClient, trackJob]);
+  }, [projectId, queryClient, trackJob, sources]);
 
   const retryJob = useCallback(async (tracked: TrackedSourceJob) => {
     if (unavailableSourceIds.current.has(tracked.sourceId)) return;
@@ -306,29 +317,30 @@ export function useSourcesController(selectedSourceId?: string) {
       await queryClient.invalidateQueries({ queryKey: ['resource-library', projectId] });
       setSubmitStage('启动解析任务…');
       let parseStarted=false;let browserNotice='';
-      let browserSelected=kind==='file'&&file&&/\.(pdf|docx|xlsx|pptx)$/i.test(file.name)&&(/\.(docx|xlsx|pptx)$/i.test(file.name)||parseMode==='browser'||(parseMode==='auto'&&file.size>10*1024*1024));
-      if(kind==='file'&&file&&/\.pdf$/i.test(file.name)&&parseMode==='auto'&&!browserSelected) {
+      const automaticFile = kind === 'file' && project?.aiCollaborationEnabled === true && capability.features.aiEnabled;
+      let browserSelected=!automaticFile && kind==='file'&&file&&/\.(pdf|docx|xlsx|pptx)$/i.test(file.name)&&(/\.(docx|xlsx|pptx)$/i.test(file.name)||parseMode==='browser'||(parseMode==='auto'&&file.size>10*1024*1024));
+      if(!automaticFile&&kind==='file'&&file&&/\.pdf$/i.test(file.name)&&parseMode==='auto'&&!browserSelected) {
         await import('../../pages/source-pdf-render');
         const {getDocument}=await import('pdfjs-dist');
         const task=getDocument({data:new Uint8Array(await file.arrayBuffer())});
         try {browserSelected=(await task.promise).numPages>30;} finally{await task.destroy();}
       }
-      if(browserSelected&&file) {
+      if (automaticFile) { parseStarted = true; browserNotice = '文件已保存，正文提取、总结与适用的要求草稿将由后台处理，关闭页面仍会继续。扫描 PDF 如需页面图片，请打开文件详情点击“准备扫描页并识别”。'; } else if(browserSelected&&file) {
         const abort=new AbortController();importAbort.current=abort;
         const result=await importBrowserFile(projectId,source.sourceVersionId,file,abort.signal,setSubmitStage);
         importAbort.current=null;browserNotice=(result.textReady?'本机正文已保存。':`正文部分完成，${result.needsImages} 页待补充。`)+(result.warnings.length?' '+result.warnings.join('；'):'');
-        if(result.textReady&&capability.features.aiEnabled) {
+        if(result.textReady&&project?.aiCollaborationEnabled === true&&capability.features.aiEnabled) {
           const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/analyze'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});
           trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;
         }
-      } else if(!capability.features.aiEnabled&&kind==='file'&&file&&/\.pdf$/i.test(file.name)) {const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/extract'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;}
-      else if(capability.features.aiEnabled) parseStarted=await startParse({sourceId:source.sourceId,title:source.title},source.sourceVersionId);
+      } else if(!(project?.aiCollaborationEnabled === true && capability.features.aiEnabled)&&kind==='file'&&file&&/\.pdf$/i.test(file.name)) {const job=await documentRequest<{jobId:string}>(projectPath(projectId,'/document-imports/extract'),{method:'POST',body:{sourceVersionId:source.sourceVersionId}});trackJob({jobId:job.jobId,sourceId:source.sourceId,sourceVersionId:source.sourceVersionId,sourceTitle:source.title,fileId,status:'queued'});parseStarted=true;}
+      else if(project?.aiCollaborationEnabled === true&&capability.features.aiEnabled) parseStarted=await startParse({sourceId:source.sourceId,title:source.title},source.sourceVersionId);
       setText('');
       setUrl('');
       setTitle('');
       setFile(null);
-      setSuccessMessage(browserNotice || (!capability.features.aiEnabled
-        ? '来源已创建并保存。当前服务能力显示 AI 未启用，暂不能发起要求提取。'
+      setSuccessMessage(browserNotice || (!(project?.aiCollaborationEnabled === true && capability.features.aiEnabled)
+        ? '来源已创建并保存。项目或服务 AI 未启用，暂不能自动发起要求提取。'
         : parseStarted ? '来源已创建，解析任务已提交。' : '来源已创建，但解析请求未成功；请在来源列表中确认状态后重试解析。'));
     } catch (error) {
       setActionError(error);
