@@ -1,3 +1,4 @@
+import { recordActivity, recordModelResponse, readActivity } from './ai-activity';
 import { aiSecret, checkpointSecret } from '../ai/secrets';
 import { scheduleAutomaticDraftRetry } from './ai-automatic-retries';
 import { readAudioPipelineStatus } from './audio-pipeline';
@@ -115,7 +116,7 @@ export async function draftView(env: Env, row: DraftRow) {
       goal?:z.infer<typeof creationGoal>;
       mode: 'ai' | 'manual';
       configVersionId?: string;
-    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, previewState: row.preview_waiting_id && row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id && row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id, row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: await Promise.all((await draftFiles(env, row.id)).map(async f=>{const indexed=await env.DB.prepare('SELECT 1 FROM draft_document_blocks WHERE file_id=?1 LIMIT 1').bind(f.id).first();const view=await fileView(env,f);return {...view,textReady:!!indexed||view.textReady};})), removedFiles: await Promise.all(removed.results.map(f=>fileView(env,f))), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
+    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, activity: row.preview_attempt_id ? await readActivity(env, 'draft:'+row.preview_attempt_id, row.preview_waiting_id ? 'waiting_input' : row.preview_state==='ready'?'succeeded':row.preview_state) : null, previewState: row.preview_waiting_id && row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id && row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id, row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: await Promise.all((await draftFiles(env, row.id)).map(async f=>{const indexed=await env.DB.prepare('SELECT 1 FROM draft_document_blocks WHERE file_id=?1 LIMIT 1').bind(f.id).first();const view=await fileView(env,f);return {...view,textReady:!!indexed||view.textReady};})), removedFiles: await Promise.all(removed.results.map(f=>fileView(env,f))), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
   };
 }
 function editable(row: DraftRow, revision: number) {
@@ -247,12 +248,20 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     const normalizedTasks = tasks.map((task, index) => ({ ...creationTask.parse(task), key: task.key ?? `t${index + 1}` }));
     if (previous.mode === 'manual' && JSON.stringify(previous.goal) === JSON.stringify(goal) && JSON.stringify(previous.tasks) === JSON.stringify(normalizedTasks)) return draftView(env, row);
   }
-  const attempt = resumeAttempt ?? newId();
+  const manualResume=mode==='ai'&&regenerate&&!resumeAttempt&&row.preview_state==='failed'&&row.preview_attempt_id||null;
+  const attempt = resumeAttempt ?? manualResume ?? newId();
   // Persist before claiming, so a queued execution can never silently use newer inputs/config.
   let savedCheckpoint=mode==='ai'?await prepareDraftPreviewAttempt(env,row,attempt,requestedGoal):null;
   if(savedCheckpoint&&(savedCheckpoint.checkpoint.draftId!==id||savedCheckpoint.checkpoint.userId!==userId||savedCheckpoint.checkpoint.revision!==revision))throw invalidState('预览检查点与草稿版本不匹配');
+  if(manualResume&&savedCheckpoint){
+    const config=await loadAiConfig(env.DB);
+    if(!config?.enabled||config.id!==savedCheckpoint.checkpoint.configVersionId)throw invalidState('模型配置已变化，请重新发起预览');
+    savedCheckpoint.checkpoint.pendingDispatch=false;
+    savedCheckpoint.etag=await saveDraftCheckpoint(env,savedCheckpoint.checkpoint,savedCheckpoint.etag);
+  }
   const claimed = await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_attempt_id=?4,preview_waiting_id=NULL,preview_error=NULL,preview_config_version_id=?8,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_waiting_id IS NULL AND ((?7=1 AND preview_state='running' AND preview_attempt_id=?4) OR (?7=0 AND preview_attempt_id IS ?9 AND updated_at=?10 AND (preview_state!='running' OR ?6=1)))").bind(id, userId, revision, attempt, nowIso(), regenerate ? 1 : 0,resumeAttempt?1:0,savedCheckpoint?.checkpoint.configVersionId??null,row.preview_attempt_id,row.updated_at).run();
   if (!claimed.meta.changes) throw invalidState('预览状态已变化，请刷新');
+  if(manualResume)await recordActivity(env,'draft:'+attempt,'retrying','resumed',{completed:savedCheckpoint?.checkpoint.step??0,unit:'step'});
   let dispatched = false;
   try {
     let context = savedCheckpoint?.checkpoint.context ?? await draftPreviewContext(env,id,userId);
@@ -275,6 +284,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         if(current.status!=='active'||current.revision!==revision||current.preview_attempt_id!==attempt||current.preview_state!=='running'||current.preview_waiting_id||!cfg?.enabled||cfg.id!==configVersionId)throw invalidState('草稿或模型配置已变化');
       };
       await guard();
+      await recordActivity(env,'draft:'+attempt,'reading_sources','completed');
       // A durable dispatch marker is never automatically replayed, even after a process crash.
       if(state.pendingDispatch)throw new DraftCheckpointBusy();
       while(!state.content) {
@@ -282,6 +292,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         if(!state.pendingOutput) {
           let out:Awaited<ReturnType<typeof gatewayChat>>|undefined,failure:unknown,callDispatched=false;
           try {
+            await recordActivity(env,'draft:'+attempt,'calling_model','started',{completed:state.step,unit:'step'});
             out=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:aiSecret(env),envName:env.ENV_NAME,diagnostics:env},{
               config:model,messages,jsonMode:true,privateContext:true,sessionId:attempt,
               toolMode:{definitions:[askUserQuestionDefinition,draftReadTool],exchanges:state.exchanges},
@@ -289,7 +300,9 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
               onDispatch:()=>{callDispatched=true;dispatched=true;}
             });
             // Save received output before accounting/tool execution. A crash cannot duplicate the paid request.
+            await recordModelResponse(env,'draft:'+attempt);
             state.pendingOutput=out;state.pendingResults=[];state.pendingDispatch=false;await save();
+            await recordActivity(env,'draft:'+attempt,'calling_model','completed',{completed:state.step+1,unit:'step'});
           } catch(e) {failure=e;}
           if(callDispatched)await recordAiCall(env,{draftId:id,purpose:'textEconomy',configVersionId,promptVersion:'creation-preview-v2',model:model.model,input:{redacted:true,draftId:id,revision,toolMode:true},output:{redacted:true,...(failure?{error:'provider_failed'}:{})},promptTokens:out?.promptTokens??null,completionTokens:out?.completionTokens??null,latencyMs:out?.latencyMs??0,status:failure?'failed':'ok'});
           if(failure)throw failure;
@@ -302,10 +315,12 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
           for(const call of calls) {
             if(state.pendingResults.some(result=>result.call.id===call.id))continue;
             await guard();
+            await recordActivity(env,'draft:'+attempt,'executing_tool','started',{completed:state.step,unit:'step'});
             const result=call.name==='ask_user_question'
               ?await executeClarification(env,{draftId:id,userId,attemptId:attempt,revision},{...call,id:`${state.step}:${call.id}`})
               :call.name==='read_draft_document'?await executeDraftReadTool(env,id,userId,call.args):{error:'UNKNOWN_TOOL',message:'仅支持 ask_user_question/read_draft_document'};
             state.pendingResults.push({call,output:result});await save();
+            await recordActivity(env,'draft:'+attempt,'executing_tool','completed',{completed:state.step+1,unit:'step'});
           }
           state.exchanges.push({assistant:out.toolOutput.assistant,results:state.pendingResults});
           state.pendingOutput=undefined;state.pendingResults=[];state.step++;await save();
@@ -314,6 +329,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         }
       }
       await guard();
+      await recordActivity(env,'draft:'+attempt,'validating');
       const begin=state.content.indexOf('{'),end=state.content.lastIndexOf('}');
       const result=z.object({goal:creationGoal.optional(),tasks:z.array(creationTask).min(1).max(20)}).strict().parse(JSON.parse(state.content.slice(begin,end+1)));
       output=result.tasks;goal=requestedGoal??payload.goal??result.goal??goal;
@@ -341,12 +357,19 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     }
     const preview={goal,tasks:output,mode,...(configVersionId?{configVersionId}:{})};
     const nextRevision=payload.workspace?revision+1:revision;
+    if(mode==='ai')await recordActivity(env,'draft:'+attempt,'saving');
     const saved=await env.DB.prepare("UPDATE project_creation_drafts SET preview_json=?5,revision=?7,preview_revision=?7,preview_state='ready',preview_waiting_id=NULL,updated_at=?6 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_attempt_id=?4 AND preview_state='running' AND preview_waiting_id IS NULL").bind(id,userId,revision,attempt,JSON.stringify(preview),nowIso(),nextRevision).run();
     if(!saved.meta.changes)throw invalidState('草稿已变化，预览未应用');
+    if(mode==='ai')await recordActivity(env,'draft:'+attempt,'completed','completed');
     return draftView(env,await getDraft(env,id,userId));
   } catch(e) {
     if(e instanceof UserClarificationPending||e instanceof DraftCheckpointBusy)return draftView(env,await getDraft(env,id,userId));
+    if(savedCheckpoint && (e instanceof z.ZodError || e instanceof SyntaxError)){
+      const invalid=await loadDraftCheckpoint(env,attempt);
+      if(invalid?.checkpoint.content){invalid.checkpoint.content=undefined;await saveDraftCheckpoint(env,invalid.checkpoint,invalid.etag);}
+    }
     await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error=?3,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND revision=?5 AND preview_state='running' AND preview_waiting_id IS NULL AND owner_id=?6").bind(id,attempt,dispatched?'本次调用已发出，可能产生用量；结果未能确认。主动重新生成可能再次计费。':e instanceof AppError?e.message:'预览失败，请重试',nowIso(),revision,userId).run();
+    if(mode==='ai')await recordActivity(env,'draft:'+attempt,'failed','failed');
     await scheduleAutomaticDraftRetry(env,id,attempt,e instanceof z.ZodError || (e instanceof SyntaxError && savedCheckpoint) ? new AppError('AI_OUTPUT_INVALID','预览模型输出未通过校验',502,false) : e);
     throw e;
   }

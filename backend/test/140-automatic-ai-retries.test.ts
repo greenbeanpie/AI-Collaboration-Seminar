@@ -103,6 +103,15 @@ describe('durable 60-second AI recovery',()=>{
     });
     const row=(await retryRow(root))!;expect(row.status).toBe('pending');expect(row.attempts).toBe(1);expect(row.lease_token).toBeNull();
   });
+  it('requires an explicit click before replaying an unknown draft provider request',async()=>{
+    await configureGoFixture();const owner=await seedUser(),draftId=newId(),attempt=newId(),cfg=(await loadAiConfig(env.DB))!,now=nowIso(),payload=creationPayload.parse({name:'未知请求',aiCollaborationEnabled:true});
+    await env.DB.prepare("INSERT INTO project_creation_drafts(id,owner_id,payload_json,preview_state,preview_attempt_id,preview_config_version_id,project_id,created_at,updated_at) VALUES(?1,?2,?3,'failed',?4,?5,?6,?7,?7)").bind(draftId,owner.userId,JSON.stringify(payload),attempt,cfg.id,newId(),now).run();
+    await saveDraftCheckpoint(env,{version:1,draftId,userId:owner.userId,revision:1,attempt,configVersionId:cfg.id,payload,context:[],system:'fixture',step:2,exchanges:[],pendingDispatch:true});
+    await env.DB.prepare("INSERT INTO ai_automatic_retries(id,target_kind,target_id,draft_id,status,next_attempt_at,created_at,updated_at) VALUES(?1,'draft_preview',?2,?3,'pending',?4,?4,?4)").bind('draft:'+attempt,attempt,draftId,now).run();
+    const create=vi.fn(async()=>({})),testEnv={...env,AGENT_WORKFLOW:new Proxy(env.AGENT_WORKFLOW,{get:(target,key)=>key==='create'?create:Reflect.get(target,key)})};
+    await recoverAutomaticAiRetries(testEnv,vi.fn());expect(create).not.toHaveBeenCalled();expect((await loadDraftCheckpoint(env,attempt))!.checkpoint.pendingDispatch).toBe(true);
+    expect(await retryFailedDraftPreview(testEnv,draftId)).toMatchObject({status:'retried',jobId:attempt});expect(create).toHaveBeenCalledTimes(1);
+  });
   it('retries an unknown draft dispatch while preserving paid output and completed tool results',async()=>{
     await configureGoFixture();const owner=await seedUser(),draftId=newId(),attempt=newId(),cfg=(await loadAiConfig(env.DB))!,now=nowIso();
     const payload=creationPayload.parse({name:'重试草稿',aiCollaborationEnabled:true});
@@ -118,7 +127,8 @@ describe('durable 60-second AI recovery',()=>{
     await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed' WHERE id=?1").bind(draftId).run();
     await env.DB.prepare("UPDATE ai_automatic_retries SET status='exhausted',attempts=3 WHERE id=?1").bind(`draft:${attempt}`).run();
     const restarted=await retryFailedDraftPreview(testEnv,draftId);
-    expect(restarted.status).toBe('retried');expect(restarted.jobId).not.toBe(attempt);
+    expect(restarted.status).toBe('retried');expect(restarted.jobId).toBe(attempt);
+    expect((await loadDraftCheckpoint(env,attempt))!.checkpoint.pendingResults).toEqual([result]);
     expect((await retryRow(`draft:${attempt}`))?.status).toBe('exhausted');
   });
 

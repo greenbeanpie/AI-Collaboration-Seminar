@@ -1,3 +1,4 @@
+import { recordActivity, recordModelResponse } from '../src/services/ai-activity';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -22,6 +23,18 @@ const task = {
 };
 afterEach(async () => { vi.unstubAllGlobals(); await env.DB.exec('DROP TRIGGER IF EXISTS fail_task'); });
 describe('private creation drafts', () => {
+  it('exposes private activity history without fabricating response time on reads',async()=>{
+    const owner=await seedUser(),stranger=await seedUser(),draft=await data(await req(owner.token,'',payload)),attempt=newId();
+    await env.DB.prepare("UPDATE project_creation_drafts SET preview_attempt_id=?2,preview_state='running' WHERE id=?1").bind(draft.id,attempt).run();
+    await recordActivity(env,'draft:'+attempt,'calling_model');
+    const before=await data(await req(owner.token,'/'+draft.id));expect(before.activity.lastResponseAt).toBeNull();
+    await recordModelResponse(env,'draft:'+attempt);await recordActivity(env,'draft:'+attempt,'saving');
+    const first=await data(await req(owner.token,'/'+draft.id)),second=await data(await req(owner.token,'/'+draft.id));
+    expect(first.activity.lastResponseAt).toBeTruthy();expect(second.activity.lastResponseAt).toBe(first.activity.lastResponseAt);
+    const history=await data(await req(owner.token,'/'+draft.id+'/activity-events?limit=1'));expect(history.items).toHaveLength(1);expect(history.nextCursor).not.toBeNull();
+    expect((await req(stranger.token,'/'+draft.id+'/activity-events')).status).toBe(404);
+  });
+
   it('stages bytes privately, cancels/restores, imports all entities once, and only then activates invitations', async () => {
     const owner = await seedUser(), stranger = await seedUser(), key = newId();
     const first = await req(owner.token, '', payload, 'POST', key), draft = await data(first);

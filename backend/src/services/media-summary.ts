@@ -1,3 +1,5 @@
+import { checkpointRootId, checkpointFingerprint, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
+import { recordActivity, recordModelResponse } from './ai-activity';
 import { aiSecret } from '../ai/secrets';
 import { runAudioPipeline,whisperEnabled,audioFallbackConfigId } from './audio-pipeline';
 import type { Env } from '../env';
@@ -36,6 +38,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
   let client:GeminiMediaClient|undefined,state:State|null=null,continuing=false,ownsLease=false,mimoRequest=input.mediaProvider==='mimo';const leaseToken=newId();
   try {
     await assertActive();
+    await recordActivity(env,jobId,'reading_sources');
     const config=await loadAiConfig(env.DB,input.configVersionId);
     if(!config?.enabled)throw new AppError('AI_UNAVAILABLE','AI 尚未启用；原文件已保留',503,false);
     const fallbackId=await audioFallbackConfigId(env,jobId);
@@ -79,7 +82,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,provider,created_at) VALUES(?1,?2,?3,?4,0,'started','mimo',?5)").bind(callId,jobId,config.id,mimoModel.model,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try{await assertActive();result=await mimo.summarize(url,file.mime);}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try{await assertActive();await recordActivity(env,jobId,'summarizing');const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([config.id,file.r2_key,file.mime,'mimo'])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof mimo.summarize>>>(env,key);if(cached){result=cached;}else{result=await mimo.summarize(url,file.mime);await recordModelResponse(env,jobId);await saveResponseCheckpoint(env,key,result);}}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cached_tokens=?4,audio_tokens=?5,video_tokens=?6,window_end=?7 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,result.cachedTokens,result.audioTokens,result.videoTokens,result.summary.durationSeconds??null).run();
       await assertActive();
       await env.DB.prepare("UPDATE media_processing SET summary_json=?3,duration_seconds=?4,windows_json=?5,updated_at=?6 WHERE id=?1 AND lease_token=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=media_processing.job_id AND status IN ('queued','running'))").bind(state.id,leaseToken,JSON.stringify(result.summary),result.summary.durationSeconds??null,JSON.stringify([result.summary]),nowIso()).run();
@@ -120,9 +123,11 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       const callId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,window_end,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,'started',?7)").bind(callId,jobId,mediaConfig!.id,model.model,window.start,window.end??null,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try {result=await client.summarize(remote,file.mime,window.start,window.end);}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try {await recordActivity(env,jobId,'summarizing','started',{completed:index,total:windows.length,unit:'window'});const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([mediaConfig!.id,file.r2_key,file.mime,window.start,window.end])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof client.summarize>>>(env,key);if(cached){result=cached;}else{result=await client.summarize(remote,file.mime,window.start,window.end);await recordModelResponse(env,jobId);await saveResponseCheckpoint(env,key,result);}}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens).run();
+      await recordActivity(env,jobId,'saving');
       completed.push(result.summary);await env.DB.prepare("UPDATE media_processing SET windows_json=?2,summary_json=?3,stage='processing',updated_at=?4 WHERE id=?1").bind(state.id,JSON.stringify(completed),JSON.stringify({...result.summary,complete:false,caveats:[...result.summary.caveats,'处理中；尚未确认完整覆盖']}),nowIso()).run();
+      await recordActivity(env,jobId,'summarizing','completed',{completed:completed.length,total:windows.length,unit:'window'});
       if(file.mime.startsWith('audio/') && index===0){
         const audioDuration=result.summary.durationSeconds;
         if(!audioDuration)throw new AppError('AI_OUTPUT_INVALID','无法确认音频总时长；摘要按部分结果保留，请核对',422,false);
@@ -137,6 +142,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     }
     summary=mediaSummarySchema.parse({title:completed[0]!.title,summary:completed.map(s=>s.summary).join('\n\n'),keyPoints:completed.flatMap(s=>s.keyPoints).slice(0,50),conclusions:completed.flatMap(s=>s.conclusions).slice(0,30),actionItems:completed.flatMap(s=>s.actionItems).slice(0,30),timestamps:completed.flatMap(s=>s.timestamps).slice(0,100),caveats:['这是 AI 摘要，不是逐字原文。',...completed.flatMap(s=>s.caveats)].slice(0,30),complete:true});
     }
+    await recordActivity(env,jobId,'saving');
     const text=mediaSummaryText(summary);await assertActive();
     if(sourceVersionId){
       const active=await loadActiveSourceVersion(env,sourceVersionId,input.sourceLifecycleVersion),fragmentId=newId(),guard=sourceLifecycleGuard('?1','?2')+" AND EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running')) AND EXISTS(SELECT 1 FROM media_processing WHERE job_id=?3 AND lease_token=?8)";

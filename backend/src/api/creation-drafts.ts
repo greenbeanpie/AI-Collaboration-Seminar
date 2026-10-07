@@ -1,3 +1,4 @@
+import { readActivityEvents, aiActivitySchema, aiActivityEventsSchema } from '../services/ai-activity';
 import { cancelDraftMediaStatements } from '../services/draft-media-lifecycle';
 import { audioStatusSchema, audioResumeSchema } from './audio-schema';
 import { resumeWaitingAudioFallback } from '../services/audio-pipeline';
@@ -28,7 +29,7 @@ const fileSchema = z.object({
   id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaJobId:z.string().uuid().nullable().optional(),audio:audioStatusSchema.nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
 });
 const schema = z.object({
-  id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
+  activity:aiActivitySchema.nullable(), id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
     goal:creationGoal.optional(),tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
   }).nullable(), previewRevision: revision.nullable(), previewAttemptId: z.string().uuid().nullable().optional(), previewState: z.string(), clarification: clarificationSchema.nullable(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
 });
@@ -121,6 +122,11 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       }
     }
   }), async (c) => c.json(apiData(c, await draftView(c.env, await getDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id))), 200));
+  app.openapi(createRoute({method:'get',path:base+'/{draftId}/activity-events',tags:['creation'],request:{params,query:z.object({cursor:z.coerce.number().int().nonnegative().optional(),limit:z.coerce.number().int().min(1).max(100).optional()})},responses:{200:{description:'拥有者可读取当前预览安全操作记录',content:{'application/json':{schema:apiEnvelope(aiActivityEventsSchema,'DraftActivityEventsResponse')}}}}}),async c=>{
+    const row=await getDraft(c.env,c.req.valid('param').draftId,c.get('user')!.id),query=c.req.valid('query');
+    const events=row.preview_attempt_id?await readActivityEvents(c.env,'draft:'+row.preview_attempt_id,query.cursor,query.limit):{items:[],nextCursor:null};
+    return c.json(apiData(c,events),200);
+  });
   app.openapi(createRoute({
     method: 'patch', path: base + '/{draftId}', tags: ['creation'], request: {
       params, body: json(z.object({

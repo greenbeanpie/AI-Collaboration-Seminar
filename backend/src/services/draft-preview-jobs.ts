@@ -1,3 +1,6 @@
+import { recordActivity } from './ai-activity';
+import { saveDraftCheckpoint } from './draft-preview-checkpoints';
+import { loadAiConfig } from '../ai/config';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -57,14 +60,23 @@ export async function enqueueDraftPreview(env:Env,id:string,userId:string,revisi
   }
   if(row.preview_state==='ready'&&row.preview_revision===revision&&!regenerate)return draftView(env,row);
   if(row.preview_state==='running'&&(!regenerate||Date.now()-Date.parse(row.updated_at)<660000))return draftView(env,row);
-  const attempt=newId(),now=nowIso();
+  const resume=regenerate&&row.preview_state==='failed'&&row.preview_attempt_id;
+  const attempt=resume||newId(),now=nowIso();
   const snapshot=await prepareDraftPreviewAttempt(env,row,attempt,goal);
+  const instanceId=resume?`${attempt}-manual-${newId()}`:attempt;
+  if(resume){
+    const config=await loadAiConfig(env.DB);
+    if(!config?.enabled||config.id!==snapshot.checkpoint.configVersionId)throw invalidState('模型配置已变化，请重新发起预览');
+    snapshot.checkpoint.pendingDispatch=false;
+    await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);
+  }
   const result=await env.DB.batch([
     env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_attempt_id=?4,preview_waiting_id=NULL,preview_error=NULL,preview_config_version_id=?9,updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_waiting_id IS NULL AND (preview_state!='running' OR (?6=1 AND preview_attempt_id IS ?7 AND updated_at=?8))").bind(id,userId,revision,attempt,now,regenerate?1:0,row.preview_attempt_id,row.updated_at,snapshot.checkpoint.configVersionId),
-    env.DB.prepare("INSERT INTO draft_preview_dispatches(instance_id,draft_id,attempt_id,context_revision,status,created_at,updated_at) SELECT ?4,?1,?4,?3,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND revision=?3 AND preview_attempt_id=?4 AND preview_state='running' AND status='active')").bind(id,userId,revision,attempt,now)
+    env.DB.prepare("INSERT INTO draft_preview_dispatches(instance_id,draft_id,attempt_id,context_revision,status,created_at,updated_at) SELECT ?6,?1,?4,?3,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?1 AND owner_id=?2 AND revision=?3 AND preview_attempt_id=?4 AND preview_state='running' AND status='active')").bind(id,userId,revision,attempt,now,instanceId)
   ]);
   if(!result[0]?.meta.changes)throw invalidState('预览状态已变化');
-  await dispatchDraftPreview(env,{instance_id:attempt,draft_id:id,attempt_id:attempt,context_revision:revision,question_id:null,status:'pending',updated_at:now});
+  await recordActivity(env,'draft:'+attempt,resume?'retrying':'reading_sources',resume?'resumed':'started',{completed:snapshot.checkpoint.step,unit:'step'});
+  await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:id,attempt_id:attempt,context_revision:revision,question_id:null,status:'pending',updated_at:now});
   return draftView(env,await getDraft(env,id,userId));
 }
 

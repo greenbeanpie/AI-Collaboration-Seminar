@@ -1,3 +1,4 @@
+import { recordActivity } from './ai-activity';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
 import { newId, nowIso } from '../core/db';
@@ -53,7 +54,7 @@ async function schedule(env:Env,target:{id:string;kind:string;target:string;draf
 }
 
 /** Preserve completed reads and outputs; only an unanswered paid dispatch is replaced. */
-async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
+async function resumeDraftPreview(env:Env,row:RetryRow,allowUncertain=false):Promise<void> {
   const draft=await env.DB.prepare('SELECT owner_id,revision,preview_state,preview_attempt_id,preview_config_version_id,status,preview_waiting_id FROM project_creation_drafts WHERE id=?1').bind(row.draft_id).first<{owner_id:string;revision:number;preview_state:string;preview_attempt_id:string|null;preview_config_version_id:string|null;status:string;preview_waiting_id:string|null}>();
   if(!draft || draft.status!=='active' || draft.preview_attempt_id!==row.target_id || draft.preview_waiting_id) throw invalidState('草稿预览已被替换、取消或正在等待回答');
   const config=await loadAiConfig(env.DB);
@@ -63,11 +64,10 @@ async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
   const instanceId=`${row.target_id}-retry-${row.attempts}`;
   const existing=await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(instanceId).first<{status:string}>();
   if(existing?.status==='dispatched')return;
+  if(restored.checkpoint.pendingDispatch&&!restored.checkpoint.pendingOutput&&!allowUncertain)throw invalidState('上次模型请求结果未知，请点击从停止处继续；该步骤可能再次计费');
   if(draft.preview_state==='failed') {
     // Do not discard pendingOutput/pendingResults: their tool calls may already have run.
     restored.checkpoint.pendingDispatch=false;
-    // A completed but invalid final output must be generated again, without replaying tools.
-    if(restored.checkpoint.content) restored.checkpoint.content=undefined;
     await saveDraftCheckpoint(env,restored.checkpoint,restored.etag);
   } else if(draft.preview_state!=='running' || !existing) throw invalidState('预览状态已变化');
   const now=nowIso();
@@ -75,6 +75,7 @@ async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
     env.DB.prepare("INSERT OR IGNORE INTO draft_preview_dispatches(instance_id,draft_id,attempt_id,context_revision,status,created_at,updated_at) SELECT ?1,?2,?3,?4,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND status='active' AND preview_attempt_id=?3 AND revision=?4 AND preview_state IN ('failed','running') AND preview_waiting_id IS NULL)").bind(instanceId,row.draft_id,row.target_id,draft.revision,now),
     env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_error=NULL,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND preview_state='failed' AND status='active' AND preview_waiting_id IS NULL AND EXISTS(SELECT 1 FROM draft_preview_dispatches WHERE instance_id=?5)").bind(row.draft_id,row.target_id,draft.revision,now,instanceId),
   ]);
+  await recordActivity(env,'draft:'+row.target_id,'retrying','resumed',{completed:restored.checkpoint.step,unit:'step'});
   await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:row.draft_id!,attempt_id:row.target_id,context_revision:draft.revision,question_id:null,status:'pending',updated_at:now});
 }
 
@@ -97,7 +98,7 @@ export async function retryFailedDraftPreview(env:Env,draftId:string,expectedUpd
   if(!claim.meta.changes)return {status:'skipped',reason:'已达三次重试上限或正在重试'};
   const row=(await env.DB.prepare('SELECT * FROM ai_automatic_retries WHERE id=?1').bind(id).first<RetryRow>())!;
   try {
-    await resumeDraftPreview(env,row);
+    await resumeDraftPreview(env,row,true);
     await env.DB.prepare("UPDATE ai_automatic_retries SET status='dispatched',lease_token=NULL,lease_until=NULL,updated_at=?3 WHERE id=?1 AND lease_token=?2").bind(id,token,nowIso()).run();
     return {status:'retried',jobId:row.target_id};
   } catch(error) {

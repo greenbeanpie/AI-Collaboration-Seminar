@@ -1,3 +1,5 @@
+import { recordActivity } from './ai-activity';
+import { checkpointRootId, saveResponseCheckpoint, loadResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { invalidateResourceIndex } from './resource-index';
 import { ocrBatchSize, ocrContext, parseOcrBatch, removeOcrDuplicates } from './ocr-batches';
@@ -263,9 +265,25 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     if (!object) throw new AppError('SOURCE_PARSE_FAILED','页面图片缺失，请重新上传',422,false);
     page.size_bytes=object.size;
   }
+  const root=jobId?await checkpointRootId(env,jobId):sourceVersionId;
+  const pageCheckpoint=(page:{page_number:number;image_file_id:string})=>`ai/ocr-responses/${root}/${version.lifecycleVersion}/${config.id}/${page.image_file_id}-${page.page_number}.json`;
+  const persistPage=async(page:{id:string;page_number:number},data:ReturnType<typeof parseOcrBatch>[number])=>{
+    await assertProcessingActive(env,version,jobId);
+    const existing=await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id=?1 AND page_number=?2 ORDER BY seq').bind(version.id,page.page_number).all<{content:string}>();
+    const text=removeOcrDuplicates(data.text,existing.results.map(f=>f.content));
+    await env.FILES.put(`sources/${version.id}/lifecycle-${version.lifecycleVersion}/ocr-page-${page.page_number}.txt`,data.text);
+    if(text.trim())await insertFragments(env,version,[{pageNumber:page.page_number,text,kind:'ocr'}],jobId);
+    await env.DB.prepare(`UPDATE source_pages SET ocr_status='ok',ocr_method='vision',ocr_confidence=?2,needs_review=1,updated_at=?3 WHERE id=?1 AND ${processingGuard('?4','?5','?6')}`).bind(page.id,data.confidence,nowIso(),version.id,version.lifecycleVersion,jobId??null).run();
+  };
   let ocred = 0; let failed = 0; let batches = 0;
+  // A received page response survives business writes and a new execution ID.
+  for(let index=0;index<pages.results.length;){
+    const page=pages.results[index]!,cached=await loadResponseCheckpoint<ReturnType<typeof parseOcrBatch>[number]>(env,pageCheckpoint(page));
+    if(cached){await persistPage(page,cached);ocred++;pages.results.splice(index,1);}else index++;
+  }
   for (let offset = 0; offset < pages.results.length;) {
     await assertProcessingActive(env, version, jobId);
+    if(jobId)await recordActivity(env,jobId,'ocr','started',{completed:offset,total:pages.results.length,unit:'page'});
     const count = singleOnly ? 1 : ocrBatchSize(pages.results.slice(offset));
     const batch = pages.results.slice(offset, offset + count);
     const previous = await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id = ?1 AND page_number = ?2 ORDER BY seq').bind(version.id, batch[0]!.page_number - 1).all<{ content: string }>();
@@ -299,6 +317,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
           await markAiCallStarted(env,jobId);await assertProcessingActive(env,version,jobId);},
         onDispatch:()=>{attempted=true;},messages:[{role:'user',content:[...images,{type:'text',text:prompt}]}]});
       valid = parseOcrBatch(JSON.parse(response.content),batch.map(p=>p.page_number));
+      for(const data of valid){const page=batch.find(page=>page.page_number===data.pageNumber)!;await saveResponseCheckpoint(env,pageCheckpoint(page),data);}
       if (!valid.length) throw new AppError('AI_OUTPUT_INVALID','视觉模型未返回有效页面正文',422,false);
     } catch (err) { if (!attempted) throw err; caught = err; }
     const rejected = batch.length > 1 && caught instanceof AppError && caught.details?.multipleImagesRejected === true;
@@ -315,17 +334,14 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     for (const page of batch) {
       const data = valid.find(result=>result.pageNumber===page.page_number);
       if (data) {
-        const existing = await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id=?1 AND page_number=?2 ORDER BY seq').bind(version.id,page.page_number).all<{content:string}>();
-        const text = removeOcrDuplicates(data.text,existing.results.map(f=>f.content));
-        await env.FILES.put(`sources/${version.id}/lifecycle-${version.lifecycleVersion}/ocr-page-${page.page_number}.txt`, data.text);
-        if (text.trim()) await insertFragments(env,version,[{pageNumber:page.page_number,text,kind:'ocr'}],jobId);
-        await env.DB.prepare(`UPDATE source_pages SET ocr_status='ok',ocr_method='vision',ocr_confidence=?2,needs_review=1,updated_at=?3 WHERE id=?1 AND ${processingGuard('?4','?5','?6')}`).bind(page.id,data.confidence,nowIso(),version.id,version.lifecycleVersion,jobId ?? null).run();
+        await persistPage(page,data);
         ocred++;
       } else {
         await env.DB.prepare(`UPDATE source_pages SET ocr_status='failed',needs_review=1,updated_at=?2 WHERE id=?1 AND ${processingGuard('?3','?4','?5')}`).bind(page.id,nowIso(),version.id,version.lifecycleVersion,jobId ?? null).run(); failed++;
       }
     }
     offset += count;
+    if(jobId)await recordActivity(env,jobId,'ocr','completed',{completed:offset,total:pages.results.length,unit:'page'});
   }
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND image_status='none' AND text_status='none'").bind(version.id).first<{n:number}>();
   await assertProcessingActive(env,version,jobId);
@@ -415,7 +431,8 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
   const requirements:ModelRequirement[]=[];
   for await(const {index,chunk,single} of documentChunkWindows(chunks)){
     await assertProcessingActive(env,version,jobId);const listing=renderDocumentChunk(chunk,true);
-    const cacheKey=jobId?'ai-document-chunks/'+jobId+'/requirements/'+await sha256Hex(config.id+listing):null;
+    if(jobId)await recordActivity(env,jobId,'summarizing','started',{completed:index,unit:'chunk'});
+    const cacheKey=jobId?'ai-document-chunks/'+await checkpointRootId(env,jobId)+'/requirements/'+await sha256Hex(config.id+listing):null;
     const cached=cacheKey?await env.FILES.get(cacheKey):null;let result:z.infer<typeof requirementOutputSchema>;
     if(cached){result=requirementOutputSchema.parse(await cached.json());}
     else {
@@ -426,6 +443,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
       if(cacheKey)await env.FILES.put(cacheKey,JSON.stringify(result));
     }
     validateChunkCitations(chunk,result.requirements.flatMap(req=>req.citations));requirements.push(...result.requirements);
+    if(jobId)await recordActivity(env,jobId,'summarizing','completed',{completed:index+1,unit:'chunk'});
   }
   // Deduplicate identical facts only. Conflicting dates/details remain visible for human review.
   const unique=new Map<string,ModelRequirement>();
