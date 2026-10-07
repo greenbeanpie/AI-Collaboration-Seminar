@@ -88,7 +88,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     const standardId=frozenAssessment?.standards_version_id??referenceInputs.standardsVersionId??input.standardsVersionId;
     if(!standardId)throw new AppError('INVALID_STATE','请使用当前生效项目标准重新发起演练',409,false);
     const standard=await assertEffectiveStandard(env,input.projectId,standardId);
-    const assertInputs=async()=>{await assertEffectiveStandard(env,input.projectId,standardId);await assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]);};
+    const assertInputs=async()=>{const current=await env.DB.prepare("SELECT 1 FROM rehearsals r JOIN jobs j ON j.id=?2 WHERE r.id=?1 AND r.processing_job_id=j.id AND j.status IN ('queued','running')").bind(rehearsal.id,jobId).first();if(!current)throw new AppError('INVALID_STATE','答辩作业已变化，旧尝试不会发布',409,false);await assertEffectiveStandard(env,input.projectId,standardId);await assertSourceInputs(env,input.projectId,input.preferredSourceVersionIds??[],input.sourceSnapshots??[]);};
     const reviewModel = config.config.review;
 
     const versionIds = JSON.parse(rehearsal.material_version_ids_json) as string[];
@@ -151,9 +151,9 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
       await assertInputs();
       const publication=await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'summary', ?5, ?6 WHERE ${effectiveStandardGuardSql('?3','?7')}`,
-        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements,references,decisionReferences }), now,standardId),
-        env.DB.prepare(`UPDATE rehearsals SET status = 'finished', finished_at = ?2 WHERE id = ?1 AND ${effectiveStandardGuardSql('rehearsals.project_id','?3')}`).bind(rehearsal.id, now,standardId),
+          `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), 'summary', ?5, ?6 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND processing_job_id=?8 AND (finish_job_id IS NULL OR finish_job_id=?8)) AND EXISTS(SELECT 1 FROM jobs WHERE id=?8 AND status IN ('queued','running')) AND ${effectiveStandardGuardSql('?3','?7')}`,
+        ).bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, JSON.stringify({ content: data.summary, strengths: data.strengths, improvements: data.improvements,references,decisionReferences }), now,standardId,jobId),
+        env.DB.prepare(`UPDATE rehearsals SET status = 'finished', finished_at = ?2 WHERE id = ?1 AND status='active' AND processing_job_id=?4 AND (finish_job_id IS NULL OR finish_job_id=?4) AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND status IN ('queued','running')) AND ${effectiveStandardGuardSql('rehearsals.project_id','?3')}`).bind(rehearsal.id, now,standardId,jobId),
       ]);
       if(!publication[0]?.meta.changes)throw new AppError('INVALID_STATE','项目标准已变化，演练总结未发布',409,false);
       await settleReservation(env, jobId, 'settled');
@@ -206,7 +206,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     // kind 语义（PLAN）：首问 question；后续追问/点评均为 followup；answer 由用户接口写入
     const kind = input.phase === 'question' ? 'question' : 'followup';
     const inserted=await env.DB.prepare(
-      `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id=?8) AND ${effectiveStandardGuardSql('?3','?9')}`,
+      `INSERT INTO rehearsal_turns (id, rehearsal_id, project_id, sequence, kind, content_json, created_at) SELECT ?1, ?2, ?3, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM rehearsal_turns WHERE rehearsal_id = ?4), ?5, ?6, ?7 WHERE EXISTS(SELECT 1 FROM rehearsals WHERE id=?2 AND status='active' AND finish_job_id IS NULL AND processing_job_id=?8) AND EXISTS(SELECT 1 FROM jobs WHERE id=?8 AND status IN ('queued','running')) AND ${effectiveStandardGuardSql('?3','?9')}`,
     )
       .bind(crypto.randomUUID(), rehearsal.id, input.projectId, rehearsal.id, kind, JSON.stringify({ content: data.content,references,decisionReferences }), now, jobId, standardId)
       .run();
@@ -217,7 +217,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await settleReservation(env, jobId, 'released');
-    if(input.phase==='summary')await env.DB.prepare("UPDATE assessments SET status='failed' WHERE entity_id=?1 AND status!='succeeded'").bind(input.rehearsalId).run();
+    if(input.phase==='summary')await env.DB.prepare("UPDATE assessments SET status='failed' WHERE entity_id=?1 AND status!='succeeded' AND (job_id IS NULL OR job_id=?2) AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))").bind(input.rehearsalId,jobId).run();
     await failJob(env, jobId, { code: err instanceof AppError ? err.code : 'INTERNAL', message });
   }
 }
