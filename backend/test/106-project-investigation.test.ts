@@ -10,10 +10,43 @@ import { loadAiConfig } from '../src/ai/config';
 import { reserveAiSlot } from '../src/services/ai-reservations';
 import { aiJsonCall,businessJson } from '../src/services/agent';
 import { redactPrivateExchanges } from '../src/services/project-investigation';
+import { ensureExecution, readExecution, resumeExecution } from '../src/services/ai-execution-control';
 import { z } from 'zod';
 afterEach(()=>vi.unstubAllGlobals());
 async function fixture(){const owner=await seedUser(),projectId=await seedProject(owner.userId);return {owner,projectId};}
 describe('autonomous project investigation',()=>{
+  it.each([false,true])('feeds invalid provenance back to model without tools and reuses paid repaired checkpoints (direct=%s)',async direct=>{
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!,jobId=newId();
+    await reserveAiSlot(env,{projectId:f.projectId,jobId,purpose:'review_run',maxCalls:5});
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'review_run','running','{}',?3,?3)").bind(jobId,f.projectId,nowIso()).run();
+    const blankVersion=newId(),blankMaterial=newId();await env.DB.batch([env.DB.prepare("INSERT INTO materials(id,project_id,title,kind,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,'空正文成果','report',?3,?4,?5,?5)").bind(blankMaterial,f.projectId,blankVersion,f.owner.userId,nowIso()),env.DB.prepare("INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,origin,author_id,created_at) VALUES(?1,?2,?3,1,'{}','','manual',?4,?5)").bind(blankVersion,blankMaterial,f.projectId,f.owner.userId,nowIso())]);
+    const emptyRead=await executeDiscoveryTool(env,f.projectId,'read_resource',{resourceType:'material',versionId:blankVersion,offset:0});expect(referencesFromRead(emptyRead)).toEqual([]);
+    let round=0;const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+      const body=JSON.parse(String(init?.body));
+      if(round++===0)return Response.json({choices:[{message:{content:JSON.stringify({title:'真实结论',referenceIds:[`project:${f.projectId}:0`],decisionReferences:[{decisionPath:'scores[3]',referenceIds:[`material:${blankVersion}:0`]}]})}}],usage:{prompt_tokens:10,completion_tokens:5}});
+      expect(body.tools).toBeUndefined();expect(JSON.stringify(body.messages)).toContain('decisionReferences');expect(JSON.stringify(body.messages)).toContain(`material:${blankVersion}:0`);expect(JSON.stringify(body.messages)).toContain('project:'+f.projectId);
+      return Response.json({choices:[{message:{content:JSON.stringify({title:'真实结论',referenceIds:[],decisionReferences:[]})}}],usage:{prompt_tokens:10,completion_tokens:5}});
+    });vi.stubGlobal('fetch',fetch);
+    const shared={messages:[{role:'user' as const,content:'调查项目'}],promptVersion:'invalid-reference-checkpoint',configVersionId:config.id};
+    const run=()=>direct?projectToolConversation(env,{...shared,context:{projectId:f.projectId,userId:f.owner.userId,jobId},config:config.config.review}):aiJsonCall(env,{...shared,projectId:f.projectId,jobId,projectTools:{projectId:f.projectId,userId:f.owner.userId,jobId},purpose:'review',model:config.config.review.model,modelConfig:config.config.review,schema:z.object({title:z.string()}).strict()});
+    const out=await run();expect(JSON.stringify(out)).toContain('真实结论');expect(fetch).toHaveBeenCalledTimes(2);
+    await run();expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('bounds job final repairs and resumes a new correction after explicit continuation without replaying investigation',async()=>{
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!,jobId=newId();
+    await reserveAiSlot(env,{projectId:f.projectId,jobId,purpose:'review_run',maxCalls:10});
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'review_run','running','{}',?3,?3)").bind(jobId,f.projectId,nowIso()).run();await ensureExecution(env,{kind:'job',id:jobId});
+    const fetch=vi.fn(async()=>Response.json({choices:[{message:{content:JSON.stringify({title:'原结论',referenceIds:['never-read']})}}],usage:{prompt_tokens:10,completion_tokens:5}}));vi.stubGlobal('fetch',fetch);
+    const params={projectId:f.projectId,jobId,projectTools:{projectId:f.projectId,userId:f.owner.userId,jobId},purpose:'review' as const,configVersionId:config.id,model:config.config.review.model,modelConfig:config.config.review,promptVersion:'bounded-reference-repair',messages:[{role:'user' as const,content:'检查'}],schema:z.object({title:z.string()}).strict()};
+    await expect(aiJsonCall(env,params)).rejects.toMatchObject({details:{executionPause:true}});expect(fetch).toHaveBeenCalledTimes(3);expect(await readExecution(env,{kind:'job',id:jobId})).toMatchObject({state:'paused',pauseReason:'output_invalid'});
+    await resumeExecution(env,{kind:'job',id:jobId},1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(jobId).run();fetch.mockImplementation(async(_url?:unknown,init?:RequestInit)=>{const body=JSON.parse(String(init?.body));expect(body.tools).toBeUndefined();expect(JSON.stringify(body.messages)).toContain('never-read');return Response.json({choices:[{message:{content:'{"title":"原结论","referenceIds":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}});});
+    expect((await aiJsonCall(env,params)).data.title).toBe('原结论');expect(fetch).toHaveBeenCalledTimes(4);
+  });
+  it('rejects forged initial material metadata before any model dispatch',async()=>{
+    await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+    await expect(projectToolConversation(env,{context:{projectId:f.projectId,userId:f.owner.userId,initialReferences:[{id:'material:forged:0',resourceType:'material',resourceId:newId(),versionId:newId(),revision:1,quote:'伪造正文',usage:'read'}]},config:config.config.review,configVersionId:config.id,messages:[{role:'user',content:'检查'}],promptVersion:'forged-material'})).rejects.toThrow('已读取材料引用不符');expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('repairs a wrong limitations type using the exact schema failure without rerunning discovery',async()=>{
     await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;let round=0;
     const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{

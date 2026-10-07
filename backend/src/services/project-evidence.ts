@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { invalidState } from '../core/errors';
+import { AppError, invalidState } from '../core/errors';
 import { sourceLifecycleGuard } from './source-lifecycle';
 import { projectPlanDocumentSql,assessmentDocumentSql } from './project-reference-guard';
 import { guideTextSql } from './guide-history';
@@ -35,13 +35,21 @@ function referenceEnvelope(content:string):{referenceIds?:unknown;decisionRefere
   if(start<0||end<=start)return {};
   try{return JSON.parse(content.slice(start,end+1));}catch{return {};}
 }
+export function referenceOutputError(path:(string|number)[],message:string,invalidIds:unknown=[]) {
+  return new AppError('AI_OUTPUT_INVALID',message,502,false,{issues:[{path,message,invalidIds}]});
+}
+export function modelOutputIssues(error:unknown):unknown {
+  if(error instanceof AppError && error.details?.issues)return error.details.issues;
+  if(error && typeof error==='object' && 'issues' in error)return error.issues;
+  return [{path:[],message:error instanceof Error?error.message:String(error)}];
+}
 export function extractDecisionReferences(content:string,reads:ProjectReference[]):DecisionReference[] {
   const parsed=referenceEnvelope(content);
   if(parsed.decisionReferences===undefined)return [];
-  if(!Array.isArray(parsed.decisionReferences))throw invalidState('决策依据格式无效');
-  return parsed.decisionReferences.map((entry:unknown)=>{
+  if(!Array.isArray(parsed.decisionReferences))throw referenceOutputError(['decisionReferences'],'决策依据格式无效');
+  return parsed.decisionReferences.map((entry:unknown,index:number)=>{
     const e=entry as Partial<DecisionReference>;
-    if(!e || typeof e.decisionPath!=='string'||!e.decisionPath.length||e.decisionPath.length>200||!Array.isArray(e.referenceIds)||e.referenceIds.some(id=>typeof id!=='string'||!reads.some(r=>r.id===id)))throw invalidState('决策引用了未读取的参考资料');
+    if(!e || typeof e.decisionPath!=='string'||!e.decisionPath.length||e.decisionPath.length>200||!Array.isArray(e.referenceIds)||e.referenceIds.some(id=>typeof id!=='string'||!reads.some(r=>r.id===id)))throw referenceOutputError(['decisionReferences',index],'决策引用了未读取的参考资料',e?.referenceIds);
     return {decisionPath:e.decisionPath,referenceIds:[...new Set(e.referenceIds)]};
   });
 }
@@ -139,8 +147,10 @@ export function decisionReferences(content: string, reads: ProjectReference[]): 
   const parsed=referenceEnvelope(content);
   // Validate every decision against the complete read set before marking usage.
   const decisions=extractDecisionReferences(content,reads);
+  if(parsed.referenceIds!==undefined&&!Array.isArray(parsed.referenceIds))throw referenceOutputError(['referenceIds'],'引用必须为已读取公共引用ID数组');
   const ids=new Set(Array.isArray(parsed.referenceIds)?parsed.referenceIds:[]);
-  if([...ids].some(id=>typeof id!=='string'||!reads.some(r=>r.id===id))) throw invalidState('决策引用了未读取的参考资料');
+  const invalid=[...ids].filter(id=>typeof id!=='string'||!reads.some(r=>r.id===id));
+  if(invalid.length)throw referenceOutputError(['referenceIds'],'决策引用了未读取的参考资料',invalid);
   for(const decision of decisions)for(const id of decision.referenceIds)ids.add(id);
   return reads.map(r=>ids.has(r.id)?{...r,usage:'decision'}:r);
 }

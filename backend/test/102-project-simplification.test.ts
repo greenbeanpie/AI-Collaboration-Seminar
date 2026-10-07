@@ -170,7 +170,7 @@ describe('material assessment input and evidence repair',()=>{
   });
   it('repairs a mismatched quote once using the frozen body and publishes only verified evidence',async()=>{
     const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',materialVersionIds:[versionId]}));
-    const output=(quote:string)=>({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'可核对',evidence:[{type:'material',materialVersionId:versionId,quote}]})),summary:'检查结果',limitations:[],requirementChecks:s.requirements.map(r=>({requirementId:r.requirementId,status:'met',comment:'有依据',evidence:[{type:'material',materialVersionId:versionId,quote}]}))});
+    const output=(quote:string)=>({referenceIds:[`material:${versionId}:0`],decisionReferences:[{decisionPath:'scores',referenceIds:[`material:${versionId}:0`]}],scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'可核对',evidence:[{type:'material',materialVersionId:versionId,quote}]})),summary:'检查结果',limitations:[],requirementChecks:s.requirements.map(r=>({requirementId:r.requirementId,status:'met',comment:'有依据',evidence:[{type:'material',materialVersionId:versionId,quote}]}))});
     const first=model(output('改写的案例结果')),second=model(output('案例有明确结果。'),body=>{
       expect(JSON.stringify(body.messages)).toContain('评分证据与固定材料或实际回答不符');
       expect(JSON.stringify(body.messages)).toContain('案例有明确结果。');
@@ -180,7 +180,7 @@ describe('material assessment input and evidence repair',()=>{
     await runMaterialAssessmentJob(offline,created.jobId);
     expect(fetch).toHaveBeenCalledTimes(2);expect((await getJob(env,created.jobId)).status).toBe('succeeded');
     const result=await json(await f.request(`/assessments/${created.assessmentId}`));
-    expect(result.report.weightedTotal).toBe(80);expect(result.report.scores[0].evidence[0].quote).toBe('案例有明确结果。');
+    expect(result.report.weightedTotal).toBe(80);expect(result.report.references).toContainEqual(expect.objectContaining({id:`material:${versionId}:0`,versionId,usage:'decision',quote:'案例有明确结果。'}));expect(result.report.scores[0].evidence[0].quote).toBe('案例有明确结果。');
   });
   it('pauses at the execution limit without publishing fabricated evidence',async()=>{
     const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',materialVersionIds:[versionId]}));
