@@ -6,6 +6,9 @@ CREATE TABLE file_processing (
  error TEXT, updated_at TEXT NOT NULL, PRIMARY KEY(file_id,lifecycle_version)
 );
 CREATE INDEX file_processing_project ON file_processing(project_id,updated_at);
+CREATE TABLE file_derivations (
+ file_id TEXT PRIMARY KEY REFERENCES files(id), parent_file_id TEXT NOT NULL REFERENCES files(id)
+);
 CREATE TABLE file_processing_materials (
  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
  material_id TEXT NOT NULL REFERENCES materials(id), text_hash TEXT NOT NULL,

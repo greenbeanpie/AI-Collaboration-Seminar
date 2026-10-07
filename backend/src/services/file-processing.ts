@@ -19,20 +19,21 @@ type Binding={source_id:string;source_version_id:string;job_id:string|null;attem
 async function file(env:Env,projectId:string,fileId:string,actorId:string):Promise<FileRow>{
  const row=await env.DB.prepare(`SELECT f.*,p.ai_collaboration_enabled,CASE WHEN ${fileManageSql('?1','?3','f')} THEN 1 ELSE 0 END can_process
  FROM files f JOIN projects p ON p.id=f.project_id WHERE f.id=?2 AND f.project_id=?1 AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')}
+ AND NOT EXISTS(SELECT 1 FROM file_derivations WHERE file_id=f.id)
  AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?3)`)
  .bind(projectId,fileId,actorId).first<FileRow>();
  if(!row)throw notFound('文件不可用、已归档或没有项目访问权限');return row;
 }
 export async function readFileProcessing(env:Env,projectId:string,fileId:string,actorId:string):Promise<FileProcessingView>{
  const f=await file(env,projectId,fileId,actorId);
- const row=await env.DB.prepare(`SELECT b.*,p.text_status,p.summary_status,p.requirements_status,p.summary_error,p.requirements_error,v.parse_error,
+ const row=await env.DB.prepare(`SELECT b.*,s.purpose,p.text_status,p.summary_status,p.requirements_status,p.summary_error,p.requirements_error,v.parse_error,
  (SELECT COUNT(*) FROM source_pages WHERE source_version_id=b.source_version_id AND text_status='none' AND ocr_status!='ok') needs_images,
  (SELECT GROUP_CONCAT(content,char(10)) FROM (SELECT content FROM source_fragments WHERE source_version_id=b.source_version_id ORDER BY seq LIMIT 5)) preview
- FROM file_processing b LEFT JOIN source_processing p ON p.source_version_id=b.source_version_id LEFT JOIN source_versions v ON v.id=b.source_version_id WHERE b.file_id=?1 AND b.lifecycle_version=?2`)
- .bind(fileId,f.lifecycle_version).first<Binding & {text_status:string|null;summary_status:string|null;requirements_status:string|null;summary_error:string|null;requirements_error:string|null;parse_error:string|null;needs_images:number;preview:string|null}>();
+ FROM file_processing b LEFT JOIN sources s ON s.id=b.source_id LEFT JOIN source_processing p ON p.source_version_id=b.source_version_id LEFT JOIN source_versions v ON v.id=b.source_version_id WHERE b.file_id=?1 AND b.lifecycle_version=?2`)
+ .bind(fileId,f.lifecycle_version).first<Binding & {purpose:string;text_status:string|null;summary_status:string|null;requirements_status:string|null;summary_error:string|null;requirements_error:string|null;parse_error:string|null;needs_images:number;preview:string|null}>();
  const materials=row?await env.DB.prepare('SELECT material_id FROM file_processing_materials WHERE source_version_id=?1').bind(row.source_version_id).all<{material_id:string}>():null;
  return {fileId,lifecycleVersion:f.lifecycle_version,sourceId:row?.source_id??null,sourceVersionId:row?.source_version_id??null,jobId:row?.job_id??null,
- textStatus:row?.text_status??(row?.job_id?'queued':'pending'),summaryStatus:row?.summary_status??'pending',requirementsStatus:row?.requirements_status??'pending',
+ textStatus:row?.text_status??(row?.job_id?'queued':'pending'),summaryStatus:row?.summary_status??'pending',requirementsStatus:row?.purpose==='output'?'skipped':row?.requirements_status??'pending',
  error:row?.error??row?.parse_error??row?.summary_error??row?.requirements_error??null,materialIds:materials?.results.map(m=>m.material_id)??[],
  textAvailable:!!row?.preview?.trim()&&!isMediaExtension(f.ext),canProcess:!!f.can_process,needsImages:row?.needs_images??0,...(row?.preview?{textPreview:row.preview.slice(0,2000)}:{})};
 }
@@ -72,14 +73,16 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
 
 /** Bounded and non-retrying discovery. A failed attempt requires an explicit user retry. */
 export async function backfillFileProcessing(env:Env,projectId?:string,limit=20):Promise<void>{
- const rows=await env.DB.prepare(`SELECT f.id,f.project_id,f.uploader_user_id FROM files f JOIN projects p ON p.id=f.project_id
+ const rows=await env.DB.prepare(`SELECT f.id,f.project_id,COALESCE((SELECT user_id FROM project_members WHERE project_id=p.id AND role='owner' LIMIT 1),f.uploader_user_id) uploader_user_id FROM files f JOIN projects p ON p.id=f.project_id
  WHERE p.ai_collaboration_enabled=1 AND (?1 IS NULL OR p.id=?1) AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')}
+ AND f.ext IN ('.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm')
+ AND NOT EXISTS(SELECT 1 FROM file_derivations WHERE file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM source_pages WHERE image_file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM file_processing b WHERE b.file_id=f.id AND b.lifecycle_version=f.lifecycle_version AND b.attempted=1 AND NOT EXISTS(SELECT 1 FROM jobs j JOIN source_processing sp ON sp.source_version_id=b.source_version_id WHERE j.id=b.job_id AND j.status='succeeded' AND json_extract(j.input_json,'$.operation')='source.text' AND sp.requirements_status='pending'))
  ORDER BY f.created_at LIMIT ?2`).bind(projectId??null,Math.min(100,Math.max(1,limit))).all<{id:string;project_id:string;uploader_user_id:string}>();
  for(const f of rows.results){try{await ensureFileProcessing(env,f.project_id,f.id,f.uploader_user_id,{automatic:true});}catch{/* Unsupported or inaccessible files stay available for manual handling. */}}
- const ready=await env.DB.prepare(`SELECT b.source_version_id FROM file_processing b JOIN source_processing p ON p.source_version_id=b.source_version_id WHERE p.text_status='ready' AND (?1 IS NULL OR b.project_id=?1) LIMIT ?2`).bind(projectId??null,limit).all<{source_version_id:string}>();
- for(const b of ready.results){try{await syncFileProcessingText(env,b.source_version_id);}catch{/* A concurrent lifecycle change must not publish stale text. */}}
+ const ready=await env.DB.prepare(`SELECT b.source_version_id FROM file_processing b JOIN source_processing p ON p.source_version_id=b.source_version_id WHERE p.text_status='ready' AND (?1 IS NULL OR b.project_id=?1) ORDER BY b.updated_at,b.file_id LIMIT ?2`).bind(projectId??null,Math.min(100,Math.max(1,limit))).all<{source_version_id:string}>();
+ for(const b of ready.results){try{await syncFileProcessingText(env,b.source_version_id);}catch{/* A concurrent lifecycle change must not publish stale text. */}finally{await env.DB.prepare('UPDATE file_processing SET updated_at=?2 WHERE source_version_id=?1').bind(b.source_version_id,nowIso()).run();}}
 }
 
 /** Publish extracted original text only; summaries are never assessment evidence. */
@@ -87,15 +90,18 @@ export async function syncFileProcessingText(env:Env,sourceVersionId:string,jobI
  const row=await env.DB.prepare(`SELECT b.file_id,b.lifecycle_version,s.id source_id,s.purpose,s.project_id,s.title,s.created_by,f.ext FROM file_processing b JOIN sources s ON s.id=b.source_id JOIN files f ON f.id=b.file_id WHERE b.source_version_id=?1 AND f.lifecycle_version=b.lifecycle_version AND f.deleted_at IS NULL AND s.deleted_at IS NULL AND ${discoverableFileSql('f')}`).bind(sourceVersionId).first<{file_id:string;lifecycle_version:number;source_id:string;purpose:string;project_id:string;title:string;created_by:string;ext:string}>();
  if(!row||isMediaExtension(row.ext))return;
  if(jobId&&!await env.DB.prepare("SELECT 1 FROM jobs WHERE id=?1 AND status IN ('queued','running')").bind(jobId).first())return;
+ const now=nowIso();
+ await env.DB.prepare(`UPDATE materials SET purpose=COALESCE((SELECT parent.purpose FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id),?2),
+ archived_at=CASE WHEN EXISTS(SELECT 1 FROM file_processing_materials link WHERE link.source_version_id=?1 AND link.material_id=materials.id AND link.parent_material_id IS NOT NULL) THEN (SELECT parent.archived_at FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id) ELSE archived_at END,updated_at=?3 WHERE kind='file-extracted' AND id IN (SELECT material_id FROM file_processing_materials WHERE source_version_id=?1)`).bind(sourceVersionId,row.purpose,now).run();
  const fragments=await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id=?1 ORDER BY seq').bind(sourceVersionId).all<{content:string}>();
  const text=fragments.results.map(f=>f.content).join('\n\n').trim();if(!text)return;
- const hash=await sha256Hex(text),doc=JSON.stringify({type:'doc',content:text.split('\n\n').map(t=>({type:'paragraph',content:[{type:'text',text:t}]}))}),now=nowIso();
- const attachments=await env.DB.prepare(`SELECT m.id,m.kind,m.revision,m.current_version_id,v.markdown,v.attachments_json FROM materials m JOIN material_versions v ON v.id=m.current_version_id,json_each(v.attachments_json) a WHERE m.project_id=?1 AND m.purpose='output' AND m.archived_at IS NULL AND json_extract(a.value,'$.fileId')=?2`).bind(row.project_id,row.file_id).all<{id:string;kind:string;revision:number;current_version_id:string;markdown:string;attachments_json:string}>();
- await env.DB.prepare(`UPDATE materials SET purpose=COALESCE((SELECT parent.purpose FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id),?2),updated_at=?3 WHERE kind='file-extracted' AND id IN (SELECT material_id FROM file_processing_materials WHERE source_version_id=?1)`).bind(sourceVersionId,row.purpose,now).run();
- const targets=attachments.results.filter(m=>!m.markdown.trim()&&m.kind!=='file-extracted');
+ const hash=await sha256Hex(text),doc=JSON.stringify({type:'doc',content:text.split('\n\n').map(t=>({type:'paragraph',content:[{type:'text',text:t}]}))});
+ const attachments=await env.DB.prepare(`SELECT m.id,m.kind,m.revision,m.current_version_id,v.markdown,v.attachments_json,link.text_hash last_hash FROM materials m JOIN material_versions v ON v.id=m.current_version_id LEFT JOIN file_processing_materials link ON link.material_id=m.id AND link.source_version_id=?3,json_each(v.attachments_json) a WHERE m.project_id=?1 AND m.purpose='output' AND m.archived_at IS NULL AND json_extract(a.value,'$.fileId')=?2`).bind(row.project_id,row.file_id,sourceVersionId).all<{id:string;kind:string;revision:number;current_version_id:string;markdown:string;attachments_json:string;last_hash:string|null}>();
+ const targets:typeof attachments.results=[];
+ for(const material of attachments.results){if(material.kind!=='file-extracted'&&(!material.markdown.trim()||(material.last_hash&&material.last_hash===await sha256Hex(material.markdown))))targets.push(material);}
  if(!targets.length&&(row.purpose==='output'||attachments.results.some(m=>m.kind!=='file-extracted'))){
-  const linked=await env.DB.prepare('SELECT m.id,m.kind,m.revision,m.current_version_id,v.markdown,v.attachments_json FROM file_processing_materials b JOIN materials m ON m.id=b.material_id JOIN material_versions v ON v.id=m.current_version_id WHERE b.source_version_id=?1 AND m.kind=\'file-extracted\'').bind(sourceVersionId).first<typeof targets[number]>();
-  if(linked)targets.push(linked);else {
+  const linked=await env.DB.prepare('SELECT m.id,m.kind,m.revision,m.current_version_id,v.markdown,v.attachments_json,b.text_hash last_hash FROM file_processing_materials b JOIN materials m ON m.id=b.material_id JOIN material_versions v ON v.id=m.current_version_id WHERE b.source_version_id=?1 AND m.kind=\'file-extracted\'').bind(sourceVersionId).first<typeof targets[number]>();
+  if(linked){if(linked.last_hash===await sha256Hex(linked.markdown))targets.push(linked);}else {
    const materialId=newId(),versionId=newId();
    const writes=await env.DB.batch([
     env.DB.prepare(`INSERT INTO materials(id,project_id,title,kind,purpose,current_version_id,created_by,created_at,updated_at) SELECT ?1,?2,?3,'file-extracted','output',?4,?5,?6,?6 WHERE NOT EXISTS(SELECT 1 FROM file_processing_materials WHERE source_version_id=?7) AND EXISTS(SELECT 1 FROM file_processing b JOIN files f ON f.id=b.file_id JOIN sources s ON s.id=b.source_id WHERE b.source_version_id=?7 AND f.lifecycle_version=b.lifecycle_version AND f.status='available' AND f.deleted_at IS NULL AND f.archived_at IS NULL AND s.deleted_at IS NULL)`).bind(materialId,row.project_id,row.title,versionId,row.created_by,now,sourceVersionId),
