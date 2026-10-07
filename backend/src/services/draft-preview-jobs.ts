@@ -55,7 +55,11 @@ export async function dispatchDraftPreview(env:Env,dispatch:DraftDispatch):Promi
 }
 async function failStoppedDispatch(env:Env,row:DraftDispatch) {
   const snapshot=await loadDraftCheckpoint(env,row.attempt_id),execution=await readExecution(env,{kind:'draft_preview',id:row.attempt_id});
-  if(!execution||!['running','finalizing'].includes(execution.state)||snapshot&&snapshot.checkpoint.dispatchInstanceId&&row.instance_id!==snapshot.checkpoint.dispatchInstanceId)return;
+  if(!execution||!['running','finalizing'].includes(execution.state)||!snapshot)return;
+  const checkpoint=snapshot.checkpoint,segment=checkpoint.segment??0;
+  const currentId=checkpoint.dispatchGeneration===execution.generation&&checkpoint.dispatchSegment===segment?checkpoint.dispatchInstanceId:`${row.attempt_id}-g${execution.generation}-s${segment}`;
+  const legacyInitial=!checkpoint.dispatchInstanceId&&execution.generation===1&&segment===0&&row.instance_id===row.attempt_id;
+  if(!legacyInitial&&row.instance_id!==currentId)return;
   await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error='后台预览已停止；若请求已发出，用量可能已产生，未自动重放。请核对后主动重新生成',updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND preview_state='running' AND preview_waiting_id IS NULL AND NOT EXISTS(SELECT 1 FROM draft_preview_dispatches newer WHERE newer.attempt_id=?2 AND newer.question_id IS NOT NULL AND (SELECT round FROM ai_clarifications WHERE id=newer.question_id)>COALESCE((SELECT round FROM ai_clarifications WHERE id=?5),0))").bind(row.draft_id,row.attempt_id,row.context_revision,nowIso(),row.question_id).run();
 }
 

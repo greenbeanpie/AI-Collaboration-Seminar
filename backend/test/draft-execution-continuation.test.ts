@@ -2,11 +2,12 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {env} from './helpers/env';
 import {seedUser} from './helpers/seed';
 import {configureGoFixture} from './helpers/provider-config';
+import {loadAiConfig} from '../src/ai/config';
 import {newId,nowIso} from '../src/core/db';
 import type {Env} from '../src/env';
-import {enqueueDraftPreview,enqueueDraftPreviewSegment,controlDraftExecution} from '../src/services/draft-preview-jobs';
+import {enqueueDraftPreview,enqueueDraftPreviewSegment,controlDraftExecution,recoverDraftPreviews} from '../src/services/draft-preview-jobs';
 import {previewDraft,DraftPreviewYield,getDraft,draftView} from '../src/services/creation-drafts';
-import {loadDraftCheckpoint} from '../src/services/draft-preview-checkpoints';
+import {loadDraftCheckpoint,saveDraftCheckpoint,compactDraftHistory,draftTextPrefix} from '../src/services/draft-preview-checkpoints';
 import {saveExecutionPolicy,readExecution,loadExecutionPolicy} from '../src/services/ai-execution-control';
 const plan={tasks:[{key:'a',title:'调查',detail:'已读取范围',criteria:'原文可核查',effortHours:1,dependsOn:[],citations:[]}]};
 const response=(calls:unknown[]=[])=>Response.json({choices:[{finish_reason:calls.length?'tool_calls':'stop',message:{role:'assistant',content:calls.length?null:JSON.stringify(plan),...(calls.length?{tool_calls:calls}:{})}}],usage:{prompt_tokens:10,completion_tokens:10}});
@@ -22,6 +23,29 @@ describe('durable draft execution windows',()=>{
    await enqueueDraftPreviewSegment(f.local,{draftId:f.id,userId:f.userId,revision:1,attempt:f.attempt,generation:1,tasks:[]});
   }
   const ready=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,9);expect(ready.previewState).toBe('ready');expect(ready.execution?.totalCalls).toBe(10);
+ });
+ it('bounds migrated persistent history and input when continuing a 500-round checkpoint',async()=>{
+  const f=await fixture(),config=(await loadAiConfig(env.DB))!;config.config.textEconomy.maxInputChars=12000;await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(config.id,JSON.stringify(config.config)).run();
+  const snapshot=(await loadDraftCheckpoint(env,f.attempt))!,state=snapshot.checkpoint;
+  const exchange=(i:number)=>({assistant:{role:'assistant',content:null,tool_calls:[call(String(i),f.fileId)]},results:[{call:{id:String(i),name:'read_draft_document',args:{fileId:f.fileId,offset:i}},output:{blocks:[{locator:`block:${i}`,pageNumber:null,text:'😀原文'.repeat(400)}],nextOffset:i+1,nextCharOffset:0}}]});
+  state.exchanges=Array.from({length:500},(_,i)=>exchange(i));
+  const small=structuredClone(state);compactDraftHistory(small,4000,2400);const size500=JSON.stringify(small).length;
+  small.exchanges.push(...Array.from({length:500},(_,i)=>exchange(i+500)));compactDraftHistory(small,4000,2400);expect(JSON.stringify(small).length).toBeLessThan(size500+1000);expect(small.readProgress?.[0]?.nextOffset).toBeGreaterThan(900);expect(draftTextPrefix('😀😀',3)).toBe('😀');
+  await saveDraftCheckpoint(env,state,snapshot.etag);await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason='round_limit',window_calls=100,total_calls=500 WHERE target_kind='draft_preview' AND target_id=?1").bind(f.attempt).run();
+  await controlDraftExecution(f.local,f.id,f.userId,1,'continue');
+  const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const body=JSON.parse(String(init?.body)),input=body.messages.reduce((n:number,m:{content:unknown})=>n+(typeof m.content==='string'?m.content.length:JSON.stringify(m.content).length),0);expect(input).toBeLessThanOrEqual(12000);return response();});vi.stubGlobal('fetch',fetch);
+  const ready=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,2,0);expect(ready.execution?.totalCalls).toBe(501);
+  const bounded=(await loadDraftCheckpoint(env,f.attempt))!.checkpoint;expect(JSON.stringify(bounded).length).toBeLessThan(16000);expect(bounded.readProgress?.[0]?.nextOffset).toBeGreaterThan(490);
+ });
+ it('never marks a continued segment failed because its predecessor completed',async()=>{
+  const f=await fixture();vi.stubGlobal('fetch',vi.fn(async()=>response([call('read',f.fileId)])));
+  await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,0)).rejects.toBeInstanceOf(DraftPreviewYield);
+  await enqueueDraftPreviewSegment(f.local,{draftId:f.id,userId:f.userId,revision:1,attempt:f.attempt,generation:1,tasks:[]});
+  const current=`${f.attempt}-g1-s1`,get=vi.fn(async(id:string)=>({status:async()=>({status:id===current?'running':'complete'})})),local={...f.local,AGENT_WORKFLOW:{create:f.create,get}} as unknown as Env;
+  await env.DB.prepare('UPDATE project_creation_drafts SET updated_at=?2 WHERE id=?1').bind(f.id,new Date(Date.now()-800000).toISOString()).run();
+  await recoverDraftPreviews(local);expect((await draftView(local,await getDraft(local,f.id,f.userId))).previewState).toBe('running');
+  await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason='round_limit' WHERE target_kind='draft_preview' AND target_id=?1").bind(f.attempt).run();get.mockImplementation(async()=>({status:async()=>({status:'complete'})}));
+  await recoverDraftPreviews(local);expect((await draftView(local,await getDraft(local,f.id,f.userId))).previewState).toBe('paused_round_limit');
  });
  it('does not issue a 101st automatic request and preserves checkpoint progress',async()=>{
   const f=await fixture(100),fetch=vi.fn(async()=>response([call('again',f.fileId)]));vi.stubGlobal('fetch',fetch);

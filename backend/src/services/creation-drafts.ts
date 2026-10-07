@@ -24,7 +24,7 @@ import { validateTaskGraph } from './project-simplification';
 import { creationWorkspace, guardedDescriptionStatements, workspacePromotionStatements } from './creation-template';
 import { askUserQuestionDefinition, clarificationRule, currentDraftClarification, executeClarification, UserClarificationPending } from './ai-clarifications';
 import { decompositionGuidance } from './decomposition-prompt';
-import { DraftCheckpointBusy, DraftPreviewYield, loadDraftCheckpoint, saveDraftCheckpoint, type DraftPreviewCheckpoint } from './draft-preview-checkpoints';
+import { DraftCheckpointBusy, DraftPreviewYield, compactDraftHistory, draftTextPrefix, loadDraftCheckpoint, saveDraftCheckpoint, type DraftPreviewCheckpoint } from './draft-preview-checkpoints';
 import { ensureExecution, readExecution, completeExecution, pauseExecution, isExecutionPaused } from './ai-execution-control';
 export { DraftPreviewYield } from './draft-preview-checkpoints';
 export const creationGoal=z.object({title:z.string().trim().min(1).max(200),detail:z.string().max(12000)});
@@ -104,7 +104,7 @@ async function draftPreviewContext(env:Env,draftId:string,userId:string) {
   const imported=await readDraftDocument(env,draftId,userId,f.id,0);
   const pages=JSON.parse(f.pages_json) as string[];
   const preview=imported.blocks.length?imported.blocks.map(b=>b.text):pages;
-  context.push({fileId:f.id,name:f.name,pages:preview.slice(0,1).map(p=>p.slice(0,1000)),blocks:imported.blocks.map(b=>({locator:b.locator,pageNumber:b.pageNumber})),limitation:[f.text_error?.slice(0,2000),'正文预览仅包括前段，请通过read_draft_document读取详情，未读取全文不能声称完整'].filter(Boolean).join('；')});
+  context.push({fileId:f.id,name:f.name,pages:preview.slice(0,1).map(p=>draftTextPrefix(p,1000)),blocks:imported.blocks.map(b=>({locator:b.locator,pageNumber:b.pageNumber})),limitation:[f.text_error?draftTextPrefix(f.text_error,2000):null,'正文预览仅包括前段，请通过read_draft_document读取详情，未读取全文不能声称完整'].filter(Boolean).join('；')});
  }
  return context;
 }
@@ -273,27 +273,37 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
       state.executionGeneration=execution.generation;
       state.finalizing=execution.state==='finalizing';
       let etag=savedCheckpoint.etag;
-      const save=async()=>{etag=await saveDraftCheckpoint(env,state,etag);};
+      let historyBudget:number|undefined;
+      let metadataBudget=12000;
+      const save=async()=>{if(historyBudget!==undefined)compactDraftHistory(state,historyBudget,metadataBudget);etag=await saveDraftCheckpoint(env,state,etag);};
       payload=state.payload;requestedGoal=state.requestedGoal;context=state.context;
       goal=requestedGoal??payload.goal??{title:payload.name,detail:''};
       configVersionId=state.configVersionId;
       const config=await loadAiConfig(env.DB,configVersionId);
       if(!config?.enabled)throw invalidState('预览使用的模型配置不可用，请重新预览');
       const model=config.config.textEconomy;
-      const messages=[{role:'system' as const,content:state.system},{role:'user' as const,content:JSON.stringify({project:payload,files:context,...(requestedGoal?{goal:requestedGoal}:{})})}];
-      const exchanges=[] as DraftPreviewCheckpoint['exchanges'];
-      let historySize=messages.reduce((n,m)=>n+m.content.length,0)+(state.feedback?.length??0);
-      for(const exchange of [...state.exchanges].reverse()) {
-        const size=JSON.stringify(exchange).length;
-        if(historySize+size>model.maxInputChars)break;
-        exchanges.unshift(exchange);historySize+=size;
-      }
-      if(exchanges.length<state.exchanges.length) {
-        const references=state.exchanges.slice(0,state.exchanges.length-exchanges.length).flatMap(e=>e.results.map(r=>({tool:r.call.name,args:r.call.args,locators:(r.output as {blocks?:Array<{locator:string;pageNumber:number|null}>})?.blocks?.map(b=>({locator:b.locator,pageNumber:b.pageNumber}))})));
-        messages.push({role:'user',content:'早期工具正文已从本轮上下文压缩，原文仍可重新读取；引用必须重新核对。读取进度：'+JSON.stringify(references).slice(-Math.max(1,Math.floor(model.maxInputChars*0.15)))});
-      }
-      if(state.feedback)messages.push({role:'user',content:state.feedback});
-      if(state.finalizing)messages.push({role:'user',content:'用户要求输出当前结果。停止工具调用，基于已读取证据只输出最终JSON；未读取部分和证据不足须明确标注，不得伪造引用。'});
+      const requestContext=()=>{
+        const margin=Math.min(1024,Math.floor(model.maxInputChars*0.05)),cap=model.maxInputChars-margin;
+        metadataBudget=Math.max(256,Math.min(12000,Math.floor(cap*0.2)));
+        compactDraftHistory(state,Math.floor(cap*0.5),metadataBudget);
+        const messages=[{role:'system' as const,content:state.system},{role:'user' as const,content:JSON.stringify({project:payload,files:context.map(f=>({fileId:f.fileId,name:f.name,limitation:f.limitation})),...(requestedGoal?{goal:requestedGoal}:{})})}];
+        if(state.feedback)messages.push({role:'user',content:draftTextPrefix(state.feedback,Math.min(2000,Math.floor(cap*0.1)))});
+        if(state.finalizing)messages.push({role:'user',content:'用户要求输出当前结果。停止工具调用，基于已读取证据只输出最终JSON；未读取部分和证据不足须明确标注，不得伪造引用。'});
+        let used=messages.reduce((n,m)=>n+m.content.length,0);
+        if(used+256>=cap)throw validationFailed('项目需求超过当前模型输入容量，请提高模型输入字符限制或缩减项目需求');
+        metadataBudget=Math.min(metadataBudget,cap-used-128);
+        historyBudget=Math.max(0,cap-used-metadataBudget-128);
+        compactDraftHistory(state,historyBudget,metadataBudget);
+        const progress=JSON.stringify({reads:state.readProgress,clarifications:state.clarificationProgress});
+        if((state.readProgress?.length??0)+(state.clarificationProgress?.length??0)>0)messages.push({role:'user',content:'早期工具正文已压缩；原文仍可重新读取，引用须以原文核对。最新读取进度及澄清：'+progress});
+        const exchanges=state.exchanges;
+        used=messages.reduce((n,m)=>n+m.content.length,0)+JSON.stringify(exchanges).length;
+        // Initial text previews are optional evidence; never truncate user requirements.
+        const preview=JSON.stringify(context);
+        if(used+preview.length+40<=cap)messages.push({role:'user',content:'不可信文件正文预览：'+preview});
+        return {messages,exchanges};
+      };
+      requestContext();
       const guard=async()=>{
         const current=await getDraft(env,id,userId),cfg=await loadAiConfig(env.DB);
         const control=await readExecution(env,{kind:'draft_preview',id:attempt});
@@ -314,6 +324,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
           let out:Awaited<ReturnType<typeof gatewayChat>>|undefined,failure:unknown,callDispatched=false;
           try {
             await recordActivity(env,'draft:'+attempt,'calling_model','started',{completed:state.step,unit:'step'});
+            const {messages,exchanges}=requestContext();
             out=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:aiSecret(env),envName:env.ENV_NAME,diagnostics:env,executionEnv:{...env,AI_EXECUTION_CONTEXT:{modelCalls:0}}},{
               config:model,messages,jsonMode:true,privateContext:true,sessionId:attempt,executionTarget:{kind:'draft_preview',id:attempt},providerRetry:state.providerRetry,onProviderRetry:async retry=>{state.providerRetry=retry;state.pendingDispatch=false;await save();},
               toolMode:{definitions:[askUserQuestionDefinition,draftReadTool],exchanges,final:state.finalizing},
@@ -353,8 +364,6 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
             await recordActivity(env,'draft:'+attempt,'executing_tool','completed',{completed:state.step+1,unit:'step'});
           }
           state.exchanges.push({assistant:out.toolOutput.assistant,results:state.pendingResults});
-          exchanges.splice(0,exchanges.length,...state.exchanges);
-          while(exchanges.length&&messages.reduce((n,m)=>n+m.content.length,0)+JSON.stringify(exchanges).length>model.maxInputChars)exchanges.shift();
           state.pendingOutput=undefined;state.pendingResults=[];state.step++;await save();
         } else {
           state.feedback=undefined;
