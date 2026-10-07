@@ -1,4 +1,5 @@
-import { checkpointRootId, checkpointFingerprint, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
+import { recordActivity } from './ai-activity';
+import { checkpointRootId, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
@@ -117,6 +118,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     const stableSessionId=params.sessionId??params.runId??params.jobId??crypto.randomUUID();
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
     await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
+    await recordActivity(env,params.jobId,'validating');
     try { return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
     catch (validationError) {
       if(params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
@@ -203,6 +205,7 @@ export async function aiJsonCall<S extends z.ZodType>(
           // Config/member preflight may yield; the final sensitive context read comes afterward.
           await params.beforeCall?.();
           if(responseKey)await saveResponseCheckpoint(env,responseKey,{pending:true});
+          await clearUncertainCheckpointRetry(env,params.jobId);
         },
         prepareMessages: params.prepareMessages ? async () => {
           const repairMessages = messages.slice(params.messages.length);
@@ -223,6 +226,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     }
     let data: z.infer<S> | undefined;
     if (out) {
+      await recordActivity(env,params.jobId,'validating');
       try { data = params.schema.parse(extractJson(out.content)); } catch (error) { failure = error; }
     }
     // 每次已发出的请求都记录；账本/R2失败不触发第二次请求，尝试标记保留作恢复判断。
@@ -336,6 +340,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
     if(!requester) throw new AppError('PERMISSION_DENIED','无法确认本轮请求账户',403,false);
     const tools:ProjectToolContext={projectId:input.projectId,userId:requester,jobId,allowSearch:input.allowSearch,searchQuery:input.searchQuery,...(input.capability==='guide'&&run.session_id?{guideSessionId:run.session_id}:{})};
     await assertToolAccess(env,tools);
+    await recordActivity(env,jobId,'reading_sources');
     await validateInputs(env, input.projectId, input);
     const context = await buildContext(env, input);
     const history = input.capability === 'guide' ? await buildGuideHistory(env, tools) : '';
@@ -481,6 +486,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
         env.DB.prepare('UPDATE agent_sessions SET updated_at = ?2 WHERE id = ?1').bind(run.session_id, now),
       );
     }
+    await recordActivity(env,jobId,'saving');
     const result = await env.DB.batch(statements);
     if (!result[0]?.meta.changes) throw new AppError('INVALID_STATE', '来源已移入回收站或生命周期已变化，请重新发起', 409, false);
     await settleReservation(env, jobId, 'settled');
@@ -497,8 +503,8 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
   } catch (err) {
     if (err instanceof InvestigationContinuation) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    await env.DB.prepare("UPDATE agent_runs SET status = 'failed', output_json = ?2 WHERE id = ?1 AND status = 'running'")
-      .bind(input.runId, JSON.stringify({ error: message.slice(0, 500) }))
+    await env.DB.prepare("UPDATE agent_runs SET status = 'failed', output_json = ?2 WHERE id = ?1 AND status = 'running' AND job_id=?3")
+      .bind(input.runId, JSON.stringify({ error: message.slice(0, 500) }),jobId)
       .run();
     await settleReservation(env, jobId, 'released');
     const code = err instanceof AppError ? err.code : 'INTERNAL';

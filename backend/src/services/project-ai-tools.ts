@@ -1,4 +1,5 @@
-import { checkpointRootId, allowsUncertainCheckpointRetry } from './ai-checkpoints';
+import { recordActivity } from './ai-activity';
+import { checkpointRootId, allowsUncertainCheckpointRetry, clearUncertainCheckpointRetry } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { discoverableFileSql } from './archive-policy';
 import { askUserQuestionDefinition, clarificationRule, executeClarification, UserClarificationPending } from './ai-clarifications';
@@ -357,6 +358,7 @@ export async function projectToolConversation(env: Env, params: {
         beforeFetch: async () => {
           await guard();
           await checkpoint(true);
+          await clearUncertainCheckpointRetry(env,context.jobId);
           await markAiCallStarted(env, context.jobId, true);
           await guard();
         }, prepareMessages: params.prepareMessages && !toolMode.nativeSearch ? async()=>[...await params.prepareMessages!(),...messages.slice(params.messages.length)] : undefined, onDispatch: () => {
@@ -415,6 +417,7 @@ export async function projectToolConversation(env: Env, params: {
     });
   }
   await guard();
+  await recordActivity(env,context.jobId,'reading_sources');
   const overview=context.scoringOnly?{}:await executeDiscoveryTool(env,context.projectId,'get_project_overview',{});
   const directory=await executeDiscoveryTool(env,context.projectId,'list_project_resources',{});
   const taskOverview=context.scoringOnly?{items:[]}:await executeDiscoveryTool(env,context.projectId,'list_tasks',{});
@@ -457,6 +460,7 @@ export async function projectToolConversation(env: Env, params: {
     }
     const results: ToolExchange['results'] = [...pendingResults];
     for (const invocation of o.toolCalls.slice(results.length)) {
+      await recordActivity(env,context.jobId,'executing_tool','started',{completed:trace.length,unit:'step'});
       usedTools++;
       let output: unknown, status: 'ok' | 'failed' = 'ok';
       let safeArgs: unknown = {
@@ -549,6 +553,7 @@ export async function projectToolConversation(env: Env, params: {
       if(invocation.name==='web_search')pendingSearchOutput=undefined;
       pendingResults=results;
       await checkpoint();
+      await recordActivity(env,context.jobId,'executing_tool',status==='ok'?'completed':'failed',{completed:trace.length,unit:'step'});
       toolsInSlice++;
       if(env.AI_EXECUTION_SLICE && toolsInSlice>=4 && results.length<o.toolCalls.length) throw new InvestigationContinuation();
     }

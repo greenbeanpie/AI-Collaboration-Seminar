@@ -6,7 +6,7 @@ import { configureGoFixture } from './helpers/provider-config';
 import { loadAiConfig } from '../src/ai/config';
 import { newId, nowIso } from '../src/core/db';
 import { aiJsonCall } from '../src/services/agent';
-import { checkpointRootId, loadResponseCheckpoint, saveResponseCheckpoint } from '../src/services/ai-checkpoints';
+import { checkpointRootId, checkpointFingerprint, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from '../src/services/ai-checkpoints';
 import { reserveAiSlot } from '../src/services/ai-reservations';
 import { retryFailedAiJob } from '../src/services/admin-ai-retries';
 import { loadInvestigation, saveInvestigation } from '../src/services/project-investigation';
@@ -45,4 +45,14 @@ it('manual retry rejects a different actor and keeps uncertain retry authorizati
   expect((await retryFailedAiJob(env,f.jobId,undefined,undefined,{actorId:newId(),allowUncertainDispatch:true})).status).toBe('skipped');
   const r=await retryFailedAiJob(env,f.jobId,undefined,undefined,{actorId:f.user.userId,allowUncertainDispatch:true});expect(r.status).toBe('queued');
   const original=await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(f.jobId).first<{input_json:string}>();expect(JSON.parse(original!.input_json).allowUncertainCheckpointRetry).toBeUndefined();
+});
+
+it('manual uncertain dispatch authorization is consumed before the next paid request',async()=>{
+  const f=await fixture();const params={projectId:f.projectId,jobId:f.jobId,purpose:'textEconomy' as const,configVersionId:f.config.id,model:f.config.config.textEconomy.model,modelConfig:f.config.config.textEconomy,promptVersion:'uncertain-consume',messages:[{role:'user' as const,content:'generate'}],schema:z.object({title:z.string()})};
+  const fingerprint=await checkpointFingerprint({projectId:params.projectId,promptVersion:params.promptVersion,configVersionId:params.configVersionId,modelConfig:params.modelConfig,messages:params.messages});
+  await saveResponseCheckpoint(env,`ai/responses/${f.jobId}/${fingerprint}/0.json`,{pending:true});
+  await expect(aiJsonCall(env,params)).rejects.toThrow('结果未确认');
+  await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('true')) WHERE id=?1").bind(f.jobId).run();
+  const fetch=vi.fn(async()=>{expect(await allowsUncertainCheckpointRetry(env,f.jobId)).toBe(false);return Response.json({choices:[{message:{content:'{"title":"resumed"}'}}],usage:{prompt_tokens:10,completion_tokens:5}});});vi.stubGlobal('fetch',fetch);
+  expect((await aiJsonCall(env,params)).data.title).toBe('resumed');expect(fetch).toHaveBeenCalledTimes(1);
 });

@@ -22,6 +22,11 @@ export async function allowsUncertainCheckpointRetry(env:Env,jobId?:string):Prom
   const job=await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(jobId).first<{input_json:string}>();
   return !!job && JSON.parse(job.input_json).allowUncertainCheckpointRetry===true;
 }
+/** Manual permission applies only to the previously failed dispatch, never a future one. */
+export async function clearUncertainCheckpointRetry(env:Env,jobId?:string):Promise<void> {
+  if(!jobId)return;
+  await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('false')) WHERE id=?1 AND json_extract(input_json,'$.allowUncertainCheckpointRetry')=1").bind(jobId).run();
+}
 export async function checkpointFingerprint(value:unknown):Promise<string> {
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)));
   return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
