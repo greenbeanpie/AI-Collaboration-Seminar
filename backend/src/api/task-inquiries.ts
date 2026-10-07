@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { parsePaging, nextCursor } from '../core/pagination';
 import type { AppEnv } from '../env';
 import { requireUser, requireProjectMember } from '../core/auth';
 import { apiData } from '../core/api';
@@ -12,7 +13,7 @@ const base='/api/v1/projects/{projectId}';
 const params=z.object({projectId:z.string().uuid(),taskId:z.string().uuid()});
 const message=z.object({messageId:z.string(),authorId:z.string(),authorName:z.string(),body:z.string(),createdAt:z.string()});
 const inquiry=z.object({inquiryId:z.string(),taskId:z.string(),upstreamTaskId:z.string(),taskTitle:z.string(),upstreamTitle:z.string(),requesterId:z.string(),requesterName:z.string(),recipientId:z.string(),recipientName:z.string(),recipientSource:z.enum(['submission','completion','substitute','direct']),createdAt:z.string(),messages:z.array(message)});
-const list=createRoute({method:'get',path:base+'/tasks/{taskId}/inquiries',request:{params},responses:{200:{description:'当前任务中的私密一对一质询工单',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(inquiry)}),'TaskInquiryListResponse')}}}}});
+const list=createRoute({method:'get',path:base+'/tasks/{taskId}/inquiries',request:{params,query:z.object({cursor:z.string().optional(),limit:z.string().optional()})},responses:{200:{description:'当前任务中的私密一对一质询工单',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(inquiry),nextCursor:z.string().nullable()}),'TaskInquiryListResponse')}}}}});
 const create=createRoute({method:'post',path:base+'/tasks/{taskId}/inquiries',request:{params,body:{required:true,content:{'application/json':{schema:z.object({recipientId:z.string().uuid(),body:z.string().trim().min(1).max(4000)}).strict()}}}},responses:{201:{description:'一对一任务质询工单已创建',content:{'application/json':{schema:apiEnvelope(z.object({inquiryId:z.string().uuid()}),'TaskInquiryCreatedResponse')}}}}});
 const reply=createRoute({method:'post',path:base+'/task-inquiries/{inquiryId}/messages',request:{params:z.object({projectId:z.string().uuid(),inquiryId:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:z.object({body:z.string().trim().min(1).max(4000)}).strict()}}}},responses:{201:{description:'质询消息已发送',content:{'application/json':{schema:apiEnvelope(z.object({messageId:z.string().uuid()}),'TaskInquiryMessageCreatedResponse')}}}}});
 const unread=createRoute({method:'get',path:base+'/task-inquiries/unread',request:{params:z.object({projectId:z.string().uuid()})},responses:{200:{description:'当前成员的任务质询未读数量',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({taskId:z.string().uuid(),unreadCount:z.number().int().nonnegative()}))}),'TaskInquiryUnreadResponse')}}}}});
@@ -27,10 +28,19 @@ export function registerTaskInquiryRoutes(app:OpenAPIHono<AppEnv>) {
  app.openapi(list,async c=>{
   const {projectId,taskId}=c.req.valid('param'),userId=c.get('user')!.id;
   if(!await c.env.DB.prepare('SELECT id FROM tasks WHERE project_id=?1 AND id=?2').bind(projectId,taskId).first())throw notFound('任务不存在');
+  const paging=parsePaging(c.req.valid('query'));
   // New tickets use one shared task id; this also preserves both historical sides of legacy threads.
-  const rows=await c.env.DB.prepare("SELECT i.id inquiryId,i.task_id taskId,i.upstream_task_id upstreamTaskId,i.task_title taskTitle,i.upstream_title upstreamTitle,i.requester_id requesterId,u.display_name requesterName,i.recipient_id recipientId,v.display_name recipientName,CASE WHEN i.task_id=i.upstream_task_id THEN 'direct' ELSE i.recipient_source END recipientSource,i.created_at createdAt FROM task_inquiries i JOIN users u ON u.id=i.requester_id JOIN users v ON v.id=i.recipient_id WHERE i.project_id=?1 AND ((i.task_id=?2 AND i.requester_id=?3) OR (i.upstream_task_id=?2 AND i.recipient_id=?3)) ORDER BY i.created_at,i.id").bind(projectId,taskId,userId).all<z.infer<typeof inquiry>>();
-  const items=await Promise.all(rows.results.map(async item=>({...item,messages:(await c.env.DB.prepare('SELECT m.id messageId,m.author_id authorId,u.display_name authorName,m.body,m.created_at createdAt FROM task_inquiry_messages m JOIN users u ON u.id=m.author_id WHERE m.inquiry_id=?1 ORDER BY m.created_at,m.id').bind(item.inquiryId).all<z.infer<typeof message>>()).results})));
-  return c.json(apiData(c,{items}),200);
+  const rows=await c.env.DB.prepare("SELECT i.id inquiryId,i.task_id taskId,i.upstream_task_id upstreamTaskId,i.task_title taskTitle,i.upstream_title upstreamTitle,i.requester_id requesterId,u.display_name requesterName,i.recipient_id recipientId,v.display_name recipientName,CASE WHEN i.task_id=i.upstream_task_id THEN 'direct' ELSE i.recipient_source END recipientSource,i.created_at createdAt FROM task_inquiries i JOIN users u ON u.id=i.requester_id JOIN users v ON v.id=i.recipient_id WHERE i.project_id=?1 AND ((i.task_id=?2 AND i.requester_id=?3) OR (i.upstream_task_id=?2 AND i.recipient_id=?3)) AND (?4 IS NULL OR i.created_at>?4 OR (i.created_at=?4 AND i.id>?5)) ORDER BY i.created_at,i.id LIMIT ?6").bind(projectId,taskId,userId,paging.cursor?.createdAt??null,paging.cursor?.id??null,paging.limit+1).all<z.infer<typeof inquiry>>();
+  const page=rows.results.slice(0,paging.limit);
+  const messages=await c.env.DB.prepare(`SELECT m.inquiry_id inquiryId,m.id messageId,m.author_id authorId,u.display_name authorName,m.body,m.created_at createdAt
+    FROM task_inquiry_messages m JOIN users u ON u.id=m.author_id JOIN task_inquiries i ON i.id=m.inquiry_id
+    WHERE i.project_id=?1 AND m.inquiry_id IN(SELECT value FROM json_each(?2)) AND (i.requester_id=?3 OR i.recipient_id=?3)
+    ORDER BY m.created_at,m.id`).bind(projectId,JSON.stringify(page.map(r=>r.inquiryId)),userId).all<z.infer<typeof message>&{inquiryId:string}>();
+  const grouped=new Map<string,z.infer<typeof message>[]>();
+  for(const {inquiryId,...message} of messages.results){const list=grouped.get(inquiryId)??[];list.push(message);grouped.set(inquiryId,list);}
+  const items=page.map(item=>({...item,messages:grouped.get(item.inquiryId)??[]}));
+  const last=page.at(-1);
+  return c.json(apiData(c,{items,nextCursor:nextCursor(rows.results.length>paging.limit,last&&{createdAt:last.createdAt,id:last.inquiryId})??null}),200);
  });
 
  app.openapi(unread,async c=>{

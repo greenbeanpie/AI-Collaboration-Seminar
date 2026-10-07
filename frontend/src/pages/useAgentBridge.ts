@@ -8,6 +8,10 @@ export const bridgeDevicesKey = ['agent-bridge-devices'] as const;
 export const bridgeHandoffsKey = (projectId: string, taskId: string) => ['agent-bridge-handoffs', projectId, taskId] as const;
 export const bridgeActive = (item: BridgeHandoff) => !['blocked', 'failed', 'cancelled', 'ready_for_review'].includes(item.state);
 const devicePreferences = new Map<string, string>();
+if (typeof window !== 'undefined') window.addEventListener('account-device-cleared', event => {
+  const accountId = (event as CustomEvent<{ accountId: string }>).detail?.accountId;
+  if (accountId) for (const key of devicePreferences.keys()) if (key.startsWith('agent-bridge-device:' + accountId + ':')) devicePreferences.delete(key);
+});
 export function preferredBridgeDevice(projectId: string, actorId?: string) {
   if (!actorId) return '';
   const key = `agent-bridge-device:${actorId}:${projectId}`;

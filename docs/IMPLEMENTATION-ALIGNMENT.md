@@ -251,6 +251,18 @@ A04/A05/A06/A09/A10/A11/A12 安装入口/A13 本地机制/A15 均有实现和本
 
 线上首次 PBKDF2 600000 返回 NotSupportedError：本地新运行时与线上100000上限存在差异。最终使用原生 scrypt N32768/r8/p3、16字节随机盐、32字节输出，拒绝弱参数；同密码升级管理员哈希后，重新部署并通过生产与本地实测。参考 [Cloudflare Node crypto支持](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/) 与 [OWASP密码存储参数](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)。
 
-最终生产版本：后端 `85f011b9-7c7e-4be1-992c-8a1510a31e8c`，前端 `54b06f48-c0e8-44ec-936b-f4d93350a95c`。安全证据 [password-auth-readiness.json](evidence/password-auth-readiness.json)，网页截图 [password-admin-accounts.png](evidence/password-admin-accounts.png)。此前邮箱认证记录是历史状态。
+最终生产版本：后端 `85f011b9-7c7e-4be1-992c-8a1510a31e8c`，前端 `54b06f48-c0e8-44ec-936b-f4d93350a95c`。安全证据 [password-auth-readiness.json](evidence/password-auth-readiness.json)，网页截图 [password-admin-accounts.png（历史证据已归档）](EVIDENCE-ARCHIVE.md)。此前邮箱认证记录是历史状态。
 
 剩余边界：无自助密码找回/普通旧账号密码配置界面；邮箱可填但未验证，不能用于自动认领或找回。邀请码记录仅最新100条。自定义域名挑战、真模型/OCR、云端恢复和告警配置仍按此前边界保留。Workers测试池仍有取消请求/RPC释放收尾告警，未隐藏。
+
+> 历史截图与输出已核验归档；原采集路径通过[归档清单与恢复说明](EVIDENCE-ARCHIVE.md)查找。本报告保留原验收结论，未重新执行浏览器测试。
+
+## 生产部署 AI 续跑队列屏障（2026-10-07）
+
+部署前只读侦察确认：production 最近一次部署为 2026-10-07 03:12Z（提交 08309bd，由维护者手动 `wrangler deploy` 完成；GitHub Actions 只做验证与 dry-run，不存在 push 自动部署）；生产 D1 无待应用迁移。本次目标改动为 main `6a1deb8` 引入的续跑队列屏障（修复长任务撞 Cloudflare 32 层 subrequest 上限 10034），仅涉及后端，前端与文档改动不需要重新部署前端 Worker。
+
+云端变更共两项：新建队列 `greenbp-team-office-ai-continuations`（账号内此前无任何队列）；原地更新后端 Worker `greenbp-team-office-backend`（版本 `385082d0`），部署输出确认 4 个 cron 触发器与两个 Workflow（parse/agent）原样保留、队列 producer 与 consumer 均已绑定。未触碰 D1、R2、Secrets、vars、Turnstile、域名绑定、前端 Worker `greenbp-team-office`、staging 及账号内其他项目。
+
+部署前 `VITE_BUILD_VERSION=$(git rev-parse HEAD) npm run preflight:deploy -- production` 通过；从与 origin/main 同步的干净提交 `0f5f87d` 构建。部署后验证（经 `https://team.greenbp.dpdns.org`）：`/api/v1/health` 200（environment: production）、`/health/deps` 返回 d1 ok / r2 ok、`/capabilities` 200；`wrangler queues list` 确认 producer=1、consumer=1。补丁的端到端效果验收（长任务不再出现 10034、`ai_execution_slices.slice` 持续递增、下一分片由队列消费者或 cron 派发）需随真实长任务使用观察，标准见 [WORKFLOW-CONTINUATION-QUEUE](WORKFLOW-CONTINUATION-QUEUE.md)。
+
+回滚边界：`npx wrangler rollback --env production` 回到 08309bd 内容；队列资源残留无害（旧版本代码不引用该绑定），队列消费幂等（仅派发 pending 且 slice 匹配的行），队列暂不可用时任务停为 pending 等待 cron 派发而非失败。本次未应用任何迁移，无数据库回滚需求。

@@ -1,3 +1,8 @@
+import { ExecutionControlPanel } from '../components/ExecutionControlPanel';
+import { executionOf, olderExecution } from '../api/ai-execution';
+import { AiActivityStatus } from '../components/AiActivityStatus';
+import type { AiActivity } from '../api/ai-activity';
+import { JobAiActivity } from './JobAiActivity';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { AudioPipelineStatus } from './AudioPipelineStatus';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -63,16 +68,19 @@ function CreationWizard({ userId }: {
   const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [actionBusy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
   const previewEpoch = useRef(0), latestDraft = useRef(draft);
   latestDraft.current = draft;
-  const previewRunning = draft?.previewState === 'running';
+  const [previewSubmitting, setPreviewSubmitting] = useState(false);
+  const previewActivity = (draft as WizardDraft & { activity?: AiActivity | null } | null)?.activity;
+  const previewRunning = draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused';
   const mediaPending = draft?.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
   const mediaPolling = draft?.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
   const previewWaiting = draft?.previewState === 'waiting_input';
   const busy = actionBusy || previewRunning || previewWaiting;
-  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
-  useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? ''))) || next.revision < latestDraft.current.revision) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); if (next.revision !== previous.revision) setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); setConfirmed(false); } }, [draftPoll.data]);
+  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => document.visibilityState === 'hidden' ? false : query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? ''))) || next.revision < latestDraft.current.revision || olderExecution(next, latestDraft.current)) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); if (next.revision !== previous.revision) setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); setConfirmed(false); } }, [draftPoll.data]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
+  const [manualGoalEdited, setManualGoalEdited] = useState(false);
   const capabilities = useCapabilities(), queryClient = useQueryClient(), navigate = useNavigate();
   const list = useQuery({
     queryKey: ['creation-drafts', userId], queryFn: () => api.get<'CreationDraftListResponse'>('/api/v1/creation-drafts'), retry: false
@@ -117,7 +125,7 @@ function CreationWizard({ userId }: {
           return;
         }
         setDraft(next);
-        if (next.previewState === 'waiting_input' || next.previewState === 'running') setStep(3);
+        if (['waiting_input','running','paused_round_limit','ready','failed'].includes(next.previewState)) setStep(3);
         setPayload(next.payload);
         setManual(next.preview?.tasks ?? []);
         setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
@@ -245,24 +253,30 @@ function CreationWizard({ userId }: {
       return remaining;
     });
   };
-  const preview = (mode: 'ai' | 'manual', regenerate = false) => run(async () => {
+  const preview = async (mode: 'ai' | 'manual', regenerate = false) => {
+    if (lock.current || previewRunning) return;
+    if (mode === 'ai') setPreviewSubmitting(true);
+    try { await run(async () => {
     const current = await ensure();
     const next: WizardDraft = await api.post<'CreationDraftResponse'>(draftPath(current.id, '/preview'), {
-      expectedRevision: current.revision, mode, ...(mode === 'ai' ? { background: true } : {}), tasks: mode === 'manual' ? manual : [], ...(mode === 'manual' ? { goal: manualGoal.title.trim() ? manualGoal : { title: payload.name, detail: '' } } : {}), regenerate
+      expectedRevision: current.revision, mode, ...(mode === 'ai' ? { background: true } : {}), tasks: mode === 'manual' ? manual : [], ...(mode === 'ai' && manualGoalEdited && manualGoal.title.trim() ? { goal: manualGoal } : {}), ...(mode === 'manual' ? { goal: manualGoal.title.trim() ? manualGoal : { title: payload.name, detail: '' } } : {}), regenerate: regenerate || mode === 'ai' && (Boolean(current.previewAttemptId) || current.previewState !== 'none')
     });
     accept(next);
+    setManualGoalEdited(false);
     setManual(next.preview?.tasks ?? []);
-    setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
-  });
+    setManualGoal(mode === 'ai' && manualGoalEdited ? manualGoal : next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
+    }); } finally { setPreviewSubmitting(false); }
+  };
   const openDraft = (id: string) => run(async () => {
     const next: WizardDraft = await api.get<'CreationDraftResponse'>(draftPath(id));
     if (isTemplatePayload(next.payload)) { navigate(`/app/projects/new/template/${encodeURIComponent(next.id)}`); return; }
     accept(next);
     setLocals([]);
+    setManualGoalEdited(false);
     remember(id, []);
     setManual(next.preview?.tasks ?? []);
     setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
-    setStep(next.previewState === 'waiting_input' || next.previewState === 'running' ? 3 : 0);
+    setStep(['waiting_input','running','paused_round_limit','ready','failed'].includes(next.previewState) ? 3 : 0);
     setResult(null);
   });
   const resolveClarification = async (answer?: ClarificationAnswer) => {
@@ -320,6 +334,8 @@ function CreationWizard({ userId }: {
       expectedRevision: draft.revision, confirmed: true
     })))}>恢复创建结果与邀请</button></section> : <>
  <h2>{wizardSteps[step]}</h2>
+ {draft && <ExecutionControlPanel execution={executionOf(draft)} path={draftPath(draft.id)} enabled={!actionBusy} processingEnabled={sameWizardPayload(payload,draft.payload) && !manualGoalEdited} onBeforeAction={() => { previewEpoch.current++; }} onUpdated={snapshot => { const next = snapshot as WizardDraft; if (next.id !== latestDraft.current?.id || olderExecution(next, latestDraft.current)) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); } }} />}
+ {(previewActivity || previewSubmitting || previewRunning || previewWaiting || draft?.previewState === 'failed') && <AiActivityStatus execution={executionOf(draft)} activity={previewActivity} jobId={draft?.id} status={previewRunning ? 'running' : previewWaiting ? 'waiting_input' : draft?.previewState === 'ready' ? 'succeeded' : draft?.previewState === 'failed' ? 'failed' : 'queued'} submitting={previewSubmitting} readError={draftPoll.error} eventsPath={draft ? `${draftPath(draft.id)}/activity-events` : undefined} onRefresh={() => void refreshClarification().catch(setError)} onResume={executionOf(draft) ? undefined : () => preview('ai',true)} resuming={previewSubmitting} />}
  {previewWaiting && draft?.clarification?.status === 'pending' && <AiClarificationCard question={draft.clarification} disabled={actionBusy} onAnswer={resolveClarification} onCancel={() => resolveClarification()} onRefresh={refreshClarification} />}
  {previewWaiting && !draft?.clarification && <div className="callout"><p>AI 正在等待补充信息，正在核对问题状态。</p><button type="button" className="button button-quiet" disabled={actionBusy} onClick={() => void refreshClarification().catch(setError)}>重新读取待回答问题</button></div>}
  {step === 0 && <><Field aiReference label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field aiReference label="主目标（可选）" hint="可直接给出团队大目标；留空时使用项目名称，目标说明留空。主动生成 AI 预览时可以建议目标。"><input className="input" maxLength={200} value={payload.goal?.title ?? ''} disabled={busy} onChange={e => { const title = e.target.value; setField('goal', title.trim() ? { title, detail: payload.goal?.detail ?? '' } : undefined); setManualGoal({ title, detail: payload.goal?.detail ?? '' }); }}/></Field><Field aiReference label="项目说明（可选）"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field aiReference label="截止日期（可选）" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
@@ -341,7 +357,7 @@ function CreationWizard({ userId }: {
  {step === 1 && <><Field label="正文解析方式"><select className="input" value={parseMode} onChange={e=>setParseMode(e.target.value as typeof parseMode)}><option value="auto">自动建议：小PDF云端，大PDF本机；DOCX、XLSX、PPTX本机</option><option value="cloud">云端读取小PDF</option><option value="browser">本机读取正文</option></select></Field><Field aiReference label="上传项目文件（可选）" hint="最多10个文件，支持 PDF、DOCX、XLSX、PPTX、图片、TXT、Markdown 和音视频（50 MiB）。上传只暂存到私有草稿，音视频后台生成摘要。"><input ref={fileInput} className="input" type="file" multiple accept={creationFileExtensions} disabled={busy || !capabilities.data} onChange={e => {
       select(e.target.files);
       e.target.value = '';
-    }}/></Field>{draft?.files.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}<AiReferenceBadge ariaHidden /></strong><small>{(file.sizeBytes / 1024).toFixed(1)} KiB · 已暂存 · {file.textReady ? '已读取文本' : '尚无可读取文本'}</small><AudioPipelineStatus audio={file.audio} disabled={busy} onRefresh={() => void run(async () => { const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); })} onResume={() => void run(async () => { if(!file.mediaJobId)return; await api.post<'DraftAudioFallbackResumeResponse'>(draftPath(draft!.id,`/files/${file.id}/media-resume`),{jobId:file.mediaJobId}); const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); setConfirmed(false); })}/>{file.mediaStatus && <p>音视频处理：{file.mediaStatus}{file.mediaSummary ? ' · AI 摘要（非逐字原文）' : ''}</p>}{file.mediaError && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{file.mediaError}</p>}{file.textError && <p>{file.textError}</p>}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void run(async () => {
+    }}/></Field>{draft?.files.map(file => <div className="wizard-file" key={file.id}><strong>{file.name}<AiReferenceBadge ariaHidden /></strong><small>{(file.sizeBytes / 1024).toFixed(1)} KiB · 已暂存 · {file.textReady ? '已读取文本' : '尚无可读取文本'}</small><JobAiActivity projectId={draft!.id} jobId={file.mediaJobId} onSettled={() => void api.get<'CreationDraftResponse'>(draftPath(draft!.id)).then(next => { setDraft(next); })} /><AudioPipelineStatus audio={file.audio} disabled={busy} onRefresh={() => void run(async () => { const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); })} onResume={() => void run(async () => { if(!file.mediaJobId)return; await api.post<'DraftAudioFallbackResumeResponse'>(draftPath(draft!.id,`/files/${file.id}/media-resume`),{jobId:file.mediaJobId}); const previous=latestDraft.current!; const next=await api.get<'CreationDraftResponse'>(draftPath(previous.id)); setDraft(next); setPayload(current => sameWizardPayload(current,previous.payload) ? next.payload : current); setConfirmed(false); })}/>{file.mediaStatus && <p>音视频处理：{file.mediaStatus}{file.mediaSummary ? ' · AI 摘要（非逐字原文）' : ''}</p>}{file.mediaError && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{file.mediaError}</p>}{file.textError && <p>{file.textError}</p>}<button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void run(async () => {
       accept(await api.post<'CreationDraftResponse'>(draftPath(draft.id, `/files/${file.id}/state`), {
         expectedRevision: draft.revision, removed: true
       }));
@@ -353,7 +369,7 @@ function CreationWizard({ userId }: {
       remember(draft?.id, remaining);
     }}>移除待上传</button></div>)}</>}
  {step === 2 && <><Field aiReference label="组员总人数（含负责人）（可选）" hint="用于团队规划，可在创建后继续邀请成员；不设置项目人数上限。"><input type="number" className="input" min={1} max={100} value={payload.teamSize} disabled={busy} onChange={e => setField('teamSize', Number(e.target.value))}/></Field><Field aiReference label="邀请对象的完整登录用户名（每行一个，可留空）" hint="只按完整用户名精确匹配，不按昵称查找。正式创建后对方在首页接受或拒绝；邀请不提前占名额。"><textarea className="input textarea" rows={4} disabled={busy} value={payload.inviteUsernames.join('\n')} onChange={e => setField('inviteUsernames', e.target.value.split('\n'))} onBlur={() => setField('inviteUsernames', payload.inviteUsernames.map(n => n.trim()).filter(Boolean))}/></Field><p>正式创建成功后才发送邀请；组员接受后加入普通成员并获得项目权限。</p></>}
- {step === 3 && <>{mediaPending && <p role="status">音视频摘要正在处理，完成后可生成预览；也可移出该文件继续创建。</p>}{previewRunning && <p role="status">AI 正在后台处理文件并调查项目草稿，可刷新页面后继续等待。</p>}{draftPoll.error && <ErrorNotice error={draftPoll.error} onRetry={() => void draftPoll.refetch()} />}<Field aiReference label="主目标预览（可选）" hint="大目标独立保存，不计入下面的任务数量或工时。编辑后需保存当前预览。"><input className="input" maxLength={200} value={manualGoal.title} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, title: e.target.value }); setConfirmed(false); }}/></Field><Field aiReference label="目标说明预览（可选）"><textarea className="input" rows={3} maxLength={4000} value={manualGoal.detail} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, detail: e.target.value }); setConfirmed(false); }}/></Field><Field aiReference label="拆分要求（可选）" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || mediaPending || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.preview))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
+ {step === 3 && <>{mediaPending && <p role="status">音视频摘要正在处理，完成后可生成预览；也可移出该文件继续创建。</p>}{previewRunning && <p role="status">AI 正在后台处理文件并调查项目草稿，可刷新页面后继续等待。</p>}{draftPoll.error && <ErrorNotice error={draftPoll.error} onRetry={() => void draftPoll.refetch()} />}<Field aiReference label="主目标预览（可选）" hint="大目标独立保存，不计入下面的任务数量或工时。编辑后需保存当前预览。"><input className="input" maxLength={200} value={manualGoal.title} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, title: e.target.value }); setManualGoalEdited(true); setConfirmed(false); }}/></Field><Field aiReference label="目标说明预览（可选）"><textarea className="input" rows={3} maxLength={4000} value={manualGoal.detail} disabled={busy} onChange={e => { setManualGoal({ ...manualGoal, detail: e.target.value }); setManualGoalEdited(true); setConfirmed(false); }}/></Field><Field aiReference label="拆分要求（可选）" hint="说明具体目标、交付成果和限制；修改后旧预览失效。"><textarea className="input textarea" rows={3} maxLength={4000} disabled={busy} value={payload.brief} onChange={e => setField('brief', e.target.value)}/></Field><div className="form-actions"><button type="button" className="button button-primary" disabled={busy || mediaPending || !payload.aiCollaborationEnabled || !capabilities.data?.features.aiEnabled} onClick={() => void preview('ai', Boolean(draft?.previewAttemptId || draft?.preview || executionOf(draft)))}>{draft?.preview ? '重新生成 AI 预览' : '生成 AI 拆分预览'}</button><button type="button" className="button button-quiet" disabled={busy || manual.length >= 20} onClick={() => setManual(items => [...items, {
         key: crypto.randomUUID(), dependsOn: [], title: '', detail: '', criteria: '', effortHours: 1, citations: []
       }])}>添加手动任务</button></div><p>手动预览不调用模型；可确认暂不创建任务。重新生成 AI 预览可能再次产生用量。</p>{manual.map((task, index) => <fieldset key={task.key ?? index} className="wizard-task"><legend>任务 {index + 1}</legend><Field aiReference label="标题"><input className="input" value={task.title} maxLength={200} disabled={busy} onChange={e => {
       setManual(items => items.map((t, i) => i === index ? {

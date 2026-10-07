@@ -691,3 +691,9 @@ standardView 批量读取项目范围内的引用元数据与可用状态，源�
 standards.generate 使用严格 scoringStandardOutputSchema，只接受 methodSource 和 dimensions，维度只含 key/label/weight/citations。documented 必须引用实际读取的 source 固定片段，名称与原始分值逐字可验证，引用不得夹带其他原文；proposed 根据主目标生成总和100的权重，引用必须为空。服务端转换到兼容保存结构时 detail/notes 为空、category=scoring、日期为 null，原始分值按比例转换为百分比。scoringOnly 上下文只预载来源目录，仅暴露原文检索工具，不读取任务、反馈、旧标准或模型总结。引用批量补充原文件名和定位字段，前端 fromGenerated 保留并通过保存协议传回引用核心字段。scoringOutputVersion=2 阻止旧格式任务恢复或旧成功结果进入编辑器，不重放旧的已付费调查。
 
 ApiError.message 直接取后端 message，兼容无错误码/请求编号的消息对象及纯文本原因。ErrorNotice、页面边界和所有作业/传输/通知/权限错误入口使用统一 errorMessage 原文显示，React 文本节点安全渲染并保留换行；诊断元数据只留在内部，不作为网页错误提示展示，不追加 traceback 或固定泛化提示。
+
+## AI 活动与断点恢复
+
+迁移 `backend/migrations/0061_ai_activity.sql` 增加安全活动摘要与步骤记录。`backend/src/services/ai-activity.ts` 维护真实阶段和模型返回时间，普通任务及私有创建草稿采用相同展示协议。任务操作记录可分页读取并串联执行尝试；草稿及无项目任务限制拥有者访问。
+
+`backend/src/services/ai-checkpoints.ts` 在私有 R2 加密保存模型响应，调查断点按执行尝试隔离，已收到响应优先用于校验和业务保存。失败续跑沿用输入版本、来源生命周期、权限及并发检查；旧尝试不能覆盖新的业务结果。结果不明的模型请求不自动重放，用户主动续跑时重新请求当前步骤，界面提示可能重复计费。当前实现及验证说明见仓库 `docs/AI-ACTIVITY.md`。

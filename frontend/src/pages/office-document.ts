@@ -159,4 +159,3 @@ export async function parseOfficeDocument(
     return { status: 'partial', format, pages: null, blocks: acknowledged, warnings };
   } finally { await reader.close(); }
 }
-

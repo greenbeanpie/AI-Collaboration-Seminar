@@ -25,3 +25,5 @@ Ctrl+C 停止此脚本所属的隔离 DSH 进程。保留历史 smoke homes，�
 已提交的精选截图与机器结果位于仓库 `docs/evidence/dsh-bridge-release/native-plugin-card.png` 和 `native-remote-install.json`；私有浏览器认证 URL 已从精选报告移除。
 
 未创建生产配对、未提供个人密钥、未运行付费模型、未测试原生目录选择。独立浏览器与本次隔离 DSH 进程均已停止，历史 homes 保留。
+
+> 历史截图与输出已核验归档；原采集路径通过[归档清单与恢复说明](../../../docs/EVIDENCE-ARCHIVE.md)查找。本报告保留原验收结论，未重新执行浏览器测试。

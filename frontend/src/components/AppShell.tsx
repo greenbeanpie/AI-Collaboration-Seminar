@@ -1,7 +1,7 @@
 import { requestSettingsLeave } from '../dialogs/settings-leave';
 import { BrandMark } from './BrandMark';
 import { NotificationControls } from '../notifications/NotificationControls';
-import { unsubscribeDevice, deviceSubscriptionId } from '../notifications/core';
+import { unsubscribeDevice, deviceSubscriptionId, deviceKey, notifyWorkerAccount } from '../notifications/core';
 import { notificationRequest } from '../notifications/api';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -11,14 +11,20 @@ import { Archive, BookOpen, FolderKanban, KeyRound, LifeBuoy, LogOut, MoreHorizo
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
-import { ErrorNotice } from './ui';
+import { ErrorNotice, Modal } from './ui';
 import { ThemeSelector } from './ThemeSelector';
 import { OfflineWorkspaceStatus } from '../offline/OfflineWorkspaceStatus';
-import { forgetAccount } from '../offline/store';
+import { clearOfflineAccount, forgetAccount, operations } from '../offline/store';
 import { AiReferencePreferencesProvider } from './AiReferencePreferencesProvider';
+import { setDesktopAccount } from '../desktop/lifecycle';
+import { desktopInvoke, isDesktop } from '../desktop/bridge';
+import { confirmPage } from '../dialogs/dialog-service';
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
+  useEffect(() => { setDesktopAccount(user.id); return () => setDesktopAccount(null); }, [user.id]);
   const logoutLock = useRef(false);
+  const sessionRevoked = useRef(false);
+  const [clearCount, setClearCount] = useState<number | null>(null);
   const [logoutError, setLogoutError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -44,27 +50,54 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   const queryClient = useQueryClient();
   const label = user.displayName || user.username || user.email || '项目成员';
 
-  async function logout() {
+  async function offerClearLogout() {
+    if (busy) return;
+    try { setLogoutError(null); setClearCount((await operations(user.id)).length); }
+    catch (error) { setLogoutError(error); }
+  }
+  async function logout(clearDevice = false) {
     if (logoutLock.current) return;
     logoutLock.current = true;
     try {
       if (!await requestSettingsLeave()) return;
-      setBusy(true); setLogoutError(null);
-      if (navigator.onLine === false) {
-        forgetAccount(); queryClient.clear(); navigate('/login', { replace: true }); return;
+      if (isDesktop()) {
+        const [pending, native] = await Promise.all([operations(user.id), desktopInvoke<{ pendingUploads: number }>('desktop_pending_files')]);
+        if ((pending.length || native.pendingUploads) && !await confirmPage(`本机还有 ${pending.length} 项待同步操作、${native.pendingUploads} 个待上传附件。退出登录会停止同步，内容保留供原账户下次登录继续。确定退出吗？`)) return;
       }
-      const subscriptionId = deviceSubscriptionId(user.id);
-      await unsubscribeDevice(user.id,notificationRequest);
-      await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session',{headers:{...(subscriptionId ? {'X-Push-Subscription-Id':subscriptionId} : {}),'X-Notification-Account':user.id}});
-      clearAccountStorage(user.id);
-      forgetAccount();
-      await queryClient.clear();
-      navigate('/login', { replace: true });
+      setBusy(true); setLogoutError(null);
+      const offline = navigator.onLine === false;
+      if (!offline && !sessionRevoked.current) {
+        const subscriptionId = deviceSubscriptionId(user.id);
+        await unsubscribeDevice(user.id, notificationRequest);
+        await api.delete<'AuthSessionDeleteResponse'>('/api/v1/auth/session', { headers: { ...(subscriptionId ? { 'X-Push-Subscription-Id': subscriptionId } : {}), 'X-Notification-Account': user.id } });
+        sessionRevoked.current = true;
+      }
+      if (clearDevice) {
+        clearAccountStorage(user.id, true);
+        localStorage.removeItem(deviceKey(user.id));
+        if (offline && 'serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration('/');
+          const subscription = await registration?.pushManager?.getSubscription();
+          if (subscription && !await subscription.unsubscribe()) throw new Error('未能取消本机通知订阅，请重试');
+        }
+        await notifyWorkerAccount(null);
+        await clearOfflineAccount(user.id);
+      } else if (offline) await notifyWorkerAccount(null);
+      forgetAccount(); queryClient.clear();
+      setClearCount(null);
+      navigate(offline ? '/login?localLogout=1' : '/login', { replace: true });
     } catch (error) { window.dispatchEvent(new Event('settings-leave-failed')); setLogoutError(error); }
     finally { logoutLock.current = false; setBusy(false); }
   }
 
   return <AiReferencePreferencesProvider accountId={user.id}><div className="app-frame office-shell">
+    {clearCount !== null && <Modal title="退出并清除此设备数据" onClose={() => { if (!busy) setClearCount(null); }}>
+      <p>将删除当前账号在此设备的离线快照、草稿和通知记录，其他账号数据保留。</p>
+      <p role="alert">尚有 {clearCount} 项未同步操作。确认后这些本机修改将被删除。</p>
+      {navigator.onLine === false && <p>当前离线，服务端会话无法撤销。联网后请重新登录并退出。</p>}
+      {logoutError !== null && <ErrorNotice error={logoutError} />}
+      <div className="form-actions"><button className="button button-quiet" disabled={busy} onClick={() => setClearCount(null)}>取消</button><button className="button button-danger" disabled={busy} onClick={() => void logout(true)}>确认清除并退出</button></div>
+    </Modal>}
     <aside className="sidebar">
       <div className="sidebar-brand"><Link to="/app" className="brand"><span className="brand-mark"><BrandMark/></span><span className="brand-copy"><strong>补位</strong><small>AI 项目办公室</small></span></Link></div>
       <div className="sidebar-navigation">
@@ -96,6 +129,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
             <ThemeSelector/>
             <Link className="topbar-support" to="/app/support" aria-label="支持工单"><LifeBuoy size={17}/><span>支持</span></Link>
             <button className="icon-button topbar-logout" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /><span className="topbar-action-label">退出登录</span></button>
+            <button className="button button-quiet button-small" disabled={busy} onClick={() => void offerClearLogout()}>退出并清除此设备数据</button>
           </div>
         </div>
       </header>

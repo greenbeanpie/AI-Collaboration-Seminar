@@ -35,8 +35,7 @@ function LegacyTaskAgentHandoff({ projectId, task, tasks }: { projectId: string;
         const id = pending.pop()!;
         if (seen.has(id)) continue;
         seen.add(id);
-        const dependency = tasks.find(item => item.taskId === id);
-        if (!dependency) throw new Error('部分前置任务尚未读取，请刷新任务列表后重试。');
+        const dependency = tasks.find(item => item.taskId === id) ?? await projectRequest<CollaborationTask>(projectId, `/tasks/${encodeURIComponent(id)}`, { networkOnly: navigator.onLine !== false });
         dependencies.push(dependency); pending.push(...dependency.dependsOnTaskIds);
       }
       const dependencyContext = await Promise.all(dependencies.map(async dependency => {
@@ -82,6 +81,6 @@ function LegacyTaskAgentHandoff({ projectId, task, tasks }: { projectId: string;
     } catch { setTransferError(new Error('下载失败，请选择下方提示词手动复制。')); }
     finally { if (url) { const exportedUrl = url; window.setTimeout(() => URL.revokeObjectURL(exportedUrl), 1000); } }
   };
-  if (!eligibility.eligible) return <div className="stack"><TaskAgentEligibilityNotice eligibility={eligibility} /></div>;
-  return <div className="stack"><p>复制提示词或下载文件，然后交给本地 Agent 执行。</p>{context.isPending && <Spinner label="生成任务提示词" />}{context.error && <ErrorNotice error={context.error} onRetry={() => void context.refetch()} />}{context.data && !context.error && !context.isFetching && <><Field aiReference label="任务执行提示词"><textarea className="input" rows={14} readOnly value={context.data} onFocus={event => event.currentTarget.select()} /></Field><div className="collab-toolbar"><button className="button button-primary" disabled={context.isFetching} onClick={() => void copy()}>复制提示词</button><button className="button" disabled={context.isFetching} onClick={download}>下载提示词</button><button className="button button-quiet" disabled={context.isFetching} onClick={() => { setStatus(''); setTransferError(null); void context.refetch(); }}>重新生成</button></div></>}{transferError && <ErrorNotice error={transferError}/>}<p role="status">{status}</p></div>;
+  if (!eligibility.eligible) return <div className="stack"><TaskAgentEligibilityNotice projectId={projectId} eligibility={eligibility} /></div>;
+  return <div className="stack"><TaskAgentEligibilityNotice projectId={projectId} eligibility={eligibility} /><p>复制提示词或下载文件，然后交给本地 Agent 执行。</p>{context.isPending && <Spinner label="生成任务提示词" />}{context.error && <ErrorNotice error={context.error} onRetry={() => void context.refetch()} />}{context.data && !context.error && !context.isFetching && <><Field aiReference label="任务执行提示词"><textarea className="input" rows={14} readOnly value={context.data} onFocus={event => event.currentTarget.select()} /></Field><div className="collab-toolbar"><button className="button button-primary" disabled={context.isFetching} onClick={() => void copy()}>复制提示词</button><button className="button" disabled={context.isFetching} onClick={download}>下载提示词</button><button className="button button-quiet" disabled={context.isFetching} onClick={() => { setStatus(''); setTransferError(null); void context.refetch(); }}>重新生成</button></div></>}{transferError && <ErrorNotice error={transferError}/>}<p role="status">{status}</p></div>;
 }

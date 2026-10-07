@@ -1,12 +1,15 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskFileUploads } from './TaskFileUploads';
 import { projectRequest } from '../api/simplification';
 import { uploadProjectFile } from './source-workflows';
 import type { TaskFile } from './task-files-client';
-import { listAllItems } from '../api/client';
-vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn() }));
+import { api } from '../api/client';
+import { parseBrowserDocument } from './browser-document';
+vi.mock('./browser-document', () => ({ parseBrowserDocument: vi.fn() }));
+const parse = vi.mocked(parseBrowserDocument);
+vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), api: { ... (await importOriginal<typeof import('../api/client')>()).api, get: vi.fn() } }));
 vi.mock('../api/simplification', () => ({ projectRequest: vi.fn() }));
 vi.mock('./source-workflows', () => ({ uploadProjectFile: vi.fn() }));
 const request = vi.mocked(projectRequest), upload = vi.mocked(uploadProjectFile);
@@ -46,7 +49,7 @@ it('replaces an existing file using the material revision and new immutable byte
 it('recovers an upload whose completion response was lost without uploading again', async () => {
   show(); await waitFor(() => expect(screen.getByLabelText('上传成果文件')).toBeEnabled());
   upload.mockImplementationOnce(async (_project, _file, _key, initialized) => { initialized?.('confirmed-file'); throw new Error('上传响应丢失'); });
-  vi.mocked(listAllItems).mockResolvedValue([{ fileId: 'confirmed-file', name: '已上传.pdf', status: 'available', sizeBytes: 10, createdAt: '2026-10-04', deletedAt: null, lifecycleVersion: 1, canDelete: true, sourceIds: [] }]);
+  vi.mocked(api.get).mockResolvedValue({ items: [{ fileId: 'confirmed-file', name: '已上传.pdf', status: 'available', sizeBytes: 10, createdAt: '2026-10-04', deletedAt: null, lifecycleVersion: 1, canDelete: true, sourceIds: [] }], nextCursor: null } as never);
   fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['bytes'], '已上传.pdf')] } });
   await screen.findByText('上传响应丢失'); fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/tasks/t/files', expect.objectContaining({ body: { fileId: 'confirmed-file' } })));
@@ -69,4 +72,19 @@ it('blocks submission with an explicit reason until a failed upload is removed',
   await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(true, '请重试或移除失败的待上传文件。'));
   fireEvent.click(screen.getByRole('button', { name: '移除待上传项' }));
   await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false, ''));
+});
+describe('deliverable text extraction', () => {
+  it('sends extracted plain text with the registration and reports the result', async () => {
+    show(); await waitFor(() => expect(screen.getByLabelText('上传成果文件')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['第一行。\r\n第二行。'], '成果.txt')] } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/tasks/t/files', expect.objectContaining({ method: 'POST', body: { fileId: 'new-file', text: '第一行。\n第二行。' } })));
+    await screen.findByText(/已提取正文/);
+  });
+  it('registers the file anyway and warns when extraction fails', async () => {
+    parse.mockRejectedValue(new Error('文件包含无效或不支持的 XML。'));
+    show(); await waitFor(() => expect(screen.getByLabelText('上传成果文件')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [new File(['bytes'], '成果.docx')] } });
+    await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/tasks/t/files', expect.objectContaining({ method: 'POST', body: { fileId: 'new-file' } })));
+    await screen.findByText(/未能提取正文/);
+  });
 });

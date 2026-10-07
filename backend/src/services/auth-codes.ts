@@ -1,3 +1,4 @@
+import { purposeSecret } from '../ai/secrets';
 import type { Env } from '../env';
 import { hmacSha256Hex, newId, nowIso, timingSafeEqual } from '../core/db';
 import {
@@ -73,8 +74,12 @@ export async function createChallenge(
   const codeHmacValue = await codeHmac(env.AUTH_SECRET, challengeId, params.email, code);
 
   const day = nowStr.slice(0, 10);
-  const ipHash = params.ip ? await hmacSha256Hex(env.AUTH_SECRET, `email-ip|${params.ip}`) : null;
-  const recipientHash = await hmacSha256Hex(env.AUTH_SECRET, `email-quota|${params.email.toLowerCase()}`);
+  const rateSecret = await purposeSecret(env, 'rate-limit');
+  const legacyIpHash = params.ip ? await hmacSha256Hex(env.AUTH_SECRET, `email-ip|${params.ip}`) : null;
+  const ipHash = params.ip ? await hmacSha256Hex(rateSecret, `email-ip|${params.ip}`) : null;
+  const legacyRecipientHash = await hmacSha256Hex(env.AUTH_SECRET, `email-quota|${params.email.toLowerCase()}`);
+  const legacyRecipient = await env.DB.prepare('SELECT sends FROM auth_email_recipient_usage WHERE day = ?1 AND email_hash = ?2').bind(day, legacyRecipientHash).first();
+  const recipientHash = legacyRecipient ? legacyRecipientHash : await hmacSha256Hex(rateSecret, `email-quota|${params.email.toLowerCase()}`);
   const resendBefore = new Date(now.getTime() - LIMITS.challengeResendSeconds * 1000).toISOString();
   const hourAgo = new Date(now.getTime() - 3600_000).toISOString();
   // One transaction claims the per-email/IP allowance and global delivery budget.
@@ -86,9 +91,9 @@ export async function createChallenge(
       SELECT ?1, ?2, ?3, 0, ?4, ?5, ?6
       WHERE NOT EXISTS (SELECT 1 FROM auth_challenges WHERE lower(email) = lower(?2) AND requested_at > ?7)
         AND (SELECT sends FROM auth_email_recipient_usage WHERE day = ?10 AND email_hash = ?8) < 6
-        AND (?4 IS NULL OR (SELECT COUNT(*) FROM auth_email_ip_attempts WHERE ip_hash = ?12 AND attempted_at > ?9) < 10)
+        AND (?4 IS NULL OR (SELECT COUNT(*) FROM auth_email_ip_attempts WHERE ip_hash IN (?12, ?13) AND attempted_at > ?9) < 10)
         AND (SELECT sends FROM auth_email_daily_usage WHERE day = ?10) < ?11`)
-      .bind(challengeId, params.email, codeHmacValue, params.ip, nowStr, expiresAt, resendBefore, recipientHash, hourAgo, day, dailyEmailLimit(env), ipHash),
+      .bind(challengeId, params.email, codeHmacValue, params.ip, nowStr, expiresAt, resendBefore, recipientHash, hourAgo, day, dailyEmailLimit(env), ipHash, legacyIpHash),
     env.DB.prepare('UPDATE auth_email_daily_usage SET sends = sends + 1 WHERE day = ?1 AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?2)').bind(day, challengeId),
     env.DB.prepare('UPDATE auth_email_recipient_usage SET sends = sends + 1 WHERE day = ?1 AND email_hash = ?2 AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?3)').bind(day, recipientHash, challengeId),
     env.DB.prepare('INSERT INTO auth_email_ip_attempts (id, ip_hash, attempted_at) SELECT ?1, ?2, ?3 WHERE ?2 IS NOT NULL AND EXISTS (SELECT 1 FROM auth_challenges WHERE id = ?1)').bind(challengeId, ipHash, nowStr),

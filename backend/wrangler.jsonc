@@ -5,7 +5,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "greenbp-team-office-backend",
   "main": "src/index.ts",
-  "compatibility_date": "2025-05-05",
+  "compatibility_date": "2026-09-26",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "d1_databases": [
@@ -30,7 +30,7 @@
     }
   ],
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": ["* * * * *", "*/10 * * * *", "0 * * * *", "0 3 * * *"]
   },
   "observability": {
     "enabled": true
@@ -92,7 +92,8 @@
         "EMAIL_FROM": "补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>",
         "AUTH_MODE": "password",
         "EMAIL_DAILY_LIMIT": "30",
-        "TURNSTILE_REQUIRED": "false",
+        "TURNSTILE_REQUIRED": "true",
+        "TURNSTILE_HOSTNAMES": "team.greenbp.dpdns.org,greenbp-team-office.hddhp.workers.dev",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFKQSg4fWagOtFAC"
       },
       "d1_databases": [
@@ -105,6 +106,14 @@
       ],
       "ai": { "binding": "AI", "remote": true },
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-production" }],
+      "queues": {
+        "producers": [
+          { "binding": "AI_CONTINUATION_QUEUE", "queue": "greenbp-team-office-ai-continuations" }
+        ],
+        "consumers": [
+          { "queue": "greenbp-team-office-ai-continuations", "max_batch_size": 10, "max_batch_timeout": 1 }
+        ]
+      },
       "workflows": [
         {
           "binding": "PARSE_WORKFLOW",

@@ -1,7 +1,8 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { assertSourceInputs, snapshotRequirementSources, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
@@ -64,8 +65,8 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   if(!requester)throw new AppError('NOT_FOUND','任务请求者不存在',404,false);
   if(input.assessmentId){await runMaterialAssessmentJob(env,jobId);return;}
   try {
-    const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2')
-      .bind(input.reviewId, input.projectId)
+    const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2 AND (job_id IS NULL OR job_id=?3)')
+      .bind(input.reviewId, input.projectId,jobId)
       .first<ReviewRow>();
     if (!review) throw new AppError('NOT_FOUND', '预审记录不存在', 404, false);
     if (review.status !== 'pending' && review.status !== 'running') {
@@ -84,6 +85,8 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
     const weights = standard.rubric.weights;
     const requirements = {results:standard.requirements};
     const assertInputs = async () => {
+      const current=await env.DB.prepare("SELECT 1 FROM reviews r JOIN jobs j ON j.id=?2 WHERE r.id=?1 AND (r.job_id IS NULL OR r.job_id=j.id) AND j.status IN ('queued','running')").bind(input.reviewId,jobId).first();
+      if(!current)throw new AppError('INVALID_STATE','预审作业已变化，旧尝试不会发布',409,false);
       await assertEffectiveStandard(env, input.projectId, input.standardsVersionId!);
       const snapshots=(await Promise.all(standard.requirementSetIds.map(id=>snapshotRequirementSources(env,input.projectId,id)))).flat();
       await assertSourceInputs(env,input.projectId,snapshots.map(source=>source.sourceVersionId),input.sourceSnapshots);
@@ -161,7 +164,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
     await assertInputs();
     const now = nowIso();
     const updated = await env.DB.batch([
-      env.DB.prepare(`UPDATE reviews SET status='succeeded',report_json=?2 WHERE id=?1 AND project_id=?3 AND status IN ('pending','running') AND ${effectiveStandardGuardSql('?3',"json_extract((SELECT input_json FROM jobs WHERE id=?4),'$.standardsVersionId')")} AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`).bind(
+      env.DB.prepare(`UPDATE reviews SET status='succeeded',report_json=?2 WHERE id=?1 AND project_id=?3 AND status IN ('pending','running') AND (job_id IS NULL OR job_id=?4) AND EXISTS(SELECT 1 FROM jobs WHERE id=?4 AND status IN ('queued','running')) AND ${effectiveStandardGuardSql('?3',"json_extract((SELECT input_json FROM jobs WHERE id=?4),'$.standardsVersionId')")} AND ${sourceInputsGuard("(SELECT input_json FROM jobs WHERE id=?4)", '?3')}`).bind(
         review.id,
         JSON.stringify(report), input.projectId, jobId,
       ),
@@ -178,10 +181,9 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       payload: { overall: total },
     });
     await succeedJob(env, jobId, { reviewId: review.id });
-  } catch (err) {
-    if (err instanceof InvestigationContinuation) throw err;
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     const message = err instanceof Error ? err.message : String(err);
-    await env.DB.prepare("UPDATE reviews SET status = 'failed' WHERE id = ?1 AND status IN ('pending', 'running')").bind(input.reviewId).run();
+    await env.DB.prepare("UPDATE reviews SET status = 'failed' WHERE id = ?1 AND status IN ('pending', 'running') AND (job_id IS NULL OR job_id=?2) AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))").bind(input.reviewId,jobId).run();
     await settleReservation(env, jobId, 'released');
     await failJob(env, jobId, { code: err instanceof AppError ? err.code : 'INTERNAL', message });
   }

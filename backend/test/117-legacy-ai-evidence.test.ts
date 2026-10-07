@@ -82,4 +82,31 @@ describe('legacy AI compatibility retains trustworthy evidence',()=>{
     const response=await request(f,`rehearsals/${rehearsalId}`),body=await response.json() as {data:{turns:Array<{content:string;references:unknown[];decisionReferences:unknown[]}>}};
     expect(body.data.turns[0]!.content).toBe('对实际任务和回答的总结');expect(body.data.turns[0]!.references.length).toBeGreaterThan(0);expect(body.data.turns[0]!.decisionReferences).toHaveLength(1);
   });
+  it('does not publish or fail a replacement review when the old attempt loses ownership before its write',async()=>{
+    const f=await fixture(),r=await review(f),replacement=await job(f,'review_run',{projectId:f.projectId,reviewId:r.id});
+    await env.DB.prepare('UPDATE reviews SET job_id=?2 WHERE id=?1').bind(r.id,r.jobId).run();
+    provider(report(f));
+    let switched=false;
+    const selected=new WeakSet<object>();
+    const wrap=(statement:D1PreparedStatement):D1PreparedStatement=>{const proxy=new Proxy(statement,{get(target,key){if(key==='bind')return (...args:unknown[])=>wrap(target.bind(...args));const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});selected.add(proxy);return proxy;};
+    const db=new Proxy(env.DB,{get(target,key){
+      if(key==='prepare')return (sql:string)=>sql.includes("UPDATE reviews SET status='succeeded'")?wrap(target.prepare(sql)):target.prepare(sql);
+      if(key==='batch')return async(statements:D1PreparedStatement[])=>{if(!switched&&statements.some(statement=>selected.has(statement))){switched=true;await env.DB.batch([env.DB.prepare("UPDATE jobs SET status='failed' WHERE id=?1").bind(r.jobId),env.DB.prepare('UPDATE reviews SET job_id=?2 WHERE id=?1').bind(r.id,replacement)]);}return target.batch(statements);};
+      const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+    }});
+    await runReviewJob({...env,DB:db},r.jobId);
+    expect(switched).toBe(true);
+    expect(await env.DB.prepare('SELECT status,job_id,report_json FROM reviews WHERE id=?1').bind(r.id).first()).toEqual({status:'pending',job_id:replacement,report_json:null});
+  });
+  it('an old rehearsal failure cannot mark the replacement assessment failed',async()=>{
+    const f=await fixture(),rehearsalId=newId(),now=nowIso();
+    const old=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'}),replacement=await job(f,'rehearsal_turn',{rehearsalId,projectId:f.projectId,phase:'summary'}),assessmentId=newId();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO rehearsals(id,project_id,scope,material_version_ids_json,status,created_by,created_at,processing_job_id,finish_job_id) VALUES(?1,?2,'all','[]','active',?3,?4,?5,?5)").bind(rehearsalId,f.projectId,f.owner.userId,now,replacement),
+      env.DB.prepare("INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) VALUES(?1,?2,'rehearsal',?3,1,?4,'{}','active',?5,?6,?7)").bind(assessmentId,f.projectId,rehearsalId,f.standardId,replacement,f.owner.userId,now)
+    ]);
+    const fetch=provider({});await runRehearsalTurnJob(env,old);expect(fetch).not.toHaveBeenCalled();
+    expect(await env.DB.prepare('SELECT status,job_id FROM assessments WHERE id=?1').bind(assessmentId).first()).toEqual({status:'active',job_id:replacement});
+  });
+
 });

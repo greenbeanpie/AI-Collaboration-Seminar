@@ -1,3 +1,4 @@
+import { ExecutionPaused, readExecution } from '../src/services/ai-execution-control';
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -11,7 +12,7 @@ import { applyProposal } from '../src/services/collaboration';
 import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => { vi.unstubAllGlobals(); await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=100 WHERE id='global'").run(); });
 await configureGoFixture();
 const id = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -62,8 +63,8 @@ function provider(output: unknown, before?: () => Promise<void>) {
     vi.stubGlobal('fetch', mock);
     return mock;
 }
-async function noProposal(f: Fixture, jobId: string, existingTask = false) {
-    expect((await getJob(env, jobId)).status).toBe('failed');
+async function noProposal(f: Fixture, jobId: string, existingTask = false, expectedStatus = 'failed') {
+    expect((await getJob(env, jobId)).status).toBe(expectedStatus);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM collaboration_proposals WHERE job_id=?1').bind(jobId).first<{ n: number }>())?.n).toBe(0);
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM tasks WHERE project_id=?1').bind(f.projectId).first<{ n: number }>())?.n).toBe(existingTask ? 1 : 0);
 }
@@ -201,7 +202,8 @@ describe('strict source citations and finite task outputs', () => {
         await applyProposal(env,f.projectId,outcome.proposalId,1,f.user.userId);
         expect(await env.DB.prepare('SELECT title,assignee_id,revision FROM tasks WHERE id=?1').bind(j.taskId).first()).toMatchObject({ title: '验证案例与结果', assignee_id: f.user.userId, revision: 2 });
     });
-    it.each(['missing', 'quote', 'version', 'fragment', 'page', 'citation_privilege', 'task_privilege', 'delete_project'])('rejects %s citation/output and does not create tasks', async kind => {
+    it.each(['missing', 'quote', 'version', 'fragment', 'page', 'citation_privilege', 'task_privilege', 'delete_project'])('rejects or pauses invalid %s citation/output and does not create tasks', async kind => {
+        await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=2 WHERE id='global'").run();
         const f = await fixture(), s = await source(f), j = await job(f, [s]);
         const output = { tasks: [task([s])] };
         if (kind === 'missing') output.tasks[0]!.citations = [];
@@ -213,10 +215,21 @@ describe('strict source citations and finite task outputs', () => {
         if (kind === 'task_privilege') Object.assign(output.tasks[0]!, { assigneeId: f.user.userId, grantOwner: true });
         if (kind === 'delete_project') Object.assign(output, { deleteProject: true });
         const mock = provider(output);
-        await runCollaborationAiJob(offline, j.jobId);
-        await noProposal(f, j.jobId);
-        expect(mock.mock.calls.length).toBeLessThanOrEqual(2);
-        expect(JSON.parse((await getJob(env, j.jobId)).error_json!).code).toBe('AI_OUTPUT_INVALID');
+        const correctableStructure = ['missing', 'citation_privilege', 'task_privilege', 'delete_project'].includes(kind);
+        if (correctableStructure) {
+            await expect(runCollaborationAiJob(offline, j.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+            await noProposal(f, j.jobId, false, 'waiting_input');
+            expect(await readExecution(env, { kind: 'job', id: j.jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
+            expect(mock).toHaveBeenCalledTimes(2);
+            expect(JSON.parse(String(mock.mock.calls[1]![1]?.body)).tools).toBeUndefined();
+        } else {
+            await runCollaborationAiJob(offline, j.jobId);
+            await noProposal(f, j.jobId);
+            expect(mock).toHaveBeenCalledTimes(1);
+            expect(JSON.parse((await getJob(env, j.jobId)).error_json!).code).toBe('AI_OUTPUT_INVALID');
+        }
+        expect((await env.DB.prepare('SELECT content FROM source_fragments WHERE id=?1').bind(s.fragmentId).first<{ content: string }>())?.content).toBe(s.text);
+        expect((await env.DB.prepare('SELECT role FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId, f.user.userId).first<{role:string}>())?.role).toBe('owner');
     });
     it('one correctly cited source cannot silently omit another selected source', async () => {
         const f = await fixture(), s = await source(f), second = await source(f, '另需核对结果展示'), j = await job(f, [s, second]);

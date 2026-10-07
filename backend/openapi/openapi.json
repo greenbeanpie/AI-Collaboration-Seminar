@@ -948,6 +948,154 @@
           "data": {
             "type": "object",
             "properties": {
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              },
+              "activity": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "reading_sources",
+                      "calling_model",
+                      "executing_tool",
+                      "validating",
+                      "saving",
+                      "transcribing",
+                      "summarizing",
+                      "ocr",
+                      "retrying",
+                      "waiting_retry",
+                      "waiting_input",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "updatedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastResponseAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "progress": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "completed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "page",
+                          "chunk",
+                          "window"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "completed"
+                    ]
+                  },
+                  "canResume": {
+                    "type": "boolean"
+                  },
+                  "resumeReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "updatedAt",
+                  "lastResponseAt",
+                  "progress",
+                  "canResume",
+                  "resumeReason",
+                  "uncertain"
+                ]
+              },
               "id": {
                 "type": "string",
                 "format": "uuid"
@@ -1858,6 +2006,8 @@
               }
             },
             "required": [
+              "execution",
+              "activity",
               "id",
               "status",
               "revision",
@@ -1894,6 +2044,154 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "execution": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "windowCalls": {
+                          "type": "integer"
+                        },
+                        "totalCalls": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "paused",
+                            "finalizing",
+                            "cancelled",
+                            "completed"
+                          ]
+                        },
+                        "pauseReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "round_limit",
+                            "request_uncertain",
+                            "output_invalid",
+                            "interrupted",
+                            null
+                          ]
+                        },
+                        "canContinue": {
+                          "type": "boolean"
+                        },
+                        "canOutput": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "generation",
+                        "windowCalls",
+                        "totalCalls",
+                        "limit",
+                        "state",
+                        "pauseReason",
+                        "canContinue",
+                        "canOutput"
+                      ]
+                    },
+                    "activity": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "preparing",
+                            "reading_sources",
+                            "calling_model",
+                            "executing_tool",
+                            "validating",
+                            "saving",
+                            "transcribing",
+                            "summarizing",
+                            "ocr",
+                            "retrying",
+                            "waiting_retry",
+                            "waiting_input",
+                            "completed",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastResponseAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "progress": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "completed": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unit": {
+                              "type": "string",
+                              "enum": [
+                                "step",
+                                "page",
+                                "chunk",
+                                "window"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "completed"
+                          ]
+                        },
+                        "canResume": {
+                          "type": "boolean"
+                        },
+                        "resumeReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "uncertain": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "updatedAt",
+                        "lastResponseAt",
+                        "progress",
+                        "canResume",
+                        "resumeReason",
+                        "uncertain"
+                      ]
+                    },
                     "id": {
                       "type": "string",
                       "format": "uuid"
@@ -2804,6 +3102,8 @@
                     }
                   },
                   "required": [
+                    "execution",
+                    "activity",
                     "id",
                     "status",
                     "revision",
@@ -2823,6 +3123,112 @@
             },
             "required": [
               "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "DraftActivityEventsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "preparing",
+                        "reading_sources",
+                        "calling_model",
+                        "executing_tool",
+                        "validating",
+                        "saving",
+                        "transcribing",
+                        "summarizing",
+                        "ocr",
+                        "retrying",
+                        "waiting_retry",
+                        "waiting_input",
+                        "completed",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "started",
+                        "completed",
+                        "failed",
+                        "resumed"
+                      ]
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "progress": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "completed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "step",
+                            "page",
+                            "chunk",
+                            "window"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "completed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "code",
+                    "state",
+                    "at",
+                    "progress"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -3452,10 +3858,108 @@
                   "confirmedAt",
                   "createdAt"
                 ]
+              },
+              "generatedJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "activity": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "reading_sources",
+                      "calling_model",
+                      "executing_tool",
+                      "validating",
+                      "saving",
+                      "transcribing",
+                      "summarizing",
+                      "ocr",
+                      "retrying",
+                      "waiting_retry",
+                      "waiting_input",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "updatedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastResponseAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "progress": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "completed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "page",
+                          "chunk",
+                          "window"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "completed"
+                    ]
+                  },
+                  "canResume": {
+                    "type": "boolean"
+                  },
+                  "resumeReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "updatedAt",
+                  "lastResponseAt",
+                  "progress",
+                  "canResume",
+                  "resumeReason",
+                  "uncertain"
+                ]
               }
             },
             "required": [
-              "standard"
+              "standard",
+              "generatedJobId",
+              "activity"
             ]
           },
           "requestId": {
@@ -7365,10 +7869,30 @@
                     "canManagePermissions"
                   ]
                 }
+              },
+              "totalCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "workload": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "totalCount",
+              "workload",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -8269,6 +8793,112 @@
           "requestId"
         ]
       },
+      "SourceDetailResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "contributors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "displayName"
+                  ]
+                }
+              },
+              "sourceId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "paste",
+                  "web"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "reference",
+                  "output"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "currentVersionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "lifecycleVersion": {
+                "type": "integer"
+              },
+              "canDelete": {
+                "type": "boolean"
+              },
+              "deletedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fileId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "sourceId",
+              "kind",
+              "title",
+              "purpose",
+              "revision",
+              "currentVersionId",
+              "createdAt",
+              "lifecycleVersion",
+              "canDelete",
+              "deletedAt",
+              "fileId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "SourceVersionResponse": {
         "type": "object",
         "properties": {
@@ -8800,6 +9430,102 @@
                   "completedWindows"
                 ]
               },
+              "processingJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "activity": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "reading_sources",
+                      "calling_model",
+                      "executing_tool",
+                      "validating",
+                      "saving",
+                      "transcribing",
+                      "summarizing",
+                      "ocr",
+                      "retrying",
+                      "waiting_retry",
+                      "waiting_input",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "updatedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastResponseAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "progress": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "completed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "page",
+                          "chunk",
+                          "window"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "completed"
+                    ]
+                  },
+                  "canResume": {
+                    "type": "boolean"
+                  },
+                  "resumeReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "updatedAt",
+                  "lastResponseAt",
+                  "progress",
+                  "canResume",
+                  "resumeReason",
+                  "uncertain"
+                ]
+              },
               "textStatus": {
                 "type": "string",
                 "enum": [
@@ -8935,6 +9661,8 @@
               }
             },
             "required": [
+              "processingJobId",
+              "activity",
               "textStatus",
               "requirementsStatus",
               "requirementsError",
@@ -9741,6 +10469,160 @@
               "createdAt": {
                 "type": "string"
               },
+              "updatedAt": {
+                "type": "string"
+              },
+              "finishedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "activity": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "reading_sources",
+                      "calling_model",
+                      "executing_tool",
+                      "validating",
+                      "saving",
+                      "transcribing",
+                      "summarizing",
+                      "ocr",
+                      "retrying",
+                      "waiting_retry",
+                      "waiting_input",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "updatedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastResponseAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "progress": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "completed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "page",
+                          "chunk",
+                          "window"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "completed"
+                    ]
+                  },
+                  "canResume": {
+                    "type": "boolean"
+                  },
+                  "resumeReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "updatedAt",
+                  "lastResponseAt",
+                  "progress",
+                  "canResume",
+                  "resumeReason",
+                  "uncertain"
+                ]
+              },
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              },
               "retry": {
                 "type": "object",
                 "properties": {
@@ -9771,7 +10653,117 @@
               "kind",
               "status",
               "attempts",
-              "createdAt"
+              "createdAt",
+              "updatedAt",
+              "finishedAt",
+              "activity",
+              "execution"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiActivityEventsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "preparing",
+                        "reading_sources",
+                        "calling_model",
+                        "executing_tool",
+                        "validating",
+                        "saving",
+                        "transcribing",
+                        "summarizing",
+                        "ocr",
+                        "retrying",
+                        "waiting_retry",
+                        "waiting_input",
+                        "completed",
+                        "failed",
+                        "cancelled"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "started",
+                        "completed",
+                        "failed",
+                        "resumed"
+                      ]
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "progress": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "completed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "step",
+                            "page",
+                            "chunk",
+                            "window"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "completed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "code",
+                    "state",
+                    "at",
+                    "progress"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -9797,6 +10789,365 @@
             },
             "required": [
               "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "JobExecutionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              }
+            },
+            "required": [
+              "jobId",
+              "execution"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiExecutionPolicyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "maxModelCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              }
+            },
+            "required": [
+              "version",
+              "maxModelCalls"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ProjectChatHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "jobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "references": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "title": {
+                            "type": "string"
+                          },
+                          "href": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "title",
+                          "href"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "questionId",
+                    "role",
+                    "content",
+                    "createdAt",
+                    "jobId"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pendingJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor",
+              "pendingJobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ProjectChatEnqueuedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "questionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "questionId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ProjectChatClearedResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "cleared": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "cleared"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ProjectChatOperationsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "search",
+                        "read",
+                        "tasks",
+                        "status"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "completed",
+                        "failed"
+                      ]
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "attempt": {
+                      "type": "integer"
+                    },
+                    "href": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "status",
+                    "at",
+                    "attempt",
+                    "href"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -10161,6 +11512,209 @@
           "requestId"
         ]
       },
+      "TaskGraphResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string",
+                      "enum": [
+                        "date",
+                        "datetime",
+                        "unknown"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "requirementId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "todo",
+                        "doing",
+                        "blocked",
+                        "done"
+                      ]
+                    },
+                    "lifecycleState": {
+                      "type": "string"
+                    },
+                    "assigneeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "number"
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "title",
+                    "detail",
+                    "criteria",
+                    "effortHours",
+                    "dueDate",
+                    "duePrecision",
+                    "createdAt",
+                    "updatedAt",
+                    "currentSubmissionId",
+                    "requirementId",
+                    "pendingHumanReview",
+                    "status",
+                    "lifecycleState",
+                    "assigneeId",
+                    "revision",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds"
+                  ]
+                }
+              },
+              "edges": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "dependsOnTaskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "taskId",
+                    "dependsOnTaskId"
+                  ]
+                }
+              },
+              "totals": {
+                "type": "object",
+                "properties": {
+                  "total": {
+                    "type": "number"
+                  },
+                  "todo": {
+                    "type": "number"
+                  },
+                  "doing": {
+                    "type": "number"
+                  },
+                  "blocked": {
+                    "type": "number"
+                  },
+                  "done": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "total",
+                  "todo",
+                  "doing",
+                  "blocked",
+                  "done"
+                ]
+              },
+              "graphRevision": {
+                "type": "number"
+              },
+              "canRegenerate": {
+                "type": "boolean"
+              },
+              "memberIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "items",
+              "edges",
+              "totals",
+              "graphRevision",
+              "canRegenerate",
+              "memberIds"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "CommentResponse": {
         "type": "object",
         "properties": {
@@ -10365,10 +11919,17 @@
                     "canManage"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -10631,10 +12192,17 @@
                     "messages"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -10751,67 +12319,6 @@
             },
             "required": [
               "messageId"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "CollaborationSettingsResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "aiCollaborationEnabled": {
-                "type": "boolean"
-              },
-              "assignmentMode": {
-                "type": "string",
-                "enum": [
-                  "manual",
-                  "automatic"
-                ]
-              },
-              "evaluationMode": {
-                "type": "string",
-                "enum": [
-                  "manual",
-                  "automatic"
-                ]
-              },
-              "planningMode": {
-                "type": "string",
-                "enum": [
-                  "manual",
-                  "automatic"
-                ]
-              },
-              "progressionMode": {
-                "type": "string",
-                "enum": [
-                  "manual",
-                  "automatic"
-                ]
-              },
-              "revision": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              }
-            },
-            "required": [
-              "aiCollaborationEnabled",
-              "assignmentMode",
-              "evaluationMode",
-              "planningMode",
-              "progressionMode",
-              "revision"
             ]
           },
           "requestId": {
@@ -11026,245 +12533,6 @@
             "required": [
               "items",
               "nextCursor"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "CollaborationTaskSummaryResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "summary": {
-                "type": "string"
-              },
-              "summaryStatus": {
-                "type": "string",
-                "enum": [
-                  "ready",
-                  "missing",
-                  "queued",
-                  "running",
-                  "failed",
-                  "disabled"
-                ]
-              },
-              "summaryJobId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "summarySourceHash": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "summaryStatus",
-              "summarySourceHash"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "CollaborationTaskResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "pendingHumanReview": {
-                "type": "boolean"
-              },
-              "startedAt": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "archivedAt": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "taskId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "title": {
-                "type": "string"
-              },
-              "detail": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "todo",
-                  "doing",
-                  "blocked",
-                  "done"
-                ]
-              },
-              "assigneeId": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "uuid"
-              },
-              "revision": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              },
-              "lifecycleState": {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "in_progress",
-                  "submitted",
-                  "accepted",
-                  "improve",
-                  "rework"
-                ]
-              },
-              "criteria": {
-                "type": "string"
-              },
-              "citations": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "sourceVersionId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "fragmentId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "pageNumber": {
-                      "type": [
-                        "integer",
-                        "null"
-                      ]
-                    },
-                    "quote": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 2000
-                    },
-                    "availability": {
-                      "type": "string",
-                      "enum": [
-                        "unavailable"
-                      ]
-                    },
-                    "deletedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "sourceVersionId",
-                    "fragmentId",
-                    "pageNumber",
-                    "quote"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "effortHours": {
-                "type": "number"
-              },
-              "dueDate": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "currentSubmissionId": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "uuid"
-              },
-              "dependsOnTaskIds": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "unfinishedDependencyIds": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "createdAt": {
-                "type": "string"
-              },
-              "updatedAt": {
-                "type": "string"
-              },
-              "summary": {
-                "type": "string"
-              },
-              "summaryStatus": {
-                "type": "string",
-                "enum": [
-                  "ready",
-                  "missing",
-                  "queued",
-                  "running",
-                  "failed",
-                  "disabled"
-                ]
-              },
-              "summaryJobId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "summarySourceHash": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "taskId",
-              "title",
-              "detail",
-              "status",
-              "assigneeId",
-              "revision",
-              "lifecycleState",
-              "criteria",
-              "effortHours",
-              "currentSubmissionId",
-              "dependsOnTaskIds",
-              "unfinishedDependencyIds",
-              "createdAt",
-              "updatedAt"
             ]
           },
           "requestId": {
@@ -11797,10 +13065,749 @@
                     "updatedAt"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationProposalListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "proposalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "decompose",
+                        "assign"
+                      ]
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "planningAction": {
+                          "type": "string",
+                          "enum": [
+                            "regenerate",
+                            "adjust"
+                          ]
+                        },
+                        "references": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "decisionReferences": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "causeEventId": {
+                          "type": "string"
+                        },
+                        "progression": {
+                          "type": "boolean"
+                        },
+                        "goal": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "detail"
+                          ]
+                        },
+                        "brief": {
+                          "type": "string"
+                        },
+                        "sourceVersionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 4000,
+                                "default": ""
+                              },
+                              "criteria": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4000
+                              },
+                              "effortHours": {
+                                "type": "number",
+                                "minimum": 0.25,
+                                "maximum": 200,
+                                "default": 1
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "dependsOn": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "citations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "sourceVersionId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "fragmentId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "pageNumber": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "quote": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    }
+                                  },
+                                  "required": [
+                                    "sourceVersionId",
+                                    "fragmentId",
+                                    "pageNumber",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "criteria"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "updates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 4000,
+                                "default": ""
+                              },
+                              "criteria": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4000
+                              },
+                              "effortHours": {
+                                "type": "number",
+                                "minimum": 0.25,
+                                "maximum": 200,
+                                "default": 1
+                              },
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "expectedRevision": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "citations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "sourceVersionId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "fragmentId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "pageNumber": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "quote": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    }
+                                  },
+                                  "required": [
+                                    "sourceVersionId",
+                                    "fragmentId",
+                                    "pageNumber",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "criteria",
+                              "taskId",
+                              "expectedRevision"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "assignments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "assigneeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "expectedRevision": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "taskId",
+                              "assigneeId",
+                              "expectedRevision",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "considerations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "applied",
+                        "stale"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "proposalId",
+                    "kind",
+                    "payload",
+                    "status",
+                    "revision",
+                    "createdAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationAiActivityResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "activity": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "preparing",
+                      "reading_sources",
+                      "calling_model",
+                      "executing_tool",
+                      "validating",
+                      "saving",
+                      "transcribing",
+                      "summarizing",
+                      "ocr",
+                      "retrying",
+                      "waiting_retry",
+                      "waiting_input",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  },
+                  "updatedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastResponseAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "progress": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "completed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "page",
+                          "chunk",
+                          "window"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "completed"
+                    ]
+                  },
+                  "canResume": {
+                    "type": "boolean"
+                  },
+                  "resumeReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "updatedAt",
+                  "lastResponseAt",
+                  "progress",
+                  "canResume",
+                  "resumeReason",
+                  "uncertain"
+                ]
+              }
+            },
+            "required": [
+              "jobId",
+              "activity"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "aiCollaborationEnabled": {
+                "type": "boolean"
+              },
+              "assignmentMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "evaluationMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "planningMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "progressionMode": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "automatic"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "aiCollaborationEnabled",
+              "assignmentMode",
+              "evaluationMode",
+              "planningMode",
+              "progressionMode",
+              "revision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationTaskSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "summaryStatus": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "missing",
+                  "queued",
+                  "running",
+                  "failed",
+                  "disabled"
+                ]
+              },
+              "summaryJobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "summarySourceHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "summaryStatus",
+              "summarySourceHash"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "CollaborationTaskResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "pendingHumanReview": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "archivedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "todo",
+                  "doing",
+                  "blocked",
+                  "done"
+                ]
+              },
+              "assigneeId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "lifecycleState": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "in_progress",
+                  "submitted",
+                  "accepted",
+                  "improve",
+                  "rework"
+                ]
+              },
+              "criteria": {
+                "type": "string"
+              },
+              "citations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sourceVersionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "fragmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "pageNumber": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "unavailable"
+                      ]
+                    },
+                    "deletedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sourceVersionId",
+                    "fragmentId",
+                    "pageNumber",
+                    "quote"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "effortHours": {
+                "type": "number"
+              },
+              "dueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "currentSubmissionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "dependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "unfinishedDependencyIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "summaryStatus": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "missing",
+                  "queued",
+                  "running",
+                  "failed",
+                  "disabled"
+                ]
+              },
+              "summaryJobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "summarySourceHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "taskId",
+              "title",
+              "detail",
+              "status",
+              "assigneeId",
+              "revision",
+              "lifecycleState",
+              "criteria",
+              "effortHours",
+              "currentSubmissionId",
+              "dependsOnTaskIds",
+              "unfinishedDependencyIds",
+              "createdAt",
+              "updatedAt"
             ]
           },
           "requestId": {
@@ -12326,320 +14333,6 @@
               "revision",
               "createdAt",
               "updatedAt"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "CollaborationProposalListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "proposalId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "decompose",
-                        "assign"
-                      ]
-                    },
-                    "payload": {
-                      "type": "object",
-                      "properties": {
-                        "planningAction": {
-                          "type": "string",
-                          "enum": [
-                            "regenerate",
-                            "adjust"
-                          ]
-                        },
-                        "references": {
-                          "type": "array",
-                          "items": {}
-                        },
-                        "decisionReferences": {
-                          "type": "array",
-                          "items": {}
-                        },
-                        "causeEventId": {
-                          "type": "string"
-                        },
-                        "progression": {
-                          "type": "boolean"
-                        },
-                        "goal": {
-                          "type": "object",
-                          "properties": {
-                            "title": {
-                              "type": "string"
-                            },
-                            "detail": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "title",
-                            "detail"
-                          ]
-                        },
-                        "brief": {
-                          "type": "string"
-                        },
-                        "sourceVersionIds": {
-                          "type": "array",
-                          "items": {
-                            "type": "string",
-                            "format": "uuid"
-                          }
-                        },
-                        "tasks": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "title": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "detail": {
-                                "type": "string",
-                                "maxLength": 4000,
-                                "default": ""
-                              },
-                              "criteria": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 4000
-                              },
-                              "effortHours": {
-                                "type": "number",
-                                "minimum": 0.25,
-                                "maximum": 200,
-                                "default": 1
-                              },
-                              "key": {
-                                "type": "string"
-                              },
-                              "dependsOn": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              },
-                              "citations": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "sourceVersionId": {
-                                      "type": "string",
-                                      "format": "uuid"
-                                    },
-                                    "fragmentId": {
-                                      "type": "string",
-                                      "format": "uuid"
-                                    },
-                                    "pageNumber": {
-                                      "type": [
-                                        "integer",
-                                        "null"
-                                      ]
-                                    },
-                                    "quote": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 2000
-                                    }
-                                  },
-                                  "required": [
-                                    "sourceVersionId",
-                                    "fragmentId",
-                                    "pageNumber",
-                                    "quote"
-                                  ],
-                                  "additionalProperties": false
-                                }
-                              }
-                            },
-                            "required": [
-                              "title",
-                              "criteria"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "updates": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "title": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "detail": {
-                                "type": "string",
-                                "maxLength": 4000,
-                                "default": ""
-                              },
-                              "criteria": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 4000
-                              },
-                              "effortHours": {
-                                "type": "number",
-                                "minimum": 0.25,
-                                "maximum": 200,
-                                "default": 1
-                              },
-                              "taskId": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "expectedRevision": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0
-                              },
-                              "citations": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "sourceVersionId": {
-                                      "type": "string",
-                                      "format": "uuid"
-                                    },
-                                    "fragmentId": {
-                                      "type": "string",
-                                      "format": "uuid"
-                                    },
-                                    "pageNumber": {
-                                      "type": [
-                                        "integer",
-                                        "null"
-                                      ]
-                                    },
-                                    "quote": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 2000
-                                    }
-                                  },
-                                  "required": [
-                                    "sourceVersionId",
-                                    "fragmentId",
-                                    "pageNumber",
-                                    "quote"
-                                  ],
-                                  "additionalProperties": false
-                                }
-                              }
-                            },
-                            "required": [
-                              "title",
-                              "criteria",
-                              "taskId",
-                              "expectedRevision"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "assignments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "taskId": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "assigneeId": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "format": "uuid"
-                              },
-                              "expectedRevision": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0
-                              },
-                              "reason": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "taskId",
-                              "assigneeId",
-                              "expectedRevision",
-                              "reason"
-                            ]
-                          }
-                        },
-                        "considerations": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "pending",
-                        "applied",
-                        "stale"
-                      ]
-                    },
-                    "revision": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "proposalId",
-                    "kind",
-                    "payload",
-                    "status",
-                    "revision",
-                    "createdAt"
-                  ]
-                }
-              },
-              "nextCursor": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "items",
-              "nextCursor"
             ]
           },
           "requestId": {
@@ -17332,6 +19025,13 @@
                 ]
               },
               "report": {},
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
               "createdAt": {
                 "type": "string"
               }
@@ -17342,6 +19042,7 @@
               "rubricVersionId",
               "materialVersionIds",
               "status",
+              "jobId",
               "createdAt"
             ]
           },
@@ -17395,6 +19096,13 @@
                       ]
                     },
                     "report": {},
+                    "jobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
                     "createdAt": {
                       "type": "string"
                     }
@@ -17405,13 +19113,21 @@
                     "rubricVersionId",
                     "materialVersionIds",
                     "status",
+                    "jobId",
                     "createdAt"
                   ]
                 }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
-              "items"
+              "items",
+              "nextCursor"
             ]
           },
           "requestId": {
@@ -17500,6 +19216,13 @@
                     },
                     "canOperate": {
                       "type": "boolean"
+                    },
+                    "aiJobId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
                     },
                     "processingJobId": {
                       "type": [
@@ -17602,6 +19325,13 @@
               },
               "canOperate": {
                 "type": "boolean"
+              },
+              "aiJobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
               },
               "processingJobId": {
                 "type": [
@@ -22891,6 +24621,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "turnstileToken": {
+                    "type": "string",
+                    "maxLength": 2048
                   }
                 },
                 "required": [
@@ -22914,6 +24648,16 @@
           },
           "401": {
             "description": "账号或密码错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "人机验证失败",
             "content": {
               "application/json": {
                 "schema": {
@@ -22963,6 +24707,10 @@
                     "type": "string",
                     "pattern": "^[A-Za-z0-9]{16}$"
                   },
+                  "turnstileToken": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
                   "email": {
                     "type": [
                       "string",
@@ -22994,6 +24742,16 @@
           },
           "400": {
             "description": "参数或邀请码无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "人机验证失败",
             "content": {
               "application/json": {
                 "schema": {
@@ -24578,6 +26336,58 @@
         }
       }
     },
+    "/api/v1/creation-drafts/{draftId}/activity-events": {
+      "get": {
+        "tags": [
+          "creation"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "拥有者可读取当前预览安全操作记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftActivityEventsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creation-drafts/{draftId}/state": {
       "post": {
         "tags": [
@@ -24986,6 +26796,72 @@
         }
       }
     },
+    "/api/v1/creation-drafts/{draftId}/execution/{action}": {
+      "post": {
+        "tags": [
+          "creation"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "output",
+                "cancel"
+              ]
+            },
+            "required": true,
+            "name": "action",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedGeneration": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "allowUncertainDispatch": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedGeneration"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "继续、输出已有结果或取消后台执行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationDraftResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/answer": {
       "post": {
         "tags": [
@@ -25287,6 +27163,15 @@
         ],
         "summary": "我参与的项目列表（游标分页）",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
           {
             "schema": {
               "type": "string"
@@ -26529,6 +28414,31 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           }
         ],
         "responses": {
@@ -27542,6 +29452,45 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "来源详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDetailResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/projects/{projectId}/sources/{sourceId}/restore": {
@@ -27729,6 +29678,15 @@
           },
           {
             "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": false,
@@ -27844,6 +29802,25 @@
             "required": true,
             "name": "sourceVersionId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "fragmentId",
+            "in": "query"
           },
           {
             "schema": {
@@ -28830,6 +30807,59 @@
         }
       }
     },
+    "/api/v1/jobs/{jobId}/activity-events": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "读取 AI 操作记录（包含续跑历史）",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "安全操作记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiActivityEventsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/{jobId}/retry": {
       "post": {
         "tags": [
@@ -28864,6 +30894,329 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{jobId}/execution/{action}": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "继续、输出当前结果或取消后台 AI 处理",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "output",
+                "cancel"
+              ]
+            },
+            "required": true,
+            "name": "action",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedGeneration": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "allowUncertainDispatch": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedGeneration"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "执行操作已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobExecutionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "执行代次变化或状态不允许",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-execution-policy": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "读取后台 AI 执行策略",
+        "responses": {
+          "200": {
+            "description": "独立执行策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiExecutionPolicyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要超级管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新后台 AI 窗口调用上限",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "maxModelCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "maxModelCalls"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已保存并记录审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiExecutionPolicyResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "策略版本已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/ai-chat": {
+      "get": {
+        "tags": [
+          "project-ai-chat"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "个人问答历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectChatHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-ai-chat"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "问答已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectChatEnqueuedResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "project-ai-chat"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "个人历史已清空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectChatClearedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/ai-chat/questions/{questionId}/operations": {
+      "get": {
+        "tags": [
+          "project-ai-chat"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "questionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "安全资源操作记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectChatOperationsResponse"
                 }
               }
             }
@@ -29033,6 +31386,52 @@
             "required": false,
             "name": "status",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "assigneeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "submitted",
+                "accepted",
+                "improve",
+                "rework"
+              ]
+            },
+            "required": false,
+            "name": "lifecycleState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "pendingReview",
+            "in": "query"
           }
         ],
         "responses": {
@@ -29042,6 +31441,39 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/graph": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "完整任务依赖图与统计",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "完整图",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGraphResponse"
                 }
               }
             }
@@ -29426,6 +31858,22 @@
             "required": true,
             "name": "taskId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {
@@ -29475,6 +31923,10 @@
                   "fileId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 60000
                   }
                 },
                 "required": [
@@ -29547,6 +31999,10 @@
                   "expectedRevision": {
                     "type": "integer",
                     "exclusiveMinimum": 0
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 60000
                   }
                 },
                 "required": [
@@ -29592,6 +32048,22 @@
             "required": true,
             "name": "taskId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {
@@ -29812,6 +32284,617 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/collaboration/tasks": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "submitted",
+                "accepted",
+                "improve",
+                "rework"
+              ]
+            },
+            "required": false,
+            "name": "lifecycleState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "pendingReview",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "detail": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "default": ""
+                  },
+                  "criteria": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "effortHours": {
+                    "type": "number",
+                    "minimum": 0.25,
+                    "maximum": 200,
+                    "default": 1
+                  }
+                },
+                "required": [
+                  "title",
+                  "criteria"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationTaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "submitted",
+                "accepted",
+                "improve",
+                "rework"
+              ]
+            },
+            "required": false,
+            "name": "lifecycleState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "pendingReview",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/submissions": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "submitted",
+                "accepted",
+                "improve",
+                "rework"
+              ]
+            },
+            "required": false,
+            "name": "lifecycleState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "pendingReview",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /tasks/{taskId}/submissions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                  },
+                  "materialVersionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 10,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/proposals": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "summary": "协作流程 /proposals",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "submitted",
+                "accepted",
+                "improve",
+                "rework"
+              ]
+            },
+            "required": false,
+            "name": "lifecycleState",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "pendingReview",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationProposalListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/collaboration/ai-activity": {
+      "get": {
+        "tags": [
+          "collaboration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务规划与分工最近 AI 活动",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollaborationAiActivityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/collaboration/settings": {
       "get": {
         "tags": [
@@ -29919,124 +33002,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CollaborationSettingsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{projectId}/collaboration/tasks": {
-      "get": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "cursor",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationTaskListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "title": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "detail": {
-                    "type": "string",
-                    "maxLength": 4000,
-                    "default": ""
-                  },
-                  "criteria": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "effortHours": {
-                    "type": "number",
-                    "minimum": 0.25,
-                    "maximum": 200,
-                    "default": 1
-                  }
-                },
-                "required": [
-                  "title",
-                  "criteria"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationTaskResponse"
                 }
               }
             }
@@ -30513,238 +33478,6 @@
         }
       }
     },
-    "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions": {
-      "get": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks/{taskId}/submissions",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "taskId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks/{taskId}/submissions",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "taskId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "expectedRevision": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0
-                  },
-                  "body": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 30000
-                  },
-                  "materialVersionIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "maxItems": 10,
-                    "default": []
-                  }
-                },
-                "required": [
-                  "expectedRevision",
-                  "body"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{projectId}/tasks/{taskId}/submissions": {
-      "get": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks/{taskId}/submissions",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "taskId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationSubmissionListResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /tasks/{taskId}/submissions",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "taskId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "expectedRevision": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0
-                  },
-                  "body": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 30000
-                  },
-                  "materialVersionIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "maxItems": 10,
-                    "default": []
-                  }
-                },
-                "required": [
-                  "expectedRevision",
-                  "body"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationSubmissionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/decide": {
       "post": {
         "tags": [
@@ -30908,55 +33641,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CollaborationSubmissionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/projects/{projectId}/collaboration/proposals": {
-      "get": {
-        "tags": [
-          "collaboration"
-        ],
-        "summary": "协作流程 /proposals",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "项目 ID"
-            },
-            "required": true,
-            "description": "项目 ID",
-            "name": "projectId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "cursor",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollaborationProposalListResponse"
                 }
               }
             }
@@ -33624,6 +36308,15 @@
           {
             "schema": {
               "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "true",
                 "false"
@@ -33902,6 +36595,15 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           },
           {
             "schema": {
@@ -34245,6 +36947,15 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           },
           {
             "schema": {
@@ -34865,6 +37576,31 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           }
         ],
         "responses": {
@@ -35018,6 +37754,15 @@
             "description": "项目 ID",
             "name": "projectId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           },
           {
             "schema": {
@@ -35793,6 +38538,24 @@
             },
             "required": false,
             "name": "archived",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "fileId",
             "in": "query"
           },
           {

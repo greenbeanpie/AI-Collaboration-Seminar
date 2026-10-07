@@ -32,6 +32,7 @@ export function PersonalProfilePage() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [candidates, setCandidates] = useState<ProfileImportCandidate[] | null>(null);
+  const [importCursor, setImportCursor] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<unknown>(null);
   const [importSelections, setImportSelections] = useState<Record<string, ImportField[]>>({});
@@ -83,17 +84,13 @@ export function PersonalProfilePage() {
     setDraft(saved); setEditing(false); setError(null); setNotice(''); setImports([]); setImportSelections({});
   }
 
-  async function loadImports() {
+  async function loadImports(more = false) {
     setImportBusy(true); setImportError(null);
     try {
-      const items: ProfileImportCandidate[] = []; const seen = new Set<string>(); let cursor: string | null = null;
-      do {
-        const page: { items: ProfileImportCandidate[]; nextCursor: string | null } = await accountRequest('/auth/personal-profile/import-candidates', { query: { cursor, limit: 100 } });
-        items.push(...page.items); cursor = page.nextCursor;
-        if (cursor && seen.has(cursor)) throw new Error('导入候选分页异常，请重新读取。');
-        if (cursor) seen.add(cursor);
-      } while (cursor);
-      setCandidates(items);
+      const cursor = more ? importCursor : null;
+      const page: { items: ProfileImportCandidate[]; nextCursor: string | null } = await accountRequest('/auth/personal-profile/import-candidates', { query: { cursor, limit: 50 } });
+      if (page.nextCursor && page.nextCursor === cursor) throw new Error('导入候选分页异常，请重新读取。');
+      setCandidates(previous => more ? [...(previous ?? []), ...page.items] : page.items); setImportCursor(page.nextCursor);
     } catch (reason) { setImportError(reason); }
     finally { setImportBusy(false); }
   }
@@ -155,7 +152,7 @@ export function PersonalProfilePage() {
             <p className="muted">Markdown 支持标题、列表、粗体、行内代码和 HTTPS 链接；不执行 HTML，不加载图片。</p>
             <section className="profile-field"><label className="field" htmlFor="profile-weekly-hours"><span className="field-label">每周总可用时间（小时）</span></label><input className="input" id="profile-weekly-hours" type="number" min="0" max="168" step="0.5" value={draft.weeklyAvailableHours ?? ''} onChange={event => setDraft({ ...draft, weeklyAvailableHours: event.target.value === '' ? null : Number(event.target.value) })} /><p className="muted">可留空。仅本人可见，不公开，也不发送给 AI。</p></section>
           </section>
-          <section className="section-card profile-imports"><h2>旧项目资料导入</h2><p>候选仅本人可见。逐字段选择复制，保留其他草稿内容；全局资料不会自动被覆盖。</p><button className="button button-quiet" type="button" disabled={importBusy} onClick={() => void loadImports()}>{importBusy ? '读取中…' : '读取导入候选'}</button>{importError !== null && <ErrorNotice error={importError} />}{candidates?.length === 0 && <p>没有待导入的旧项目资料。</p>}{candidates?.filter(candidate => !candidate.importedAt).map(candidate => <article key={candidate.candidateId} className="wizard-task"><h3>{candidate.sourceProjectName}</h3>{(['major', 'specialties', 'weeklyAvailableHours'] as const).map(field => { const value = field === 'major' ? candidate.major : field === 'specialties' ? candidate.skills.join('、') : candidate.weeklyAvailableHours == null ? '未填写' : `${candidate.weeklyAvailableHours} 小时`; return <label className="profile-toggle" key={field}><input type="checkbox" checked={(importSelections[candidate.candidateId] ?? []).includes(field)} onChange={event => setImportSelections(current => ({ ...current, [candidate.candidateId]: event.target.checked ? [...(current[candidate.candidateId] ?? []), field] : (current[candidate.candidateId] ?? []).filter(value => value !== field) }))} />{field === 'weeklyAvailableHours' ? '每周总可用时间' : names[field]}：{value || '未填写'}</label>; })}<button className="button button-quiet" type="button" disabled={!importSelections[candidate.candidateId]?.length} onClick={() => void importCandidate(candidate)}>复制所选字段到草稿</button></article>)}</section>
+          <section className="section-card profile-imports"><h2>旧项目资料导入</h2><p>候选仅本人可见。逐字段选择复制，保留其他草稿内容；全局资料不会自动被覆盖。</p><button className="button button-quiet" type="button" disabled={importBusy} onClick={() => void loadImports()}>{importBusy ? '读取中…' : '读取导入候选'}</button>{importError !== null && <ErrorNotice error={importError} />}{importCursor && <button className="button button-quiet" type="button" disabled={importBusy} onClick={() => void loadImports(true)}>加载更多导入候选</button>}{candidates?.length === 0 && <p>没有待导入的旧项目资料。</p>}{candidates?.filter(candidate => !candidate.importedAt).map(candidate => <article key={candidate.candidateId} className="wizard-task"><h3>{candidate.sourceProjectName}</h3>{(['major', 'specialties', 'weeklyAvailableHours'] as const).map(field => { const value = field === 'major' ? candidate.major : field === 'specialties' ? candidate.skills.join('、') : candidate.weeklyAvailableHours == null ? '未填写' : `${candidate.weeklyAvailableHours} 小时`; return <label className="profile-toggle" key={field}><input type="checkbox" checked={(importSelections[candidate.candidateId] ?? []).includes(field)} onChange={event => setImportSelections(current => ({ ...current, [candidate.candidateId]: event.target.checked ? [...(current[candidate.candidateId] ?? []), field] : (current[candidate.candidateId] ?? []).filter(value => value !== field) }))} />{field === 'weeklyAvailableHours' ? '每周总可用时间' : names[field]}：{value || '未填写'}</label>; })}<button className="button button-quiet" type="button" disabled={!importSelections[candidate.candidateId]?.length} onClick={() => void importCandidate(candidate)}>复制所选字段到草稿</button></article>)}</section>
           <section className="section-card profile-privacy-controls">
             <h2>搜索与隐私</h2>
             <p>用户名：@{session.data?.username ?? '此旧账号尚无用户名，暂不可搜索'}</p>

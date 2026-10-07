@@ -1,5 +1,5 @@
 import { archiveFile, fileManageSql } from '../services/task-files';
-import { contributorSchema, fileContributors } from '../services/file-contributors';
+import { contributorSchema, fileContributorsForFiles } from '../services/file-contributors';
 import { withIdempotency } from '../services/idempotency';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -87,7 +87,7 @@ const fileListResponse = apiEnvelope(z.object({ items:z.array(z.object({
 const lifecycleBody=z.object({expectedLifecycleVersion:z.number().int().positive()}).strict();
 const lifecycleResponse=apiEnvelope(z.object({fileId:z.string().uuid(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),affectedSourceIds:z.array(z.string().uuid())}),'FileLifecycleResponse');
 const listRoute=createRoute({method:'get',path:'/api/v1/projects/{projectId}/files',tags:['files'],summary:'文件库和回收站（含未完成上传）',
-  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),archived:z.enum(['true','false']).optional(),cursor:z.string().optional(),limit:z.string().optional()})},
+  request:{params:paramsProject,query:z.object({deleted:z.enum(['true','false']).optional(),archived:z.enum(['true','false']).optional(),q:z.string().trim().max(200).optional(),fileId:z.string().uuid().optional(),cursor:z.string().optional(),limit:z.string().optional()})},
   responses:{200:{description:'文件列表',content:{'application/json':{schema:fileListResponse}}}}});
 const deleteRoute=createRoute({method:'delete',path:'/api/v1/projects/{projectId}/files/{fileId}',tags:['files'],summary:'移入回收站并取消相关来源任务，保留原文件和历史',
   request:{params:paramsFile,body:{required:true,content:{'application/json':{schema:lifecycleBody}}}},
@@ -113,15 +113,21 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
         AND (archived_at IS NOT NULL)=?7
         AND (?7=1 OR NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id WHERE u.file_id=files.id AND m.archived_at IS NOT NULL))
         AND NOT EXISTS(SELECT 1 FROM task_file_uploads u JOIN materials m ON m.id=u.material_id JOIN material_versions v ON v.id=m.current_version_id WHERE u.file_id=files.id AND files.id!=json_extract(v.attachments_json,'$[0].fileId'))
+        AND (?9 IS NULL OR id=?9)
+        AND (?8='' OR instr(lower(COALESCE(original_name,'')),lower(?8))>0)
         AND (?3 IS NULL OR created_at<?3 OR (created_at=?3 AND id<?4)) ORDER BY created_at DESC,id DESC LIMIT ?5`)
-      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1,member.userId,query.archived==='true'?1:0)
+      .bind(member.projectId,query.deleted==='true'?1:0,cursor?.createdAt??null,cursor?.id??null,limit+1,member.userId,query.archived==='true'?1:0,query.q??'',query.fileId??null)
       .all<{id:string;original_name:string|null;ext:string;status:'pending'|'available'|'quarantined'|'discarded';size_bytes:number|null;created_at:string;deleted_at:string|null;lifecycle_version:number;uploader_user_id:string;archived_at:string|null;allowed:number}>();
-    const items=await Promise.all(rows.results.slice(0,limit).map(async r=>{
-      const sources=await c.env.DB.prepare(`SELECT DISTINCT v.source_id FROM source_versions v WHERE v.project_id=?1 AND
-        (v.file_id=?2 OR EXISTS(SELECT 1 FROM source_pages page WHERE page.source_version_id=v.id AND page.image_file_id=?2))`).bind(member.projectId,r.id).all<{source_id:string}>();
-      return {contributors:await fileContributors(c.env,member.projectId,r.id),uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,archivedAt:r.archived_at,lifecycleVersion:r.lifecycle_version,canManage:Boolean(r.allowed),
-        canDelete:Boolean(r.allowed),sourceIds:sources.results.map(source=>source.source_id)};
-    }));
+    const page=rows.results.slice(0,limit);
+    const contributors=await fileContributorsForFiles(c.env,member.projectId,page.map(r=>r.id));
+    const sourceLinks=await c.env.DB.prepare(`SELECT DISTINCT f.id fileId,v.source_id sourceId FROM files f
+      JOIN source_versions v ON v.project_id=f.project_id AND (v.file_id=f.id OR EXISTS(
+        SELECT 1 FROM source_pages page WHERE page.source_version_id=v.id AND page.image_file_id=f.id))
+      WHERE f.project_id=?1 AND f.id IN(SELECT value FROM json_each(?2))`).bind(member.projectId,JSON.stringify(page.map(r=>r.id))).all<{fileId:string;sourceId:string}>();
+    const sourcesByFile=new Map<string,string[]>();
+    for(const link of sourceLinks.results){const ids=sourcesByFile.get(link.fileId)??[];ids.push(link.sourceId);sourcesByFile.set(link.fileId,ids);}
+    const items=page.map(r=>({contributors:contributors.get(r.id)??[],uploaderUserId:r.uploader_user_id,fileId:r.id,name:r.original_name??`文件 ${r.id.slice(0,8)}${r.ext}`,status:r.status,sizeBytes:r.size_bytes,createdAt:r.created_at,deletedAt:r.deleted_at,archivedAt:r.archived_at,lifecycleVersion:r.lifecycle_version,canManage:Boolean(r.allowed),
+      canDelete:Boolean(r.allowed),sourceIds:sourcesByFile.get(r.id)??[]}));
     const last=items.at(-1);return c.json(apiData(c,{items,nextCursor:nextCursor(rows.results.length>limit,last&&{createdAt:last.createdAt,id:last.fileId})??null}),200);
   });
   app.openapi(deleteRoute,async c=>{

@@ -88,7 +88,7 @@ const PAGE = 20, CHARS = 6000;
 const page = (rows: unknown[], offset: number) => ({ untrustedData: true, items: rows.slice(0,PAGE), nextOffset: rows.length > PAGE ? offset+PAGE : null });
 
 /** Caller enforces membership before and after each read. Queries never accept project identity from the model. */
-export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown): Promise<Record<string,unknown>> {
+export async function executeDiscoveryTool(env: Env, projectId: string, name: string, input: unknown, options:{prepareText?:boolean}={}): Promise<Record<string,unknown>> {
   const a = parseDiscoveryArgs(name, input, projectId);
   if (['get_resource_index','search_resource','read_resource_section'].includes(name)) {
     const target={resourceType:a.resourceType!,versionId:a.versionId!};
@@ -153,7 +153,7 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
   if (name === 'read_resource') {
     if(!a.resourceType || !a.versionId) throw invalidState('读取资料需要 resourceType 和 versionId');
     if(a.resourceType==='source') {
-      await (await import('./resource-preparation')).prepareSourceText(env,projectId,a.versionId);
+      if(options.prepareText!==false)await (await import('./resource-preparation')).prepareSourceText(env,projectId,a.versionId);
       const row = await env.DB.prepare(`SELECT s.id,s.title,s.lifecycle_version,v.id versionId,p.text_status FROM source_versions v JOIN sources s ON s.id=v.source_id
         LEFT JOIN source_processing p ON p.source_version_id=v.id WHERE v.id=?1 AND v.project_id=?2 AND ${sourceLifecycleGuard('v.id','NULL')}`).bind(a.versionId,projectId).first<{id:string;title:string;lifecycle_version:number;versionId:string;text_status:string}>();
       if(!row) throw notFound('来源版本不存在或已回收');

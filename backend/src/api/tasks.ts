@@ -1,6 +1,8 @@
+import { pristineTasksSql } from '../services/task-planning-policy';
+import { readTaskPage } from '../services/collaboration-read-models';
 import { readinessStatements } from '../services/task-readiness';
 import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
-import { readTaskSummary, taskSummarySchema } from '../services/task-summary';
+import { taskSummarySchema } from '../services/task-summary';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -11,8 +13,8 @@ import { invalidState, notFound, validationFailed, versionConflict } from '../co
 import { parsePaging, nextCursor } from '../core/pagination';
 import { recordEvent } from '../services/events';
 import { projectParams } from './projects';
-import { projectGoal, taskDependencies, graphSnapshot, validateTaskGraph } from '../services/project-simplification';
-import { owner, pendingTaskHumanReview } from '../services/collaboration';
+import { projectGoal, graphSnapshot, validateTaskGraph } from '../services/project-simplification';
+import { owner } from '../services/collaboration';
 
 const taskParams = projectParams.extend({ taskId: z.string().uuid() });
 
@@ -96,7 +98,7 @@ const taskListRoute = createRoute({
   summary: '任务列表（可按状态/负责人过滤，游标分页）',
   request: {
     params: projectParams,
-    query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), status: z.enum(['todo', 'doing', 'blocked', 'done', 'all']).optional() }),
+    query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), status: z.enum(['todo', 'doing', 'blocked', 'done', 'all']).optional(), assigneeId:z.string().uuid().optional(), q:z.string().max(200).optional(), lifecycleState:z.enum(['open','in_progress','submitted','accepted','improve','rework']).optional(), pendingReview:z.enum(['true','false']).optional() }),
   },
   responses: { 200: { content: { 'application/json': { schema: taskListResponse } }, description: '列表' } },
 });
@@ -199,7 +201,7 @@ function toTask(r: TaskRow) {
     updatedAt: r.updated_at,
   };
 }
-async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {pendingHumanReview:await pendingTaskHumanReview(env,r.project_id,r.id),...toTask(r),...await taskDependencies(env,r.project_id,r.id),...await readTaskSummary(env,r)};}
+async function taskView(env:AppEnv['Bindings'],r:TaskRow){return {...toTask(r),...(await readTaskPage(env,[r])).get(r.id)};}
 
 const commentSelect = `SELECT c.id, c.target_type, c.target_id, c.author_id, u.display_name AS author_name, c.body, c.created_at
   FROM comments c JOIN users u ON u.id = c.author_id`;
@@ -266,6 +268,11 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
       binds.push(status);
       conditions.push(`status = ?${binds.length}`);
     }
+    const query=c.req.valid('query');
+    if(query.assigneeId){binds.push(query.assigneeId);conditions.push(`assignee_id=?${binds.length}`);}
+    if(query.lifecycleState){binds.push(query.lifecycleState);conditions.push(`lifecycle_state=?${binds.length}`);}
+    if(query.q?.trim()){binds.push(query.q.trim());conditions.push(`(instr(lower(title),lower(?${binds.length}))>0 OR instr(lower(detail),lower(?${binds.length}))>0)`);}
+    if(query.pendingReview!==undefined){binds.push(query.pendingReview==='true'?1:0);conditions.push(`EXISTS(SELECT 1 FROM task_submissions s WHERE s.id=tasks.current_submission_id AND s.task_id=tasks.id AND s.project_id=tasks.project_id AND tasks.status='done' AND tasks.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending')=?${binds.length}`);}
     if (paging.cursor) {
       binds.push(paging.cursor.createdAt, paging.cursor.createdAt, paging.cursor.id);
       conditions.push('(created_at < ? OR (created_at = ? AND id < ?))');
@@ -279,13 +286,30 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     const hasMore = rows.results.length > paging.limit;
     const pageRows = rows.results.slice(0, paging.limit);
     const lastRow = pageRows[pageRows.length - 1];
+    const hydrated = await readTaskPage(c.env,pageRows);
     return c.json(
       apiData(c, {
-        items: await Promise.all(pageRows.map(r=>taskView(c.env,r))),
+        items: pageRows.map(r=>({...toTask(r),...hydrated.get(r.id)})),
         nextCursor: nextCursor(hasMore, lastRow ? { createdAt: lastRow.created_at, id: lastRow.id } : undefined) ?? null,
       }),
       200,
     );
+  });
+
+  app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/tasks/graph',tags:['tasks'],summary:'完整任务依赖图与统计',request:{params:projectParams},responses:{200:{description:'完整图',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({taskId:z.string().uuid(),title:z.string(),detail:z.string(),criteria:z.string(),effortHours:z.number(),dueDate:z.string().nullable(),duePrecision:z.enum(['date','datetime','unknown']),createdAt:z.string(),updatedAt:z.string(),currentSubmissionId:z.string().uuid().nullable(),requirementId:z.string().uuid().nullable(),pendingHumanReview:z.boolean(),status:z.enum(['todo','doing','blocked','done']),lifecycleState:z.string(),assigneeId:z.string().uuid().nullable(),revision:z.number(),dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid())})),edges:z.array(z.object({taskId:z.string().uuid(),dependsOnTaskId:z.string().uuid()})),totals:z.object({total:z.number(),todo:z.number(),doing:z.number(),blocked:z.number(),done:z.number()}),graphRevision:z.number(),canRegenerate:z.boolean(),memberIds:z.array(z.string().uuid())}),'TaskGraphResponse')}}}}}),async c=>{
+    const projectId=c.get('member')!.projectId;
+    const [rows,edges,policy,goal]=await Promise.all([
+      c.env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,due_date,due_precision,created_at,updated_at,current_submission_id,requirement_id,status,lifecycle_state,assignee_id,revision, EXISTS(SELECT 1 FROM task_submissions s WHERE s.id=tasks.current_submission_id AND s.task_id=tasks.id AND s.project_id=tasks.project_id AND tasks.status='done' AND tasks.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending') pending_human_review FROM tasks WHERE project_id=?1 AND archived_at IS NULL ORDER BY created_at DESC,id DESC`).bind(projectId).all<{id:string;title:string;detail:string;criteria:string;effort_hours:number;due_date:string|null;due_precision:'date'|'datetime'|'unknown'|null;created_at:string;updated_at:string;current_submission_id:string|null;requirement_id:string|null;pending_human_review:number;status:'todo'|'doing'|'blocked'|'done';lifecycle_state:string|null;assignee_id:string|null;revision:number}>(),
+      c.env.DB.prepare('SELECT d.task_id,d.depends_on_task_id FROM task_dependencies d JOIN tasks t ON t.id=d.task_id AND t.project_id=d.project_id JOIN tasks dependency ON dependency.id=d.depends_on_task_id AND dependency.project_id=d.project_id WHERE d.project_id=?1 AND t.archived_at IS NULL AND dependency.archived_at IS NULL ORDER BY d.task_id,d.depends_on_task_id').bind(projectId).all<{task_id:string;depends_on_task_id:string}>(),
+      c.env.DB.prepare(`SELECT ${pristineTasksSql('?1')} pristine`).bind(projectId).first<{pristine:number}>(),
+      projectGoal(c.env,projectId),
+    ]);
+    const status=new Map(rows.results.map(row=>[row.id,row.status])),dependencies=new Map<string,string[]>();
+    for(const edge of edges.results){const ids=dependencies.get(edge.task_id)??[];ids.push(edge.depends_on_task_id);dependencies.set(edge.task_id,ids);}
+    const totals={total:rows.results.length,todo:0,doing:0,blocked:0,done:0};
+    const items=rows.results.map(row=>{totals[row.status]++;const dependsOnTaskIds=dependencies.get(row.id)??[];return {taskId:row.id,title:row.title,detail:row.detail,criteria:row.criteria,effortHours:row.effort_hours,dueDate:row.due_date,duePrecision:row.due_precision??'unknown',createdAt:row.created_at,updatedAt:row.updated_at,currentSubmissionId:row.current_submission_id,requirementId:row.requirement_id,pendingHumanReview:row.pending_human_review===1,status:row.status,lifecycleState:row.lifecycle_state??(row.status==='done'?'accepted':row.status==='doing'?'in_progress':'open'),assigneeId:row.assignee_id,revision:row.revision,dependsOnTaskIds,unfinishedDependencyIds:dependsOnTaskIds.filter(id=>status.get(id)!=='done')};});
+    const memberRows=await c.env.DB.prepare('SELECT user_id FROM project_members WHERE project_id=?1').bind(projectId).all<{user_id:string}>();
+    return c.json(apiData(c,{memberIds:memberRows.results.map(row=>row.user_id),items,edges:edges.results.map(row=>({taskId:row.task_id,dependsOnTaskId:row.depends_on_task_id})),totals,graphRevision:goal.graphRevision,canRegenerate:policy?.pristine===1}));
   });
 
   app.openapi(taskGetRoute, async (c) => {
@@ -500,6 +524,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     const hasMore = rows.results.length > paging.limit;
     const pageRows = rows.results.slice(0, paging.limit);
     const lastRow = pageRows[pageRows.length - 1];
+
     return c.json(
       apiData(c, {
         items: pageRows.map((r) => ({

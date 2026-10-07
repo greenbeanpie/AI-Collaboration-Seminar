@@ -24,15 +24,15 @@ describe('durable investigation continuation',()=>{
     expect(await loadInvestigation(env,f.id)).toEqual(state);
     expect(await env.DB.prepare('SELECT phase,step FROM ai_investigations WHERE id=?1').bind(f.id).first()).toEqual({phase:'read',step:3});
   });
-  it('keeps raw checkpoints backward compatible by default, including partial tool results',async()=>{
+  it('encrypts checkpoints by default while preserving partial tool results',async()=>{
     const f=await fixture(),state=checkpoint();await saveInvestigation(env,f.context,f.id,'old-format',state);
-    expect(await (await env.FILES.get(`ai/investigations/${f.id}.json`))!.json()).toEqual(state);
+    expect(await (await env.FILES.get(`ai/investigations/${f.id}.json`))!.json()).toMatchObject({format:'encrypted-investigation-v1'});
     expect(await loadInvestigation(env,f.id)).toEqual(state);
     expect(await loadInvestigation(env,newId())).toBeNull();
   });
   it.each([false,true])('refuses uncertain paid replay after pendingDispatch, encrypted=%s',async privateContext=>{
     const f=await fixture();await saveInvestigation(env,f.context,f.id,'uncertain-dispatch',{...checkpoint(),pendingDispatch:true},privateContext);
-    await expect(loadInvestigation(env,f.id)).rejects.toThrow('避免重复付费');
+    await expect(loadInvestigation(env,f.id)).rejects.toThrow('结果未确认');
   });
   it('encrypts completed content and restores large multilingual checkpoints without truncation',async()=>{
     const f=await fixture(),state={...checkpoint(),content:'私密最终决策',compacted:'🔐私密历史中文'.repeat(25000)};

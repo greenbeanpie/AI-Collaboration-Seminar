@@ -2,8 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
-  define: { 'import.meta.env.VITE_BUILD_VERSION': JSON.stringify(process.env.VITE_BUILD_VERSION || `build-${new Date().toISOString()}`) },
+export default defineConfig(({ command }) => {
+  const version = command === 'serve' ? 'dev' : process.env.VITE_BUILD_VERSION;
+  if (command === 'build' && !/^[0-9a-f]{7,40}$/.test(version ?? '')) {
+    throw new Error('Release builds require VITE_BUILD_VERSION set to the Git commit SHA.');
+  }
+  return {
+  define: { 'import.meta.env.VITE_BUILD_VERSION': JSON.stringify(version) },
   plugins: [
     react(),
     VitePWA({
@@ -50,4 +55,5 @@ export default defineConfig({
       '/api': { target: process.env.AI_OFFICE_API_TARGET || 'http://127.0.0.1:8787', changeOrigin: false },
     },
   },
+  };
 });

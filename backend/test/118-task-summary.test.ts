@@ -1,3 +1,6 @@
+import { ensureExecution, resumeExecution } from '../src/services/ai-execution-control';
+import { executeAiSlice } from '../src/services/ai-execution-slices';
+import { reserveAiSlot } from '../src/services/ai-reservations';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SELF } from 'cloudflare:test';
 import { env, BASE } from './helpers/env';
@@ -59,11 +62,13 @@ describe('independent bounded task summaries',()=>{
     model('采集真实样本。',async()=>{await env.DB.prepare('UPDATE tasks SET detail=?2 WHERE id=?1').bind(f.taskId,'新的任务说明'.repeat(20)).run();});
     await runTaskSummaryJob(env,a.summaryJobId!);expect((await getJob(env,a.summaryJobId!)).status).toBe('failed');expect((await f.read()).summaryStatus).toBe('missing');
   });
-  it('enforces 60 character bound and retries failed calls only explicitly',async()=>{
-    const f=await fixture(),a=await f.start(),provider=model('字'.repeat(61));
-    await runTaskSummaryJob(env,a.summaryJobId!);expect((await f.read()).summaryStatus).toBe('failed');
-    expect((await f.start()).summaryJobId).toBe(a.summaryJobId);expect(provider).toHaveBeenCalledTimes(2);
-    const retry=await f.start(true);expect(retry.summaryJobId).not.toBe(a.summaryJobId);model();await runTaskSummaryJob(env,retry.summaryJobId!);expect((await f.read()).summaryStatus).toBe('ready');
+  it('keeps the 60 character validation while pausing and continuing the same job',async()=>{
+    const f=await fixture(),a=await f.start(),provider=model('字'.repeat(61)),jobId=a.summaryJobId!,target={kind:'job' as const,id:jobId};
+    await ensureExecution(env,target);await env.DB.prepare('UPDATE ai_executions SET call_limit=2 WHERE target_id=?1').bind(jobId).run();
+    for(let slice=0;slice<3;slice++)await executeAiSlice({...offline,AI_EXECUTION_SLICE:true,AI_EXECUTION_CONTEXT:{modelCalls:0}},jobId,slice,()=>runTaskSummaryJob({...offline,AI_EXECUTION_SLICE:true,AI_EXECUTION_CONTEXT:{modelCalls:0}},jobId));
+    expect((await getJob(env,jobId)).status).toBe('waiting_input');expect((await f.read()).summaryStatus).toBe('running');expect(provider).toHaveBeenCalledTimes(2);
+    expect((await f.start()).summaryJobId).toBe(jobId);await resumeExecution(env,target,1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(jobId).run();await reserveAiSlot(env,{projectId:f.projectId,jobId,purpose:'execution_resume'});
+    model();await runTaskSummaryJob(env,jobId);expect((await f.read()).summaryStatus).toBe('ready');
   });
   it('honors project enablement and provider enablement without model calls',async()=>{
     const f=await fixture(),provider=model();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=0 WHERE id=?1').bind(f.projectId).run();

@@ -89,4 +89,3 @@ describe('Office browser extraction', () => {
     await expect(parse(await zip({ ...parts, 'ppt/_rels/presentation.xml.rels': '<Relationships><Relationship Id="later" Type="namespace/slide" Target="../../outside.xml"/></Relationships>' }), 'pptx')).rejects.toThrow('越界');
   });
 });
-

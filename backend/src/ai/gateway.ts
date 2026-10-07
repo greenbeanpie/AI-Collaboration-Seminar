@@ -1,3 +1,5 @@
+import { markModelDispatch, recordModelResponse, clearUncertainDispatch } from '../services/ai-activity';
+import type { SecretKeyring } from './secrets';
 import { MULTIMODAL_LIMITS } from './multimodal-limits';
 import { feedbackForJob } from '../services/project-feedback';
 import { applyToolMode, normalizeToolResponse, toolResponseShape, type ToolMode, type ToolOutput } from './tool-transport';
@@ -9,6 +11,8 @@ import { classifyFetchFailure, diagnosticErrorCode, recordAiDiagnostic, safeBack
 import type { Env } from '../env';
 import { LIMITS } from '../core/limits';
 import { unseal } from './secrets';
+import { acquireExecutionCall, abortExecutionCall, finishExecutionCall, readExecution, ExecutionPaused, isExecutionPaused, type ExecutionTarget, type ExecutionCallToken, resolveExecutionTarget } from '../services/ai-execution-control';
+import { InvestigationContinuation } from '../services/project-investigation';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -22,6 +26,7 @@ export interface ChatMessage {
 export interface GatewayCallInput {
   projectId?: string;
   jobId?: string;
+  executionTarget?: ExecutionTarget;
   /** Durable recovery state when a Workflow continues in another instance. */
   providerRetry?: ProviderRetryState;
   onProviderRetry?: (state: ProviderRetryState) => Promise<void>;
@@ -56,10 +61,12 @@ export interface GatewayEndpoint {
   accountId: string;
   apiToken: string;
   gatewayId: string;
-  authSecret?: string;
+  authSecret?: string | SecretKeyring;
   /** 当前环境；仅 local 允许回环模型地址，用于零费用本地联调 */
   envName?: string;
   diagnostics?: Pick<Env, 'DB'>;
+  /** Full execution environment for background dispatch accounting; probes omit a target. */
+  executionEnv?: Env;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
@@ -120,14 +127,43 @@ export async function gatewayChat(
   let recoveryDeadline = input.providerRetry?.deadline;
   if (input.providerRetry && input.providerRetry.nextAttemptAt > Date.now()) await wait(input.providerRetry.nextAttemptAt - Date.now());
   for (let attempt = input.providerRetry?.attempt ?? 0; ; attempt++) {
+    let dispatched=false;
+    let executionCall: ExecutionCallToken | undefined;
+    const executionEnv = endpoint.executionEnv ?? (endpoint.diagnostics && 'FILES' in endpoint.diagnostics ? endpoint.diagnostics as Env : undefined);
+    let executionTarget = input.executionTarget ?? (input.jobId ? { kind: 'job' as const, id: input.jobId } : undefined);
     try {
       const remaining = recoveryDeadline === undefined ? input.config.timeoutMs : Math.min(input.config.timeoutMs, recoveryDeadline - Date.now());
       if (remaining <= 0) throw new AppError('AI_UNAVAILABLE', '模型服务在一分钟恢复窗口内未恢复', 503, false);
       const output = await gatewayChatAttempt(endpoint, {
-        ...input, config: { ...input.config, timeoutMs: remaining },
+        ...input,
+        beforeFetch: async () => {
+          if (executionEnv && executionTarget) {
+            if (executionEnv.AI_EXECUTION_CONTEXT && executionEnv.AI_EXECUTION_CONTEXT.modelCalls >= 1) throw new InvestigationContinuation();
+            executionTarget = await resolveExecutionTarget(executionEnv, executionTarget);
+            executionCall = await acquireExecutionCall(executionEnv, executionTarget, executionEnv.AI_EXECUTION_CONTEXT?.generation);
+            if (executionEnv.AI_EXECUTION_CONTEXT) executionEnv.AI_EXECUTION_CONTEXT.generation = executionCall.generation;
+          }
+          await input.beforeFetch?.();
+        },
+        onDispatch:()=>{dispatched=true;if(executionEnv?.AI_EXECUTION_CONTEXT)executionEnv.AI_EXECUTION_CONTEXT.modelCalls++;input.onDispatch?.();}, config: { ...input.config, timeoutMs: remaining },
       }, fetchImpl, recoveryDeadline);
+      if (executionEnv && executionTarget && executionCall && !await finishExecutionCall(executionEnv, executionTarget, executionCall)) throw new AppError('INVALID_STATE', '处理已取消或被新窗口替换，旧模型结果未应用', 409, false, { executionSuperseded: true });
+      executionCall = undefined;
       return { ...output, latencyMs: Date.now() - started };
     } catch (error) {
+      if (executionEnv && executionTarget && executionCall) {
+        if (!dispatched) await abortExecutionCall(executionEnv, executionTarget, executionCall);
+        else {
+          const uncertain = error instanceof AppError && ['network_error', 'timeout'].includes(String(error.details?.cause));
+          await finishExecutionCall(executionEnv, executionTarget, executionCall, { uncertain });
+          if (uncertain) {
+            const execution = await readExecution(executionEnv, executionTarget);
+            if (execution?.state === 'paused') throw new ExecutionPaused(execution);
+          }
+        }
+      }
+      if (isExecutionPaused(error) || error instanceof InvestigationContinuation || error instanceof AppError && error.details?.executionSuperseded === true) throw error;
+      if(!dispatched && endpoint.diagnostics)await clearUncertainDispatch(endpoint.diagnostics,input.jobId);
       if (endpoint.diagnostics) {
         const appError = error instanceof AppError ? error : undefined;
         const providerReason = appError?.details?.providerReason;
@@ -193,6 +229,7 @@ async function gatewayChatAttempt(
   const started = Date.now();
   let res: Response;
   await input.beforeFetch?.();
+  if (endpoint.diagnostics) await markModelDispatch(endpoint.diagnostics,input.jobId);
   const messages = input.prepareMessages ? await input.prepareMessages() : input.messages;
   const dispatchChars = messages.reduce((total, message) => total + (typeof message.content === 'string' ? message.content.length : message.content.reduce((n, part) => n + (part.type === 'text' ? part.text.length : 0), 0)), 0);
   if (dispatchChars > input.config.maxInputChars || messages.length > 32) {
@@ -273,6 +310,7 @@ async function gatewayChatAttempt(
   }
 
   if (!res.ok) {
+    if (endpoint.diagnostics) await clearUncertainDispatch(endpoint.diagnostics,input.jobId);
     const errorBody = await readProviderErrorBody(res);
     await res.body?.cancel();
     const providerReason = safeProviderErrorReason(errorBody, token);
@@ -286,13 +324,20 @@ async function gatewayChatAttempt(
     });
   }
 
-  if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'succeeded', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'NONE', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
+  if (endpoint.diagnostics) {
+    try { await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'succeeded', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'NONE', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) }); }
+    catch { console.warn('[ai-diagnostics] response metadata unavailable; preserving received result'); }
+  }
 
   let data: unknown;
   try { data = await readProviderJson(res); }
   catch (error) {
     if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'model_result', status: 'failed', durationMs: Math.min(3_600_000, Date.now() - started), errorCode: 'AI_OUTPUT_INVALID', errorReason: '模型响应 JSON 解析失败；未记录响应正文或解析异常片段', httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
     throw error;
+  }
+  if (endpoint.diagnostics) {
+    try { await recordModelResponse(endpoint.diagnostics,input.jobId); }
+    catch { console.warn('[ai-activity] response metadata unavailable; preserving received result'); }
   }
   if(input.toolMode) {
     try {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}

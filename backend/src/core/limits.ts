@@ -1,11 +1,11 @@
 /** 全局限制常量。/capabilities 下发的值必须与此处硬校验一致。 */
+import { MAX_TASK_FILE_TEXT_CHARS } from '../../../shared/task-file-text';
+
 export const LIMITS = {
   /** 单文件上传上限（按实际上传字节计） */
   maxFileBytes: null,
   maxMediaBytes: 50 * 1024 * 1024,
   audioTranscriptChunkChars: 12000,
-  audioTranscriptMaxChunks: 24,
-  audioPipelineMaxCalls: 64,
   /** 单个 PDF 最大页数 */
   maxPdfPages: null,
   recommendedCloudFileBytes: 10 * 1024 * 1024,
@@ -38,6 +38,8 @@ export const LIMITS = {
   orphanGcMaxObjectsPerRun: 200,
   /** 已完成幂等回放记录的保留天数；processing 记录不自动删除，需运维核对（见 A08） */
   idempotencyCompletedRetentionDays: 30,
+  /** 任务成果登记时随请求提交的正文长度上限（字符），超出由前端截断；供材料检查评分读取 */
+  maxTaskFileTextChars: MAX_TASK_FILE_TEXT_CHARS,
 } as const;
 
 /** 允许上传的扩展名与可检测的文件魔数（见 services/files.ts） */

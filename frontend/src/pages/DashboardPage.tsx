@@ -1,9 +1,13 @@
+import { VirtualList } from '../components/VirtualList';
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
+import { completeTaskGraph } from '../features/pagination/taskGraph';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useMemo, useState } from 'react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, CalendarDays, CheckCheck, Clock3, FolderKanban, LayoutGrid, List, Plus, UsersRound } from 'lucide-react';
-import { listAllItems } from '../api/client';
+import { projectRequest } from '../api/simplification';
 import type { ProjectSummary, Task } from '../api/types';
 import { ErrorNotice, EmptyState, Modal, PageHeading, Spinner, StatusPill } from '../components/ui';
 import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
@@ -50,18 +54,18 @@ export function DashboardPage() {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [searchParams, setSearchParams] = useSearchParams();
   const archiveOpen = searchParams.get('archive') === '1';
-  const projectsQuery = useQuery({ queryKey: ['projects'], queryFn: () => listAllItems<'ProjectListResponse'>('/api/v1/projects', { status: 'all', limit: 100 }, { requireNextCursor: true }) });
+  const projectsQuery = usePagedItems<'ProjectListResponse'>({ searchable: true, queryKey: ['projects'], path: '/api/v1/projects', query: { status: 'all', limit: 100 } });
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const taskQueries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['tasks', project.id], queryFn: () => listAllItems<'TaskListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/tasks`, { limit: 100 }, { requireNextCursor: true }), staleTime: 10_000,
+    queryKey: ['tasks', project.id], queryFn: () => completeTaskGraph(project.id), staleTime: 10_000,
   })) });
   const memberQueries = useQueries({ queries: projects.map(project => ({
-    queryKey: ['members', project.id], queryFn: () => listAllItems<'MemberListResponse'>(`/api/v1/projects/${encodeURIComponent(project.id)}/members`), staleTime: 10_000, enabled: project.status !== 'archived',
+    queryKey: ['members', project.id], queryFn: async () => { const graph = await projectRequest<{ memberIds: string[] }>(project.id, '/tasks/graph'); if (!Array.isArray(graph.memberIds)) throw new Error('完整成员统计尚未读取。'); return graph.memberIds.map(userId => ({ userId })); }, staleTime: 10_000, enabled: project.status !== 'archived',
   })) });
   const entries = projects.map((project, index) => ({ project, tasks: taskQueries[index]?.data ? uniqueProjectTasks(taskQueries[index].data) : undefined, members: memberQueries[index]?.data, error: taskQueries[index]?.error, memberError: memberQueries[index]?.error, status: projectDisplayStatus(project, taskQueries[index]?.error ? undefined : taskQueries[index]?.data) }));
   const current = entries.filter(entry => entry.status !== 'archived');
   const archived = entries.filter(entry => entry.status === 'archived');
-  const available = !projectsQuery.error && current.every(entry => entry.tasks !== undefined && !entry.error);
+  const available = !projectsQuery.error && !projectsQuery.hasNextPage && current.every(entry => entry.tasks !== undefined && !entry.error);
   const allTasks = current.flatMap(entry => entry.tasks ?? []);
   const actionableAvailable = available && current.every(entry => entry.members !== undefined && !entry.memberError);
   const pendingProjects = pendingProjectGroups(current);
@@ -76,8 +80,10 @@ export function DashboardPage() {
 
   if (projectsQuery.isLoading) return <div className="content-wrap"><Spinner label="正在加载项目" /></div>;
   return <div className="page-stack dashboard-page">
+    {projectsQuery.search?.trim() && <p className="form-note">统计与待响应事项仅包含当前搜索匹配的项目。</p>}
+    {projectsQuery.hasNextPage && <p className="form-note">还有项目尚未加载；跨项目统计将在加载全部项目后显示。</p>}
     <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="让每个项目有序向前，让下一步清晰可见。" action={<Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link>} />
-    {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}
+    {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}<LoadMore query={projectsQuery} label="项目" />
     <div className="dashboard-metrics">
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>
       <DeadlineMetric tasks={pending} available={actionableAvailable} />
@@ -89,7 +95,7 @@ export function DashboardPage() {
       <section className="dashboard-projects" aria-label="项目区">
         <div className="dashboard-section-head"><h2>项目 <small>{visible.length} 个</small></h2><div className="dashboard-segment" aria-label="项目视图"><button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><LayoutGrid size={14} />网格</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}><List size={14} />列表</button></div><div className="dashboard-filters" aria-label="项目筛选">{(['all', 'active', 'done'] as const).map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? '全部' : value === 'active' ? '进行中' : '已完成'}</button>)}</div></div>
         <div className="dashboard-filter-note">进行中包含待响应 · 已完成表示项目内全部任务完成</div>
-        {projectsQuery.error ? <div className="card"><EmptyState title="项目列表暂不可用" detail="请重试加载项目。" /></div> : visible.length === 0 ? <div className="card"><EmptyState title={current.length ? '暂无此类项目' : '还没有项目'} detail="创建项目，或使用邀请代码加入团队。" action={<Link className="button button-quiet" to="/app/projects/new"><Plus size={16} />新建项目</Link>} /></div> : <div className={`dashboard-project-collection dashboard-view-${view}`}>{visible.map(entry => <ProjectCard key={entry.project.id} {...entry} />)}</div>}
+        {projectsQuery.error ? <div className="card"><EmptyState title="项目列表暂不可用" detail="请重试加载项目。" /></div> : visible.length === 0 ? <div className="card"><EmptyState title={current.length ? '暂无此类项目' : '还没有项目'} detail="创建项目，或使用邀请代码加入团队。" action={<Link className="button button-quiet" to="/app/projects/new"><Plus size={16} />新建项目</Link>} /></div> : <VirtualList className={`dashboard-project-collection dashboard-view-${view}`} label="项目列表" items={visible} getKey={entry => entry.project.id} renderItem={entry => <ProjectCard {...entry} />} />}
       </section>
       <aside className="dashboard-attention card" aria-label="待响应事项"><div className="dashboard-section-head"><h2><Clock3 size={16} />待响应事项</h2><small>{actionableAvailable ? pending.length : '—'} 项可完成</small></div><p className="dashboard-attention-intro">按项目查看已分配、前置任务已完成的未完成任务。</p>
         {!actionableAvailable ? <p className="dashboard-attention-empty">{projectsQuery.error || attentionError ? '任务暂不可用，请重试。' : '正在读取待响应事项…'}</p> : pendingProjects.length === 0 ? <EmptyState title="暂时没有待响应事项" detail="当前没有可完成任务。" /> : <div className="dashboard-attention-list">{pendingProjects.map(({ project, actionable }) => <section className="dashboard-attention-project" key={project.id} aria-label={project.name}>

@@ -1,3 +1,6 @@
+import { ensureExecution, pauseExecution, resumeExecution } from '../src/services/ai-execution-control';
+import { ensureInitialExecutionSlice, executeAiSlice } from '../src/services/ai-execution-slices';
+import { getJob } from '../src/services/jobs';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
@@ -38,7 +41,7 @@ describe('independent source summaries', () => {
     await env.DB.prepare('INSERT INTO ai_config_versions(id,version,config_json,enabled,created_at) VALUES (?1,?2,?3,1,?4)').bind(currentId,old.version+1,JSON.stringify(config),new Date().toISOString()).run();
     const dispatch = vi.fn(async () => ({ id: crypto.randomUUID() }));
     const fetch = vi.fn(); vi.stubGlobal('fetch',fetch);
-    const result = await enqueueSourceSummary({ ...env, PARSE_WORKFLOW: { create:dispatch } } as unknown as Env,f.sourceVersionId,f.owner.userId,0);
+    const result = await enqueueSourceSummary({ ...env, AGENT_WORKFLOW: { create:dispatch } } as unknown as Env,f.sourceVersionId,f.owner.userId,0);
     const job = await env.DB.prepare('SELECT input_json FROM jobs WHERE id = ?1').bind(result.jobId).first<{input_json:string}>();
     expect(JSON.parse(job!.input_json)).toMatchObject({ operation:'source.summary', configVersionId:currentId, phase:'summary' });
     expect((await loadAiConfig(env.DB,old.id))!.config.textEconomy).not.toHaveProperty('enabledOutputLimit');
@@ -99,10 +102,24 @@ describe('independent source summaries', () => {
   it('does not save fabricated summary citations', async () => {
     const f = await fixture(); const jobId = await summaryJob(f);
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({title:'错误总结',summary:'虚假内容',keyPoints:['虚假'],citations:[{fragmentId:crypto.randomUUID(),pageNumber:null,quote:'不存在'}],caveats:[]})}}],usage:{prompt_tokens:20,completion_tokens:20}}),{status:200,headers:{'content-type':'application/json'}})));
-    expect((await runSourceSummary(env,jobId)).status).toBe('failed');
+    const target={kind:'job' as const,id:jobId};await ensureExecution(env,target);await env.DB.prepare('UPDATE ai_executions SET call_limit=1 WHERE target_id=?1').bind(jobId).run();await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(jobId).run();await ensureInitialExecutionSlice(env,jobId);
+    for(let slice=0;slice<2;slice++){const local={...env,AI_EXECUTION_SLICE:true as const,AI_EXECUTION_CONTEXT:{modelCalls:0}};await executeAiSlice(local,jobId,slice,async()=>{await runSourceSummary(local,jobId);});}
+    expect((await getJob(env,jobId)).status).toBe('waiting_input');
     expect((await env.DB.prepare('SELECT summary_json FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first<{summary_json:string|null}>())?.summary_json).toBeNull();
   });
 
+  it('resumes source-summary chunks and outputs only the saved coverage',async()=>{
+    const f=await fixture(),jobId=await summaryJob(f),configRow=await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();
+    const config=JSON.parse(configRow!.config_json);config.textEconomy.maxInputChars=1600;await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(configRow!.id,JSON.stringify(config)).run();
+    await env.DB.prepare('UPDATE source_fragments SET content=?2 WHERE source_version_id=?1').bind(f.sourceVersionId,'完整原文资料。'.repeat(600)).run();
+    await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(jobId).run();await ensureInitialExecutionSlice(env,jobId);
+    const provider=mockGatewayFetch();vi.stubGlobal('fetch',provider);const local={...env,AI_EXECUTION_SLICE:true as const,AI_EXECUTION_CONTEXT:{modelCalls:0}};
+    await executeAiSlice(local,jobId,0,async()=>{await runSourceSummary(local,jobId);});expect(provider).toHaveBeenCalledOnce();
+    expect(await env.DB.prepare('SELECT summary_status FROM source_processing WHERE source_version_id=?1').bind(f.sourceVersionId).first()).toEqual({summary_status:'running'});
+    const target={kind:'job' as const,id:jobId};await pauseExecution(env,target,'round_limit');await resumeExecution(env,target,1,'output');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(jobId).run();
+    const finalEnv={...env,AI_EXECUTION_SLICE:true as const,AI_EXECUTION_CONTEXT:{modelCalls:0}};await executeAiSlice(finalEnv,jobId,1,async()=>{await runSourceSummary(finalEnv,jobId);});
+    const result=JSON.parse((await getJob(env,jobId)).result_json!);expect(result).toMatchObject({partial:true,complete:false});expect(result.coverage.coveredChars).toBeLessThan(result.coverage.totalChars);expect(provider).toHaveBeenCalledOnce();
+  });
   it('bounds each prompt including instructions and records complete document coverage', async () => {
     const f = await fixture(); const jobId = await summaryJob(f);
     const row = await env.DB.prepare('SELECT id,config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;config_json:string}>();

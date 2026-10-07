@@ -53,11 +53,11 @@ async function startParse(cookie: string, pid: string, sourceId: string): Promis
 }
 
 /** 等待任务终态；引擎不可用（本地测试）时直接同步执行解析逻辑 */
-async function ensureJobDone(cookie: string, jobId: string): Promise<{ status: string; result: unknown; error: unknown }> {
+async function ensureJobDone(cookie: string, jobId: string): Promise<{ status: string; result: unknown; error: unknown; execution: unknown }> {
   for (let i = 0; i < 20; i++) {
     const res = await SELF.fetch(`${BASE}/api/v1/jobs/${jobId}`, { headers: { cookie } });
     if (res.status === 200) {
-      const data = (await res.json() as { data: { status: string; result: unknown; error: unknown } }).data;
+      const data = (await res.json() as { data: { status: string; result: unknown; error: unknown; execution: unknown } }).data;
       if (['succeeded', 'failed', 'waiting_input'].includes(data.status)) return data;
     } else {
       await res.text();
@@ -67,7 +67,7 @@ async function ensureJobDone(cookie: string, jobId: string): Promise<{ status: s
   // Workflow 引擎不可用时的兜底：直接同步执行
   await runParseJob(env, jobId);
   const res = await SELF.fetch(`${BASE}/api/v1/jobs/${jobId}`, { headers: { cookie } });
-  const data = (await res.json() as { data: { status: string; result: unknown; error: unknown } }).data;
+  const data = (await res.json() as { data: { status: string; result: unknown; error: unknown; execution: unknown } }).data;
   return data;
 }
 
@@ -294,9 +294,13 @@ describe('来源解析流水线', () => {
     const upBody = (await up.json() as { data: { jobId: string | null } }).data;
 
     const ocrDone = await ensureJobDone(authCookie(owner.token), upBody.jobId!);
-    // 识别失败的页面不得被当作整册识别完成
-    expect(ocrDone.status).toBe('queued'); // OCR failure is queued for bounded recovery, never reported as complete.
-    expect((ocrDone.error as { code: string }).code).toBe('AI_OUTPUT_INVALID');
+    // 识别失败的页面不得被当作整册识别完成：输出无效时任务暂停等待续跑，而非自动重放已付费请求。
+    expect(ocrDone.status).toBe('waiting_input');
+    const execution = ocrDone.execution as { state: string; pauseReason: string | null; canContinue: boolean };
+    expect(execution.state).toBe('paused');
+    expect(execution.pauseReason).toBe('output_invalid');
+    expect(execution.canContinue).toBe(true);
+    expect(ocrDone.error).toBeNull();
 
     const page = await env.DB.prepare("SELECT ocr_status FROM source_pages WHERE source_version_id = ?1 AND page_number = 1")
       .bind(sourceVersionId)

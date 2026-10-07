@@ -1,10 +1,11 @@
+import { aiActivitySchema, readActivity } from '../services/ai-activity';
+import { registerCollaborationReadRoutes } from './collaboration-read';
+import { readTaskPage } from '../services/collaboration-read-models';
 import { submitCollaborationTask } from '../services/collaboration-submission';
-import { pendingTaskHumanReview } from '../services/collaboration';
 import { currentProjectFeedback, projectFeedbackHistory, saveProjectFeedback } from '../services/project-feedback';
 import { assertCanRegenerate } from '../services/task-planning-policy';
 import { projectOwnerSql, projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
-import { taskSummarySchema, readTaskSummary, enqueueTaskSummary } from '../services/task-summary';
-import { sourceReferenceAvailability } from '../services/source-inputs';
+import { taskSummarySchema, enqueueTaskSummary } from '../services/task-summary';
 import { readProjectSourceContext } from '../services/collaboration-context';
 import { calculateRubricWeightedTotal, continueConfirmedPlan, projectSourceCitationSchema, rubricScoringSchema } from '../services/collaboration-ai';
 import { profileStamp } from '../services/personal-profiles';
@@ -17,14 +18,13 @@ import { requireProjectMember, requireUser } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { newId, nowIso } from '../core/db';
-import { parsePaging, nextCursor } from '../core/pagination';
 import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
 import { withIdempotency } from '../services/idempotency';
 import { withReservedAiJob } from '../services/ai-reservations';
 import { createJobAndDispatch } from '../services/jobs';
 import { applyProposal, reviseProposal, audit, decideSubmission, owner, toCollaborationTask, toProposal, toSubmission, type CollaborationTask, type Proposal, type Submission } from '../services/collaboration';
 import { projectParams } from './projects';
-import { projectGoal, taskDependencies } from '../services/project-simplification';
+import { projectGoal } from '../services/project-simplification';
 import { loadResourceVersionText } from '../services/resources';
 import { assertEffectiveStandard, effectiveStandardGuardSql } from '../services/effective-standard';
 const feedbackSnapshotSchema = z.object({versionId:z.string().nullable(),version:z.number().int().nonnegative(),feedback:z.string(),actorId:z.string().nullable(),createdAt:z.string().nullable()});
@@ -42,8 +42,8 @@ function route(app: OpenAPIHono<AppEnv>, method: 'get' | 'post' | 'patch', path:
     const extras: Record<string, z.ZodString> = {};
     for (const match of path.matchAll(/\{(\w+)\}/g))
         extras[match[1]!] = z.string().uuid();
-    const [out, name] = path === '/feedback/current' ? [feedbackSnapshotSchema,'ProjectFeedbackCurrentResponse'] : path === '/feedback/history' ? [z.object({items:z.array(feedbackSnapshotSchema)}),'ProjectFeedbackHistoryResponse'] : path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema) }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
-    const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals') ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
+    const [out, name] = path === '/feedback/current' ? [feedbackSnapshotSchema,'ProjectFeedbackCurrentResponse'] : path === '/feedback/history' ? [z.object({items:z.array(feedbackSnapshotSchema)}),'ProjectFeedbackHistoryResponse'] : path.endsWith('/summary') ? [taskSummarySchema, 'CollaborationTaskSummaryResponse'] : path === '/settings' ? [settingsSchema, 'CollaborationSettingsResponse'] : status === 202 ? [z.object({ jobId: z.string().uuid() }), 'CollaborationJobResponse'] : path.endsWith('/apply') ? [z.object({ applied: z.boolean(),followupJobId:z.string().uuid().nullable().optional(),followupError:z.string().nullable().optional() }), 'CollaborationApplyResponse'] : path === '/feedback' ? [z.object({feedbackId:z.string().uuid(),queued:z.boolean()}),'CollaborationFeedbackResponse'] : path.includes('/proposals/') && method==='patch' ? [proposalSchema,'CollaborationProposalResponse'] : path === '/proposals' ? [z.object({ items: z.array(proposalSchema), nextCursor: z.string().nullable() }), 'CollaborationProposalListResponse'] : path.includes('submissions') ? [method === 'get' ? z.object({ items: z.array(submissionSchema), nextCursor: z.string().nullable() }) : submissionSchema, method === 'get' ? 'CollaborationSubmissionListResponse' : 'CollaborationSubmissionResponse'] : path === '/tasks' && method === 'get' ? [z.object({ items: z.array(taskSchema), nextCursor: z.string().nullable() }), 'CollaborationTaskListResponse'] : [taskSchema, 'CollaborationTaskResponse'];
+    const r = createRoute({ method, path: '/api/v1/projects/{projectId}/collaboration' + path, tags: ['collaboration'], summary: '协作流程 ' + path, request: { params: projectParams.extend(extras), ...(method === 'get' && (path === '/tasks' || path === '/proposals' || path.endsWith('/submissions')) ? { query: z.object({ cursor: z.string().optional(), limit: z.string().optional(), q:z.string().max(200).optional(), lifecycleState:z.enum(['open','in_progress','submitted','accepted','improve','rework']).optional(), pendingReview:z.enum(['true','false']).optional() }) } : {}), ...(body ? { body: { required: true, content: { 'application/json': { schema: body } } } } : {}) }, responses: { [status]: { description: '成功', content: { 'application/json': { schema: apiEnvelope(out as z.ZodType, name as string) } } } } });
     const dispatch = (async (c: Context<AppEnv>) => {
         if (method === 'post' && (path === '/tasks' || path === '/tasks/{taskId}/submissions')) {
             const idem = await withIdempotency(c.env, { key: c.req.header('idempotency-key'), userId: c.get('user')!.id, operation: path === '/tasks' ? 'collaboration.createTask' : 'collaboration.submitTask', rawBody: JSON.stringify({ projectId: c.req.param('projectId'), ...(path === '/tasks' ? {} : { taskId: c.req.param('taskId') }), body: await c.req.json() }) }, async () => {
@@ -79,12 +79,15 @@ async function task(c: Context<AppEnv>) {
     return r;
 }
 async function taskWithReferences(c: Context<AppEnv>, row: CollaborationTask) {
-    const output = toCollaborationTask(row);
-    output.citations = await Promise.all((output.citations as Array<{ sourceVersionId: string }>).map(async citation => ({ ...citation, ...await sourceReferenceAvailability(c.env, row.project_id, citation.sourceVersionId) })));
-    return {pendingHumanReview:await pendingTaskHumanReview(c.env,row.project_id,row.id),...output,...await taskDependencies(c.env,row.project_id,row.id),...await readTaskSummary(c.env,row)};
+    return {...toCollaborationTask(row),...(await readTaskPage(c.env,[row])).get(row.id)};
 }
 export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     app.use('/api/v1/projects/:projectId/collaboration/*', requireUser, requireProjectMember());
+    registerCollaborationReadRoutes(app,route);
+    app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/collaboration/ai-activity',tags:['collaboration'],request:{params:projectParams},responses:{200:{description:'任务规划与分工最近 AI 活动',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid().nullable(),activity:aiActivitySchema.nullable()}),'CollaborationAiActivityResponse')}}}}}),async c=>{
+      const row=await c.env.DB.prepare("SELECT id,status FROM jobs WHERE project_id=?1 AND json_extract(input_json,'$.operation') IN ('collaboration.decompose','collaboration.assign','collaboration.adjust','collaboration.progression') ORDER BY created_at DESC,id DESC LIMIT 1").bind(c.req.valid('param').projectId).first<{id:string;status:string}>();
+      return c.json(apiData(c,{jobId:row?.id??null,activity:row?await readActivity(c.env,row.id,row.status):null}),200);
+    });
     route(app, 'get', '/settings', undefined, async (c) => c.json(apiData(c, await settings(c))));
     route(app, 'patch', '/settings', z.object({ expectedRevision: revision, aiCollaborationEnabled: z.boolean().optional(), assignmentMode: mode.optional(), evaluationMode: mode.optional(), planningMode:mode.optional(),progressionMode:mode.optional() }), async (c) => {
         const { projectId, userId } = ids(c);
@@ -95,17 +98,6 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!results[0]!.meta.changes)
             throw invalidState('设置已变化');
         return c.json(apiData(c, await settings(c)));
-    });
-    route(app, 'get', '/tasks', undefined, async (c) => {
-        const paging = parsePaging(c.req.query());
-        const cursor = paging.cursor;
-        const rows = await c.env.DB.prepare(`SELECT * FROM tasks WHERE project_id=?1 AND archived_at IS NULL
-            AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
-            ORDER BY created_at DESC,id DESC LIMIT ?4`)
-            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<CollaborationTask>();
-        const page = rows.results.slice(0, paging.limit);
-        const last = page.at(-1);
-        return c.json(apiData(c, { items: await Promise.all(page.map(row => taskWithReferences(c, row))), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
     });
     route(app, 'post', '/tasks/{taskId}/summary', z.object({retry:z.boolean().optional()}).strict(), async c => {
         const {projectId,userId}=ids(c); const body=await c.req.json();
@@ -146,7 +138,6 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
                 throw invalidState('任务已被领取、成员或版本已变化');
             return c.json(apiData(c, await taskWithReferences(c, await task(c))));
         });
-    route(app, 'get', '/tasks/{taskId}/submissions', undefined, async (c) => { await task(c); const rows = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE task_id=?1 AND project_id=?2 ORDER BY round DESC').bind(c.req.param('taskId'), ids(c).projectId).all<Submission>(); const items = await Promise.all(rows.results.map(async (row) => { const versions = await c.env.DB.prepare('SELECT v.id AS versionId,m.id AS materialId,m.title,v.revision FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE m.project_id=?1 AND v.id IN(SELECT value FROM json_each(?2))').bind(ids(c).projectId, row.material_versions_json).all(); return { ...toSubmission(row), materialVersions: versions.results }; })); return c.json(apiData(c, { items })); });
     route(app, 'post', '/tasks/{taskId}/submissions', z.object({ expectedRevision: revision, body: z.string().min(1).max(30000), materialVersionIds: z.array(z.string().uuid()).max(10).default([]) }), async (c) => {
         const { projectId, userId } = ids(c);
         const b = await c.req.json();
@@ -174,18 +165,6 @@ export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
         if (!results[0]!.meta.changes) throw invalidState('提交评价或权限已变化，请重新核对评分');
         const updated = await c.env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(submissionId).first<Submission>();
         return c.json(apiData(c, toSubmission(updated!)));
-    });
-    route(app, 'get', '/proposals', undefined, async (c) => {
-        const paging = parsePaging(c.req.query());
-        const cursor = paging.cursor;
-        const rows = await c.env.DB.prepare(`SELECT p.*,json_extract(j.input_json,'$.profileStamp') profile_stamp,EXISTS(SELECT 1 FROM collaboration_proposal_revisions correction WHERE correction.proposal_id=p.id) human_revised FROM collaboration_proposals p JOIN jobs j ON j.id=p.job_id WHERE p.project_id=?1
-            AND (?2 IS NULL OR p.created_at < ?2 OR (p.created_at = ?2 AND p.id < ?3))
-            ORDER BY p.created_at DESC,p.id DESC LIMIT ?4`)
-            .bind(ids(c).projectId, cursor?.createdAt ?? null, cursor?.id ?? null, paging.limit + 1).all<Proposal & {profile_stamp:string|null;human_revised:number}>();
-        const page = rows.results.slice(0, paging.limit);
-        const last = page.at(-1);
-        const currentStamp = await profileStamp(c.env, ids(c).projectId);
-        return c.json(apiData(c, { items: page.map(p => p.kind === 'assign' && !p.human_revised && p.profile_stamp !== currentStamp ? {...toProposal(p),status:'stale',payload:{}} : toProposal(p)), nextCursor: nextCursor(rows.results.length > paging.limit, last ? { createdAt: last.created_at, id: last.id } : undefined) ?? null }));
     });
     route(app, 'post', '/proposals/{proposalId}/apply', z.object({ expectedRevision: revision,selectedTaskKeys:z.array(z.string()).optional(),selectedUpdateTaskIds:z.array(z.string().uuid()).optional(),selectedAssignmentTaskIds:z.array(z.string().uuid()).optional() }), async (c) => { const { projectId, userId } = ids(c); const b = await c.req.json(); await applyProposal(c.env, projectId, c.req.param('proposalId')!, b.expectedRevision, userId,false,undefined,b); return c.json(apiData(c, { applied: true,...await continueConfirmedPlan(c.env,projectId,c.req.param('proposalId')!,userId) })); });
     route(app,'patch','/proposals/{proposalId}',z.object({expectedRevision:revision,payload:proposalSchema.shape.payload,reason:z.string().min(1).max(4000)}),async c=>{

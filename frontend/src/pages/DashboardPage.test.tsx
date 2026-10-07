@@ -9,12 +9,12 @@ afterEach(cleanup);
 const task = (taskId: string, status: Task['status'] = 'doing', changes: Partial<Task> = {}) => ({taskId,title:taskId,status,dueDate:null,duePrecision:'unknown',lifecycleState:status === 'done' ? 'accepted' : 'in_progress',assigneeId:'member',dependsOnTaskIds:[],unfinishedDependencyIds:[],revision:1,...changes}) as Task;
 function setup(options: { loading?: boolean; archive?: boolean; membersLoading?: boolean; memberError?: boolean; pendingTasks?: Task[]; taskError?: boolean; empty?: boolean } = {}) {
   const client = new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
-  client.setQueryData(['projects'], options.empty ? [] : [
+  client.setQueryData(['projects', 'pages', { status: 'all', limit: 100 }, ''], { pages: [{ items: options.empty ? [] : [
     {id:'pending',name:'待确认项目',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
     {id:'doing',name:'进行中的项目甲',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'member'},
     {id:'done',name:'已完成项目甲',status:'active',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
     {id:'archive',name:'已归档项目甲',status:'archived',description:'',deadlineDate:null,deadlinePrecision:'unknown',myRole:'owner'},
-  ]);
+  ], nextCursor: null }], pageParams: [null] });
   if(!options.loading) client.setQueryData(['tasks','pending'], options.pendingTasks ?? [task('待确认任务','todo')]);
   if (options.taskError) client.getQueryCache().find({ queryKey: ['tasks', 'pending'] })!.setState({ status: 'error', error: new Error('任务读取失败') });
   for (const id of ['pending', 'doing', 'done']) if (!(options.membersLoading && id === 'pending')) client.setQueryData(['members', id], [{ userId: 'member' }]);

@@ -1,10 +1,14 @@
+import { JobAiActivity } from './JobAiActivity';
+import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { Link } from 'react-router-dom';
 import { StandardSummary } from './StandardSummary';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
-import { ApiError, listAllItems, projectPath } from '../api/client';
+import { ApiError, projectPath } from '../api/client';
 import { projectRequest, type StandardCitation, type StandardRequirement, type StandardVersion } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -30,18 +34,19 @@ function ProjectStandardsEditor() {
   const client = useQueryClient();
   const versions = useQuery({ queryKey: ['standards', projectId], queryFn: () => projectRequest<{ items: StandardVersion[] }>(projectId, '/standards') });
   const [draft, setDraft] = useState<EditorDraft | null>(null);
-  const current = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
+  const current = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null; generatedJobId?: string | null }>(projectId, '/standards/current') });
   const [conflicted, setConflicted] = useState(false);
   const [validationError, setValidationError] = useState<unknown>(null);
   const pendingKey=`standards-generation:${projectId}`;
   const [generationJobId,setGenerationJobId]=useState<string|null>(()=>readPendingJob(pendingKey)?.jobId??null);
   const generationPoll=useVisibleJobPoller(generationJobId);
+  const [lastGenerationJobId,setLastGenerationJobId]=useState(generationJobId);
   const generate=useMutation({mutationFn:async()=>{
     const body={};const namespace=`standards-generate:${projectId}`;
     const key=await idempotencyKeyForIntent(namespace,body);
     const response=await projectRequest<{jobId:string}>(projectId,'/standards/generate',{method:'POST',body,idempotencyKey:key});
     completeIntent(namespace);return response;
-  },onSuccess:result=>{setValidationError(null);writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);}});
+  },onSuccess:result=>{setValidationError(null);writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);setLastGenerationJobId(result.jobId);}});
   const generating=generate.isPending || Boolean(generationJobId && !generationPoll.isSettled);
   useEffect(()=>{
     const job=generationPoll.job;
@@ -72,10 +77,10 @@ function ProjectStandardsEditor() {
     const result = await projectRequest<StandardVersion>(projectId, tail, { method: draft.base ? 'PATCH' : 'POST', body: { ...body, ...(draft.base ? { expectedRevision: draft.base.revision } : {}) }, idempotencyKey }); completeIntent(namespace); return result;
   }, onSuccess: async () => { setDraft(null); setConflicted(false); setValidationError(null); await invalidate(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) { setConflicted(true); await invalidate(); } } });
   const update = (key: string, patch: Partial<EditorRow>) => setDraft(current => current ? { ...current, rows: current.rows.map(row => row.key === key ? { ...row, ...patch } : row) } : current);
-  return <div className="page-stack">
+  return <div className="page-stack"><ProjectFlowReturn />
     <p className="notice notice-warn">该页面标准为项目级标准，任务标准请前往<strong><Link to={`/app/projects/${projectId}/tasks`}>任务</Link></strong>页面选择对应任务进行查看</p>
     <SectionCard title="项目标准" action={project.myRole === 'owner' && !draft ? <div className="form-actions">{selected && <button className="button button-quiet" disabled={generating} onClick={() => { setDraft(fromVersion(selected)); setConflicted(false); save.reset(); }}>修订生效标准</button>}<button className="button button-quiet" disabled={generating} onClick={()=>generate.mutate()}>AI 生成标准</button><button className="button button-primary" disabled={generating} onClick={() => { setDraft({ title: '项目标准', rows: [newRow()], notes: '' }); setConflicted(false); save.reset(); }}><Plus size={16} />新建标准</button></div> : undefined}>
-      {generating && <Spinner label="生成项目标准" />}{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
+      <JobAiActivity projectId={projectId} jobId={generationJobId ?? lastGenerationJobId ?? current.data?.generatedJobId} submitting={generate.isPending} canResume={project.myRole === 'owner'} onResumed={id => { setGenerationJobId(id); setLastGenerationJobId(id); writePendingJob(pendingKey,{jobId:id,entityId:projectId,action:'standards.generate'}); }} />{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
       {current.isLoading && <Spinner label="读取标准版本" />}{current.error && <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />}
       {draft ? <form className="stack standards-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <Field aiReference label="标准名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>
@@ -100,9 +105,9 @@ function SourceCitationPicker({ projectId, citations, dimensionLabel, onChange }
   const [fragmentId, setFragmentId] = useState('');
   const [quote, setQuote] = useState('');
   const [open, setOpen] = useState(false);
-  const sources = useQuery({ queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }), enabled: open });
+  const sources = usePagedItems<'SourceListResponse'>({ searchable: true, queryKey: ['sources', projectId], enabled: open, path: projectPath(projectId, '/sources'), query: { limit: 100 } });
   const source = sources.data?.find(item => item.sourceId === sourceId);
-  const fragments = useQuery({ queryKey: ['sourceFragments', projectId, source?.currentVersionId], queryFn: () => listAllItems<'SourceFragmentListResponse'>(projectPath(projectId, `/sources/${encodeURIComponent(sourceId)}/versions/${encodeURIComponent(source!.currentVersionId!)}/fragments`)), enabled: open && Boolean(source?.currentVersionId) });
+  const fragments = usePagedItems<'SourceFragmentListResponse'>({ queryKey: ['sourceFragments', projectId, source?.currentVersionId], enabled: open && Boolean(source?.currentVersionId), path: projectPath(projectId, `/sources/${encodeURIComponent(sourceId)}/versions/${encodeURIComponent(source?.currentVersionId ?? '')}/fragments`) });
   const fragment = fragments.data?.find(item => item.fragmentId === fragmentId);
-  return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>来源引用（{citations.length} 条） <AiReferenceBadge ariaHidden /></summary>{citations.map((citation, index) => <div key={index}><p>[{index+1}] {citation.fileName??citation.sourceTitle??''} <AiReferenceBadge /></p><button className="button button-quiet button-small" type="button" onClick={() => onChange(citations.filter((_, current) => current !== index))}>移除此引用</button></div>)}<Field aiReference label="引用资料"><select className="input" value={sourceId} onChange={event => { setSourceId(event.target.value); setFragmentId(''); setQuote(''); }}><option value="">选择导入资料的固定原文</option>{sources.data?.map(item => <option key={item.sourceId} value={item.sourceId}>{item.title}</option>)}</select></Field>{sources.error && <ErrorNotice error={sources.error} />}{fragments.error && <ErrorNotice error={fragments.error} />}{source && <Field aiReference label="原文片段"><select className="input" value={fragmentId} onChange={event => { setFragmentId(event.target.value); setQuote(''); }}><option value="">选择原文片段</option>{fragments.data?.map((item,index) => <option key={item.fragmentId} value={item.fragmentId}>{item.pageNumber ? `第 ${item.pageNumber} 页` : '正文'} · 片段 {index+1}</option>)}</select></Field>}{fragment && <><Field aiReference label="评分项原文" hint="最多 2000 字，必须是上方原文中的连续节选。"><textarea className="input" rows={4} maxLength={2000} value={quote} onChange={event => setQuote(event.target.value)} /></Field></>}<button type="button" className="button button-quiet" disabled={!fragment || !quote.trim() || !fragment.content.includes(quote.trim()) || !quote.includes(dimensionLabel) || !/[0-9]+(?:\.[0-9]+)?\s*(?:%|％|分|点)/.test(quote) || !source?.currentVersionId || citations.length >= 10} onClick={() => { if (fragment && source?.currentVersionId) onChange([...citations, { sourceVersionId: source.currentVersionId, fragmentId: fragment.fragmentId, pageNumber: fragment.pageNumber, quote: quote.trim(),sourceId:sourceId,sourceTitle:source.title,fileName:source.title,fileId:source.fileId??null }]); }}>添加此原文引用</button></details>;
+  return <details onToggle={event => setOpen(event.currentTarget.open)}><summary>来源引用（{citations.length} 条） <AiReferenceBadge ariaHidden /></summary>{citations.map((citation, index) => <div key={index}><p>[{index+1}] {citation.fileName??citation.sourceTitle??''} <AiReferenceBadge /></p><button className="button button-quiet button-small" type="button" onClick={() => onChange(citations.filter((_, current) => current !== index))}>移除此引用</button></div>)}<Field aiReference label="引用资料"><select className="input" value={sourceId} onChange={event => { setSourceId(event.target.value); setFragmentId(''); setQuote(''); }}><option value="">选择导入资料的固定原文</option>{sources.data?.map(item => <option key={item.sourceId} value={item.sourceId}>{item.title}</option>)}</select></Field>{sources.error && <ErrorNotice error={sources.error} />}<LoadMore query={sources} label="来源" />{fragments.error && <ErrorNotice error={fragments.error} />}<LoadMore query={fragments} label="原文片段" />{source && <Field aiReference label="原文片段"><select className="input" value={fragmentId} onChange={event => { setFragmentId(event.target.value); setQuote(''); }}><option value="">选择原文片段</option>{fragments.data?.map((item,index) => <option key={item.fragmentId} value={item.fragmentId}>{item.pageNumber ? `第 ${item.pageNumber} 页` : '正文'} · 片段 {index+1}</option>)}</select></Field>}{fragment && <><Field aiReference label="评分项原文" hint="最多 2000 字，必须是上方原文中的连续节选。"><textarea className="input" rows={4} maxLength={2000} value={quote} onChange={event => setQuote(event.target.value)} /></Field></>}<button type="button" className="button button-quiet" disabled={!fragment || !quote.trim() || !fragment.content.includes(quote.trim()) || !quote.includes(dimensionLabel) || !/[0-9]+(?:\.[0-9]+)?\s*(?:%|％|分|点)/.test(quote) || !source?.currentVersionId || citations.length >= 10} onClick={() => { if (fragment && source?.currentVersionId) onChange([...citations, { sourceVersionId: source.currentVersionId, fragmentId: fragment.fragmentId, pageNumber: fragment.pageNumber, quote: quote.trim(),sourceId:sourceId,sourceTitle:source.title,fileName:source.title,fileId:source.fileId??null }]); }}>添加此原文引用</button></details>;
 }

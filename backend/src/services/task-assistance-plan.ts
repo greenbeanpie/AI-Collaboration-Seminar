@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { activeMaterialSql, discoverableSourceSql } from './archive-policy';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -57,7 +59,7 @@ export async function enqueueTaskAssistancePlan(env:Env,projectId:string,taskId:
  try{
  await reserveAiSlot(env,{projectId,jobId,purpose:'agent_run',maxCalls:2,configVersionId:c.config.id});
  await createJobAndDispatch(env,{projectId,jobId,kind:'agent_run',createdBy:userId,input:{operation:'collaboration.assistance-plan',projectId,taskId,requestedBy:userId,sourceHash:c.sourceHash,contextStamp:c.task.stamp,configVersionId:c.config.id}});
- }catch(error){if(!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()){await settleReservation(env,jobId,'released');await env.DB.prepare("UPDATE task_assistance_plans SET status='failed',error='计划生成未能启动',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();}throw error;}
+ }catch(error){ if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;if(!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()){await settleReservation(env,jobId,'released');await env.DB.prepare("UPDATE task_assistance_plans SET status='failed',error='计划生成未能启动',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();}throw error;}
  return readTaskAssistancePlan(env,projectId,taskId,userId);
 }
 async function planInputs(env:Env,projectId:string,taskId:string){
@@ -92,5 +94,5 @@ export async function runTaskAssistancePlanJob(env:Env,jobId:string):Promise<voi
  AND EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE p.id=?5 AND m.user_id=?6 AND p.status='active' AND p.ai_collaboration_enabled=1)
  AND EXISTS(SELECT 1 FROM ai_config_versions WHERE id=?7 AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))`).bind(jobId,output.data.markdown,now,input.contextStamp,input.projectId,input.requestedBy,input.configVersionId).run();
  if(!saved.meta.changes)throw invalidState('计划生成结果已过期');await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{taskId:input.taskId,sourceHash:input.sourceHash,markdown:output.data.markdown});
- }catch(error){await env.DB.prepare("UPDATE task_assistance_plans SET status='failed',error=?2,updated_at=?3 WHERE job_id=?1 AND status!='ready'").bind(jobId,error instanceof AppError?error.message:'计划生成失败，请重新生成',nowIso()).run();await settleReservation(env,jobId,'released');await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof AppError?error.message:'计划生成失败'});}
+ }catch(error){ if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;await env.DB.prepare("UPDATE task_assistance_plans SET status='failed',error=?2,updated_at=?3 WHERE job_id=?1 AND status!='ready'").bind(jobId,error instanceof AppError?error.message:'计划生成失败，请重新生成',nowIso()).run();await settleReservation(env,jobId,'released');await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof AppError?error.message:'计划生成失败'});}
 }

@@ -1,3 +1,4 @@
+import { aiSecret } from './secrets';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { AppError, aiUnavailable } from '../core/errors';
@@ -55,7 +56,7 @@ export function parseTranscriptionEvent(raw:unknown):{ready?:boolean;partial?:st
 /** Worker-only handshake: provider credentials never appear in a browser response. */
 export async function connectTranscribeGateway(env:Env,config:RealtimeTranscriptionConfig,guard:()=>Promise<void>,fetchImpl:typeof fetch=fetch):Promise<WebSocket> {
   if(config.model!==TRANSCRIBE_LIVE_MODEL || config.provider!=='google-ai-studio' || !/^[a-z0-9-]{1,64}$/.test(config.gatewayId) || !/^[a-zA-Z0-9_-]+$/.test(env.CLOUDFLARE_ACCOUNT_ID) || !config.gatewayTokenEncrypted)throw aiUnavailable('实时转录Gateway配置不完整');
-  const token=await unseal(config.gatewayTokenEncrypted,env.AUTH_SECRET);
+  const token=await unseal(config.gatewayTokenEncrypted,aiSecret(env));
   if(!token || /[\x00-\x1f\x7f]/.test(token))throw aiUnavailable('实时转录Gateway认证令牌无效');
   const url=new URL(`https://gateway.ai.cloudflare.com/v1/${env.CLOUDFLARE_ACCOUNT_ID}/${config.gatewayId}/google`);
   await guard();

@@ -1,0 +1,13 @@
+.ai-activity { padding: 14px; border: 1px solid var(--border, #d6d9df); border-radius: 10px; margin: 10px 0; overflow-wrap: anywhere; }
+.ai-activity-current { display: flex; gap: 10px; align-items: flex-start; }
+.ai-activity-current p { margin: 6px 0; font-size: .9rem; }
+.ai-activity-indicator { flex: 0 0 12px; width: 12px; height: 12px; margin-top: 4px; border-radius: 50%; background: currentColor; opacity: .5; }
+.ai-activity-indicator.is-running { animation: ai-activity-pulse 1.3s ease-in-out infinite; }
+.ai-activity summary { cursor: pointer; padding: 8px 0; }
+.ai-activity-history { padding-left: 20px; }
+.ai-activity-history li { margin: 8px 0; }
+.ai-activity-history time { display: block; font-size: .82rem; opacity: .75; }
+.ai-activity-failure { white-space: pre-wrap; }
+@keyframes ai-activity-pulse { 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ai-activity-indicator.is-running { animation: none; opacity: 1; } }
+@media (max-width: 480px) { .ai-activity { padding: 10px; } }

@@ -26,6 +26,15 @@ function record(status: 'queued' | 'running' | 'waiting_input' | null, serverSta
 }
 
 describe('source text-layer retry', () => {
+  it('shows the file, version, parsing and citation relationship while keeping IDs in details', () => {
+    record(null);
+    expect(screen.getByText('来源版本 1')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '文件、来源与引用关系' })).toHaveTextContent('原文件 → 来源版本 → 解析正文 → 项目标准引用');
+    expect(screen.getByRole('link', { name: '查看项目标准与引用' })).toHaveAttribute('href', '/app/projects/p/requirements');
+    const details = screen.getByText('技术详情').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent('来源版本编号v');
+  });
   it('offers an explicit retry for existing PDF with a visible AI usage notice; never retries automatically', () => {
     const onParse = record('waiting_input');
     expect(onParse).not.toHaveBeenCalled();

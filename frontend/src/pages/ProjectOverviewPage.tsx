@@ -1,10 +1,12 @@
+import { ProjectAiChat } from '../components/ProjectAiChat';
+import { completeTaskGraph } from '../features/pagination/taskGraph';
 import { useSession } from '../auth';
 import { PendingTaskPreview } from '../components/PendingTaskPreview';
 import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { useProject } from '../components/ProjectShell';
 import { projectPermission } from '../project-permissions';
@@ -19,9 +21,9 @@ export function ProjectOverviewPage() {
   const invitationRequests = useQuery({ queryKey: ['invitation-requests', projectId], queryFn: () => projectRequest<{ items: { status: string }[] }>(projectId, '/invitation-requests'), enabled: projectPermission(project, 'teamManage') && navigator.onLine !== false });
   const pendingInvitations = invitationRequests.data?.items.filter(item => item.status === 'pending').length ?? 0;
   const queries = useQueries({ queries: [
-    { queryKey: ['tasks', projectId], queryFn: () => listAllItems<'TaskListResponse'>(projectPath(projectId, '/tasks'), { limit: 100 }, { requireNextCursor: true }) },
-    { queryKey: ['sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) },
-    { queryKey: ['requirementSets', projectId], queryFn: () => listAllItems<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets'), { limit: 100 }) },
+    { queryKey: ['tasks', projectId], queryFn: () => completeTaskGraph(projectId) },
+    { queryKey: ['sources', projectId], queryFn: () => api.get<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 1 }).then(page => page.items) },
+    { queryKey: ['requirementSets', projectId], queryFn: () => api.get<'RequirementSetListResponse'>(projectPath(projectId, '/requirement-sets')).then(page => page.items) },
   ] });
   const [tasks, sources, requirementSets] = queries;
   const taskItems = tasks.data ?? [];
@@ -35,7 +37,8 @@ export function ProjectOverviewPage() {
 
   return <div className="page-stack project-overview-page">
     <div className="overview-welcome"><div><span className="eyebrow">项目进度</span><h1>一起把下一步做好</h1><p>此处汇总项目服务中已保存的任务、成员、材料与要求状态。</p></div><Link to={`/app/projects/${projectId}/tasks`} className="button button-primary">查看任务 <ArrowRight size={16} /></Link></div>
-    <div className="project-overview-columns"><div><SectionCard aiReference title="项目主目标" detail="主目标独立于任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖任务</Link></>}</SectionCard>
+    <div className="project-overview-columns"><div className="stack"><SectionCard aiReference title="项目主目标" detail="主目标独立于任务数量与工时。">{goal.error ? <ErrorNotice error={goal.error} onRetry={() => void goal.refetch()} /> : goal.isLoading ? <Spinner label="读取主目标" /> : <><strong>{goal.data?.title || '尚未填写主目标'}</strong><p>{goal.data?.detail}</p><Link to={`/app/projects/${projectId}/tasks`}>查看目标与依赖任务</Link></>}</SectionCard>
+    <ProjectAiChat projectId={projectId} />
     </div><div className="stack">{errors.length > 0 && <div className="stack">{errors.map((query, i) => <ErrorNotice key={i} error={query.error} onRetry={() => void query.refetch()} />)}</div>}
     <div className="metric-grid overview-metrics">
       <TaskCompletionMetric variant="overview" completed={done} total={taskItems.length} available={tasks.data !== undefined && !tasks.error} unavailableMessage={tasks.error ? '任务统计暂不可用' : '正在读取任务进度'} />

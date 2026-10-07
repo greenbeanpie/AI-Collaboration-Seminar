@@ -1,27 +1,31 @@
+import { JobAiActivity } from './JobAiActivity';
+import { usePagedItems } from '../features/pagination/usePagedItems';
+import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { api, listAllItems, projectPath } from '../api/client';
+import { api, projectPath } from '../api/client';
 import { ErrorNotice, Spinner, StatusPill } from '../components/ui';
 import { idempotencyKeyForIntent, completeIntent, useVisibleJobPoller } from './aiWorkflowSupport';
 import type { DataOf } from '../api/types';
 
 export function ProjectSourceContext({ projectId, enabled, selected, onSelection, onReady }: { projectId: string; enabled: boolean; selected: string[]; onSelection: (versionId: string, checked: boolean) => void; onReady: (versionId: string, ready: boolean) => void }) {
-  const sources = useQuery({ queryKey: ['project-assistant-sources', projectId], queryFn: () => listAllItems<'SourceListResponse'>(projectPath(projectId, '/sources'), { limit: 100 }, { requireNextCursor: true }) });
+  const sources = usePagedItems<'SourceListResponse'>({ searchable: true, queryKey: ['project-assistant-sources', projectId], path: projectPath(projectId, '/sources'), query: { limit: 100 } });
   useEffect(() => {
-    if (!sources.data) return;
+    // Only a complete, unfiltered list can prove a formerly current source is gone.
+    if (!sources.data || sources.hasNextPage || sources.search?.trim()) return;
     const activeVersions = new Set(sources.data.map(source => source.currentVersionId).filter(Boolean));
     for (const versionId of selected) if (!activeVersions.has(versionId)) {
       onSelection(versionId, false);
       onReady(versionId, false);
     }
-  }, [sources.data, selected, onSelection, onReady]);
+  }, [sources.data, sources.hasNextPage, sources.search, selected, onSelection, onReady]);
   return <section className="stack">
     <strong>优先参考来源（可选固定版本）</strong>
 
     {sources.isLoading && <Spinner label="读取项目资料" />}
-    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}
+    {sources.error && <ErrorNotice error={sources.error} onRetry={() => void sources.refetch()} />}<LoadMore query={sources} label="来源" />
     {sources.data?.length === 0 && <p className="form-note">尚无项目来源；可先上传资料，也可仅按你填写的目标发起拆解。</p>}
     {sources.data?.map(source => <SourceContextRow key={source.sourceId} projectId={projectId} source={source} enabled={enabled} selected={source.currentVersionId ? selected.includes(source.currentVersionId) : false} selectionFull={selected.length >= 5} onSelection={onSelection} onReady={onReady} />)}
     <Link className="button button-quiet button-small" to={`/app/projects/${projectId}/sources`}>查看原文件、缺页处理与文件总结</Link>
@@ -52,6 +56,7 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
   const waitingForPages = serverJob?.status === 'waiting_input' || processing.data?.textStatus === 'waiting_input';
   const running = parse.isPending || Boolean(serverJob || jobId && !job.isSettled);
   return <article className="collab-proposal stack">
+    <JobAiActivity projectId={projectId} jobId={jobId ?? (processing.data as {processingJobId?: string | null} | undefined)?.processingJobId} submitting={parse.isPending} canResume={enabled} onSettled={() => { void version.refetch(); void processing.refetch(); }} />
     <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><AiReferenceBadge ariaHidden /><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : waitingForPages ? '等待缺页识别' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
     {!ready && <p className="form-note">原文件或来源已保留，此来源尚未完整读取。AI会说明信息缺口，可在来源页面补齐识别后继续。</p>}
     {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{waitingForPages ? '请到来源页面补齐缺页' : running ? '资料处理进行中…' : '读取资料正文'}</button>}

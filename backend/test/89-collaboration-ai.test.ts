@@ -1,3 +1,4 @@
+import { ExecutionPaused, readExecution } from '../src/services/ai-execution-control';
 import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SELF } from 'cloudflare:test';
@@ -9,7 +10,7 @@ import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
 import { applyProposal, decideSubmission, pendingTaskHumanReview, toSubmission, type Submission } from '../src/services/collaboration';
 import { continueConfirmedPlan, runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => { vi.unstubAllGlobals(); await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=100 WHERE id='global'").run(); });
 await configureGoFixture();
 const id = () => crypto.randomUUID();
 const stamp = () => new Date().toISOString();
@@ -223,13 +224,18 @@ describe('artifact-only evaluation safety', () => {
         expect(fetchMock).not.toHaveBeenCalled();
         await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();
     });
-    it('invalid tool-session output fails without repeating the investigation', async () => {
+    it('invalid output pauses at the window limit without repeating the investigation or accepting the task', async () => {
+        await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=2 WHERE id='global'").run();
         const f = await fixture('automatic');
         const fetchMock = model({ decision: 'accept' });
         vi.stubGlobal('fetch', fetchMock);
-        await runCollaborationAiJob(env, f.jobId);
-        expect((await getJob(env, f.jobId)).status).toBe('failed');
-        expect(fetchMock).toHaveBeenCalledTimes(1);
+        await expect(runCollaborationAiJob(env, f.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        expect((await getJob(env, f.jobId)).status).toBe('waiting_input');
+        expect(await readExecution(env, { kind: 'job', id: f.jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)).tools).toBeUndefined();
+        expect(await env.DB.prepare('SELECT ai_report_json,status FROM task_submissions WHERE id=?1').bind(f.submissionId).first()).toMatchObject({ ai_report_json: null, status: 'pending' });
+        expect(await env.DB.prepare('SELECT lifecycle_state,status FROM tasks WHERE id=?1').bind(f.taskId).first()).toMatchObject({ lifecycle_state: 'submitted', status: 'doing' });
     });
     it('material bodies beyond the model limit are rejected without truncation or calls', async () => {
         const f = await fixture('automatic', [], '正文'.repeat(50000));

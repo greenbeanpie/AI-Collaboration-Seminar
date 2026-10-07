@@ -301,3 +301,16 @@ describe('creation preview clarification', () => {
     expect(mocks.post.mock.calls.some(([path]) => String(path).endsWith('/commit'))).toBe(false);
   });
 });
+
+it('restores a paused draft and continues its generation without starting a new preview', async () => {
+  draft = { ...draft, payload: { ...draft.payload, aiCollaborationEnabled: true }, previewState: 'paused_round_limit', execution: { generation: 4, windowCalls: 100, totalCalls: 100, limit: 100, state: 'paused', pauseReason: 'round_limit', canContinue: true, canOutput: true } };
+  sessionStorage.setItem('ai-office:creation-wizard:owner', JSON.stringify({ id: draft.id }));
+  mocks.request.mockImplementation(async () => ({ ...draft, previewState: 'ready', execution: { ...draft.execution, generation: 5, state: 'completed', canContinue: false, canOutput: false }, previewRevision: draft.revision, preview: { mode: 'ai', goal: { title: '接续完成的目标', detail: '' }, tasks: [{ title: '调查取件体验', detail: '访谈', criteria: '完成报告', effortHours: 2, citations: [] }] } }));
+  mount();
+  const button = await screen.findByRole('button', { name: '继续处理' });
+  expect(screen.getByLabelText(/^主目标预览/)).toBeEnabled();
+  fireEvent.click(button);
+  await waitFor(() => expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('接续完成的目标'));
+  expect(mocks.request).toHaveBeenCalledWith('/api/v1/creation-drafts/draft-1/execution/continue', expect.objectContaining({ body: { expectedGeneration: 4 } }));
+  expect(mocks.post.mock.calls.filter(([path]) => String(path).endsWith('/preview'))).toHaveLength(0);
+});

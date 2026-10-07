@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { collaborationApi } from './collaboration';
 afterEach(() => vi.unstubAllGlobals());
-it.each(['tasks', 'proposals'] as const)('loads every collaboration %s page without hiding older records', async (kind) => {
+it.each(['tasks', 'proposals'] as const)('loads one collaboration %s page and follows the cursor only when requested', async (kind) => {
   const count = kind === 'tasks' ? 205 : 107;
   const rows = Array.from({ length: count }, (_, index) => ({ id: `${kind}-${index}` }));
   const fetchMock = vi.fn(async (url: string) => {
@@ -12,8 +12,12 @@ it.each(['tasks', 'proposals'] as const)('loads every collaboration %s page with
   });
   vi.stubGlobal('fetch', fetchMock);
   const result = await collaborationApi[kind]('p1');
-  expect(result.items).toEqual(rows);
-  expect(fetchMock.mock.calls.length).toBe(Math.ceil(count / 37));
+  expect(result.items).toEqual(rows.slice(0, 37));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const cursor = (result as { nextCursor?: string | null }).nextCursor;
+  const next = kind === 'tasks' ? await collaborationApi.tasks('p1', { cursor }) : await collaborationApi.proposals('p1', cursor);
+  expect(next.items).toEqual(rows.slice(37, 74));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock.mock.calls.every(([url]) => url.includes(kind === 'tasks' ? '/projects/p1/tasks?' : '/collaboration/proposals?'))).toBe(true);
 });
 it('rejects a truncated collaboration list without a cursor contract', async () => {

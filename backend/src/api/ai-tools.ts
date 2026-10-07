@@ -1,3 +1,4 @@
+import { permissionDenied } from '../core/errors';
 import { clarificationSchema, answerSchema, listProjectClarifications, projectClarificationBinding, answerClarification, cancelClarification } from '../services/ai-clarifications';
 import { activeExecutionSlice, dispatchExecutionSlice } from '../services/ai-execution-slices';
 import { getJob } from '../services/jobs';
@@ -72,6 +73,8 @@ export function registerAiToolRoutes(app: OpenAPIHono<AppEnv>) {
     }
   }), async (c) => {
     const q = c.req.valid('query'), offset = Math.min(1000, Number(q.offset ?? 0));
+    const job=await getJob(c.env,q.jobId),input=JSON.parse(job.input_json) as {operation?:string;questionId?:string;requestedBy?:string};
+    if(input.operation==='project.chat'&&(input.requestedBy!==c.get('user')!.id||!await c.env.DB.prepare('SELECT 1 FROM project_ai_chat_questions WHERE id=?1 AND user_id=?2').bind(input.questionId??null,c.get('user')!.id).first()))throw permissionDenied('问答历史不存在或不属于当前用户');
     const rows = await c.env.DB.prepare('SELECT id,name,status,args_json,result_json,created_at FROM ai_tool_calls WHERE project_id=?1 AND job_id=?2 ORDER BY created_at,id LIMIT 21 OFFSET ?3').bind(c.get('member')!.projectId, q.jobId, offset).all<{
       id: string;
       name: string;

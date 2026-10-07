@@ -6,6 +6,7 @@ import { ProjectOverviewPage } from './ProjectOverviewPage';
 import type { Task } from '../api/types';
 
 vi.mock('../api/client', async importOriginal => ({ ...await importOriginal<typeof import('../api/client')>(), listAllItems: vi.fn(() => new Promise(() => {})) }));
+vi.mock('../components/ProjectAiChat', () => ({ ProjectAiChat: () => <div>询问 AI</div> }));
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({
   projectId: 'overview-project',
   project: { deadlineDate: '2026-10-30', deadlinePrecision: 'day' },

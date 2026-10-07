@@ -1,3 +1,4 @@
+import type { Paging } from '../core/pagination';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound, permissionDenied, versionConflict } from '../core/errors';
@@ -17,19 +18,24 @@ export function fileManageSql(project: string, actor: string, file = 'files'): s
       EXISTS(SELECT 1 FROM task_file_uploads upload JOIN materials material ON material.id=upload.material_id JOIN tasks task ON task.id=material.task_id WHERE upload.file_id=${file}.id AND task.project_id=${project} AND task.assignee_id=${actor}))`;
 }
 const taskGuard = `EXISTS(SELECT 1 FROM tasks task JOIN project_members member ON member.project_id=task.project_id AND member.user_id=?3 WHERE task.id=?2 AND task.project_id=?1 AND (task.assignee_id=?3 OR ${projectPermissionSql('?1','?3','resourceManage')}))`;
-export async function readTaskFile(env: Env, projectId: string, taskId: string, materialId: string, actorId: string) {
-  const row = await env.DB.prepare(`SELECT m.id materialId,m.task_id taskId,m.revision,m.current_version_id versionId,m.archived_at materialArchivedAt,
+/** Shared list/detail projection preserves archive and per-actor management semantics. */
+export async function readTaskFiles(env: Env, projectId: string, taskId: string, actorId: string, materialId?: string, paging?: Paging) {
+  const rows = await env.DB.prepare(`SELECT m.created_at createdAt,m.id materialId,m.task_id taskId,m.revision,m.current_version_id versionId,m.archived_at materialArchivedAt,
     f.id fileId,f.original_name name,f.archived_at archivedAt,f.deleted_at deletedAt,f.lifecycle_version lifecycleVersion,
     CASE WHEN ${materialManageSql('?1','?4','m')} THEN 1 ELSE 0 END can_manage
     FROM materials m JOIN material_versions version ON version.id=m.current_version_id
     JOIN files f ON f.id=json_extract(version.attachments_json,'$[0].fileId')
-    WHERE m.project_id=?1 AND m.task_id=?2 AND m.id=?3 AND m.kind='task-file'`)
-    .bind(projectId,taskId,materialId,actorId).first<{materialId:string;taskId:string;revision:number;versionId:string;materialArchivedAt:string|null;fileId:string;name:string;archivedAt:string|null;deletedAt:string|null;lifecycleVersion:number;can_manage:number}>();
-  if (!row) throw notFound('任务文件不存在');
-  const { can_manage, ...item } = row;
-  return { ...item, canManage: Boolean(can_manage) };
+    WHERE m.project_id=?1 AND m.task_id=?2 AND (?3 IS NULL OR m.id=?3) AND m.kind='task-file'
+    AND (?5 IS NULL OR m.created_at>?5 OR (m.created_at=?5 AND m.id>?6)) ORDER BY m.created_at,m.id LIMIT ?7`)
+    .bind(projectId,taskId,materialId??null,actorId,paging?.cursor?.createdAt??null,paging?.cursor?.id??null,paging ? paging.limit+1 : -1).all<{createdAt:string;materialId:string;taskId:string;revision:number;versionId:string;materialArchivedAt:string|null;fileId:string;name:string;archivedAt:string|null;deletedAt:string|null;lifecycleVersion:number;can_manage:number}>();
+  return rows.results.map(({can_manage,...item})=>({...item,canManage:Boolean(can_manage)}));
 }
-export async function saveTaskFile(env: Env, params: {projectId:string;taskId:string;actorId:string;fileId:string;materialId?:string;expectedRevision?:number}) {
+export async function readTaskFile(env: Env, projectId: string, taskId: string, materialId: string, actorId: string) {
+  const item=(await readTaskFiles(env,projectId,taskId,actorId,materialId))[0];
+  if(!item) throw notFound('任务文件不存在');
+  return item;
+}
+export async function saveTaskFile(env: Env, params: {projectId:string;taskId:string;actorId:string;fileId:string;materialId?:string;expectedRevision?:number;text?:string}) {
   const {projectId,taskId,actorId,fileId}=params;
   if(!await env.DB.prepare('SELECT 1 FROM tasks WHERE id=?1 AND project_id=?2').bind(taskId,projectId).first()) throw notFound('任务不存在');
   if(!await env.DB.prepare(`SELECT 1 WHERE ${taskGuard}`).bind(projectId,taskId,actorId).first()) throw permissionDenied('需要当前任务执行人或资料管理权限');
@@ -63,10 +69,10 @@ export async function saveTaskFile(env: Env, params: {projectId:string;taskId:st
   const writes:D1PreparedStatement[]=[];
   if(!params.materialId) writes.push(env.DB.prepare(`INSERT INTO materials(id,project_id,task_id,title,kind,purpose,current_version_id,revision,created_by,created_at,updated_at)
     SELECT ?6,?1,?2,?9,'task-file','output',?7,1,?3,?8,?8 WHERE ${taskGuard} AND ${fileGuard} AND ${countGuard}`).bind(...binds));
-  const materialGuard=params.materialId ? `EXISTS(SELECT 1 FROM materials WHERE id=?6 AND project_id=?1 AND task_id=?2 AND revision=?12 AND archived_at IS NULL AND ${materialManageSql('?1','?3')} AND EXISTS(SELECT 1 FROM material_versions current_version JOIN files original ON original.id=json_extract(current_version.attachments_json,'$[0].fileId') WHERE current_version.id=materials.current_version_id AND original.deleted_at IS NULL AND original.archived_at IS NULL AND original.lifecycle_version=?13))` : 'EXISTS(SELECT 1 FROM materials WHERE id=?6 AND current_version_id=?7)';
+  const materialGuard=params.materialId ? `EXISTS(SELECT 1 FROM materials WHERE id=?6 AND project_id=?1 AND task_id=?2 AND revision=?13 AND archived_at IS NULL AND ${materialManageSql('?1','?3')} AND EXISTS(SELECT 1 FROM material_versions current_version JOIN files original ON original.id=json_extract(current_version.attachments_json,'$[0].fileId') WHERE current_version.id=materials.current_version_id AND original.deleted_at IS NULL AND original.archived_at IS NULL AND original.lifecycle_version=?14))` : 'EXISTS(SELECT 1 FROM materials WHERE id=?6 AND current_version_id=?7)';
   writes.push(env.DB.prepare(`INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,attachments_json,origin,author_id,created_at)
-    SELECT ?7,?6,?1,?10,'{"type":"doc","content":[]}','',?11,'manual',?3,?8 WHERE ${taskGuard} AND ${fileGuard} AND ${materialGuard}`)
-    .bind(...binds,versionRevision,JSON.stringify([{fileId,name:file.original_name}]),...(params.materialId?[params.expectedRevision,previousLifecycleVersion]:[])));
+    SELECT ?7,?6,?1,?10,'{"type":"doc","content":[]}',?12,?11,'manual',?3,?8 WHERE ${taskGuard} AND ${fileGuard} AND ${materialGuard}`)
+    .bind(...binds,versionRevision,JSON.stringify([{fileId,name:file.original_name}]),params.text?.trim()??'',...(params.materialId?[params.expectedRevision,previousLifecycleVersion]:[])));
   writes.push(env.DB.prepare(`UPDATE materials SET current_version_id=?2,title=?3,revision=revision+1,updated_at=?4 WHERE id=?1 AND EXISTS(SELECT 1 FROM material_versions WHERE id=?2) AND current_version_id!=?2`).bind(materialId,versionId,file.original_name,now));
   writes.push(env.DB.prepare(`INSERT INTO task_file_uploads(file_id,material_id) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM material_versions WHERE id=?3 AND material_id=?2)`).bind(fileId,materialId,versionId));
   const mappingIndex = writes.length - 1;

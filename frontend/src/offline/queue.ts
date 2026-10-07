@@ -11,7 +11,7 @@ export function cacheable(url: string): boolean {
   const path = new URL(url, window.location.origin).pathname;
   return path === '/api/v1/auth/session' || path === '/api/v1/capabilities' || path === '/api/v1/projects'
     || /^\/api\/v1\/projects\/[^/]+\/(?:ai\/clarifications|collaboration\/proposals|task-inquiries\/unread)$/.test(path)
-    || /^\/api\/v1\/projects\/[^/]+(?:$|\/(?:tasks|materials|members|comments|goal|standards|sources|resource-library|requirement-sets|collaboration\/(?:settings|feedback|tasks))(?:\/|$))/.test(path);
+    || /^\/api\/v1\/projects\/[^/]+(?:$|\/(?:tasks|materials|members|comments|goal|standards|sources|resource-library|files|requirement-sets|collaboration\/(?:settings|feedback|tasks))(?:\/|$))/.test(path) && !/\/files\/[^/]+\/(?:content|uploads)(?:\/|$)/.test(path);
 }
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};

@@ -1,9 +1,11 @@
+import { readExecution, resolveExecutionTarget, ensureExecution, markInterruptedExecution } from './ai-execution-control';
+import { recordActivity } from './ai-activity';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
 import { newId, nowIso } from '../core/db';
 import { loadAiConfig } from '../ai/config';
 import { loadDraftCheckpoint, saveDraftCheckpoint } from './draft-preview-checkpoints';
-import { dispatchDraftPreview, enqueueDraftPreview } from './draft-preview-jobs';
+import { dispatchDraftPreview, controlDraftExecution } from './draft-preview-jobs';
 
 export const AUTOMATIC_AI_RETRY_LIMIT = 3;
 export const AUTOMATIC_AI_RETRY_DELAY_MS = 60_000;
@@ -23,6 +25,8 @@ export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string
       AND kind IN ('agent_run','review_run','rehearsal_turn','assignment_suggest','requirement_extract','parse_source','ocr_pages')
       AND COALESCE(json_extract(input_json,'$.mediaProvider'),'')!='mimo'
       AND NOT EXISTS(SELECT 1 FROM media_processing WHERE job_id=jobs.id AND provider='mimo')
+      AND NOT EXISTS(SELECT 1 FROM ai_task_activities WHERE target_id=jobs.id AND uncertain=1)
+      AND NOT EXISTS(SELECT 1 FROM ai_executions e WHERE e.target_kind='job' AND e.target_id IN (jobs.id,REPLACE(COALESCE(json_extract(jobs.input_json,'$.autoRetryRootId'),''),'job:','')) AND e.state IN ('paused','finalizing','cancelled','completed'))
     ON CONFLICT(id) DO UPDATE SET target_id=excluded.target_id,
       status=CASE WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,
       next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,lease_token=NULL,lease_until=NULL,updated_at=excluded.updated_at
@@ -53,7 +57,7 @@ async function schedule(env:Env,target:{id:string;kind:string;target:string;draf
 }
 
 /** Preserve completed reads and outputs; only an unanswered paid dispatch is replaced. */
-async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
+async function resumeDraftPreview(env:Env,row:RetryRow,allowUncertain=false):Promise<void> {
   const draft=await env.DB.prepare('SELECT owner_id,revision,preview_state,preview_attempt_id,preview_config_version_id,status,preview_waiting_id FROM project_creation_drafts WHERE id=?1').bind(row.draft_id).first<{owner_id:string;revision:number;preview_state:string;preview_attempt_id:string|null;preview_config_version_id:string|null;status:string;preview_waiting_id:string|null}>();
   if(!draft || draft.status!=='active' || draft.preview_attempt_id!==row.target_id || draft.preview_waiting_id) throw invalidState('草稿预览已被替换、取消或正在等待回答');
   const config=await loadAiConfig(env.DB);
@@ -63,11 +67,10 @@ async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
   const instanceId=`${row.target_id}-retry-${row.attempts}`;
   const existing=await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(instanceId).first<{status:string}>();
   if(existing?.status==='dispatched')return;
+  if(restored.checkpoint.pendingDispatch&&!restored.checkpoint.pendingOutput&&!allowUncertain)throw invalidState('上次模型请求结果未知，请点击从停止处继续；该步骤可能再次计费');
   if(draft.preview_state==='failed') {
     // Do not discard pendingOutput/pendingResults: their tool calls may already have run.
     restored.checkpoint.pendingDispatch=false;
-    // A completed but invalid final output must be generated again, without replaying tools.
-    if(restored.checkpoint.content) restored.checkpoint.content=undefined;
     await saveDraftCheckpoint(env,restored.checkpoint,restored.etag);
   } else if(draft.preview_state!=='running' || !existing) throw invalidState('预览状态已变化');
   const now=nowIso();
@@ -75,6 +78,7 @@ async function resumeDraftPreview(env:Env,row:RetryRow):Promise<void> {
     env.DB.prepare("INSERT OR IGNORE INTO draft_preview_dispatches(instance_id,draft_id,attempt_id,context_revision,status,created_at,updated_at) SELECT ?1,?2,?3,?4,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND status='active' AND preview_attempt_id=?3 AND revision=?4 AND preview_state IN ('failed','running') AND preview_waiting_id IS NULL)").bind(instanceId,row.draft_id,row.target_id,draft.revision,now),
     env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_error=NULL,updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND preview_state='failed' AND status='active' AND preview_waiting_id IS NULL AND EXISTS(SELECT 1 FROM draft_preview_dispatches WHERE instance_id=?5)").bind(row.draft_id,row.target_id,draft.revision,now,instanceId),
   ]);
+  await recordActivity(env,'draft:'+row.target_id,'retrying','resumed',{completed:restored.checkpoint.step,unit:'step'});
   await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:row.draft_id!,attempt_id:row.target_id,context_revision:draft.revision,question_id:null,status:'pending',updated_at:now});
 }
 
@@ -89,7 +93,11 @@ export async function retryFailedDraftPreview(env:Env,draftId:string,expectedUpd
     const checkpoint=await loadDraftCheckpoint(env,draft.preview_attempt_id);
     const config=await loadAiConfig(env.DB);
     if(!checkpoint || !config?.enabled || config.id!==checkpoint.checkpoint.configVersionId) return {status:'skipped',reason:'预览模型配置已变化'};
-    const refreshed=await enqueueDraftPreview(env,draftId,checkpoint.checkpoint.userId,checkpoint.checkpoint.revision,[],true,checkpoint.checkpoint.requestedGoal);
+    const target={kind:'draft_preview' as const,id:draft.preview_attempt_id};
+    const execution=await ensureExecution(env,target,{draftId,userId:checkpoint.checkpoint.userId});
+    if(['running','finalizing'].includes(execution.state))await markInterruptedExecution(env,target,execution.generation,{requestUncertain:checkpoint.checkpoint.pendingDispatch===true&&!checkpoint.checkpoint.pendingOutput});
+    await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_error=NULL WHERE id=?1 AND preview_attempt_id=?2 AND preview_state='failed' AND status='active'").bind(draftId,draft.preview_attempt_id).run();
+    const refreshed=await controlDraftExecution(env,draftId,checkpoint.checkpoint.userId,execution.generation,'continue',{allowUncertainDispatch:true});
     return {status:'retried',jobId:refreshed.previewAttemptId ?? undefined};
   }
   const token=newId(),now=nowIso();
@@ -97,7 +105,7 @@ export async function retryFailedDraftPreview(env:Env,draftId:string,expectedUpd
   if(!claim.meta.changes)return {status:'skipped',reason:'已达三次重试上限或正在重试'};
   const row=(await env.DB.prepare('SELECT * FROM ai_automatic_retries WHERE id=?1').bind(id).first<RetryRow>())!;
   try {
-    await resumeDraftPreview(env,row);
+    await resumeDraftPreview(env,row,true);
     await env.DB.prepare("UPDATE ai_automatic_retries SET status='dispatched',lease_token=NULL,lease_until=NULL,updated_at=?3 WHERE id=?1 AND lease_token=?2").bind(id,token,nowIso()).run();
     return {status:'retried',jobId:row.target_id};
   } catch(error) {
@@ -113,6 +121,10 @@ export async function recoverAutomaticAiRetries(env:Env,retryJob:AutomaticJobRet
   const due=await env.DB.prepare("SELECT * FROM ai_automatic_retries WHERE (status='pending' AND attempts<3 AND next_attempt_at<=?1) OR (status='dispatching' AND lease_until<?1) ORDER BY next_attempt_at LIMIT ?2").bind(now,limit).all<RetryRow>();
   let dispatched=0;
   for(const row of due.results) {
+    if(row.target_kind==='job'){
+      const execution=await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:row.target_id}));
+      if(execution&&['paused','finalizing','cancelled','completed'].includes(execution.state)){await env.DB.prepare("UPDATE ai_automatic_retries SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=?2 WHERE id=?1").bind(row.id,nowIso()).run();continue;}
+    }
     const token=newId();
     const claimed=await env.DB.prepare("UPDATE ai_automatic_retries SET attempts=attempts+CASE WHEN status='pending' THEN 1 ELSE 0 END,status='dispatching',lease_token=?2,lease_until=?3,updated_at=?4 WHERE id=?1 AND ((status='pending' AND attempts<3 AND next_attempt_at<=?4) OR (status='dispatching' AND lease_until<?4))").bind(row.id,token,new Date(Date.now()+300_000).toISOString(),now).run();
     if(!claimed.meta.changes)continue;

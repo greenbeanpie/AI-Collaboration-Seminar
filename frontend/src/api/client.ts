@@ -2,6 +2,8 @@ import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { errorMessage } from './error-info';
 import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
 import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
+import { beginDesktopActivity } from '../desktop/lifecycle';
+import { isDesktop } from '../desktop/bridge';
 
 export class ApiError extends Error {
   readonly diagnosticMessage: string;
@@ -38,6 +40,8 @@ export type RequestOptions = {
   /** Internal sync/revalidation path: never read a local snapshot or enqueue work. */
   networkOnly?: boolean;
   requireOfflinePersistence?: boolean;
+  /** Background conditional request bound to the originating account snapshot. */
+  conditionalSnapshot?: { accountId: string; data: unknown; etag?: string };
 };
 
 function makeRequestId(): string {
@@ -45,6 +49,11 @@ function makeRequestId(): string {
 }
 
 const revalidations = new Map<string, Promise<void>>();
+const accountEpochs = new Map<string, number>();
+if (typeof window !== 'undefined') window.addEventListener('account-device-cleared', event => {
+  const accountId = (event as CustomEvent<{ accountId: string }>).detail?.accountId;
+  if (typeof accountId === 'string') accountEpochs.set(accountId, (accountEpochs.get(accountId) ?? 0) + 1);
+});
 function revalidate(url: string, accountId: string): void {
   const key = `${accountId}:${url}`;
   if (revalidations.has(key)) return;
@@ -52,13 +61,14 @@ function revalidate(url: string, accountId: string): void {
     try {
       const previous = await readSnapshot(url, accountId);
       if (offlineAccount()?.id !== accountId) return;
-      const data = await request(url, { networkOnly: true, signal: AbortSignal.timeout(15_000) });
+      const data = await request(url, { networkOnly: true, signal: AbortSignal.timeout(15_000), ...(previous ? { conditionalSnapshot: { accountId, data: previous.data, etag: previous.etag } } : {}) });
       const sessionId = (data as { user?: { id?: string } }).user?.id;
       if (url === '/api/v1/auth/session' && sessionId && sessionId !== accountId && offlineAccount()?.id === sessionId) {
         window.dispatchEvent(new Event('auth-expired'));
         return;
       }
-      if (offlineAccount()?.id === accountId && JSON.stringify(previous?.data) !== JSON.stringify(data)) {
+      const updated = await readSnapshot(url, accountId);
+      if (offlineAccount()?.id === accountId && (!previous?.etag || !updated?.etag || previous.etag !== updated.etag)) {
         window.dispatchEvent(new CustomEvent('offline-snapshot-updated', { detail: { accountId } }));
       }
     } catch { /* Keep the visible snapshot when background refresh is unavailable. */ }
@@ -76,10 +86,26 @@ export function apiUrl(path: string, query?: RequestOptions['query']): string {
 }
 
 export async function request<Name extends SchemaName>(path: string, options: RequestOptions = {}): Promise<DataOf<Name>> {
+  const finish = beginDesktopActivity();
+  try { return await performRequest<Name>(path, options); }
+  finally { finish(); }
+}
+
+async function performRequest<Name extends SchemaName>(path: string, options: RequestOptions): Promise<DataOf<Name>> {
   const method = options.method ?? 'GET';
   const requestId = makeRequestId();
   const url = apiUrl(path, options.query);
   const accountAtStart = offlineAccount()?.id;
+  const epochAtStart = accountAtStart ? accountEpochs.get(accountAtStart) ?? 0 : 0;
+  const submission = url.match(/^\/api\/v1\/projects\/([^/]+)\/(?:collaboration\/)?tasks\/([^/]+)\/submissions$/);
+  if (submission && method === 'POST' && !options.networkOnly && isDesktop()) {
+    const { hasPendingTaskFiles } = await import('../desktop/attachments');
+    const pending = await hasPendingTaskFiles(submission[1]!, submission[2]!);
+    if (offlineAccount()?.id !== accountAtStart || (accountAtStart && (accountEpochs.get(accountAtStart) ?? 0) !== epochAtStart)) {
+      throw new ApiError(401, { requestId, error: { code: 'AUTH_CONTEXT_CHANGED', message: '本机账号数据已清除，请重新登录后操作。', retryable: false } });
+    }
+    if (pending) return await queueOffline(url, method, options.body, options.idempotencyKey) as DataOf<Name>;
+  }
   const local = async (): Promise<DataOf<Name>> => {
     const cached = cacheable(url) ? await readSnapshot(url) : undefined;
     if (cached) return await offlineView(url, cached.data) as DataOf<Name>;
@@ -105,6 +131,7 @@ export async function request<Name extends SchemaName>(path: string, options: Re
   }
   const headers = new Headers(options.headers);
   headers.set('X-Request-Id', requestId);
+  if (method === 'GET' && options.conditionalSnapshot && options.conditionalSnapshot.accountId === accountAtStart && options.conditionalSnapshot.etag) headers.set('If-None-Match', options.conditionalSnapshot.etag);
   const hasJsonBody = options.body !== undefined;
   if (hasJsonBody) headers.set('Content-Type', 'application/json');
   if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
@@ -128,6 +155,10 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     });
   }
 
+  if (accountAtStart && (accountEpochs.get(accountAtStart) ?? 0) !== epochAtStart) {
+    throw new ApiError(401, { requestId, error: { code: 'AUTH_CONTEXT_CHANGED', message: '本机账号数据已清除，请重新登录后操作。', retryable: false } });
+  }
+  if (response.status === 304 && options.conditionalSnapshot?.etag && options.conditionalSnapshot.accountId === accountAtStart && offlineAccount()?.id === accountAtStart) return options.conditionalSnapshot.data as DataOf<Name>;
   const returnedRequestId = response.headers.get('X-Request-Id') ?? requestId;
   const responseText = await response.text();
   let payload: unknown = null;
@@ -160,19 +191,19 @@ export async function request<Name extends SchemaName>(path: string, options: Re
     if (user && typeof user === 'object' && 'id' in user) {
       try {
         const account = user as NonNullable<ReturnType<typeof offlineAccount>>;
-        rememberAccount(account);
+        if (rememberAccount(account, method !== 'GET') === false) throw new ApiError(401, { requestId, error: { code: 'AUTH_CONTEXT_CHANGED', message: '本机账号数据已清除，请重新登录。', retryable: false } });
         if (method !== 'GET') await writeSnapshot('/api/v1/auth/session', { user: account }, account.id);
       }
-      catch { window.dispatchEvent(new Event('offline-storage-failed')); }
+      catch (error) { if (error instanceof ApiError) throw error; window.dispatchEvent(new Event('offline-storage-failed')); }
     }
   }
   const currentAccount = offlineAccount()?.id;
   if (method === 'GET' && cacheable(url) && currentAccount && (url === '/api/v1/auth/session' || currentAccount === accountAtStart)) {
-    try { await writeSnapshot(url, data, currentAccount); }
+    try { await writeSnapshot(url, data, currentAccount, response.headers.get('ETag') ?? undefined); }
     catch (failure) { window.dispatchEvent(new Event('offline-storage-failed')); if (options.requireOfflinePersistence) throw failure; }
     if (!options.networkOnly) {
       try { return await offlineView(url, data) as DataOf<Name>; }
-      catch { window.dispatchEvent(new Event('offline-storage-failed')); }
+      catch (error) { if (error instanceof ApiError) throw error; window.dispatchEvent(new Event('offline-storage-failed')); }
     }
   }
   return data;

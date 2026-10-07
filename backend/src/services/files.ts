@@ -190,10 +190,10 @@ export async function readFileContent(
   params: { projectId: string; fileId: string; range?: string },
 ): Promise<{ body: ReadableStream<Uint8Array>; mime: string; headers: Record<string,string>; status: 200 | 206 }> {
   const row = await env.DB.prepare(
-    'SELECT id, project_id, r2_key, status, mime_detected, deleted_at, lifecycle_version FROM files WHERE id = ?1',
+    'SELECT id, project_id, r2_key, status, mime_detected, deleted_at, lifecycle_version, original_name FROM files WHERE id = ?1',
   )
     .bind(params.fileId)
-    .first<{ id: string; project_id: string; r2_key: string; status: FileStatus; mime_detected: string | null; deleted_at: string|null; lifecycle_version:number }>();
+    .first<{ id: string; project_id: string; r2_key: string; status: FileStatus; mime_detected: string | null; deleted_at: string|null; lifecycle_version:number; original_name:string|null }>();
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'available') throw notFound('文件不可用');
   const rangeHeaders = new Headers(); if(params.range) rangeHeaders.set('range',params.range);
@@ -202,7 +202,10 @@ export async function readFileContent(
   const body = obj.body;
   const active=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL AND lifecycle_version=?3 AND status='available'").bind(row.id,params.projectId,row.lifecycle_version).first();
   if(!active) throw notFound('文件已移入回收站或生命周期已变化');
-  const headers:Record<string,string>={'accept-ranges':'bytes','etag':obj.httpEtag};
+  const safeName = (row.original_name ?? 'file').replace(/[\r\n\x00-\x1f\x7f\/\\]/g, '_').slice(0, 200);
+  const encodedName = encodeURIComponent(safeName).replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase());
+  const disposition = /^(?:text\/plain|application\/pdf|image\/|audio\/|video\/)/.test(row.mime_detected ?? '') ? 'inline' : 'attachment';
+  const headers:Record<string,string>={'accept-ranges':'bytes','etag':obj.httpEtag, 'content-disposition': disposition + "; filename=\"file\"; filename*=UTF-8''" + encodedName, 'x-content-type-options':'nosniff', 'cross-origin-resource-policy':'same-origin'};
   const range=params.range?obj.range:undefined;
   if(range && 'offset' in range && 'length' in range) {headers['content-range']=`bytes ${range.offset}-${range.offset!+range.length!-1}/${obj.size}`;headers['content-length']=String(range.length);}
   else headers['content-length']=String(obj.size);

@@ -1,3 +1,4 @@
+import { AiExecutionPolicySettings } from './AiExecutionPolicySettings';
 import { AudioModelSettings } from './AudioModelSettings';
 import { blankAudioSettings, localSpeechSettings, type AudioSettingsView } from './audio-settings-view';
 import { useSettingsDirty } from './settings-dirty';
@@ -153,7 +154,7 @@ export function AiSettings() {
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
   const requiredProbes = config.routingMode === 'unified' && !config.unified.supportsVision ? purposes.filter(p => p !== 'visionEconomy') : purposes;
-  return <SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。普通供应商使用各自 API URL 与加密保存的 API key；仅 Workers AI 和单独配置的 Gateway 功能经过 Cloudflare AI Gateway。设置影响所有项目。">
+  return <><AiExecutionPolicySettings access={access} token={token} /><SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。普通供应商使用各自 API URL 与加密保存的 API key；仅 Workers AI 和单独配置的 Gateway 功能经过 Cloudflare AI Gateway。设置影响所有项目。">
     <div className="stack">
       {session.data?.role !== 'super_admin' && <p className="muted">需要超级管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
       <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { loadSequence.current++; setToken(e.target.value); setReady(false); setEdited(true); setReports({}); setError(undefined); setMessage('请先读取当前令牌可访问的已保存配置。'); }} /></Field></details>
@@ -232,5 +233,5 @@ export function AiSettings() {
       <div className="form-actions"><button className="button button-primary" disabled={!access || busy || !ready} onClick={() => void run(() => save())}>保存配置</button><button className="button button-quiet" disabled={!access || busy || !ready || !version} onClick={() => void run(disable)}>停用 AI</button><button className="button button-primary" disabled={!access || busy || !ready || !version || dirty || savedEnabled} onClick={() => void run(() => save(true))}>{savedEnabled ? 'AI 已启用' : '启用 AI'}</button></div>
       {busy && <p role="status">正在处理，请稍候……</p>}{message && <p role="status">{message}</p>}{Boolean(error) && <ErrorNotice error={error} />}
     </div>
-  </SectionCard>;
+  </SectionCard></>;
 }

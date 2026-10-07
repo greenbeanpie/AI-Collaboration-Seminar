@@ -1,22 +1,30 @@
 import type { User } from '../api/types';
+import { setDesktopAccount } from '../desktop/lifecycle';
 
-export type Snapshot = { key: string; accountId: string; url: string; data: unknown; savedAt: string };
+export type Snapshot = { key: string; accountId: string; url: string; data: unknown; savedAt: string; etag?: string };
 export type PendingOperation = {
   key: string; accountId: string; projectId: string; url: string; method: string;
   body: Record<string, unknown>; localId: string; base: unknown; createdAt: string;
   state: 'pending' | 'conflict' | 'blocked'; error?: string; server?: unknown;
+  desktopAttachmentsResolved?: boolean;
 };
 const accountKey = 'buwei:offline-account';
 let database: Promise<IDBDatabase> | undefined;
+const clearingAccounts = new Set<string>();
 
 export function offlineAccount(): User | null {
   try { return JSON.parse(localStorage.getItem(accountKey) ?? 'null') as User | null; }
   catch { return null; }
 }
-export function rememberAccount(user: User): void {
+export function rememberAccount(user: User, newSession = false): boolean {
+  if (clearingAccounts.has(user.id) && !newSession) return false;
   localStorage.setItem(accountKey, JSON.stringify(user));
+  if (newSession) clearingAccounts.delete(user.id);
+  setDesktopAccount(user.id);
+  return true;
 }
 export function forgetAccount(): void {
+  setDesktopAccount(null);
   try { localStorage.removeItem(accountKey); } catch { /* Clearing the in-memory session still proceeds. */ }
 }
 function open(): Promise<IDBDatabase> {
@@ -55,10 +63,10 @@ export async function readSnapshot(url: string, accountId = offlineAccount()?.id
   if (!accountId) return undefined;
   return transact<Snapshot | undefined>('snapshots', 'readonly', store => store.get(`${accountId}:${normalizeUrl(url)}`));
 }
-export async function writeSnapshot(url: string, data: unknown, accountId = offlineAccount()?.id): Promise<void> {
-  if (!accountId) return;
+export async function writeSnapshot(url: string, data: unknown, accountId = offlineAccount()?.id, etag?: string): Promise<void> {
+  if (!accountId || clearingAccounts.has(accountId)) return;
   const normalized = normalizeUrl(url);
-  await transact('snapshots', 'readwrite', store => store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data, savedAt: new Date().toISOString() } satisfies Snapshot));
+  await transact('snapshots', 'readwrite', store => store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data, savedAt: new Date().toISOString(), ...(etag ? { etag } : {}) } satisfies Snapshot));
 }
 export async function snapshots(accountId = offlineAccount()?.id): Promise<Snapshot[]> {
   return accountId ? transact('snapshots', 'readonly', store => store.index('accountId').getAll(accountId)) : [];
@@ -102,6 +110,7 @@ export async function operations(accountId = offlineAccount()?.id): Promise<Pend
   return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key));
 }
 export async function putOperation(operation: PendingOperation): Promise<void> {
+  if (clearingAccounts.has(operation.accountId)) throw new Error('此账号的本机数据已清除，请重新登录后操作');
   await transact('operations', 'readwrite', store => store.put(operation));
   window.dispatchEvent(new Event('offline-data-changed'));
 }
@@ -110,9 +119,22 @@ export async function removeOperation(key: string): Promise<void> {
   window.dispatchEvent(new Event('offline-data-changed'));
 }
 export async function clearOfflineAccount(accountId: string): Promise<void> {
-  if (offlineAccount()?.id === accountId) forgetAccount();
-  for (const name of ['snapshots', 'operations'] as const) {
-    const rows = await transact<Array<{ key: string }>>(name, 'readonly', store => store.index('accountId').getAll(accountId));
-    for (const row of rows) await transact(name, 'readwrite', store => store.delete(row.key));
-  }
+  clearingAccounts.add(accountId);
+  try {
+    const db = await open();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(['snapshots', 'operations'], 'readwrite');
+      for (const name of ['snapshots', 'operations']) {
+        const request = tx.objectStore(name).index('accountId').openKeyCursor(IDBKeyRange.only(accountId));
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor) { tx.objectStore(name).delete(cursor.primaryKey); cursor.continue(); }
+        };
+      }
+      tx.oncomplete = () => resolve();
+      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('清除本机数据失败，请重试'));
+    });
+    if (offlineAccount()?.id === accountId) forgetAccount();
+    window.dispatchEvent(new Event('offline-data-changed'));
+  } catch (error) { clearingAccounts.delete(accountId); throw error; }
 }

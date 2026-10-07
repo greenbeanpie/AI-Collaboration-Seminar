@@ -1,3 +1,4 @@
+import { secureResponse } from './security-headers.ts';
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   API: { fetch(request: Request): Promise<Response> };
@@ -9,6 +10,6 @@ export default {
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
       return env.API.fetch(request);
     }
-    return env.ASSETS.fetch(request);
+    return secureResponse(await env.ASSETS.fetch(request));
   },
 };

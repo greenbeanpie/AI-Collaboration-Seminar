@@ -3,7 +3,7 @@ import { SELF } from 'cloudflare:test';
 import { env, BASE } from './helpers/env';
 import { ADMIN_TOKEN } from './helpers/constants';
 import { aiModelConfigSchema, loadAiConfig, type AiModelConfig } from '../src/ai/config';
-import { seal } from '../src/ai/secrets';
+import { aiSecret, seal } from '../src/ai/secrets';
 import { gatewayChat } from '../src/ai/gateway';
 import { normalizeProviderResponse } from '../src/ai/transport';
 import { aiJsonCall } from '../src/services/agent';
@@ -14,7 +14,7 @@ import { seedProject, seedUser } from './helpers/seed';
 import { FIXED_MAX_OUTPUT_TOKENS, presetEndpoint, protocolForConfig, providerPresets, sameCredentialDestination, type ProviderPreset, type ApiProtocol } from '../../shared/ai-providers';
 import { z } from 'zod';
 
-const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: env.AUTH_SECRET, envName: 'local' };
+const endpoint = { accountId: 'account', apiToken: 'workers-key', gatewayId: 'gateway', authSecret: aiSecret(env), envName: 'local' };
 const encrypted = await seal('fixture-provider-key', env.AUTH_SECRET);
 function config(preset: ProviderPreset, model: string, extra: Partial<AiModelConfig> = {}): AiModelConfig {
   return aiModelConfigSchema.parse({ provider: 'openai-compatible', providerPreset: preset, model, apiUrl: presetEndpoint(preset, model, extra.apiProtocol), apiKeyEncrypted: encrypted, timeoutMs: 90000, maxInputChars: 48000, supportsJson: providerPresets[preset].supportsJson, supportsVision: true, goUsageAcknowledged: preset === 'opencode-go', ...extra });
@@ -242,7 +242,7 @@ describe('versioned configuration, authorization, and reservations', () => {
     await reserveAiSlot(env, { projectId, jobId, purpose: 'agent_run', configVersionId: loaded.id });
     const mock = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: null, reasoning_content: 'synthetic thought' } }], usage: { prompt_tokens: 3, completion_tokens: 4096 } })));
     vi.stubGlobal('fetch', mock);
-    await expect(aiJsonCall(env, { projectId, jobId, configVersionId: loaded.id, purpose: 'textEconomy', model: cfg.model, modelConfig: cfg, promptVersion: 'fixture', messages, schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_OUTPUT_INVALID', details: { cause: 'output_limit' } });
+    await expect(aiJsonCall(env, { projectId, jobId, configVersionId: loaded.id, purpose: 'textEconomy', model: cfg.model, modelConfig: cfg, promptVersion: 'fixture', messages, schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({details:{executionPause:true,execution:{state:'paused',pauseReason:'output_invalid',totalCalls:1}}});
     expect(mock).toHaveBeenCalledOnce();
     expect((await env.DB.prepare('SELECT attempts_started FROM usage_reservations WHERE job_id=?1').bind(jobId).first<{ attempts_started: number }>())?.attempts_started).toBe(1);
   });
@@ -275,7 +275,7 @@ describe('versioned configuration, authorization, and reservations', () => {
     expect((await aiJsonCall(env, args)).repaired).toBe(true); expect(mock).toHaveBeenCalledTimes(2);
     expect(mock.mock.calls.map(call => new Headers(call[1]?.headers).get('x-opencode-session'))).toEqual([jobId, jobId]);
     expect((await env.DB.prepare('SELECT attempts_started FROM usage_reservations WHERE job_id=?1').bind(jobId).first<{ attempts_started: number }>())?.attempts_started).toBe(2);
-    await expect(aiJsonCall(env, args)).rejects.toThrow('次数上限'); expect(mock).toHaveBeenCalledTimes(2);
+    expect(await env.DB.prepare('SELECT max_calls FROM usage_reservations WHERE job_id=?1').bind(jobId).first()).toMatchObject({max_calls:100});
     const job2 = crypto.randomUUID(); await reserveAiSlot(env, { projectId, jobId: job2, purpose: 'review_run', configVersionId: loaded.id });
     const rejected = vi.fn(async () => new Response('secret body never echoed', { status: 403 })); vi.stubGlobal('fetch', rejected);
     await expect(aiJsonCall(env, { ...args, jobId: job2 })).rejects.toThrow('403'); expect(rejected).toHaveBeenCalledOnce();

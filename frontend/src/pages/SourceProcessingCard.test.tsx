@@ -7,7 +7,7 @@ import type { DataOf } from '../api/types';
 
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), api:{ get:vi.fn(),post:vi.fn() } }));
 afterEach(cleanup);
-const base: DataOf<'SourceProcessingResponse'> = { textStatus:'ready',requirementsStatus:'ready',requirementsError:null,summaryStatus:'pending',summary:null,summaryError:null,summaryJobId:null,summaryRevision:0,coveredChars:null,totalChars:null };
+const base: DataOf<'SourceProcessingResponse'> = { activity:null,processingJobId:null,textStatus:'ready',requirementsStatus:'ready',requirementsError:null,summaryStatus:'pending',summary:null,summaryError:null,summaryJobId:null,summaryRevision:0,coveredChars:null,totalChars:null };
 function view(state=base,aiEnabled=true) {
   vi.mocked(api.get).mockResolvedValue(state as never);
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><SourceProcessingCard projectId="p" sourceId="s" versionId="v" aiEnabled={aiEnabled} active={false}/></QueryClientProvider>);
@@ -40,4 +40,16 @@ describe('independent file summary UI',()=>{
     view({...base,textStatus:'waiting_input'},false);
     expect(await screen.findByRole('button',{name:'生成文件总结'})).toBeDisabled(); expect(api.post).not.toHaveBeenCalled();
   });
+  it('uses checkpoint resume rather than starting another summary when a failed job is known', async () => {
+    vi.mocked(api.post).mockClear();
+    const state = { ...base, summaryStatus: 'failed' as const, summaryJobId: 'failed-summary', summaryError: '保存未完成' };
+    vi.mocked(api.get).mockImplementation(async path => path.includes('/jobs/') ? { jobId: 'failed-summary', status: 'failed', activity: { code: 'failed', updatedAt: null, lastResponseAt: '2026-10-07T00:00:00Z', progress: null, canResume: true, resumeReason: null, uncertain: false } } as never : state as never);
+    vi.mocked(api.post).mockResolvedValue({ jobId: 'resumed-summary' } as never);
+    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><SourceProcessingCard projectId="p" sourceId="s" versionId="v" aiEnabled active={false}/></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '从停止处继续' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/jobs/failed-summary/retry', undefined, expect.objectContaining({idempotencyKey:expect.any(String)})));
+    expect(screen.queryByRole('button', {name:'单独重试文件总结'})).toBeNull();
+    expect(vi.mocked(api.post).mock.calls.some(([path]) => path.endsWith('/processing/summary'))).toBe(false);
+  });
+
 });

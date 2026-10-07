@@ -74,7 +74,7 @@ describe('native search survives investigation slices',()=>{
     const files=new Proxy(env.FILES,{get(target,key){if(key==='put')return async(...args:Parameters<R2Bucket['put']>)=>{
       if(interrupted)throw new Error('fixture checkpoint interruption');
       const result=await target.put(...args);
-      if(typeof args[1]==='string'&&JSON.parse(args[1]).pendingSearchOutput){interrupted=true;throw new Error('fixture checkpoint interruption');}
+      if((await loadInvestigation({...env,FILES:target},f.id,true,f.jobId))?.pendingSearchOutput){interrupted=true;throw new Error('fixture checkpoint interruption');}
       return result;
     };const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
     await expect(projectToolConversation({...env,FILES:files,AI_EXECUTION_SLICE:true},f.params)).rejects.toThrow('fixture checkpoint interruption');
@@ -87,6 +87,6 @@ describe('native search survives investigation slices',()=>{
     await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toBeInstanceOf(InvestigationContinuation);
     const state=(await loadInvestigation(env,f.id))!;
     await saveInvestigation(env,f.context,f.id,f.params.promptVersion,{...state,searchUsed:true,pendingDispatch:true},true);
-    await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toThrow('避免重复付费');expect(f.fetch).toHaveBeenCalledTimes(1);
+    await expect(projectToolConversation({...env,AI_EXECUTION_SLICE:true},f.params)).rejects.toThrow('结果未确认');expect(f.fetch).toHaveBeenCalledTimes(1);
   });
 });

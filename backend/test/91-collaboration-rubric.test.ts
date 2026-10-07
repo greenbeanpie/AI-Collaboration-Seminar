@@ -1,3 +1,4 @@
+import { ExecutionPaused, readExecution } from '../src/services/ai-execution-control';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SELF } from 'cloudflare:test';
 import { env, BASE } from './helpers/env';
@@ -9,7 +10,7 @@ import { enqueueEvaluation } from '../src/services/collaboration-evaluation';
 import { runCollaborationAiJob, taskEvaluationSchema, calculateRubricWeightedTotal, type CollaborationAiInput, type EvaluationRubricSnapshot } from '../src/services/collaboration-ai';
 import { saveStandard } from '../src/services/project-simplification';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => { vi.unstubAllGlobals(); await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=100 WHERE id='global'").run(); });
 await configureGoFixture();
 const id = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -69,8 +70,8 @@ async function mutateInput(jobId: string, change: (input: CollaborationAiInput) 
     change(input);
     await env.DB.prepare('UPDATE jobs SET input_json=?2 WHERE id=?1').bind(jobId, JSON.stringify(input)).run();
 }
-async function expectFailedUntouched(f: Fixture, jobId: string) {
-    expect((await getJob(env, jobId)).status).toBe('failed');
+async function expectFailedUntouched(f: Fixture, jobId: string, expectedStatus = 'failed') {
+    expect((await getJob(env, jobId)).status).toBe(expectedStatus);
     expect(await f.persisted()).toEqual({ status: 'pending', report: null });
     const state = await env.DB.prepare('SELECT lifecycle_state,status FROM tasks WHERE id=?1').bind(f.taskId).first();
     expect(state).toMatchObject({ lifecycle_state: 'submitted', status: 'doing' });
@@ -127,16 +128,20 @@ describe('bounded assistive rubric scores', () => {
         expect((await getJob(env, jobId)).status).toBe('succeeded');
         expect((await f.persisted()).report.rubricScoring.status).toBe('unavailable');
     });
-    it('no-rubric output cannot invent scores', async () => {
+    it('no-rubric output cannot invent scores while corrections are paused', async () => {
+        await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=2 WHERE id='global'").run();
         const f = await fixture();
         const jobId = await f.start();
         const provider = model(report(f));
         vi.stubGlobal('fetch', provider);
-        await runCollaborationAiJob(env, jobId);
-        await expectFailedUntouched(f, jobId);
-        expect(provider).toHaveBeenCalledTimes(1);
+        await expect(runCollaborationAiJob(env, jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        await expectFailedUntouched(f, jobId, 'waiting_input');
+        expect(await readExecution(env, { kind: 'job', id: jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
+        expect(provider).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(String(provider.mock.calls[1]![1]?.body)).tools).toBeUndefined();
     });
-    it.each(['missing', 'extra', 'duplicate', 'omitted', 'total'])('refuses %s rubric output without repeating the tool session', async kind => {
+    it.each(['missing', 'extra', 'duplicate', 'omitted', 'total'])('pauses invalid %s rubric output without repeating the tool session', async kind => {
+        await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=2 WHERE id='global'").run();
         const f = await fixture(true);
         await rubric(f);
         const jobId = await f.start();
@@ -148,9 +153,11 @@ describe('bounded assistive rubric scores', () => {
         if (kind === 'total') Object.assign(output, { weightedTotal: 100 });
         const provider = model(output);
         vi.stubGlobal('fetch', provider);
-        await runCollaborationAiJob(env, jobId);
-        await expectFailedUntouched(f, jobId);
-        expect(provider).toHaveBeenCalledTimes(1);
+        await expect(runCollaborationAiJob(env, jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+        await expectFailedUntouched(f, jobId, 'waiting_input');
+        expect(await readExecution(env, { kind: 'job', id: jobId })).toMatchObject({ state: 'paused', pauseReason: 'round_limit', windowCalls: 2, totalCalls: 2 });
+        expect(provider).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(String(provider.mock.calls[1]![1]?.body)).tools).toBeUndefined();
     });
     it.each(['score', 'confidence', 'empty_evidence', 'person_rank'])('strict scoring schema rejects invalid %s', kind => {
         const evidence = [{ materialVersionId: id(), quote: '原文' }];

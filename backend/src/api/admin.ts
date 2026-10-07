@@ -1,3 +1,4 @@
+import { aiSecret } from '../ai/secrets';
 import { normalizeProcessingStrategies } from '../../../shared/audio-settings';
 import { validateMediaModel, GeminiMediaClient } from '../ai/gemini-media';
 import { validateMimoMediaModel, MimoMediaClient } from '../ai/mimo-media';
@@ -210,7 +211,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mediaUnderstanding;
     const encrypted=model?.apiKeyEncrypted;
     if(!loaded||!model||!encrypted)throw invalidState('请先保存音视频模型及 API key');
-    const passed=await new GeminiMediaClient(model,await unseal(encrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
+    const passed=await new GeminiMediaClient(model,await unseal(encrypted,aiSecret(c.env)),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'官方模型元数据可访问，支持 generateContent；音视频摘要质量需真实样本核对':'官方模型未声明 generateContent'}),200);
   });
 
@@ -219,7 +220,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const loaded=await loadAiConfig(c.env.DB),model=loaded?.config.mimoMediaUnderstanding;
     const encrypted=model?.apiKeyEncrypted;
     if(!loaded||!model||!encrypted)throw invalidState('请先保存 MiMo 模型及 API key');
-    const passed=await new MimoMediaClient(model,await unseal(encrypted,c.env.AUTH_SECRET),fetch,c.env,c.get('requestId')).probe();
+    const passed=await new MimoMediaClient(model,await unseal(encrypted,aiSecret(c.env)),fetch,c.env,c.get('requestId')).probe();
     return c.json(apiData(c,{passed,model:model.model,configVersion:loaded.version,detail:passed?'小米官方模型列表可访问；音频识别质量需真实样本核对':'当前密钥不可访问 mimo-v2.6-pro'}),200);
   });
   app.openapi(createAccountInvitationRoute, async c => c.json(apiData(c, await createAccountInvitation(c.env, c.get('user')?.id ?? null)), 201));
@@ -297,13 +298,13 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
       }
       const modelConfig = config[purpose];
       if (!modelConfig) continue;
-      modelConfig.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, c.env.AUTH_SECRET) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
+      modelConfig.apiKeyEncrypted = input.apiKey ? await seal(input.apiKey, aiSecret(c.env)) : input.clearKey ? undefined : previous?.apiKeyEncrypted;
     }
     if(config.realtimeAudioTranscription&&realtimeInput&&!body.clearRealtimeAudioTranscription){
       const previous=latest?.config.realtimeAudioTranscription;
       if(previous?.gatewayTokenEncrypted&&previous.gatewayId!==realtimeInput.gatewayId&&!realtimeInput.gatewayToken&&!realtimeInput.clearGatewayToken)throw validationFailed('切换 Gateway 时，请重新填写或清除 Cloudflare AI Gateway 认证令牌');
       config.realtimeAudioTranscription.apiKeyEncrypted=undefined;
-      config.realtimeAudioTranscription.gatewayTokenEncrypted=realtimeInput.clearGatewayToken?undefined:realtimeInput.gatewayToken?await seal(realtimeInput.gatewayToken,c.env.AUTH_SECRET):previous?.gatewayTokenEncrypted;
+      config.realtimeAudioTranscription.gatewayTokenEncrypted=realtimeInput.clearGatewayToken?undefined:realtimeInput.gatewayToken?await seal(realtimeInput.gatewayToken,aiSecret(c.env)):previous?.gatewayTokenEncrypted;
     }
     // GET exposes the legacy omitted search switch as false; both shapes have the same authority.
     // Normalize only equivalent defaults: an actual search permission change still invalidates probes.

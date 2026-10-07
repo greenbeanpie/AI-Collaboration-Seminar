@@ -172,11 +172,13 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "content-type: applicati
 
 日志中可检索的关键前缀：`[cron]`（维护与恢复）、`[gc]`（孤儿回收失败）、`[events]`（账本写入失败）、`[email:resend]`（投递失败）。
 
-## 12. 当前发布状态（2026-09-30，19dedbd）
+## 12. 当前发布状态（2026-10-07，6a1deb8）
 
-production 的 Worker 名称、Service Binding 和资源字段在仓库中已对齐，`npm run preflight:deploy -- production` 通过。staging 的同命令仍报缺 EMAIL_FROM、D1 ID、Origin。以上均是静态配置验证，不代表远端资源或发信域名已验收；当前 `EMAIL_FROM` 仍使用 `onboarding@resend.dev`，真实邮件投递需单独验证。
+production 后端已原地部署 AI 续跑队列屏障（版本 `385082d0`，对应 main 提交 `6a1deb8`/`0f5f87d`）：Workflow N+1 不再由 Workflow N 同步创建，而是写入 D1 pending 行后经队列 `greenbp-team-office-ai-continuations` 异步唤醒（producer 与 consumer 均为 `greenbp-team-office-backend`），队列不可用时回退分钟级 cron。本次新增的唯一云端资源是该队列；未应用任何 D1 迁移，未改动 Secrets、D1、R2、vars、域名绑定与前端 Worker。部署前 `npm run preflight:deploy -- production` 通过；部署后 `/api/v1/health`、`/health/deps`（d1/r2 均 ok）、`/capabilities` 均 200。补丁背景、应用方法与生产验收标准见 [WORKFLOW-CONTINUATION-QUEUE](../../docs/WORKFLOW-CONTINUATION-QUEUE.md)。
 
-正式放量前先修复架构文档 A03/A07/A08 所列代码缺口；随后验收 Secrets、D1 迁移、私有 R2、两端部署与回滚、Service Binding、真实邮件、模型/OCR、云端恢复与监控。模型 URL/key 继续留待用户在网页设置填写；模型 fixture 成功不能替代真模型和云端故障验收。
+回滚：`npx wrangler rollback --env production` 回到上一版本（08309bd 内容）。队列资源残留无害——旧版本代码不引用该绑定；队列消费幂等（仅派发 pending 且 slice 匹配的行），重复投递安全；队列暂时不可用时业务任务停为 pending 等待 cron 派发，不会判为失败。
+
+更早状态：2026-09-30（19dedbd）完成 production Worker 命名、Service Binding 与资源字段对齐，`npm run preflight:deploy -- production` 通过；当时 staging 仍缺 EMAIL_FROM、真实 D1 ID 与 HTTPS Origin。此后的实际部署、密码认证、Turnstile、邮件投递与模型/OCR 验收以仓库各验收记录为准。
 
 ## 13. 密码身份与一次性注册码
 

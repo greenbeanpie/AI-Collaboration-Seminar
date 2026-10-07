@@ -5,6 +5,8 @@ import { configureGoFixture, assertGoRequest } from './helpers/provider-config';
 import { seedProject, seedUser, authCookie } from './helpers/seed';
 import type { Env } from '../src/env';
 import { enqueueTaskAgentEligibility, readTaskAgentEligibility } from '../src/services/task-agent-eligibility';
+import { createApp } from '../src/app';
+import { readExecution } from '../src/services/ai-execution-control';
 import { getJob } from '../src/services/jobs';
 import { runAiJob } from '../src/services/ai-jobs';
 await configureGoFixture();
@@ -12,6 +14,7 @@ afterEach(()=>vi.unstubAllGlobals());
 const offline = {...env,AGENT_WORKFLOW:{create:async()=>{throw new Error('offline fixture');}}} as unknown as Env;
 async function fixture(detail='整理已提供的现场访谈资料并分析主要观点') {
   await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();
+  await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=100 WHERE id='global'").run();
   const user=await seedUser(), projectId=await seedProject(user.userId),taskId=crypto.randomUUID(),now=new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=1 WHERE id=?1').bind(projectId),
@@ -44,17 +47,26 @@ describe('model based task Agent eligibility',()=>{
     const f=await fixture(),[a,b]=await Promise.all([f.start(),f.start()]);expect(a.jobId).toBe(b.jobId);
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM usage_reservations WHERE project_id=?1').bind(f.projectId).first()).toMatchObject({n:1});
   });
-  it('requires explicit retry after invalid output; reserves and audits both bounded repair calls',async()=>{
-    const f=await fixture(),a=await f.start(),provider=model({eligible:'yes',reason:''});await runAiJob(env,a.jobId!);
-    expect(await f.read()).toMatchObject({status:'failed',eligible:null});expect(provider).toHaveBeenCalledTimes(2);expect((await f.start()).jobId).toBe(a.jobId);
-    const retry=await f.start(true);expect(retry.jobId).not.toBe(a.jobId);model();await runAiJob(env,retry.jobId!);expect((await f.read()).status).toBe('ready');
+  it('pauses after the configured window, preserves eligibility and audits repair calls until explicit continuation',async()=>{
+    const f=await fixture();await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=2 WHERE id='global'").run();
+    const a=await f.start(),provider=model({eligible:'yes',reason:''});
+    await expect(runAiJob(env,a.jobId!)).rejects.toMatchObject({details:{executionPause:true}});
+    expect(await f.read()).toMatchObject({status:'running',eligible:null});expect(provider).toHaveBeenCalledTimes(2);
+    expect((await getJob(env,a.jobId!)).status).toBe('waiting_input');expect((await f.start()).jobId).toBe(a.jobId);
+    expect(await readExecution(env,{kind:'job',id:a.jobId!})).toMatchObject({state:'paused',pauseReason:'round_limit',windowCalls:2,totalCalls:2});
+    expect(await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls WHERE job_id=?1').bind(a.jobId).first()).toMatchObject({n:2});
+    const continued=await createApp().request(BASE+`/api/v1/jobs/${a.jobId}/execution/continue`,{method:'POST',headers:{cookie:authCookie(f.user.token),'content-type':'application/json','idempotency-key':crypto.randomUUID()},body:JSON.stringify({expectedGeneration:1})},offline);
+    expect(continued.status).toBe(202);const next=model();await runAiJob(env,a.jobId!);expect(next).toHaveBeenCalledOnce();expect((await f.read()).status).toBe('ready');
+    expect(await readExecution(env,{kind:'job',id:a.jobId!})).toMatchObject({state:'completed',generation:2,totalCalls:3});
   });
-  it('repairs one invalid model output and succeeds',async()=>{
-    const f=await fixture(),a=await f.start();let n=0;model({eligible:true,reason:'可以完成'},async()=>{n++;if(n===1)throw new Error('provider transport failure');});
-    // A transport failure is terminal rather than an unsafe replay.
-    await runAiJob(env,a.jobId!);expect((await f.read()).status).toBe('failed');
-    const b=await f.start(true);const provider=model();provider.mockImplementationOnce(async()=>new Response(JSON.stringify({choices:[{message:{content:'{}'}}],usage:{prompt_tokens:30,completion_tokens:20}}),{headers:{'content-type':'application/json'}}));
-    await runAiJob(env,b.jobId!);expect(provider).toHaveBeenCalledTimes(2);expect((await f.read()).status).toBe('ready');
+  it('never replays unknown transport automatically and repairs only after a same-job user continuation',async()=>{
+    const f=await fixture(),a=await f.start();const failed=model(undefined,async()=>{throw new Error('provider transport failure');});
+    await expect(runAiJob(env,a.jobId!)).rejects.toMatchObject({details:{executionPause:true}});expect(failed).toHaveBeenCalledOnce();
+    expect((await getJob(env,a.jobId!)).status).toBe('waiting_input');expect((await f.read()).status).toBe('running');
+    await expect(runAiJob(env,a.jobId!)).resolves.toBeUndefined();expect(failed).toHaveBeenCalledOnce();
+    const continued=await createApp().request(BASE+`/api/v1/jobs/${a.jobId}/execution/continue`,{method:'POST',headers:{cookie:authCookie(f.user.token),'content-type':'application/json','idempotency-key':crypto.randomUUID()},body:JSON.stringify({expectedGeneration:1,allowUncertainDispatch:true})},offline);
+    expect(continued.status).toBe(202);const provider=model();provider.mockImplementationOnce(async()=>new Response(JSON.stringify({choices:[{message:{content:'{}'}}],usage:{prompt_tokens:30,completion_tokens:20}}),{headers:{'content-type':'application/json'}}));
+    await runAiJob(env,a.jobId!);expect(provider).toHaveBeenCalledTimes(2);expect((await f.read()).status).toBe('ready');
   });
   it.each(['title','detail','criteria'])('invalidates %s edits and rejects in flight results',async column=>{
     const f=await fixture(),a=await f.start();model(undefined,async()=>{await env.DB.prepare(`UPDATE tasks SET ${column}='新内容' WHERE id=?1`).bind(f.taskId).run();});

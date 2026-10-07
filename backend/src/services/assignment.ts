@@ -1,9 +1,10 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { effectiveStandard, assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { assertRequirementSources, snapshotRequirementSources, assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import { assertProfileStamp, recommendationDispatch, finishRecommendationJob, profileSnapshotGuard } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
@@ -208,8 +209,7 @@ export async function runAssignmentSuggestionJob(env: Env, jobId: string): Promi
       if(!changed.meta.changes)throw new AppError('INVALID_STATE','项目标准、来源或成员已变化，建议未发布',409,false);
       await env.DB.prepare("UPDATE job_outbox SET status='done',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();
     } else await finishRecommendationJob(env, jobId, result);
-  } catch (error) {
-    if (error instanceof InvestigationContinuation) throw error;
+  } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
     await settleReservation(env, jobId, 'released');
     await failJob(env, jobId, {
       code: error instanceof AppError ? error.code : 'INTERNAL',

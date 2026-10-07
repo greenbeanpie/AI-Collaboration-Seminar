@@ -1,9 +1,15 @@
 /// <reference path="../cloudflare-bindings.d.ts" />
 export type EnvName = 'local' | 'staging' | 'production';
 
+export type AiContinuationMessage =
+  | { kind: 'job-slice'; jobId: string; slice: number }
+  | { kind: 'draft-preview'; instanceId: string };
+
 export interface Env {
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
+  /** Invocation-local dispatch count. A new Workflow instance gets a fresh context. */
+  AI_EXECUTION_CONTEXT?: { modelCalls: number; generation?: number };
   AI?: Cloudflare.Env['AI'];
   DOCUMENT_IMPORTS_ENABLED?: string;
   RESOURCE_INDEX_ENABLED?: string;
@@ -12,11 +18,18 @@ export interface Env {
   FILES: R2Bucket;
   PARSE_WORKFLOW: Workflow;
   AGENT_WORKFLOW: Workflow;
+  /** Async barrier between Workflow slices. Optional so cron remains a safe fallback. */
+  AI_CONTINUATION_QUEUE?: Queue<AiContinuationMessage>;
   ENV_NAME: EnvName;
   EMAIL_MODE: 'echo' | 'resend';
   /** 逗号分隔的写请求 Origin 白名单 */
   ALLOWED_ORIGINS: string;
   AUTH_SECRET: string;
+  AI_CONFIG_SECRET?: string;
+  CHECKPOINT_SECRET?: string;
+  MEDIA_GRANT_SECRET?: string;
+  RATE_LIMIT_SECRET?: string;
+  TURNSTILE_HOSTNAMES?: string;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;
   AI_GATEWAY_ID: string;

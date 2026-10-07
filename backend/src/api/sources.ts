@@ -1,5 +1,5 @@
 import { discoverableFileSql } from '../services/archive-policy';
-import { contributorSchema, fileContributors } from '../services/file-contributors';
+import { contributorSchema, fileContributors, fileContributorsForFiles } from '../services/file-contributors';
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -82,7 +82,7 @@ const versionResponse = apiEnvelope(
 
 const fragmentsRoute = createRoute({
   method: 'get', path: '/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments', tags: ['sources'],
-  summary: '来源全文引用片段', request: { params: versionParams, query: z.object({ cursor: z.string().optional(), limit: z.string().optional() }) },
+  summary: '来源全文引用片段', request: { params: versionParams, query: z.object({ q: z.string().trim().max(200).optional(), fragmentId: z.string().min(1).max(100).optional(), cursor: z.string().optional(), limit: z.string().optional() }) },
   responses: { 200: { content: { 'application/json': { schema: apiEnvelope(z.object({ items: z.array(z.object({ fragmentId: z.string(), pageNumber: z.number().nullable(), content: z.string(), kind: z.string(), seq: z.number() })), nextCursor: z.string().nullable() }), 'SourceFragmentListResponse') } }, description: '可引用片段' } },
 });
 
@@ -135,9 +135,11 @@ const listRoute = createRoute({
   path: '/api/v1/projects/{projectId}/sources',
   tags: ['sources'],
   summary: '来源列表（游标分页）',
-  request: { params: projectParams, query: z.object({ deleted:z.enum(['true','false']).optional(),cursor: z.string().optional(), limit: z.string().optional() }) },
+  request: { params: projectParams, query: z.object({ deleted:z.enum(['true','false']).optional(),q:z.string().trim().max(200).optional(),cursor: z.string().optional(), limit: z.string().optional() }) },
   responses: { 200: { content: { 'application/json': { schema: listResponse } }, description: '列表' } },
 });
+
+const detailRoute=createRoute({method:'get',path:'/api/v1/projects/{projectId}/sources/{sourceId}',tags:['sources'],request:{params:sourceParams},responses:{200:{description:'来源详情',content:{'application/json':{schema:apiEnvelope(sourceSchema,'SourceDetailResponse')}}}}});
 
 const versionRoute = createRoute({
   method: 'get',
@@ -332,21 +334,23 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       `SELECT id, project_id, kind, title, purpose, resource_revision, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
         (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
        WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
+       AND (?6='' OR instr(lower(title),lower(?6))>0)
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
        ORDER BY created_at DESC, id DESC LIMIT ?4`,
     )
-      .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1,query.deleted==='true'?1:0)
+      .bind(member.projectId, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1,query.deleted==='true'?1:0,query.q??'')
       .all<SourceRow>();
     const hasMore = rows.results.length > limit;
-    const items = await Promise.all(rows.results.slice(0, limit).map(async (r) => ({
-      contributors:await fileContributors(c.env,member.projectId,r.file_id),
+    const contributors = await fileContributorsForFiles(c.env,member.projectId,rows.results.slice(0,limit).map(r=>r.file_id));
+    const items = rows.results.slice(0, limit).map((r) => ({
+      contributors:r.file_id ? contributors.get(r.file_id)??[] : [],
       sourceId: r.id,
       kind: r.kind,
       title: r.title,
       purpose: r.purpose, revision: r.resource_revision + r.lifecycle_version - 1,
       currentVersionId: r.current_version_id,
       createdAt: r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.permissions.resourceManage||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id,
-    })));
+    }));
     const lastItem = items.at(-1);
     return c.json(
       apiData(c, {
@@ -355,6 +359,15 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       }),
       200,
     );
+  });
+
+  app.openapi(detailRoute,async c=>{
+    const member=c.get('member')!,p=c.req.valid('param');
+    const r=await c.env.DB.prepare(`SELECT s.*,(SELECT file_id FROM source_versions WHERE id=s.current_version_id) file_id FROM sources s WHERE s.project_id=?1 AND s.id=?2
+      AND (s.deleted_at IS NOT NULL OR s.kind!='file' OR EXISTS(SELECT 1 FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=s.current_version_id AND ${discoverableFileSql('f')}))`).bind(member.projectId,p.sourceId).first<SourceRow>();
+    if(!r) throw notFound('来源不存在或已归档');
+    c.header('Cache-Control','no-store');
+    return c.json(apiData(c,{contributors:await fileContributors(c.env,member.projectId,r.file_id),sourceId:r.id,kind:r.kind,title:r.title,purpose:r.purpose,revision:r.resource_revision+r.lifecycle_version-1,currentVersionId:r.current_version_id,createdAt:r.created_at,lifecycleVersion:r.lifecycle_version,canDelete:member.permissions.resourceManage||r.created_by===c.get('user')!.id,deletedAt:r.deleted_at,fileId:r.file_id}),200);
   });
 
   app.openapi(versionRoute, async (c) => {
@@ -399,7 +412,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const limit = parsePaging(query).limit;
     const after = Number(query.cursor ?? 0);
     if (!Number.isSafeInteger(after) || after < 0) throw validationFailed('片段游标无效');
-    const rows = await c.env.DB.prepare('SELECT id, page_number, content, kind, seq FROM source_fragments WHERE source_version_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(sourceVersionId, after, limit + 1).all<{ id: string; page_number: number | null; content: string; kind: string; seq: number }>();
+    const rows = await c.env.DB.prepare("SELECT id, page_number, content, kind, seq FROM source_fragments WHERE source_version_id = ?1 AND seq > ?2 AND (?4='' OR instr(lower(content),lower(?4))>0) AND (?5 IS NULL OR id=?5) AND project_id=?6 ORDER BY seq LIMIT ?3").bind(sourceVersionId, after, limit + 1, query.q ?? '', query.fragmentId ?? null, c.get('member')!.projectId).all<{ id: string; page_number: number | null; content: string; kind: string; seq: number }>();
     const page = rows.results.slice(0, limit);
     return c.json(apiData(c, { items: page.map(r => ({ fragmentId: r.id, pageNumber: r.page_number, content: r.content, kind: r.kind, seq: r.seq })), nextCursor: rows.results.length > limit ? String(page.at(-1)!.seq) : null }), 200);
   });

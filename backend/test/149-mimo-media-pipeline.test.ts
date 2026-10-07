@@ -1,9 +1,11 @@
+import { checkpointFingerprint, checkpointRootId, saveResponseCheckpoint } from '../src/services/ai-checkpoints';
+import { acquireExecutionCall, markInterruptedExecution, readExecution, resumeExecution } from '../src/services/ai-execution-control';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
 import { seedUser, seedProject } from './helpers/seed';
 import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
-import { newId, nowIso } from '../src/core/db';
+import { hmacSha256Hex, newId, nowIso } from '../src/core/db';
 import { createApp } from '../src/app';
 import { createMediaFetchUrl, readMediaGrant } from '../src/services/media-fetch';
 import { runMediaJob, cleanupMediaFiles } from '../src/services/media-summary';
@@ -48,6 +50,18 @@ function provider(options:{complete?:boolean;error?:boolean;after?:()=>Promise<v
  });
 }
 describe('MiMo private audio grants',()=>{
+ it('accepts live legacy grants, requires separated v2 signatures and rejects unknown versions',async()=>{
+  const f=await fixture();await f.insertState();const url=new URL(await createMediaFetchUrl(testEnv,f.jobId));
+  expect(url.searchParams.get('v')).toBe('2');
+  const expires=url.searchParams.get('expires')!;
+  const message=JSON.stringify(['mimo-media-v1',f.jobId,f.stateId,f.fileId,f.key,'audio/wav',12,0,expires]);
+  const legacySignature=await hmacSha256Hex(env.AUTH_SECRET,message);
+  const legacy=new URL(url);legacy.searchParams.delete('v');legacy.searchParams.set('signature',legacySignature);
+  expect((await readMediaGrant(testEnv,new Request(legacy),f.jobId)).status).toBe(200);
+  legacy.searchParams.set('v','2');expect((await readMediaGrant(testEnv,new Request(legacy),f.jobId)).status).toBe(404);
+  url.searchParams.set('v','3');expect((await readMediaGrant(testEnv,new Request(url),f.jobId)).status).toBe(404);
+ });
+
  it('streams full bytes, HEAD, bounded and suffix ranges with no-store',async()=>{
   const f=await fixture();await f.insertState();const url=await createMediaFetchUrl(testEnv,f.jobId),app=createApp();
   const full=await app.request(url,{},testEnv);expect(full.status).toBe(200);expect((await full.arrayBuffer()).byteLength).toBe(12);expect(full.headers.get('cache-control')).toBe('no-store');
@@ -82,8 +96,24 @@ describe('MiMo audio orchestration',()=>{
   await runMediaJob(testEnv,f.jobId,source?f.versionId:undefined);expect(request).toHaveBeenCalledTimes(1);
   const body=JSON.parse(String(request.mock.calls[0]![1]!.body));expect((await readMediaGrant(testEnv,new Request(body.messages[1].content[0].input_audio.data),f.jobId)).status).toBe(404);
  });
- it('unknown accepted call does not enter automatic retry queue or Gemini fallback',async()=>{const f=await fixture(),request=provider({error:true});vi.stubGlobal('fetch',request);expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'failed'});await runMediaJob(testEnv,f.jobId);expect(request).toHaveBeenCalledTimes(1);expect(await env.DB.prepare('SELECT status FROM media_calls WHERE job_id=?1').bind(f.jobId).first()).toEqual({status:'unknown'});expect(await env.DB.prepare('SELECT COUNT(*) n FROM ai_automatic_retries WHERE target_id=?1').bind(f.jobId).first()).toEqual({n:0});expect(await env.FILES.head(f.key)).toBeTruthy();});
- it('preserves partial result but does not publish it as ready',async()=>{const f=await fixture();vi.stubGlobal('fetch',provider({complete:false}));await runMediaJob(testEnv,f.jobId);expect((await getJob(env,f.jobId)).status).toBe('failed');const state=await env.DB.prepare('SELECT summary_json FROM media_processing WHERE job_id=?1').bind(f.jobId).first<{summary_json:string}>();expect(JSON.parse(state!.summary_json).complete).toBe(false);expect(await env.DB.prepare('SELECT pages_json FROM creation_draft_files WHERE id=?1').bind(f.fileId).first()).toEqual({pages_json:'[]'});});
+ it('unknown accepted call does not enter automatic retry queue or Gemini fallback',async()=>{const f=await fixture(),request=provider({error:true});vi.stubGlobal('fetch',request);await expect(runMediaJob(testEnv,f.jobId)).rejects.toMatchObject({details:{executionPause:true}});expect((await getJob(testEnv,f.jobId)).status).toBe('waiting_input');await runMediaJob(testEnv,f.jobId);expect(request).toHaveBeenCalledTimes(1);expect(await env.DB.prepare('SELECT status FROM media_calls WHERE job_id=?1').bind(f.jobId).first()).toEqual({status:'unknown'});expect(await env.DB.prepare('SELECT COUNT(*) n FROM ai_automatic_retries WHERE target_id=?1').bind(f.jobId).first()).toEqual({n:0});expect(await env.FILES.head(f.key)).toBeTruthy();});
+ it('replays an unknown MiMo step only after explicit consent and consumes the permission',async()=>{
+  const f=await fixture(),lost=provider({error:true});vi.stubGlobal('fetch',lost);await expect(runMediaJob(testEnv,f.jobId)).rejects.toMatchObject({details:{executionPause:true}});
+  const target={kind:'job' as const,id:f.jobId};await resumeExecution(env,target,1,'continue',{allowUncertainDispatch:true});await env.DB.prepare("UPDATE jobs SET status='running',input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('true')) WHERE id=?1").bind(f.jobId).run();
+  const request=provider();vi.stubGlobal('fetch',request);expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'succeeded'});expect(request).toHaveBeenCalledOnce();expect(await readExecution(env,target)).toMatchObject({totalCalls:2,state:'completed'});expect(JSON.parse((await getJob(env,f.jobId)).input_json).allowUncertainCheckpointRetry).toBe(false);
+ });
+ it('restores a saved MiMo response after Workflow interruption without another paid call',async()=>{
+  const f=await fixture(),target={kind:'job' as const,id:f.jobId};await f.insertState();await env.DB.prepare('UPDATE media_processing SET lease_token=NULL,lease_expires_at=NULL WHERE job_id=?1').bind(f.jobId).run();
+  await acquireExecutionCall(env,target);const key=`ai/media-responses/${await checkpointRootId(env,f.jobId)}/${await checkpointFingerprint([f.config.id,f.key,'audio/wav','mimo'])}.json`;
+  await saveResponseCheckpoint(env,key,{summary,promptTokens:100,completionTokens:20,cachedTokens:10,audioTokens:63,videoTokens:null});await markInterruptedExecution(env,target,1);
+  await resumeExecution(env,target,1,'continue',{allowUncertainDispatch:true});await env.DB.prepare("UPDATE jobs SET status='running',input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('true')) WHERE id=?1").bind(f.jobId).run();
+  const request=provider();vi.stubGlobal('fetch',request);expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'succeeded'});expect(request).not.toHaveBeenCalled();expect(await readExecution(env,target)).toMatchObject({totalCalls:1,state:'completed'});
+ });
+ it('preserves partial result but does not publish it as ready',async()=>{const f=await fixture();vi.stubGlobal('fetch',provider({complete:false}));await expect(runMediaJob(testEnv,f.jobId)).rejects.toMatchObject({details:{executionPause:true}});expect((await getJob(env,f.jobId)).status).toBe('waiting_input');const state=await env.DB.prepare('SELECT summary_json FROM media_processing WHERE job_id=?1').bind(f.jobId).first<{summary_json:string}>();expect(JSON.parse(state!.summary_json).complete).toBe(false);expect(await env.DB.prepare('SELECT pages_json FROM creation_draft_files WHERE id=?1').bind(f.fileId).first()).toEqual({pages_json:'[]'});});
+ it('replaces invalid MiMo coverage only with a newly validated user-window response',async()=>{
+  const f=await fixture();vi.stubGlobal('fetch',provider({complete:false}));await expect(runMediaJob(testEnv,f.jobId)).rejects.toMatchObject({details:{executionPause:true}});const target={kind:'job' as const,id:f.jobId};
+  await resumeExecution(env,target,1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(f.jobId).run();const request=provider();vi.stubGlobal('fetch',request);expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'succeeded'});expect(request).toHaveBeenCalledOnce();expect(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[0].content).toContain('上次输出未通过校验');expect(await readExecution(env,target)).toMatchObject({totalCalls:2,state:'completed'});
+ });
  it('cancellation after model call preserves call records without publishing',async()=>{const f=await fixture();vi.stubGlobal('fetch',provider({after:async()=>{await env.DB.prepare("UPDATE jobs SET status='cancelled' WHERE id=?1").bind(f.jobId).run();}}));await runMediaJob(testEnv,f.jobId);expect((await getJob(env,f.jobId)).status).toBe('cancelled');expect(await env.DB.prepare('SELECT pages_json FROM creation_draft_files WHERE id=?1').bind(f.fileId).first()).toEqual({pages_json:'[]'});expect(await env.DB.prepare('SELECT status FROM media_calls WHERE job_id=?1').bind(f.jobId).first()).toEqual({status:'ok'});});
  it('busy lease does not issue another request',async()=>{const f=await fixture();await f.insertState();const request=provider();vi.stubGlobal('fetch',request);expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'busy'});expect(request).not.toHaveBeenCalled();});
  it('a stale paid-call owner cannot fail a task owned by a newer lease',async()=>{const f=await fixture();vi.stubGlobal('fetch',provider({after:async()=>{await env.DB.prepare("UPDATE media_processing SET lease_token='new-owner' WHERE job_id=?1").bind(f.jobId).run();}}));expect(await runMediaJob(testEnv,f.jobId)).toEqual({status:'busy'});expect((await getJob(env,f.jobId)).status).toBe('running');expect(await env.DB.prepare('SELECT stage,lease_token FROM media_processing WHERE job_id=?1').bind(f.jobId).first()).toEqual({stage:'generating',lease_token:'new-owner'});expect(await env.DB.prepare('SELECT pages_json FROM creation_draft_files WHERE id=?1').bind(f.fileId).first()).toEqual({pages_json:'[]'});});

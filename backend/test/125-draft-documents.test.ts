@@ -6,6 +6,15 @@ import {beginDraftUpload,uploadDraftPart,completeDraftUpload,importDraftBlocks,f
 import {getDraft,commitDraft,previewDraft,uploadDraftFile} from '../src/services/creation-drafts';
 async function fixture(){const owner=await seedUser(),id=newId(),time=nowIso();await env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(id,owner.userId,JSON.stringify({name:'分块项目',description:'',brief:'',teamSize:1,inviteLabels:[],inviteUsernames:[],aiCollaborationEnabled:false}),newId(),time).run();return {id,userId:owner.userId,fileId:newId()};}
 describe('draft streamed original and client text import',()=>{
+ it('reads all 29 short DOCX-style blocks in one batch and repairs only unique exact citations',async()=>{
+  const f=await fixture();await uploadDraftFile(env,f.id,f.userId,1,f.fileId,'资料.txt',new TextEncoder().encode('original'));
+  for(let seq=0;seq<29;seq++)await importDraftBlocks(env,f.id,f.userId,f.fileId,2,[{seq,pageNumber:null,text:`第${seq}块独有原文；共同句子`}]);
+  const read=await readDraftDocument(env,f.id,f.userId,f.fileId,0);expect(read.blocks).toHaveLength(29);expect(read.nextOffset).toBeNull();expect(read.blocks[28]).toMatchObject({seq:28,locator:'block:28',pageNumber:null});
+  const task={title:'核对',detail:'材料',criteria:'原文相符',effortHours:1,dependsOn:[],citations:[{fileId:f.fileId,pageNumber:null,quote:'第28块独有原文'}]};
+  const ready=await previewDraft(env,f.id,f.userId,2,'manual',[task],true);expect(ready.preview!.tasks[0]!.citations[0]!.locator).toBe('block:28');
+  await expect(previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{fileId:f.fileId,pageNumber:null,quote:'共同句子'}]}],true)).rejects.toThrow('无法唯一匹配');
+  await expect(previewDraft(env,f.id,f.userId,2,'manual',[{...task,citations:[{fileId:f.fileId,pageNumber:null,quote:'伪造引用'}]}],true)).rejects.toThrow('原文不符');
+ });
  it('checks actual part length and excludes complete/cancel while a part is in flight',async()=>{
   const f=await fixture(),bytes=new Uint8Array(10);await beginDraftUpload(env,f.id,f.userId,f.fileId,'资料.txt',10,1);
   await expect(uploadDraftPart(env,f.id,f.userId,f.fileId,1,new Response(new Uint8Array(9)).body,10)).rejects.toThrow();
