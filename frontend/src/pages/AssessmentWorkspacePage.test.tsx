@@ -175,7 +175,7 @@ it('keeps a retry response attached to its originating record after selection ch
   showRecords([failed,saved],'/assessment?section=checks&assessmentId=failed');
   fireEvent.click(await screen.findByRole('button',{name:'从停止处继续'}));
   await waitFor(()=>expect(writes).toEqual(['/api/v1/jobs/failed-job/retry']));
-  fireEvent.click(screen.getAllByRole('button',{name:/材料检查 ·/})[1]!);
+  fireEvent.click(screen.getAllByRole('button',{name:/材料检查 ·/}).find(button => !button.classList.contains('active'))!);
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   releaseRetry!(Response.json({data:{jobId:'retried-job'}}));
   await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
@@ -198,4 +198,28 @@ it('creates scoring using the server effective standard without a standard selec
   expect(writes[0]).toMatchObject({kind:'material_review', goalRevision:1});
   expect(writes[0]).not.toHaveProperty('standardsVersionId');
   expect(writes[0]).not.toHaveProperty('rubricVersionId');
+});
+
+it('places running AI activity below initiation settings beside history', async () => {
+  const running = record('running', 'material_review', 'running', { jobId: 'running-job', report: null });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { jobId: 'running-job', status: 'running', activity: { code: 'repairing', updatedAt: null, lastResponseAt: null, progress: null, canResume: false, uncertain: false } } })));
+  showRecords([running], '/assessment?section=checks&assessmentId=running');
+  const activity = await screen.findByRole('region', { name: 'AI 处理状态' });
+  const column = activity.closest('.assessment-initiation-column')!;
+  expect(column).toContainElement(screen.getByRole('heading', { name: '发起成果检查' }));
+  expect(column).not.toContainElement(screen.getByRole('heading', { name: '独立评分记录' }));
+  expect(screen.getByRole('button', { name: '开始本轮材料检查' }).compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getAllByRole('region', { name: 'AI 处理状态' })).toHaveLength(1);
+  expect(screen.getByText('正在核对并修正结果', { selector: 'strong' })).toBeInTheDocument();
+});
+it('keeps completed AI activity in the left column and orders history by newest date with stable ties', async () => {
+  const saved = record('new-z', 'material_review', 'succeeded', { jobId: 'saved-job', createdAt: '2026-10-07T01:00:00Z' });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { jobId: 'saved-job', status: 'succeeded' } })));
+  showRecords([record('old', 'material_review', 'succeeded', { createdAt: '2026-10-01T01:00:00Z' }), record('new-a', 'material_review', 'succeeded', { createdAt: saved.createdAt }), saved], '/assessment?section=checks&assessmentId=new-z');
+  const activity = await screen.findByRole('region', { name: 'AI 处理状态' });
+  expect(activity.closest('.assessment-initiation-column')).toBeTruthy();
+  expect(screen.getAllByRole('region', { name: 'AI 处理状态' })).toHaveLength(1);
+  const rows = screen.getAllByRole('button', { name: /材料检查 ·/ });
+  expect(rows[0]).toHaveClass('active');
+  expect(rows[2]?.textContent).toContain('2026/10/1');
 });

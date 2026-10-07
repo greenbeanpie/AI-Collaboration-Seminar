@@ -60,7 +60,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   const supplement = (path: string) => `${path}${path.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(returnTo)}`;
 
   const [pending, setPending] = useState<PendingAssessment | null>(() => readPendingJob<PendingAssessment>(pendingKey(projectId, session.data?.id ?? 'anonymous')));
-  const rows = (history.data ?? []).filter(item => item.kind === kind);
+  const rows = (history.data ?? []).filter(item => item.kind === kind).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.assessmentId.localeCompare(a.assessmentId));
   const linkedRecord = (history.data ?? []).find(item => item.assessmentId === linkedId || item.rehearsalId === linkedId);
   const newlyCreatedId = pending?.kind === kind && pending.action === 'create' && pending.entityId === linkedId ? pending.entityId : '';
   const selectedId = linkedRecord?.kind === kind ? linkedRecord.assessmentId : newlyCreatedId || (!linkedRecord && linkedId && !history.isLoading ? linkedId : '') || rows[0]?.assessmentId || '';
@@ -114,6 +114,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
   return <div className="page-stack">
     {!aiEnabled && <p className="notice notice-warn">AI 当前不可用，可以继续维护标准、人工评分及修正历史结果。</p>}
     <div className="assessment-layout">
+      <div className="assessment-initiation-column">
       <SectionCard title={kind === 'rehearsal' ? '发起答辩演练评分' : '发起成果检查'} detail="依据项目标准核验成果，与自由审阅区分。固定主目标与标准；所选文件优先参考，系统发现并冻结实际成果版本。答辩评分依据本轮真实回答。">
         {[goal, standards].filter(query => query.error).map((query, index) => <ErrorNotice key={index} error={query.error} onRetry={() => void query.refetch()} />)}
         {goal.isLoading || standards.isLoading ? <Spinner label="读取目标与评分标准" /> : <form className="stack" onSubmit={event => { event.preventDefault(); if(canInitiate)create.mutate(); }}>
@@ -125,6 +126,10 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
           <button className="button button-primary" disabled={!canInitiate || !aiEnabled || !goal.data?.title.trim() || !currentStandard || create.isPending}><Play size={16} />{create.isPending ? '正在创建本轮评分' : kind === 'rehearsal' ? '开始本轮答辩演练' : '开始本轮材料检查'}</button>
         </form>}
       </SectionCard>
+    {create.isPending && !activePending && <AiActivityStatus submitting />}
+    {activePending && <div className="notice"><AiActivityStatus job={job.job} jobId={activeJobId ?? undefined} submitting={create.isPending} loading={job.loading} readError={job.error} onRefresh={() => job.refresh()} onResume={canRetry && aiEnabled ? async () => { await retry.mutateAsync(); } : undefined} resuming={retry.isPending} />{canRetry && <><p>评分未完成，服务端失败状态与已有证据已保留。</p></>}{job.job?.status === 'failed' && <ErrorNotice error={job.job.error ?? new Error('评分任务失败。')} />}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
+    {assessment && !activePending && <JobAiActivity projectId={projectId} jobId={assessment.jobId} canResume={false} />}
+      </div>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">
         {history.isLoading && <Spinner label="读取评分历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
         <VirtualList label="评分历史" className="assessment-history" items={rows} getKey={row => row.assessmentId} renderItem={row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{assessmentStatusLabel(row)}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>} />
@@ -134,11 +139,9 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </SectionCard>
     </div>
 
-    {create.isPending && !activePending && <AiActivityStatus submitting />}
-    {activePending && <div className="notice"><AiActivityStatus job={job.job} jobId={activeJobId ?? undefined} submitting={create.isPending} loading={job.loading} readError={job.error} onRefresh={() => job.refresh()} onResume={canRetry && aiEnabled ? async () => { await retry.mutateAsync(); } : undefined} resuming={retry.isPending} />{canRetry && <><p>评分未完成，服务端失败状态与已有证据已保留。</p></>}{job.job?.status === 'failed' && <ErrorNotice error={job.job.error ?? new Error('评分任务失败。')} />}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
     {selectedId && <SectionCard aiReference title="本轮评分与证据" detail="总分由服务端按本轮固定权重计算；证据不足时显示反馈与无法评分的原因。" action={<button className="button button-quiet button-small" onClick={() => void selected.refetch()}><RefreshCw size={14} />刷新结果</button>}>
       {selected.isLoading && <Spinner label="读取本轮评分" />}{selected.error && <ErrorNotice error={selected.error} onRetry={() => void selected.refetch()} />}
-      {assessment && <>{!activePending && <JobAiActivity projectId={projectId} jobId={assessment.jobId} canResume={false} />}<div className="callout">{assessment.historical ? <strong>历史反馈：本记录未绑定新版主目标与统一标准，不补造新版评分。</strong> : <><strong>{assessment.goal?.title} <AiReferenceBadge ariaHidden /></strong><p>{assessment.goal?.detail} <AiReferenceBadge /></p><small>目标 r{assessment.goalRevision} · 标准 v{assessment.standardsVersion} · 固定文档版本 {assessment.materialVersionIds.join('、')}</small></>}</div>
+      {assessment && <><div className="callout">{assessment.historical ? <strong>历史反馈：本记录未绑定新版主目标与统一标准，不补造新版评分。</strong> : <><strong>{assessment.goal?.title} <AiReferenceBadge ariaHidden /></strong><p>{assessment.goal?.detail} <AiReferenceBadge /></p><small>目标 r{assessment.goalRevision} · 标准 v{assessment.standardsVersion} · 固定文档版本 {assessment.materialVersionIds.join('、')}</small></>}</div>
         {assessment.jobError && <p className="notice notice-warn">{assessment.status === 'succeeded' ? '本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。' : assessment.jobError}</p>}
         {assessment.rehearsalId && <RehearsalsPage key={assessment.rehearsalId} embedded rehearsalId={assessment.rehearsalId} />}
         {isScoringReport(assessment.report) ? <AssessmentReportView report={assessment.report} /> : assessment.report ? <div className="assessment-historical-feedback"><h3>历史文字反馈 <AiReferenceBadge ariaHidden /></h3><pre>{JSON.stringify(assessment.report, null, 2)}</pre></div> : <p className="muted">{assessment.historical ? '原有文字反馈保留在问答记录中。' : assessment.kind === 'rehearsal' ? '完成真实回答并结束本轮演练后，将依据冻结问答生成评分。' : '本轮评分尚未返回结果。'}</p>}

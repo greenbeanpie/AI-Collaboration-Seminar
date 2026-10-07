@@ -12,6 +12,9 @@ type Props = {
   onResume?: () => void | Promise<void>; resuming?: boolean; executionEnabled?: boolean; showHistory?: boolean;
 };
 const statuses: Record<ActivityJob['status'], string> = { queued: '排队中', running: 'AI 处理中', waiting_input: '等待补充信息', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
+function mergeEvents(previous: AiActivityEvent[], incoming: AiActivityEvent[]) {
+  return [...new Map([...previous, ...incoming].map(event => [event.id, event])).values()].sort((a, b) => b.id - a.id);
+}
 const eventStates = { started: '开始', completed: '完成', failed: '失败', resumed: '继续执行' };
 
 export function AiActivityStatus({ job, execution: suppliedExecution, activity: suppliedActivity, status: suppliedStatus, jobId: suppliedId, eventsPath, submitting = false, loading = false, readError, onRefresh, onResume, resuming = false, executionEnabled = true, showHistory = true }: Props) {
@@ -31,7 +34,7 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
     if (!open || !jobId || (history.jobId === jobId && history.loaded)) return;
     const controller = new AbortController();
     setHistoryLoading(true); setHistoryError(null);
-    void readActivityEvents(jobId, undefined, controller.signal, eventsPath).then(page => { if (controller.signal.aborted) return; setHistoryLoading(false); setHistory({ jobId, items: page.items, cursor: page.nextCursor, loaded: true }); }).catch(error => {
+    void readActivityEvents(jobId, undefined, controller.signal, eventsPath, 'desc').then(page => { if (controller.signal.aborted) return; setHistoryLoading(false); setHistory({ jobId, items: mergeEvents([], page.items), cursor: page.nextCursor, loaded: true }); }).catch(error => {
       if (!controller.signal.aborted) setHistoryError(error);
     }).finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
@@ -40,16 +43,24 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => {
     const history = historyRef.current;
-    if (!open || !jobId || history.jobId !== jobId || !history.loaded || history.cursor !== null || !activity?.updatedAt) return;
+    if (!open || !jobId || history.jobId !== jobId || !history.loaded || !activity?.updatedAt) return;
     const controller = new AbortController();
-    const cursor = history.items.at(-1)?.id;
-    void readActivityEvents(jobId, cursor, controller.signal, eventsPath).then(page => {
-      if (controller.signal.aborted || !page.items.length) return;
-      setHistory(current => current.jobId !== jobId ? current : { ...current, items: [...current.items, ...page.items.filter(item => !current.items.some(previous => previous.id === item.id))], cursor: page.nextCursor });
-    }).catch(error => { if (!controller.signal.aborted) setHistoryError(error); });
+    // Read all new ascending pages before merging; the older-page cursor stays independent.
+    void (async () => {
+      let cursor = history.items[0]?.id;
+      do {
+        const page = await readActivityEvents(jobId, cursor, controller.signal, eventsPath);
+        if (controller.signal.aborted) return;
+        if (page.items.length) setHistory(current => current.jobId !== jobId ? current : { ...current, items: mergeEvents(current.items, page.items) });
+        if (page.nextCursor === null || page.nextCursor === cursor) break;
+        cursor = page.nextCursor;
+      } while (!controller.signal.aborted);
+    })().catch(error => { if (!controller.signal.aborted) setHistoryError(error); });
     return () => controller.abort();
-  }, [open, jobId, activity?.updatedAt, eventsPath]);
+  }, [open, jobId, activity?.updatedAt, eventsPath, history.jobId, history.loaded]);
   if (!job && !activity && !status && !submitting && !loading && !readError) return null;
+  const repairExhausted = status === 'failed' && job?.error !== null && typeof job?.error === 'object' && 'code' in job.error && job.error.code === 'AI_OUTPUT_INVALID';
+  const failureMessage = errorMessage(job?.error, 'AI 执行失败。');
   const executing = status === 'running' && execution?.state !== 'paused' && !readError;
   const progress = activity?.progress;
   const result = job?.result as { partial?: boolean; complete?: boolean; summary?: string; caveats?: string[]; fragments?: Array<{ id: string; page_number: number | null; content: string }> } | null;
@@ -65,20 +76,20 @@ export function AiActivityStatus({ job, execution: suppliedExecution, activity: 
     if (!jobId || historyLoading) return;
     setHistoryLoading(true); setHistoryError(null);
     try {
-      const page = await readActivityEvents(jobId, currentHistory.cursor ?? undefined, undefined, eventsPath);
-      setHistory(current => ({ jobId, items: [...(current.jobId === jobId && current.loaded ? current.items : []), ...page.items], cursor: page.nextCursor, loaded: true }));
+      const page = await readActivityEvents(jobId, currentHistory.cursor ?? undefined, undefined, eventsPath, 'desc');
+      setHistory(current => ({ jobId, items: mergeEvents(current.jobId === jobId && current.loaded ? current.items : [], page.items), cursor: page.nextCursor, loaded: true }));
     } catch (error) { setHistoryError(error); } finally { setHistoryLoading(false); }
   };
   return <section className="ai-activity" aria-label="AI 处理状态">
     <div className="ai-activity-current" role="status" aria-live="polite" aria-atomic="true">
       <span className={`ai-activity-indicator${executing ? ' is-running' : ''}`} aria-hidden="true" />
-      <div><strong>{resuming || resumePending ? '等待续跑' : execution?.state === 'paused' ? '已暂停' : activity?.code === 'waiting_retry' ? '等待重试' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
+      <div><strong>{resuming || resumePending ? '等待续跑' : execution?.state === 'paused' ? '已暂停' : activity?.code === 'waiting_retry' ? '等待重试' : activity?.code === 'repairing' && status === 'running' ? '正在核对并修正结果' : repairExhausted ? '自动修正未完成' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
         <p>当前操作：{execution?.state === 'paused' ? '等待选择继续处理或输出当前结果' : submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
         <p>AI 最后一次回复时间：<time dateTime={activity?.lastResponseAt ?? undefined}>{activityTime(activity?.lastResponseAt)}</time></p>
       </div>
     </div>
     {Boolean(readError) && <div><p>读取状态失败，保留最近一次已知状态。</p><ErrorNotice error={readError} onRetry={onRefresh} /></div>}
-    {status === 'failed' && <div><p className="ai-activity-failure">{errorMessage(job?.error, 'AI 执行失败。')}</p>{activity?.uncertain && <p>上次请求结果不明，继续时将重新请求未完成步骤，可能再次计费。</p>}{activity?.canResume && onResume && executionOf(job)?.state !== 'paused' ? <>{activity.resumeReason && !activity.uncertain && <p>{activity.resumeReason}</p>}<button className="button button-quiet button-small" disabled={resuming || resumePending} onClick={() => void resume()}>{resuming || resumePending ? '正在续跑' : '从停止处继续'}</button></> : <p>{activity?.resumeReason ?? '此任务暂不可续跑，请重新发起。'}</p>}</div>}
+    {status === 'failed' && <div><p className="ai-activity-failure">{repairExhausted && !failureMessage.startsWith('自动修正未完成') ? `自动修正未完成：${failureMessage}` : failureMessage}</p>{activity?.uncertain && <p>上次请求结果不明，继续时将重新请求未完成步骤，可能再次计费。</p>}{activity?.canResume && onResume && executionOf(job)?.state !== 'paused' ? <>{activity.resumeReason && !activity.uncertain && <p>{activity.resumeReason}</p>}<button className="button button-quiet button-small" disabled={resuming || resumePending} onClick={() => void resume()}>{resuming || resumePending ? '正在续跑' : '从停止处继续'}</button></> : <p>{activity?.resumeReason ?? '此任务暂不可续跑，请重新发起。'}</p>}</div>}
     {job && jobId && <ExecutionControlPanel execution={executionOf(job)} enabled={executionEnabled} path={`/api/v1/jobs/${encodeURIComponent(jobId)}`} onUpdated={() => { onRefresh?.(); window.dispatchEvent(new Event('ai-job-refresh')); }} />}
     {status === 'succeeded' && partial && <section aria-label="部分 AI 结果"><p role="status">已输出当前部分结果；尚未处理的范围仍未完成，不能视为全文处理成功。</p>{result.caveats?.filter(value => typeof value === 'string').map((value, index) => <p key={index}>{value}</p>)}{typeof result.summary === 'string' && result.summary && <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{result.summary}</pre>}{Array.isArray(result.fragments) && <details><summary>已识别的正文片段</summary>{result.fragments.map(fragment => <div key={fragment.id}>{fragment.page_number !== null && <p>第 {fragment.page_number} 页</p>}<pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{fragment.content}</pre></div>)}</details>}</section>}
     {Boolean(resumeError) && <ErrorNotice error={resumeError} />}
