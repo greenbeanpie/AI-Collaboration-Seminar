@@ -191,6 +191,9 @@ if (!capabilities.features.aiEnabled) {
   for (let attempt = 0; attempt < 80; attempt++) {
     await recoverLocalJobs(attempt);
     job = await call(owner, `/jobs/${pending.jobId}`);
+    assert(job.activity && typeof job.activity.code === 'string');
+    assert.equal(job.activity.lastResponseAt, null, 'Disabled AI has no invented model reply time');
+    assert(typeof job.updatedAt === 'string');
     if (['failed', 'succeeded', 'cancelled'].includes(job.status) || job.error?.code === 'AI_UNAVAILABLE') break;
     await new Promise(resolve => setTimeout(resolve, 250));
   }

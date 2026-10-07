@@ -24,6 +24,7 @@ export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string
       AND kind IN ('agent_run','review_run','rehearsal_turn','assignment_suggest','requirement_extract','parse_source','ocr_pages')
       AND COALESCE(json_extract(input_json,'$.mediaProvider'),'')!='mimo'
       AND NOT EXISTS(SELECT 1 FROM media_processing WHERE job_id=jobs.id AND provider='mimo')
+      AND NOT EXISTS(SELECT 1 FROM ai_task_activities WHERE target_id=jobs.id AND uncertain=1)
     ON CONFLICT(id) DO UPDATE SET target_id=excluded.target_id,
       status=CASE WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,
       next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,lease_token=NULL,lease_until=NULL,updated_at=excluded.updated_at

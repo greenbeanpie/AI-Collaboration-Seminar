@@ -39,6 +39,7 @@ const rehearsalSchema = z.object({
   memberId: z.string().uuid().nullable(),
   status: z.enum(['active', 'finished']),
   initiatorId:z.string().uuid(), respondentId:z.string().uuid(), canOperate:z.boolean(),
+  aiJobId:z.string().uuid().nullable().optional(),
   processingJobId:z.string().uuid().nullable(), processingStatus:z.string().nullable(),
   turns: z.array(turnSchema),
   createdAt: z.string(),
@@ -118,6 +119,7 @@ interface RehearsalRow {
   created_at: string;
   finished_at: string | null;
   finish_job_id:string|null;
+  ai_job_id?:string|null;
   created_by:string; processing_job_id:string|null; processing_status:string|null;
 }
 
@@ -131,6 +133,7 @@ interface TurnRow {
 
 function toRehearsal(r: RehearsalRow, turns: TurnRow[], userId:string) {
   return {
+    aiJobId:r.ai_job_id??r.processing_job_id,
     rehearsalId:r.id, initiatorId:r.created_by, respondentId:r.created_by, canOperate:r.created_by===userId, processingJobId:r.processing_job_id, processingStatus:r.processing_status??null,
     scope: r.scope,
     memberId: r.member_id,
@@ -153,7 +156,7 @@ function toRehearsal(r: RehearsalRow, turns: TurnRow[], userId:string) {
 }
 
 async function loadRehearsal(env: AppEnv['Bindings'], rehearsalId: string, projectId: string): Promise<RehearsalRow> {
-  const row = await env.DB.prepare('SELECT r.*, j.status AS processing_status FROM rehearsals r LEFT JOIN jobs j ON j.id=r.processing_job_id WHERE r.id = ?1 AND r.project_id = ?2')
+  const row = await env.DB.prepare(`SELECT r.*, (SELECT id FROM jobs WHERE project_id=r.project_id AND json_extract(input_json,'$.rehearsalId')=r.id ORDER BY created_at DESC,id DESC LIMIT 1) AS ai_job_id, j.status AS processing_status FROM rehearsals r LEFT JOIN jobs j ON j.id=r.processing_job_id WHERE r.id = ?1 AND r.project_id = ?2`)
     .bind(rehearsalId, projectId)
     .first<RehearsalRow>();
   if (!row) throw notFound('答辩演练不存在');
@@ -240,7 +243,7 @@ export function registerRehearsalRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(listRoute, async (c) => {
     const { projectId } = c.req.valid('param');
     const paging = parsePaging(c.req.valid('query'));
-    const rows = await c.env.DB.prepare(`SELECT r.*, (SELECT status FROM jobs WHERE id=r.processing_job_id) AS processing_status FROM rehearsals r WHERE project_id = ?1 AND (?5='' OR instr(lower(r.status),lower(?5))>0) AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4`)
+    const rows = await c.env.DB.prepare(`SELECT r.*, (SELECT id FROM jobs WHERE project_id=r.project_id AND json_extract(input_json,'$.rehearsalId')=r.id ORDER BY created_at DESC,id DESC LIMIT 1) AS ai_job_id, (SELECT status FROM jobs WHERE id=r.processing_job_id) AS processing_status FROM rehearsals r WHERE project_id = ?1 AND (?5='' OR instr(lower(r.status),lower(?5))>0) AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) ORDER BY created_at DESC, id DESC LIMIT ?4`)
       .bind(projectId, paging.cursor?.createdAt ?? null, paging.cursor?.id ?? null, paging.limit + 1,c.req.valid('query').q??'').all<RehearsalRow>();
     const page = rows.results.slice(0, paging.limit);
     const items = page.map(r => { const { turns: _turns, ...metadata }=toRehearsal(r, [], c.get('user')!.id); return metadata; });

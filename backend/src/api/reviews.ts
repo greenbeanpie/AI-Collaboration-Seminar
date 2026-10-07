@@ -47,6 +47,7 @@ const reviewSchema = z.object({
   materialVersionIds: z.array(z.string().uuid()),
   status: z.enum(['pending', 'running', 'succeeded', 'failed']),
   report: z.unknown().nullable(),
+  jobId:z.string().uuid().nullable(),
   createdAt: z.string(),
 });
 const reviewResponse = apiEnvelope(reviewSchema, 'ReviewResponse');
@@ -91,12 +92,14 @@ interface ReviewRow {
   material_version_ids_json: string;
   status: string;
   report_json: string | null;
+  job_id: string | null;
   created_at: string;
 }
 
 function toReview(r: ReviewRow) {
   return {
     reviewId: r.id,
+    jobId:r.job_id,
     requirementSetId: r.requirement_set_id,
     rubricVersionId: r.rubric_version_id,
     materialVersionIds: JSON.parse(r.material_version_ids_json) as string[],

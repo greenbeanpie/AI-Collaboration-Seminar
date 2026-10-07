@@ -43,7 +43,7 @@ export function TaskAssistancePlan({ projectId, task }: { projectId: string; tas
     {data?.plan && <><AiReferenceBadge /><div className="task-assistance-plan">{data.plan.markdown}</div><small>生成于 {new Date(data.plan.generatedAt).toLocaleString()}</small></>}
     {stale && <p role="status">任务或项目资料已变化，当前计划需要更新。</p>}
     <JobAiActivity projectId={projectId} jobId={data?.jobId} submitting={generate.isPending} onSettled={() => void query.refetch()} canResume={data?.taskRevision === task.revision && data?.status !== 'disabled'} />
-    {data?.error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{data.error}</p>}
+    {data?.error && !data.jobId && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{data.error}</p>}
     {generate.error && <ErrorNotice error={generate.error} />}
     {data?.status === 'disabled' && <p role="status">AI 已禁用，暂不能生成计划。</p>}
     {data && !query.error && !(data.status === 'failed' && data.jobId) && <button className="button button-primary" disabled={pending || data.status === 'disabled' || query.isFetching || data.taskRevision !== task.revision} onClick={() => {

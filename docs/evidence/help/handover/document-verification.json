@@ -1,8 +1,8 @@
 {
   "scope": "read-only source and in-memory SQLite checks",
-  "sourcePathsChecked": 77,
-  "tableCount": 79,
-  "columnCount": 742,
+  "sourcePathsChecked": 80,
+  "tableCount": 121,
+  "columnCount": 1087,
   "ddlAndMetadataMatch": true,
   "integrityCheck": "ok",
   "foreignKeyCheck": [],
@@ -15,7 +15,7 @@
     {
       "name": "0002_seed.sql",
       "status": "skipped",
-      "sha256": "d5349f20723e8cbd2ddaed0315b3c8f9814302dd0d3561408ba5490eb2bbeffd"
+      "sha256": "af781458894c0ae328450364c5b9600cf8b35c527a10f27d790a3afabf2f14f1"
     },
     {
       "name": "0003_contributions_correction.sql",
@@ -226,6 +226,91 @@
       "name": "0044_saved_standard_activation.sql",
       "status": "applied",
       "sha256": "8f3f6325b9fcd8345b0a36ff5a3cf4b5da7f5ade90072f578bd051d2b2d52b7d"
+    },
+    {
+      "name": "0045_task_agent_eligibility.sql",
+      "status": "applied",
+      "sha256": "35fa357e618c4d8e5fc024243d100ebd2f815dd72ca5c3019684453e1bf817e4"
+    },
+    {
+      "name": "0046_system_background.sql",
+      "status": "applied",
+      "sha256": "d8b6b78f0f89ab00b1605611f3159adb014a6bde998d5351e0c151a578568506"
+    },
+    {
+      "name": "0047_media_summaries.sql",
+      "status": "applied",
+      "sha256": "e130c88590a939ec78d2bf3727ca00882e21d2c7657687d181bb658d9b6c11e2"
+    },
+    {
+      "name": "0048_document_imports.sql",
+      "status": "applied",
+      "sha256": "2bb24989c10c0ad76e1d806766a246aa84957de37a96a904205cee0e83a92131"
+    },
+    {
+      "name": "0049_ocr_batches.sql",
+      "status": "applied",
+      "sha256": "f7ced3c8352d3c49dc975f1d85c35475802e3a6512118eacc2f1e6e984971a4e"
+    },
+    {
+      "name": "0050_resource_index.sql",
+      "status": "applied",
+      "sha256": "2682a4321a9ea9a8ee61e9d5605c954a088bc6f0e755dc325725d7f221fc2c56"
+    },
+    {
+      "name": "0051_draft_document_imports.sql",
+      "status": "applied",
+      "sha256": "8704fc64c795d597b10fcc01b54046a69e28ce24f4060f9d1959d8dec52c14c6"
+    },
+    {
+      "name": "0052_whisper_audio_pipeline.sql",
+      "status": "applied",
+      "sha256": "eec2bb3cad219518e6a828db00d967b48519412be948989b90fe8b64987a95e6"
+    },
+    {
+      "name": "0053_agent_bridges.sql",
+      "status": "applied",
+      "sha256": "1cf08d015301adb7eecc6b03a292fa1bcccbdc69136fe6f8bef3f2d2298ddf25"
+    },
+    {
+      "name": "0054_task_assistance.sql",
+      "status": "applied",
+      "sha256": "b724a2d52e958a25bca7de394dfaf6afae6773ed98d0d3122aacd487c15136bf"
+    },
+    {
+      "name": "0055_task_files_archive.sql",
+      "status": "applied",
+      "sha256": "59176e4f460733b1668842df6b1ad0e7ab0148b1384e575e44be8e57b202bb01"
+    },
+    {
+      "name": "0056_admin_ai_retries.sql",
+      "status": "applied",
+      "sha256": "fd6ad60bd028ba7278371b608f37d24a0dc58059321878f2268508124dba4112"
+    },
+    {
+      "name": "0057_ai_automatic_retries.sql",
+      "status": "applied",
+      "sha256": "1476e40e66eedd2d354a5aa37c9544d3539eea086b1f81888b3183e6e82955f4"
+    },
+    {
+      "name": "0058_rehearsal_voice.sql",
+      "status": "applied",
+      "sha256": "7ce86df78dd9fa215111a7b3d4a5846aa661acdb6a34486c44be895774f4dc35"
+    },
+    {
+      "name": "0059_rehearsal_speech.sql",
+      "status": "applied",
+      "sha256": "d5ee78e9223c627ac3cbfc9318563260f4e9eee614bc005af5bb6d1c9782b630"
+    },
+    {
+      "name": "0060_mimo_media.sql",
+      "status": "applied",
+      "sha256": "2d032e23d61b72f616d71e5898df62bfd1719dc47194ae8ab89bbbb19b42083d"
+    },
+    {
+      "name": "0061_ai_activity.sql",
+      "status": "applied",
+      "sha256": "6693f4b7ffe382f5148f30ec057498235610801c9156acd61fb859f026231be7"
     }
   ],
   "tables": [
@@ -237,6 +322,46 @@
     {
       "table": "account_role_audit",
       "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "admin_ai_retry_batches",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "admin_ai_retry_items",
+      "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "admin_ai_retry_links",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_bridge_artifacts",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_bridge_devices",
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_bridge_events",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_bridge_handoffs",
+      "columns": 24,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "agent_bridge_scopes",
+      "columns": 3,
       "ddlMatchesMigrations": true
     },
     {
@@ -252,6 +377,16 @@
     {
       "table": "agent_turns",
       "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_activity_events",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ai_automatic_retries",
+      "columns": 12,
       "ddlMatchesMigrations": true
     },
     {
@@ -290,6 +425,11 @@
       "ddlMatchesMigrations": true
     },
     {
+      "table": "ai_task_activities",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
       "table": "ai_tool_calls",
       "columns": 9,
       "ddlMatchesMigrations": true
@@ -307,6 +447,16 @@
     {
       "table": "assessments",
       "columns": 15,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "audio_pipeline",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "audio_pipeline_calls",
+      "columns": 6,
       "ddlMatchesMigrations": true
     },
     {
@@ -360,6 +510,46 @@
       "ddlMatchesMigrations": true
     },
     {
+      "table": "document_parse_batches",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "document_parse_pages",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "document_parse_sessions",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "draft_document_blocks",
+      "columns": 7,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "draft_document_imports",
+      "columns": 6,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "draft_document_part_leases",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "draft_document_parts",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "draft_document_uploads",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
       "table": "draft_preview_dispatches",
       "columns": 8,
       "ddlMatchesMigrations": true
@@ -375,8 +565,23 @@
       "ddlMatchesMigrations": true
     },
     {
+      "table": "file_upload_part_leases",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "file_upload_parts",
+      "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "file_upload_sessions",
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
       "table": "files",
-      "columns": 18,
+      "columns": 19,
       "ddlMatchesMigrations": true
     },
     {
@@ -406,7 +611,17 @@
     },
     {
       "table": "materials",
-      "columns": 11,
+      "columns": 14,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "media_calls",
+      "columns": 16,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "media_processing",
+      "columns": 18,
       "ddlMatchesMigrations": true
     },
     {
@@ -427,6 +642,11 @@
     {
       "table": "notification_settings",
       "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "ocr_model_capabilities",
+      "columns": 3,
       "ddlMatchesMigrations": true
     },
     {
@@ -490,8 +710,18 @@
       "ddlMatchesMigrations": true
     },
     {
+      "table": "rehearsal_speech",
+      "columns": 21,
+      "ddlMatchesMigrations": true
+    },
+    {
       "table": "rehearsal_turns",
       "columns": 9,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "rehearsal_voice_sessions",
+      "columns": 23,
       "ddlMatchesMigrations": true
     },
     {
@@ -507,6 +737,46 @@
     {
       "table": "requirements",
       "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_blocks",
+      "columns": 12,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts_config",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts_content",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts_data",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts_docsize",
+      "columns": 2,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_fts_idx",
+      "columns": 3,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "resource_index_state",
+      "columns": 9,
       "ddlMatchesMigrations": true
     },
     {
@@ -526,7 +796,12 @@
     },
     {
       "table": "source_fragments",
-      "columns": 8,
+      "columns": 10,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "source_ocr_batches",
+      "columns": 13,
       "ddlMatchesMigrations": true
     },
     {
@@ -541,7 +816,7 @@
     },
     {
       "table": "source_versions",
-      "columns": 14,
+      "columns": 17,
       "ddlMatchesMigrations": true
     },
     {
@@ -570,6 +845,21 @@
       "ddlMatchesMigrations": true
     },
     {
+      "table": "task_agent_auto_checks",
+      "columns": 5,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_agent_eligibility",
+      "columns": 8,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_assistance_plans",
+      "columns": 11,
+      "ddlMatchesMigrations": true
+    },
+    {
       "table": "task_completion_people",
       "columns": 3,
       "ddlMatchesMigrations": true
@@ -577,6 +867,11 @@
     {
       "table": "task_dependencies",
       "columns": 4,
+      "ddlMatchesMigrations": true
+    },
+    {
+      "table": "task_file_uploads",
+      "columns": 2,
       "ddlMatchesMigrations": true
     },
     {

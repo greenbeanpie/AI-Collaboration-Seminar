@@ -1351,6 +1351,46 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/v1/creation-drafts/{draftId}/activity-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: number | null;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    draftId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 拥有者可读取当前预览安全操作记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DraftActivityEventsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creation-drafts/{draftId}/state": {
         parameters: {
             query?: never;
@@ -4347,6 +4387,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{jobId}/activity-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取 AI 操作记录（包含续跑历史） */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: number | null;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    jobId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 安全操作记录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiActivityEventsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{jobId}/retry": {
         parameters: {
             query?: never;
@@ -5345,6 +5426,44 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["CollaborationProposalListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/collaboration/ai-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 任务规划与分工最近 AI 活动 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollaborationAiActivityResponse"];
                     };
                 };
             };
@@ -12202,6 +12321,21 @@ export interface components {
         };
         CreationDraftResponse: {
             data: {
+                activity: {
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    updatedAt: string | null;
+                    lastResponseAt: string | null;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                    canResume: boolean;
+                    resumeReason: string | null;
+                    uncertain: boolean;
+                } | null;
                 /** Format: uuid */
                 id: string;
                 /** @enum {string} */
@@ -12405,6 +12539,21 @@ export interface components {
         CreationDraftListResponse: {
             data: {
                 items: {
+                    activity: {
+                        /** @enum {string} */
+                        code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                        updatedAt: string | null;
+                        lastResponseAt: string | null;
+                        progress: {
+                            completed: number;
+                            total?: number;
+                            /** @enum {string} */
+                            unit?: "step" | "page" | "chunk" | "window";
+                        } | null;
+                        canResume: boolean;
+                        resumeReason: string | null;
+                        uncertain: boolean;
+                    } | null;
                     /** Format: uuid */
                     id: string;
                     /** @enum {string} */
@@ -12606,6 +12755,27 @@ export interface components {
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
         };
+        DraftActivityEventsResponse: {
+            data: {
+                items: {
+                    id: number;
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    /** @enum {string} */
+                    state: "started" | "completed" | "failed" | "resumed";
+                    at: string;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                }[];
+                nextCursor: number | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
         DraftAudioFallbackResumeResponse: {
             data: {
                 /** Format: uuid */
@@ -12765,6 +12935,23 @@ export interface components {
                     };
                     confirmedAt: string | null;
                     createdAt: string;
+                } | null;
+                /** Format: uuid */
+                generatedJobId: string | null;
+                activity: {
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    updatedAt: string | null;
+                    lastResponseAt: string | null;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                    canResume: boolean;
+                    resumeReason: string | null;
+                    uncertain: boolean;
                 } | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -14003,6 +14190,23 @@ export interface components {
                     durationSeconds: number | null;
                     completedWindows: number;
                 } | null;
+                /** Format: uuid */
+                processingJobId: string | null;
+                activity: {
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    updatedAt: string | null;
+                    lastResponseAt: string | null;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                    canResume: boolean;
+                    resumeReason: string | null;
+                    uncertain: boolean;
+                } | null;
                 /** @enum {string} */
                 textStatus: "pending" | "processing" | "waiting_input" | "ready" | "failed";
                 /** @enum {string} */
@@ -14228,6 +14432,23 @@ export interface components {
                 };
                 attempts: number;
                 createdAt: string;
+                updatedAt: string;
+                finishedAt: string | null;
+                activity: {
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    updatedAt: string | null;
+                    lastResponseAt: string | null;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                    canResume: boolean;
+                    resumeReason: string | null;
+                    uncertain: boolean;
+                };
                 retry?: {
                     status: string;
                     attempts: number;
@@ -14235,6 +14456,27 @@ export interface components {
                     /** Format: uuid */
                     originalJobId: string;
                 };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiActivityEventsResponse: {
+            data: {
+                items: {
+                    id: number;
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    /** @enum {string} */
+                    state: "started" | "completed" | "failed" | "resumed";
+                    at: string;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                }[];
+                nextCursor: number | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -14787,6 +15029,29 @@ export interface components {
                     createdAt: string;
                 }[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        CollaborationAiActivityResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string | null;
+                activity: {
+                    /** @enum {string} */
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    updatedAt: string | null;
+                    lastResponseAt: string | null;
+                    progress: {
+                        completed: number;
+                        total?: number;
+                        /** @enum {string} */
+                        unit?: "step" | "page" | "chunk" | "window";
+                    } | null;
+                    canResume: boolean;
+                    resumeReason: string | null;
+                    uncertain: boolean;
+                } | null;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -16179,6 +16444,8 @@ export interface components {
                 /** @enum {string} */
                 status: "pending" | "running" | "succeeded" | "failed";
                 report?: unknown;
+                /** Format: uuid */
+                jobId: string | null;
                 createdAt: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -16197,6 +16464,8 @@ export interface components {
                     /** @enum {string} */
                     status: "pending" | "running" | "succeeded" | "failed";
                     report?: unknown;
+                    /** Format: uuid */
+                    jobId: string | null;
                     createdAt: string;
                 }[];
                 nextCursor: string | null;
@@ -16231,6 +16500,8 @@ export interface components {
                     respondentId: string;
                     canOperate: boolean;
                     /** Format: uuid */
+                    aiJobId?: string | null;
+                    /** Format: uuid */
                     processingJobId: string | null;
                     processingStatus: string | null;
                     createdAt: string;
@@ -16256,6 +16527,8 @@ export interface components {
                 /** Format: uuid */
                 respondentId: string;
                 canOperate: boolean;
+                /** Format: uuid */
+                aiJobId?: string | null;
                 /** Format: uuid */
                 processingJobId: string | null;
                 processingStatus: string | null;

@@ -66,7 +66,7 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
   return <section className="ai-activity" aria-label="AI 处理状态">
     <div className="ai-activity-current" role="status" aria-live="polite" aria-atomic="true">
       <span className={`ai-activity-indicator${executing ? ' is-running' : ''}`} aria-hidden="true" />
-      <div><strong>{resuming || resumePending ? '等待续跑' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
+      <div><strong>{resuming || resumePending ? '等待续跑' : activity?.code === 'waiting_retry' ? '等待重试' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
         <p>当前操作：{submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
         <p>AI 最后一次回复时间：<time dateTime={activity?.lastResponseAt ?? undefined}>{activityTime(activity?.lastResponseAt)}</time></p>
       </div>

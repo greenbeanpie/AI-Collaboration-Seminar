@@ -1,3 +1,4 @@
+import { aiActivitySchema, readActivity } from '../services/ai-activity';
 import { audioStatusSchema, audioResumeSchema } from './audio-schema';
 import { readAudioPipelineStatus, resumeWaitingAudioFallback } from '../services/audio-pipeline';
 import { mediaSummarySchema } from '../ai/gemini-media';
@@ -15,6 +16,8 @@ const params = z.object({ projectId: z.string().uuid(), sourceId: z.string().uui
 const path = '/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing';
 const response = apiEnvelope(z.object({
   media:z.object({jobId:z.string().uuid().optional(),audio:audioStatusSchema.nullable().optional(),stage:z.string(),summary:mediaSummarySchema.nullable(),error:z.string().nullable(),durationSeconds:z.number().nullable(),completedWindows:z.number().int()}).nullable().optional(),
+  processingJobId:z.string().uuid().nullable(),
+  activity:aiActivitySchema.nullable(),
   textStatus: z.enum(['pending','processing','waiting_input','ready','failed']),
   requirementsStatus: z.enum(['pending','processing','ready','failed']), requirementsError: z.string().nullable(),
   summaryStatus: z.enum(['pending','queued','running','ready','failed','cancelled']),
@@ -43,8 +46,9 @@ export function registerSourceProcessingRoutes(app: OpenAPIHono<AppEnv>): void {
     const textStatus = state?.text_status ?? (missing?.n ? 'waiting_input' : version.char_count ? 'ready' : version.status === 'failed' ? 'failed' : 'pending');
     const mediaState=await c.env.DB.prepare('SELECT job_id,stage,summary_json,error,duration_seconds,windows_json FROM media_processing WHERE source_version_id=?1 ORDER BY created_at DESC LIMIT 1').bind(p.sourceVersionId).first<{job_id:string;stage:string;summary_json:string|null;error:string|null;duration_seconds:number|null;windows_json:string}>();
     const media=mediaState?{jobId:mediaState.job_id,audio:await readAudioPipelineStatus(c.env,mediaState.job_id),stage:mediaState.stage,summary:mediaState.summary_json?mediaSummarySchema.parse(JSON.parse(mediaState.summary_json)):null,error:mediaState.error,durationSeconds:mediaState.duration_seconds,completedWindows:(JSON.parse(mediaState.windows_json) as unknown[]).length}:null;
+    const processingJob=await c.env.DB.prepare("SELECT id,status FROM jobs WHERE project_id=?1 AND json_extract(input_json,'$.sourceVersionId')=?2 AND kind IN ('parse_source','ocr_pages','requirement_extract') AND COALESCE(json_extract(input_json,'$.operation'),'') NOT IN ('source.summary','media.summary') ORDER BY created_at DESC,id DESC LIMIT 1").bind(p.projectId,p.sourceVersionId).first<{id:string;status:string}>();
     const summary = state?.summary_json ? documentSummarySchema.safeParse(JSON.parse(state.summary_json)) : null;
-    return c.json(apiData(c, { media,textStatus, requirementsStatus: state?.requirements_status ?? (version.status === 'ready' ? 'ready' : version.status === 'failed' && textStatus === 'ready' ? 'failed' : 'pending'), requirementsError: state?.requirements_error ?? (textStatus === 'ready' && version.status === 'failed' ? version.parse_error : null), summaryStatus: state?.summary_status ?? 'pending', summary: summary?.success ? summary.data : null, summaryError: state?.summary_error ?? null, summaryJobId: state?.summary_job_id ?? null, summaryRevision: state?.summary_revision ?? 0, coveredChars: state?.covered_chars ?? null, totalChars: state?.total_chars ?? null }),200);
+    return c.json(apiData(c, { media,processingJobId:processingJob?.id??null,activity:processingJob?await readActivity(c.env,processingJob.id,processingJob.status):null,textStatus, requirementsStatus: state?.requirements_status ?? (version.status === 'ready' ? 'ready' : version.status === 'failed' && textStatus === 'ready' ? 'failed' : 'pending'), requirementsError: state?.requirements_error ?? (textStatus === 'ready' && version.status === 'failed' ? version.parse_error : null), summaryStatus: state?.summary_status ?? 'pending', summary: summary?.success ? summary.data : null, summaryError: state?.summary_error ?? null, summaryJobId: state?.summary_job_id ?? null, summaryRevision: state?.summary_revision ?? 0, coveredChars: state?.covered_chars ?? null, totalChars: state?.total_chars ?? null }),200);
   });
   app.openapi(createRoute({method:'post',path:`${path}/media-resume`,tags:['sources'],summary:'配置 Gemini 后继续音频回退，不重复转录',request:{params,body:{required:true,content:{'application/json':{schema:z.object({jobId:z.string().uuid()}).strict()}}}},responses:{202:{description:'原任务已恢复',content:{'application/json':{schema:apiEnvelope(audioResumeSchema,'AudioFallbackResumeResponse')}}}}}),async c=>{
     c.header('Cache-Control','no-store');

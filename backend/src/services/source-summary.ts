@@ -1,3 +1,5 @@
+import { checkpointRootId } from './ai-checkpoints';
+import { recordActivity } from './ai-activity';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -126,7 +128,8 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     const summaries:z.infer<typeof chunkSummarySchema>[]=[];
     for await(const {index,chunk,boundaries,single} of documentChunkWindows(chunks,contextLimit)){
       await assertActive();const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+coverageContext+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
-      const cacheKey='ai-document-chunks/'+jobId+'/summary/'+await sha256Hex(config.id+content);
+      await recordActivity(env,jobId,'summarizing','started',{completed:index,unit:'chunk'});
+      const cacheKey='ai-document-chunks/'+await checkpointRootId(env,jobId)+'/summary/'+await sha256Hex(config.id+content);
       const cached=await env.FILES.get(cacheKey);let data:z.infer<typeof chunkSummarySchema>;
       if(cached){data=chunkSummarySchema.parse(await cached.json());}
       else {

@@ -1,3 +1,4 @@
+import { recordActivity } from './ai-activity';
 import { prepareAutomaticJobRetry } from './ai-automatic-retries';
 import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
@@ -30,6 +31,8 @@ export interface JobRow {
   attempts: number;
   created_at: string;
   updated_at: string;
+  finished_at: string | null;
+  created_by: string | null;
 }
 
 export interface ParseJobInput {
@@ -137,7 +140,7 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
 
 export async function getJob(env: Env, jobId: string): Promise<JobRow> {
   const row = await env.DB.prepare(
-    'SELECT id, project_id, kind, status, input_json, result_json, error_json, attempts, created_at, updated_at FROM jobs WHERE id = ?1',
+    'SELECT id, project_id, kind, status, input_json, result_json, error_json, attempts, created_at, updated_at, finished_at, created_by FROM jobs WHERE id = ?1',
   )
     .bind(jobId)
     .first<JobRow>();
@@ -160,6 +163,7 @@ export async function failJob(env: Env, jobId: string, error: { code: string; me
 }
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
+  await recordActivity(env,jobId,'saving');
   const transition = await env.DB.prepare(
     `UPDATE jobs SET status = 'succeeded', result_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')
       AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,

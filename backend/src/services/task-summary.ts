@@ -44,7 +44,7 @@ export async function readTaskSummaries(env: Env, tasks: CollaborationTask[]): P
   const active = hasUnready ? await enabled(env,projectId) : null;
   for (const {task,summarySourceHash} of pending) {
     const cached = cache.get(task.id);
-    if (cached?.status === 'ready') result.set(task.id,{summary:cached.summary!,summaryStatus:'ready',summarySourceHash});
+    if (cached?.status === 'ready') result.set(task.id,{summary:cached.summary!,summaryStatus:'ready',summaryJobId:cached.job_id,summarySourceHash});
     else if (!active) result.set(task.id,{summaryStatus:'disabled',summarySourceHash});
     else if (!cached) result.set(task.id,{summaryStatus:'missing',summarySourceHash});
     else {

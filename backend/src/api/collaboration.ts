@@ -1,3 +1,4 @@
+import { aiActivitySchema, readActivity } from '../services/ai-activity';
 import { registerCollaborationReadRoutes } from './collaboration-read';
 import { readTaskPage } from '../services/collaboration-read-models';
 import { submitCollaborationTask } from '../services/collaboration-submission';
@@ -83,6 +84,10 @@ async function taskWithReferences(c: Context<AppEnv>, row: CollaborationTask) {
 export function registerCollaborationRoutes(app: OpenAPIHono<AppEnv>): void {
     app.use('/api/v1/projects/:projectId/collaboration/*', requireUser, requireProjectMember());
     registerCollaborationReadRoutes(app,route);
+    app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/collaboration/ai-activity',tags:['collaboration'],request:{params:projectParams},responses:{200:{description:'任务规划与分工最近 AI 活动',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid().nullable(),activity:aiActivitySchema.nullable()}),'CollaborationAiActivityResponse')}}}}}),async c=>{
+      const row=await c.env.DB.prepare("SELECT id,status FROM jobs WHERE project_id=?1 AND json_extract(input_json,'$.operation') IN ('collaboration.decompose','collaboration.assign','collaboration.adjust','collaboration.progression') ORDER BY created_at DESC,id DESC LIMIT 1").bind(c.req.valid('param').projectId).first<{id:string;status:string}>();
+      return c.json(apiData(c,{jobId:row?.id??null,activity:row?await readActivity(c.env,row.id,row.status):null}),200);
+    });
     route(app, 'get', '/settings', undefined, async (c) => c.json(apiData(c, await settings(c))));
     route(app, 'patch', '/settings', z.object({ expectedRevision: revision, aiCollaborationEnabled: z.boolean().optional(), assignmentMode: mode.optional(), evaluationMode: mode.optional(), planningMode:mode.optional(),progressionMode:mode.optional() }), async (c) => {
         const { projectId, userId } = ids(c);
