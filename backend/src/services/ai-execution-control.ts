@@ -30,6 +30,7 @@ export async function acquireExecutionCall(env:Env,t:ExecutionTarget):Promise<Ex
  const granted=await env.DB.prepare(`UPDATE ai_executions SET inflight_token=?3,inflight_generation=generation,window_calls=window_calls+1,total_calls=total_calls+1,final_call_used=CASE WHEN state='finalizing' THEN 1 ELSE final_call_used END,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND inflight_token IS NULL AND ((state='running' AND window_calls<call_limit) OR (state='finalizing' AND final_call_used=0)) RETURNING generation`).bind(t.kind,t.id,token.id,now).first<{generation:number}>();
  if(granted)return {...token,generation:granted.generation};
  const r=(await row(env,t))!;if(r.state==='running' && !r.inflight_token && r.window_calls>=r.call_limit){await pauseExecution(env,t,'round_limit');throw new ExecutionPaused((await readExecution(env,t))!);}
+ if(r.state==='finalizing' && !r.inflight_token){await pauseExecution(env,t,'output_invalid');throw new ExecutionPaused((await readExecution(env,t))!);}
  if(r.state==='paused')throw new ExecutionPaused(view(r));throw invalidState(r.inflight_token?'已有模型请求正在处理':'当前执行状态不允许发出请求');
 }
 /** False means a cancelled or resumed generation must discard its late result. */
@@ -57,3 +58,9 @@ export async function resolveExecutionTarget(env:Env,t:ExecutionTarget):Promise<
 }
 
 export const executionSchema=z.object({generation:z.number().int(),windowCalls:z.number().int(),totalCalls:z.number().int(),limit:z.number().int(),state:z.enum(['running','paused','finalizing','cancelled','completed']),pauseReason:z.enum(['round_limit','request_uncertain','output_invalid','interrupted']).nullable(),canContinue:z.boolean(),canOutput:z.boolean()});
+
+/** Invoke only after the owning Workflow is confirmed terminal. Never clear live calls by age. */
+export async function markInterruptedExecution(env:Env,t:ExecutionTarget,expectedGeneration:number):Promise<boolean>{
+ const result=await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason=CASE WHEN inflight_token IS NULL THEN 'interrupted' ELSE 'request_uncertain' END,inflight_token=NULL,inflight_generation=NULL,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND generation=?3 AND state IN ('running','finalizing')").bind(t.kind,t.id,expectedGeneration,nowIso()).run();
+ if(result.meta.changes)await syncPausedTarget(env,t);return result.meta.changes>0;
+}
