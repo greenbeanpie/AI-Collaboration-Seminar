@@ -1,3 +1,4 @@
+import { checkpointAttemptIds } from './ai-checkpoints';
 import { checkpointSecret, type SecretKeyring } from '../ai/secrets';
 import type { Env } from '../env';
 import type { ToolExchange,WebCitation } from '../ai/tool-transport';
@@ -55,8 +56,11 @@ export function redactPrivateExchanges(exchanges:ToolExchange[]):ToolExchange[] 
   };
   return exchanges.map(e=>({...e,assistant:scrub(e.assistant)}));
 }
-export async function loadInvestigation(env: Env, id: string, allowUncertainDispatch=false): Promise<InvestigationCheckpoint | null> {
-  const stored=await env.FILES.get(`ai/investigations/${id}.json`);
+export async function loadInvestigation(env: Env, id: string, allowUncertainDispatch=false,jobId?:string): Promise<InvestigationCheckpoint | null> {
+  let stored:R2ObjectBody|null=null;
+  if(jobId){for(const attempt of await checkpointAttemptIds(env,jobId)){stored=await env.FILES.get(`ai/investigations/${id}/${attempt}.json`);if(stored)break;}}
+  else {const row=await env.DB.prepare('SELECT checkpoint_key FROM ai_investigations WHERE id=?1').bind(id).first<{checkpoint_key:string}>();if(row)stored=await env.FILES.get(row.checkpoint_key);}
+  stored??=await env.FILES.get(`ai/investigations/${id}.json`);
   if(!stored) return null;
   const data=await stored.json<InvestigationCheckpoint|EncryptedCheckpoint>();
   const checkpoint='format' in data&&data.format==='encrypted-investigation-v1'
@@ -67,12 +71,12 @@ export async function loadInvestigation(env: Env, id: string, allowUncertainDisp
 }
 export async function saveInvestigation(env: Env, context:{projectId:string;userId:string;jobId?:string}, id:string, promptVersion:string, checkpoint:InvestigationCheckpoint, privateContext=false) {
   if(context.jobId && await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(context.jobId).first())throw invalidState('任务已由新尝试继续，旧结果不会保存');
-  const key=`ai/investigations/${id}.json`;
+  const key=context.jobId?`ai/investigations/${id}/${context.jobId}.json`:`ai/investigations/${id}.json`;
   const phase=checkpoint.content?'complete':'read';
   const stored=await encryptCheckpoint(checkpoint,id,checkpointSecret(env));
   await env.FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
   await env.DB.prepare(`INSERT INTO ai_investigations(id,project_id,job_id,requested_by,prompt_version,checkpoint_key,phase,step,updated_at)
-    VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(id) DO UPDATE SET phase=excluded.phase,step=excluded.step,updated_at=excluded.updated_at`)
+    SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE ?3 IS NULL OR EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running','waiting_input') AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?3)) ON CONFLICT(id) DO UPDATE SET job_id=excluded.job_id,checkpoint_key=excluded.checkpoint_key,phase=excluded.phase,step=excluded.step,updated_at=excluded.updated_at`)
     .bind(id,context.projectId,context.jobId??null,context.userId,promptVersion,key,phase,checkpoint.step,nowIso()).run();
 }
 /** Deterministic compaction retains resource locators and exact read excerpts; the model can reread omitted content. */

@@ -258,10 +258,10 @@ export async function projectToolConversation(env: Env, params: {
   const checkpointRoot=context.jobId?await checkpointRootId(env,context.jobId):undefined;
   const allowUncertain=await allowsUncertainCheckpointRetry(env,context.jobId);
   const investigationId=checkpointRoot ? checkpointRoot+'-'+params.promptVersion.replace(/[^a-zA-Z0-9_-]/g,'_') : undefined;
-  let restored=investigationId ? await loadInvestigation(env,investigationId,allowUncertain) : null;
+  let restored=investigationId ? await loadInvestigation(env,investigationId,allowUncertain,context.jobId) : null;
   // A prompt upgrade must not discard an already-paid pending provider response.
   const previousPrompt:Record<string,string>={'collaboration-decompose-v4-clarification':'collaboration-decompose-v3-evidence','collaboration-adjust-v2-clarification':'collaboration-adjust-v1'};
-  if(!restored && context.jobId && previousPrompt[params.promptVersion])restored=await loadInvestigation(env,checkpointRoot+'-'+previousPrompt[params.promptVersion],allowUncertain);
+  if(!restored && context.jobId && previousPrompt[params.promptVersion])restored=await loadInvestigation(env,checkpointRoot+'-'+previousPrompt[params.promptVersion],allowUncertain,context.jobId);
   const activeStandardId=async()=> (await env.DB.prepare('SELECT id FROM standards_versions WHERE project_id=?1 ORDER BY version DESC LIMIT 1').bind(context.projectId).first<{id:string}>())?.id??null;
   const effectiveStandardsVersionId=restored ? restored.effectiveStandardsVersionId!==undefined ? restored.effectiveStandardsVersionId : restored.references.find(ref=>ref.resourceType==='standard')?.resourceId??null : await activeStandardId();
   let compacted=restored?.compacted??'';

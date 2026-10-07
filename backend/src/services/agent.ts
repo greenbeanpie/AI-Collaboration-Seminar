@@ -1,5 +1,5 @@
 import { recordActivity } from './ai-activity';
-import { checkpointRootId, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
+import { checkpointRootId, checkpointAttemptIds, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
@@ -181,9 +181,11 @@ export async function aiJsonCall<S extends z.ZodType>(
       status,
     });
 
-  const root=params.jobId?await checkpointRootId(env,params.jobId):undefined;
+  const persisted=params.jobId?await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(params.jobId).first():null;
+  const root=params.jobId && persisted?await checkpointRootId(env,params.jobId):undefined;
+  const attempts=root?await checkpointAttemptIds(env,params.jobId!):[];
   const fingerprint=root?await checkpointFingerprint({projectId:params.projectId,promptVersion:params.promptVersion,configVersionId:params.configVersionId,modelConfig:params.modelConfig,messages:params.messages}):undefined;
-  const sessionId = params.sessionId ?? params.runId ?? root ?? crypto.randomUUID();
+  const sessionId = params.sessionId ?? params.runId ?? root ?? params.jobId ?? crypto.randomUUID();
   let messages = params.messages;
   const maxAttempts=params.maxAttempts??2;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -191,8 +193,14 @@ export async function aiJsonCall<S extends z.ZodType>(
     let attempted = false;
     let out: Awaited<ReturnType<typeof gatewayChat>> | undefined;
     let failure: unknown;
-    const responseKey=root?`ai/responses/${root}/${fingerprint}/${attempt}.json`:undefined;
-    const saved=responseKey?await loadResponseCheckpoint<{pending:boolean;output?:Awaited<ReturnType<typeof gatewayChat>>}>(env,responseKey):null;
+    const prefix=root?`ai/responses/${root}/${fingerprint}/${attempt}`:undefined;
+    const responseKey=prefix?`${prefix}/${params.jobId}.json`:undefined;
+    const dispatchKey=responseKey?responseKey+'.dispatch':undefined;
+    type SavedResponse={pending:boolean;output?:Awaited<ReturnType<typeof gatewayChat>>};
+    let saved:SavedResponse|null=null;
+    if(prefix){for(const execution of attempts){saved=await loadResponseCheckpoint<SavedResponse>(env,`${prefix}/${execution}.json`);if(saved?.output)break;}saved??=await loadResponseCheckpoint<SavedResponse>(env,prefix+'.json');}
+    if(!saved?.output && prefix){for(const execution of attempts){const marker=await loadResponseCheckpoint<SavedResponse>(env,`${prefix}/${execution}.json.dispatch`);if(marker){saved=marker;break;}}}
+
     if(saved?.pending && !await allowsUncertainCheckpointRetry(env,params.jobId))throw new AppError('INVALID_STATE','上次模型请求结果未确认，请从停止处继续，该步骤可能再次计费',409,false);
     const replayed=!!saved?.output;
     try {
@@ -204,7 +212,7 @@ export async function aiJsonCall<S extends z.ZodType>(
           await markAiCallStarted(env, params.jobId);
           // Config/member preflight may yield; the final sensitive context read comes afterward.
           await params.beforeCall?.();
-          if(responseKey)await saveResponseCheckpoint(env,responseKey,{pending:true});
+          if(dispatchKey)await saveResponseCheckpoint(env,dispatchKey,{pending:true},{mutable:true});
           await clearUncertainCheckpointRetry(env,params.jobId);
         },
         prepareMessages: params.prepareMessages ? async () => {
@@ -216,7 +224,7 @@ export async function aiJsonCall<S extends z.ZodType>(
         onDispatch: () => { attempted = true; },
       });
     } catch (error) {
-      if (!attempted) { if(responseKey && !replayed)await saveResponseCheckpoint(env,responseKey,{pending:false}); if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
+      if (!attempted) { if(dispatchKey && !replayed)await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true}); if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
       failure = error;
     }
     // Persist the paid response before schema validation, ledger writes, or business writes.

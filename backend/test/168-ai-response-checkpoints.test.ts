@@ -50,9 +50,25 @@ it('manual retry rejects a different actor and keeps uncertain retry authorizati
 it('manual uncertain dispatch authorization is consumed before the next paid request',async()=>{
   const f=await fixture();const params={projectId:f.projectId,jobId:f.jobId,purpose:'textEconomy' as const,configVersionId:f.config.id,model:f.config.config.textEconomy.model,modelConfig:f.config.config.textEconomy,promptVersion:'uncertain-consume',messages:[{role:'user' as const,content:'generate'}],schema:z.object({title:z.string()})};
   const fingerprint=await checkpointFingerprint({projectId:params.projectId,promptVersion:params.promptVersion,configVersionId:params.configVersionId,modelConfig:params.modelConfig,messages:params.messages});
-  await saveResponseCheckpoint(env,`ai/responses/${f.jobId}/${fingerprint}/0.json`,{pending:true});
+  await saveResponseCheckpoint(env,`ai/responses/${f.jobId}/${fingerprint}/0/${f.jobId}.json.dispatch`,{pending:true});
   await expect(aiJsonCall(env,params)).rejects.toThrow('结果未确认');
   await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('true')) WHERE id=?1").bind(f.jobId).run();
   const fetch=vi.fn(async()=>{expect(await allowsUncertainCheckpointRetry(env,f.jobId)).toBe(false);return Response.json({choices:[{message:{content:'{"title":"resumed"}'}}],usage:{prompt_tokens:10,completion_tokens:5}});});vi.stubGlobal('fetch',fetch);
   expect((await aiJsonCall(env,params)).data.title).toBe('resumed');expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('received response blobs are immutable and successor investigation objects cannot be replaced by old attempt writes',async()=>{
+  const f=await fixture(),key='ai/responses/immutable/'+newId();
+  await saveResponseCheckpoint(env,key,{content:'first'});await saveResponseCheckpoint(env,key,{content:'late'});
+  expect(await loadResponseCheckpoint(env,key)).toEqual({content:'first'});
+  const id=f.jobId+'-isolated',state={step:3,exchanges:[],references:[],trace:[]};
+  await saveInvestigation(env,{projectId:f.projectId,userId:f.user.userId,jobId:f.jobId},id,'isolated',state);
+  const oldKey=`ai/investigations/${id}/${f.jobId}.json`,oldObject=await (await env.FILES.get(oldKey))!.text();
+  await env.DB.prepare("UPDATE jobs SET status='failed' WHERE id=?1").bind(f.jobId).run();
+  const retry=await retryFailedAiJob(env,f.jobId);expect(retry.status).toBe('queued');
+  expect((await loadInvestigation(env,id,false,retry.jobId))?.step).toBe(3);
+  await saveInvestigation(env,{projectId:f.projectId,userId:f.user.userId,jobId:retry.jobId},id,'isolated',{...state,step:4});
+  await env.FILES.put(oldKey,oldObject);
+  expect((await loadInvestigation(env,id,false,retry.jobId))?.step).toBe(4);
+  expect((await loadInvestigation(env,id))?.step).toBe(4);
 });

@@ -58,12 +58,14 @@ describe('one automatic evaluation per submitted round', () => {
         expect(submitted.json.data.evaluationError).toBeUndefined();
         expect(await f.counts()).toEqual({ submissions: 1, jobs: 0, reservations: 0 });
     });
-    it.each(['failed', 'cancelled'])('does not restart a %s evaluation through service or generic retry', async status => {
+    it.each(['failed', 'cancelled'])('keeps logical evaluation unique while generic retry handles %s attempts', async status => {
         const f = await fixture(), first = (await f.submit()).json.data;
         await env.DB.prepare('UPDATE jobs SET status=?2 WHERE id=?1').bind(first.evaluationJobId, status).run();
         await expect(enqueueEvaluation(offline, f.projectId, first.submissionId, f.user.userId)).rejects.toThrow('本轮提交已启动过');
-        expect((await f.request(`/jobs/${first.evaluationJobId}/retry`, {})).status).toBe(409);
-        expect(await f.counts()).toEqual({ submissions: 1, jobs: 1, reservations: 1 });
+        const retry=await f.request(`/jobs/${first.evaluationJobId}/retry`, {});
+        expect(retry.status).toBe(status==='failed'?202:409);
+        expect(await f.counts()).toEqual({ submissions: 1, jobs: status==='failed'?2:1, reservations: status==='failed'?2:1 });
+        if(status==='failed')expect(await env.DB.prepare('SELECT evaluation_job_id,evaluation_attempts,ai_report_json FROM task_submissions WHERE id=?1').bind(first.submissionId).first()).toEqual({evaluation_job_id:retry.json.data.jobId,evaluation_attempts:1,ai_report_json:null});
     });
     it('rejects the removed manual evaluation endpoint and keeps old disabled submissions untouched after enablement', async () => {
         const f = await fixture(false), first = (await f.submit()).json.data;

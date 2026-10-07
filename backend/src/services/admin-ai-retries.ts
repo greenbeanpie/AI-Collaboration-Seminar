@@ -1,3 +1,5 @@
+import { readTaskAssistancePlan } from './task-assistance-plan';
+import { readTaskAgentEligibility } from './task-agent-eligibility';
 import { checkpointRootId } from './ai-checkpoints';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -84,6 +86,8 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  if(input.standardsVersionId)guards.push(effectiveStandardGuardSql('old.project_id',"json_extract(old.input_json,'$.standardsVersionId')"));
  if(input.settingsRevision!==undefined)guards.push("EXISTS(SELECT 1 FROM projects WHERE id=old.project_id AND ai_collaboration_enabled=1 AND collaboration_revision=json_extract(old.input_json,'$.settingsRevision'))");
  if(input.tasks)for(const task of input.tasks){const current=await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1 AND project_id=?2').bind(task.taskId,job.project_id).first<{revision:number}>();if(current?.revision!==task.revision)return {status:'skipped',reason:'任务版本已变化'};}
+ if(input.operation==='collaboration.assistance-plan' && (await readTaskAssistancePlan(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务、资料、标准或权限已变化，请重新生成计划'};
+ if(input.operation==='collaboration.agent-eligibility' && (await readTaskAgentEligibility(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务内容或模型配置已变化，请重新检查'};
  const reset:Array<{table:string;pointer:string;extra?:string}>=[];
  const requireRow=async(table:string,pointer:string,condition:string)=>{guards.push(`EXISTS(SELECT 1 FROM ${table} WHERE ${pointer}=old.id AND ${condition})`);};
  if(input.operation==='media.draft')guards.push("EXISTS(SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=json_extract(old.input_json,'$.fileId') AND d.id=json_extract(old.input_json,'$.draftId') AND f.removed=0 AND d.status='active' AND d.owner_id=?4)");
