@@ -16,6 +16,8 @@ export interface ContextPhase {
   keys?:Record<string,string>;
   summary?:ChatMessage;
   summaryData?:{reads:unknown[];evidence:unknown[];omittedExchanges:number};
+  readKeys?:string[];
+  repeatedReads?:number;
 }
 const clone = <T>(value:T):T => JSON.parse(JSON.stringify(value)) as T;
 export function createContextPhase(messages:ChatMessage[],definitions:ToolDefinition[]):ContextPhase {
@@ -39,6 +41,13 @@ export function refreshContextSource(phase:ContextPhase,messages:ChatMessage[]):
   phase.sourceMessages=clone(messages);
 }
 export function appendContextExchange(phase:ContextPhase,exchange:ToolExchange):void {
+  phase.readKeys??=[];
+  for(const result of exchange.results) {
+    if(!/^read_|^get_resource_index$/.test(result.call.name))continue;
+    const key=JSON.stringify([result.call.name,result.call.args]);
+    if(phase.readKeys.includes(key))phase.repeatedReads=(phase.repeatedReads??0)+1;
+    else phase.readKeys.push(key);
+  }
   phase.timeline.push({kind:'exchange',exchange:clone(exchange)});
 }
 function toolMode(phase:ContextPhase,final=false):ToolMode {
@@ -62,7 +71,7 @@ function locator(value:unknown):unknown {
   }
   return result;
 }
-export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,options:{final?:boolean;jsonMode?:boolean;preserve?:unknown[]}={}):{messages:ChatMessage[];toolMode:ToolMode;metadata:{stage:number;compactions:number;baseChars:number;inputChars:number}} {
+export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,options:{final?:boolean;jsonMode?:boolean;preserve?:unknown[]}={}):{messages:ChatMessage[];toolMode:ToolMode;metadata:{stage:number;compactions:number;baseChars:number;inputChars:number;repeatedReads:number}} {
   let size=contextRequestChars(config,phase,options);
   const target=Math.floor(config.maxInputChars*.5);
   if(size>=Math.floor(config.maxInputChars*.8)) {
@@ -105,5 +114,5 @@ export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,opti
     }
   }
   if(size>config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
-  return {messages:messages(phase),toolMode:toolMode(phase,options.final),metadata:{stage:phase.stage,compactions:phase.compactions,baseChars:JSON.stringify(phase.baseMessages).length,inputChars:size}};
+  return {messages:messages(phase),toolMode:toolMode(phase,options.final),metadata:{stage:phase.stage,compactions:phase.compactions,baseChars:JSON.stringify(phase.baseMessages).length,inputChars:size,repeatedReads:phase.repeatedReads??0}};
 }

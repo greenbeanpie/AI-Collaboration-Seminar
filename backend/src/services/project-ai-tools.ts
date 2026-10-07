@@ -396,6 +396,7 @@ export async function projectToolConversation(env: Env, params: {
       error = e;
     }
     if(out) {
+      if(!toolMode.nativeSearch && contextPhase)contextPhase.repeatedReads=0;
       if(toolMode.definitions.length) pendingOutput=out;
       if(toolMode.nativeSearch) pendingSearchOutput=out;
       providerRetry=undefined;
