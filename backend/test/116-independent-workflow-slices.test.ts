@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Env } from '../src/env';
+import type { AiContinuationMessage, Env } from '../src/env';
 import { env } from './helpers/env';
 import { seedProject, seedUser } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
@@ -21,35 +21,48 @@ function withWorkflow(create:unknown,get:unknown=()=>({status:async()=>({status:
  return {...env,AGENT_WORKFLOW:{create,get} as unknown as Workflow};
 }
 describe('independent workflow instance relay',()=>{
+ function withQueue(local:Env,messages:AiContinuationMessage[]):Env{
+  return {...local,AI_CONTINUATION_QUEUE:{send:vi.fn(async(message:AiContinuationMessage)=>{messages.push(message);return {metadata:{metrics:{backlogCount:0,backlogBytes:0,oldestMessageTimestamp:0}}};})} as unknown as Queue<AiContinuationMessage>};
+ }
  it('processes >16 slices in independent deterministic instances with two paid responses and no repeated reads',async()=>{
   await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;
   await reserveAiSlot(env,{projectId:f.projectId,jobId:f.jobId,purpose:'review_run',maxCalls:24});
   const fetch=vi.fn(async()=>Response.json({choices:[{finish_reason:fetch.mock.calls.length===1?'tool_calls':'stop',message:fetch.mock.calls.length===1?{tool_calls:Array.from({length:64},(_,i)=>({id:`read-${i}`,type:'function',function:{name:'list_project_resources',arguments:JSON.stringify({offset:i*20})}}))}:{content:'{"summary":"完成","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}}));
   vi.stubGlobal('fetch',fetch);
   const queue:{id:string;params:{jobId:string;slice:number}}[]=[];
-  const create=vi.fn(async(input)=>{queue.push(input);return {};});const local=withWorkflow(create);
+  const continuations:AiContinuationMessage[]=[];
+  const create=vi.fn(async(input)=>{queue.push(input);return {};});const local=withQueue(withWorkflow(create),continuations);
   await dispatchExecutionSlice(local,(await activeExecutionSlice(local,f.jobId))!);
   let executions=0;
-  while(queue.length){
+  while(queue.length||continuations.length){
+   while(continuations.length){
+    const message=continuations.shift()!;
+    if(message.kind!=='job-slice')continue;
+    const active=await activeExecutionSlice(local,message.jobId);
+    if(active?.status==='pending'&&active.slice===message.slice)await dispatchExecutionSlice(local,active);
+   }
+   if(!queue.length)continue;
    const instance=queue.shift()!;instance.params.slice ??= 0;executions++;
    expect(instance.id).toBe(instance.params.slice===0?f.jobId:`${f.jobId}-s${instance.params.slice}`);
-   const run=vi.fn(async()=>{await projectToolConversation({...local,AI_EXECUTION_SLICE:true},{context:{projectId:f.projectId,userId:f.owner.userId,jobId:f.jobId},config:config.config.review,configVersionId:config.id,purpose:'review',privateContext:true,messages:[{role:'user',content:'自主调查'}],promptVersion:'independent-slice-fixture'});await succeedJob(local,f.jobId,{ok:true});});
-   await executeAiSlice(local,f.jobId,instance.params.slice,run);
-   await executeAiSlice(local,f.jobId,instance.params.slice,run);
+   const sliceEnv={...local,AI_EXECUTION_SLICE:true as const};
+   const run=vi.fn(async()=>{await projectToolConversation(sliceEnv,{context:{projectId:f.projectId,userId:f.owner.userId,jobId:f.jobId},config:config.config.review,configVersionId:config.id,purpose:'review',privateContext:true,messages:[{role:'user',content:'自主调查'}],promptVersion:'independent-slice-fixture'});await succeedJob(sliceEnv,f.jobId,{ok:true});});
+   await executeAiSlice(sliceEnv,f.jobId,instance.params.slice,run);
+   await executeAiSlice(sliceEnv,f.jobId,instance.params.slice,run);
    expect(run).toHaveBeenCalledTimes(1);
   }
   expect(executions).toBeGreaterThan(16);expect(create).toHaveBeenCalledTimes(executions);expect(fetch).toHaveBeenCalledTimes(2);
   expect((await getJob(local,f.jobId)).status).toBe('succeeded');
   expect((await env.DB.prepare('SELECT COUNT(*) count FROM ai_tool_calls WHERE job_id=?1').bind(f.jobId).first<{count:number}>())!.count).toBe(64);
  }, 20_000);
- it('persists failed child delivery and cron retries same instance without rerunning parent',async()=>{
-  const f=await fixture();const create=vi.fn().mockRejectedValueOnce(new Error('engine unavailable')).mockResolvedValue({});const local=withWorkflow(create);
+ it('never recursively creates the next workflow when the async barrier is unavailable; cron dispatches it later',async()=>{
+  const f=await fixture();const create=vi.fn(async(_input:{id:string;params:{jobId:string;slice?:number}})=>({}));const local=withWorkflow(create);
   const run=vi.fn(async()=>{throw new InvestigationContinuation();});
-  await executeAiSlice(local,f.jobId,0,run);
+  await executeAiSlice({...local,AI_EXECUTION_SLICE:true},f.jobId,0,run);
   expect((await activeExecutionSlice(local,f.jobId))?.status).toBe('pending');
+  expect(create).not.toHaveBeenCalled();
   await recoverExecutionSlices(local);
-  expect(create.mock.calls.map(call=>call[0].id)).toEqual([`${f.jobId}-s1`,`${f.jobId}-s1`]);
-  await executeAiSlice(local,f.jobId,0,run);expect(run).toHaveBeenCalledTimes(1);
+  expect(create.mock.calls.map(call=>call[0].id)).toEqual([`${f.jobId}-s1`]);
+  await executeAiSlice({...local,AI_EXECUTION_SLICE:true},f.jobId,0,run);expect(run).toHaveBeenCalledTimes(1);
  });
  it('reconciles active child instead of completed root',async()=>{
   const f=await fixture(),local=withWorkflow(vi.fn(async()=>({})));

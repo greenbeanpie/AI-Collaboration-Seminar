@@ -1,6 +1,7 @@
 import { recordActivity } from './ai-activity';
 import { saveDraftCheckpoint } from './draft-preview-checkpoints';
 import { ensureExecution, readExecution, resumeExecution, cancelExecution, markInterruptedExecution } from './ai-execution-control';
+import { enqueueContinuation } from './continuation-queue';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -53,6 +54,11 @@ export async function dispatchDraftPreview(env:Env,dispatch:DraftDispatch):Promi
   if(terminal)await failStoppedDispatch(env,row);
   return true;
 }
+
+export async function dispatchDraftPreviewById(env:Env,instanceId:string):Promise<boolean> {
+  const row=await env.DB.prepare("SELECT * FROM draft_preview_dispatches WHERE instance_id=?1 AND status='pending'").bind(instanceId).first<DraftDispatch>();
+  return row ? dispatchDraftPreview(env,row) : false;
+}
 async function failStoppedDispatch(env:Env,row:DraftDispatch) {
   const snapshot=await loadDraftCheckpoint(env,row.attempt_id),target={kind:'draft_preview' as const,id:row.attempt_id};
   const current=await env.DB.prepare("SELECT owner_id FROM project_creation_drafts WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND status='active' AND preview_state='running'").bind(row.draft_id,row.attempt_id,row.context_revision).first<{owner_id:string}>();
@@ -100,7 +106,10 @@ export async function enqueueDraftPreviewSegment(env:Env,input:DraftPreviewInput
   if(input.generation!==undefined&&input.generation!==execution.generation)return;
   const current=restored.checkpoint,instanceId=current.dispatchGeneration===execution.generation&&current.dispatchSegment===(current.segment??0)&&current.dispatchInstanceId?current.dispatchInstanceId:`${input.attempt}-g${execution.generation}-s${current.segment??0}`,now=nowIso();
   await env.DB.prepare("INSERT OR IGNORE INTO draft_preview_dispatches(instance_id,draft_id,attempt_id,context_revision,status,created_at,updated_at) VALUES(?1,?2,?3,?4,'pending',?5,?5)").bind(instanceId,input.draftId,input.attempt,input.revision,now).run();
-  await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:input.draftId,attempt_id:input.attempt,context_revision:input.revision,question_id:null,status:'pending',updated_at:now});
+  // A Queue consumer starts the next Workflow from a fresh Worker invocation,
+  // breaking the recursive Workflow -> Workflow pipeline. Cron is the fallback.
+  const queued=await enqueueContinuation(env,{kind:'draft-preview',instanceId});
+  if(!queued&&!env.AI_EXECUTION_SLICE)await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:input.draftId,attempt_id:input.attempt,context_revision:input.revision,question_id:null,status:'pending',updated_at:now});
 }
 
 export async function controlDraftExecution(env:Env,id:string,userId:string,expectedGeneration:number,action:'continue'|'output'|'cancel',options:{allowUncertainDispatch?:boolean}={}) {

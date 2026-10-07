@@ -106,6 +106,14 @@
       ],
       "ai": { "binding": "AI", "remote": true },
       "r2_buckets": [{ "binding": "FILES", "bucket_name": "ai-office-files-production" }],
+      "queues": {
+        "producers": [
+          { "binding": "AI_CONTINUATION_QUEUE", "queue": "greenbp-team-office-ai-continuations" }
+        ],
+        "consumers": [
+          { "queue": "greenbp-team-office-ai-continuations", "max_batch_size": 10, "max_batch_timeout": 1 }
+        ]
+      },
       "workflows": [
         {
           "binding": "PARSE_WORKFLOW",

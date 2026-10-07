@@ -3,6 +3,7 @@ import { isExecutionPaused } from './ai-execution-control';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
+import { enqueueContinuation } from './continuation-queue';
 
 export class BackgroundContinuation extends Error { constructor(message='已保存后台处理检查点，将在独立实例继续'){super(message);this.name='BackgroundContinuation';} }
 export function isBackgroundContinuation(error:unknown):boolean {return error instanceof BackgroundContinuation || error instanceof InvestigationContinuation || error instanceof AppError&&error.details?.executionSuperseded===true;}
@@ -47,7 +48,13 @@ export async function continueExecutionSlice(env:Env,jobId:string,slice:number):
     env.DB.prepare("UPDATE jobs SET updated_at=?3 WHERE id=?1 AND status='running' AND EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?2+1)").bind(jobId,slice,now),
   ]);
   const active=await activeExecutionSlice(env,jobId);
-  if(active?.slice===next) await dispatchExecutionSlice(env,active);
+  if(active?.slice===next) {
+    // Never recursively create Workflow N+1 from Workflow N. Cloudflare caps a
+    // single Worker pipeline at 32 invocations. Queue delivery starts a fresh
+    // event; if Queue is unavailable, leave the durable pending row for cron.
+    const queued=await enqueueContinuation(env,{kind:'job-slice',jobId,slice:next});
+    if(!queued&&!env.AI_EXECUTION_SLICE)await dispatchExecutionSlice(env,active);
+  }
 }
 export async function completeExecutionSlice(env:Env,jobId:string,slice:number):Promise<void>{
   await env.DB.prepare("UPDATE ai_execution_slices SET status='complete',updated_at=?3 WHERE job_id=?1 AND slice=?2 AND status='running'").bind(jobId,slice,nowIso()).run();

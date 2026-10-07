@@ -1,6 +1,10 @@
 /// <reference path="../cloudflare-bindings.d.ts" />
 export type EnvName = 'local' | 'staging' | 'production';
 
+export type AiContinuationMessage =
+  | { kind: 'job-slice'; jobId: string; slice: number }
+  | { kind: 'draft-preview'; instanceId: string };
+
 export interface Env {
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
@@ -14,6 +18,8 @@ export interface Env {
   FILES: R2Bucket;
   PARSE_WORKFLOW: Workflow;
   AGENT_WORKFLOW: Workflow;
+  /** Async barrier between Workflow slices. Optional so cron remains a safe fallback. */
+  AI_CONTINUATION_QUEUE?: Queue<AiContinuationMessage>;
   ENV_NAME: EnvName;
   EMAIL_MODE: 'echo' | 'resend';
   /** 逗号分隔的写请求 Origin 白名单 */
