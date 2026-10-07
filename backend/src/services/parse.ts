@@ -536,9 +536,9 @@ async function withAiSlot<T>(
 
 export async function hasReadyMediaSummary(env:Env,versionId:string):Promise<boolean>{return Boolean(await env.DB.prepare("SELECT 1 FROM source_processing p WHERE p.source_version_id=?1 AND p.text_status='ready' AND p.summary_status='ready' AND EXISTS(SELECT 1 FROM media_processing m WHERE m.source_version_id=?1 AND m.stage='ready')").bind(versionId).first());}
 
-async function outputSource(env:Env,versionId:string):Promise<boolean>{
+async function skipSourceRequirements(env:Env,versionId:string):Promise<boolean>{
  const row=await env.DB.prepare(`SELECT s.purpose,EXISTS(SELECT 1 FROM materials m JOIN material_versions mv ON mv.id=m.current_version_id,json_each(mv.attachments_json) a WHERE m.project_id=s.project_id AND m.purpose='output' AND m.archived_at IS NULL AND json_extract(a.value,'$.fileId')=v.file_id) output_attachment FROM sources s JOIN source_versions v ON v.source_id=s.id WHERE v.id=?1`).bind(versionId).first<{purpose:string;output_attachment:number}>();
- return row?.purpose==='output'||!!row?.output_attachment;
+ return row?.purpose==='output'||row?.purpose==='background'||!!row?.output_attachment;
 }
 
 /** 任务编排：按 job input 的阶段执行对应步骤（Workflow 与恢复器共用） */
@@ -562,7 +562,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         const lifecycle=input.sourceLifecycleVersion??1;
         try{
           await loadActiveSourceVersion(env,input.sourceVersionId,lifecycle);await assertSourceJobActive(env,jobId);
-          if(operation==='source.text'||await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,lifecycle,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true,derived:true});}
+          if(operation==='source.text'||await skipSourceRequirements(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,lifecycle,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true,derived:true});}
           else{
             await setSourceStage(env,input.sourceVersionId,'requirements','processing',null,lifecycle,jobId);
             const result=await withAiSlot(env,jobId,job.project_id,'requirement_extract',()=>extractRequirements(env,input.sourceVersionId,input.configVersionId,jobId,lifecycle));
@@ -573,7 +573,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
       }
       const result=await runMediaJob(env,jobId,input.sourceVersionId);
       if(result.status==='succeeded'&&operation==='file.process'){
-        if(await outputSource(env,input.sourceVersionId))await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,input.sourceLifecycleVersion);
+        if(await skipSourceRequirements(env,input.sourceVersionId))await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,input.sourceLifecycleVersion);
         else {
           const claim=await env.DB.prepare("UPDATE source_processing SET requirements_status='processing' WHERE source_version_id=?1 AND requirements_status='pending'").bind(input.sourceVersionId).run();
           if(claim.meta.changes){try{const next=await createJobAndDispatch(env,{projectId:job.project_id,kind:'parse_source',createdBy:job.created_by,input:{...input,operation:'file.process',phase:'analyze'}});await env.DB.prepare('UPDATE file_processing SET job_id=?2,updated_at=?3 WHERE source_version_id=?1 AND job_id=?4').bind(input.sourceVersionId,next,nowIso(),jobId).run();}catch(error){await setSourceStage(env,input.sourceVersionId,'requirements','failed',error instanceof Error?error.message:'要求提取未能启动',input.sourceLifecycleVersion);}}
@@ -611,7 +611,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         return {status:(await getJob(env,jobId)).status};
       }
       await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
-      if(await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
+      if(await skipSourceRequirements(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
       await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
       const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
         extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),
@@ -640,7 +640,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     await syncFileProcessingText(env,input.sourceVersionId,jobId);
     if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.ocr'){await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,ocrReady:true});return {status:(await getJob(env,jobId)).status};}
     await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
-    if(await outputSource(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
+    if(await skipSourceRequirements(env,input.sourceVersionId)){await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,expectedLifecycleVersion,jobId);await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,requirementsSkipped:true});return {status:'succeeded'};}
     await setSourceStage(env, input.sourceVersionId, 'requirements', 'processing', null, expectedLifecycleVersion, jobId);
     const result = await withAiSlot(env, jobId, job.project_id, 'requirement_extract', () =>
       extractRequirements(env, input.sourceVersionId, input.configVersionId, jobId, expectedLifecycleVersion),

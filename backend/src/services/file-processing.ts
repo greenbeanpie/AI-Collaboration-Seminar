@@ -15,7 +15,7 @@ export interface FileProcessingView {
  textStatus:string;summaryStatus:string;requirementsStatus:string;error:string|null;materialIds:string[];
  textAvailable:boolean;canProcess:boolean;needsImages:number;textPreview?:string;
 }
-type FileRow={id:string;project_id:string;lifecycle_version:number;ext:string;original_name:string;uploader_user_id:string;ai_collaboration_enabled:number;can_process:number};
+type FileRow={id:string;project_id:string;lifecycle_version:number;ext:string;original_name:string;uploader_user_id:string;ai_collaboration_enabled:number;can_process:number;processing_purpose:string|null};
 type Binding={source_id:string;source_version_id:string;job_id:string|null;attempted:number;error:string|null};
 async function file(env:Env,projectId:string,fileId:string,actorId:string):Promise<FileRow>{
  const row=await env.DB.prepare(`SELECT f.*,p.ai_collaboration_enabled,CASE WHEN ${fileManageSql('?1','?3','f')} THEN 1 ELSE 0 END can_process
@@ -34,7 +34,7 @@ export async function readFileProcessing(env:Env,projectId:string,fileId:string,
  .bind(fileId,f.lifecycle_version).first<Binding & {purpose:string;text_status:string|null;summary_status:string|null;requirements_status:string|null;summary_error:string|null;requirements_error:string|null;parse_error:string|null;needs_images:number;preview:string|null}>();
  const materials=row?await env.DB.prepare('SELECT material_id FROM file_processing_materials WHERE source_version_id=?1').bind(row.source_version_id).all<{material_id:string}>():null;
  return {fileId,lifecycleVersion:f.lifecycle_version,sourceId:row?.source_id??null,sourceVersionId:row?.source_version_id??null,jobId:row?.job_id??null,
- textStatus:row?.text_status??(row?.job_id?'queued':'pending'),summaryStatus:row?.summary_status??'pending',requirementsStatus:row?.purpose==='output'?'skipped':row?.requirements_status??'pending',
+ textStatus:row?.text_status??(row?.job_id?'queued':'pending'),summaryStatus:row?.summary_status??'pending',requirementsStatus:row&&['output','background'].includes(row.purpose)?'skipped':row?.requirements_status??'pending',
  error:row?.error??row?.parse_error??row?.summary_error??row?.requirements_error??null,materialIds:materials?.results.map(m=>m.material_id)??[],
  textAvailable:!!row?.preview?.trim()&&!isMediaExtension(f.ext),canProcess:!!f.can_process,needsImages:row?.needs_images??0,...(row?.preview?{textPreview:row.preview.slice(0,2000)}:{})};
 }
@@ -54,19 +54,30 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
  if(!b)throw invalidState('文件状态已变化');
  await env.DB.batch([
  env.DB.prepare(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at,purpose) SELECT ?1,?2,'file',?3,?4,?5,?6,?6,
- CASE WHEN EXISTS(SELECT 1 FROM materials m JOIN material_versions v ON v.id=m.current_version_id,json_each(v.attachments_json) a WHERE m.project_id=?2 AND m.purpose='output' AND json_extract(a.value,'$.fileId')=?7) THEN 'output' ELSE 'reference' END WHERE NOT EXISTS(SELECT 1 FROM sources WHERE id=?1)`).bind(b.source_id,projectId,f.original_name,b.source_version_id,actorId,now,fileId),
+ COALESCE((SELECT processing_purpose FROM files WHERE id=?7),CASE WHEN EXISTS(SELECT 1 FROM materials m JOIN material_versions v ON v.id=m.current_version_id,json_each(v.attachments_json) a WHERE m.project_id=?2 AND m.purpose='output' AND json_extract(a.value,'$.fileId')=?7) THEN 'output' ELSE 'reference' END) WHERE NOT EXISTS(SELECT 1 FROM sources WHERE id=?1)`).bind(b.source_id,projectId,f.original_name,b.source_version_id,actorId,now,fileId),
  env.DB.prepare(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,status,created_at) SELECT ?1,?2,?3,1,'file',?4,'pending',?5 WHERE NOT EXISTS(SELECT 1 FROM source_versions WHERE id=?1)`).bind(b.source_version_id,b.source_id,projectId,fileId,now),
  ]);
  await syncFileProcessingText(env,b.source_version_id);
  const active=await env.DB.prepare("SELECT id FROM jobs WHERE json_extract(input_json,'$.sourceVersionId')=?1 AND status IN ('queued','running') LIMIT 1").bind(b.source_version_id).first<{id:string}>();
  if(active)return readFileProcessing(env,projectId,fileId,actorId);
+ await env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,text_status,requirements_status,updated_at)
+ SELECT v.id,v.project_id,'ready',CASE WHEN EXISTS(SELECT 1 FROM requirement_sets WHERE source_version_id=v.id) THEN 'ready' ELSE 'pending' END,?2 FROM source_versions v
+ WHERE v.id=?1 AND v.status='ready' AND EXISTS(SELECT 1 FROM source_fragments WHERE source_version_id=v.id AND trim(content)!='') ON CONFLICT DO NOTHING`).bind(b.source_version_id,now).run();
  const state=await env.DB.prepare('SELECT text_status,requirements_status,summary_status FROM source_processing WHERE source_version_id=?1').bind(b.source_version_id).first<{text_status:string;requirements_status:string;summary_status:string}>();
+ if(ai&&state?.text_status==='ready'&&state.summary_status==='pending'){
+  try{const summary=await enqueueSourceSummary(env,b.source_version_id,actorId);
+   if(state.requirements_status==='ready')await env.DB.prepare('UPDATE file_processing SET job_id=?3,error=NULL,updated_at=?4 WHERE file_id=?1 AND lifecycle_version=?2').bind(fileId,f.lifecycle_version,summary.jobId,now).run();
+  }catch(error){await env.DB.prepare("UPDATE source_processing SET summary_status='failed',summary_error=?2 WHERE source_version_id=?1 AND summary_status='pending'").bind(b.source_version_id,error instanceof Error?error.message:'总结任务未能启动').run();}
+ }
  if(options.retry&&ai&&state?.text_status==='ready'&&['failed','cancelled'].includes(state.summary_status)){
   const summary=await enqueueSourceSummary(env,b.source_version_id,actorId);
   await env.DB.prepare('UPDATE file_processing SET job_id=?3,error=NULL,updated_at=?4 WHERE file_id=?1 AND lifecycle_version=?2').bind(fileId,f.lifecycle_version,summary.jobId,now).run();
   return readFileProcessing(env,projectId,fileId,actorId);
  }
- if(state?.text_status==='ready'&&(!ai||state.requirements_status==='ready'))return readFileProcessing(env,projectId,fileId,actorId);
+ if(state?.text_status==='ready'&&(!ai||state.requirements_status==='ready')){
+  if(ai)await env.DB.prepare('UPDATE file_processing SET attempted=1,updated_at=?3 WHERE file_id=?1 AND lifecycle_version=?2').bind(fileId,f.lifecycle_version,now).run();
+  return readFileProcessing(env,projectId,fileId,actorId);
+ }
  const jobId=newId();
  const claim=await env.DB.prepare(`UPDATE file_processing SET attempted=1,job_id=?3,error=NULL,updated_at=?4 WHERE file_id=?1 AND lifecycle_version=?2 AND (attempted=0 OR ?5=1 OR (?6=1 AND EXISTS(SELECT 1 FROM jobs WHERE id=file_processing.job_id AND status='succeeded' AND json_extract(input_json,'$.operation')='source.text'))) AND NOT EXISTS(SELECT 1 FROM jobs WHERE id=file_processing.job_id AND status IN ('queued','running'))`).bind(fileId,f.lifecycle_version,jobId,now,options.retry?1:0,ai?1:0).run();
  if(!claim.meta.changes)return readFileProcessing(env,projectId,fileId,actorId);
@@ -79,8 +90,10 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
 
 /** Bounded and non-retrying discovery. A failed attempt requires an explicit user retry. */
 export async function backfillFileProcessing(env:Env,projectId?:string,limit=20):Promise<void>{
- const rows=await env.DB.prepare(`SELECT f.id,f.project_id,COALESCE((SELECT user_id FROM project_members WHERE project_id=p.id AND role='owner' LIMIT 1),f.uploader_user_id) uploader_user_id FROM files f JOIN projects p ON p.id=f.project_id
+ const eligibleActor=`(SELECT candidate.user_id FROM project_members candidate WHERE candidate.project_id=f.project_id AND ${fileManageSql('f.project_id','candidate.user_id','f')} ORDER BY (candidate.user_id=f.uploader_user_id) DESC,(candidate.role='owner') DESC,candidate.user_id LIMIT 1)`;
+ const rows=await env.DB.prepare(`SELECT f.id,f.project_id,${eligibleActor} uploader_user_id FROM files f JOIN projects p ON p.id=f.project_id
  WHERE p.ai_collaboration_enabled=1 AND (?1 IS NULL OR p.id=?1) AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')}
+ AND ${eligibleActor} IS NOT NULL
  AND f.ext IN ('.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm')
  AND NOT EXISTS(SELECT 1 FROM file_derivations WHERE file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM source_pages WHERE image_file_id=f.id)
@@ -93,12 +106,17 @@ export async function backfillFileProcessing(env:Env,projectId?:string,limit=20)
 
 /** Publish extracted original text only; summaries are never assessment evidence. */
 export async function syncFileProcessingText(env:Env,sourceVersionId:string,jobId?:string):Promise<void>{
- const row=await env.DB.prepare(`SELECT b.file_id,b.lifecycle_version,s.id source_id,s.purpose,s.project_id,s.title,s.created_by,f.ext FROM file_processing b JOIN sources s ON s.id=b.source_id JOIN files f ON f.id=b.file_id WHERE b.source_version_id=?1 AND f.lifecycle_version=b.lifecycle_version AND f.deleted_at IS NULL AND s.deleted_at IS NULL AND ${discoverableFileSql('f')}`).bind(sourceVersionId).first<{file_id:string;lifecycle_version:number;source_id:string;purpose:string;project_id:string;title:string;created_by:string;ext:string}>();
+ const row=await env.DB.prepare(`SELECT b.file_id,b.lifecycle_version,s.id source_id,s.purpose,s.project_id,s.title,s.created_by,f.ext,
+ CASE WHEN f.lifecycle_version=b.lifecycle_version AND f.status='available' AND f.deleted_at IS NULL AND s.deleted_at IS NULL AND ${discoverableFileSql('f')} THEN 1 ELSE 0 END publishable
+ FROM file_processing b JOIN sources s ON s.id=b.source_id JOIN files f ON f.id=b.file_id WHERE b.source_version_id=?1 ORDER BY b.lifecycle_version DESC LIMIT 1`).bind(sourceVersionId).first<{file_id:string;lifecycle_version:number;source_id:string;purpose:string;project_id:string;title:string;created_by:string;ext:string;publishable:number}>();
  if(!row||isMediaExtension(row.ext))return;
  if(jobId&&!await env.DB.prepare("SELECT 1 FROM jobs WHERE id=?1 AND status IN ('queued','running')").bind(jobId).first())return;
  const now=nowIso();
- await env.DB.prepare(`UPDATE materials SET purpose=COALESCE((SELECT parent.purpose FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id),?2),
- archived_at=CASE WHEN EXISTS(SELECT 1 FROM file_processing_materials link WHERE link.source_version_id=?1 AND link.material_id=materials.id AND link.parent_material_id IS NOT NULL) THEN (SELECT parent.archived_at FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id) ELSE archived_at END,updated_at=?3 WHERE kind='file-extracted' AND id IN (SELECT material_id FROM file_processing_materials WHERE source_version_id=?1)`).bind(sourceVersionId,row.purpose,now).run();
+ const parentLink=`EXISTS(SELECT 1 FROM file_processing_materials link WHERE link.source_version_id=?1 AND link.material_id=materials.id AND link.parent_material_id IS NOT NULL)`;
+ const attachedParent=`EXISTS(SELECT 1 FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id JOIN material_versions pv ON pv.id=parent.current_version_id,json_each(pv.attachments_json) a WHERE link.source_version_id=?1 AND link.material_id=materials.id AND json_extract(a.value,'$.fileId')=?4)`;
+ await env.DB.prepare(`UPDATE materials SET purpose=CASE WHEN ${parentLink} AND NOT ${attachedParent} THEN 'reference' ELSE COALESCE((SELECT parent.purpose FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id),?2) END,
+ archived_at=CASE WHEN ?5=0 THEN COALESCE(archived_at,?3) WHEN ${parentLink} THEN CASE WHEN NOT ${attachedParent} THEN COALESCE(archived_at,?3) ELSE (SELECT parent.archived_at FROM file_processing_materials link JOIN materials parent ON parent.id=link.parent_material_id WHERE link.source_version_id=?1 AND link.material_id=materials.id) END ELSE archived_at END,updated_at=?3 WHERE kind='file-extracted' AND id IN (SELECT material_id FROM file_processing_materials WHERE source_version_id=?1)`).bind(sourceVersionId,row.purpose,now,row.file_id,row.publishable).run();
+ if(!row.publishable)return;
  const fragments=await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id=?1 ORDER BY seq').bind(sourceVersionId).all<{content:string}>();
  const text=fragments.results.map(f=>f.content).join('\n\n').trim();if(!text)return;
  const hash=await sha256Hex(text),doc=JSON.stringify({type:'doc',content:text.split('\n\n').map(t=>({type:'paragraph',content:[{type:'text',text:t}]}))});
