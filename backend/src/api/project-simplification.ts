@@ -87,7 +87,7 @@ export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
           const version=await c.env.DB.prepare('SELECT markdown FROM material_versions WHERE id=?1 AND project_id=?2').bind(versionId,projectId).first<{markdown:string}>();
           if(version?.markdown.trim()){hasBody=true;break;}
         }
-        if(!hasBody)throw invalidState('没有可核对的成果正文。请先在项目文档中保存用途为“成果”的文档正文，再开始材料检查；仅有上传附件尚不能评分，需提供可核对正文；背景和参考资料不能替代成果。');
+        if(!hasBody)throw invalidState('没有可核对的成果正文。请先保存用途为“成果”的文档正文，或上传成果文件并完成正文提取，再开始材料检查；未提取正文的附件、背景和参考资料不能替代成果正文。');
       }
       return withReservedAiJob(c.env,{projectId,purpose:b.kind==='material_review'?'review_run':'rehearsal_turn',maxCalls:24},async(jobId,configVersionId)=>{
         const id=newId(),rehearsalId=b.kind==='rehearsal'?newId():null,now=nowIso(),batch=[c.env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11 WHERE ${projectPermissionSql('?2','?10','scoreInitiate')} AND ${effectiveStandardGuardSql('?2','?6')}`).bind(id,projectId,b.kind,rehearsalId,input.goal.revision,input.standard.standardsVersionId,JSON.stringify(input),b.kind==='rehearsal'?'active':'pending',jobId,userId,now)];
