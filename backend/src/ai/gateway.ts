@@ -27,7 +27,7 @@ export interface ChatMessage {
 
 export interface GatewayCallInput {
   feedbackManaged?:boolean;
-  contextMetadata?:{stage:number;compactions:number;baseChars:number;inputChars:number;step?:number;repeatedReads?:number};
+  contextMetadata?:{stage:number;compactions:number;baseChars:number;inputChars:number;step?:number;repeatedReads?:number;readTrackingWindow?:number};
   projectId?: string;
   jobId?: string;
   executionTarget?: ExecutionTarget;
@@ -248,7 +248,7 @@ async function gatewayChatAttempt(
   const serializedBody = JSON.stringify(body);
   const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
   const base=JSON.stringify({messages,definitions:input.toolMode?.definitions??[]});
-  const contextMetadata:AiContextMetadata={protocol,step:input.contextMetadata?.step,stage:input.contextMetadata?.stage??0,compactionCount:input.contextMetadata?.compactions??0,baseHash:hash(base),baseChars:base.length,inputHash:hash(serializedBody),inputChars:serializedBody.length,...(input.contextMetadata?.repeatedReads!==undefined?{repeatedReads:input.contextMetadata.repeatedReads}:{})};
+  const contextMetadata:AiContextMetadata={protocol,step:input.contextMetadata?.step,stage:input.contextMetadata?.stage??0,compactionCount:input.contextMetadata?.compactions??0,baseHash:hash(base),baseChars:base.length,inputHash:hash(serializedBody),inputChars:serializedBody.length,...(input.contextMetadata?.repeatedReads!==undefined?{repeatedReads:input.contextMetadata.repeatedReads,readTrackingWindow:input.contextMetadata.readTrackingWindow}:{})};
   if(input.contextMetadata && serializedBody.length>input.config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
   if (images.length && !input.config.supportsVision) throw new AppError('AI_UNAVAILABLE','当前模型不支持图像；不会回落到其他端点',503,false);

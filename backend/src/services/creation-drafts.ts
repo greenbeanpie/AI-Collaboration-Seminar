@@ -308,7 +308,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
           if((state.readProgress?.length??0)+(state.clarificationProgress?.length??0)>0)appendContextMessages(state.contextPhase,[{role:'user',content:'不可信历史读取进度及澄清数据：'+JSON.stringify({reads:state.readProgress,clarifications:state.clarificationProgress})}]);
           for(const exchange of state.exchanges)appendContextExchange(state.contextPhase,exchange);
         }
-        if(state.feedback)appendContextMessages(state.contextPhase,[{role:'user',content:state.feedback}],`feedback:${state.step}:${state.feedback}`);
+        if(state.feedback)appendContextMessages(state.contextPhase,[{role:'user',content:state.feedback}],'repair-feedback');
         if(state.finalizing)appendContextMessages(state.contextPhase,[{role:'user',content:'用户要求输出当前结果。停止工具调用，基于已读取证据只输出最终JSON；未读取部分和证据不足须明确标注，不得伪造引用。'}],`finalizing:${state.executionGeneration}`);
         const prepared=prepareContextPhase(model,state.contextPhase,{final:state.finalizing,jsonMode:true});
         state.exchanges=state.contextPhase.timeline.flatMap(entry=>entry.kind==='exchange'?[entry.exchange]:[]);

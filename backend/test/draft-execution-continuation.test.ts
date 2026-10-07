@@ -36,7 +36,9 @@ describe('durable draft execution windows',()=>{
   await controlDraftExecution(f.local,f.id,f.userId,1,'continue');
   const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const body=JSON.parse(String(init?.body)),input=body.messages.reduce((n:number,m:{content:unknown})=>n+(typeof m.content==='string'?m.content.length:JSON.stringify(m.content).length),0);expect(input).toBeLessThanOrEqual(12000);return response();});vi.stubGlobal('fetch',fetch);
   const ready=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,2,0);expect(ready.execution?.totalCalls).toBe(501);
-  const bounded=(await loadDraftCheckpoint(env,f.attempt))!.checkpoint;expect(JSON.stringify(bounded).length).toBeLessThan(18000);expect(bounded.contextPhase?.stage).toBe(1);expect(JSON.stringify(bounded.contextPhase?.summaryData)).toContain('nextOffset');
+  const bounded=(await loadDraftCheckpoint(env,f.attempt))!.checkpoint;
+  // Phase and compatibility views plus bounded read fingerprints are persisted together.
+  expect(JSON.stringify(bounded).length).toBeLessThan(30000);expect(bounded.contextPhase?.readKeys?.length).toBeLessThanOrEqual(256);expect(bounded.contextPhase?.stage).toBe(1);expect(JSON.stringify(bounded.contextPhase?.summaryData)).toContain('nextOffset');
  });
  it('never marks a continued segment failed because its predecessor completed',async()=>{
   const f=await fixture();vi.stubGlobal('fetch',vi.fn(async()=>response([call('read',f.fileId)])));

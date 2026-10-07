@@ -13,6 +13,7 @@ SELECT
   SUM(latency_ms) AS total_latency_ms,
   AVG(latency_ms) AS mean_latency_ms,
   SUM(json_extract(context_metadata_json, '$.repeatedReads')) AS repeated_reads,
+  MAX(json_extract(context_metadata_json, '$.readTrackingWindow')) AS recent_distinct_read_window,
   SUM(CASE WHEN json_extract(context_metadata_json, '$.repeatedReads') IS NOT NULL THEN 1 ELSE 0 END) AS calls_with_read_metadata
 FROM ai_calls
 GROUP BY COALESCE(job_id, draft_id, run_id, id),

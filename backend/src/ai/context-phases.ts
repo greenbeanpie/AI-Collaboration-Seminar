@@ -3,6 +3,9 @@ import type { AiModelConfig } from './config';
 import { buildProviderRequest } from './transport';
 import { applyToolMode, type ToolDefinition, type ToolExchange, type ToolMode } from './tool-transport';
 import { AppError } from '../core/errors';
+import { createHash } from 'node:crypto';
+
+export const READ_TRACKING_WINDOW=256;
 
 export type ContextEntry = {kind:'message';message:ChatMessage} | {kind:'exchange';exchange:ToolExchange};
 export interface ContextPhase {
@@ -44,9 +47,11 @@ export function appendContextExchange(phase:ContextPhase,exchange:ToolExchange):
   phase.readKeys??=[];
   for(const result of exchange.results) {
     if(!/^read_|^get_resource_index$/.test(result.call.name))continue;
-    const key=JSON.stringify([result.call.name,result.call.args]);
+    const key=createHash('sha256').update(JSON.stringify([result.call.name,result.call.args])).digest('hex').slice(0,32);
     if(phase.readKeys.includes(key))phase.repeatedReads=(phase.repeatedReads??0)+1;
-    else phase.readKeys.push(key);
+    phase.readKeys=phase.readKeys.filter(previous=>previous!==key);
+    phase.readKeys.push(key);
+    phase.readKeys=phase.readKeys.slice(-READ_TRACKING_WINDOW);
   }
   phase.timeline.push({kind:'exchange',exchange:clone(exchange)});
 }
@@ -71,7 +76,7 @@ function locator(value:unknown):unknown {
   }
   return result;
 }
-export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,options:{final?:boolean;jsonMode?:boolean;preserve?:unknown[]}={}):{messages:ChatMessage[];toolMode:ToolMode;metadata:{stage:number;compactions:number;baseChars:number;inputChars:number;repeatedReads:number}} {
+export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,options:{final?:boolean;jsonMode?:boolean;preserve?:unknown[]}={}):{messages:ChatMessage[];toolMode:ToolMode;metadata:{stage:number;compactions:number;baseChars:number;inputChars:number;repeatedReads:number;readTrackingWindow:number}} {
   let size=contextRequestChars(config,phase,options);
   const target=Math.floor(config.maxInputChars*.5);
   if(size>=Math.floor(config.maxInputChars*.8)) {
@@ -104,15 +109,17 @@ export function prepareContextPhase(config:AiModelConfig,phase:ContextPhase,opti
     }
     if(removed.length) {
       size=contextRequestChars(config,phase,options);
+      let olderLocatorsOmitted=false;
       while(size>target && locators.length>1) {
+        olderLocatorsOmitted=true;
         locators.shift();
         updateSummary(true);
         size=contextRequestChars(config,phase,options);
       }
-      phase.summaryData=updateSummary();
+      phase.summaryData=updateSummary(olderLocatorsOmitted);
       phase.stage++;phase.compactions++;
     }
   }
   if(size>config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
-  return {messages:messages(phase),toolMode:toolMode(phase,options.final),metadata:{stage:phase.stage,compactions:phase.compactions,baseChars:JSON.stringify(phase.baseMessages).length,inputChars:size,repeatedReads:phase.repeatedReads??0}};
+  return {messages:messages(phase),toolMode:toolMode(phase,options.final),metadata:{stage:phase.stage,compactions:phase.compactions,baseChars:JSON.stringify(phase.baseMessages).length,inputChars:size,repeatedReads:phase.repeatedReads??0,readTrackingWindow:READ_TRACKING_WINDOW}};
 }

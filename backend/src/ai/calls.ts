@@ -15,6 +15,7 @@ export interface AiContextMetadata {
   inputHash: string;
   inputChars: number;
   repeatedReads?: number;
+  readTrackingWindow?:number;
 }
 
 export interface AiCallRecord {
@@ -98,8 +99,10 @@ function serializeContextMetadata(value: AiContextMetadata): string | null {
     || !/^[a-f0-9]{64}$/.test(value.baseHash) || !/^[a-f0-9]{64}$/.test(value.inputHash)
     || [value.stage, value.compactionCount, value.baseChars, value.inputChars].some(n => tokenCount(n) === null)
     || (value.step !== undefined && tokenCount(value.step) === null)
-    || (value.repeatedReads !== undefined && tokenCount(value.repeatedReads) === null)) return null;
+    || (value.repeatedReads !== undefined && tokenCount(value.repeatedReads) === null)
+    || (value.readTrackingWindow !== undefined && tokenCount(value.readTrackingWindow) === null)) return null;
   return JSON.stringify({ protocol: value.protocol, step: value.step, stage: value.stage, compactionCount: value.compactionCount,
     baseHash: value.baseHash, baseChars: value.baseChars, inputHash: value.inputHash, inputChars: value.inputChars,
-    ...(value.repeatedReads === undefined ? {} : { repeatedReads: value.repeatedReads }) });
+    ...(value.repeatedReads === undefined ? {} : { repeatedReads: value.repeatedReads }),
+    ...(value.readTrackingWindow===undefined?{}:{readTrackingWindow:value.readTrackingWindow}) });
 }
