@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { Job } from '../api/types';
+import type { ActivityJob } from '../api/ai-activity';
 import '../styles/ai-workflows.css';
 
 export type JobPollState = {
-  job: Job | null;
+  job: ActivityJob | null;
   error: unknown;
   loading: boolean;
 };
@@ -13,6 +14,7 @@ const pollDelays = [2_000, 3_000, 5_000, 8_000, 10_000];
 
 /** Poll a real backend job while this page is visible, starting at two seconds and backing off to ten. */
 export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [state, setState] = useState<{ jobId: string | null } & JobPollState>({ jobId: null, job: null, error: null, loading: false });
 
   useEffect(() => {
@@ -22,12 +24,13 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
     }
 
     let active = true;
+    let polledId = jobId;
     let timer: number | undefined;
     let controller: AbortController | undefined;
     let delayIndex = 0;
     let inFlight = false;
     let refreshWhenVisible = false;
-    setState({ jobId, job: null, error: null, loading: true });
+    setState(current => ({ jobId, job: current.jobId === jobId ? current.job : null, error: null, loading: true }));
 
     const schedule = () => {
       if (!active || document.visibilityState !== 'visible') return;
@@ -41,7 +44,8 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
       inFlight = true;
       controller = new AbortController();
       try {
-        const job = await api.get<'JobResponse'>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, undefined, controller.signal);
+        const job = await api.get<'JobResponse'>(`/api/v1/jobs/${encodeURIComponent(polledId)}`, undefined, controller.signal);
+        polledId = job.jobId;
         if (!active) return;
         setState({ jobId, job, error: null, loading: false });
         if (!isSettledJob(job.status)) schedule();
@@ -71,21 +75,25 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
       } else refreshWhenVisible = true;
     };
 
+    const onRefresh = () => { if (timer !== undefined) window.clearTimeout(timer); void poll(); };
+    window.addEventListener('ai-job-refresh', onRefresh);
     document.addEventListener('visibilitychange', onVisibilityChange);
     if (document.visibilityState === 'visible') void poll();
     return () => {
       active = false;
+      window.removeEventListener('ai-job-refresh', onRefresh);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (timer !== undefined) window.clearTimeout(timer);
       controller?.abort();
     };
-  }, [jobId, refreshKey]);
+  }, [jobId, refreshKey, refreshVersion]);
 
   const current: JobPollState & { jobId: string | null } = state.jobId === jobId
     ? { jobId: state.jobId, job: state.job, error: state.error, loading: state.loading }
     : { jobId, job: null, error: null, loading: Boolean(jobId) };
   return {
     ...current,
+    refresh: () => setRefreshVersion(version => version + 1),
     isSettled: current.job ? isSettledJob(current.job.status) : false,
   };
 }
