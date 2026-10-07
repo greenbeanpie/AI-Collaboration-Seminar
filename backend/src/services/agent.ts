@@ -263,7 +263,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     if (!failure) {if(executionTarget)await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);return { data: data!, repaired: attempt > 0 };}
     if(finalizing&&executionTarget){await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);}
     // An exhausted output budget cannot be repaired using the same cap. Keep JSON/schema repairs.
-    if (!executionTarget && !out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
+    if(!out && failure instanceof AppError && failure.code==='AI_OUTPUT_INVALID' && failure.details?.cause==='output_limit'){if(executionTarget){await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);}throw failure;}
     // Transport recovery belongs to gatewayChat. Never restart its recovery window
     // through the independent JSON/schema repair loop, or replay uncertain dispatches.
     if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE') { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw failure; }

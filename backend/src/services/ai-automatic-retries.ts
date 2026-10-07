@@ -1,11 +1,11 @@
-import { readExecution, resolveExecutionTarget } from './ai-execution-control';
+import { readExecution, resolveExecutionTarget, ensureExecution, markInterruptedExecution } from './ai-execution-control';
 import { recordActivity } from './ai-activity';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
 import { newId, nowIso } from '../core/db';
 import { loadAiConfig } from '../ai/config';
 import { loadDraftCheckpoint, saveDraftCheckpoint } from './draft-preview-checkpoints';
-import { dispatchDraftPreview, enqueueDraftPreview } from './draft-preview-jobs';
+import { dispatchDraftPreview, controlDraftExecution } from './draft-preview-jobs';
 
 export const AUTOMATIC_AI_RETRY_LIMIT = 3;
 export const AUTOMATIC_AI_RETRY_DELAY_MS = 60_000;
@@ -93,7 +93,11 @@ export async function retryFailedDraftPreview(env:Env,draftId:string,expectedUpd
     const checkpoint=await loadDraftCheckpoint(env,draft.preview_attempt_id);
     const config=await loadAiConfig(env.DB);
     if(!checkpoint || !config?.enabled || config.id!==checkpoint.checkpoint.configVersionId) return {status:'skipped',reason:'预览模型配置已变化'};
-    const refreshed=await enqueueDraftPreview(env,draftId,checkpoint.checkpoint.userId,checkpoint.checkpoint.revision,[],true,checkpoint.checkpoint.requestedGoal);
+    const target={kind:'draft_preview' as const,id:draft.preview_attempt_id};
+    const execution=await ensureExecution(env,target,{draftId,userId:checkpoint.checkpoint.userId});
+    if(['running','finalizing'].includes(execution.state))await markInterruptedExecution(env,target,execution.generation,{requestUncertain:checkpoint.checkpoint.pendingDispatch===true&&!checkpoint.checkpoint.pendingOutput});
+    await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running',preview_error=NULL WHERE id=?1 AND preview_attempt_id=?2 AND preview_state='failed' AND status='active'").bind(draftId,draft.preview_attempt_id).run();
+    const refreshed=await controlDraftExecution(env,draftId,checkpoint.checkpoint.userId,execution.generation,'continue',{allowUncertainDispatch:true});
     return {status:'retried',jobId:refreshed.previewAttemptId ?? undefined};
   }
   const token=newId(),now=nowIso();

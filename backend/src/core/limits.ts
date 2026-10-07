@@ -4,8 +4,6 @@ export const LIMITS = {
   maxFileBytes: null,
   maxMediaBytes: 50 * 1024 * 1024,
   audioTranscriptChunkChars: 12000,
-  audioTranscriptMaxChunks: 24,
-  audioPipelineMaxCalls: 64,
   /** 单个 PDF 最大页数 */
   maxPdfPages: null,
   recommendedCloudFileBytes: 10 * 1024 * 1024,

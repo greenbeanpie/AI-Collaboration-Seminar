@@ -71,8 +71,8 @@ export async function resolveExecutionTarget(env:Env,t:ExecutionTarget):Promise<
 export const executionSchema=z.object({generation:z.number().int(),windowCalls:z.number().int(),totalCalls:z.number().int(),limit:z.number().int(),state:z.enum(['running','paused','finalizing','cancelled','completed']),pauseReason:z.enum(['round_limit','request_uncertain','output_invalid','interrupted']).nullable(),canContinue:z.boolean(),canOutput:z.boolean()});
 
 /** Invoke only after the owning Workflow is confirmed terminal. Never clear live calls by age. */
-export async function markInterruptedExecution(env:Env,t:ExecutionTarget,expectedGeneration:number):Promise<boolean>{
- const result=await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason=CASE WHEN inflight_token IS NULL THEN 'interrupted' ELSE 'request_uncertain' END,inflight_token=NULL,inflight_generation=NULL,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND generation=?3 AND state IN ('running','finalizing')").bind(t.kind,t.id,expectedGeneration,nowIso()).run();
+export async function markInterruptedExecution(env:Env,t:ExecutionTarget,expectedGeneration:number,options:{requestUncertain?:boolean}={}):Promise<boolean>{
+ const result=await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason=CASE WHEN inflight_token IS NULL AND ?5=0 THEN 'interrupted' ELSE 'request_uncertain' END,inflight_token=NULL,inflight_generation=NULL,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND generation=?3 AND state IN ('running','finalizing')").bind(t.kind,t.id,expectedGeneration,nowIso(),options.requestUncertain?1:0).run();
  if(result.meta.changes)await syncPausedTarget(env,t);return result.meta.changes>0;
 }
 

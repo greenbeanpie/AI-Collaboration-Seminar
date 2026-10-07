@@ -37,7 +37,7 @@ export function chunkTranscript(t:Transcript,maxInputChars:number):AudioChunk[] 
   if(!current || current.text.length+line.length+1>cap || JSON.stringify({...current,text:current.text+'\n'+line,segments:[...current.segments,s]}).length>maxInputChars-2048){const candidate={start:s.start!,end:s.end!,text:line,segments:[s]};if(JSON.stringify(candidate).length>maxInputChars-2048)throw new Error('完整分段连同质量指标超过模型输入上限');current={start:s.start!,end:s.end!,text:'',segments:[]};chunks.push(current);}
   current.text+=(current.text?'\n':'')+line;current.segments.push(s);current.end=s.end!;
  }
- if(!chunks.length || chunks.length>LIMITS.audioTranscriptMaxChunks)throw new Error('转录超出分块处理范围');
+ if(!chunks.length)throw new Error('转录没有可处理的分块');
  return chunks;
 }
 export function allQualityPassed(values:AudioQuality[],chunks:number):boolean{return values.length===chunks&&values.every(v=>v.score>=0.85&&!v.critical&&v.anomalies.length===0);}

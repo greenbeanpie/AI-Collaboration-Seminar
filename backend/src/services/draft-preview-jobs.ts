@@ -1,6 +1,6 @@
 import { recordActivity } from './ai-activity';
 import { saveDraftCheckpoint } from './draft-preview-checkpoints';
-import { ensureExecution, readExecution, resumeExecution, cancelExecution, pauseExecution, markInterruptedExecution } from './ai-execution-control';
+import { ensureExecution, readExecution, resumeExecution, cancelExecution, markInterruptedExecution } from './ai-execution-control';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -59,13 +59,14 @@ async function failStoppedDispatch(env:Env,row:DraftDispatch) {
   if(!current)return;
   const execution=await readExecution(env,target)??await ensureExecution(env,target,{draftId:row.draft_id,userId:current.owner_id});
   if(!['running','finalizing'].includes(execution.state))return;
-  if(!snapshot){await pauseExecution(env,target,'output_invalid');return;}
+  if(!snapshot){await markInterruptedExecution(env,target,execution.generation);await env.DB.prepare("UPDATE project_creation_drafts SET preview_error='恢复检查点不存在；资料仍保留，请主动重新生成预览' WHERE id=?1 AND preview_attempt_id=?2").bind(row.draft_id,row.attempt_id).run();return;}
   const checkpoint=snapshot.checkpoint,segment=checkpoint.segment??0;
   const currentId=checkpoint.dispatchGeneration===execution.generation&&checkpoint.dispatchSegment===segment?checkpoint.dispatchInstanceId:`${row.attempt_id}-g${execution.generation}-s${segment}`;
-  const legacyInitial=!checkpoint.dispatchInstanceId&&execution.generation===1&&segment===0&&row.instance_id===row.attempt_id;
-  if(!legacyInitial&&row.instance_id!==currentId)return;
-  if(checkpoint.pendingDispatch)await pauseExecution(env,target,'request_uncertain');
-  else await markInterruptedExecution(env,target,execution.generation);
+  if(!checkpoint.dispatchInstanceId&&execution.generation===1&&segment===0){
+    const latest=await env.DB.prepare("SELECT s.instance_id FROM draft_preview_dispatches s LEFT JOIN ai_clarifications q ON q.id=s.question_id WHERE s.attempt_id=?1 ORDER BY COALESCE(q.round,0) DESC,s.created_at DESC LIMIT 1").bind(row.attempt_id).first<{instance_id:string}>();
+    if(latest?.instance_id!==row.instance_id)return;
+  }else if(row.instance_id!==currentId)return;
+  await markInterruptedExecution(env,target,execution.generation,{requestUncertain:checkpoint.pendingDispatch===true});
 }
 
 export async function enqueueDraftPreview(env:Env,id:string,userId:string,revision:number,tasks:DraftPreviewInput['tasks'],regenerate:boolean,goal?:DraftPreviewInput['goal']) {
