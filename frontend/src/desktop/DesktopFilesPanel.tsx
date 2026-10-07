@@ -14,7 +14,10 @@ export function DesktopFilesPanel({ projectId, taskId, disabled = false, onBusy,
     let live = true;
     let signature: string | undefined;
     const refresh = () => { if (document.visibilityState === 'hidden') return; void listDesktopFiles(projectId).then(next => { if (live) { setRows(next); const nextSignature = next.filter(row => row.direction === 'upload' && row.status === 'complete').map(row => row.id).sort().join(','); if (signature !== undefined && signature !== nextSignature) completed.current?.(); signature = nextSignature; } }).catch(failure => { if (live) setError(failure); }); };
-    refresh(); window.addEventListener('desktop-transfer-refresh', refresh); document.addEventListener('visibilitychange', refresh); const timer = setInterval(refresh, 3000); return () => { live = false; clearInterval(timer); window.removeEventListener('desktop-transfer-refresh', refresh); document.removeEventListener('visibilitychange', refresh); };
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const visibility = () => { clearInterval(timer); timer = undefined; if (document.visibilityState !== 'hidden') { refresh(); timer = setInterval(refresh, 3000); } };
+    visibility(); window.addEventListener('desktop-transfer-refresh', refresh); document.addEventListener('visibilitychange', visibility);
+    return () => { live = false; clearInterval(timer); window.removeEventListener('desktop-transfer-refresh', refresh); document.removeEventListener('visibilitychange', visibility); };
   }, [projectId]);
   const pending = rows.some(row => row.direction === 'upload' && row.taskId === taskId && row.status !== 'complete');
   useEffect(() => { onBusy?.(running || pending, pending ? '本机附件尚未上传并入库，提交将保存在本机等待附件完成。' : running ? '正在保存附件。' : ''); }, [onBusy, pending, running]);

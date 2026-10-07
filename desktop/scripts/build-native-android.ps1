@@ -1,0 +1,72 @@
+param([string[]]$Targets=@('aarch64','x86_64'),[switch]$Debug)
+$ErrorActionPreference='Stop'
+$repo=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$tauri=Join-Path $repo 'desktop/src-tauri'
+$project=Join-Path $tauri 'gen/android'
+$ndkbin=Join-Path $env:NDK_HOME 'toolchains/llvm/prebuilt/windows-x86_64/bin'
+$mode=if($Debug){'debug'}else{'release'}
+$names=@('TAURI_ANDROID_PROJECT_PATH','WRY_ANDROID_PACKAGE','WRY_ANDROID_LIBRARY','WRY_ANDROID_KOTLIN_FILES_OUT_DIR','TAURI_ANDROID_PACKAGE_UNESCAPED','TARGET_AR','TARGET_CC','TARGET_CXX','ANDROID_NATIVE_API_LEVEL','CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER','CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS','CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER','CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS')
+$previous=@{}
+foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
+try {
+  $env:TAURI_ANDROID_PROJECT_PATH=$project
+  $env:WRY_ANDROID_PACKAGE='cn.buwei.mobile'
+  $env:TAURI_ANDROID_PACKAGE_UNESCAPED='cn.buwei.mobile'
+  $env:WRY_ANDROID_LIBRARY='buwei_desktop_core'
+  $env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR=Join-Path $project 'app/src/main/java/cn/buwei/mobile/generated'
+  New-Item -ItemType Directory $env:WRY_ANDROID_KOTLIN_FILES_OUT_DIR -Force | Out-Null
+  $env:TARGET_AR=Join-Path $ndkbin 'llvm-ar.exe'
+  $env:ANDROID_NATIVE_API_LEVEL='26'
+  $config=Get-Content (Join-Path $tauri 'tauri.conf.json') -Raw | ConvertFrom-Json
+  $v=$config.version.Split('.')
+  $versionCode=[int]$v[0]*1000000+[int]$v[1]*10000+[int]$v[2]*1000
+  "tauri.android.versionName=$($config.version)`ntauri.android.versionCode=$versionCode" | Set-Content (Join-Path $project 'app/tauri.properties') -Encoding ascii
+  $gradleTasks=@()
+  $skipTasks=@()
+  foreach($target in $Targets){
+    $triple="$target-linux-android"
+    $key=$triple.Replace('-','_').ToUpperInvariant()
+    $compiler=Join-Path $ndkbin "$($triple)26-clang.cmd"
+    $env:TARGET_CC=$compiler
+    $env:TARGET_CXX=Join-Path $ndkbin "$($triple)26-clang++.cmd"
+    [Environment]::SetEnvironmentVariable("CARGO_TARGET_${key}_LINKER",$compiler,'Process')
+    [Environment]::SetEnvironmentVariable("CARGO_TARGET_${key}_RUSTFLAGS",'-Clink-arg=-landroid -Clink-arg=-llog -Clink-arg=-lOpenSLES','Process')
+    $cargoArgs=@('build','--locked','--lib','--manifest-path',(Join-Path $tauri 'Cargo.toml'),'--target',$triple,'--features','tauri/custom-protocol')
+    if(!$Debug){$cargoArgs+='--release'}
+    & cargo @cargoArgs
+    if($LASTEXITCODE){throw "Rust Android build failed for $triple"}
+    $abi=if($target -eq 'aarch64'){'arm64-v8a'}else{'x86_64'}
+    $flavor=if($target -eq 'aarch64'){'Arm64'}else{'X86_64'}
+    $nativeDirectory=Join-Path $project "app/src/main/jniLibs/$abi"
+    New-Item -ItemType Directory $nativeDirectory -Force | Out-Null
+    $library=Join-Path $tauri "target/$triple/$mode/libbuwei_desktop_core.so"
+    Copy-Item -LiteralPath $library -Destination $nativeDirectory -Force
+    $dependencies=& (Join-Path $ndkbin 'llvm-readelf.exe') -d $library
+    if($LASTEXITCODE){throw 'Cannot inspect native dependencies'}
+    if($dependencies -match 'libc\+\+_shared.so'){
+      Copy-Item -LiteralPath (Join-Path $ndkbin "../sysroot/usr/lib/$triple/libc++_shared.so") -Destination $nativeDirectory -Force
+    }
+    $profile=if($Debug){'Debug'}else{'Release'}
+    $gradleTasks+="assemble$flavor$profile"
+    $skipTasks+=@('-x',"rustBuild$flavor$profile")
+  }
+  # tauri-build normally generates these from dependency build metadata. Recover
+  # them explicitly when a cached target tree outlives ignored generated files.
+  if (!(Test-Path (Join-Path $project 'tauri.settings.gradle')) -or !(Test-Path (Join-Path $project 'app/tauri.build.gradle.kts'))) {
+    $metadata = & cargo metadata --locked --format-version 1 --filter-platform "$($Targets[0])-linux-android" --manifest-path (Join-Path $tauri 'Cargo.toml') | ConvertFrom-Json
+    if ($LASTEXITCODE) { throw 'Cannot resolve Tauri Android library metadata' }
+    $package = $metadata.packages | Where-Object name -EQ 'tauri' | Select-Object -First 1
+    if (!$package) { throw 'Tauri package missing from Cargo dependency graph' }
+    $libraryDirectory = (Join-Path (Split-Path $package.manifest_path) 'mobile/android').Replace('\','/')
+    $settings = "include ':tauri-android'`nproject(':tauri-android').projectDir = new File('$($libraryDirectory.Replace("'","\'"))')`n"
+    [IO.File]::WriteAllText((Join-Path $project 'tauri.settings.gradle'), $settings)
+    [IO.File]::WriteAllText((Join-Path $project 'app/tauri.build.gradle.kts'), 'dependencies { implementation(project(":tauri-android")) }')
+  }
+  Push-Location $project
+  try {
+    & ./gradlew.bat @gradleTasks @skipTasks --no-daemon --no-configuration-cache
+    if($LASTEXITCODE){throw 'Gradle Android packaging failed'}
+  }finally{Pop-Location}
+}finally{
+  foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')}
+}

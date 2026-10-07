@@ -31,6 +31,7 @@ pub struct NativeState {
     pub nonce: AtomicU64,
     pub auth_epoch: AtomicU64,
     pub preparing: AtomicBool,
+    pub foreground: AtomicBool,
 }
 impl Default for NativeState {
     fn default() -> Self {
@@ -42,6 +43,7 @@ impl Default for NativeState {
             nonce: AtomicU64::new(0),
             auth_epoch: AtomicU64::new(0),
             preparing: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
         }
     }
 }
@@ -74,7 +76,6 @@ pub fn validate_source(window: &WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
-#[cfg(windows)]
 pub fn diagnostic(app: &AppHandle, area: &str, message: &str) {
     use std::io::Write;
     if let Ok(root) = app.path().app_local_data_dir() {
@@ -111,22 +112,24 @@ pub fn dispatch(app: &AppHandle, name: &str, detail: serde_json::Value) {
         );
     }
 }
+#[cfg(windows)]
 pub fn resume(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.with_webview(|_webview| {
+        let _ = w.with_webview(|webview| {
             #[cfg(windows)]
             unsafe {
                 use windows::core::Interface;
-                if let Ok(v) = _webview.controller().CoreWebView2().and_then(|c| {
+                if let Ok(v) = webview.controller().CoreWebView2().and_then(|c| {
                     c.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
                 }) {
                     let _ = v.Resume();
                 }
-                let _ = _webview.controller().SetIsVisible(true);
+                let _ = webview.controller().SetIsVisible(true);
             }
         });
     }
 }
+#[cfg(windows)]
 pub fn show(app: &AppHandle, route: Option<&str>) {
     resume(app);
     if let Some(w) = app.get_webview_window("main") {
@@ -141,6 +144,7 @@ pub fn show(app: &AppHandle, route: Option<&str>) {
         dispatch(app, "desktop-resume", serde_json::json!({}));
     }
 }
+#[cfg(any(windows, test))]
 pub fn safe_route(path: &str) -> bool {
     path.starts_with("/app")
         && !path.starts_with("//")
@@ -151,26 +155,26 @@ pub fn safe_route(path: &str) -> bool {
                 && (u.path() == "/app" || u.path().starts_with("/app/"))
         })
 }
+#[cfg(windows)]
 pub fn suspend(app: &AppHandle) {
     if !app.state::<NativeState>().safe() {
         return;
     }
     if let Some(w) = app.get_webview_window("main") {
-        #[cfg(windows)]
         let handle = app.clone();
-        let _ = w.with_webview(move |_webview| {
+        let _ = w.with_webview(move |webview| {
             #[cfg(windows)]
             unsafe {
                 use webview2_com::{
                     Microsoft::Web::WebView2::Win32::ICoreWebView2_3, TrySuspendCompletedHandler,
                 };
                 use windows::core::Interface;
-                if let Ok(v) = _webview
+                if let Ok(v) = webview
                     .controller()
                     .CoreWebView2()
                     .and_then(|c| c.cast::<ICoreWebView2_3>())
                 {
-                    let _ = _webview.controller().SetIsVisible(false);
+                    let _ = webview.controller().SetIsVisible(false);
                     let callback =
                         TrySuspendCompletedHandler::create(Box::new(move |result, suspended| {
                             diagnostic(
@@ -186,23 +190,36 @@ pub fn suspend(app: &AppHandle) {
         });
     }
 }
+#[cfg(target_os = "android")]
+pub fn suspend(_app: &AppHandle) {}
 pub async fn session_client(
     app: &AppHandle,
     expected_account: &str,
 ) -> Result<(reqwest::Client, String), String> {
     let w = app.get_webview_window("main").ok_or("Window unavailable")?;
     validate_source(&w)?;
-    let origin = url::Url::parse(PRODUCTION_ORIGIN).map_err(|e| e.to_string())?;
-    let cookies = tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(origin))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-    let cookie = cookies
-        .iter()
-        .filter(|c| c.name() == "ai_office_session")
-        .map(|c| format!("{}={}", c.name(), c.value()))
-        .collect::<Vec<_>>()
-        .join("; ");
+    #[cfg(not(target_os = "android"))]
+    let cookie = {
+        let origin = url::Url::parse(PRODUCTION_ORIGIN).map_err(|e| e.to_string())?;
+        let cookies = tauri::async_runtime::spawn_blocking(move || w.cookies_for_url(origin))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        cookies
+            .iter()
+            .filter(|c| c.name() == "ai_office_session")
+            .map(|c| format!("{}={}", c.name(), c.value()))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    #[cfg(target_os = "android")]
+    let cookie = {
+        let session = crate::android::session(app).await?;
+        if !session.foreground {
+            return Err("网络传输已暂停，返回前台后继续".into());
+        }
+        session.cookie
+    };
     if cookie.is_empty() {
         return Err("Not authenticated".into());
     }

@@ -25,9 +25,9 @@ async function post<Name extends SchemaName>(projectId: string, suffix: string, 
 export const collaborationApi = {
   settings: (id: string) => get<'CollaborationSettingsResponse'>(id, '/settings') as Promise<CollaborationSettingsData>,
   saveSettings: async (id: string, body: Partial<Omit<CollaborationSettingsData, 'revision'>> & { expectedRevision: number }) => api.patch<'CollaborationSettingsResponse'>(path(id, '/settings'), body) as Promise<CollaborationSettingsData>,
-  tasks: async (id: string, options: { networkOnly?: boolean; signal?: AbortSignal; cursor?: string | null; q?: string; lifecycleState?: string; pendingReview?: boolean } = {}) => {
-    const { networkOnly, signal, ...query } = options;
-    const page = await request<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { query: { limit: 50, ...query }, networkOnly, signal });
+  tasks: async (id: string, options: { networkOnly?: boolean; offlineReadFallback?: boolean; signal?: AbortSignal; cursor?: string | null; q?: string; lifecycleState?: string; pendingReview?: boolean } = {}) => {
+    const { networkOnly, offlineReadFallback, signal, ...query } = options;
+    const page = await request<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { query: { limit: 50, ...query }, networkOnly, offlineReadFallback, signal });
     return requireCursor(page) as { items: CollaborationTask[]; nextCursor?: string | null };
   },
   graph: (id: string) => projectRequest<TaskGraph>(id, '/tasks/graph'),
