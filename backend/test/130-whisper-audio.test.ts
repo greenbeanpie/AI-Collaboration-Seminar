@@ -83,18 +83,41 @@ describe('durable native audio path',()=>{
   const request=llm([q,summary]);expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'succeeded'});expect(f.run).toHaveBeenCalledOnce();expect(request).toHaveBeenCalledTimes(2);expect(await readExecution(env,target)).toMatchObject({totalCalls:4});
  });
  it('pauses malformed quality output and repairs a new response key while retaining completed Whisper',async()=>{
-  const f=await fixture();const invalid=llm([{}]);await expect(runMediaJob(f.local,f.jobId,f.versionId)).rejects.toMatchObject({details:{executionPause:true}});expect(invalid).toHaveBeenCalledOnce();expect(f.run).toHaveBeenCalledOnce();
-  const target={kind:'job' as const,id:f.jobId};expect(await readExecution(env,target)).toMatchObject({state:'paused',pauseReason:'output_invalid',totalCalls:2});expect((await readAudioPipelineStatus(env,f.jobId))?.phase).toBe('output_invalid');
+  const f=await fixture();const invalid=llm([{}, {}, {}]);await expect(runMediaJob(f.local,f.jobId,f.versionId)).rejects.toMatchObject({details:{executionPause:true}});expect(invalid).toHaveBeenCalledTimes(3);expect(f.run).toHaveBeenCalledOnce();
+  const target={kind:'job' as const,id:f.jobId};expect(await readExecution(env,target)).toMatchObject({state:'paused',pauseReason:'output_invalid',totalCalls:4});expect((await readAudioPipelineStatus(env,f.jobId))?.phase).toBe('output_invalid');
   await resumeExecution(env,target,1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(f.jobId).run();
   const fixed=llm([q,summary]);expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'succeeded'});expect(f.run).toHaveBeenCalledOnce();expect(fixed).toHaveBeenCalledTimes(2);expect(JSON.parse(String(fixed.mock.calls[0]![1]!.body)).messages[0].content).toContain('修正先前输出错误');
-  const keys=(await env.FILES.list({prefix:'ai/audio-responses/'+f.jobId+'/'})).objects.map(o=>o.key);expect(keys.some(key=>key.endsWith('-repair-g2'))).toBe(true);expect(keys.some(key=>key.endsWith('.json'))).toBe(true);expect(await readExecution(env,target)).toMatchObject({state:'completed',totalCalls:4});
+  const keys=(await env.FILES.list({prefix:'ai/audio-responses/'+f.jobId+'/'})).objects.map(o=>o.key);expect(keys.some(key=>key.endsWith('-repair-g2'))).toBe(true);expect(keys.some(key=>key.endsWith('.json'))).toBe(true);expect(await readExecution(env,target)).toMatchObject({state:'completed',totalCalls:6});
  });
  it('classifies a truncated quality response as invalid output rather than an unknown dispatch',async()=>{
   const f=await fixture();await runMediaJob(f.local,f.jobId,f.versionId,1);
   const request=vi.fn(async()=>Response.json({choices:[{finish_reason:'length',message:{content:JSON.stringify(q)}}],usage:{prompt_tokens:10,completion_tokens:10}}));vi.stubGlobal('fetch',request);await expect(runMediaJob(f.local,f.jobId,f.versionId,1)).rejects.toMatchObject({details:{executionPause:true}});
-  expect(await readExecution(env,{kind:'job',id:f.jobId})).toMatchObject({state:'paused',pauseReason:'output_invalid'});expect((await readAudioPipelineStatus(env,f.jobId))?.phase).toBe('output_invalid');expect(request).toHaveBeenCalledOnce();expect(f.run).toHaveBeenCalledOnce();
+  expect(await readExecution(env,{kind:'job',id:f.jobId})).toMatchObject({state:'paused',pauseReason:'output_invalid'});expect((await readAudioPipelineStatus(env,f.jobId))?.phase).toBe('output_invalid');expect(request).toHaveBeenCalledTimes(3);expect(f.run).toHaveBeenCalledOnce();
  });
  it('cancellation prevents summaries after transcription',async()=>{const f=await fixture();await runMediaJob(f.local,f.jobId,f.versionId,1);await env.DB.prepare("UPDATE jobs SET status='cancelled' WHERE id=?1").bind(f.jobId).run();const request=llm([]);expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'cancelled'});expect(request).not.toHaveBeenCalled();});
  it('resumes waiting job with latest frozen Gemini config and blocks outsiders',async()=>{const f=await fixture();llm([{...q,critical:true}]);await runMediaJob(f.local,f.jobId,f.versionId);const outsider=await seedUser();await expect(resumeWaitingAudioFallback(f.local,f.jobId,outsider.userId)).rejects.toThrow('项目成员');const model={...f.config.config.textEconomy,provider:'google-gemini',providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com',apiKeyEncrypted:await seal('fixture-media',env.AUTH_SECRET)};await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(f.config.id,JSON.stringify({...f.config.config,mediaUnderstanding:model})).run();expect(await readAudioPipelineStatus(f.local,f.jobId)).toMatchObject({canResumeFallback:true});expect(await resumeWaitingAudioFallback(f.local,f.jobId,f.owner.userId)).toMatchObject({jobId:f.jobId,status:'running'});await expect(resumeWaitingAudioFallback(f.local,f.jobId,f.owner.userId)).rejects.toThrow('已继续');expect(f.run).toHaveBeenCalledOnce();expect((await getJob(env,f.jobId)).status).toBe('running');});
 });
 
+
+it('automatically repairs quality schema and summary timestamp errors without retranscribing',async()=>{
+ const f=await fixture(),request=llm([{},q,{...summary,timestamps:[{seconds:999,description:'invalid'}]},summary]);
+ expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'succeeded'});
+ expect(f.run).toHaveBeenCalledOnce();expect(request).toHaveBeenCalledTimes(4);
+ const prompts=request.mock.calls.map(([,init])=>JSON.parse(String(init?.body)).messages[0].content);
+ expect(prompts[1]).toContain('上次输出');expect(prompts[3]).toContain('允许范围');
+ const keys=(await env.FILES.list({prefix:'ai/audio-responses/'+f.jobId+'/'})).objects.map(item=>item.key);
+ expect(keys.filter(key=>key.endsWith('-auto-1')).length).toBe(2);
+});
+it('reports HTTP 402 without correction or Gemini fallback',async()=>{
+ const f=await fixture(),request=vi.fn(async()=>new Response('{}',{status:402}));vi.stubGlobal('fetch',request);
+ expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'failed'});
+ expect(JSON.parse((await getJob(env,f.jobId)).error_json!).message).toBe('后台模型余额不足，请等待或联系管理员处理');
+ expect(request).toHaveBeenCalledOnce();expect(f.run).toHaveBeenCalledOnce();
+});
+
+it('reports a definite native Whisper HTTP 402 without declaring an unknown result or fallback',async()=>{
+ const f=await fixture();f.run.mockRejectedValueOnce(Object.assign(new Error('balance'),{status:402}));const request=llm([]);
+ expect(await runMediaJob(f.local,f.jobId,f.versionId)).toEqual({status:'failed'});
+ expect(JSON.parse((await getJob(env,f.jobId)).error_json!).message).toBe('后台模型余额不足，请等待或联系管理员处理');
+ expect(f.run).toHaveBeenCalledOnce();expect(request).not.toHaveBeenCalled();
+});
