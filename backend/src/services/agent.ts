@@ -167,7 +167,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     input: unknown,
     output: unknown,
     status: 'ok' | 'repaired' | 'invalid' | 'failed',
-    tokens: { promptTokens: number | null; completionTokens: number | null },
+    tokens: { promptTokens: number | null; completionTokens: number | null;cachedTokens?:number|null;cacheMissTokens?:number|null;contextMetadata?:import('../ai/calls').AiContextMetadata },
     latencyMs: number,
   ) =>
     recordAiCall(env, {
@@ -182,6 +182,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       output: params.privateContext ? { redacted: true } : output,
       promptTokens: tokens.promptTokens,
       completionTokens: tokens.completionTokens,
+      cachedTokens:tokens.cachedTokens,cacheMissTokens:tokens.cacheMissTokens,contextMetadata:tokens.contextMetadata,
       latencyMs,
       status,
     });

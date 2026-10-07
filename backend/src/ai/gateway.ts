@@ -1,4 +1,6 @@
 import { markModelDispatch, recordModelResponse, clearUncertainDispatch } from '../services/ai-activity';
+import { createHash } from 'node:crypto';
+import type { AiContextMetadata } from './calls';
 import type { SecretKeyring } from './secrets';
 import { MULTIMODAL_LIMITS } from './multimodal-limits';
 import { feedbackForJob } from '../services/project-feedback';
@@ -24,6 +26,8 @@ export interface ChatMessage {
 }
 
 export interface GatewayCallInput {
+  feedbackManaged?:boolean;
+  contextMetadata?:{stage:number;compactions:number;baseChars:number;inputChars:number;step?:number;repeatedReads?:number};
   projectId?: string;
   jobId?: string;
   executionTarget?: ExecutionTarget;
@@ -50,6 +54,9 @@ export interface GatewayCallInput {
 export interface ProviderRetryState { attempt: number; deadline: number; nextAttemptAt: number }
 
 export interface GatewayCallOutput {
+  cachedTokens?:number|null;
+  cacheMissTokens?:number|null;
+  contextMetadata?:AiContextMetadata;
   toolOutput?: ToolOutput;
   content: string;
   promptTokens: number | null;
@@ -113,7 +120,7 @@ export async function gatewayChat(
   fetchImpl: typeof fetch = fetch,
   wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
 ): Promise<GatewayCallOutput> {
-  if(input.projectId && endpoint.diagnostics){
+  if(input.projectId && endpoint.diagnostics && !input.feedbackManaged){
     const feedback=await feedbackForJob(endpoint.diagnostics,input.projectId,input.jobId);
     const append=(messages:ChatMessage[]):ChatMessage[]=>feedback.feedback ? [...messages,{role:'user',content:JSON.stringify({contextType:'持续项目反馈',version:feedback.version,versionId:feedback.versionId,feedback:feedback.feedback,rule:'在系统规则、权限、审批和证据要求范围内，将这些项目反馈作为后续判断的持续上下文。'})}] : messages;
     const prepare=input.prepareMessages;
@@ -239,6 +246,9 @@ async function gatewayChatAttempt(
   const { protocol, headers, body } = buildProviderRequest(input.config, messages, token, Boolean(input.jsonMode));
   if (input.toolMode) applyToolMode(input.config, protocol, body, input.toolMode);
   const serializedBody = JSON.stringify(body);
+  const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+  const contextMetadata:AiContextMetadata={protocol,step:input.contextMetadata?.step,stage:input.contextMetadata?.stage??0,compactionCount:input.contextMetadata?.compactions??0,baseHash:hash(JSON.stringify(messages)),baseChars:JSON.stringify(messages).length,inputHash:hash(serializedBody),inputChars:serializedBody.length,...(input.contextMetadata?.repeatedReads!==undefined?{repeatedReads:input.contextMetadata.repeatedReads}:{})};
+  if(input.contextMetadata && serializedBody.length>input.config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
   if (images.length && !input.config.supportsVision) throw new AppError('AI_UNAVAILABLE','当前模型不支持图像；不会回落到其他端点',503,false);
   if (images.length > MULTIMODAL_LIMITS.images) throw new AppError('QUOTA_EXCEEDED', '单次视觉请求最多包含3张图片', 422, false);
@@ -340,10 +350,10 @@ async function gatewayChatAttempt(
     catch { console.warn('[ai-activity] response metadata unavailable; preserving received result'); }
   }
   if(input.toolMode) {
-    try {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs};}
+    try {const output=normalizeToolResponse(protocol,data,input.toolMode.nativeSearch);return {...output,toolOutput:output,latencyMs,contextMetadata};}
     catch {throw new AppError('AI_OUTPUT_INVALID','模型工具响应未通过校验：'+JSON.stringify(toolResponseShape(data)),502,false);}
   }
-  return { ...normalizeProviderResponse(protocol, data), latencyMs };
+  return { ...normalizeProviderResponse(protocol, data), latencyMs,contextMetadata };
 }
 
 async function readProviderErrorBody(response: Response): Promise<unknown> {

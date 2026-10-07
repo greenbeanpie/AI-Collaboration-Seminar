@@ -1,0 +1,61 @@
+import { afterEach,describe,expect,it,vi } from 'vitest';
+import { env } from './helpers/env';
+import { seedProject,seedUser } from './helpers/seed';
+import { loadAiConfig } from '../src/ai/config';
+import { seal } from '../src/ai/secrets';
+import { newId,nowIso } from '../src/core/db';
+import { reserveAiSlot } from '../src/services/ai-reservations';
+import { projectToolConversation } from '../src/services/project-ai-tools';
+import { InvestigationContinuation,loadInvestigation } from '../src/services/project-investigation';
+import { appendContextExchange,appendContextMessages,createContextPhase,prepareContextPhase,refreshContextSource } from '../src/ai/context-phases';
+afterEach(()=>vi.unstubAllGlobals());
+
+describe('stable context phases',()=>{
+  it.each(['deepseek','deepseek-anthropic'] as const)('keeps %s prefix across references and checkpoint resumes',async preset=>{
+    const owner=await seedUser(),projectId=await seedProject(owner.userId),jobId=newId();
+    const cfg=(await loadAiConfig(env.DB))!;
+    Object.assign(cfg.config.review,{provider:'openai-compatible',providerPreset:preset,model:'deepseek-flash',apiUrl:preset==='deepseek'?'https://api.deepseek.com/chat/completions':'https://api.deepseek.com/anthropic/v1/messages',apiKeyEncrypted:await seal('mock-key',env.AUTH_SECRET),supportsJson:preset==='deepseek',maxInputChars:100000,reasoningEffort:'high'});
+    await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2,enabled=1 WHERE id=?1').bind(cfg.id,JSON.stringify(cfg.config)).run();
+    await reserveAiSlot(env,{projectId,jobId,purpose:'review_run',maxCalls:24});
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'review_run','running','{}',?3,?3)").bind(jobId,projectId,nowIso()).run();
+    const requests:Record<string,any>[]=[];
+    vi.stubGlobal('fetch',vi.fn(async(_url:unknown,init:RequestInit)=>{
+      requests.push(JSON.parse(String(init.body)));
+      const first=requests.length===1;
+      return Response.json(preset==='deepseek'?{choices:[{finish_reason:first?'tool_calls':'stop',message:first?{content:null,reasoning_content:'mock thought',tool_calls:[{id:'overview',type:'function',function:{name:'get_project_overview',arguments:'{}'}}]}:{content:'{"summary":"完成","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:100,completion_tokens:10,prompt_cache_hit_tokens:80,prompt_cache_miss_tokens:20}}:{stop_reason:first?'tool_use':'end_turn',content:first?[{type:'thinking',thinking:'mock thought',signature:'mock signature'},{type:'tool_use',id:'overview',name:'get_project_overview',input:{}}]:[{type:'text',text:'{"summary":"完成","referenceIds":[],"decisionReferences":[]}'}],usage:{input_tokens:20,cache_read_input_tokens:80,output_tokens:10}});
+    }));
+    const params={context:{projectId,userId:owner.userId,jobId},config:cfg.config.review,configVersionId:cfg.id,purpose:'review' as const,messages:[{role:'user' as const,content:'调查项目'}],promptVersion:'stable-phase-test'};
+    const local={...env,AI_EXECUTION_SLICE:true as const};
+    await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
+    await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
+    await projectToolConversation(local,params);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.messages.slice(0,requests[0]!.messages.length)).toEqual(requests[0]!.messages);
+    expect(requests[1]!.system).toEqual(requests[0]!.system);
+    expect(requests[1]!.tools).toEqual(requests[0]!.tools);
+    expect(JSON.stringify(requests[1])).toContain(preset==='deepseek'?'reasoning_content':'signature');
+    const saved=await loadInvestigation(env,jobId+'-stable-phase-test');
+    expect(saved?.contextPhase?.compactions).toBe(0);
+    expect(await env.DB.prepare('SELECT cached_tokens,cache_miss_tokens,context_metadata_json FROM ai_calls WHERE job_id=?1 LIMIT 1').bind(jobId).first()).toMatchObject({cached_tokens:80,cache_miss_tokens:20,context_metadata_json:expect.any(String)});
+  });
+  it('compacts only at phase boundaries and keeps evidence and complete exchanges',async()=>{
+    const cfg=(await loadAiConfig(env.DB))!.config.review;
+    const config={...cfg,maxInputChars:12000};
+    const phase=createContextPhase([{role:'system',content:'rules'},{role:'user',content:'request'}],[]);
+    appendContextMessages(phase,[{role:'user',content:'human clarification'}],'clarification');
+    for(let i=0;i<8;i++)appendContextExchange(phase,{assistant:{role:'assistant',tool_calls:[{id:String(i),type:'function',function:{name:'read',arguments:'{}'}}]},results:[{call:{id:String(i),name:'read',args:{id:i}},output:{text:'x'.repeat(1700),id:i,nextOffset:i+1}}]});
+    const evidence={id:'proof',quote:'exact decision evidence'};
+    const result=prepareContextPhase(config,phase,{preserve:[evidence]});
+    expect(phase.compactions).toBe(1);
+    expect(result.metadata.inputChars).toBeLessThanOrEqual(config.maxInputChars*.5);
+    expect(JSON.stringify(result)).toContain('exact decision evidence');
+    expect(JSON.stringify(result)).toContain('human clarification');
+    expect(phase.timeline.at(-1)?.kind).toBe('exchange');
+    const before=JSON.stringify(phase);
+    prepareContextPhase(config,phase);expect(JSON.stringify(phase)).toBe(before);
+    refreshContextSource(phase,[{role:'system',content:'rules'},{role:'user',content:'new authorized request'}]);
+    expect(phase.baseMessages[1]!.content).toBe('request');
+    expect(phase.timeline.at(-1)?.kind).toBe('message');
+    expect(()=>prepareContextPhase({...config,maxInputChars:100},phase)).toThrow('输入容量');
+  });
+});

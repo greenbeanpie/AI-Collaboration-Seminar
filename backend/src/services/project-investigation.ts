@@ -4,6 +4,7 @@ import type { Env } from '../env';
 import type { ToolExchange,WebCitation } from '../ai/tool-transport';
 import type { GatewayCallOutput, ProviderRetryState } from '../ai/gateway';
 import type { ProjectReference } from './project-evidence';
+import type { ContextPhase } from '../ai/context-phases';
 import { nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
 import { seal,unseal } from '../ai/secrets';
@@ -15,6 +16,7 @@ export class InvestigationContinuation extends Error {
   }
 }
 export interface InvestigationCheckpoint {
+  contextPhase?:ContextPhase;
   effectiveStandardsVersionId?:string|null;
   step: number; exchanges: ToolExchange[]; references: ProjectReference[];
   trace: Array<{name:string;status:string;fileId?:string}>;
