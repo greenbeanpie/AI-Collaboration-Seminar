@@ -25,7 +25,7 @@ import { creationWorkspace, guardedDescriptionStatements, workspacePromotionStat
 import { askUserQuestionDefinition, clarificationRule, currentDraftClarification, executeClarification, UserClarificationPending } from './ai-clarifications';
 import { decompositionGuidance } from './decomposition-prompt';
 import { DraftCheckpointBusy, DraftPreviewYield, compactDraftHistory, draftTextPrefix, loadDraftCheckpoint, saveDraftCheckpoint, type DraftPreviewCheckpoint } from './draft-preview-checkpoints';
-import { ensureExecution, readExecution, completeExecution, pauseExecution, isExecutionPaused } from './ai-execution-control';
+import { ensureExecution, readExecution, completeExecution, pauseExecution, cancelExecution, isExecutionPaused } from './ai-execution-control';
 export { DraftPreviewYield } from './draft-preview-checkpoints';
 export const creationGoal=z.object({title:z.string().trim().min(1).max(200),detail:z.string().max(12000)});
 export const creationTask = z.object({
@@ -136,13 +136,33 @@ function editable(row: DraftRow, revision: number) {
     throw invalidState('预览仍在进行，等待结果后再修改；请求结果不明时可主动重新预览');
   }
 }
+/** Editing a paused attempt invalidates its executor, but never makes its preview committable. */
+export async function prepareDraftEdit(env:Env,id:string,userId:string,revision:number):Promise<DraftRow> {
+  const row=await getDraft(env,id,userId);
+  if(row.status!=='active')throw invalidState('草稿已取消或已创建');
+  if(row.revision!==revision)throw versionConflict(row.revision);
+  if(row.preview_waiting_id)throw invalidState('请先回答或取消当前澄清问题，再修改草稿');
+  if(row.preview_state!=='running')return row;
+  if(!row.preview_attempt_id)throw invalidState('预览仍在进行，等待结果后再修改');
+  const target={kind:'draft_preview' as const,id:row.preview_attempt_id},execution=await readExecution(env,target);
+  if(!execution||!['paused','cancelled'].includes(execution.state))throw invalidState('预览仍在进行，等待结果后再修改');
+  await cancelExecution(env,target,execution.generation);
+  const changed=await env.DB.prepare(`UPDATE project_creation_drafts SET preview_state='none',preview_revision=NULL,preview_error=NULL,updated_at=?5
+    WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state='running' AND preview_waiting_id IS NULL AND preview_attempt_id=?4
+    AND EXISTS(SELECT 1 FROM ai_executions WHERE target_kind='draft_preview' AND target_id=?4 AND generation=?6 AND state='cancelled')`)
+    .bind(id,userId,revision,row.preview_attempt_id,nowIso(),execution.generation).run();
+  if(!changed.meta.changes)throw invalidState('预览或执行代次已变化，请刷新后修改');
+  const current=await getDraft(env,id,userId);
+  if(current.revision!==revision||current.preview_attempt_id!==row.preview_attempt_id||current.preview_state!=='none')throw invalidState('草稿预览已变化，请刷新后修改');
+  return current;
+}
 export async function updateDraft(env: Env, id: string, userId: string, revision: number, payload: DraftPayload) {
-  const row = await getDraft(env, id, userId);
+  const row = await prepareDraftEdit(env, id, userId, revision);
   editable(row, revision);
   const previous=creationPayload.parse(JSON.parse(row.payload_json));
   if(payload.workspace===undefined&&previous.workspace)payload={...payload,workspace:previous.workspace};
   await resolveInviteRecipients(env, userId, payload.inviteUsernames);
-  const saved = await env.DB.prepare("UPDATE project_creation_drafts SET payload_json=?4,revision=revision+1,preview_state='none',updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running'").bind(id, userId, revision, JSON.stringify(payload), nowIso()).run();
+  const saved = await env.DB.prepare("UPDATE project_creation_drafts SET payload_json=?4,revision=revision+1,preview_state='none',updated_at=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND preview_attempt_id IS ?6").bind(id, userId, revision, JSON.stringify(payload), nowIso(),row.preview_attempt_id).run();
   if (!saved.meta.changes) {
     throw versionConflict((await getDraft(env, id, userId)).revision);
   }
@@ -160,7 +180,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
     }
     return draftView(env, row);
   }
-  editable(row, revision);
+  const editing=await prepareDraftEdit(env,id,userId,revision);
   const total = await env.DB.prepare('SELECT COUNT(*) n FROM creation_draft_files WHERE draft_id=?1').bind(id).first<{
     n: number;
   }>();
@@ -209,7 +229,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
     throw invalidState('此上传标识已被其他文件占用');
   }
   const result = await env.DB.batch([
-    env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',updated_at=?4,preview_attempt_id=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10 AND (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1)<100").bind(id, userId, revision, now, fileId),
+    env.DB.prepare("UPDATE project_creation_drafts SET revision=revision+1,preview_state='none',updated_at=?4,preview_attempt_id=?5 WHERE id=?1 AND owner_id=?2 AND revision=?3 AND status='active' AND preview_state!='running' AND (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1 AND removed=0)<10 AND (SELECT COUNT(*) FROM creation_draft_files WHERE draft_id=?1)<100 AND preview_attempt_id IS ?6").bind(id, userId, revision, now, fileId,editing.preview_attempt_id),
     env.DB.prepare(`INSERT INTO creation_draft_files(id,draft_id,name,ext,r2_key,sha256,size_bytes,mime,pages_json,text_error,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11 WHERE EXISTS(SELECT 1 FROM project_creation_drafts WHERE id=?2 AND owner_id=?12 AND revision=?13 AND preview_attempt_id=?1 AND status='active')`).bind(fileId, id, name, ext, key, sha, bytes.length, mime, JSON.stringify(pages), textError, now, userId, revision + 1)
   ]);
   if (!result[0]?.meta.changes) {
@@ -237,7 +257,8 @@ export async function prepareDraftPreviewAttempt(env:Env,row:DraftRow,attempt:st
 }
 
 export async function previewDraft(env: Env, id: string, userId: string, revision: number, mode: 'ai' | 'manual', tasks: z.infer<typeof creationTask>[], regenerate: boolean,requestedGoal?:z.infer<typeof creationGoal>,resumeAttempt?:string,expectedGeneration?:number,expectedSegment?:number) {
-  const row = await getDraft(env, id, userId);
+  let row = await getDraft(env, id, userId);
+  if(!resumeAttempt && row.preview_state==='running' && !row.preview_waiting_id)row=await prepareDraftEdit(env,id,userId,revision);
   if (row.status !== 'active' || row.revision !== revision) throw invalidState('草稿已变化，请刷新后重新预览');
   // An unanswered question is an intentional pause, never a stale running request.
   if(row.preview_waiting_id) {
