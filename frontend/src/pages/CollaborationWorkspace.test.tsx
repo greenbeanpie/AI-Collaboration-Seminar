@@ -127,7 +127,7 @@ describe('collaboration lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看与提交' }));
     fireEvent.change(screen.getByLabelText('成果说明'), { target: { value: '完整成果正文与固定版本' } });
     fireEvent.click(screen.getByRole('button', { name: '提交本轮成果' }));
-    await screen.findByText('AI 任务：处理中');
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByRole('status')).toHaveTextContent('AI 处理中')); 
     expect(fetchMock.mock.calls.filter(([url, options]) => String(url).endsWith('/tasks/t1/submissions') && options?.method === 'POST')).toHaveLength(1);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/evaluate'))).toBe(false);
     expect(screen.queryByRole('button', { name: '请求 AI 评价' })).toBeNull();
@@ -358,7 +358,9 @@ describe('collaboration lifecycle', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/jobs/j1')).length).toBeGreaterThan(1));
     fireEvent.click(screen.getByRole('button', { name: 'AI 拆解、调整与分工' }));
-    await waitFor(() => expect(screen.getByText(/AI 任务：.*完成/)).toBeVisible());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByRole('status')).toHaveTextContent('已完成'));
+    expect(screen.getByRole('region', { name: 'AI 处理状态' })).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByText('操作记录')).toBeInTheDocument();
     expect(screen.getByLabelText('持续项目反馈')).toHaveValue('创建交付任务');
   });
 

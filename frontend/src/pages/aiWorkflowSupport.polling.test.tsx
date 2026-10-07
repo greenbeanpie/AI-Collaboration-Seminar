@@ -42,3 +42,17 @@ it('follows the successor attempt and retains known completion during status ref
   expect(result.current.job?.status).toBe('succeeded');
   await act(async () => finish({ jobId: 'successor', status: 'succeeded' }));
 });
+it('keeps one polling timer when an explicit refresh arrives during an in-flight request', async () => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  vi.useFakeTimers();
+  let finish!: (value: unknown) => void;
+  get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue({ jobId: 'job', status: 'running' });
+  renderHook(() => useVisibleJobPoller('job'));
+  await act(async () => { window.dispatchEvent(new Event('ai-job-refresh')); });
+  await act(async () => finish({ jobId: 'job', status: 'running' }));
+  expect(get).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(get).toHaveBeenCalledTimes(3);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(get).toHaveBeenCalledTimes(3);
+});

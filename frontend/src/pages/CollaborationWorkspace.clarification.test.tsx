@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -57,7 +57,8 @@ describe('persisted project clarification', () => {
     await openQuestion();
     expect(screen.getByLabelText('补充回答')).toHaveValue('由项目负责人审核');
     fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
-    await screen.findByText('AI 任务：已完成');
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByRole('status')).toHaveTextContent('已完成'));
+    expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByText('操作记录')).toBeInTheDocument();
     const writes = fetch.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(writes).toHaveLength(1);
     expect(writes[0]?.[0]).toBe('/api/v1/projects/project-1/ai/clarifications/question-project/answer');
@@ -73,7 +74,8 @@ describe('persisted project clarification', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '提交回答并继续' })).toBeEnabled());
     expect(screen.getByRole('radio', { name: '全体成员' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
-    await screen.findByText('AI 任务：已完成');
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByRole('status')).toHaveTextContent('已完成'));
+    expect(within(screen.getByRole('region', { name: 'AI 处理状态' })).getByText('操作记录')).toBeInTheDocument();
     const writes = fetch.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(writes.map(([, init]) => JSON.parse(String(init?.body)).expectedRevision)).toEqual([5, 6]);
   });

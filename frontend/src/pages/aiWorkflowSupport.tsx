@@ -34,6 +34,7 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
 
     const schedule = () => {
       if (!active || document.visibilityState !== 'visible') return;
+      if (timer !== undefined) window.clearTimeout(timer);
       const delay = pollDelays[Math.min(delayIndex, pollDelays.length - 1)] ?? 10_000;
       delayIndex += 1;
       timer = window.setTimeout(() => { void poll(); }, delay);
@@ -75,7 +76,11 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
       } else refreshWhenVisible = true;
     };
 
-    const onRefresh = () => { if (timer !== undefined) window.clearTimeout(timer); void poll(); };
+    const onRefresh = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+      if (inFlight) refreshWhenVisible = true; else void poll();
+    };
     window.addEventListener('ai-job-refresh', onRefresh);
     document.addEventListener('visibilitychange', onVisibilityChange);
     if (document.visibilityState === 'visible') void poll();
