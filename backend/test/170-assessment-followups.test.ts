@@ -56,6 +56,18 @@ function provider(f:Awaited<ReturnType<typeof followupFixture>>,score=80,firstIn
   });vi.stubGlobal('fetch',fetch);return fetch;
 }
 describe('material follow-up scoring',()=>{
+  it('rolls back the conversation and job together when dispatch-outbox persistence fails',async()=>{
+    const f=await followupFixture();
+    await env.DB.prepare(`CREATE TRIGGER reject_followup_outbox BEFORE INSERT ON job_outbox
+      WHEN EXISTS(SELECT 1 FROM jobs WHERE id=NEW.job_id AND json_extract(input_json,'$.followupId') IS NOT NULL)
+      BEGIN SELECT RAISE(ABORT,'fixture outbox write failed'); END;`).run();
+    try{
+      await expect(createAssessmentFollowup(env,f.projectId,f.id,f.owner.userId,{expectedRevision:2,message:'核对原文'})).rejects.toThrow();
+      expect(await env.DB.prepare('SELECT COUNT(*) n FROM assessment_followups WHERE assessment_id=?1').bind(f.id).first()).toEqual({n:0});
+      expect(await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(f.projectId).first()).toEqual({n:0});
+      expect(await env.DB.prepare("SELECT COUNT(*) n FROM usage_reservations WHERE project_id=?1 AND status='reserved'").bind(f.projectId).first()).toEqual({n:0});
+    }finally{await env.DB.exec('DROP TRIGGER reject_followup_outbox');}
+  });
   it.each([80,50])('publishes adjusted/unchanged result (%s) preserving original report and audit',async score=>{
     const f=await followupFixture(),q=await queued(f),fetch=provider(f,score);await runAssessmentFollowupJob(env,q.jobId);
     const row=(await env.DB.prepare('SELECT * FROM assessments WHERE id=?1').bind(f.id).first<AssessmentRow>())!;

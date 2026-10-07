@@ -5548,6 +5548,944 @@
           "requestId"
         ]
       },
+      "AssessmentFollowupsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "followupId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "assessmentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "baseRevision": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "conflict",
+                        "cancelled",
+                        "waiting_input"
+                      ]
+                    },
+                    "jobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "baseReport": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "assistive"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "scored",
+                            "unscorable"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              "confidence": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "enum": [
+                                  "human",
+                                  "ai"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "score",
+                              "confidence",
+                              "comment",
+                              "evidence",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 10
+                        },
+                        "weightedTotal": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "limitations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requirementChecks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requirementId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "met",
+                                  "unmet",
+                                  "unknown"
+                                ]
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              }
+                            },
+                            "required": [
+                              "requirementId",
+                              "status",
+                              "comment",
+                              "evidence"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "references": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "decisionReferences": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "status",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "scores",
+                        "weightedTotal",
+                        "summary",
+                        "limitations",
+                        "requirementChecks"
+                      ]
+                    },
+                    "proposedReport": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "assistive"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "scored",
+                            "unscorable"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              "confidence": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "enum": [
+                                  "human",
+                                  "ai"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "score",
+                              "confidence",
+                              "comment",
+                              "evidence",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 10
+                        },
+                        "weightedTotal": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "limitations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requirementChecks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requirementId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "met",
+                                  "unmet",
+                                  "unknown"
+                                ]
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              }
+                            },
+                            "required": [
+                              "requirementId",
+                              "status",
+                              "comment",
+                              "evidence"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "references": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "decisionReferences": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "status",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "scores",
+                        "weightedTotal",
+                        "summary",
+                        "limitations",
+                        "requirementChecks"
+                      ]
+                    },
+                    "publishedReport": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "assistive"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "scored",
+                            "unscorable"
+                          ]
+                        },
+                        "standardsVersionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "standardsVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              "confidence": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "origin": {
+                                "type": "string",
+                                "enum": [
+                                  "human",
+                                  "ai"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "score",
+                              "confidence",
+                              "comment",
+                              "evidence",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 10
+                        },
+                        "weightedTotal": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "limitations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requirementChecks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "requirementId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "met",
+                                  "unmet",
+                                  "unknown"
+                                ]
+                              },
+                              "comment": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                              },
+                              "evidence": {
+                                "type": "array",
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "material"
+                                          ]
+                                        },
+                                        "materialVersionId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "materialVersionId",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "answer"
+                                          ]
+                                        },
+                                        "turnSequence": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "quote": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 2000
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "turnSequence",
+                                        "quote"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                },
+                                "maxItems": 20
+                              }
+                            },
+                            "required": [
+                              "requirementId",
+                              "status",
+                              "comment",
+                              "evidence"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "references": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "decisionReferences": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "status",
+                        "standardsVersionId",
+                        "standardsVersion",
+                        "scores",
+                        "weightedTotal",
+                        "summary",
+                        "limitations",
+                        "requirementChecks"
+                      ]
+                    },
+                    "publishedRevision": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "followupId",
+                    "assessmentId",
+                    "userId",
+                    "message",
+                    "baseRevision",
+                    "status",
+                    "jobId",
+                    "baseReport",
+                    "proposedReport",
+                    "publishedReport",
+                    "publishedRevision",
+                    "error",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AssessmentFollowupCreateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "followupId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "followupId",
+              "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "AssessmentCorrectionResponse": {
         "type": "object",
         "properties": {
@@ -28345,6 +29283,128 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AssessmentCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/assessments/{assessmentId}/followups": {
+      "get": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assessmentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentFollowupsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-simplification"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "assessmentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  }
+                },
+                "required": [
+                  "expectedRevision",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentFollowupCreateResponse"
                 }
               }
             }

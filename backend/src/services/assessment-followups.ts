@@ -10,7 +10,8 @@ import { sourceInputsGuard } from './source-inputs';
 import { scoringReportSchema, scoreAssessment, type AssessmentInput, type AssessmentRow, type ScoringReport } from './assessments';
 import { calculateRubricWeightedTotal } from './collaboration-ai';
 import { withReservedAiJob, settleReservation } from './ai-reservations';
-import { createJobAndDispatch, getJob, failJob, succeedJob } from './jobs';
+import { tryDispatchJob, getJob, failJob, succeedJob } from './jobs';
+import { currentProjectFeedback } from './project-feedback';
 import { isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 
@@ -36,12 +37,22 @@ export async function createAssessmentFollowup(env:Env,projectId:string,id:strin
   if(!(await loadAiConfig(env.DB))?.enabled)throw invalidState('后台 AI 配置未启用');
   return withReservedAiJob(env,{projectId,purpose:'review_run',maxCalls:24},async(jobId,configVersionId)=>{
     const followupId=newId(),now=nowIso();
-    const inserted=await env.DB.prepare(`INSERT INTO assessment_followups(id,assessment_id,project_id,user_id,message,base_revision,base_report_json,job_id,created_at,updated_at)
+    const feedbackSnapshot=await currentProjectFeedback(env,projectId);
+    // Persist the message, job and dispatch outbox together: a crashed request must
+    // never leave a queued conversation without a recoverable background job.
+    const inserted=await env.DB.batch([
+      env.DB.prepare(`INSERT INTO assessment_followups(id,assessment_id,project_id,user_id,message,base_revision,base_report_json,job_id,created_at,updated_at)
       SELECT ?1,id,project_id,?4,?5,revision,report_json,?6,?7,?7 FROM assessments a WHERE a.id=?2 AND a.project_id=?3 AND revision=?8 AND status='succeeded' AND kind='material_review' AND ${projectPermissionSql('?3','?4','scoreCorrect')} AND ${effectiveStandardGuardSql('?3','a.standards_version_id')}
-      AND NOT EXISTS(SELECT 1 FROM assessment_followups f WHERE f.assessment_id=a.id AND ((f.status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.id=f.job_id)) OR EXISTS(SELECT 1 FROM jobs j WHERE j.id=f.job_id AND j.status IN ('queued','running','waiting_input'))))`).bind(followupId,id,projectId,actorId,body.message,jobId,now,body.expectedRevision).run();
-    if(!inserted.meta.changes)throw invalidState('评分、权限已变化，或已有追加对话正在处理，请刷新');
-    try{await createJobAndDispatch(env,{jobId,projectId,kind:'review_run',input:{assessmentId:id,followupId,projectId,configVersionId},createdBy:actorId});}
-    catch(error){if(!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first())await env.DB.prepare("UPDATE assessment_followups SET status='failed',error_json=?2,updated_at=?3 WHERE id=?1").bind(followupId,JSON.stringify({message:'作业创建失败，请重新提交'}),nowIso()).run();throw error;}
+      AND EXISTS(SELECT 1 FROM projects WHERE id=?3 AND status='active' AND ai_collaboration_enabled=1)
+      AND NOT EXISTS(SELECT 1 FROM assessment_followups f WHERE f.assessment_id=a.id AND ((f.status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.id=f.job_id)) OR EXISTS(SELECT 1 FROM jobs j WHERE j.id=f.job_id AND j.status IN ('queued','running','waiting_input'))))`).bind(followupId,id,projectId,actorId,body.message,jobId,now,body.expectedRevision),
+      env.DB.prepare(`INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_by,created_at,updated_at)
+        SELECT ?1,?2,'review_run','queued',?3,0,?4,?5,?5 WHERE EXISTS(SELECT 1 FROM assessment_followups WHERE id=?6 AND job_id=?1)`)
+        .bind(jobId,projectId,JSON.stringify({assessmentId:id,followupId,projectId,configVersionId,feedbackSnapshot}),actorId,now,followupId),
+      env.DB.prepare(`INSERT INTO job_outbox(id,job_id,status,available_at,attempts,created_at,updated_at)
+        SELECT ?1,?2,'pending',?3,0,?3,?3 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status='queued')`).bind(newId(),jobId,now),
+    ]);
+    if(!inserted[0]?.meta.changes)throw invalidState('评分、权限已变化，或已有追加对话正在处理，请刷新');
+    await tryDispatchJob(env,jobId);
     return {followupId,jobId};
   });
 }

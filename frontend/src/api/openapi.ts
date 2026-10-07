@@ -2475,6 +2475,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/assessments/{assessmentId}/followups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    assessmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 成功 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssessmentFollowupsResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    assessmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedRevision: number;
+                        message: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 成功 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AssessmentFollowupCreateResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/assessments/{assessmentId}/scores": {
         parameters: {
             query?: never;
@@ -13703,6 +13775,203 @@ export interface components {
                     report?: unknown;
                 })[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AssessmentFollowupsResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    followupId: string;
+                    /** Format: uuid */
+                    assessmentId: string;
+                    /** Format: uuid */
+                    userId: string;
+                    message: string;
+                    baseRevision: number;
+                    /** @enum {string} */
+                    status: "queued" | "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "waiting_input";
+                    /** Format: uuid */
+                    jobId: string;
+                    baseReport: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "scored" | "unscorable";
+                        /** Format: uuid */
+                        standardsVersionId: string;
+                        standardsVersion: number;
+                        scores: {
+                            key: string;
+                            score: number | null;
+                            confidence: number | null;
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                            label: string;
+                            /** @enum {string} */
+                            origin?: "human" | "ai";
+                        }[];
+                        weightedTotal: number | null;
+                        summary: string;
+                        limitations: string[];
+                        requirementChecks: {
+                            /** Format: uuid */
+                            requirementId: string;
+                            /** @enum {string} */
+                            status: "met" | "unmet" | "unknown";
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                        }[];
+                        references?: unknown[];
+                        decisionReferences?: unknown[];
+                    };
+                    proposedReport: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "scored" | "unscorable";
+                        /** Format: uuid */
+                        standardsVersionId: string;
+                        standardsVersion: number;
+                        scores: {
+                            key: string;
+                            score: number | null;
+                            confidence: number | null;
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                            label: string;
+                            /** @enum {string} */
+                            origin?: "human" | "ai";
+                        }[];
+                        weightedTotal: number | null;
+                        summary: string;
+                        limitations: string[];
+                        requirementChecks: {
+                            /** Format: uuid */
+                            requirementId: string;
+                            /** @enum {string} */
+                            status: "met" | "unmet" | "unknown";
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                        }[];
+                        references?: unknown[];
+                        decisionReferences?: unknown[];
+                    } | null;
+                    publishedReport: {
+                        /** @enum {string} */
+                        kind: "assistive";
+                        /** @enum {string} */
+                        status: "scored" | "unscorable";
+                        /** Format: uuid */
+                        standardsVersionId: string;
+                        standardsVersion: number;
+                        scores: {
+                            key: string;
+                            score: number | null;
+                            confidence: number | null;
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                            label: string;
+                            /** @enum {string} */
+                            origin?: "human" | "ai";
+                        }[];
+                        weightedTotal: number | null;
+                        summary: string;
+                        limitations: string[];
+                        requirementChecks: {
+                            /** Format: uuid */
+                            requirementId: string;
+                            /** @enum {string} */
+                            status: "met" | "unmet" | "unknown";
+                            comment: string;
+                            evidence: ({
+                                /** @enum {string} */
+                                type: "material";
+                                /** Format: uuid */
+                                materialVersionId: string;
+                                quote: string;
+                            } | {
+                                /** @enum {string} */
+                                type: "answer";
+                                turnSequence: number;
+                                quote: string;
+                            })[];
+                        }[];
+                        references?: unknown[];
+                        decisionReferences?: unknown[];
+                    } | null;
+                    publishedRevision: number | null;
+                    error: string | null;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AssessmentFollowupCreateResponse: {
+            data: {
+                /** Format: uuid */
+                followupId: string;
+                /** Format: uuid */
+                jobId: string;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
