@@ -1,3 +1,4 @@
+import { AiActivityStatus } from '../components/AiActivityStatus';
 import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { VirtualList } from '../components/VirtualList';
 import { usePagedItems } from '../features/pagination/usePagedItems';
@@ -5,14 +6,14 @@ import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Play, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Play, ShieldAlert } from 'lucide-react';
 import { api, projectPath } from '../api/client';
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { projectRequest, type StandardVersion } from '../api/simplification';
 import type { DataOf } from '../api/types';
-import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
+import { completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 
 type ReviewItem = DataOf<'ReviewListResponse'>['items'][number];
 type MaterialItem = DataOf<'MaterialListResponse'>['items'][number];
@@ -42,7 +43,6 @@ export function ReviewsPage() {
   const [retryingJob, setRetryingJob] = useState(false);
   const [pendingReviewJob, setPendingReviewJob] = useState<PendingReviewJob | null>(() => readPendingJob<PendingReviewJob>(pendingJobKey(projectId)));
   const [creating, setCreating] = useState(false);
-  const job = useVisibleJobPoller(pendingReviewJob?.jobId ?? null);
   const selectedReviewQuery = useQuery({
     queryKey: ['review', projectId, selectedReviewId],
     queryFn: () => api.get<'ReviewResponse'>(projectPath(projectId, `/reviews/${encodeURIComponent(selectedReviewId)}`)),
@@ -51,6 +51,9 @@ export function ReviewsPage() {
     refetchOnWindowFocus: true,
   });
   const review = selectedReviewQuery.data;
+  const reviewJobId = (review as (ReviewItem & { jobId?: string | null }) | undefined)?.jobId;
+  const visibleReviewJob = pendingReviewJob?.entityId === selectedReviewId ? pendingReviewJob : reviewJobId ? { jobId: reviewJobId, entityId: selectedReviewId, action: 'create' } : pendingReviewJob;
+  const job = useVisibleJobPoller(visibleReviewJob?.jobId ?? null);
   const reviews = useMemo(() => reviewListQuery.data ?? [], [reviewListQuery.data]);
   const aiEnabled = capabilities.data?.features.aiEnabled === true;
   const hasPendingReviewJob = Boolean(pendingReviewJob && !job.isSettled);
@@ -81,11 +84,10 @@ export function ReviewsPage() {
     if (!selectedReviewId && reviews.length > 0) setSelectedReviewId(reviews[0]?.reviewId ?? '');
   }, [reviews, selectedReviewId]);
   useEffect(() => {
-    if (!job.job || !job.isSettled || !pendingReviewJob || job.job.jobId !== pendingReviewJob.jobId) return;
+    if (!job.job || !job.isSettled || !pendingReviewJob || job.jobId !== pendingReviewJob.jobId) return;
     if (job.job.status === 'failed' || job.job.status === 'waiting_input') return;
     const clear = () => {
-      clearPendingJob(pendingJobKey(projectId), pendingReviewJob.jobId);
-      setPendingReviewJob((current) => current?.jobId === pendingReviewJob.jobId ? null : current);
+      // Keep completed job linked to review for reply time and history.
     };
     if (job.job.status === 'succeeded') {
       void Promise.all([
@@ -95,7 +97,7 @@ export function ReviewsPage() {
     } else {
       clear();
     }
-  }, [job.job, job.isSettled, pendingReviewJob, projectId, queryClient]);
+  }, [job.job, job.jobId, job.isSettled, pendingReviewJob, projectId, queryClient]);
 
   const freshness = (materialVersionIds: string[]) => {
     let stale = false;
@@ -132,12 +134,12 @@ export function ReviewsPage() {
   };
 
   const handleRetryJob = async () => {
-    if (!aiEnabled || !pendingReviewJob || job.job?.status !== 'failed' || retryingJob) return;
+    if (!aiEnabled || !visibleReviewJob || job.job?.status !== 'failed' || retryingJob) return;
     setRetryingJob(true);
     setRetryError(null);
     try {
-      const nextJobId = await retryBackendJob(projectId, pendingReviewJob.jobId);
-      const pending = { ...pendingReviewJob, jobId: nextJobId };
+      const nextJobId = await retryBackendJob(projectId, job.job?.jobId ?? visibleReviewJob.jobId);
+      const pending = { ...visibleReviewJob, jobId: nextJobId };
       writePendingJob(pendingJobKey(projectId), pending);
       setPendingReviewJob(pending);
     } catch (error) {
@@ -179,7 +181,8 @@ export function ReviewsPage() {
             </div>
           </div>
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
-          {pendingReviewJob && <div className="ai-workflow-field ai-workflow-field-wide"><JobPanel jobId={pendingReviewJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && !capabilities.error} onRetry={() => void handleRetryJob()} /></div>}
+          {creating && <AiActivityStatus submitting />}
+          {pendingReviewJob && <div className="ai-workflow-field ai-workflow-field-wide"><JobPanel jobId={pendingReviewJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && !capabilities.error} onRetry={handleRetryJob} /></div>}
           <div className="ai-workflow-actions ai-workflow-field-wide">
             <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || creating || hasPendingReviewJob || !standard || selectedMaterialVersionIds.length === 0}><Play size={15} />{creating ? '正在创建预审' : hasPendingReviewJob ? '预审任务处理中' : '发起真实预审'}</button>
 
@@ -205,7 +208,7 @@ export function ReviewsPage() {
       {selectedReviewQuery.isLoading ? <Spinner label="正在读取预审报告" /> : selectedReviewQuery.error ? <ErrorNotice error={selectedReviewQuery.error} onRetry={() => void selectedReviewQuery.refetch()} /> : review ? <>
         <div className="ai-workflow-meta"><StatusPill tone={review.status === 'succeeded' ? 'good' : review.status === 'failed' ? 'bad' : 'blue'}>{reviewStatusLabel(review.status)}</StatusPill><span>创建于 {formatWorkflowDate(review.createdAt)}</span><span>评分版本 {review.rubricVersionId}</span><span>要求集 {review.requirementSetId}</span></div>
         <div className="ai-workflow-meta"><ShieldAlert size={15} /><span>绑定材料版本：{review.materialVersionIds.join(' · ')}</span><FreshnessStatus state={freshness(review.materialVersionIds)} /></div>
-        {pendingReviewJob?.entityId === selectedReviewId && <JobPanel jobId={pendingReviewJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && !capabilities.error} onRetry={() => void handleRetryJob()} />}
+        {visibleReviewJob?.entityId === selectedReviewId && <JobPanel jobId={visibleReviewJob.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && !capabilities.error} onRetry={handleRetryJob} />}
         {review.status === 'succeeded' ? <ReportView report={review.report} /> : review.status === 'failed' ? <div className="ai-workflow-note is-error">后端预审执行失败。报告未生成，请查看任务状态或发起新的预审。</div> : <div className="ai-workflow-note">后端仍在生成此报告。可刷新报告读取最新服务端状态。</div>}
       </> : null}
     </SectionCard>}
@@ -219,8 +222,8 @@ function FreshnessStatus({ state }: { state: 'stale' | 'unknown' | 'current' }) 
   return <StatusPill tone="good">材料版本仍为当前版本</StatusPill>;
 }
 
-function JobPanel({ jobId, job, error, retryError, loading, retrying, canRetry, onRetry }: { jobId: string; job: DataOf<'JobResponse'> | null; error: unknown; retryError: unknown; loading: boolean; retrying: boolean; canRetry: boolean; onRetry: () => void }) {
-  return <div className="ai-workflow-job"><RefreshCw className={job && (job.status === 'queued' || job.status === 'running') ? 'spin' : ''} size={16} /><div><strong>{job ? jobStatusLabel(job.status) : loading ? '正在读取任务' : '等待任务状态'}</strong><p>后端任务 ID {jobId}{job ? ` · 第 ${job.attempts} 次执行` : ''}</p>{Boolean(error) && <ErrorNotice error={error} />}{job?.status === 'failed' && <><ErrorNotice error={job.error ?? new Error('任务执行失败。')} /><button className="button button-quiet button-small" onClick={onRetry} disabled={retrying || !canRetry}><RefreshCw size={13} />{retrying ? '正在重试' : canRetry ? '重试后端任务' : '后端 AI 未启用，暂不可重试'}</button></>}{job?.status === 'waiting_input' && <p>后端任务正在等待补充输入；预审报告尚未完成。</p>}{Boolean(retryError) && <ErrorNotice error={retryError} />}</div></div>;
+function JobPanel({ jobId: _jobId, job, error, retryError, loading, retrying, canRetry, onRetry }: { jobId: string; job: DataOf<'JobResponse'> | null; error: unknown; retryError: unknown; loading: boolean; retrying: boolean; canRetry: boolean; onRetry: () => void | Promise<void> }) {
+  return <><AiActivityStatus job={job} jobId={_jobId} loading={loading} readError={error} onRefresh={() => window.dispatchEvent(new Event('ai-job-refresh'))} onResume={canRetry ? onRetry : undefined} resuming={retrying} />{Boolean(retryError) && <ErrorNotice error={retryError} />}</>;
 }
 
 function reviewStatusLabel(status: ReviewItem['status']): string {

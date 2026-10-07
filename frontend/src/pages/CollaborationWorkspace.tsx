@@ -1,3 +1,4 @@
+import { JobAiActivity } from './JobAiActivity';
 import { defaultTaskDraft as defaultDraft, useTaskOperations } from '../features/collaboration/useTaskOperations';
 import { useCollaborationQueries } from '../features/collaboration/useCollaborationQueries';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -21,7 +22,7 @@ import { collaborationApi, type CollaborationTask, type CollaborationProposal } 
 import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, Modal, SectionCard, Spinner, StatusPill } from '../components/ui';
-import { useVisibleJobPoller } from './aiWorkflowSupport';
+import { retryBackendJob, useVisibleJobPoller } from './aiWorkflowSupport';
 import { ReferencePicker } from './ReferencePicker';
 import './ProjectWorkspace.css';
 import { projectRequest } from '../api/simplification';
@@ -105,6 +106,8 @@ function ProjectCollaborationWorkspace() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobRefresh, setJobRefresh] = useState(0);
   const job = useVisibleJobPoller(jobId, jobRefresh);
+  const previousActivity = useQuery({ queryKey: ['collaboration-ai-activity', projectId], queryFn: () => projectRequest<{ jobId: string | null }>(projectId, '/collaboration/ai-activity') });
+  useEffect(() => { if (!jobId && previousActivity.data?.jobId) setJobId(previousActivity.data.jobId); }, [jobId, previousActivity.data?.jobId]);
   const resolvedQuestions = useRef(new Set<string>());
   const clarifications = useQuery({
     queryKey: clarificationQueryKey(projectId),
@@ -183,7 +186,7 @@ function ProjectCollaborationWorkspace() {
       <div className="form-actions"><button className="button" disabled={!canRegenerate || feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || (allowSearch&&!searchQuery.trim()) || ai.isPending || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('decompose')}>重新生成整套任务建议</button><button className="button" disabled={feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || (allowSearch&&!searchQuery.trim()) || ai.isPending || !(graph.data?.items ?? []).some(row => ['open', 'in_progress', 'improve', 'rework'].includes(row.lifecycleState)) || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('adjust')}>按要求调整现有任务</button><button className="button" disabled={feedbackBase===null || saveFeedback.isPending || !owner || !aiEnabled || ai.isPending || !(graph.data?.items ?? []).some(row => !row.assigneeId && row.lifecycleState === 'open') || waitingForAnswer || (!!jobId && !job.isSettled)} onClick={() => ai.mutate('assign')}>建议未认领任务分工</button></div>
       {ai.error && <ErrorNotice error={ai.error} />}
       {handoffNotice && <p className="form-note">{handoffNotice}</p>}
-      <JobProgress job={job} />
+      <JobProgress job={job} submitting={ai.isPending} onResume={owner && aiEnabled ? async () => { if (job.job) setJobId(await retryBackendJob(projectId, job.job.jobId)); } : undefined} />
       {(job.job as unknown as {feedbackSnapshot?:FeedbackSnapshot})?.feedbackSnapshot && <details><summary>本次使用的持续反馈版本 {(job.job as unknown as {feedbackSnapshot:FeedbackSnapshot}).feedbackSnapshot.version}</summary><p style={{whiteSpace:'pre-wrap'}}>{(job.job as unknown as {feedbackSnapshot:FeedbackSnapshot}).feedbackSnapshot.feedback || '未设置持续反馈'}</p></details>}
       {jobId&&<ProjectToolCalls projectId={projectId} jobId={jobId}/>}
       <LoadMore query={proposalPages} label="AI 建议" />
@@ -203,7 +206,7 @@ function ProjectCollaborationWorkspace() {
     <VirtualList label="协作任务" className="collab-grid" items={rows.filter(task => statusFilter === 'all' || (statusFilter === 'pending_review' ? task.pendingHumanReview : task.lifecycleState === statusFilter && (statusFilter !== 'accepted' || !task.pendingHumanReview)))} getKey={task => task.taskId} renderItem={task => <article className="collab-task" key={task.taskId}>
       <div className="collab-toolbar"><div className="collab-task-status"><StatusPill tone={task.pendingHumanReview ? 'warn' : task.lifecycleState === 'accepted' ? 'good' : ['improve', 'rework'].includes(task.lifecycleState) ? 'warn' : 'blue'}>{taskStateLabel(task)}</StatusPill>{(task.unfinishedDependencyIds?.length ?? 0) > 0 && <span className="collab-dependency-warning" tabIndex={0} aria-label="前置任务未完成，可提前认领、执行和提交。">前置任务未完成<span role="tooltip">前置任务未完成，可提前认领、执行和提交。</span></span>}</div><small>{task.effortHours} 小时</small></div>
       <button title={task.title} className="collab-title" onClick={() => setSelectedId(task.taskId)}>{task.title}</button><AiReferenceBadge />
-      <p className="collab-criteria">{taskSummaryPreview(task)}</p>{summaries.errors[task.taskId] && <ErrorNotice error={summaries.errors[task.taskId]} />}{Array.from(taskSummarySource(task)).length > 60 && !task.summary && <small className="collab-summary-status">原文节选{summaries.errors[task.taskId] || task.summaryStatus === 'failed' ? ' · 摘要生成失败' : task.summaryStatus === 'queued' || task.summaryStatus === 'running' ? ' · AI 正在总结' : ''}{aiEnabled && (summaries.errors[task.taskId] || task.summaryStatus === 'failed') && <button className="button button-quiet button-small" disabled={summaries.retryBusy} onClick={() => summaries.retry(task)}>重试摘要</button>}</small>}
+      <p className="collab-criteria">{taskSummaryPreview(task)}</p>{task.summaryJobId && <JobAiActivity projectId={projectId} jobId={task.summaryJobId} canResume={aiEnabled} onSettled={() => { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); }} />}{summaries.errors[task.taskId] && <ErrorNotice error={summaries.errors[task.taskId]} />}{Array.from(taskSummarySource(task)).length > 60 && !task.summary && <small className="collab-summary-status">原文节选{summaries.errors[task.taskId] || task.summaryStatus === 'failed' ? ' · 摘要生成失败' : task.summaryStatus === 'queued' || task.summaryStatus === 'running' ? ' · AI 正在总结' : ''}{aiEnabled && !task.summaryJobId && (summaries.errors[task.taskId] || task.summaryStatus === 'failed') && <button className="button button-quiet button-small" disabled={summaries.retryBusy} onClick={() => summaries.retry(task)}>重试摘要</button>}</small>}
       {(task.dependsOnTaskIds?.length ?? 0) > 0 && <small className="collab-task-dependencies">前置任务：{task.dependsOnTaskIds!.map(id => rows.find(row => row.taskId === id)?.title ?? id).join('、')}</small>}
       <div className="collab-toolbar collab-task-footer"><span className="tm-meta-item"><UserRound size={14} />{members.data?.find(member => member.userId === task.assigneeId)?.displayName ?? (task.assigneeId ? '项目成员' : '尚未认领')}</span>{!task.assigneeId && task.lifecycleState === 'open' && <button className="button button-primary button-small" disabled={claim.isPending || !me.data} onClick={() => claim.mutate(task)}>我来认领</button>}<button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId)}>查看与提交</button><button className="button button-quiet button-small" onClick={() => setInquiryId(task.taskId)}>任务质询{(unread.data?.items.find(item => item.taskId === task.taskId)?.unreadCount ?? 0) > 0 && <span className="task-inquiry-unread" aria-label="有未读质询">{unread.data!.items.find(item => item.taskId === task.taskId)!.unreadCount}</span>}</button><TaskAgentAction projectId={projectId} task={task} onHandoff={() => setAgentTaskId(task.taskId)} /><button className="button button-quiet button-small" onClick={() => setSelectedId(task.taskId, 'settings')}>任务设置</button></div>
     </article>} />

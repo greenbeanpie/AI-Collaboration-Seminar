@@ -33,6 +33,19 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
     }).finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
   }, [open, jobId, eventsPath, history.jobId, history.loaded]);
+  const historyRef = useRef(history);
+  useEffect(() => { historyRef.current = history; }, [history]);
+  useEffect(() => {
+    const history = historyRef.current;
+    if (!open || !jobId || history.jobId !== jobId || !history.loaded || history.cursor !== null || !activity?.updatedAt) return;
+    const controller = new AbortController();
+    const cursor = history.items.at(-1)?.id;
+    void readActivityEvents(jobId, cursor, controller.signal, eventsPath).then(page => {
+      if (controller.signal.aborted || !page.items.length) return;
+      setHistory(current => current.jobId !== jobId ? current : { ...current, items: [...current.items, ...page.items.filter(item => !current.items.some(previous => previous.id === item.id))], cursor: page.nextCursor });
+    }).catch(error => { if (!controller.signal.aborted) setHistoryError(error); });
+    return () => controller.abort();
+  }, [open, jobId, activity?.updatedAt, eventsPath]);
   if (!job && !activity && !status && !submitting && !loading && !readError) return null;
   const executing = status === 'running' && !readError;
   const progress = activity?.progress;
@@ -54,7 +67,7 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
     <div className="ai-activity-current" role="status" aria-live="polite" aria-atomic="true">
       <span className={`ai-activity-indicator${executing ? ' is-running' : ''}`} aria-hidden="true" />
       <div><strong>{resuming || resumePending ? '等待续跑' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
-        <p>当前操作：{submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : ' 步'}`}</p>
+        <p>当前操作：{submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
         <p>AI 最后一次回复时间：<time dateTime={activity?.lastResponseAt ?? undefined}>{activityTime(activity?.lastResponseAt)}</time></p>
       </div>
     </div>

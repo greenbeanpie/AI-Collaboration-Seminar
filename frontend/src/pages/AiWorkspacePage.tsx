@@ -1,3 +1,4 @@
+import { AiActivityStatus } from '../components/AiActivityStatus';
 import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { FixedMaterialVersions } from './FixedMaterialVersions';
 import { usePagedItems } from '../features/pagination/usePagedItems';
@@ -12,7 +13,7 @@ import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import type { DataOf } from '../api/types';
-import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, jobStatusLabel, markdownToTiptapDoc, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
+import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, markdownToTiptapDoc, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 
 type AgentSession = DataOf<'AgentSessionResponse'>;
 type MaterialItem = DataOf<'MaterialListResponse'>['items'][number];
@@ -75,6 +76,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
   const [retryError, setRetryError] = useState<unknown>(null);
   const [retryingJob, setRetryingJob] = useState(false);
   const [answerText, setAnswerText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [pendingAgentJob, setPendingAgentJob] = useState<PendingAgentJob | null>(() => readPendingJob<PendingAgentJob>(pendingJobKey(projectId)));
 
@@ -110,28 +112,27 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     const summary = selectedSessionSummary;
-    if (!summary?.latestJobId || !['running', 'failed'].includes(summary.latestRunStatus ?? '') || pendingAgentJob?.entityId === summary.sessionId) return;
+    if (!summary?.latestJobId || pendingAgentJob?.entityId === summary.sessionId) return;
     const pending = { jobId: summary.latestJobId, entityId: summary.sessionId, action: 'resume' };
     writePendingJob(pendingJobKey(projectId), pending);
     setPendingAgentJob(pending);
   }, [pendingAgentJob?.entityId, projectId, selectedSessionSummary]);
 
   useEffect(() => {
-    if (!job.job || !job.isSettled || !pendingAgentJob || job.job.jobId !== pendingAgentJob.jobId) return;
+    if (!job.job || !job.isSettled || !pendingAgentJob || job.jobId !== pendingAgentJob.jobId) return;
     if (job.job.status === 'failed' || job.job.status === 'waiting_input') return;
     if (job.job.status === 'succeeded') {
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['agentSession', projectId, pendingAgentJob.entityId] }),
         queryClient.invalidateQueries({ queryKey: ['materials', projectId] }),
       ]).finally(() => {
-        clearPendingJob(pendingJobKey(projectId), pendingAgentJob.jobId);
-        setPendingAgentJob((current) => current?.jobId === pendingAgentJob.jobId ? null : current);
+        // Retain terminal activity alongside its result.
       });
     } else {
       clearPendingJob(pendingJobKey(projectId), pendingAgentJob.jobId);
       setPendingAgentJob((current) => current?.jobId === pendingAgentJob.jobId ? null : current);
     }
-  }, [job.job, job.isSettled, pendingAgentJob, projectId, queryClient]);
+  }, [job.job, job.jobId, job.isSettled, pendingAgentJob, projectId, queryClient]);
 
   const savePending = (sessionId: string, jobId: string, action: string) => {
     const pending = { jobId, entityId: sessionId, action };
@@ -144,7 +145,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
     setRetryingJob(true);
     setRetryError(null);
     try {
-      const nextJobId = await retryBackendJob(projectId, pendingAgentJob.jobId);
+      const nextJobId = await retryBackendJob(projectId, job.job?.jobId ?? pendingAgentJob.jobId);
       savePending(pendingAgentJob.entityId, nextJobId, pendingAgentJob.action);
     } catch (error) {
       setRetryError(error);
@@ -155,7 +156,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
 
   const handleCreateSession = async (event: FormEvent) => {
     event.preventDefault();
-    if (!aiEnabled || activeJobPending) return;
+    if (!aiEnabled || activeJobPending || submitting) return;
     const body = {
       mode,
       ...(allowSearch&&searchQuery.trim()?{allowSearch:true,searchQuery:searchQuery.trim()}:{}),
@@ -167,6 +168,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
     };
 
     setCreateError(null);
+    setSubmitting(true);
     try {
       const namespace = `agent-create:${projectId}`;
       const key = await idempotencyKeyForIntent(namespace, body);
@@ -179,14 +181,15 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
       void queryClient.invalidateQueries({ queryKey: ['agentSessions', projectId] });
     } catch (error) {
       setCreateError(error);
-    }
+    } finally { setSubmitting(false); }
   };
 
   const handleGuideAnswer = async (event: FormEvent) => {
     event.preventDefault();
     const content = answerText.trim();
-    if (!session || session.capability !== 'guide' || session.status !== 'active' || !content || activeJobPending || !aiEnabled) return;
+    if (!session || session.capability !== 'guide' || session.status !== 'active' || !content || activeJobPending || !aiEnabled || submitting) return;
     setAnswerError(null);
+    setSubmitting(true);
     const body = { content };
     try {
       const namespace = `agent-answer:${projectId}:${session.sessionId}`;
@@ -198,7 +201,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
       void queryClient.invalidateQueries({ queryKey: ['agentSession', projectId, session.sessionId] });
     } catch (error) {
       setAnswerError(error);
-    }
+    } finally { setSubmitting(false); }
   };
 
   const capabilityStatus = capabilities.isLoading
@@ -261,8 +264,9 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
           {Boolean(createError) && <div className="ai-workflow-field ai-workflow-field-wide"><ErrorNotice error={createError} /></div>}
+          {submitting && <AiActivityStatus submitting />}
           <div className="ai-workflow-actions ai-workflow-field-wide">
-            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || activeJobPending}><Play size={15} />{activeJobPending ? '当前 AI 任务处理中' : '开始真实 AI 协作'}</button>
+            <button className="button button-primary" type="submit" disabled={!aiEnabled || capabilities.isLoading || Boolean(capabilities.error) || activeJobPending || submitting}><Play size={15} />{activeJobPending ? '当前 AI 任务处理中' : '开始真实 AI 协作'}</button>
             {mode === 'review_only' && selectedMaterialVersionIds.length === 0 && <span className="muted">未选择材料时，AI 自动发现相关材料并记录审阅对象</span>}
           </div>
         </form>}
@@ -280,7 +284,8 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
           {selectedSessionSummary && <div className="ai-workflow-meta"><span>{selectedSessionSummary.title}</span><span>更新于 {formatWorkflowDate(selectedSessionSummary.updatedAt)}</span><span>最近运行 {selectedSessionSummary.latestRunStatus ?? '无'}</span><span className="mono">会话 ID {selectedSessionSummary.sessionId}</span></div>}
           {selectedSessionQuery.isLoading ? <Spinner label="正在从后端恢复会话" /> : selectedSessionQuery.error ? <ErrorNotice error={selectedSessionQuery.error} onRetry={() => void selectedSessionQuery.refetch()} /> : session ? <>
             <div className="ai-workflow-meta"><StatusPill tone={session.status === 'active' ? 'blue' : 'neutral'}>{session.status === 'active' ? '会话进行中' : '会话已关闭'}</StatusPill><span>{modeOptions.find((option) => option.value === session.capability)?.label ?? session.capability}</span><span className="mono">ID {session.sessionId}</span><span>{session.turns.length} 个对话回合</span></div>
-            {currentJobId && <JobPanel jobId={currentJobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} onRetry={() => void handleRetryJob()} />}
+            {submitting && <AiActivityStatus submitting />}
+            {currentJobId && <JobPanel jobId={currentJobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} onRetry={handleRetryJob} />}
             {currentJobId&&<ProjectToolCalls projectId={projectId} jobId={currentJobId}/>}
             {jobIsWaitingForInput && <div className="ai-workflow-note is-warning">此任务需要后端补充输入才能继续；请根据后端任务状态处理后再重新载入会话。</div>}
             <div className="ai-workflow-chat">
@@ -299,7 +304,7 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
                 <textarea className="input textarea ai-workflow-textarea" maxLength={8000} value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder="结合团队实际情况回答，不确定的内容可以注明待确认。" disabled={activeJobPending || !aiEnabled} />
               </Field>
               {Boolean(answerError) && <ErrorNotice error={answerError} />}
-              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!aiEnabled || !answerText.trim() || activeJobPending}><Send size={15} />提交回答</button>{!aiEnabled && <span className="muted">后端 AI 未启用，不能生成下一轮内容。</span>}</div>
+              <div className="ai-workflow-actions"><button className="button button-primary" type="submit" disabled={!aiEnabled || !answerText.trim() || activeJobPending || submitting}><Send size={15} />提交回答</button>{!aiEnabled && <span className="muted">后端 AI 未启用，不能生成下一轮内容。</span>}</div>
             </form>}
           </> : <EmptyState title="选择一个真实会话" detail="会话内容会通过服务端返回的会话 ID 读取。" />}
         </div> : <EmptyState title="后端暂时没有 AI 会话" detail="创建成功的真实会话会出现在这个列表中；页面不会用本机记录或示例内容代替服务端历史。" />}
@@ -391,9 +396,8 @@ function DraftReviewCard({ projectId, runId, runStatus, payload, materials, adop
   </div>;
 }
 
-function JobPanel({ jobId, job, error, retryError, loading, retrying, canRetry, onRetry }: { jobId: string; job: DataOf<'JobResponse'> | null; error: unknown; retryError: unknown; loading: boolean; retrying: boolean; canRetry: boolean; onRetry: () => void }) {
-  const status = job ? jobStatusLabel(job.status) : loading ? '正在读取任务' : '等待任务状态';
-  return <div className="ai-workflow-job"><RefreshCw className={job && (job.status === 'queued' || job.status === 'running') ? 'spin' : ''} size={16} /><div><strong>{status}</strong><p>后端任务 ID {jobId}{job ? ` · 第 ${job.attempts} 次执行` : ''}</p>{Boolean(error) && <ErrorNotice error={error} />}{job?.status === 'failed' && <><ErrorNotice error={job.error ?? new Error('任务执行失败。')} /><button className="button button-quiet button-small" onClick={onRetry} disabled={retrying || !canRetry}><RefreshCw size={13} />{retrying ? '正在重试' : canRetry ? '重试后端任务' : '后端 AI 未启用，暂不可重试'}</button></>}{Boolean(retryError) && <ErrorNotice error={retryError} />}{job?.status === 'waiting_input' && <p>后端任务在等待补充信息，当前页面不会伪造完成结果。</p>}</div></div>;
+function JobPanel({ jobId: _jobId, job, error, retryError, loading, retrying, canRetry, onRetry }: { jobId: string; job: DataOf<'JobResponse'> | null; error: unknown; retryError: unknown; loading: boolean; retrying: boolean; canRetry: boolean; onRetry: () => void | Promise<void> }) {
+  return <><AiActivityStatus job={job} jobId={_jobId} loading={loading} readError={error} onRefresh={() => window.dispatchEvent(new Event('ai-job-refresh'))} onResume={canRetry ? onRetry : undefined} resuming={retrying} />{Boolean(retryError) && <ErrorNotice error={retryError} />}</>;
 }
 
 function turnLabel(kind: AgentSession['turns'][number]['kind']): string {
