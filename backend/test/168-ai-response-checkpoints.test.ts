@@ -72,3 +72,15 @@ it('received response blobs are immutable and successor investigation objects ca
   expect((await loadInvestigation(env,id,false,retry.jobId))?.step).toBe(4);
   expect((await loadInvestigation(env,id))?.step).toBe(4);
 });
+
+it('dry-run eligibility uses retry guards without reserving quota, changing inputs or creating a successor',async()=>{
+  const f=await fixture();await env.DB.prepare("UPDATE jobs SET status='failed' WHERE id=?1").bind(f.jobId).run();
+  const before=await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(f.jobId).first();
+  const reservations=await env.DB.prepare('SELECT COUNT(*) n FROM usage_reservations WHERE project_id=?1').bind(f.projectId).first();
+  expect(await retryFailedAiJob(env,f.jobId,undefined,undefined,{actorId:f.user.userId,allowUncertainDispatch:true,dryRun:true})).toEqual({status:'queued',jobId:f.jobId});
+  expect(await env.DB.prepare('SELECT input_json FROM jobs WHERE id=?1').bind(f.jobId).first()).toEqual(before);
+  expect(await env.DB.prepare('SELECT COUNT(*) n FROM usage_reservations WHERE project_id=?1').bind(f.projectId).first()).toEqual(reservations);
+  expect(await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(f.jobId).first()).toBeNull();
+  expect(await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(f.projectId).first()).toEqual({n:1});
+  expect((await retryFailedAiJob(env,f.jobId,undefined,undefined,{actorId:newId(),dryRun:true})).status).toBe('skipped');
+});

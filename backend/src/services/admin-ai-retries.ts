@@ -54,7 +54,7 @@ export async function enqueueAdminAiRetries(env:Env,idempotencyKey:string,actorI
 
 export type RetryResult={status:'queued'|'skipped';reason?:string;jobId?:string};
 /** A replacement keeps the old terminal job immutable, so late completions cannot publish. */
-export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:string,autoRetryRootId?:string,options:{actorId?:string;allowUncertainDispatch?:boolean}={}):Promise<RetryResult> {
+export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:string,autoRetryRootId?:string,options:{actorId?:string;allowUncertainDispatch?:boolean;dryRun?:boolean}={}):Promise<RetryResult> {
  const job=await env.DB.prepare('SELECT * FROM jobs WHERE id=?1').bind(jobId).first<{id:string;project_id:string|null;kind:string;status:string;input_json:string;updated_at:string;created_by:string|null}>();
  if(!job||job.status!=='failed'||(expectedUpdatedAt&&job.updated_at!==expectedUpdatedAt))return {status:'skipped',reason:'任务状态已变化'};
  if(await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(jobId).first())return {status:'skipped',reason:'已排队重试'};
@@ -108,6 +108,8 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  const id=newId(),now=nowIso();
  const eligible=await env.DB.prepare(`SELECT 1 FROM jobs old WHERE old.id=?1 AND ${guards.join(' AND ')}`).bind(jobId,id,job.updated_at,actorId).first();
  if(!eligible)return {status:'skipped',reason:'权限、版本或当前业务状态已变化'};
+ // Eligibility reads use the exact execution guards without reserving quota or changing pointers.
+ if(options.dryRun)return {status:'queued',jobId};
  const reservation=await env.DB.prepare('SELECT purpose,max_calls FROM usage_reservations WHERE job_id=?1 ORDER BY created_at DESC LIMIT 1').bind(jobId).first<{purpose:string;max_calls:number}>();
  if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId:id,purpose:reservation?.purpose??job.kind,maxCalls:reservation?.max_calls??2,configVersionId:config.id});
  try{
