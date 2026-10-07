@@ -7,9 +7,9 @@ import type { StandardVersion } from '../api/simplification';
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project: { myRole: 'owner' } }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear(); });
 const version: StandardVersion = { standardsVersionId: 's', projectId: 'p', version: 1, title: '统一标准', status: 'confirmed', revision: 1, requirementSetIds: ['r-set'], rubricVersionId: 'rubric', mappings: [], requirements: [{ requirementId: 'r', requirementSetId: 'r-set', title: '提供来源', detail: '所有外部内容可追溯', category: 'other', dueDate: null, duePrecision: 'unknown', citations: [] }], rubric: { rubricVersionId: 'rubric', version: 1, weights: [{ key: 'official_quality', label: '官方质量维度', weight: 70 }], notes: '已保存的官方规则' }, confirmedAt: '2026-10-01', createdAt: '2026-10-01' };
-function show(items: StandardVersion[] = []) {
+function show(items: StandardVersion[] = [], generatedJobId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false }, mutations: { retry: false } } });
-  client.setQueryData(['standards', 'p'], { items }); client.setQueryData(['current-standard', 'p'], { standard: items[0] ?? null }); client.setQueryData(['requirementSets', 'p'], []);
+  client.setQueryData(['standards', 'p'], { items }); client.setQueryData(['current-standard', 'p'], { standard: items[0] ?? null, generatedJobId }); client.setQueryData(['requirementSets', 'p'], []);
   render(<QueryClientProvider client={client}><MemoryRouter><StandardsEditor /></MemoryRouter></QueryClientProvider>);
 }
 it('preserves unmapped existing rubric dimensions in the same editor while keeping internal keys hidden', () => {
@@ -93,4 +93,13 @@ it('saving a revision creates the new current standard immediately without a con
   fireEvent.click(screen.getByRole('button', { name: '保存并生效' }));
   expect(await screen.findByText('生效标准 v2')).toBeInTheDocument();
   expect(writes).toEqual(['/api/v1/projects/p/standards/s']);
+});
+
+it('restores completed AI activity from the current-standard response top-level job pointer', async () => {
+  const fetch = vi.fn(async () => Response.json({ data: { jobId: 'completed-standard-job', status: 'succeeded', activity: { code: 'completed', updatedAt: '2026-10-07T00:00:00Z', lastResponseAt: '2026-10-07T00:00:00Z', progress: null, canResume: false, resumeReason: null, uncertain: false } } }));
+  vi.stubGlobal('fetch', fetch);
+  show([version], 'completed-standard-job');
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/v1/jobs/completed-standard-job', expect.any(Object)));
+  expect(await screen.findByText('已完成', { selector: 'strong' })).toBeInTheDocument();
+  expect(screen.getByText(/AI 最后一次回复时间/)).toBeInTheDocument();
 });

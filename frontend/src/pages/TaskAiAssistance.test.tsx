@@ -8,7 +8,7 @@ const actor = vi.hoisted(() => ({ id: 'u1' }));
 vi.mock('../auth', () => ({ useSession: () => ({ data: { id: actor.id } }) }));
 vi.mock('../api/simplification', () => ({ projectRequest: request }));
 vi.mock('./TaskAgentHandoff', () => ({ TaskAgentHandoff: () => <div>delegation</div> }));
-afterEach(() => { cleanup(); vi.resetAllMocks(); actor.id = 'u1'; });
+afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals(); actor.id = 'u1'; });
 const task = { taskId: 't1', revision: 3 } as CollaborationTask;
 const result = (changes: Partial<AssistancePlan> = {}): AssistancePlan => ({ status: 'missing', taskRevision: 3, sourceHash: 'current', plan: null, jobId: null, error: null, ...changes });
 function setup() {
@@ -54,4 +54,14 @@ it('stores a late generation result only in the original account cache', async (
   await waitFor(() => expect(view.client.getQueryData<AssistancePlan>(['task-assistance-plan', 'p1', 't1', 3, 'u1'])?.plan?.markdown).toBe('账号一计划'));
   expect(screen.queryByText('账号一计划')).toBeNull();
   expect(view.client.getQueryData<AssistancePlan>(['task-assistance-plan', 'p1', 't1', 3, 'u2'])?.plan).toBeNull();
+});
+
+it('offers resume without a second generation action for a failed plan with a job pointer', async () => {
+  request.mockResolvedValue(result({ status: 'failed', jobId: 'failed-plan', error: '保存计划未完成' }));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { jobId: 'failed-plan', status: 'failed', activity: {code:'failed',updatedAt:null,lastResponseAt:null,progress:null,canResume:true,resumeReason:null,uncertain:false} } })));
+  setup();
+  expect(await screen.findByRole('button',{name:'从停止处继续'})).toBeEnabled();
+  expect(screen.queryByRole('button',{name:'生成辅助计划'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'重新生成辅助计划'})).toBeNull();
+  expect(request.mock.calls.some(call => call[2]?.method === 'POST')).toBe(false);
 });

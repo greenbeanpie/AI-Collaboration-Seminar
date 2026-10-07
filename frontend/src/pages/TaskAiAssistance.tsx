@@ -46,7 +46,7 @@ export function TaskAssistancePlan({ projectId, task }: { projectId: string; tas
     {data?.error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{data.error}</p>}
     {generate.error && <ErrorNotice error={generate.error} />}
     {data?.status === 'disabled' && <p role="status">AI 已禁用，暂不能生成计划。</p>}
-    {data && !query.error && <button className="button button-primary" disabled={pending || data.status === 'disabled' || query.isFetching || data.taskRevision !== task.revision} onClick={() => {
+    {data && !query.error && !(data.status === 'failed' && data.jobId) && <button className="button button-primary" disabled={pending || data.status === 'disabled' || query.isFetching || data.taskRevision !== task.revision} onClick={() => {
       if (generationLock.current) return;
       generationLock.current = true;
       void generate.mutateAsync().catch(() => {}).finally(() => { generationLock.current = false; });

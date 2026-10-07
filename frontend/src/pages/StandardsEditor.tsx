@@ -34,7 +34,7 @@ function ProjectStandardsEditor() {
   const client = useQueryClient();
   const versions = useQuery({ queryKey: ['standards', projectId], queryFn: () => projectRequest<{ items: StandardVersion[] }>(projectId, '/standards') });
   const [draft, setDraft] = useState<EditorDraft | null>(null);
-  const current = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null }>(projectId, '/standards/current') });
+  const current = useQuery({ queryKey: ['current-standard', projectId], queryFn: () => projectRequest<{ standard: StandardVersion | null; generatedJobId?: string | null }>(projectId, '/standards/current') });
   const [conflicted, setConflicted] = useState(false);
   const [validationError, setValidationError] = useState<unknown>(null);
   const pendingKey=`standards-generation:${projectId}`;
@@ -80,7 +80,7 @@ function ProjectStandardsEditor() {
   return <div className="page-stack"><ProjectFlowReturn />
     <p className="notice notice-warn">该页面标准为项目级标准，任务标准请前往<strong><Link to={`/app/projects/${projectId}/tasks`}>任务</Link></strong>页面选择对应任务进行查看</p>
     <SectionCard title="项目标准" action={project.myRole === 'owner' && !draft ? <div className="form-actions">{selected && <button className="button button-quiet" disabled={generating} onClick={() => { setDraft(fromVersion(selected)); setConflicted(false); save.reset(); }}>修订生效标准</button>}<button className="button button-quiet" disabled={generating} onClick={()=>generate.mutate()}>AI 生成标准</button><button className="button button-primary" disabled={generating} onClick={() => { setDraft({ title: '项目标准', rows: [newRow()], notes: '' }); setConflicted(false); save.reset(); }}><Plus size={16} />新建标准</button></div> : undefined}>
-      <JobAiActivity projectId={projectId} jobId={generationJobId ?? lastGenerationJobId ?? (selected as StandardVersion & { generatedJobId?: string | null } | undefined)?.generatedJobId} submitting={generate.isPending} canResume={project.myRole === 'owner'} onResumed={id => { setGenerationJobId(id); setLastGenerationJobId(id); writePendingJob(pendingKey,{jobId:id,entityId:projectId,action:'standards.generate'}); }} />{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
+      <JobAiActivity projectId={projectId} jobId={generationJobId ?? lastGenerationJobId ?? current.data?.generatedJobId} submitting={generate.isPending} canResume={project.myRole === 'owner'} onResumed={id => { setGenerationJobId(id); setLastGenerationJobId(id); writePendingJob(pendingKey,{jobId:id,entityId:projectId,action:'standards.generate'}); }} />{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
       {current.isLoading && <Spinner label="读取标准版本" />}{current.error && <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />}
       {draft ? <form className="stack standards-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <Field aiReference label="标准名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>
