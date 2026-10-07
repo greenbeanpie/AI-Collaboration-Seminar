@@ -79,6 +79,18 @@ function showRecords(records: Assessment[], entry: string) {
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry.replace(/^\/assessment/, '/app/projects/p/assessment')]}><ProjectSectionNavigation projectId="p" canManage/><AssessmentWorkspacePage/><LocationProbe/></MemoryRouter></QueryClientProvider>);
   return client;
 }
+it('pages newest-first history without changing the selected report', async () => {
+  const records = Array.from({ length: 13 }, (_, i) => record(`page-${i}`, 'material_review', 'succeeded', { createdAt: `2026-10-${String(13 - i).padStart(2, '0')}T00:00:00Z` }));
+  showRecords(records, '/assessment?section=checks&assessmentId=page-0');
+  expect(await screen.findByText('page-0-summary', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.getByLabelText('评分历史').querySelectorAll('button')).toHaveLength(6);
+  const location = screen.getByTestId('location').textContent;
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  await screen.findByText('第 2 页 / 共 3 页 · 每页 6 条');
+  expect(screen.getByLabelText('评分历史').querySelectorAll('button')).toHaveLength(6);
+  expect(screen.getByText('page-0-summary', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.getByTestId('location').textContent).toBe(location);
+});
 it('clears every selection alias when switching kind and renders only the matching scoring form',async()=>{
   const material=record('material','material_review'), rehearsal=record('rehearsal','rehearsal');
   showRecords([material,rehearsal],'/assessment?section=checks&assessmentId=material&reviewId=old&rehearsalId=other&review=legacy&rehearsal=legacy-session');

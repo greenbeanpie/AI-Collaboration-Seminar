@@ -1,8 +1,7 @@
 import { JobAiActivity } from './JobAiActivity';
 import { AiActivityStatus } from '../components/AiActivityStatus';
 import { usePagedRecords } from '../features/pagination/usePagedItems';
-import { LoadMore } from '../features/pagination/LoadMore';
-import { VirtualList } from '../components/VirtualList';
+import { AssessmentHistoryPages } from './AssessmentHistoryPages';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { useEffect, useState } from 'react';
@@ -132,8 +131,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </div>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">
         {history.isLoading && <Spinner label="读取评分历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
-        <VirtualList label="评分历史" className="assessment-history" items={rows} getKey={row => row.assessmentId} renderItem={row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{assessmentStatusLabel(row)}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>} />
-        <LoadMore query={history} label="评分记录" />
+        <AssessmentHistoryPages items={rows} hasMore={history.hasNextPage} loading={history.isFetching} loadMore={async () => !(await history.fetchNextPage()).isError} renderItem={row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{assessmentStatusLabel(row)}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>} />
         {!history.isLoading && !history.error && !rows.length && <EmptyState title="尚无此形式的评分记录" detail="完成一轮检查或演练后，反馈会独立保存。" />}
     {(assessment && !assessment.historical && projectPermission(project,'scoreCorrect') && ['succeeded','failed'].includes(assessment.status)) && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={currentStandard ?? undefined} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
       </SectionCard>
