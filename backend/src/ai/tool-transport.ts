@@ -1,7 +1,10 @@
 import type { AiModelConfig } from './config';
 import type { ApiProtocol } from '../../../shared/ai-providers';
-import { protocolForConfig, providerOptionErrors } from '../../../shared/ai-providers';
+import { protocolForConfig, providerOptionErrors, usesDeepSeekThinkingToggle } from '../../../shared/ai-providers';
 import { AppError } from '../core/errors';
+import type { ChatMessage } from './gateway';
+import { buildProviderRequest } from './transport';
+import { normalizeTokenUsage, type AiTokenUsage } from './usage';
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -26,9 +29,11 @@ export interface ToolExchange {
 export interface ToolMode {
   definitions: ToolDefinition[];
   exchanges?: ToolExchange[];
+  timeline?: ToolContextEntry[];
   nativeSearch?: boolean;
   final?: boolean;
 }
+export type ToolContextEntry = { kind: 'message'; message: ChatMessage } | { kind: 'exchange'; exchange: ToolExchange };
 export interface ToolOutput {
   content: string;
   toolCalls: ToolInvocation[];
@@ -84,7 +89,11 @@ export function nativeSearchCapability(config: AiModelConfig): {
 }
 export function applyToolMode(config: AiModelConfig, protocol: ApiProtocol, body: Record<string, unknown>, mode: ToolMode): void {
   const defs = mode.final ? [] : mode.definitions;
-  const exchanges = mode.exchanges ?? [];
+  const timeline: ToolContextEntry[] = mode.timeline ?? (mode.exchanges ?? []).map(exchange => ({ kind: 'exchange', exchange }));
+  const message = (entry: Extract<ToolContextEntry, { kind: 'message' }>, key: string): unknown[] => {
+    if (entry.message.role === 'system') throw new AppError('AI_UNAVAILABLE', '增量上下文不能修改系统前缀', 503, false);
+    return buildProviderRequest({ ...config, apiProtocol: protocol }, [entry.message], '', false).body[key] as unknown[];
+  };
   if (protocol === 'responses') {
     body.tools = defs.map(d => ({
       type: 'function', ...d, strict: false
@@ -97,9 +106,13 @@ export function applyToolMode(config: AiModelConfig, protocol: ApiProtocol, body
     }
     body.max_tool_calls = mode.nativeSearch ? 1 : 64;
     body.parallel_tool_calls = false;
-    body.input = [...(body.input as unknown[]), ...exchanges.flatMap(e => [...(Array.isArray(e.assistant) ? e.assistant : []), ...e.results.map(r => ({
+    body.input = [...(body.input as unknown[]), ...timeline.flatMap(entry => {
+      if (entry.kind === 'message') return message(entry, 'input');
+      const e = entry.exchange;
+      return [...(Array.isArray(e.assistant) ? e.assistant : []), ...e.results.map(r => ({
           type: 'function_call_output', call_id: r.call.id, output: JSON.stringify(r.output)
-        }))])];
+        }))];
+    })];
   }
   else if (protocol === 'messages') {
     body.tools = defs.map(d => ({
@@ -110,13 +123,17 @@ export function applyToolMode(config: AiModelConfig, protocol: ApiProtocol, body
           type: 'web_search_20250305', name: 'web_search', max_uses: 1
         }];
     }
-    body.messages = [...(body.messages as unknown[]), ...exchanges.flatMap(e => [{
+    body.messages = [...(body.messages as unknown[]), ...timeline.flatMap(entry => {
+      if (entry.kind === 'message') return message(entry, 'messages');
+      const e = entry.exchange;
+      return [{
           role: 'assistant', content: e.assistant
         }, {
           role: 'user', content: e.results.map(r => ({
             type: 'tool_result', tool_use_id: r.call.id, content: JSON.stringify(r.output)
           }))
-        }])];
+        }];
+    })];
   }
   else if (protocol === 'gemini') {
     body.tools = defs.length ? [{
@@ -128,21 +145,30 @@ export function applyToolMode(config: AiModelConfig, protocol: ApiProtocol, body
         }];
       delete object(body.generationConfig).responseMimeType;
     }
-    body.contents = [...(body.contents as unknown[]), ...exchanges.flatMap(e => [e.assistant, {
+    body.contents = [...(body.contents as unknown[]), ...timeline.flatMap(entry => {
+      if (entry.kind === 'message') return message(entry, 'contents');
+      const e = entry.exchange;
+      return [e.assistant, {
           role: 'user', parts: e.results.map(r => ({
             functionResponse: {
               name: r.call.name, id: r.call.id, response: r.output
             }
           }))
-        }])];
+        }];
+    })];
   }
   else {
     body.tools = defs.map(d => ({
       type: 'function', function: d
     }));
-    body.messages = [...(body.messages as unknown[]), ...exchanges.flatMap(e => [e.assistant, ...e.results.map(r => ({
+    body.messages = [...(body.messages as unknown[]), ...timeline.flatMap(entry => {
+      if (entry.kind === 'message') return message(entry, 'messages');
+      const e = entry.exchange, assistant = { ...object(e.assistant) };
+      if (!usesDeepSeekThinkingToggle(config)) delete assistant.reasoning_content;
+      return [assistant, ...e.results.map(r => ({
           role: 'tool', tool_call_id: r.call.id, content: JSON.stringify(r.output)
-        }))])];
+        }))];
+    })];
     if (mode.nativeSearch) {
       delete body.tools;
       body.plugins = [{
@@ -194,13 +220,9 @@ export function toolResponseShape(value:unknown) {
   const reason=typeof choice.finish_reason==='string'&&['stop','tool_calls','length','function_call','content_filter'].includes(choice.finish_reason)?choice.finish_reason:'unknown';
   return {choices:array(data.choices).length,finishReason:reason,toolCalls:array(message.tool_calls).length,answerChars:typeof message.content==='string'?message.content.length:0,providerError:Boolean(data.error),outputItems:array(data.output).length};
 }
-export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nativeSearch = false): ToolOutput & {
-  promptTokens: number | null;
-  completionTokens: number | null;
-} {
+export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nativeSearch = false): ToolOutput & AiTokenUsage {
   const d = object(value), usage = object(d.usage), calls: ToolInvocation[] = [], citations: WebCitation[] = [];
   let content = '', assistant: unknown, queries: number | null = 0, performed = false;
-  let prompt: unknown, completion: unknown;
   const cite = (url: unknown, title: unknown) => {
     const c = safeWebCitation(url, title);
     if (c && !citations.some(x => x.url === c.url)) {
@@ -255,8 +277,6 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
         throw invalid();
       }
     }
-    prompt = usage.input_tokens;
-    completion = usage.output_tokens;
   }
   else if (protocol === 'messages') {
     if (!['end_turn', 'stop_sequence', 'tool_use'].includes(d.stop_reason)) {
@@ -286,8 +306,6 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
         throw invalid();
       }
     }
-    prompt = typeof usage.input_tokens === 'number' ? usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) : null;
-    completion = usage.output_tokens;
     queries = object(usage.server_tool_use).web_search_requests ?? (performed ? null : 0);
   }
   else if (protocol === 'gemini') {
@@ -309,8 +327,6 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
       cite(object(chunk.web).uri, object(chunk.web).title);
     performed = array(g.groundingChunks).length > 0 || (Array.isArray(g.webSearchQueries) && g.webSearchQueries.length > 0);
     queries = Array.isArray(g.webSearchQueries) ? g.webSearchQueries.length : performed ? null : 0;
-    prompt = object(d.usageMetadata).promptTokenCount;
-    completion = typeof object(d.usageMetadata).candidatesTokenCount === 'number' ? object(d.usageMetadata).candidatesTokenCount + (object(d.usageMetadata).thoughtsTokenCount ?? 0) : null;
   }
   else {
     const choice = array(d.choices)[0], m = object(choice?.message);
@@ -320,7 +336,7 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
     assistant = {
       role: 'assistant', content: m.content ?? null, ...(m.tool_calls ? {
         tool_calls: m.tool_calls
-      } : {})
+      } : {}), ...(typeof m.reasoning_content === 'string' ? { reasoning_content: m.reasoning_content } : {})
     };
     content = typeof m.content === 'string' ? m.content : '';
     for (const t of array(m.tool_calls)) {
@@ -335,15 +351,12 @@ export function normalizeToolResponse(protocol: ApiProtocol, value: unknown, nat
     }
     performed = nativeSearch && citations.length > 0;
     queries = performed ? null : 0;
-    prompt = usage.prompt_tokens;
-    completion = usage.completion_tokens;
   }
   if (calls.length > 64 || new Set(calls.map(c => c.id)).size !== calls.length || (!content.trim() && !calls.length)) {
     throw invalid();
   }
-  const tokens = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : null;
   return {
-    content, toolCalls: calls, assistant, citations: citations.slice(0, 20), promptTokens: tokens(prompt), completionTokens: tokens(completion), ...(nativeSearch ? {
+    content, toolCalls: calls, assistant, citations: citations.slice(0, 20), ...normalizeTokenUsage(protocol, d), ...(nativeSearch ? {
       searchUsage: {
         provider: protocol, performed, queries
       }

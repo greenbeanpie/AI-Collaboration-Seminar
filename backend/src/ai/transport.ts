@@ -1,6 +1,7 @@
 import type { AiModelConfig } from './config';
 import type { ChatMessage } from './gateway';
 import { AppError } from '../core/errors';
+import { normalizeTokenUsage, type AiTokenUsage } from './usage';
 import { FIXED_MAX_OUTPUT_TOKENS, modelCapabilities, protocolForConfig, usesDeepSeekThinkingToggle, type ApiProtocol } from '../../../shared/ai-providers';
 
 const invalid = (message: string, details?: Record<string, unknown>) => new AppError('AI_OUTPUT_INVALID', message, 502, false, details);
@@ -77,43 +78,28 @@ export function buildProviderRequest(config: AiModelConfig, messages: ChatMessag
 type Obj = Record<string, unknown>;
 const obj = (value: unknown): Obj => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Obj : {};
 const items = (value: unknown): Obj[] => Array.isArray(value) ? value.map(obj) : [];
-const count = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
-function sum(base: unknown, ...optional: unknown[]): number | null {
-  const first = count(base);
-  const counts = optional.map(n => n === undefined ? 0 : count(n));
-  if (first === null || counts.includes(null)) return null;
-  return count(first + counts.reduce<number>((total, n) => total + (n ?? 0), 0));
-}
 /** Extract only answer text. Thought/reasoning blocks are never returned as the user answer. */
-export function normalizeProviderResponse(protocol: ApiProtocol, value: unknown): { content: string; promptTokens: number | null; completionTokens: number | null } {
+export function normalizeProviderResponse(protocol: ApiProtocol, value: unknown): { content: string } & AiTokenUsage {
   const data = obj(value);
   if (data.error) throw invalid('模型返回错误响应');
   let content: string;
-  let promptTokens: number | null;
-  let completionTokens: number | null;
-  const usage = obj(data.usage);
   if (protocol === 'responses') {
     if (data.status !== 'completed' || items(data.output).some(item => !['message', 'reasoning'].includes(String(item.type)) || (item.type === 'message' && (item.role !== 'assistant' || (item.status !== undefined && item.status !== 'completed') || items(item.content).some(part => part.type !== 'output_text'))))) throw invalid('模型 Responses 输出未完成、拒绝或需要工具执行');
     content = items(data.output).filter(item => item.type === 'message').flatMap(item => items(item.content)).filter(part => part.type === 'output_text' && typeof part.text === 'string').map(part => part.text).join('');
-    promptTokens = count(usage.input_tokens); completionTokens = count(usage.output_tokens);
   } else if (protocol === 'messages') {
     if (!['end_turn', 'stop_sequence'].includes(String(data.stop_reason)) || items(data.content).some(part => ['tool_use', 'server_tool_use', 'refusal'].includes(String(part.type)))) throw invalid('模型 Messages 输出被截断、拒绝或需要工具执行');
     content = items(data.content).filter(part => part.type === 'text' && typeof part.text === 'string').map(part => part.text).join('');
-    promptTokens = sum(usage.input_tokens, usage.cache_creation_input_tokens, usage.cache_read_input_tokens); completionTokens = count(usage.output_tokens);
   } else if (protocol === 'gemini') {
     const candidate = items(data.candidates)[0];
     if (obj(data.promptFeedback).blockReason || candidate?.finishReason !== 'STOP' || items(obj(candidate?.content).parts).some(part => part.functionCall)) throw invalid('模型 Gemini 输出未完成、被安全过滤或需要工具执行');
     content = items(obj(candidate?.content).parts).filter(part => part.thought !== true && typeof part.text === 'string').map(part => part.text).join('');
-    const metadata = obj(data.usageMetadata);
-    promptTokens = count(metadata.promptTokenCount); completionTokens = sum(metadata.candidatesTokenCount, metadata.thoughtsTokenCount);
   } else {
     const choice = items(data.choices)[0];
     if (choice?.finish_reason === 'length') throw invalid(`模型输出被截断：达到系统固定的 ${FIXED_MAX_OUTPUT_TOKENS} token 上限；请缩短任务内容或降低思考强度后重试`, { cause: 'output_limit', finishReason: 'length' });
     if ((choice?.finish_reason !== undefined && choice.finish_reason !== 'stop') || obj(choice?.message).refusal || obj(choice?.message).tool_calls || obj(choice?.message).function_call) throw invalid('模型 Chat 输出被截断、过滤或需要工具执行');
     const text = obj(choice?.message).content;
     content = typeof text === 'string' ? text : '';
-    promptTokens = count(usage.prompt_tokens); completionTokens = count(usage.completion_tokens);
   }
   if (!content.trim()) throw invalid('模型响应缺少文本内容');
-  return { content, promptTokens, completionTokens };
+  return { content, ...normalizeTokenUsage(protocol, data) };
 }
