@@ -5,7 +5,7 @@ import { currentProjectFeedback } from './project-feedback';
 import { activeExecutionSlice, ensureInitialExecutionSlice, dispatchExecutionSlice } from './ai-execution-slices';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
-import { settleReservation } from './ai-reservations';
+import { settleReservation, releaseIdleReservation } from './ai-reservations';
 import { newId, nowIso } from '../core/db';
 import { invalidState, notFound } from '../core/errors';
 import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
@@ -158,7 +158,9 @@ export async function failJob(env: Env, jobId: string, error: { code: string; me
   const retry=prepareAutomaticJobRetry(env,jobId,error,failedAt);
   if(retry)writes.push(retry);
   const results=await env.DB.batch(writes);
-  return (results[0]?.meta.changes ?? 0)>0;
+  const transitioned = (results[0]?.meta.changes ?? 0)>0;
+  if (transitioned) await releaseIdleReservation(env, jobId, failedAt);
+  return transitioned;
 }
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
@@ -174,18 +176,20 @@ export async function succeedJob(env: Env, jobId: string, result: unknown): Prom
     .run();
   if ((transition.meta?.changes ?? 0) === 0) return;
   await completeExecution(env,target,generation??undefined);
+  await releaseIdleReservation(env, jobId);
   await env.DB.prepare("UPDATE job_outbox SET status = 'done', updated_at = ?2 WHERE job_id = ?1")
     .bind(jobId, nowIso())
     .run();
 }
 
 export async function waitJobInput(env: Env, jobId: string, result: unknown): Promise<void> {
-  await env.DB.prepare(
+  const transition = await env.DB.prepare(
     `UPDATE jobs SET status = 'waiting_input', result_json = ?2, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')
       AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,
   )
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
+  if ((transition.meta?.changes ?? 0)>0) await releaseIdleReservation(env, jobId);
 }
 
 /** 终态不可逆：终态任务拒绝 retry/继续（PLAN 二.7） */
@@ -210,7 +214,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
   const interrupt=async()=>{
     if(!execution)return false;
     if((await activeExecutionSlice(env,jobId))?.instance_id!==active?.instance_id)return true;
-    if(await markInterruptedExecution(env,target,execution.generation))await settleReservation(env,jobId,'settled');
+    if(await markInterruptedExecution(env,target,execution.generation))await releaseIdleReservation(env,jobId);
     return true;
   };
   let state: InstanceStatus;

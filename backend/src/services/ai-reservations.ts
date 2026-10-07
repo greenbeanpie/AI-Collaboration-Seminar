@@ -1,9 +1,9 @@
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
-import { quotaExceeded } from '../core/errors';
+import { AppError, quotaExceeded } from '../core/errors';
 import { loadAiConfig } from '../ai/config';
-import { loadExecutionPolicy } from './ai-execution-control';
+import { loadExecutionPolicy, resolveExecutionTarget } from './ai-execution-control';
 
 /**
  * AI 并发槽位与调用额度预占：
@@ -11,6 +11,12 @@ import { loadExecutionPolicy } from './ai-execution-control';
  * - 模型轮次由独立执行窗口控制，本模块只管理项目并发槽位。
  * - 崩溃遗留的活动槽位由 cron 释放，但仍在排队/运行的任务不会被释放。
  */
+
+/** Distinguish project admission from monetary/provider quotas. */
+export function isConcurrencyLimitError(error: unknown): boolean {
+  return error instanceof AppError && error.code === 'QUOTA_EXCEEDED'
+    && error.details?.limit === LIMITS.concurrentAiTasksPerProject;
+}
 
 /** 在业务写入和派发之前冻结配置与预占。创建失败且任务未落库才释放。 */
 export async function withReservedAiJob<T>(
@@ -100,16 +106,29 @@ export async function settleReservation(env: Env, jobId: string, outcome: 'settl
     .run();
 }
 
-/**
- * cron：释放超过 2 小时且对应任务已不在排队/运行中的预占。
- * 仍在 queued/running/waiting_input 的任务不释放，避免并发槽位被重复占用或过早放行；
- * 任务记录缺失（孤儿预占）按已结束处理，避免永久占用槽位。
- */
+/** Release only an idle job; the SQL fence protects a concurrently acquired call or resumed execution. */
+export async function releaseIdleReservation(env: Env, jobId: string, now = nowIso()): Promise<void> {
+  const target = await resolveExecutionTarget(env, { kind: 'job', id: jobId });
+  await env.DB.prepare(`UPDATE usage_reservations
+    SET status = CASE WHEN attempts_started = 0 THEN 'released' ELSE 'settled' END, settled_at = ?3
+    WHERE job_id = ?1 AND status = 'reserved'
+      AND NOT EXISTS (SELECT 1 FROM ai_executions WHERE target_kind = 'job' AND target_id = ?2
+        AND (inflight_token IS NOT NULL OR (state = 'paused' AND pause_reason = 'request_uncertain')))
+      AND (EXISTS (SELECT 1 FROM jobs WHERE id = ?1 AND status IN ('succeeded','failed','cancelled','waiting_input'))
+        OR EXISTS (SELECT 1 FROM ai_executions WHERE target_kind = 'job' AND target_id = ?2 AND state = 'paused')
+        OR (NOT EXISTS (SELECT 1 FROM jobs WHERE id = ?1) AND created_at <= ?4))`)
+    .bind(jobId, target.id, now, new Date(Date.parse(now) - 2 * 60_000).toISOString()).run();
+}
+
+/** Minute recovery: terminal/idle slots need no age delay. Orphans retain a creation grace period. */
 export async function releaseStaleReservations(env: Env, now: string): Promise<void> {
-  const staleBefore = new Date(new Date(now).getTime() - 2 * 3600_000).toISOString();
-  const stale = await env.DB.prepare(
-    `SELECT job_id FROM usage_reservations WHERE status = 'reserved' AND created_at <= ?1
-       AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = usage_reservations.job_id AND jobs.status IN ('queued', 'running', 'waiting_input'))`,
-  ).bind(staleBefore).all<{ job_id: string }>();
-  for (const row of stale.results) await settleReservation(env, row.job_id, 'released', now);
+  const orphanBefore = new Date(Date.parse(now) - 2 * 60_000).toISOString();
+  const candidates = await env.DB.prepare(`SELECT r.job_id FROM usage_reservations r
+    LEFT JOIN jobs j ON j.id = r.job_id
+    WHERE r.status = 'reserved'
+      AND (j.status IN ('succeeded','failed','cancelled','waiting_input')
+        OR (j.id IS NULL AND r.created_at <= ?1)
+        OR EXISTS (SELECT 1 FROM ai_executions e WHERE e.target_kind = 'job' AND e.target_id = r.job_id AND e.state = 'paused'))`)
+    .bind(orphanBefore).all<{job_id:string}>();
+  for (const row of candidates.results) await releaseIdleReservation(env, row.job_id, now);
 }
