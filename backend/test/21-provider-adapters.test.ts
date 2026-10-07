@@ -357,3 +357,9 @@ it('an explicit Go capability probe shares one stable session across text, JSON 
   const sessions = mock.mock.calls.map(call => new Headers(call[1]?.headers).get('x-opencode-session'));
   expect(sessions[0]).toMatch(/^probe-/); expect(new Set(sessions).size).toBe(1);
 });
+
+it('shows the actionable balance message for HTTP 402 without retrying',async()=>{
+ const mock=vi.fn(async()=>Response.json({error:{message:'Insufficient balance'}},{status:402}));
+ await expect(gatewayChat(endpoint,{config:config('deepseek','deepseek-chat'),messages},mock)).rejects.toMatchObject({message:'后台模型余额不足，请等待或联系管理员处理',retryable:false,details:{status:402}});
+ expect(mock).toHaveBeenCalledOnce();
+});

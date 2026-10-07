@@ -16,6 +16,7 @@ export function isAutomaticAiFailure(code:string):boolean {
 
 /** Prepared insert belongs in the same transaction as the exact failed transition. */
 export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string;details?:unknown},failedAt:string):D1PreparedStatement|null {
+  if(error.message==='后台模型余额不足，请等待或联系管理员处理' || (error.details && typeof error.details==='object' && 'status' in error.details && error.details.status===402))return null;
   if(error.details && typeof error.details==='object' && 'automaticRetry' in error.details && error.details.automaticRetry===false)return null;
   if(!isAutomaticAiFailure(error.code)) return null;
   const due=new Date(Date.parse(failedAt)+AUTOMATIC_AI_RETRY_DELAY_MS).toISOString();
@@ -41,7 +42,7 @@ export async function scheduleAutomaticJobRetry(env:Env,jobId:string,error:{code
   await prepareAutomaticJobRetry(env,jobId,error,job.updated_at)?.run();
 }
 export async function scheduleAutomaticDraftRetry(env:Env,draftId:string,attemptId:string,error:unknown):Promise<void> {
-  if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code)) return;
+  if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code) || error.details?.status===402 || error.message==='后台模型余额不足，请等待或联系管理员处理') return;
   const draft=await env.DB.prepare("SELECT 1 FROM project_creation_drafts WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND preview_state='failed' AND preview_waiting_id IS NULL").bind(draftId,attemptId).first();
   if(draft) await schedule(env,{id:`draft:${attemptId}`,kind:'draft_preview',target:attemptId,draftId},error.message);
 }

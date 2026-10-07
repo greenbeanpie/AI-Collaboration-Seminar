@@ -27,7 +27,7 @@ function trustedUploadUrl(value:string):string {
   return url.href;
 }
 async function checked(response:Response):Promise<Response> {
-  if(!response.ok) throw new AppError('AI_UNAVAILABLE',`Google 媒体请求失败（HTTP ${response.status}）`,502,false,{status:response.status});
+  if(!response.ok) throw new AppError('AI_UNAVAILABLE',response.status===402?'后台模型余额不足，请等待或联系管理员处理':`Google 媒体请求失败（HTTP ${response.status}）`,502,false,{status:response.status});
   return response;
 }
 export function validateGeminiFile(file:GeminiFile):GeminiFile {

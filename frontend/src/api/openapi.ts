@@ -1363,6 +1363,7 @@ export interface paths {
                 query?: {
                     cursor?: number | null;
                     limit?: number;
+                    order?: "asc" | "desc";
                 };
                 header?: never;
                 path: {
@@ -4445,6 +4446,7 @@ export interface paths {
                 query?: {
                     cursor?: number | null;
                     limit?: number;
+                    order?: "asc" | "desc";
                 };
                 header?: never;
                 path: {
@@ -12716,7 +12718,7 @@ export interface components {
                 } | null;
                 activity: {
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     updatedAt: string | null;
                     lastResponseAt: string | null;
                     progress: {
@@ -12946,7 +12948,7 @@ export interface components {
                     } | null;
                     activity: {
                         /** @enum {string} */
-                        code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                        code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                         updatedAt: string | null;
                         lastResponseAt: string | null;
                         progress: {
@@ -13165,7 +13167,7 @@ export interface components {
                 items: {
                     id: number;
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     /** @enum {string} */
                     state: "started" | "completed" | "failed" | "resumed";
                     at: string;
@@ -13345,7 +13347,7 @@ export interface components {
                 generatedJobId: string | null;
                 activity: {
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     updatedAt: string | null;
                     lastResponseAt: string | null;
                     progress: {
@@ -14599,7 +14601,7 @@ export interface components {
                 processingJobId: string | null;
                 activity: {
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     updatedAt: string | null;
                     lastResponseAt: string | null;
                     progress: {
@@ -14841,7 +14843,7 @@ export interface components {
                 finishedAt: string | null;
                 activity: {
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     updatedAt: string | null;
                     lastResponseAt: string | null;
                     progress: {
@@ -14882,7 +14884,7 @@ export interface components {
                 items: {
                     id: number;
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     /** @enum {string} */
                     state: "started" | "completed" | "failed" | "resumed";
                     at: string;
@@ -15546,7 +15548,7 @@ export interface components {
                 jobId: string | null;
                 activity: {
                     /** @enum {string} */
-                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
+                    code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "repairing" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
                     updatedAt: string | null;
                     lastResponseAt: string | null;
                     progress: {

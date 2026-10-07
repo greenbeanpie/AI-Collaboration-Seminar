@@ -129,13 +129,13 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     );
   });
 
-  app.openapi(createRoute({method:'get',path:'/api/v1/jobs/{jobId}/activity-events',tags:['jobs'],summary:'读取 AI 操作记录（包含续跑历史）',request:{params:jobParams,query:z.object({cursor:z.coerce.number().int().min(0).optional(),limit:z.coerce.number().int().min(1).max(100).optional()})},responses:{200:{description:'安全操作记录',content:{'application/json':{schema:apiEnvelope(aiActivityEventsSchema,'AiActivityEventsResponse')}}}}}),async c=>{
+  app.openapi(createRoute({method:'get',path:'/api/v1/jobs/{jobId}/activity-events',tags:['jobs'],summary:'读取 AI 操作记录（包含续跑历史）',request:{params:jobParams,query:z.object({cursor:z.coerce.number().int().min(0).optional(),limit:z.coerce.number().int().min(1).max(100).optional(),order:z.enum(['asc','desc']).optional()})},responses:{200:{description:'安全操作记录',content:{'application/json':{schema:apiEnvelope(aiActivityEventsSchema,'AiActivityEventsResponse')}}}}}),async c=>{
     const original=c.req.valid('param').jobId,user=c.get('user')!;
     await authorizedJob(c.env,original,user.id);
     const id=await currentSuccessor(c.env,original);
     await authorizedJob(c.env,id,user.id);
     const query=c.req.valid('query');
-    return c.json(apiData(c,await readActivityEvents(c.env,id,query.cursor,query.limit)),200);
+    return c.json(apiData(c,await readActivityEvents(c.env,id,query.cursor,query.limit,query.order)),200);
   });
   app.openapi(retryRoute,async c=>{
     const user=c.get('user')!,requested=c.req.valid('param').jobId;

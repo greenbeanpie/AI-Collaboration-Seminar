@@ -37,7 +37,7 @@ function record(value: unknown): Record<string, unknown> { return value !== null
 async function boundedJson(response: Response): Promise<unknown> {
   if (!response.ok || response.redirected) {
     await response.body?.cancel();
-    throw new AppError('AI_UNAVAILABLE', `MiMo 媒体请求失败（HTTP ${response.status}）；请核对后主动重试`, 502, false, {status:response.status});
+    throw new AppError('AI_UNAVAILABLE', response.status===402?'后台模型余额不足，请等待或联系管理员处理':`MiMo 媒体请求失败（HTTP ${response.status}）；请核对后主动重试`, 502, false, {status:response.status});
   }
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > MAX_RESPONSE_BYTES) {

@@ -1021,6 +1021,7 @@
                       "calling_model",
                       "executing_tool",
                       "validating",
+                      "repairing",
                       "saving",
                       "transcribing",
                       "summarizing",
@@ -2117,6 +2118,7 @@
                             "calling_model",
                             "executing_tool",
                             "validating",
+                            "repairing",
                             "saving",
                             "transcribing",
                             "summarizing",
@@ -3157,6 +3159,7 @@
                         "calling_model",
                         "executing_tool",
                         "validating",
+                        "repairing",
                         "saving",
                         "transcribing",
                         "summarizing",
@@ -3880,6 +3883,7 @@
                       "calling_model",
                       "executing_tool",
                       "validating",
+                      "repairing",
                       "saving",
                       "transcribing",
                       "summarizing",
@@ -9451,6 +9455,7 @@
                       "calling_model",
                       "executing_tool",
                       "validating",
+                      "repairing",
                       "saving",
                       "transcribing",
                       "summarizing",
@@ -10489,6 +10494,7 @@
                       "calling_model",
                       "executing_tool",
                       "validating",
+                      "repairing",
                       "saving",
                       "transcribing",
                       "summarizing",
@@ -10692,6 +10698,7 @@
                         "calling_model",
                         "executing_tool",
                         "validating",
+                        "repairing",
                         "saving",
                         "transcribing",
                         "summarizing",
@@ -13429,6 +13436,7 @@
                       "calling_model",
                       "executing_tool",
                       "validating",
+                      "repairing",
                       "saving",
                       "transcribing",
                       "summarizing",
@@ -26506,6 +26514,18 @@
             "required": false,
             "name": "limit",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "required": false,
+            "name": "order",
+            "in": "query"
           }
         ],
         "responses": {
@@ -30977,6 +30997,18 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "required": false,
+            "name": "order",
             "in": "query"
           }
         ],

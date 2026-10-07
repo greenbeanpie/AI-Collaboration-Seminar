@@ -133,3 +133,10 @@ describe('durable 60-second AI recovery',()=>{
   });
 
 });
+
+it('never schedules a new paid request after a balance rejection, even when wrappers omit details',async()=>{
+ for(const details of [undefined,{status:402}]){
+ const id=await job();await failJob(env,id,{code:'AI_UNAVAILABLE',message:'后台模型余额不足，请等待或联系管理员处理',details});
+ expect(await env.DB.prepare('SELECT 1 FROM ai_automatic_retries WHERE target_id=?1').bind(id).first()).toBeNull();
+ }
+});

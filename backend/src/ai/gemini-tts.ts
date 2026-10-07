@@ -70,7 +70,7 @@ export async function geminiSpeech(input: GeminiSpeechRequest, request: typeof f
       body: JSON.stringify({ model: input.model, input: [{ type: 'user_input', content: [{ type: 'text', text: input.text }] }], response_format: { type: 'audio', mime_type: 'audio/wav' }, generation_config: { speech_config: [{ voice: input.voice }] } }),
     });
   } catch { throw aiUnavailable('TTS Gateway 请求失败或超时；本次结果未知', { cause: 'network_error' }); }
-  if (!response.ok) { await response.body?.cancel(); throw new AppError('AI_UNAVAILABLE', `TTS Gateway 请求失败（HTTP ${response.status}）`, 502, [429,500,502,503,504].includes(response.status), { status: response.status }); }
+  if (!response.ok) { await response.body?.cancel(); throw new AppError('AI_UNAVAILABLE', response.status===402?'后台模型余额不足，请等待或联系管理员处理':`TTS Gateway 请求失败（HTTP ${response.status}）`, 502, [429,500,502,503,504].includes(response.status), { status: response.status }); }
   const data = object(await boundedJson(response));
   if (data.status !== 'completed' || !Array.isArray(data.steps)) throw invalid('TTS 未完整生成音频');
   const audio = data.steps.flatMap(step => { const value = object(step); return value.type === 'model_output' && Array.isArray(value.content) ? value.content : []; }).filter(part => object(part).type === 'audio');

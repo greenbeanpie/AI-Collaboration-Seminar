@@ -50,3 +50,19 @@ it('uncertain paid requests wait for a manual resume instead of an automatic rep
  expect(await env.DB.prepare('SELECT 1 FROM ai_automatic_retries WHERE target_id=?1').bind(f.id).first()).toBeNull();
  expect((await readActivity(env,f.id,'failed')).uncertain).toBe(true);
 });
+
+it('loads latest events first, pages older history and catches up newer events',async()=>{
+ const user=await seedUser(),f=await job(user.userId);
+ for(let i=0;i<5;i++)await recordActivity(env,f.id,'reading_sources','started',{completed:i});
+ const newest=await readActivityEvents(env,f.id,0,2,'desc');
+ expect(newest.items.map(e=>e.progress?.completed)).toEqual([4,3]);
+ const older=await readActivityEvents(env,f.id,newest.nextCursor!,2,'desc');
+ expect(older.items.map(e=>e.progress?.completed)).toEqual([2,1]);
+ await recordActivity(env,f.id,'repairing');
+ const fresh=await readActivityEvents(env,f.id,newest.items[0]!.id,20);
+ expect(fresh.items).toHaveLength(1);expect(fresh.items[0]!.code).toBe('repairing');
+ const response=await SELF.fetch(BASE+'/api/v1/jobs/'+f.id+'/activity-events?order=desc&limit=2',{headers:{Cookie:authCookie(user.token)}});
+ expect(response.status).toBe(200);
+ const body=await response.json() as {data:{items:Array<{id:number}>}};
+ expect(body.data.items[0]!.id).toBe(fresh.items[0]!.id);
+});

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { nowIso } from '../core/db';
 
-export const activityCodes = ['preparing','reading_sources','calling_model','executing_tool','validating','saving','transcribing','summarizing','ocr','retrying','waiting_retry','waiting_input','completed','failed','cancelled'] as const;
+export const activityCodes = ['preparing','reading_sources','calling_model','executing_tool','validating','repairing','saving','transcribing','summarizing','ocr','retrying','waiting_retry','waiting_input','completed','failed','cancelled'] as const;
 export type ActivityCode = typeof activityCodes[number];
 export type ActivityProgress = { completed: number; total?: number; unit?: string };
 export const activityProgressSchema = z.object({ completed:z.number().int().min(0),total:z.number().int().min(0).optional(),unit:z.enum(['step','page','chunk','window']).optional() });
@@ -51,9 +51,10 @@ export async function readActivity(env:Pick<Env,'DB'>,targetId:string,status:str
  const canResume=status==='failed';
  return {code:validCode(code),updatedAt:current?.updated_at??null,lastResponseAt:previous?.last_response_at??null,progress:current?.progress_json?activityProgressSchema.parse(JSON.parse(current.progress_json)):null,canResume,resumeReason:canResume?null:status==='waiting_input'?'请先回答待补充问题':null,uncertain:!!current?.uncertain};
 }
-export async function readActivityEvents(env:Pick<Env,'DB'>,targetId:string,cursor=0,limit=20){
+export async function readActivityEvents(env:Pick<Env,'DB'>,targetId:string,cursor=0,limit=20,order:'asc'|'desc'='asc'){
  const size=Math.min(100,Math.max(1,Math.floor(limit)));
- const rows=await env.DB.prepare(`${chainSql} SELECT e.* FROM ai_activity_events e JOIN ancestors x ON x.id=e.target_id WHERE e.id>?2 ORDER BY e.id LIMIT ?3`).bind(targetId,cursor,size+1).all<{id:number;code:string;state:'started'|'completed'|'failed'|'resumed';created_at:string;progress_json:string|null}>();
+ const descending=order==='desc';
+ const rows=await env.DB.prepare(`${chainSql} SELECT e.* FROM ai_activity_events e JOIN ancestors x ON x.id=e.target_id WHERE ${descending?'(?2=0 OR e.id<?2)':'e.id>?2'} ORDER BY e.id ${descending?'DESC':'ASC'} LIMIT ?3`).bind(targetId,cursor,size+1).all<{id:number;code:string;state:'started'|'completed'|'failed'|'resumed';created_at:string;progress_json:string|null}>();
  const items=rows.results.slice(0,size).map(row=>({id:row.id,code:validCode(row.code),state:row.state,at:row.created_at,progress:row.progress_json?activityProgressSchema.parse(JSON.parse(row.progress_json)):null}));
  return {items,nextCursor:rows.results.length>size?items.at(-1)!.id:null};
 }

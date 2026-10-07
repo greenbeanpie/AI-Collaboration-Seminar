@@ -123,9 +123,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       }
     }
   }), async (c) => c.json(apiData(c, await draftView(c.env, await getDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id))), 200));
-  app.openapi(createRoute({method:'get',path:base+'/{draftId}/activity-events',tags:['creation'],request:{params,query:z.object({cursor:z.coerce.number().int().nonnegative().optional(),limit:z.coerce.number().int().min(1).max(100).optional()})},responses:{200:{description:'拥有者可读取当前预览安全操作记录',content:{'application/json':{schema:apiEnvelope(aiActivityEventsSchema,'DraftActivityEventsResponse')}}}}}),async c=>{
+  app.openapi(createRoute({method:'get',path:base+'/{draftId}/activity-events',tags:['creation'],request:{params,query:z.object({cursor:z.coerce.number().int().nonnegative().optional(),limit:z.coerce.number().int().min(1).max(100).optional(),order:z.enum(['asc','desc']).optional()})},responses:{200:{description:'拥有者可读取当前预览安全操作记录',content:{'application/json':{schema:apiEnvelope(aiActivityEventsSchema,'DraftActivityEventsResponse')}}}}}),async c=>{
     const row=await getDraft(c.env,c.req.valid('param').draftId,c.get('user')!.id),query=c.req.valid('query');
-    const events=row.preview_attempt_id?await readActivityEvents(c.env,'draft:'+row.preview_attempt_id,query.cursor,query.limit):{items:[],nextCursor:null};
+    const events=row.preview_attempt_id?await readActivityEvents(c.env,'draft:'+row.preview_attempt_id,query.cursor,query.limit,query.order):{items:[],nextCursor:null};
     return c.json(apiData(c,events),200);
   });
   app.openapi(createRoute({

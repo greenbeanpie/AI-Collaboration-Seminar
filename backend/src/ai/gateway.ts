@@ -317,7 +317,7 @@ async function gatewayChatAttempt(
     const multipleImagesRejected = [400, 422].includes(res.status) && /(?:only|maximum|max(?:imum)?|at most)\s+(?:one|1)\s+image|multiple\s+images?\s+(?:(?:are|is)\s+)?(?:not\s+supported|unsupported)|不支持多(?:张|个)图|最多.{0,3}(?:1|一)张/u.test(JSON.stringify(errorBody).toLowerCase());
     const retryable = res.status === 429 || res.status >= 500;
     if (endpoint.diagnostics) await recordAiDiagnostic(endpoint.diagnostics, { requestId: input.diagnosticRequestId ?? input.sessionId, operation: 'model_call', phase: 'fetch_received', status: 'failed', durationMs: Math.min(3_600_000, latencyMs), errorCode: 'PROVIDER_FAILED', errorReason: providerReason ?? `供应商返回 HTTP ${res.status}，但响应中没有可读取的结构化错误原因`, httpStatus: res.status, protocol, method: 'POST', redirectMode: 'manual', ...safeDiagnosticTarget(url) });
-    throw new AppError('AI_UNAVAILABLE', `模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
+    throw new AppError('AI_UNAVAILABLE', res.status===402?'后台模型余额不足，请等待或联系管理员处理':`模型服务返回 ${res.status}`, retryable ? 503 : 502, retryable, {
       status: res.status,
       ...(providerReason ? { providerReason } : {}),
       ...(multipleImagesRejected ? { multipleImagesRejected: true } : {}),
