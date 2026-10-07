@@ -23,6 +23,12 @@ it('lets ordinary members read chronological history without a write or resume c
   expect(screen.queryByRole('textbox')).toBeNull();
   expect(screen.getByRole('button',{name:'从停止处继续'})).toBeDisabled();
 });
+it('keeps a paused followup available for continuation without accepting another concurrent turn',()=>{
+ show({items:[turn('paused',{status:'waiting_input',publishedReport:null,proposedReport:null})]});
+ fireEvent.change(screen.getByRole('textbox'),{target:{value:'另一条追问'}});
+ expect(screen.getByRole('button',{name:'正在处理上一条追问'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'从停止处继续'})).toBeEnabled();
+});
 it('submits expected revision and an idempotency key, while leaving the current score untouched',async()=>{
   let body:unknown;let key:string|null=null;
   const fetch=vi.fn(async (_url:unknown,init?:RequestInit)=>{

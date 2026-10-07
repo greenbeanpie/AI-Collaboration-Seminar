@@ -239,7 +239,7 @@ it('keeps completed AI activity in the left column and orders history by newest 
 it('offers followup discussion only for a completed modern material check with a real revision', async () => {
   vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:{items:[],nextCursor:null}})));
   showRecords([record('modern','material_review','succeeded',{revision:2,origin:'ai'})],'/assessment?section=checks&assessmentId=modern');
-  expect(await screen.findByRole('heading',{name:'评分追问与复核'})).toBeInTheDocument();
+  expect(await screen.findByRole('heading',{name:'追加对话与评分复核'})).toBeInTheDocument();
   expect(screen.getByText('modern-summary',{selector:'p'})).toBeInTheDocument();
 });
 it.each([
@@ -249,5 +249,5 @@ it.each([
 ])('does not offer followups for unsupported $kind/$status/historical=$historical',async item=>{
   showRecords([record('unsupported',item.kind,item.status,{historical:item.historical,revision:2})],'/assessment?section='+ (item.kind==='rehearsal'?'rehearsals':'checks') +'&assessmentId=unsupported');
   await screen.findByText('unsupported-summary',{selector:'p'});
-  expect(screen.queryByRole('heading',{name:'评分追问与复核'})).toBeNull();
+  expect(screen.queryByRole('heading',{name:'追加对话与评分复核'})).toBeNull();
 });

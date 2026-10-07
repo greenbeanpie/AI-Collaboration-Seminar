@@ -5,6 +5,7 @@ import { useSession } from '../auth';
 import { ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { completeIntent, idempotencyKeyForIntent } from './aiWorkflowSupport';
 import { JobAiActivity } from './JobAiActivity';
+import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import './AssessmentFollowups.css';
 
 export type AssessmentFollowup = {
@@ -16,20 +17,20 @@ export type AssessmentFollowup = {
 };
 type FollowupPage = { items: AssessmentFollowup[]; nextCursor: string | null };
 const labels: Record<AssessmentFollowup['status'], string> = { queued: '等待处理', running: '正在复核', succeeded: '复核完成', failed: '复核未完成', conflict: '评分已变化，保留建议', cancelled: '已取消', waiting_input: '等待继续' };
-const active = new Set(['queued', 'running']);
+const active = new Set(['queued', 'running', 'waiting_input']);
 function ScoreChanges({ turn }: { turn: AssessmentFollowup }) {
   const report = turn.publishedReport ?? turn.proposedReport;
   if (!report) return null;
   return <div className="assessment-followup-result">
     <strong>{turn.publishedReport ? '本次复核结果' : '尚未写入当前评分的建议'}</strong>
-    <p>{report.summary}</p>
-    <p>总分：{turn.baseReport.weightedTotal ?? '未评分'} → {report.weightedTotal ?? '未评分'}</p>
+    <p>{report.summary} <AiReferenceBadge /></p>
+    <p>总分：{turn.baseReport.weightedTotal ?? '未评分'} → {report.weightedTotal ?? '未评分'} <AiReferenceBadge /></p>
     {report.scores.map(score => {
       const before = turn.baseReport.scores.find(item => item.key === score.key);
-      return <article key={score.key}><strong>{score.label}：{before?.score ?? '未评分'} → {score.score ?? '未评分'}</strong><p>{score.comment}</p></article>;
+      return <article key={score.key}><strong>{score.label}：{before?.score ?? '未评分'} → {score.score ?? '未评分'} <AiReferenceBadge /></strong><p>{score.comment} <AiReferenceBadge /></p></article>;
     })}
-    {turn.proposedReport && turn.publishedReport && JSON.stringify(turn.proposedReport.scores) !== JSON.stringify(turn.publishedReport.scores) && <details><summary>查看 AI 建议与保留的人工评分</summary><p>已有人工评分保留，以下为 AI 建议。</p>{turn.proposedReport.scores.map(score => <p key={score.key}>{score.label}：{score.score ?? '未评分'} · {score.comment}</p>)}</details>}
-    {report.limitations.length > 0 && <ul>{report.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+    {turn.proposedReport && turn.publishedReport && JSON.stringify(turn.proposedReport.scores) !== JSON.stringify(turn.publishedReport.scores) && <details><summary>查看 AI 建议与保留的人工评分</summary><p>已有人工评分保留，以下为 AI 建议。</p>{turn.proposedReport.scores.map(score => <p key={score.key}>{score.label}：{score.score ?? '未评分'} · {score.comment} <AiReferenceBadge /></p>)}</details>}
+    {report.limitations.length > 0 && <ul>{report.limitations.map((item, index) => <li key={index}>{item} <AiReferenceBadge /></li>)}</ul>}
   </div>;
 }
 export function AssessmentFollowups({ projectId, assessment, canCorrect, aiEnabled, onChanged }: {
@@ -77,8 +78,8 @@ export function AssessmentFollowups({ projectId, assessment, canCorrect, aiEnabl
     },
     onSuccess: async result => { setMessage(''); setSubmittedJob(result.jobId); setSubmittedActive(true); await refresh(); },
   });
-  const jobId = submittedJob ?? latest?.jobId;
-  return <SectionCard title="评分追问与复核" detail="可以询问评分依据、指出固定材料中的遗漏，或请求重新核对。处理期间保留当前评分。">
+  const jobId = submittedActive ? submittedJob : latest?.jobId ?? submittedJob;
+  return <SectionCard title="追加对话与评分复核" detail="可以询问评分依据、指出固定材料中的遗漏，或请求重新核对。处理期间保留当前评分。">
     <p className="form-note">追问中的新事实不能直接作为评分证据；复核只使用本轮固定成果与标准。人工修正的分数会保留。</p>
     {history.isLoading && <Spinner label="读取追问记录" />}
     {history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
@@ -95,7 +96,7 @@ export function AssessmentFollowups({ projectId, assessment, canCorrect, aiEnabl
       </li>)}
     </ol>
     {!history.isLoading && !history.error && !turns.length && <p className="muted">尚无追问记录。</p>}
-    {jobId && <JobAiActivity projectId={projectId} jobId={jobId} canResume={permitted && aiEnabled} onSettled={() => { setSubmittedActive(false); void refresh(); }} onResumed={id => { setSubmittedJob(id); setSubmittedActive(true); void refresh(); }} />}
+    {jobId && <JobAiActivity projectId={projectId} jobId={jobId} canResume={permitted && aiEnabled && (submittedActive || latest?.userId === session.data?.id)} onSettled={() => { setSubmittedActive(false); void refresh(); }} onResumed={id => { setSubmittedJob(id); setSubmittedActive(true); void refresh(); }} />}
     {permitted ? <form className="stack" onSubmit={async event => {
       event.preventDefault(); if (lock.current || submit.isPending || !message.trim()) return;
       lock.current = true;
