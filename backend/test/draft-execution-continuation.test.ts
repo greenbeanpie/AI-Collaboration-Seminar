@@ -56,6 +56,13 @@ describe('durable draft execution windows',()=>{
   const snapshot=await loadDraftCheckpoint(env,f.attempt);expect(snapshot?.checkpoint.content).toBeUndefined();expect(snapshot?.checkpoint.feedback).toContain('未通过校验');
   expect((await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).previewState).toBe('ready');expect(fetch).toHaveBeenCalledTimes(2);
  });
+ it('keeps an invalid explicit final result paused without another automatic call',async()=>{
+  const f=await fixture(1),fetch=vi.fn(async()=>fetch.mock.calls.length===1?response([call('read',f.fileId)]):Response.json({choices:[{message:{content:'invalid final JSON'}}]}));vi.stubGlobal('fetch',fetch);
+  await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).rejects.toBeInstanceOf(DraftPreviewYield);
+  await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt);await controlDraftExecution(f.local,f.id,f.userId,1,'output');
+  const paused=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,2,1);expect(paused.execution).toMatchObject({state:'paused',pauseReason:'output_invalid',totalCalls:2});expect(paused.previewState).toBe('paused_round_limit');
+  await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,2,1);expect(fetch).toHaveBeenCalledTimes(2);
+ });
  it('permits one explicit final call after pause, and cancelled generations discard late work',async()=>{
   const f=await fixture(1);const fetch=vi.fn(async()=>response(fetch.mock.calls.length===1?[call('read',f.fileId)]:[]));vi.stubGlobal('fetch',fetch);
   await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).rejects.toBeInstanceOf(DraftPreviewYield);

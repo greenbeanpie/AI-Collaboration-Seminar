@@ -406,6 +406,18 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     if(e instanceof DraftPreviewYield)throw e;
     if(isExecutionPaused(e))return draftView(env,await getDraft(env,id,userId));
     if(savedCheckpoint) {
+      const control=await readExecution(env,{kind:'draft_preview',id:attempt});
+      const current=await getDraft(env,id,userId);
+      if(current.preview_attempt_id!==attempt||current.status!=='active'||control&&(control.generation!==savedCheckpoint.checkpoint.executionGeneration||['cancelled','completed'].includes(control.state)))return draftView(env,current);
+      if(savedCheckpoint.checkpoint.finalizing) {
+        const snapshot=await loadDraftCheckpoint(env,attempt);
+        if(snapshot){snapshot.checkpoint.content=undefined;snapshot.checkpoint.pendingOutput=undefined;snapshot.checkpoint.pendingResults=[];snapshot.checkpoint.pendingDispatch=false;snapshot.checkpoint.feedback='收尾输出未能形成有效结果：'+(e instanceof Error?e.message:'输出无效');await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);}
+        await pauseExecution(env,{kind:'draft_preview',id:attempt},'output_invalid');
+        await env.DB.prepare("UPDATE project_creation_drafts SET preview_error=?3 WHERE id=?1 AND preview_attempt_id=?2 AND preview_state='running'").bind(id,attempt,e instanceof AppError?e.message:'收尾输出未通过校验，请继续处理或再次输出').run();
+        return draftView(env,await getDraft(env,id,userId));
+      }
+    }
+    if(savedCheckpoint) {
       const invalid=await loadDraftCheckpoint(env,attempt);
       if(invalid?.checkpoint.content || (invalid?.checkpoint.pendingOutput && (!invalid.checkpoint.pendingOutput.toolOutput || invalid.checkpoint.finalizing))) {
         const state=invalid.checkpoint;

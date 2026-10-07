@@ -95,7 +95,12 @@ export async function enqueueDraftPreviewSegment(env:Env,input:DraftPreviewInput
 
 export async function controlDraftExecution(env:Env,id:string,userId:string,expectedGeneration:number,action:'continue'|'output'|'cancel') {
   const row=await getDraft(env,id,userId);
-  if(row.status!=='active'||!row.preview_attempt_id||row.preview_state!=='running')throw invalidState('草稿没有可控制的执行');
+  if(row.status!=='active'||!row.preview_attempt_id)throw invalidState('草稿没有可控制的执行');
+  if(action==='cancel') {
+    const execution=await readExecution(env,{kind:'draft_preview',id:row.preview_attempt_id});
+    if(execution?.state==='cancelled'&&execution.generation===expectedGeneration)return draftView(env,row);
+  }
+  if(row.preview_state!=='running')throw invalidState('草稿没有可控制的执行');
   const snapshot=await loadDraftCheckpoint(env,row.preview_attempt_id);
   if(!snapshot||snapshot.checkpoint.revision!==row.revision)throw invalidState('草稿版本已变化');
   const target={kind:'draft_preview' as const,id:row.preview_attempt_id};
