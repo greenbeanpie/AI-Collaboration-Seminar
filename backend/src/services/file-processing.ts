@@ -8,6 +8,7 @@ import { createJobAndDispatch } from './jobs';
 import { isMediaExtension } from './files';
 import { loadActiveSourceVersion } from './source-lifecycle';
 import { invalidateResourceIndex } from './resource-index';
+import { enqueueSourceSummary } from './source-summary';
 
 export interface FileProcessingView {
  fileId:string;lifecycleVersion:number;sourceId:string|null;sourceVersionId:string|null;jobId:string|null;
@@ -60,6 +61,11 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
  const active=await env.DB.prepare("SELECT id FROM jobs WHERE json_extract(input_json,'$.sourceVersionId')=?1 AND status IN ('queued','running') LIMIT 1").bind(b.source_version_id).first<{id:string}>();
  if(active)return readFileProcessing(env,projectId,fileId,actorId);
  const state=await env.DB.prepare('SELECT text_status,requirements_status,summary_status FROM source_processing WHERE source_version_id=?1').bind(b.source_version_id).first<{text_status:string;requirements_status:string;summary_status:string}>();
+ if(options.retry&&ai&&state?.text_status==='ready'&&['failed','cancelled'].includes(state.summary_status)){
+  const summary=await enqueueSourceSummary(env,b.source_version_id,actorId);
+  await env.DB.prepare('UPDATE file_processing SET job_id=?3,error=NULL,updated_at=?4 WHERE file_id=?1 AND lifecycle_version=?2').bind(fileId,f.lifecycle_version,summary.jobId,now).run();
+  return readFileProcessing(env,projectId,fileId,actorId);
+ }
  if(state?.text_status==='ready'&&(!ai||state.requirements_status==='ready'))return readFileProcessing(env,projectId,fileId,actorId);
  const jobId=newId();
  const claim=await env.DB.prepare(`UPDATE file_processing SET attempted=1,job_id=?3,error=NULL,updated_at=?4 WHERE file_id=?1 AND lifecycle_version=?2 AND (attempted=0 OR ?5=1 OR (?6=1 AND EXISTS(SELECT 1 FROM jobs WHERE id=file_processing.job_id AND status='succeeded' AND json_extract(input_json,'$.operation')='source.text'))) AND NOT EXISTS(SELECT 1 FROM jobs WHERE id=file_processing.job_id AND status IN ('queued','running'))`).bind(fileId,f.lifecycle_version,jobId,now,options.retry?1:0,ai?1:0).run();
