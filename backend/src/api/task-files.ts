@@ -4,15 +4,18 @@ import type { AppEnv } from '../env';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
+import { LIMITS } from '../core/limits';
 import { readTaskFiles, saveTaskFile } from '../services/task-files';
 import { notFound } from '../core/errors';
 
 const params=z.object({projectId:z.string().uuid(),taskId:z.string().uuid()});
 const item=z.object({materialId:z.string().uuid(),taskId:z.string().uuid(),fileId:z.string().uuid(),name:z.string(),revision:z.number().int(),versionId:z.string().uuid(),archivedAt:z.string().nullable(),materialArchivedAt:z.string().nullable(),deletedAt:z.string().nullable(),lifecycleVersion:z.number().int(),canManage:z.boolean()});
 const path='/api/v1/projects/{projectId}/tasks/{taskId}/files';
+/** 浏览器端从成果文档提取的正文；空串与纯空白视为未提供，正文始终对应本次上传的文件版本。 */
+const extractedText=z.string().max(LIMITS.maxTaskFileTextChars).optional();
 const get=createRoute({method:'get',path,tags:['tasks'],request:{params,query:z.object({cursor:z.string().optional(),limit:z.string().optional()})},responses:{200:{description:'任务文件及归档记录',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(item),nextCursor:z.string().nullable()}),'TaskFileListResponse')}}}}});
-const post=createRoute({method:'post',path,tags:['tasks'],request:{params,body:{required:true,content:{'application/json':{schema:z.object({fileId:z.string().uuid()}).strict()}}}},responses:{201:{description:'任务文件已登记',content:{'application/json':{schema:apiEnvelope(item,'TaskFileResponse')}}}}});
-const put=createRoute({method:'put',path:path+'/{materialId}',tags:['tasks'],request:{params:params.extend({materialId:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:z.object({fileId:z.string().uuid(),expectedRevision:z.number().int().positive()}).strict()}}}},responses:{201:{description:'不可变文件版本已创建',content:{'application/json':{schema:apiEnvelope(item,'TaskFileVersionResponse')}}}}});
+const post=createRoute({method:'post',path,tags:['tasks'],request:{params,body:{required:true,content:{'application/json':{schema:z.object({fileId:z.string().uuid(),text:extractedText}).strict()}}}},responses:{201:{description:'任务文件已登记',content:{'application/json':{schema:apiEnvelope(item,'TaskFileResponse')}}}}});
+const put=createRoute({method:'put',path:path+'/{materialId}',tags:['tasks'],request:{params:params.extend({materialId:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:z.object({fileId:z.string().uuid(),expectedRevision:z.number().int().positive(),text:extractedText}).strict()}}}},responses:{201:{description:'不可变文件版本已创建',content:{'application/json':{schema:apiEnvelope(item,'TaskFileVersionResponse')}}}}});
 export function registerTaskFileRoutes(app:OpenAPIHono<AppEnv>) {
   app.use('/api/v1/projects/:projectId/tasks/:taskId/files',requireUser,requireProjectMember());
   app.use('/api/v1/projects/:projectId/tasks/:taskId/files/*',requireUser,requireProjectMember());

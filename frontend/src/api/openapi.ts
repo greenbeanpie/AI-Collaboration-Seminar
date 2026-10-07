@@ -5200,6 +5200,7 @@ export interface paths {
                     "application/json": {
                         /** Format: uuid */
                         fileId: string;
+                        text?: string;
                     };
                 };
             };
@@ -5246,6 +5247,7 @@ export interface paths {
                         /** Format: uuid */
                         fileId: string;
                         expectedRevision: number;
+                        text?: string;
                     };
                 };
             };

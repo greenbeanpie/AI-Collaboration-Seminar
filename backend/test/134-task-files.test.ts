@@ -97,4 +97,23 @@ describe('任务文件版本及独立归档',()=>{
     expect((await env.DB.prepare('SELECT COUNT(*) count FROM material_versions WHERE material_id=?1').bind(entry.materialId).first<{count:number}>())?.count).toBe(1);
     expect((await data(await f.request(f.path))).items[0]).toMatchObject({revision:1,fileId:entry.fileId,canManage:false});
   });
+  it('persists uploaded deliverable text into the version markdown and resets it when a replacement omits it',async()=>{
+    const f=await fixture(),fileId=await f.upload();
+    expect((await f.request(f.path,'POST',{fileId,text:'成果正文第一段。\n\n成果正文第二段。'})).status).toBe(201);
+    const markdown=async(versionId:string)=>(await env.DB.prepare('SELECT markdown FROM material_versions WHERE id=?1').bind(versionId).first<{markdown:string}>())!.markdown;
+    const first=await data(await f.request(f.path));
+    expect(first.items[0].fileId).toBe(fileId);
+    expect(await markdown(first.items[0].versionId)).toBe('成果正文第一段。\n\n成果正文第二段。');
+    expect((await f.request(f.path,'POST',{fileId:await f.upload(),text:'   '})).status).toBe(201);
+    expect((await f.request(f.path,'POST',{fileId:await f.upload(),text:'字'.repeat(60_001)})).status).toBe(400);
+    const secondFile=await f.upload();
+    expect((await f.request(`${f.path}/${first.items[0].materialId}`,'PUT',{fileId:secondFile,expectedRevision:1,text:'替换后的正文'})).status).toBe(201);
+    const second=await data(await f.request(f.path));
+    expect(second.items[0].revision).toBe(2);
+    expect(await markdown(second.items[0].versionId)).toBe('替换后的正文');
+    expect((await f.request(`${f.path}/${first.items[0].materialId}`,'PUT',{fileId:await f.upload(),expectedRevision:2})).status).toBe(201);
+    const third=await data(await f.request(f.path));
+    expect(third.items[0].revision).toBe(3);
+    expect(await markdown(third.items[0].versionId)).toBe('');
+  });
 });

@@ -31923,6 +31923,10 @@
                   "fileId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 60000
                   }
                 },
                 "required": [
@@ -31995,6 +31999,10 @@
                   "expectedRevision": {
                     "type": "integer",
                     "exclusiveMinimum": 0
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 60000
                   }
                 },
                 "required": [
