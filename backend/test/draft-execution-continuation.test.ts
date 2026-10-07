@@ -51,7 +51,7 @@ describe('durable draft execution windows',()=>{
   const f=await fixture(100),fetch=vi.fn(async()=>response([call('again',f.fileId)]));vi.stubGlobal('fetch',fetch);
   for(let segment=0;segment<100;segment++)await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,segment)).rejects.toBeInstanceOf(DraftPreviewYield);
   const paused=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,100);expect(fetch).toHaveBeenCalledTimes(100);expect(paused.execution).toMatchObject({state:'paused',windowCalls:100,totalCalls:100,pauseReason:'round_limit'});expect((await loadDraftCheckpoint(env,f.attempt))?.checkpoint.step).toBe(100);
- });
+ },30000); // 101 次完整 durable 段（模型调用+加密 checkpoint 持久化）串行需 ~9s，默认 5s 阈值不够
  it('persists confirmed provider retry state and counts its next segment request',async()=>{
   const f=await fixture(),fetch=vi.fn(async()=>fetch.mock.calls.length===1?Response.json({error:{message:'busy'}},{status:429}):response());vi.stubGlobal('fetch',fetch);
   await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).rejects.toBeInstanceOf(DraftPreviewYield);
