@@ -185,7 +185,7 @@ export function useSourcesController(selectedSourceId?: string) {
   }, [projectId]);
 
   const scanPages = useCallback(async (tracked: TrackedSourceJob) => {
-    if (!capability || unavailableSourceIds.current.has(tracked.sourceId)) return;
+    if (!capability || project?.aiCollaborationEnabled !== true || !capability.features.aiEnabled || unavailableSourceIds.current.has(tracked.sourceId)) return;
     const lifecycleEpoch = sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0;
     const ensureAvailable = () => {
       if (currentProjectId.current !== projectId || unavailableSourceIds.current.has(tracked.sourceId) || (sourceLifecycleEpochs.current.get(tracked.sourceId) ?? 0) !== lifecycleEpoch) throw new Error('资料状态已变化或已切换项目，页面处理已停止。');
@@ -221,7 +221,7 @@ export function useSourcesController(selectedSourceId?: string) {
           ensureAvailable();setScanProgress(`正在上传第 ${image.pageNumber} 页图片…`);
           const imageFileId=await uploadProjectFile(projectId,image.file,undefined,undefined,{derivedFromFileId:fileId});
           uploadedImages.push({pageNumber:image.pageNumber,fileId:imageFileId});
-          if(uploadedImages.length===100) {
+          if(uploadedImages.length===3) {
             await api.post<'PageImagesResponse'>(projectPath(projectId,`/sources/${encodeURIComponent(tracked.sourceId)}/page-images`),{sourceVersionId:tracked.sourceVersionId,images:uploadedImages.splice(0)},{idempotencyKey:createIntentKey()});
           }
         }
@@ -252,7 +252,7 @@ export function useSourcesController(selectedSourceId?: string) {
     } finally {
       setScanJobId(null);
     }
-  }, [capability, projectId, queryClient, replaceTracked]);
+  }, [capability, project?.aiCollaborationEnabled, projectId, queryClient, replaceTracked]);
 
   const submitSource = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

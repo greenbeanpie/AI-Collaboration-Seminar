@@ -22,6 +22,8 @@ export async function prepareFileScanPages(projectId: string, state: FileProcess
   const pending = await api.get<'RenderRequestsResponse'>(projectPath(projectId, `${sourcePath}/render-requests`), { sourceVersionId: state.sourceVersionId });
   if (!pending.items.length) return;
   onProgress('正在读取扫描 PDF，请保持页面打开…');
+  const pageNumbers = pending.items.slice(0, 30).map(page => page.pageNumber);
+  const remaining = pending.items.length - pageNumbers.length;
   const bytes = await downloadSourcePdf(projectId, state.fileId);
   const { iteratePdfPages } = await import('./source-pdf-render');
   const images: { pageNumber: number; fileId: string }[] = [];
@@ -29,12 +31,12 @@ export async function prepareFileScanPages(projectId: string, state: FileProcess
     if (!images.length) return;
     await api.post<'PageImagesResponse'>(projectPath(projectId, `${sourcePath}/page-images`), { sourceVersionId: state.sourceVersionId, images: images.splice(0) }, { idempotencyKey: createIntentKey(), networkOnly: true });
   };
-  for await (const image of iteratePdfPages(bytes, pending.items.map(page => page.pageNumber), { pageImageMaxEdge: limits.pageImageMaxEdge, pageImageMaxBytes: limits.pageImageMaxBytes, maxPdfPages: null })) {
+  for await (const image of iteratePdfPages(bytes, pageNumbers, { pageImageMaxEdge: limits.pageImageMaxEdge, pageImageMaxBytes: limits.pageImageMaxBytes, maxPdfPages: null })) {
     onProgress(`正在准备第 ${image.pageNumber} 页，请保持页面打开…`);
     const fileId = await uploadProjectFile(projectId, image.file, undefined, undefined, { derivedFromFileId: state.fileId });
     images.push({ pageNumber: image.pageNumber, fileId });
-    if (images.length === 100) await flush();
+    if (images.length === 3) await flush();
   }
   await flush();
-  onProgress('页面图片已提交，后续识别继续在后台处理。');
+  onProgress(remaining > 0 ? `本批页面图片已提交，还有 ${remaining} 页待补充，请再次点击准备扫描页。` : '页面图片已提交，后续识别继续在后台处理。');
 }

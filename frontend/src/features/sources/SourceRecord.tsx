@@ -64,6 +64,8 @@ function SourceJobProgress({
   scanning: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { project } = useProject();
+  const aiEnabled = capability?.features.aiEnabled === true && project?.aiCollaborationEnabled === true;
   const [resuming, setResuming] = useState(false);
   const resumeLock = useRef(false);
   const resume = async () => {
@@ -117,7 +119,7 @@ function SourceJobProgress({
       <div><strong>{query.isLoading ? '正在读取解析任务' : job ? `解析任务：${job.status}` : '解析任务状态暂不可用'}</strong><p style={{whiteSpace:'pre-wrap'}}>{query.error ? classifySourceError(query.error) : progress}</p></div>
       <div className="sources-record-actions">
         {job?.status === 'waiting_input' && pagesToRender > 0 && (
-          <button className="button button-primary button-small" type="button" disabled={scanning || !capability?.features.aiEnabled} onClick={() => onScan(tracked)}>
+          <button className="button button-primary button-small" type="button" disabled={scanning || !aiEnabled} onClick={() => onScan(tracked)}>
             {scanning ? <><LoaderCircle className="spin" size={14} /> 正在处理页面</> : <><ScanText size={14} /> 准备扫描页并识别</>}
           </button>
         )}
@@ -126,7 +128,7 @@ function SourceJobProgress({
         {query.error && <button className="button button-quiet button-small" type="button" onClick={() => void query.refetch()}>重新查询</button>}
       </div>
     </div>
-    {job?.status === 'waiting_input' && pagesToRender > 0 && !capability?.features.aiEnabled && <div className="callout warning-callout">当前服务能力显示 AI 未启用。扫描页 OCR 和要求提取暂不可用，页面不会用模拟结果替代。</div>}
+    {job?.status === 'waiting_input' && pagesToRender > 0 && !aiEnabled && <div className="callout warning-callout">当前服务能力显示 AI 未启用。扫描页 OCR 和要求提取暂不可用，页面不会用模拟结果替代。</div>}
 
     {scanning && <div className="sources-scan-progress">正在读取待渲染页码、用 PDF.js 生成页面图片并按服务端限制上传。{scanning ? '请保持此页打开。' : ''}</div>}
     {query.error && <div className="sources-error"><ErrorNotice error={query.error} onRetry={() => void query.refetch()} /></div>}

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MaterialsPage } from './MaterialsPage';
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'project-1' }) }));
-vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'account-1' } }) }));
+vi.mock('../auth', () => ({ useSession: () => ({ data: { id: 'account-1' } }), useCapabilities: () => ({ data: undefined }) }));
 vi.mock('./FilePreview', () => ({ FilePreview: ({ fileId, name }: { fileId: string; name: string }) => <section aria-label={`预览 ${name}`} data-file-id={fileId}>原文件预览 {name}</section> }));
 afterEach(async () => { await act(async()=>{cancelPageDialog();}); cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 

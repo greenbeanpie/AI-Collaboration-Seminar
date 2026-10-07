@@ -1,3 +1,4 @@
+import { useProject } from '../components/ProjectShell';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -9,6 +10,7 @@ const labels: Record<string, string> = { pending: '尚未开始', queued: '已�
 const active = (status: string) => ['queued', 'running', 'processing'].includes(status);
 export function FileProcessingActions({ projectId, fileId, disabled = false }: { projectId: string; fileId: string; disabled?: boolean }) {
   const client = useQueryClient();
+  const { project } = useProject();
   const capabilities = useCapabilities();
   const [online, setOnline] = useState(navigator.onLine !== false);
   const [busy, setBusy] = useState(false);
@@ -33,6 +35,7 @@ export function FileProcessingActions({ projectId, fileId, disabled = false }: {
     lock.current = true; setBusy(true); setError(null);
     try {
       if (scan) {
+        if (project?.aiCollaborationEnabled !== true || !capabilities.data?.features.aiEnabled) throw new Error('请先启用项目与服务 AI，再识别扫描页。');
         if (!capabilities.data) throw new Error('文件处理能力尚未读取，请稍后重试。');
         await prepareFileScanPages(projectId, state, capabilities.data.limits, setProgress);
       } else await startFileProcessing(projectId, fileId, state.lifecycleVersion, Boolean(retry));
@@ -44,7 +47,7 @@ export function FileProcessingActions({ projectId, fileId, disabled = false }: {
     {state && <p role="status">正文提取：{labels[state.textStatus] ?? state.textStatus} · 文件总结：{labels[state.summaryStatus] ?? state.summaryStatus} · 要求提取：{labels[state.requirementsStatus] ?? state.requirementsStatus}</p>}
     <div className="form-actions">
       <button type="button" className="button button-quiet button-small" disabled={disabled || !online || busy || !state?.canProcess || Boolean(running)} onClick={() => void run()}>{busy ? '正在提交…' : running ? '后台处理中' : retry ? '重试处理' : state?.textAvailable ? '继续文件处理' : '提取正文'}</button>
-      {state && state.needsImages > 0 && <button type="button" className="button button-primary button-small" disabled={disabled || !online || busy || !state.canProcess || !capabilities.data?.features.aiEnabled} onClick={() => void run(true)}>准备扫描页并识别</button>}
+      {state && state.needsImages > 0 && <button type="button" className="button button-primary button-small" disabled={disabled || !online || busy || !state.canProcess || !capabilities.data?.features.aiEnabled || project?.aiCollaborationEnabled !== true} onClick={() => void run(true)}>准备扫描页并识别</button>}
       <button type="button" className="button button-quiet button-small" disabled={!online || busy} onClick={() => void query.refetch()}>刷新处理状态</button>
       {state?.sourceId && <Link className="button button-quiet button-small" to={`/app/projects/${projectId}/data?resourceType=source&resourceId=${encodeURIComponent(state.sourceId)}`}>查看正文与处理记录</Link>}
     </div>
