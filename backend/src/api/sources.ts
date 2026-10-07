@@ -18,6 +18,7 @@ import { withIdempotency } from '../services/idempotency';
 import { projectParams } from './projects';
 import { resourcePurposeSchema } from './resources';
 import type { ResourcePurpose } from '../services/resources';
+import { ensureFileProcessing, syncFileProcessingText } from '../services/file-processing';
 
 const sourceParams = projectParams.extend({ sourceId: z.string().uuid() });
 const versionParams = sourceParams.extend({ sourceVersionId: z.string().uuid() });
@@ -268,6 +269,12 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       fileLifecycleVersion=file.lifecycle_version;
       if (file.status !== 'available') throw invalidState('文件尚未上传或不可用');
       if (!['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.md'].includes(file.ext)) throw validationFailed('来源文件仅支持 PDF/DOCX/XLSX/PPTX/TXT/Markdown');
+      const existing=await c.env.DB.prepare(`SELECT s.id,s.current_version_id,s.created_at,s.lifecycle_version,s.resource_revision FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE v.file_id=?1 AND s.project_id=?2 AND s.deleted_at IS NULL ORDER BY s.created_at LIMIT 1`).bind(body.fileId!,member.projectId).first<{id:string;current_version_id:string;created_at:string;lifecycle_version:number;resource_revision:number}>();
+      if(existing){
+        await c.env.DB.prepare('UPDATE sources SET title=?2,purpose=?3,resource_revision=resource_revision+1,updated_at=?4 WHERE id=?1').bind(existing.id,title,body.purpose,now).run();
+        await syncFileProcessingText(c.env,existing.current_version_id);
+        return c.json(apiData(c,{sourceId:existing.id,sourceVersionId:existing.current_version_id,kind:body.kind,title,purpose:body.purpose,revision:existing.resource_revision+existing.lifecycle_version,currentVersionId:existing.current_version_id,contributors:await fileContributors(c.env,member.projectId,body.fileId!),createdAt:existing.created_at,lifecycleVersion:existing.lifecycle_version,canDelete:member.permissions.resourceManage,deletedAt:null,fileId:body.fileId!}),201);
+      }
     }
     if (body.kind === 'web') {
       try {
@@ -306,6 +313,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     inserts.push(...notificationStatements(c.env, { key: `source_added:${sourceId}`, kind: 'source_added', scope: 'project', resourceId: member.projectId, actorId: user.id, now, url: `/app/projects/${member.projectId}/sources`, record: { table: 'sources', id: sourceId } }));
     const created=await c.env.DB.batch(inserts);
     if(!created[0]?.meta.changes) throw invalidState('原文件生命周期已变化，来源未创建');
+    if(body.kind==='file'){try{await ensureFileProcessing(c.env,member.projectId,body.fileId!,user.id,{automatic:true});}catch{/* File import remains valid when background processing cannot start. */}}
     if (body.kind === 'paste' && body.text) {
       await c.env.FILES.put(`sources/${versionId}/paste.txt`, body.text);
       await c.env.DB.prepare('UPDATE source_versions SET char_count = ?2 WHERE id = ?1')
