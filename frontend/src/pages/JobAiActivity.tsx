@@ -1,3 +1,4 @@
+import { executionOf } from '../api/ai-execution';
 import { useEffect, useRef, useState } from 'react';
 import { AiActivityStatus } from '../components/AiActivityStatus';
 import { ErrorNotice } from '../components/ui';
@@ -38,6 +39,6 @@ export function JobAiActivity({ projectId, jobId, submitting = false, onSettled,
   if (!jobId && !submitting) return null;
   return <><AiActivityStatus job={poll.job} jobId={currentId ?? undefined} submitting={submitting}
     loading={poll.loading} readError={poll.error} onRefresh={() => setRefreshKey(value => value + 1)}
-    onResume={canResume ? resume : undefined} resuming={resuming} />
+    executionEnabled={canResume} onResume={canResume && !executionOf(poll.job) ? resume : undefined} resuming={resuming} />
     {Boolean(error) && <ErrorNotice error={error} />}</>;
 }

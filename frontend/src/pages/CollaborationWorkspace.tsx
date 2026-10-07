@@ -1,3 +1,4 @@
+import { executionOf } from '../api/ai-execution';
 import { JobAiActivity } from './JobAiActivity';
 import { defaultTaskDraft as defaultDraft, useTaskOperations } from '../features/collaboration/useTaskOperations';
 import { useCollaborationQueries } from '../features/collaboration/useCollaborationQueries';
@@ -121,7 +122,7 @@ function ProjectCollaborationWorkspace() {
   const jobQuestion = job.job?.status === 'waiting_input' && jobId ? clarificationFromJob(job.job.result, jobId) : null;
   const questions = (owner ? clarifications.data?.items ?? [] : []).filter(question => question.status === 'pending' && !resolvedQuestions.current.has(question.id));
   if (jobQuestion && !resolvedQuestions.current.has(jobQuestion.id) && !questions.some(question => question.id === jobQuestion.id)) questions.push(jobQuestion);
-  const waitingForAnswer = questions.length > 0 || job.job?.status === 'waiting_input';
+  const waitingForAnswer = questions.length > 0 || job.job?.status === 'waiting_input' && executionOf(job.job)?.state !== 'paused';
   useEffect(() => {
     if (job.job?.status === 'waiting_input') void client.invalidateQueries({ queryKey: clarificationQueryKey(projectId) });
   }, [job.job?.status, job.job?.result, client, projectId]);

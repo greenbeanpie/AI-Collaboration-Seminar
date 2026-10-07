@@ -1,9 +1,10 @@
+import type { ExecutionView } from '../api/ai-execution';
 import { request } from './client';
 import type { Job } from './types';
 
 export type AiProgress = { completed: number; total?: number; unit?: string };
 export type AiActivity = { code: string; updatedAt: string | null; lastResponseAt: string | null; progress: AiProgress | null; canResume: boolean; resumeReason: string | null; uncertain: boolean };
-export type ActivityJob = Job & { activity?: AiActivity | null };
+export type ActivityJob = Job & { activity?: AiActivity | null; execution?: ExecutionView | null };
 export type AiActivityEvent = { id: number; code: string; state: 'started' | 'completed' | 'failed' | 'resumed'; at: string; progress: AiProgress | null };
 export type ActivityEventPage = { items: AiActivityEvent[]; nextCursor: number | null };
 export async function readActivityEvents(jobId: string, cursor?: number, signal?: AbortSignal, eventsPath?: string): Promise<ActivityEventPage> {

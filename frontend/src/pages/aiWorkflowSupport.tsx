@@ -1,3 +1,4 @@
+import { executionOf, olderExecution } from '../api/ai-execution';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { Job } from '../api/types';
@@ -48,8 +49,8 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
         const job = await api.get<'JobResponse'>(`/api/v1/jobs/${encodeURIComponent(polledId)}`, undefined, controller.signal);
         polledId = job.jobId;
         if (!active) return;
-        setState({ jobId, job, error: null, loading: false });
-        if (!isSettledJob(job.status)) schedule();
+        setState(current => olderExecution(job, current.job) ? current : { jobId, job, error: null, loading: false });
+        if (!isSettledJob(job.status) && executionOf(job)?.state !== 'paused') schedule();
       } catch (error) {
         if (!active || (error instanceof DOMException && error.name === 'AbortError')) return;
         setState((current) => current.jobId === jobId ? { ...current, error, loading: false } : current);

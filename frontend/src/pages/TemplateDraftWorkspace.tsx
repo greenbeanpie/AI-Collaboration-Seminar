@@ -1,3 +1,5 @@
+import { ExecutionControlPanel } from '../components/ExecutionControlPanel';
+import { executionOf, olderExecution } from '../api/ai-execution';
 import { JobAiActivity } from './JobAiActivity';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { AudioPipelineStatus } from './AudioPipelineStatus';
@@ -51,7 +53,7 @@ function PrivateTemplateDraft({ draftId, userId }: { draftId: string; userId: st
   const signature = form ? templateSignature(form, draft?.files ?? []) : '';
   const dirty = Boolean(form && signature !== baseline && draft?.status === 'active');
   const clearDirty = useSettingsDirty(dirty);
-  const rememberServer = useCallback((next: TemplateDraft) => { draftRef.current = next; if (mounted.current) setDraft(next); }, []);
+  const rememberServer = useCallback((next: TemplateDraft) => { if (olderExecution(next, draftRef.current)) return; draftRef.current = next; if (mounted.current) setDraft(next); }, []);
   const hydrate = useCallback((next: TemplateDraft) => { if (!mounted.current) return; rememberServer(next); const restored = templateFormFromDraft(next); setForm(restored); setBaseline(templateSignature(restored, next.files)); setConflicted(false); setError(null); setNotice(''); }, [rememberServer]);
   useEffect(() => {
     const controller = new AbortController(); controllerRef.current = controller; mounted.current = true;
@@ -59,7 +61,7 @@ function PrivateTemplateDraft({ draftId, userId }: { draftId: string; userId: st
     return () => { controller.abort(); mounted.current = false; };
   }, [draftId, hydrate]);
   const mediaPending = draft?.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
-  const mediaPoll = useQuery({ queryKey: ['template-media',draftId], queryFn: () => projectTemplateApi.get(draftId), enabled: mediaPending && draft?.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) && !busy, refetchInterval: () => document.visibilityState !== 'hidden' ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  const mediaPoll = useQuery({ queryKey: ['template-media',draftId], queryFn: () => projectTemplateApi.get(draftId), enabled: (draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused') || mediaPending && draft?.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) && !busy, refetchInterval: () => document.visibilityState !== 'hidden' ? 3000 : false, refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const next = mediaPoll.data; if (next && !lock.current && next.revision >= (draftRef.current?.revision ?? 0)) rememberServer(next); }, [mediaPoll.data, rememberServer]);
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;
@@ -112,6 +114,7 @@ function PrivateTemplateDraft({ draftId, userId }: { draftId: string; userId: st
     <div className="template-draft-status"><div className="template-status-copy"><StatusPill tone="warn">模板预览 · 未创建</StatusPill><small>{dirty ? '有未保存编辑' : '当前账户的私有草稿'}</small></div><div className="form-actions"><button className="button button-quiet" disabled={busy || conflicted} onClick={() => void run(() => persist(false))}><Save size={15} />{busy ? '正在保存' : '保存草稿'}</button><button className="button button-primary" disabled={busy || conflicted} onClick={() => void run(() => persist(true))}>保存并创建项目</button></div></div>
     <div className="project-banner template-preview-banner"><div className="project-breadcrumb"><Link to="/app/projects/new">新建项目</Link><span>/</span><span>空项目模板</span></div><div className="project-name-row"><div><h1>{form.payload.name || '未命名项目'} <AiReferenceBadge ariaHidden /></h1><p>{form.payload.description || '在下方各分区编辑；最终保存后创建正式项目。'} <AiReferenceBadge /></p></div><StatusPill>私有草稿</StatusPill></div></div>
     <nav className="project-content-navigation project-group-navigation template-preview-nav" aria-label="模板预览分区"><div className="project-content-links">{tabs.map(([key, label]) => <button className={`project-tab ${tab === key ? 'active' : ''}`} key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => setTab(key)}>{label}</button>)}</div><select className="input project-content-select" aria-label="切换模板预览分区" value={tab} onChange={event => setTab(event.target.value as PreviewTab)}>{tabs.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></nav>
+    <ExecutionControlPanel execution={executionOf(draft)} path={`/api/v1/creation-drafts/${encodeURIComponent(draftId)}`} enabled={!busy} onUpdated={snapshot => { const next = snapshot as TemplateDraft; if (next.id !== draftId || olderExecution(next, draftRef.current)) return; if (dirty) rememberServer(next); else hydrate(next); }} />
     {error !== null && <ErrorNotice error={error} />}{notice && <p className="notice notice-success" role="status">{notice}</p>}
     {conflicted && <div className="notice notice-warn"><p>草稿已在其他页面更新。当前所有输入保留，不能用旧版本覆盖；请核对后载入最新草稿。</p><button className="button button-quiet" disabled={busy} onClick={() => void reload()}>载入最新草稿</button></div>}
     <fieldset className="template-panel" disabled={busy || conflicted} style={{ border: 0, padding: 0, margin: 0 }} aria-label={`${tabs.find(([key]) => key === tab)?.[1]}预览编辑`}>

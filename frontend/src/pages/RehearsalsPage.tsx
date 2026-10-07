@@ -1,3 +1,4 @@
+import { executionOf } from '../api/ai-execution';
 import { AiActivityStatus } from '../components/AiActivityStatus';
 import { accountStorageKey } from '../features/pagination/account-storage-key';
 import { VirtualList } from '../components/VirtualList';
@@ -266,7 +267,7 @@ export function RehearsalsPage({ rehearsalId: requestedId, embedded = false }: {
             <div className="ai-workflow-meta"><StatusPill tone={rehearsal.status === 'active' ? 'blue' : 'good'}>{rehearsal.status === 'active' ? '演练进行中' : '演练已结束'}</StatusPill><AiReferenceBadge /><span>{rehearsal.scope === 'all' ? '全项目' : `成员：${members.find((member) => member.userId === rehearsal.memberId)?.displayName ?? rehearsal.memberId ?? '未知'}`}</span><span>发起及答辩：{members.find(member=>member.userId===rehearsal.initiatorId)?.displayName ?? rehearsal.initiatorId}</span><span>开始于 {formatWorkflowDate(rehearsal.createdAt)}</span><span className="mono">ID {rehearsal.rehearsalId}</span></div>
             {(creating || sendingAnswer || finishing) && <AiActivityStatus submitting />}
             {visiblePending && <JobPanel jobId={visiblePending.jobId} job={job.job} error={job.error} retryError={retryError} loading={job.loading} retrying={retryingJob} canRetry={rehearsal.canOperate && aiEnabled && !capabilities.isLoading && Boolean(!capabilities.error)} action={visiblePending.action} onRetry={handleRetryJob} />}
-            {job.job?.status === 'waiting_input' && <div className="ai-workflow-note is-warning">后端任务正在等待补充信息，当前页面不会补造问题或回答。</div>}
+            {job.job?.status === 'waiting_input' && executionOf(job.job)?.state !== 'paused' && <div className="ai-workflow-note is-warning">后端任务正在等待补充信息，当前页面不会补造问题或回答。</div>}
             {rehearsal.turns.length === 0 && <div className="ai-workflow-note">第一问由后端生成中。问题到达后会出现在下方对话记录中。</div>}
             {rehearsal.turns.length > 0 && <VirtualList className="ai-workflow-transcript" label="演练对话" items={rehearsal.turns} getKey={turn => String(turn.sequence)} renderItem={turn => <article className={`ai-workflow-transcript-turn ${turn.role === 'user' ? 'is-user' : ''} ${turn.kind === 'summary' ? 'is-summary' : ''}`} key={`${rehearsal.rehearsalId}-${turn.sequence}`}>
               <header><strong>{turn.role === 'user' ? '答辩人回答' : turn.kind === 'summary' ? '后端演练总结' : turn.kind === 'followup' ? '评委追问' : '评委问题'}</strong><AiReferenceBadge /><span>{formatWorkflowDate(turn.createdAt)}</span></header>
