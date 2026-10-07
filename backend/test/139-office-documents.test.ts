@@ -34,11 +34,14 @@ describe('Office upload and browser text imports',()=>{
   const encrypted=good.slice(),view=new DataView(encrypted.buffer);for(let i=0;i<encrypted.length-4;i++)if(view.getUint32(i,true)===0x02014b50){view.setUint16(i+8,1,true);break;}
   await expect(validateOfficePackage(ext,encrypted.length,async(o,n)=>encrypted.slice(o,o+n))).rejects.toThrow();
  });
- it.each(['.xlsx','.pptx'] as const)('uploads %s and imports located text without invented pages',async ext=>{
+ it.each(['.xlsx','.pptx'] as const)('preserves malformed %s original and allows browser recovery without invented pages',async ext=>{
   const f=await fixture(ext);expect((await SELF.fetch(f.url,{method:'PUT',headers:{cookie:f.headers.cookie},body:f.bytes})).status).toBe(201);
   const download=await SELF.fetch(f.url,{headers:{cookie:f.headers.cookie}});expect(download.headers.get('content-type')).toBe(OFFICE_PACKAGES[ext].mime);expect(new Uint8Array(await download.arrayBuffer())).toEqual(f.bytes);
   const source=await SELF.fetch(`${BASE}/api/v1/projects/${f.project}/sources`,{method:'POST',headers:f.headers,body:JSON.stringify({kind:'file',fileId:f.file})});expect(source.status).toBe(201);const {sourceVersionId,sourceId}=(await source.json() as {data:{sourceVersionId:string;sourceId:string}}).data;
-  const job=crypto.randomUUID(),now=new Date().toISOString();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','queued',?3,?4,?5,?5)").bind(job,f.project,JSON.stringify({sourceId,sourceVersionId,phase:'extract',sourceLifecycleVersion:1}),f.user.userId,now).run();expect((await runParseJob(env,job)).status).toBe('waiting_input');
+  // The upload fixture deliberately contains no actual workbook/slide relationships.
+  // Server extraction now attempts it and fails; the original and manual fallback remain usable.
+  const job=crypto.randomUUID(),now=new Date().toISOString();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','queued',?3,?4,?5,?5)").bind(job,f.project,JSON.stringify({sourceId,sourceVersionId,phase:'extract',sourceLifecycleVersion:1}),f.user.userId,now).run();expect((await runParseJob(env,job)).status).toBe('failed');
+  expect((await SELF.fetch(f.url,{headers:{cookie:f.headers.cookie}})).status).toBe(200);
   const path=`${BASE}/api/v1/projects/${f.project}/document-imports`,method='browser-'+ext.slice(1);
   const init=await SELF.fetch(path,{method:'POST',headers:f.headers,body:JSON.stringify({sourceVersionId,method})});expect(init.status).toBe(200);const {sessionId}=(await init.json() as {data:{sessionId:string}}).data;
   const batch={batchNumber:0,blocks:[{seq:0,pageNumber:null,text:'中文原文 A1 金额 100',headingPath:ext==='.xlsx'?['预算','A1:B1']:['幻灯片 1','备注']}]};

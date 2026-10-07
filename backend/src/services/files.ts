@@ -111,7 +111,10 @@ export async function createFileInit(
          OR (?9 IS NULL AND NOT EXISTS(SELECT 1 FROM json_each(?10) requested WHERE NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=requested.value))))`,
   )
     .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName, params.derivedFromFileId ?? null, JSON.stringify(ids));
-  const result = await env.DB.batch([insert, ...contributors.map(person => env.DB.prepare(
+  const derived = params.derivedFromFileId ? [env.DB.prepare(
+    'INSERT INTO file_derivations(file_id,parent_file_id) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM files WHERE id=?1)',
+  ).bind(fileId,params.derivedFromFileId)] : [];
+  const result = await env.DB.batch([insert, ...derived, ...contributors.map(person => env.DB.prepare(
     `INSERT INTO file_contributors(file_id,user_id,display_name) SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM files WHERE id=?1)`
   ).bind(fileId,person.user_id,person.display_name))]);
   if (!result[0]?.meta.changes) throw validationFailed('项目成员或原文件已变化，请刷新后重试');

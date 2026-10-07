@@ -11,7 +11,7 @@ async function fixture() {
   const init = await request('files','POST',{fileName:'报告.txt'});
   const fileId = (await init.json() as {data:{fileId:string}}).data.fileId;
   const upload = await SELF.fetch(`${BASE}/api/v1/projects/${projectId}/files/${fileId}/content`, { method:'PUT', headers:{cookie:authCookie(owner.token)}, body:'可核对的成果原文，包含采访与调查记录。' });
-  expect(upload.status).toBe(200);
+  expect(upload.status).toBe(201);
   return {owner,member,outsider,projectId,fileId,request};
 }
 
