@@ -8,7 +8,7 @@ import { askUserQuestionDefinition, clarificationRule, executeClarification, Use
 import { projectPermissionSql, projectAccess } from './project-permissions';
 import { z } from 'zod';
 import { discoveryDefinitions, discoveryToolDefinitions, parseDiscoveryArgs, executeDiscoveryTool } from './project-context';
-import { referencesFromRead, modelOutputIssues, uniqueReadReferences, validateReadReferences, decisionReferences, extractDecisionReferences, type ProjectReference, type DecisionReference } from './project-evidence';
+import { referencesFromRead, modelOutputIssues,referenceRepairContext, uniqueReadReferences, validateReadReferences, decisionReferences, extractDecisionReferences, type ProjectReference, type DecisionReference } from './project-evidence';
 import { loadInvestigation, saveInvestigation, compactExchanges, InvestigationContinuation } from './project-investigation';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -456,9 +456,9 @@ export async function projectToolConversation(env: Env, params: {
       await recordActivity(env,context.jobId,'repairing');
       // Direct consumers use the same checkpointed output-only correction.
       const {aiJsonCall}=await import('./agent');
-      const tail:Array<{role:'assistant'|'user';content:string}>=[{role:'assistant',content},{role:'user',content:'最终引用校验失败，字段错误：'+JSON.stringify(modelOutputIssues(error))+'。仅修正最终JSON，不调用工具。公共引用仅可逐字使用服务器已读取ID：'+JSON.stringify(references.map(r=>r.id))}];
       const textMessages=(messages:ChatMessage[])=>messages.map(m=>({role:m.role,content:typeof m.content==='string'?m.content:JSON.stringify(m.content)}));
-      const repaired=await aiJsonCall(env,{projectId:context.projectId,jobId:context.jobId,runId:params.runId,sessionId:providerSessionId,purpose:params.purpose??'textEconomy',configVersionId:params.configVersionId,model:config.model,modelConfig:config,promptVersion:params.promptVersion+'-reference-repair-v1',messages:[...textMessages(params.messages),...tail],schema:z.unknown().transform(raw=>result(JSON.stringify(raw))),beforeCall:guard,privateContext:params.privateContext,maxAttempts:2,prepareMessages:params.prepareMessages?async()=>[...textMessages(await params.prepareMessages!()),...tail]:undefined});
+      const tail:Array<{role:'assistant'|'user';content:string}>=[{role:'assistant',content},{role:'user',content:'最终引用校验失败，字段错误：'+JSON.stringify(modelOutputIssues(error))+'。仅修正最终JSON，不调用工具。公共引用仅可逐字使用服务器已读取ID：'+referenceRepairContext(references,textMessages(params.messages))}];
+      const repaired=await aiJsonCall(env,{projectId:context.projectId,jobId:context.jobId,runId:params.runId,sessionId:providerSessionId,purpose:params.purpose??'textEconomy',configVersionId:params.configVersionId,model:config.model,modelConfig:config,promptVersion:params.promptVersion+'-reference-repair-v2',messages:[...textMessages(params.messages),...tail],schema:z.unknown().transform(raw=>result(JSON.stringify(raw))),beforeCall:guard,privateContext:params.privateContext,maxAttempts:2,prepareMessages:params.prepareMessages?async()=>[...textMessages(await params.prepareMessages!()),...tail]:undefined});
       return repaired.data;
     }
   };
