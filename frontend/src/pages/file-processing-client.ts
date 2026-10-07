@@ -7,6 +7,8 @@ export type FileProcessingState = {
   fileId: string; lifecycleVersion: number; sourceId: string | null; sourceVersionId: string | null;
   jobId: string | null; textStatus: string; summaryStatus: string; requirementsStatus: string;
   error: string | null; materialIds: string[]; textAvailable: boolean; canProcess: boolean; needsImages: number;
+  jobStatus?: string | null; executionState?: string | null;
+  concurrency?: { active: number; limit: number }; errorIsHistorical?: boolean; waitingForConcurrency?: boolean;
 };
 export const fileProcessingKey = (projectId: string, fileId: string) => ['fileProcessing', projectId, fileId];
 export function getFileProcessing(projectId: string, fileId: string) {

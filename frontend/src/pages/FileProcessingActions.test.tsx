@@ -35,6 +35,41 @@ describe('visible file processing actions', () => {
     show({ ...state, textStatus: 'processing' });
     expect(await screen.findByRole('button', { name: '后台处理中' })).toBeDisabled();
   });
+  it('allows retry after the actual job failed even when a stage still says running', async () => {
+    show({ ...state, textAvailable: true, textStatus: 'ready', summaryStatus: 'running', jobStatus: 'failed', error: '该项目的 AI 任务并发已达上限', errorIsHistorical: true, concurrency: { active: 0, limit: 2 } });
+    const button = await screen.findByRole('button', { name: '重试处理' });
+    expect(button).toBeEnabled();
+    expect(screen.getByText('上次处理失败：该项目的 AI 任务并发已达上限')).toBeInTheDocument();
+    expect(screen.getByText('当前项目 AI 并发：0 / 2')).toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() => expect(startFileProcessing).toHaveBeenCalledWith('p', 'f', 4, true));
+  });
+  it('uses the actual active job to prevent a retry despite failed stage flags', async () => {
+    show({ ...state, summaryStatus: 'failed', jobStatus: 'running' });
+    const button = await screen.findByRole('button', { name: '后台处理中' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(startFileProcessing).not.toHaveBeenCalled();
+  });
+  it('shows concurrency queue and polls until a slot becomes available without duplicate submission', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      show({ ...state, jobStatus: 'running', waitingForConcurrency: true, concurrency: { active: 2, limit: 2 } });
+      const button = await screen.findByRole('button', { name: '等待空闲名额' });
+      expect(button).toBeDisabled();
+      expect(screen.getByText('任务已排队，系统每分钟自动检查空闲名额，无需重复提交。')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(vi.mocked(getFileProcessing).mock.calls.length).toBeGreaterThan(1);
+      expect(startFileProcessing).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+  it('directs paused work to processing records instead of duplicating paid work', async () => {
+    show({ ...state, textAvailable: true, textStatus: 'ready', summaryStatus: 'running', jobStatus: 'waiting_input', executionState: 'paused' });
+    expect(await screen.findByRole('button', { name: '等待继续处理' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: '查看正文与处理记录' })).toBeInTheDocument();
+    expect(screen.getByText('任务已暂停或等待补充，请在正文与处理记录中继续处理。')).toBeInTheDocument();
+    expect(startFileProcessing).not.toHaveBeenCalled();
+  });
   it('offers manual page preparation for scans', async () => {
     show({ ...state, textStatus: 'waiting_input', needsImages: 2 });
     fireEvent.click(await screen.findByRole('button', { name: '准备扫描页并识别' }));
