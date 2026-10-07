@@ -1,3 +1,5 @@
+import { syncFileProcessingText } from '../services/file-processing';
+import { triggerFileProcessing } from '../services/file-processing-triggers';
 import { materialManageSql } from '../services/task-files';
 import { projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -51,7 +53,7 @@ const resourceUnion = `SELECT 'source' resource_type,s.id,s.title,s.purpose,s.cu
   (SELECT json_extract(v.attachments_json,'$[0].fileId') FROM material_versions v WHERE v.id=m.current_version_id),
   CASE WHEN m.system_managed=0 AND (${materialManageSql('?1','?3','m')}) THEN 1 ELSE 0 END,m.system_managed,'material:'||m.id,
   COALESCE(m.archived_at,(SELECT f.archived_at FROM material_versions v JOIN files f ON f.id=json_extract(v.attachments_json,'$[0].fileId') WHERE v.id=m.current_version_id)),m.task_id
-  FROM materials m WHERE m.project_id=?1`;
+  FROM materials m WHERE m.project_id=?1 AND m.kind!='file-extracted'`;
 
 
 function toResource(row: ResourceRow) {
@@ -105,6 +107,8 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
           .bind(p.resourceId, p.projectId, body.expectedRevision, body.purpose, nowIso(), member.userId).run();
     const current = await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage);
     if (!changed.meta.changes) throw versionConflict(current.revision);
-    return c.json(apiData(c, toResource(current)), 200);
+    if (current.file_id) await triggerFileProcessing(c.env, p.projectId, current.file_id, member.userId);
+    if (p.resourceType === 'source' && current.current_version_id) await syncFileProcessingText(c.env, current.current_version_id);
+    return c.json(apiData(c, toResource(await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage))), 200);
   });
 }

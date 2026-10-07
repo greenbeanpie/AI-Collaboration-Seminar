@@ -1,3 +1,4 @@
+import { triggerFileProcessing } from './file-processing-triggers';
 import { validateOfficePackage, isOfficeExtension, OFFICE_PACKAGES } from './docx-validation';
 import { nowIso, newId, sha256Hex } from '../core/db';
 import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
@@ -141,10 +142,10 @@ export async function storeFileContent(
   params: { projectId: string; fileId: string; bytes: Uint8Array },
 ): Promise<{ sizeBytes: number; sha256: string; mimeDetected: string }> {
   const row = await env.DB.prepare(
-    'SELECT id, project_id, r2_key, ext, status, deleted_at, lifecycle_version FROM files WHERE id = ?1',
+    'SELECT id, project_id, r2_key, ext, status, deleted_at, lifecycle_version, uploader_user_id FROM files WHERE id = ?1',
   )
     .bind(params.fileId)
-    .first<FileRow>();
+    .first<FileRow & { uploader_user_id: string }>();
   if (!row || row.project_id !== params.projectId || row.deleted_at) throw notFound('文件不存在或已移入回收站');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
   if(!params.bytes.length)throw validationFailed('文件不能为空');
@@ -181,6 +182,7 @@ export async function storeFileContent(
     .bind(mimeDetected, params.bytes.byteLength, sha, row.id, outputKey,row.lifecycle_version)
     .run();
   if(!updated.meta.changes) throw invalidState('文件生命周期已变化，上传结果未应用');
+  await triggerFileProcessing(env, params.projectId, row.id, row.uploader_user_id);
   return { sizeBytes: params.bytes.byteLength, sha256: sha, mimeDetected };
 }
 

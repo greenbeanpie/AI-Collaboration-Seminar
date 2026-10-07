@@ -1,3 +1,4 @@
+import { triggerFileProcessing } from '../services/file-processing-triggers';
 import { archiveMaterial, materialManageSql, fileManageSql } from '../services/task-files';
 import { projectPermissionSql } from '../services/project-permissions';
 import { contributorSchema, fileContributors } from '../services/file-contributors';
@@ -373,6 +374,7 @@ export function registerMaterialRoutes(app: OpenAPIHono<AppEnv>): void {
       await c.env.DB.prepare('DELETE FROM material_versions WHERE id = ?1').bind(versionId).run();
       throw versionConflict(material.revision);
     }
+    for (const attachment of attachments) await triggerFileProcessing(c.env, member.projectId, attachment.fileId, member.userId);
     const version = await loadVersion(c.env, versionId, member.projectId);
     return c.json(apiData(c, await toVersion(c.env, member.projectId, version,member.userId)), 201);
   });

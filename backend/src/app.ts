@@ -1,3 +1,4 @@
+import { registerFileProcessingRoutes } from './api/file-processing';
 import { registerAiExecutionPolicyRoutes } from './api/ai-execution-policy';
 import { registerJobExecutionRoutes } from './api/job-execution';
 import { registerProjectChatRoutes } from './api/project-ai-chat';
@@ -137,6 +138,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerRehearsalVoiceRoutes(app);
   registerLedgerRoutes(app);
   registerFileRoutes(app);
+  registerFileProcessingRoutes(app);
   registerMultipartRoutes(app);
   registerDocumentImportRoutes(app);
   app.route('/api/v1',resourceIndexApi);

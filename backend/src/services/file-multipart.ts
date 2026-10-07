@@ -1,3 +1,4 @@
+import { triggerFileProcessing } from './file-processing-triggers';
 import type { Env } from '../env';
 import { AppError, invalidState, notFound, validationFailed, unsupportedMediaType } from '../core/errors';
 import { nowIso } from '../core/db';
@@ -102,6 +103,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
    env.DB.prepare(`UPDATE file_upload_sessions SET status='complete',operation_token=NULL,operation_expires_at=NULL,updated_at=?3 WHERE id=?1 AND status='completing' AND operation_token=?2 AND ${liveGuard('?4','?5','?6','?7')} AND EXISTS(SELECT 1 FROM files WHERE id=?4 AND status='available' AND r2_key=?8)`).bind(id,token,nowIso(),file,project,user,s.lifecycle_version,s.r2_key)
   ]);
   if(!result[0]?.meta.changes||!result[1]?.meta.changes)throw invalidState('文件生命周期、项目成员或完成租约已变化');
+  await triggerFileProcessing(env, project, file, user);
   return {fileId:file,status:'available'};
  } catch(error) {
   if(completed&&error instanceof AppError&&error.code==='UNSUPPORTED_MEDIA_TYPE') {

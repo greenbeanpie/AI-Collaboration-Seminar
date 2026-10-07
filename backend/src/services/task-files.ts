@@ -1,3 +1,4 @@
+import { triggerFileProcessing } from './file-processing-triggers';
 import type { Paging } from '../core/pagination';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -87,6 +88,7 @@ export async function saveTaskFile(env: Env, params: {projectId:string;taskId:st
     }
     throw invalidState('任务分工、权限、文件状态或数量限制已变化，请刷新');
   }
+  await triggerFileProcessing(env,projectId,fileId,actorId);
   return readTaskFile(env,projectId,taskId,materialId,actorId);
 }
 export async function archiveFile(env: Env, params:{projectId:string;fileId:string;actorId:string;expectedLifecycleVersion:number;restore:boolean}) {
