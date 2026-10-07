@@ -1,3 +1,4 @@
+import { createAssessmentFollowup, listAssessmentFollowups, followupInput, followupSchema } from '../services/assessment-followups';
 import { aiActivitySchema, readActivity } from '../services/ai-activity';
 import { effectiveStandardGuardSql } from '../services/effective-standard';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -68,6 +69,12 @@ export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
     const paging=parsePaging(c.req.query()),rows=await c.env.DB.prepare(`SELECT id,created_at FROM assessments WHERE project_id=?1 UNION ALL SELECT id,created_at FROM reviews WHERE project_id=?1 UNION ALL SELECT id,created_at FROM rehearsals WHERE project_id=?1 AND NOT EXISTS(SELECT 1 FROM assessments a WHERE a.entity_id=rehearsals.id) ORDER BY created_at DESC,id DESC`).bind(c.req.param('projectId')).all<{id:string;created_at:string}>();
     const eligible=rows.results.filter(r=>!paging.cursor||r.created_at<paging.cursor.createdAt||(r.created_at===paging.cursor.createdAt&&r.id<paging.cursor.id)),page=eligible.slice(0,paging.limit),last=page.at(-1);return c.json(apiData(c,{items:await Promise.all(page.map(r=>assessmentById(c,r.id))),nextCursor:nextCursor(eligible.length>paging.limit,last?{createdAt:last.created_at,id:last.id}:undefined)??null}));
   },undefined,200,z.object({cursor:z.string().optional(),limit:z.string().optional()}));
+  endpoint(app,'get','/assessments/{assessmentId}/followups','AssessmentFollowupsResponse',z.object({items:z.array(followupSchema),nextCursor:z.string().nullable()}),async c=>c.json(apiData(c,await listAssessmentFollowups(c.env,c.req.param('projectId')!,c.req.param('assessmentId')!,c.req.query()))),undefined,200,z.object({cursor:z.string().optional(),limit:z.string().optional()}));
+  endpoint(app,'post','/assessments/{assessmentId}/followups','AssessmentFollowupCreateResponse',z.object({followupId:z.string().uuid(),jobId:z.string().uuid()}),async c=>{
+    const projectId=c.req.param('projectId')!,id=c.req.param('assessmentId')!,userId=c.get('user')!.id,body=followupInput.parse(await c.req.json());
+    const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),userId,operation:'assessment.followup',required:true,rawBody:JSON.stringify({projectId,id,body})},async()=>({status:202 as const,body:await createAssessmentFollowup(c.env,projectId,id,userId,body)}));
+    return c.json(apiData(c,result.body),202);
+  },followupInput,202);
   endpoint(app,'patch','/assessments/{assessmentId}/scores','AssessmentCorrectionResponse',assessmentSchema,async c=>{const body=await c.req.json(),projectId=c.req.param('projectId')!,id=c.req.param('assessmentId')!,userId=c.get('user')!.id;const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),userId,operation:'assessment.correct',rawBody:JSON.stringify({projectId,id,body})},async()=>({status:200 as const,body:await correctAssessment(c.env,projectId,id,userId,body)}));return c.json(apiData(c,result.body));},correctionInput);
   endpoint(app,'get','/assessments/{assessmentId}','AssessmentResponse',assessmentSchema,async c=>c.json(apiData(c,await assessmentById(c,c.req.param('assessmentId')!))));
   const create=z.object({kind:z.enum(['material_review','rehearsal']),standardsVersionId:z.string().uuid().optional(),materialVersionIds:z.array(z.string().uuid()).max(10).default([]),sourceVersionIds:z.array(z.string().uuid()).max(5).default([]),goalRevision:revision.optional()}).strict();

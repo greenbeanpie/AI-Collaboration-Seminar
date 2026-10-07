@@ -1,3 +1,4 @@
+import { runAssessmentFollowupJob } from './assessment-followups';
 import { isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
@@ -77,6 +78,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
   const input = JSON.parse(job.input_json) as ReviewJobInput;
   const requester=await env.DB.prepare('SELECT created_by FROM jobs WHERE id=?1').bind(jobId).first<{created_by:string}>();
   if(!requester)throw new AppError('NOT_FOUND','任务请求者不存在',404,false);
+  if((input as unknown as {followupId?:string}).followupId){await runAssessmentFollowupJob(env,jobId);return;}
   if(input.assessmentId){await runMaterialAssessmentJob(env,jobId);return;}
   try {
     const review = await env.DB.prepare('SELECT * FROM reviews WHERE id = ?1 AND project_id = ?2 AND (job_id IS NULL OR job_id=?3)')

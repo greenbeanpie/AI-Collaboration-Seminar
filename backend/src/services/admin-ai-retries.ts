@@ -70,7 +70,7 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  const config=await loadAiConfig(env.DB,input.configVersionId);
  if(!config?.enabled)return {status:'skipped',reason:'原模型配置不可用'};
  const guards:string[]=["EXISTS(SELECT 1 FROM auth_accounts WHERE user_id=?4 AND password_hash IS NOT NULL)","old.status='failed'","old.updated_at=?3","NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=old.id)"];
- const requiredPermission=job.kind==='review_run'?'scoreInitiate':input.operation==='standards.generate'?'owner':input.operation?.startsWith('collaboration.')&& !['collaboration.summary','collaboration.agent-eligibility','collaboration.assistance-plan','collaboration.evaluate'].includes(input.operation)?'taskManage':null;
+ const requiredPermission=job.kind==='review_run'?(input.followupId?'scoreCorrect':'scoreInitiate'):input.operation==='standards.generate'?'owner':input.operation?.startsWith('collaboration.')&& !['collaboration.summary','collaboration.agent-eligibility','collaboration.assistance-plan','collaboration.evaluate'].includes(input.operation)?'taskManage':null;
  if(job.project_id){
  guards.push("EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=old.project_id AND p.status='active' AND m.user_id=?4)");
  if(requiredPermission==='owner')guards.push("EXISTS(SELECT 1 FROM project_members WHERE project_id=old.project_id AND user_id=?4 AND role='owner')");
@@ -98,7 +98,8 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  if(input.runId){await requireRow('agent_runs','job_id',"status='failed'");reset.push({table:'agent_runs',pointer:'job_id',extra:"status='running',output_json=NULL,"});}
  if(input.reviewId){await requireRow('reviews','job_id',"status='failed' AND created_by=?4");reset.push({table:'reviews',pointer:'job_id',extra:"status='pending',"});}
  if(input.rehearsalId){await requireRow('rehearsals','processing_job_id',"status='active' AND created_by=?4");reset.push({table:'rehearsals',pointer:'processing_job_id',extra:"finish_job_id=CASE WHEN finish_job_id=?1 THEN ?2 ELSE finish_job_id END,"});}
- if(input.assessmentId||input.rehearsalId){await requireRow('assessments','job_id',"status!='succeeded' AND origin='ai' AND revision=1");reset.push({table:'assessments',pointer:'job_id',extra:"status='active',"});}
+ if(input.followupId){await requireRow('assessment_followups','job_id',"status='failed' AND user_id=?4 AND EXISTS(SELECT 1 FROM assessments a WHERE a.id=assessment_followups.assessment_id AND a.revision=assessment_followups.base_revision AND a.status='succeeded')");reset.push({table:'assessment_followups',pointer:'job_id',extra:"status='queued',error_json=NULL,"});}
+ if(!input.followupId&&(input.assessmentId||input.rehearsalId)){await requireRow('assessments','job_id',"status!='succeeded' AND origin='ai' AND revision=1");reset.push({table:'assessments',pointer:'job_id',extra:"status='active',"});}
  if(input.submissionId){await requireRow('task_submissions','evaluation_job_id',"status IN ('pending','evaluated') AND EXISTS(SELECT 1 FROM tasks t WHERE t.current_submission_id=task_submissions.id AND t.lifecycle_state='submitted' AND t.revision=task_submissions.task_revision AND t.assignee_id=task_submissions.submitted_by) AND (submitted_by=?4 OR "+projectPermissionSql('task_submissions.project_id','?4','taskManage')+')');reset.push({table:'task_submissions',pointer:'evaluation_job_id'});}
  if(input.operation==='collaboration.decompose'||input.operation==='collaboration.assign'){
  guards.push("NOT EXISTS(SELECT 1 FROM collaboration_proposals WHERE job_id=old.id AND status!='pending')");
