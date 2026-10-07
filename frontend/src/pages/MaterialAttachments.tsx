@@ -36,7 +36,7 @@ export function MaterialAttachments({ material, disabled, archiveDisabled = disa
     <FileContributorPicker projectId={projectId} value={contributorIds} onChange={setContributorIds} disabled={disabled || busy} />
     <label className="tm-attachment-upload">上传并关联附件 <AiReferenceBadge ariaHidden /><input type="file" disabled={disabled || busy || contributorIds?.length === 0 || attachments.length >= 20 || !current} onChange={e => {
       const file = e.target.files?.[0]; e.target.value = '';
-      if (file) void run(async () => { const id = await uploadProjectFile(projectId, file, undefined, undefined, { contributorIds }); await update([...attachments.map(a => a.fileId), id]); });
+      if (file) void run(async () => { const id = await uploadProjectFile(projectId, file, undefined, undefined, { contributorIds, purpose:material.purpose }); await update([...attachments.map(a => a.fileId), id]); });
     }} /></label>
     {busy && <p role="status">正在保存附件版本……</p>}{Boolean(error) && <ErrorNotice error={error} />}
   </section>;

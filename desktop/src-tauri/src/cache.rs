@@ -755,7 +755,7 @@ async fn transfer(app: &AppHandle, row: &mut NativeFile) -> Result<()> {
         let data = api(client
             .post(url(&row.project_id, "/files"))
             .header("Idempotency-Key", &row.id)
-            .json(&json!({"fileName":row.name})))
+            .json(&json!({"fileName":row.name,"purpose":"output"})))
         .await?;
         let id = data["fileId"].as_str().ok_or("缺少文件标识")?;
         valid_id(id)?;

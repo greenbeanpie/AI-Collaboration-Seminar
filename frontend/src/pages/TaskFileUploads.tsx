@@ -37,7 +37,7 @@ export function TaskFileUploads({ projectId, taskId, disabled, onBusy }: { proje
             const existing = await api.get<'FileListResponse'>(projectPath(projectId, '/files'), { fileId: row.initializedId, limit: 1 });
             if (existing.items.some(file => file.fileId === row.initializedId && file.status === 'available' && !file.archivedAt)) storedId = row.initializedId;
           }
-          const fileId = storedId ?? await uploadProjectFile(projectId, row.file, row.key, initializedId => { row.initializedId = initializedId; setRow(row.key, { initializedId }); });
+          const fileId = storedId ?? await uploadProjectFile(projectId, row.file, row.key, initializedId => { row.initializedId = initializedId; setRow(row.key, { initializedId }); }, {purpose:'output'});
           row.uploadedId = fileId; setRow(row.key, { uploadedId: fileId });
           // 登记前默认提取正文；提取失败不阻断入库，只提示材料检查将读不到正文。
           const extracted = await extractTaskFileText(row.file);

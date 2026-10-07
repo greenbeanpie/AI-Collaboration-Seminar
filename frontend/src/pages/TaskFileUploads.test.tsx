@@ -26,7 +26,7 @@ it('uploads bytes then registers the file automatically without a material picke
   const selected = new File(['bytes'], '新文件.pdf', { type: 'application/pdf' });
   fireEvent.change(screen.getByLabelText('上传成果文件'), { target: { files: [selected] } });
   await waitFor(() => expect(request).toHaveBeenCalledWith('p', '/tasks/t/files', expect.objectContaining({ method: 'POST', body: { fileId: 'new-file' } })));
-  expect(upload).toHaveBeenCalledWith('p', selected, expect.any(String), expect.any(Function));
+  expect(upload).toHaveBeenCalledWith('p', selected, expect.any(String), expect.any(Function), {purpose:'output'});
   expect(screen.queryByLabelText(/绑定材料/)).toBeNull();
 });
 it('reuses successfully uploaded bytes when registration fails and is retried', async () => {

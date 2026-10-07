@@ -17,6 +17,7 @@ const paramsProject = z.object({ projectId: z.string().uuid().openapi({ descript
 const paramsFile = paramsProject.extend({ fileId: z.string().uuid() });
 
 const initBody = z.object({
+  purpose: z.enum(['background','reference','output']).optional(),
   contributorIds: z.array(z.string().uuid()).min(1).optional(),
   derivedFromFileId: z.string().uuid().optional(),
   fileName: z.string().min(1).max(255),
@@ -153,6 +154,7 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
         contentType: body.contentType,
         contributorIds: body.contributorIds,
         derivedFromFileId: body.derivedFromFileId,
+        purpose: body.purpose,
       });
       return { status: 201 as const, body: { fileId: file.fileId, upload: { method: 'PUT' as const, url: file.uploadUrl } } };
     });

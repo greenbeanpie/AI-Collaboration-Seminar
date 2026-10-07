@@ -80,7 +80,7 @@ export function validateUploadBytes(ext: string, bytes: Uint8Array): string {
 /** 步骤一：创建文件记录并分配服务端 R2 key（客户端不能指定对象路径） */
 export async function createFileInit(
   env: Env,
-  params: { projectId: string; uploaderUserId: string; fileName: string; contentType?: string; contributorIds?: string[]; derivedFromFileId?: string },
+  params: { projectId: string; uploaderUserId: string; fileName: string; contentType?: string; contributorIds?: string[]; derivedFromFileId?: string; purpose?:'background'|'reference'|'output' },
 ): Promise<{ fileId: string; uploadUrl: string }> {
   const ext = extOf(params.fileName);
   if (!(ALLOWED_UPLOAD_EXTENSIONS as readonly string[]).includes(ext)) {
@@ -104,13 +104,13 @@ export async function createFileInit(
   const fileId = newId();
   const r2Key = `${params.projectId}/${fileId}${ext}`;
   const insert = env.DB.prepare(
-    `INSERT INTO files (id, project_id, uploader_user_id, r2_key, mime_declared, ext, status, created_at, original_name)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8
+    `INSERT INTO files (id, project_id, uploader_user_id, r2_key, mime_declared, ext, status, created_at, original_name,processing_purpose)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8,?11
      WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3)
        AND ((?9 IS NOT NULL AND EXISTS(SELECT 1 FROM files WHERE id=?9 AND project_id=?2 AND deleted_at IS NULL))
          OR (?9 IS NULL AND NOT EXISTS(SELECT 1 FROM json_each(?10) requested WHERE NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=requested.value))))`,
   )
-    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName, params.derivedFromFileId ?? null, JSON.stringify(ids));
+    .bind(fileId, params.projectId, params.uploaderUserId, r2Key, params.contentType ?? null, ext, nowIso(), params.fileName, params.derivedFromFileId ?? null, JSON.stringify(ids),params.purpose??null);
   const derived = params.derivedFromFileId ? [env.DB.prepare(
     'INSERT INTO file_derivations(file_id,parent_file_id) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM files WHERE id=?1)',
   ).bind(fileId,params.derivedFromFileId)] : [];
