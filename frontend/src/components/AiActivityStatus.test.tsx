@@ -121,3 +121,9 @@ it('explains exhausted output repair and retains checkpoint resume', () => {
   expect(screen.getByText('自动修正未完成：引用校验未通过')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '从停止处继续' })).toBeEnabled();
 });
+
+it('labels protected output-invalid pauses as unfinished correction and keeps continuation',()=>{
+ const current=job('waiting_input');current.execution={generation:1,windowCalls:2,totalCalls:2,limit:100,state:'paused',pauseReason:'output_invalid',canContinue:true,canOutput:true};
+ render(<AiActivityStatus job={current} showHistory={false}/>);
+ expect(screen.getByText('自动修正未完成')).toBeInTheDocument();expect(screen.getByRole('button',{name:'继续处理'})).toBeInTheDocument();
+});
