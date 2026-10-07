@@ -44,7 +44,7 @@ export function TaskFileUploads({ projectId, taskId, disabled, onBusy }: { proje
           const body: Record<string, unknown> = { fileId };
           let notice: string | undefined;
           if (!extracted) {
-            if (isTextExtractable(row.file.name)) notice = '未能提取正文，材料检查将无法读取该文件内容（扫描件请先在来源中 OCR，或把文字粘贴为文档）。';
+            if (isTextExtractable(row.file.name)) notice = '未能提取正文，材料检查将无法读取该文件内容（请在资料中打开此成果的附件并点击“提取正文”；扫描件点击“准备扫描页并识别”）。';
           } else {
             if (extracted.text.trim()) body.text = extracted.text;
             notice = extracted.warning ?? (extracted.text.trim() ? `已提取正文（${extracted.text.trim().length} 字），材料检查可直接引用。` : undefined);
