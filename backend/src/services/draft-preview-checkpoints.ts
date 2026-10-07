@@ -19,11 +19,22 @@ export interface DraftPreviewCheckpoint {
   requestedGoal?: z.infer<typeof creationGoal>;
   system: string;
   step: number;
+  segment?: number;
+  dispatchGeneration?: number;
+  dispatchSegment?: number;
+  dispatchInstanceId?: string;
+  executionGeneration?: number;
+  feedback?: string;
+  finalizing?: boolean;
+  providerRetry?: {attempt:number;deadline:number;nextAttemptAt:number};
   exchanges: ToolExchange[];
   pendingDispatch?: boolean;
   pendingOutput?: GatewayCallOutput;
   pendingResults?: ToolExchange['results'];
   content?: string;
+}
+export class DraftPreviewYield extends Error {
+  constructor() { super('预览检查点已保存，等待下一执行分段'); this.name='DraftPreviewYield'; }
 }
 interface Envelope { format:'encrypted-draft-preview-v1';chunks:string[] }
 export class DraftCheckpointBusy extends Error {

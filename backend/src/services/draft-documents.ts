@@ -131,8 +131,16 @@ export async function finishDraftImport(env:Env,draftId:string,userId:string,fil
 export async function readDraftDocument(env:Env,draftId:string,userId:string,fileId:string,offset:number,charOffset=0) {
  const assertRead=async()=>{const draft=await getDraft(env,draftId,userId);if(draft.status!=='active'||!await env.DB.prepare('SELECT 1 FROM creation_draft_files WHERE id=?1 AND draft_id=?2 AND removed=0').bind(fileId,draftId).first())throw notFound('草稿正文不可用');};
  await assertRead();
- const rows=await env.DB.prepare('SELECT seq,page_number pageNumber,content text,heading_json heading FROM draft_document_blocks WHERE draft_id=?1 AND file_id=?2 ORDER BY seq LIMIT 2 OFFSET ?3').bind(draftId,fileId,offset).all<{seq:number;pageNumber:number|null;text:string;heading:string}>();
+ const rows=await env.DB.prepare('SELECT seq,page_number pageNumber,content text,heading_json heading FROM draft_document_blocks WHERE draft_id=?1 AND file_id=?2 ORDER BY seq LIMIT 51 OFFSET ?3').bind(draftId,fileId,offset).all<{seq:number;pageNumber:number|null;text:string;heading:string}>();
  await assertRead();
- const block=rows.results[0],chars=Array.from(block?.text??''),more=chars.length>charOffset+6000;
- return {untrustedData:true,fileId,blocks:block?[{...block,text:chars.slice(charOffset,charOffset+6000).join(''),locator:`block:${block.seq}`,headingPath:JSON.parse(block.heading) as string[]}]:[],nextOffset:more?offset:rows.results.length>1?offset+1:null,nextCharOffset:more?charOffset+6000:0};
+ const blocks:Array<{seq:number;pageNumber:number|null;text:string;locator:string;headingPath:string[]}>=[];
+ let remaining=6000,nextOffset:number|null=null,nextCharOffset=0;
+ for(const [index,block] of rows.results.entries()) {
+  if(index>=50||remaining===0){nextOffset=offset+index;break;}
+  const chars=Array.from(block.text),start=index===0?charOffset:0,part=chars.slice(start,start+remaining);
+  blocks.push({seq:block.seq,pageNumber:block.pageNumber,text:part.join(''),locator:`block:${block.seq}`,headingPath:JSON.parse(block.heading) as string[]});
+  remaining-=part.length;
+  if(start+part.length<chars.length){nextOffset=offset+index;nextCharOffset=start+part.length;break;}
+ }
+ return {untrustedData:true,fileId,blocks,nextOffset,nextCharOffset};
 }

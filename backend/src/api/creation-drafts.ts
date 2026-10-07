@@ -15,10 +15,11 @@ import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
 import { newCreationPayload, creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
-import { enqueueDraftPreview, enqueueDraftContinuation } from '../services/draft-preview-jobs';
+import { enqueueDraftPreview, enqueueDraftContinuation, controlDraftExecution, enqueueDraftPreviewSegment } from '../services/draft-preview-jobs';
 import { answerClarification, answerSchema, cancelClarification, clarificationSchema } from '../services/ai-clarifications';
-import { loadDraftCheckpoint } from '../services/draft-preview-checkpoints';
+import { loadDraftCheckpoint, DraftPreviewYield } from '../services/draft-preview-checkpoints';
 import { projectTemplates } from '../services/creation-template';
+import { executionSchema } from '../services/ai-execution-control';
 const base = '/api/v1/creation-drafts';
 const params = z.object({
   draftId: z.string().uuid()
@@ -29,7 +30,7 @@ const fileSchema = z.object({
   id: z.string().uuid(), name: z.string(),mediaStatus:z.string().nullable().optional(),mediaJobId:z.string().uuid().nullable().optional(),audio:audioStatusSchema.nullable().optional(),mediaSummary:mediaSummarySchema.nullable().optional(),mediaError:z.string().nullable().optional(), sizeBytes: z.number(), sha256: z.string(), textReady: z.boolean(), textError: z.string().nullable()
 });
 const schema = z.object({
-  activity:aiActivitySchema.nullable(), id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
+  execution:executionSchema.nullable(),activity:aiActivitySchema.nullable(), id: z.string().uuid(), status: z.enum(['active', 'cancelled', 'committed']), revision, payload: creationPayload, preview: z.object({
     goal:creationGoal.optional(),tasks: z.array(creationTask), mode: z.enum(['ai', 'manual']), configVersionId: z.string().optional()
   }).nullable(), previewRevision: revision.nullable(), previewAttemptId: z.string().uuid().nullable().optional(), previewState: z.string(), clarification: clarificationSchema.nullable(), previewError: z.string().nullable(), files: z.array(fileSchema), removedFiles: z.array(fileSchema), projectId: z.string().nullable(), updatedAt: z.string()
 });
@@ -294,7 +295,18 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       background?:boolean;
     };
     if(b.background && b.mode==='ai')return c.json(apiData(c,await enqueueDraftPreview(c.env,c.req.valid('param').draftId,c.get('user')!.id,b.expectedRevision,b.tasks,b.regenerate,b.goal)),200);
-    return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate,b.goal)), 200);
+    try {return c.json(apiData(c, await previewDraft(c.env, c.req.valid('param').draftId, c.get('user')!.id, b.expectedRevision, b.mode, b.tasks, b.regenerate,b.goal)), 200);}
+    catch(error) {
+      if(!(error instanceof DraftPreviewYield))throw error;
+      const row=await getDraft(c.env,c.req.valid('param').draftId,c.get('user')!.id);
+      if(row.preview_attempt_id)await enqueueDraftPreviewSegment(c.env,{draftId:row.id,userId:row.owner_id,revision:row.revision,attempt:row.preview_attempt_id,tasks:[]});
+      return c.json(apiData(c,await draftView(c.env,row)),200);
+    }
+  });
+  app.openapi(createRoute({method:'post',path:base+'/{draftId}/execution/{action}',tags:['creation'],request:{params:params.extend({action:z.enum(['continue','output','cancel'])}),body:json(z.object({expectedGeneration:z.number().int().min(1)}).strict())},responses:{200:{description:'继续、输出已有结果或取消后台执行',content:{'application/json':{schema:response}}}}}),async c=>{
+    const p=c.req.valid('param'),body=c.req.valid('json') as {expectedGeneration:number},userId=c.get('user')!.id;
+    const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId,operation:`creation-draft.execution.${p.action}`,rawBody:JSON.stringify({draftId:p.draftId,...body})},async()=>({status:200 as const,body:await controlDraftExecution(c.env,p.draftId,userId,body.expectedGeneration,p.action)}));
+    return c.json(apiData(c,result.body),200);
   });
   const questionParams=params.extend({questionId:z.string().uuid()});
   app.openapi(createRoute({method:'post',path:base+'/{draftId}/clarifications/{questionId}/answer',tags:['creation'],request:{params:questionParams,body:json(answerSchema)},responses:{200:{description:'保存回答并继续原预览',content:{'application/json':{schema:response}}}}}),async c=>{

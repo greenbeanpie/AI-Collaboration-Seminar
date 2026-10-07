@@ -4,7 +4,7 @@ import { seedUser, authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { newId } from '../src/core/db';
 import { createApp } from '../src/app';
-import { previewDraft, getDraft, draftView } from '../src/services/creation-drafts';
+import { previewDraft, getDraft, draftView, DraftPreviewYield } from '../src/services/creation-drafts';
 import { enqueueDraftPreview, recoverDraftPreviews } from '../src/services/draft-preview-jobs';
 import { answerClarification } from '../src/services/ai-clarifications';
 import { loadDraftCheckpoint } from '../src/services/draft-preview-checkpoints';
@@ -67,7 +67,8 @@ describe('durable private draft clarification',()=>{
     for(let round=1;round<=3;round++) {
       expect(state.previewState).toBe('waiting_input');expect(state.clarification.round).toBe(round);
       expect((await f.request(`/${f.id}/clarifications/${state.clarification.id}/answer`,{expectedRevision:1,text:`第${round}轮补充`})).status).toBe(200);
-      state=await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,attempt);
+      try {state=await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,attempt);}
+      catch(error){if(!(error instanceof DraftPreviewYield))throw error;state=await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,attempt);}
     }
     expect(state.previewState).toBe('ready');expect(requests).toHaveLength(5);
     const toolResults=requests[4]!.messages.filter((m:any)=>m.role==='tool').map((m:any)=>JSON.parse(m.content));
@@ -107,12 +108,12 @@ describe('durable private draft clarification',()=>{
     const f=await fixture();f.create.mockRejectedValueOnce(new Error('unavailable'));
     const pending=await enqueueDraftPreview(f.local,f.id,f.owner.userId,1,[],false);
     expect(pending.previewState).toBe('running');expect(pending.previewError).toContain('自动核对恢复');expect(f.instances.size).toBe(0);
-    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(pending.previewAttemptId).first()).toEqual({status:'pending'});
+    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(`${pending.previewAttemptId}-g1-s0`).first()).toEqual({status:'pending'});
     await recoverDraftPreviews(f.local);expect(f.instances.size).toBe(1);
     expect((await read(f)).previewError).toBeNull();
     const provider=vi.fn(async()=>modelResponse('请确认范围'));vi.stubGlobal('fetch',provider);
     const waiting=await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,pending.previewAttemptId!);expect(waiting.previewState).toBe('waiting_input');
-    await env.DB.prepare("UPDATE draft_preview_dispatches SET status='pending' WHERE instance_id=?1").bind(pending.previewAttemptId).run();
+    await env.DB.prepare("UPDATE draft_preview_dispatches SET status='pending' WHERE instance_id=?1").bind(`${pending.previewAttemptId}-g1-s0`).run();
     const calls=f.create.mock.calls.length;await recoverDraftPreviews(f.local);expect(f.create.mock.calls.length).toBe(calls);expect(provider).toHaveBeenCalledOnce();
   });
 
@@ -137,11 +138,11 @@ describe('durable private draft clarification',()=>{
     f.create.mockImplementationOnce(async({id})=>{f.instances.add(id);throw new Error('response lost');});
     const pending=await enqueueDraftPreview(f.local,f.id,f.owner.userId,1,[],false);
     expect(pending.previewState).toBe('running');expect(pending.previewError).toBeNull();
-    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(pending.previewAttemptId).first()).toEqual({status:'dispatched'});
-    await env.DB.prepare("UPDATE draft_preview_dispatches SET status='pending' WHERE instance_id=?1").bind(pending.previewAttemptId).run();
+    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(`${pending.previewAttemptId}-g1-s0`).first()).toEqual({status:'dispatched'});
+    await env.DB.prepare("UPDATE draft_preview_dispatches SET status='pending' WHERE instance_id=?1").bind(`${pending.previewAttemptId}-g1-s0`).run();
     await f.request(`/${f.id}/state`,{expectedRevision:1,status:'cancelled'});
     await recoverDraftPreviews(f.local);expect(f.create).toHaveBeenCalledOnce();
-    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(pending.previewAttemptId).first()).toEqual({status:'cancelled'});
+    expect(await env.DB.prepare('SELECT status FROM draft_preview_dispatches WHERE instance_id=?1').bind(`${pending.previewAttemptId}-g1-s0`).first()).toEqual({status:'cancelled'});
   });
 
   it('rejects changed configuration while waiting and never replays an uncertain paid dispatch',async()=>{
@@ -152,10 +153,10 @@ describe('durable private draft clarification',()=>{
     expect((await read(f)).previewState).toBe('waiting_input');expect(f.instances.size).toBe(0);
     expect((await f.request(`/${f.id}/clarifications/${state.clarification.id}/cancel`,{expectedRevision:1})).status).toBe(200);
     const provider=vi.fn(async()=>{throw new TypeError('network failed');});vi.stubGlobal('fetch',provider);
-    expect((await f.request(`/${f.id}/preview`,{expectedRevision:1,mode:'ai',regenerate:true})).status).toBe(503);
-    const failed=await read(f);expect(failed.previewState).toBe('failed');expect(provider).toHaveBeenCalledOnce();
+    expect((await f.request(`/${f.id}/preview`,{expectedRevision:1,mode:'ai',regenerate:true})).status).toBe(200);
+    const failed=await read(f);expect(failed.previewState).toBe('paused_round_limit');expect(failed.execution?.pauseReason).toBe('request_uncertain');expect(provider).toHaveBeenCalledOnce();
     const checkpoint=await loadDraftCheckpoint(f.local,failed.previewAttemptId!);expect(checkpoint!.checkpoint.pendingDispatch).toBe(true);
     await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='running' WHERE id=?1").bind(f.id).run();
-    expect((await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,failed.previewAttemptId!)).previewState).toBe('running');expect(provider).toHaveBeenCalledOnce();
+    expect((await previewDraft(f.local,f.id,f.owner.userId,1,'ai',[],false,undefined,failed.previewAttemptId!)).previewState).toBe('paused_round_limit');expect(provider).toHaveBeenCalledOnce();
   });
 });
