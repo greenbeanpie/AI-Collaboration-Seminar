@@ -12,6 +12,7 @@ import { dispatchResumedExecution } from '../services/ai-execution-slices';
 import { reserveAiSlot, settleReservation } from '../services/ai-reservations';
 import { getJob, succeedJob, type JobRow } from '../services/jobs';
 import { loadActiveSourceVersion } from '../services/source-lifecycle';
+import { requireProjectPermission } from '../services/project-permissions';
 
 /** Deliver known covered material without marking the source's OCR/text pipeline complete. */
 async function partialMaterial(env:Env,job:JobRow):Promise<unknown|null>{
@@ -42,7 +43,7 @@ export function registerJobExecutionRoutes(app:OpenAPIHono<AppEnv>):void{
   const {jobId:original,action}=c.req.valid('param'),body=c.req.valid('json'),user=c.get('user')!;
   await authorizedJob(c.env,original,user.id);
   const job=await authorizedJob(c.env,await currentSuccessor(c.env,original),user.id);
-  const input=JSON.parse(job.input_json) as {requestedBy?:string;sourceVersionId?:string;sourceLifecycleVersion?:number;configVersionId?:string};
+  const input=JSON.parse(job.input_json) as {requestedBy?:string;sourceVersionId?:string;sourceLifecycleVersion?:number;configVersionId?:string;followupId?:string};
   const requestedActor=input.requestedBy??job.created_by;
   if(requestedActor&&requestedActor!==user.id)throw permissionDenied('仅原请求账户可继续、输出或取消任务');
   if(!requestedActor&&job.project_id&&!await c.env.DB.prepare("SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2 AND role='owner'").bind(job.project_id,user.id).first())throw permissionDenied('自动任务仅项目负责人可继续、输出或取消');
@@ -55,6 +56,8 @@ export function registerJobExecutionRoutes(app:OpenAPIHono<AppEnv>):void{
       // The execution and active retry descendants were cancelled atomically by the controller.
       await settleReservation(c.env,job.id,'settled');
     }else{
+      // Membership alone cannot authorize resuming a score-changing follow-up.
+      if(input.followupId && job.project_id)await requireProjectPermission(c.env,job.project_id,user.id,'scoreCorrect');
       const execution=await readExecution(c.env,target);
       if(!execution)throw invalidState('该任务没有可继续的 AI 检查点');
       await resumeExecution(c.env,target,body.expectedGeneration,action,{allowUncertainDispatch:body.allowUncertainDispatch});

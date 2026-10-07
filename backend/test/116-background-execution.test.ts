@@ -13,7 +13,7 @@ import { newId, nowIso } from '../src/core/db';
 import { AppError } from '../src/core/errors';
 import { backgroundModelCall } from '../src/services/background-model-call';
 import { ExecutionPaused, ensureExecution, pauseExecution, readExecution, resumeExecution, cancelExecution } from '../src/services/ai-execution-control';
-import { activeExecutionSlice, BackgroundContinuation, executeAiSlice } from '../src/services/ai-execution-slices';
+import { activeExecutionSlice, BackgroundContinuation, executeAiSlice, dispatchResumedExecution } from '../src/services/ai-execution-slices';
 import { failJob, getJob, reconcileWorkflowJob, succeedJob } from '../src/services/jobs';
 import { recoverAutomaticAiRetries } from '../src/services/ai-automatic-retries';
 import { registerJobExecutionRoutes } from '../src/api/job-execution';
@@ -26,6 +26,17 @@ async function fixture(kind='agent_run'){
 }
 function routes(){const app=new OpenAPIHono<AppEnv>();registerJobExecutionRoutes(app);app.onError((e,c)=>c.json({error:e instanceof AppError?{code:e.code,message:e.message}:{code:'INTERNAL'}},e instanceof AppError?e.status as 409:500));return app;}
 describe('background processing windows',()=>{
+ it.each(['continue','output'] as const)('rejects follow-up %s after score-correction permission is revoked without reserving a slot',async action=>{
+  const f=await fixture('review_run');
+  await env.DB.prepare("UPDATE jobs SET input_json=?2 WHERE id=?1").bind(f.jobId,JSON.stringify({followupId:newId()})).run();
+  await pauseExecution(env,f.target,'round_limit');
+  await env.DB.prepare("UPDATE project_members SET role='member' WHERE project_id=?1 AND user_id=?2").bind(f.projectId,f.owner.userId).run();
+  const create=vi.fn(),local={...env,AGENT_WORKFLOW:{create}} as unknown as Env;
+  const response=await routes().request(`https://example.com/api/v1/jobs/${f.jobId}/execution/${action}`,{method:'POST',headers:{cookie:authCookie(f.owner.token),'content-type':'application/json','idempotency-key':newId()},body:'{"expectedGeneration":1}'},local);
+  expect(response.status).toBe(403);expect(create).not.toHaveBeenCalled();
+  expect(await readExecution(env,f.target)).toMatchObject({state:'paused',generation:1});
+  expect(await env.DB.prepare("SELECT 1 FROM usage_reservations WHERE job_id=?1 AND status='reserved'").bind(f.jobId).first()).toBeNull();
+ });
  it('yields after one new generation and pauses the next window boundary without failure or retry',async()=>{
   const f=await fixture();await env.DB.prepare('UPDATE ai_executions SET call_limit=1 WHERE target_id=?1').bind(f.jobId).run();
   const local:Env={...env,AI_EXECUTION_CONTEXT:{modelCalls:0}},model=vi.fn(async()=>({text:'saved'}));
@@ -142,6 +153,16 @@ describe('background processing windows',()=>{
       const {succeedJob}=await import('../src/services/jobs');await succeedJob(env,f.jobId,result.data);
     });
     if((await getJob(env,f.jobId)).status==='succeeded')break;
+    // A bounded repair window requires explicit continuation before another paid call.
+    const execution=await readExecution(env,f.target);
+    if(execution?.state==='paused'){
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(execution.pauseReason).toBe('output_invalid');
+      await resumeExecution(env,f.target,execution.generation,'continue');
+      await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(f.jobId).run();
+      await reserveAiSlot(env,{projectId:f.projectId,jobId:f.jobId,purpose:'execution_resume'});
+      await dispatchResumedExecution(local,f.jobId);
+    }
   }
   expect(request).toHaveBeenCalledTimes(4);expect((await getJob(env,f.jobId)).status).toBe('succeeded');expect(await readExecution(env,f.target)).toMatchObject({totalCalls:4,state:'completed'});
  });
