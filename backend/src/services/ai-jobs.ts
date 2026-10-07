@@ -1,3 +1,4 @@
+import { BackgroundContinuation } from './ai-execution-slices';
 import { runProjectChatJob } from './project-ai-chat';
 import { runTaskAssistancePlanJob } from './task-assistance-plan';
 import { runMediaJob } from './media-summary';
@@ -22,13 +23,13 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
     case 'parse_source':
     case 'ocr_pages':
     case 'requirement_extract':
-      await runParseJob(env, jobId);
+      { const result = await runParseJob(env, jobId); if (['running','busy'].includes(result.status)) throw new BackgroundContinuation(); }
       return;
     case 'agent_run':
       if(JSON.parse(job.input_json).operation==='project.chat'){await runProjectChatJob(env,jobId);return;}
       if (JSON.parse(job.input_json).operation === 'rehearsal.tts') { await runRehearsalSpeechJob(env,jobId); return; }
       if (JSON.parse(job.input_json).operation === 'collaboration.assistance-plan') { await runTaskAssistancePlanJob(env,jobId); return; }
-      if(['media.draft','media.summary'].includes(JSON.parse(job.input_json).operation)){const input=JSON.parse(job.input_json);await runMediaJob(env,jobId,input.sourceVersionId);return;}
+      if(['media.draft','media.summary'].includes(JSON.parse(job.input_json).operation)){const input=JSON.parse(job.input_json);const result=await runMediaJob(env,jobId,input.sourceVersionId,1);if(['running','busy'].includes(result.status))throw new BackgroundContinuation();return;}
       if (JSON.parse(job.input_json).operation === 'collaboration.agent-eligibility') {
         await runTaskAgentEligibilityJob(env,jobId); return;
       }

@@ -140,13 +140,14 @@ export async function gatewayChat(
           if (executionEnv && executionTarget) {
             if (executionEnv.AI_EXECUTION_CONTEXT && executionEnv.AI_EXECUTION_CONTEXT.modelCalls >= 1) throw new InvestigationContinuation();
             executionTarget = await resolveExecutionTarget(executionEnv, executionTarget);
-            executionCall = await acquireExecutionCall(executionEnv, executionTarget);
+            executionCall = await acquireExecutionCall(executionEnv, executionTarget, executionEnv.AI_EXECUTION_CONTEXT?.generation);
+            if (executionEnv.AI_EXECUTION_CONTEXT) executionEnv.AI_EXECUTION_CONTEXT.generation = executionCall.generation;
           }
           await input.beforeFetch?.();
         },
         onDispatch:()=>{dispatched=true;if(executionEnv?.AI_EXECUTION_CONTEXT)executionEnv.AI_EXECUTION_CONTEXT.modelCalls++;input.onDispatch?.();}, config: { ...input.config, timeoutMs: remaining },
       }, fetchImpl, recoveryDeadline);
-      if (executionEnv && executionTarget && executionCall && !await finishExecutionCall(executionEnv, executionTarget, executionCall)) throw new AppError('INVALID_STATE', '处理已取消或被新窗口替换，旧模型结果未应用', 409, false);
+      if (executionEnv && executionTarget && executionCall && !await finishExecutionCall(executionEnv, executionTarget, executionCall)) throw new AppError('INVALID_STATE', '处理已取消或被新窗口替换，旧模型结果未应用', 409, false, { executionSuperseded: true });
       executionCall = undefined;
       return { ...output, latencyMs: Date.now() - started };
     } catch (error) {
@@ -161,7 +162,7 @@ export async function gatewayChat(
           }
         }
       }
-      if (isExecutionPaused(error) || error instanceof InvestigationContinuation) throw error;
+      if (isExecutionPaused(error) || error instanceof InvestigationContinuation || error instanceof AppError && error.details?.executionSuperseded === true) throw error;
       if(!dispatched && endpoint.diagnostics)await clearUncertainDispatch(endpoint.diagnostics,input.jobId);
       if (endpoint.diagnostics) {
         const appError = error instanceof AppError ? error : undefined;

@@ -31,6 +31,6 @@ export function ExecutionControlPanel({ execution, path, enabled = true, onUpdat
   return <section className="callout" aria-label="AI 持续处理控制"><p role="status" aria-live="polite">已处理 {execution.windowCalls} 轮 / {execution.limit} 轮 · 累计 {execution.totalCalls} 轮 · {states[execution.state]}</p>
     {execution.pauseReason && <p>{reasons[execution.pauseReason] ?? execution.pauseReason}</p>}
     <div className="form-actions">{execution.canContinue && <button type="button" className="button button-primary" disabled={pending || !enabled} onClick={() => void act('continue')}>继续处理</button>}{execution.canOutput && <button type="button" className="button button-quiet" disabled={pending || !enabled} onClick={() => void act('output')}>输出当前结果</button>}{!['completed', 'cancelled'].includes(execution.state) && <button type="button" className="button button-quiet" disabled={pending || !enabled} onClick={() => void act('cancel')}>取消处理</button>}</div>
-    {execution.canOutput && <p className="muted">输出当前结果将额外调用一次模型；结果通过校验后才会保存。</p>}{pending && <p role="status">正在更新处理状态…</p>}{error !== null && <ErrorNotice error={error} />}
+    {execution.canOutput && <p className="muted">输出将使用已保存的资料，可能额外调用一次模型；结果通过校验后才会保存。</p>}{pending && <p role="status">正在更新处理状态…</p>}{error !== null && <ErrorNotice error={error} />}
   </section>;
 }

@@ -3,7 +3,7 @@ import type { Env } from '../env';
 import { runAiJob } from '../services/ai-jobs';
 import { previewDraft, DraftPreviewYield } from '../services/creation-drafts';
 import { enqueueDraftPreviewSegment, type DraftPreviewInput } from '../services/draft-preview-jobs';
-import { isExecutionPaused } from '../services/ai-execution-control';
+import { isExecutionPaused, ensureExecution, resolveExecutionTarget } from '../services/ai-execution-control';
 import { executeAiSlice } from '../services/ai-execution-slices';
 
 /** A business job relays safe checkpoints through independently budgeted instances. */
@@ -27,6 +27,8 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string; s
     // A fresh instance resets invocation-local dispatch and subrequest budgets.
     await step.do('run-ai-job', { retries: { limit: 0, delay: '5 seconds' } }, async () => {
       const sliceEnv: Env = { ...this.env, AI_EXECUTION_SLICE: true, AI_EXECUTION_CONTEXT: { modelCalls: 0 } };
+      const execution = await ensureExecution(sliceEnv, await resolveExecutionTarget(sliceEnv, { kind: 'job', id: event.payload.jobId }));
+      sliceEnv.AI_EXECUTION_CONTEXT!.generation = execution.generation;
       await executeAiSlice(sliceEnv, event.payload.jobId, event.payload.slice ?? 0, () => runAiJob(sliceEnv, event.payload.jobId));
     });
   }

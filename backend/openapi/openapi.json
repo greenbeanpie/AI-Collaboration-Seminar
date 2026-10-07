@@ -948,6 +948,65 @@
           "data": {
             "type": "object",
             "properties": {
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              },
               "activity": {
                 "type": [
                   "object",
@@ -1947,6 +2006,7 @@
               }
             },
             "required": [
+              "execution",
               "activity",
               "id",
               "status",
@@ -1984,6 +2044,65 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "execution": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "windowCalls": {
+                          "type": "integer"
+                        },
+                        "totalCalls": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "paused",
+                            "finalizing",
+                            "cancelled",
+                            "completed"
+                          ]
+                        },
+                        "pauseReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "round_limit",
+                            "request_uncertain",
+                            "output_invalid",
+                            "interrupted",
+                            null
+                          ]
+                        },
+                        "canContinue": {
+                          "type": "boolean"
+                        },
+                        "canOutput": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "generation",
+                        "windowCalls",
+                        "totalCalls",
+                        "limit",
+                        "state",
+                        "pauseReason",
+                        "canContinue",
+                        "canOutput"
+                      ]
+                    },
                     "activity": {
                       "type": [
                         "object",
@@ -2983,6 +3102,7 @@
                     }
                   },
                   "required": [
+                    "execution",
                     "activity",
                     "id",
                     "status",
@@ -10444,6 +10564,65 @@
                   "uncertain"
                 ]
               },
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              },
               "retry": {
                 "type": "object",
                 "properties": {
@@ -10477,7 +10656,8 @@
               "createdAt",
               "updatedAt",
               "finishedAt",
-              "activity"
+              "activity",
+              "execution"
             ]
           },
           "requestId": {
@@ -10609,6 +10789,122 @@
             },
             "required": [
               "jobId"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "JobExecutionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "execution": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "generation": {
+                    "type": "integer"
+                  },
+                  "windowCalls": {
+                    "type": "integer"
+                  },
+                  "totalCalls": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "paused",
+                      "finalizing",
+                      "cancelled",
+                      "completed"
+                    ]
+                  },
+                  "pauseReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "round_limit",
+                      "request_uncertain",
+                      "output_invalid",
+                      "interrupted",
+                      null
+                    ]
+                  },
+                  "canContinue": {
+                    "type": "boolean"
+                  },
+                  "canOutput": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "generation",
+                  "windowCalls",
+                  "totalCalls",
+                  "limit",
+                  "state",
+                  "pauseReason",
+                  "canContinue",
+                  "canOutput"
+                ]
+              }
+            },
+            "required": [
+              "jobId",
+              "execution"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiExecutionPolicyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "maxModelCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              }
+            },
+            "required": [
+              "version",
+              "maxModelCalls"
             ]
           },
           "requestId": {
@@ -26500,6 +26796,69 @@
         }
       }
     },
+    "/api/v1/creation-drafts/{draftId}/execution/{action}": {
+      "post": {
+        "tags": [
+          "creation"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "output",
+                "cancel"
+              ]
+            },
+            "required": true,
+            "name": "action",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedGeneration": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "expectedGeneration"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "继续、输出已有结果或取消后台执行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationDraftResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/answer": {
       "post": {
         "tags": [
@@ -30528,6 +30887,162 @@
           },
           "409": {
             "description": "终态不可重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{jobId}/execution/{action}": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "继续、输出当前结果或取消后台 AI 处理",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "jobId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "output",
+                "cancel"
+              ]
+            },
+            "required": true,
+            "name": "action",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedGeneration": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "expectedGeneration"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "执行操作已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobExecutionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "执行代次变化或状态不允许",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-execution-policy": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "读取后台 AI 执行策略",
+        "responses": {
+          "200": {
+            "description": "独立执行策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiExecutionPolicyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要超级管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "更新后台 AI 窗口调用上限",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "maxModelCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "maxModelCalls"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已保存并记录审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiExecutionPolicyResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "策略版本已变化",
             "content": {
               "application/json": {
                 "schema": {

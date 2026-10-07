@@ -1637,6 +1637,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/creation-drafts/{draftId}/execution/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    draftId: string;
+                    action: "continue" | "output" | "cancel";
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedGeneration: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 继续、输出已有结果或取消后台执行 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreationDraftResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/answer": {
         parameters: {
             query?: never;
@@ -4469,6 +4513,141 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{jobId}/execution/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 继续、输出当前结果或取消后台 AI 处理 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    jobId: string;
+                    action: "continue" | "output" | "cancel";
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        expectedGeneration: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 执行操作已保存 */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobExecutionResponse"];
+                    };
+                };
+                /** @description 执行代次变化或状态不允许 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ai-execution-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取后台 AI 执行策略 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 独立执行策略 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiExecutionPolicyResponse"];
+                    };
+                };
+                /** @description 需要超级管理员权限 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        /** 更新后台 AI 窗口调用上限 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        expectedVersion: number;
+                        maxModelCalls: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已保存并记录审计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiExecutionPolicyResponse"];
+                    };
+                };
+                /** @description 策略版本已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12448,6 +12627,18 @@ export interface components {
         };
         CreationDraftResponse: {
             data: {
+                execution: {
+                    generation: number;
+                    windowCalls: number;
+                    totalCalls: number;
+                    limit: number;
+                    /** @enum {string} */
+                    state: "running" | "paused" | "finalizing" | "cancelled" | "completed";
+                    /** @enum {string|null} */
+                    pauseReason: "round_limit" | "request_uncertain" | "output_invalid" | "interrupted" | null;
+                    canContinue: boolean;
+                    canOutput: boolean;
+                } | null;
                 activity: {
                     /** @enum {string} */
                     code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
@@ -12666,6 +12857,18 @@ export interface components {
         CreationDraftListResponse: {
             data: {
                 items: {
+                    execution: {
+                        generation: number;
+                        windowCalls: number;
+                        totalCalls: number;
+                        limit: number;
+                        /** @enum {string} */
+                        state: "running" | "paused" | "finalizing" | "cancelled" | "completed";
+                        /** @enum {string|null} */
+                        pauseReason: "round_limit" | "request_uncertain" | "output_invalid" | "interrupted" | null;
+                        canContinue: boolean;
+                        canOutput: boolean;
+                    } | null;
                     activity: {
                         /** @enum {string} */
                         code: "preparing" | "reading_sources" | "calling_model" | "executing_tool" | "validating" | "saving" | "transcribing" | "summarizing" | "ocr" | "retrying" | "waiting_retry" | "waiting_input" | "completed" | "failed" | "cancelled";
@@ -14576,6 +14779,18 @@ export interface components {
                     resumeReason: string | null;
                     uncertain: boolean;
                 };
+                execution: {
+                    generation: number;
+                    windowCalls: number;
+                    totalCalls: number;
+                    limit: number;
+                    /** @enum {string} */
+                    state: "running" | "paused" | "finalizing" | "cancelled" | "completed";
+                    /** @enum {string|null} */
+                    pauseReason: "round_limit" | "request_uncertain" | "output_invalid" | "interrupted" | null;
+                    canContinue: boolean;
+                    canOutput: boolean;
+                } | null;
                 retry?: {
                     status: string;
                     attempts: number;
@@ -14612,6 +14827,34 @@ export interface components {
             data: {
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        JobExecutionResponse: {
+            data: {
+                /** Format: uuid */
+                jobId: string;
+                execution: {
+                    generation: number;
+                    windowCalls: number;
+                    totalCalls: number;
+                    limit: number;
+                    /** @enum {string} */
+                    state: "running" | "paused" | "finalizing" | "cancelled" | "completed";
+                    /** @enum {string|null} */
+                    pauseReason: "round_limit" | "request_uncertain" | "output_invalid" | "interrupted" | null;
+                    canContinue: boolean;
+                    canOutput: boolean;
+                } | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiExecutionPolicyResponse: {
+            data: {
+                version: number;
+                maxModelCalls: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

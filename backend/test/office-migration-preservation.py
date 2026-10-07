@@ -20,7 +20,7 @@ db.execute("INSERT INTO source_fragments(id,source_version_id,project_id,page_nu
 db.commit()
 tables=['document_parse_sessions','document_parse_batches','document_parse_pages','source_versions','sources','source_fragments','users','projects']
 before={t:db.execute(f'SELECT * FROM {t} ORDER BY 1').fetchall() for t in tables}
-migration=(root/'migrations/0061_office_document_imports.sql').read_text(encoding='utf-8')
+migration=(root/'migrations/0065_office_document_imports.sql').read_text(encoding='utf-8')
 db.executescript('BEGIN;'+migration+'COMMIT;')
 for t in tables: assert db.execute(f'SELECT * FROM {t} ORDER BY 1').fetchall()==before[t],t
 assert db.execute('PRAGMA foreign_key_check').fetchall()==[]

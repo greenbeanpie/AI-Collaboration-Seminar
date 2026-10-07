@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { checkpointAttemptIds,loadResponseCheckpoint,saveResponseCheckpoint } from './ai-checkpoints';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -8,7 +10,6 @@ import { aiJsonCall } from './agent';
 import { assertToolAccess, type ProjectToolOperation } from './project-ai-tools';
 import { withReservedAiJob, settleReservation } from './ai-reservations';
 import { createJobAndDispatch, getJob, failJob, succeedJob } from './jobs';
-import { InvestigationContinuation } from './project-investigation';
 import { projectReferenceGuard } from './project-reference-guard';
 import { validateReadReferences, type ProjectReference } from './project-evidence';
 
@@ -137,7 +138,7 @@ export async function runProjectChatJob(env:Env,jobId:string){
  const saved=await env.DB.prepare(`INSERT OR IGNORE INTO project_ai_chat_messages(question_id,role,content,references_json,created_at) SELECT ?1,'assistant',?3,?4,?5 FROM project_ai_chat_questions q JOIN project_ai_chat_sessions s ON s.id=q.session_id AND s.generation=q.generation WHERE q.id=?1 AND q.job_id=?2 AND s.job_id=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?2)) AND EXISTS(SELECT 1 FROM project_members m JOIN projects p ON p.id=m.project_id WHERE p.id=q.project_id AND m.user_id=q.user_id AND p.status='active' AND p.ai_collaboration_enabled=1) AND q.context_stamp=(${chatContextStampSql.replaceAll('?1','q.project_id')}) AND ${projectReferenceGuard('?6','q.project_id')}`).bind(q.id,jobId,out.data.markdown,JSON.stringify(references),nowIso(),JSON.stringify(out.references??[])).run();
  if(!saved.meta.changes&&!await env.DB.prepare("SELECT 1 FROM project_ai_chat_messages WHERE question_id=?1 AND role='assistant'").bind(q.id).first())throw invalidState('回答上下文已失效，请重新发起');
  await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{questionId:q.id});
- }catch(error){if(error instanceof InvestigationContinuation)throw error;await settleReservation(env,jobId,'released');await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof AppError?error.message:'问答失败，可从停止处继续',...(error instanceof AppError&&error.details?{details:error.details}:{})});}
+ }catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;await settleReservation(env,jobId,'released');await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof AppError?error.message:'问答失败，可从停止处继续',...(error instanceof AppError&&error.details?{details:error.details}:{})});}
 }
 
 /** Durable deletion outbox: cleared contexts remain fenced even when R2 is temporarily unavailable. */
