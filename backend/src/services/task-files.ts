@@ -1,4 +1,4 @@
-import { triggerFileProcessing } from './file-processing-triggers';
+import { triggerFileProcessing, syncMaterialFileProcessing } from './file-processing-triggers';
 import type { Paging } from '../core/pagination';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
@@ -123,5 +123,6 @@ export async function archiveMaterial(env:Env, params:{projectId:string;material
       ON CONFLICT(project_id,type,entity_type,entity_id,dedup_key) DO NOTHING`).bind(newId(),projectId,actorId,restore?'material.unarchived':'material.archived',materialId,String(expectedRevision+1),JSON.stringify({restore}),now,expectedRevision+1),
   ]);
   if(!results[0]?.meta.changes) throw invalidState('材料状态或权限已变化');
+  await syncMaterialFileProcessing(env, projectId, materialId);
   return {materialId,archivedAt:restore?null:now,revision:expectedRevision+1};
 }

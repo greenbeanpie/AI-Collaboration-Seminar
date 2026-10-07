@@ -1,5 +1,5 @@
 import { syncFileProcessingText } from '../services/file-processing';
-import { triggerFileProcessing } from '../services/file-processing-triggers';
+import { triggerFileProcessing, syncMaterialFileProcessing } from '../services/file-processing-triggers';
 import { materialManageSql } from '../services/task-files';
 import { projectPermissionSql } from '../services/project-permissions';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -109,6 +109,7 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if (!changed.meta.changes) throw versionConflict(current.revision);
     if (current.file_id) await triggerFileProcessing(c.env, p.projectId, current.file_id, member.userId);
     if (p.resourceType === 'source' && current.current_version_id) await syncFileProcessingText(c.env, current.current_version_id);
+    if (p.resourceType === 'material') await syncMaterialFileProcessing(c.env, p.projectId, p.resourceId);
     return c.json(apiData(c, toResource(await readResource(c.env, p.projectId, p.resourceType, p.resourceId, member.userId, member.permissions.resourceManage))), 200);
   });
 }
