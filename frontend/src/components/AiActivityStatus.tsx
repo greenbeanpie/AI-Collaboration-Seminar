@@ -1,5 +1,5 @@
 import { ExecutionControlPanel } from './ExecutionControlPanel';
-import { executionOf } from '../api/ai-execution';
+import { executionOf, type ExecutionView } from '../api/ai-execution';
 import { useEffect, useRef, useState } from 'react';
 import { activityLabel, activityTime, readActivityEvents, type ActivityJob, type AiActivity, type AiActivityEvent } from '../api/ai-activity';
 import { errorMessage } from '../api/error-info';
@@ -8,13 +8,14 @@ import './ai-activity.css';
 
 type Props = {
   job?: ActivityJob | null; activity?: AiActivity | null; status?: ActivityJob['status']; jobId?: string;
-  eventsPath?: string; submitting?: boolean; loading?: boolean; readError?: unknown; onRefresh?: () => void;
+  execution?: ExecutionView | null; eventsPath?: string; submitting?: boolean; loading?: boolean; readError?: unknown; onRefresh?: () => void;
   onResume?: () => void | Promise<void>; resuming?: boolean; executionEnabled?: boolean; showHistory?: boolean;
 };
 const statuses: Record<ActivityJob['status'], string> = { queued: '排队中', running: 'AI 处理中', waiting_input: '等待补充信息', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
 const eventStates = { started: '开始', completed: '完成', failed: '失败', resumed: '继续执行' };
 
-export function AiActivityStatus({ job, activity: suppliedActivity, status: suppliedStatus, jobId: suppliedId, eventsPath, submitting = false, loading = false, readError, onRefresh, onResume, resuming = false, executionEnabled = true, showHistory = true }: Props) {
+export function AiActivityStatus({ job, execution: suppliedExecution, activity: suppliedActivity, status: suppliedStatus, jobId: suppliedId, eventsPath, submitting = false, loading = false, readError, onRefresh, onResume, resuming = false, executionEnabled = true, showHistory = true }: Props) {
+  const execution = suppliedExecution ?? executionOf(job);
   const activity = suppliedActivity ?? job?.activity;
   const status = suppliedStatus ?? job?.status;
   const jobId = suppliedId ?? job?.jobId;
@@ -49,7 +50,7 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
     return () => controller.abort();
   }, [open, jobId, activity?.updatedAt, eventsPath]);
   if (!job && !activity && !status && !submitting && !loading && !readError) return null;
-  const executing = status === 'running' && !readError;
+  const executing = status === 'running' && execution?.state !== 'paused' && !readError;
   const progress = activity?.progress;
   const result = job?.result as { partial?: boolean; complete?: boolean; summary?: string; caveats?: string[]; fragments?: Array<{ id: string; page_number: number | null; content: string }> } | null;
   const partial = result && typeof result === 'object' && result.partial === true && result.complete === false;
@@ -71,8 +72,8 @@ export function AiActivityStatus({ job, activity: suppliedActivity, status: supp
   return <section className="ai-activity" aria-label="AI 处理状态">
     <div className="ai-activity-current" role="status" aria-live="polite" aria-atomic="true">
       <span className={`ai-activity-indicator${executing ? ' is-running' : ''}`} aria-hidden="true" />
-      <div><strong>{resuming || resumePending ? '等待续跑' : executionOf(job)?.state === 'paused' ? '已暂停' : activity?.code === 'waiting_retry' ? '等待重试' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
-        <p>当前操作：{submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
+      <div><strong>{resuming || resumePending ? '等待续跑' : execution?.state === 'paused' ? '已暂停' : activity?.code === 'waiting_retry' ? '等待重试' : status ? statuses[status] : submitting ? '提交 AI 请求' : loading ? '读取 AI 状态' : '等待任务状态'}</strong>
+        <p>当前操作：{execution?.state === 'paused' ? '等待选择继续处理或输出当前结果' : submitting && !job ? '提交请求' : activity ? activityLabel(activity.code) : status === 'queued' ? '等待执行' : status === 'succeeded' ? '已完成' : '等待服务端状态'}{progress && ` · 已完成 ${progress.completed}${typeof progress.total === 'number' ? ` / ${progress.total}` : ''}${progress.unit === 'page' ? ' 页' : progress.unit === 'chunk' ? ' 块' : progress.unit === 'window' ? ' 窗口' : ' 步'}`}</p>
         <p>AI 最后一次回复时间：<time dateTime={activity?.lastResponseAt ?? undefined}>{activityTime(activity?.lastResponseAt)}</time></p>
       </div>
     </div>

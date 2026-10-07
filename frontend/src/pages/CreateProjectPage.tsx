@@ -124,7 +124,7 @@ function CreationWizard({ userId }: {
           return;
         }
         setDraft(next);
-        if (next.previewState === 'waiting_input' || next.previewState === 'running' || next.previewState === 'paused_round_limit') setStep(3);
+        if (['waiting_input','running','paused_round_limit'].includes(next.previewState)) setStep(3);
         setPayload(next.payload);
         setManual(next.preview?.tasks ?? []);
         setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
@@ -273,7 +273,7 @@ function CreationWizard({ userId }: {
     remember(id, []);
     setManual(next.preview?.tasks ?? []);
     setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
-    setStep(next.previewState === 'waiting_input' || next.previewState === 'running' || next.previewState === 'paused_round_limit' ? 3 : 0);
+    setStep(['waiting_input','running','paused_round_limit'].includes(next.previewState) ? 3 : 0);
     setResult(null);
   });
   const resolveClarification = async (answer?: ClarificationAnswer) => {
@@ -332,7 +332,7 @@ function CreationWizard({ userId }: {
     })))}>恢复创建结果与邀请</button></section> : <>
  <h2>{wizardSteps[step]}</h2>
  {draft && <ExecutionControlPanel execution={executionOf(draft)} path={draftPath(draft.id)} enabled={!actionBusy} onBeforeAction={() => { previewEpoch.current++; }} onUpdated={snapshot => { const next = snapshot as WizardDraft; if (next.id !== latestDraft.current?.id || olderExecution(next, latestDraft.current)) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); } }} />}
- {(previewActivity || previewSubmitting || previewRunning || previewWaiting || draft?.previewState === 'failed') && <AiActivityStatus activity={previewActivity} jobId={draft?.id} status={previewRunning ? 'running' : previewWaiting ? 'waiting_input' : draft?.previewState === 'ready' ? 'succeeded' : draft?.previewState === 'failed' ? 'failed' : 'queued'} submitting={previewSubmitting} readError={draftPoll.error} eventsPath={draft ? `${draftPath(draft.id)}/activity-events` : undefined} onRefresh={() => void refreshClarification().catch(setError)} onResume={executionOf(draft) ? undefined : () => preview('ai',true)} resuming={previewSubmitting} />}
+ {(previewActivity || previewSubmitting || previewRunning || previewWaiting || draft?.previewState === 'failed') && <AiActivityStatus execution={executionOf(draft)} activity={previewActivity} jobId={draft?.id} status={previewRunning ? 'running' : previewWaiting ? 'waiting_input' : draft?.previewState === 'ready' ? 'succeeded' : draft?.previewState === 'failed' ? 'failed' : 'queued'} submitting={previewSubmitting} readError={draftPoll.error} eventsPath={draft ? `${draftPath(draft.id)}/activity-events` : undefined} onRefresh={() => void refreshClarification().catch(setError)} onResume={executionOf(draft) ? undefined : () => preview('ai',true)} resuming={previewSubmitting} />}
  {previewWaiting && draft?.clarification?.status === 'pending' && <AiClarificationCard question={draft.clarification} disabled={actionBusy} onAnswer={resolveClarification} onCancel={() => resolveClarification()} onRefresh={refreshClarification} />}
  {previewWaiting && !draft?.clarification && <div className="callout"><p>AI 正在等待补充信息，正在核对问题状态。</p><button type="button" className="button button-quiet" disabled={actionBusy} onClick={() => void refreshClarification().catch(setError)}>重新读取待回答问题</button></div>}
  {step === 0 && <><Field aiReference label="项目名称"><input className="input" required maxLength={100} value={payload.name} disabled={busy} onChange={e => setField('name', e.target.value)}/></Field><Field aiReference label="主目标（可选）" hint="可直接给出团队大目标；留空时使用项目名称，目标说明留空。主动生成 AI 预览时可以建议目标。"><input className="input" maxLength={200} value={payload.goal?.title ?? ''} disabled={busy} onChange={e => { const title = e.target.value; setField('goal', title.trim() ? { title, detail: payload.goal?.detail ?? '' } : undefined); setManualGoal({ title, detail: payload.goal?.detail ?? '' }); }}/></Field><Field aiReference label="项目说明（可选）"><textarea className="input textarea" maxLength={2000} rows={4} value={payload.description} disabled={busy} onChange={e => setField('description', e.target.value)}/></Field><Field aiReference label="截止日期（可选）" hint="未明确日期可留空，不会自动补时刻。"><DateInput className="input" type="date" value={payload.deadlineDate ?? ''} disabled={busy} onChange={e => {
