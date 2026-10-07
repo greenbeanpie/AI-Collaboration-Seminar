@@ -1,3 +1,6 @@
+import { backgroundModelCall } from './background-model-call';
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { checkpointRootId, checkpointFingerprint, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { recordActivity } from './ai-activity';
 import { aiSecret } from '../ai/secrets';
@@ -27,6 +30,7 @@ export async function enqueueDraftMedia(env:Env,draftId:string,fileId:string,use
   await createJobAndDispatch(env,{projectId:null,kind:'agent_run',createdBy:userId,input:{operation:'media.draft',draftId,fileId,configVersionId:config!.id,mediaProvider:selectedMediaProvider(config!,file!.mime)}});
 }
 export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,maxWindows=Infinity):Promise<{status:string}> {
+  if(env.AI_EXECUTION_SLICE)maxWindows=1;
   const job=await getJob(env,jobId),input=JSON.parse(job.input_json) as {draftId?:string;fileId?:string;configVersionId?:string;sourceLifecycleVersion?:number;mediaProvider?:'gemini'|'mimo'};
   if(['succeeded','failed','cancelled','waiting_input'].includes(job.status))return {status:job.status};
   const assertActive=async()=>{
@@ -82,7 +86,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,provider,created_at) VALUES(?1,?2,?3,?4,0,'started','mimo',?5)").bind(callId,jobId,config.id,mimoModel.model,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try{await assertActive();await recordActivity(env,jobId,'summarizing');const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([config.id,file.r2_key,file.mime,'mimo'])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof mimo.summarize>>>(env,key);if(cached){result=cached;}else{result=await mimo.summarize(url,file.mime);await saveResponseCheckpoint(env,key,result);}}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try{await assertActive();await recordActivity(env,jobId,'summarizing');const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([config.id,file.r2_key,file.mime,'mimo'])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof mimo.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{const value=await mimo.summarize(url,file.mime);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cached_tokens=?4,audio_tokens=?5,video_tokens=?6,window_end=?7 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,result.cachedTokens,result.audioTokens,result.videoTokens,result.summary.durationSeconds??null).run();
       await assertActive();
       await env.DB.prepare("UPDATE media_processing SET summary_json=?3,duration_seconds=?4,windows_json=?5,updated_at=?6 WHERE id=?1 AND lease_token=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=media_processing.job_id AND status IN ('queued','running'))").bind(state.id,leaseToken,JSON.stringify(result.summary),result.summary.durationSeconds??null,JSON.stringify([result.summary]),nowIso()).run();
@@ -110,7 +114,6 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     const duration=remote.videoMetadata?.videoDuration?Number.parseFloat(remote.videoMetadata.videoDuration):state.duration_seconds??undefined;
     if(duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) throw new AppError('AI_OUTPUT_INVALID','媒体时长无效，无法确认完整覆盖',422,false);
     let windows=duration?Array.from({length:Math.ceil(duration/600)},(_,i)=>({start:i*600,end:Math.min(duration,(i+1)*600)})):[{start:0,end:file.mime.startsWith('audio/')?600:undefined}];
-    if(windows.length>24)throw invalidState('视频超过四小时处理上限；请拆分为较短文件');
     await env.DB.prepare('UPDATE media_processing SET duration_seconds=?2 WHERE id=?1').bind(state.id,duration??null).run();
     if(job.project_id)await reserveAiSlot(env,{projectId:job.project_id,jobId,purpose:'media_summary',configVersionId:mediaConfig!.id,maxCalls:windows.length});
     const completed=JSON.parse(state.windows_json) as MediaSummary[];
@@ -119,11 +122,10 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       await assertActive();const window=windows[index]!;
       const held=await env.DB.prepare('UPDATE media_processing SET lease_expires_at=?3 WHERE id=?1 AND lease_token=?2').bind(state.id,leaseToken,new Date(Date.now()+900000).toISOString()).run();if(!held.meta.changes){continuing=true;return {status:'running'};}
       const generating=await env.DB.prepare("UPDATE media_processing SET stage='generating',updated_at=?2 WHERE id=?1 AND stage='processing'").bind(state.id,nowIso()).run();if(!generating.meta.changes)throw invalidState('媒体请求已在运行，拒绝重放');
-      const allowance=await env.DB.prepare("SELECT (SELECT COUNT(*) FROM audio_pipeline_calls WHERE job_id=?1)+(SELECT COUNT(*) FROM media_calls WHERE job_id=?1 AND model!='@cf/openai/whisper-large-v3-turbo') n WHERE EXISTS(SELECT 1 FROM audio_pipeline WHERE job_id=?1)").bind(jobId).first<{n:number}>();if(allowance&&allowance.n>=64)throw invalidState('达到音频任务总调用上限');
       const callId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,window_end,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,'started',?7)").bind(callId,jobId,mediaConfig!.id,model.model,window.start,window.end??null,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try {await recordActivity(env,jobId,'summarizing','started',{completed:index,total:windows.length,unit:'window'});const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([mediaConfig!.id,file.r2_key,file.mime,window.start,window.end])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof client.summarize>>>(env,key);if(cached){result=cached;}else{result=await client.summarize(remote,file.mime,window.start,window.end);await saveResponseCheckpoint(env,key,result);}}catch(error){await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try {await recordActivity(env,jobId,'summarizing','started',{completed:index,total:windows.length,unit:'window'});const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([mediaConfig!.id,file.r2_key,file.mime,window.start,window.end])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof client.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{const value=await client!.summarize(remote,file.mime,window.start,window.end);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens).run();
       await recordActivity(env,jobId,'saving');
       completed.push(result.summary);await env.DB.prepare("UPDATE media_processing SET windows_json=?2,summary_json=?3,stage='processing',updated_at=?4 WHERE id=?1").bind(state.id,JSON.stringify(completed),JSON.stringify({...result.summary,complete:false,caveats:[...result.summary.caveats,'处理中；尚未确认完整覆盖']}),nowIso()).run();
@@ -131,7 +133,6 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       if(file.mime.startsWith('audio/') && index===0){
         const audioDuration=result.summary.durationSeconds;
         if(!audioDuration)throw new AppError('AI_OUTPUT_INVALID','无法确认音频总时长；摘要按部分结果保留，请核对',422,false);
-        if(audioDuration>14400)throw invalidState('音频超过四小时处理上限，请拆分');
         windows=Array.from({length:Math.ceil(audioDuration/600)},(_,i)=>({start:i*600,end:Math.min(audioDuration,(i+1)*600)}));
         await env.DB.prepare('UPDATE media_processing SET duration_seconds=?2 WHERE id=?1').bind(state.id,audioDuration).run();
         if(job.project_id && !whisperEnabled(env,config,file.mime))await env.DB.prepare("UPDATE usage_reservations SET max_calls=?2 WHERE job_id=?1 AND status='reserved'").bind(jobId,Math.max(2,windows.length)).run();
@@ -167,6 +168,11 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     await env.DB.prepare("UPDATE audio_pipeline SET phase='ready',final_summary_json=?2,updated_at=?3 WHERE job_id=?1 AND phase='fallback'").bind(jobId,JSON.stringify(summary),nowIso()).run();
     await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{mediaSummary:true,sourceVersionId:sourceVersionId??null,fileId:input.fileId??null});
   }catch(error){
+    if(isExecutionPaused(error)||isBackgroundContinuation(error)){
+      continuing=true;
+      if(state&&ownsLease)await env.DB.prepare("UPDATE media_processing SET stage=CASE WHEN stage='generating' THEN 'processing' ELSE stage END WHERE id=?1 AND lease_token=?2").bind(state.id,leaseToken).run();
+      throw error;
+    }
     if(ownsLease&&state){
       const held=await env.DB.prepare('SELECT 1 FROM media_processing WHERE id=?1 AND lease_token=?2').bind(state.id,leaseToken).first();
       if(!held){ownsLease=false;return {status:'busy'};}

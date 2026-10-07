@@ -1,10 +1,11 @@
+import { ExecutionPaused, pauseExecution, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
 import { checkpointRootId, checkpointAttemptIds, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
 import { assertEffectiveStandardCapture } from './effective-standard';
 import { assertToolAccess, projectToolConversation, type ProjectToolContext } from './project-ai-tools';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { assertSourceInputs, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import { buildGuideHistory, assertGuideHistoryAccess } from './guide-history';
 import { projectReferenceGuard } from './project-reference-guard';
@@ -120,8 +121,8 @@ export async function aiJsonCall<S extends z.ZodType>(
     await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
     await recordActivity(env,params.jobId,'validating');
     try { return {effectiveStandardsVersionId:out.effectiveStandardsVersionId,data:params.schema.parse(businessJson(out.content)),repaired:false,toolTrace:out.trace,citations:out.citations,references:out.references,decisionReferences:out.decisionReferences}; }
-    catch (validationError) {
-      if(params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
+    catch (validationError) { if(isExecutionPaused(validationError)||isBackgroundContinuation(validationError))throw validationError;
+      if(!params.jobId&&params.maxAttempts===1)throw new AppError('AI_OUTPUT_INVALID','模型最终结果未通过业务校验；本操作不自动修复评价结论',502,false);
       // Correct only the final output. Before each repair dispatch the original
       // consent/config/member checks and final sensitive-context read run again.
       const repairTail:Array<{role:'assistant'|'user';content:string}>=[
@@ -187,8 +188,13 @@ export async function aiJsonCall<S extends z.ZodType>(
   const fingerprint=root?await checkpointFingerprint({projectId:params.projectId,promptVersion:params.promptVersion,configVersionId:params.configVersionId,modelConfig:params.modelConfig,messages:params.messages}):undefined;
   const sessionId = params.sessionId ?? params.runId ?? root ?? params.jobId ?? crypto.randomUUID();
   let messages = params.messages;
-  const maxAttempts=params.maxAttempts??2;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  const repairStateKey=root?`ai/responses/${root}/${fingerprint}/repair-state.json`:undefined;
+  const repairState=repairStateKey?await loadResponseCheckpoint<{attempt:number;messages:typeof messages}>(env,repairStateKey):null;
+  const firstAttempt=repairState?.attempt??0;if(repairState)messages=repairState.messages;
+  const executionTarget=params.jobId?await resolveExecutionTarget(env,{kind:'job',id:params.jobId}):null;
+  const finalizing=executionTarget?(await readExecution(env,executionTarget))?.state==='finalizing':false;
+  const maxAttempts=params.jobId?finalizing?1:Number.POSITIVE_INFINITY:params.maxAttempts??2;
+  for (let attempt = firstAttempt; attempt < (finalizing?firstAttempt+1:maxAttempts); attempt++) {
     const started = Date.now();
     let attempted = false;
     let out: Awaited<ReturnType<typeof gatewayChat>> | undefined;
@@ -223,8 +229,9 @@ export async function aiJsonCall<S extends z.ZodType>(
         } : undefined,
         onDispatch: () => { attempted = true; },
       });
-    } catch (error) {
+    } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
       if (!attempted) { if(dispatchKey && !replayed)await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true}); if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
+      if(dispatchKey&&error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number'))await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true});
       failure = error;
     }
     // Persist the paid response before schema validation, ledger writes, or business writes.
@@ -235,24 +242,28 @@ export async function aiJsonCall<S extends z.ZodType>(
     let data: z.infer<S> | undefined;
     if (out) {
       await recordActivity(env,params.jobId,'validating');
-      try { data = params.schema.parse(extractJson(out.content)); } catch (error) { failure = error; }
+      try { data = params.schema.parse(extractJson(out.content)); } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error; failure = error; }
     }
     // 每次已发出的请求都记录；账本/R2失败不触发第二次请求，尝试标记保留作恢复判断。
     if(!replayed)await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
-    if (!failure) return { data: data!, repaired: attempt === 1 };
+    if (!failure) return { data: data!, repaired: attempt > 0 };
     // An exhausted output budget cannot be repaired using the same cap. Keep JSON/schema repairs.
-    if (!out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
+    if (!executionTarget && !out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
     // Transport recovery belongs to gatewayChat. Never restart its recovery window
     // through the independent JSON/schema repair loop, or replay uncertain dispatches.
     if (!out && failure instanceof AppError && failure.code === 'AI_UNAVAILABLE') { if (params.privateContext) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw failure; }
-    if (attempt === maxAttempts-1) throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
+    if (finalizing||attempt === maxAttempts-1){
+      if(executionTarget){await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);}
+      throw new AppError('AI_OUTPUT_INVALID', '模型输出经一次修复仍不合法', 502, false);
+    }
     messages = [
       ...params.messages,
       { role: 'assistant', content: out?.content ?? '' },
       { role: 'user', content: `你的上一次输出不合法（错误：${failure instanceof Error ? failure.message.slice(0, 300) : String(failure)}）。请重新严格按 JSON 结构输出，不要任何额外文字。` },
     ];
+    if(repairStateKey)await saveResponseCheckpoint(env,repairStateKey,{attempt:attempt+1,messages},{mutable:true});
   }
   throw new AppError('AI_OUTPUT_INVALID', '模型输出不合法', 502, false);
 }
@@ -508,8 +519,7 @@ export async function runAgentJob(env: Env, jobId: string): Promise<void> {
       payload: { capability: input.capability },
     });
     await succeedJob(env, jobId, { runId: input.runId, capability: input.capability });
-  } catch (err) {
-    if (err instanceof InvestigationContinuation) throw err;
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     const message = err instanceof Error ? err.message : String(err);
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', output_json = ?2 WHERE id = ?1 AND status = 'running' AND job_id=?3")
       .bind(input.runId, JSON.stringify({ error: message.slice(0, 500) }),jobId)

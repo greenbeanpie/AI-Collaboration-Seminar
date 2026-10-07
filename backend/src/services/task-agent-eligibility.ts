@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
@@ -68,7 +70,7 @@ export async function enqueueTaskAgentEligibility(env: Env, projectId: string, t
   try {
     await reserveAiSlot(env,{projectId,jobId,purpose:'agent_run',maxCalls:2,configVersionId:config.id});
     await createJobAndDispatch(env,{projectId,jobId,kind:'agent_run',createdBy:userId,input:{operation:'collaboration.agent-eligibility',projectId,taskId,requestedBy:userId,sourceHash:current.sourceHash,activationEpoch:epoch,configVersionId:config.id}});
-  } catch (error) {
+  } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
     if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()) {
       await settleReservation(env,jobId,'released');
       await env.DB.prepare("UPDATE task_agent_eligibility SET status='failed',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();
@@ -107,7 +109,7 @@ export async function runTaskAgentEligibilityJob(env: Env, jobId: string): Promi
     if (!saved.meta.changes) throw invalidState('适用性检查结果已过期');
     await settleReservation(env,jobId,'settled');
     await succeedJob(env,jobId,{taskId:task.id,sourceHash:input.sourceHash,...output.data});
-  } catch (error) {
+  } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
     await env.DB.prepare("UPDATE task_agent_eligibility SET status='failed',updated_at=?2 WHERE job_id=?1 AND status!='ready'").bind(jobId,nowIso()).run();
     await settleReservation(env,jobId,'released');
     await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof Error?error.message:String(error)});
@@ -119,7 +121,7 @@ export async function checkTaskAgentEligibilityAutomatically(env:Env,projectId:s
  const task=await env.DB.prepare('SELECT revision,title,detail,criteria FROM tasks WHERE id=?1 AND project_id=?2 AND archived_at IS NULL').bind(taskId,projectId).first<{revision:number;title:string;detail:string;criteria:string}>();
  const config=await enabled(env,projectId);if(!task||!config)return;
  const actor=userId??(await env.DB.prepare("SELECT user_id FROM project_members WHERE project_id=?1 ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END,joined_at,user_id LIMIT 1").bind(projectId).first<{user_id:string}>())?.user_id;if(!actor)return;
- try {await enqueueTaskAgentEligibility(env,projectId,taskId,actor,task.revision,false);} catch(error) {console.error('[task eligibility] automatic enqueue failed',taskId,error instanceof AppError?error.code:'INTERNAL');}
+ try {await enqueueTaskAgentEligibility(env,projectId,taskId,actor,task.revision,false);} catch(error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;console.error('[task eligibility] automatic enqueue failed',taskId,error instanceof AppError?error.code:'INTERNAL');}
  await env.DB.prepare(`UPDATE task_agent_auto_checks SET pending=CASE WHEN EXISTS(SELECT 1 FROM task_agent_eligibility WHERE task_id=?1 AND source_hash=?6) THEN 0 ELSE 1 END,config_version_id=?2,updated_at=?7 WHERE task_id=?1 AND EXISTS(SELECT 1 FROM tasks WHERE id=?1 AND title=?3 AND detail=?4 AND criteria=?5 AND archived_at IS NULL)`)
  .bind(taskId,config.id,task.title,task.detail,task.criteria,await hash(task,config.id,await activationEpoch(env,taskId)),nowIso()).run();
 }

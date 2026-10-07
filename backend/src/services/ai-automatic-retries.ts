@@ -1,3 +1,4 @@
+import { readExecution, resolveExecutionTarget } from './ai-execution-control';
 import { recordActivity } from './ai-activity';
 import type { Env } from '../env';
 import { AppError, invalidState } from '../core/errors';
@@ -25,6 +26,7 @@ export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string
       AND COALESCE(json_extract(input_json,'$.mediaProvider'),'')!='mimo'
       AND NOT EXISTS(SELECT 1 FROM media_processing WHERE job_id=jobs.id AND provider='mimo')
       AND NOT EXISTS(SELECT 1 FROM ai_task_activities WHERE target_id=jobs.id AND uncertain=1)
+      AND NOT EXISTS(SELECT 1 FROM ai_executions e WHERE e.target_kind='job' AND e.target_id IN (jobs.id,REPLACE(COALESCE(json_extract(jobs.input_json,'$.autoRetryRootId'),''),'job:','')) AND e.state IN ('paused','finalizing','cancelled','completed'))
     ON CONFLICT(id) DO UPDATE SET target_id=excluded.target_id,
       status=CASE WHEN attempts>=3 THEN 'exhausted' ELSE 'pending' END,
       next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,lease_token=NULL,lease_until=NULL,updated_at=excluded.updated_at
@@ -115,6 +117,10 @@ export async function recoverAutomaticAiRetries(env:Env,retryJob:AutomaticJobRet
   const due=await env.DB.prepare("SELECT * FROM ai_automatic_retries WHERE (status='pending' AND attempts<3 AND next_attempt_at<=?1) OR (status='dispatching' AND lease_until<?1) ORDER BY next_attempt_at LIMIT ?2").bind(now,limit).all<RetryRow>();
   let dispatched=0;
   for(const row of due.results) {
+    if(row.target_kind==='job'){
+      const execution=await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:row.target_id}));
+      if(execution&&['paused','finalizing','cancelled','completed'].includes(execution.state)){await env.DB.prepare("UPDATE ai_automatic_retries SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=?2 WHERE id=?1").bind(row.id,nowIso()).run();continue;}
+    }
     const token=newId();
     const claimed=await env.DB.prepare("UPDATE ai_automatic_retries SET attempts=attempts+CASE WHEN status='pending' THEN 1 ELSE 0 END,status='dispatching',lease_token=?2,lease_until=?3,updated_at=?4 WHERE id=?1 AND ((status='pending' AND attempts<3 AND next_attempt_at<=?4) OR (status='dispatching' AND lease_until<?4))").bind(row.id,token,new Date(Date.now()+300_000).toISOString(),now).run();
     if(!claimed.meta.changes)continue;

@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { BackgroundContinuation, isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
 import { checkpointRootId, saveResponseCheckpoint, loadResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
@@ -319,7 +321,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       valid = parseOcrBatch(JSON.parse(response.content),batch.map(p=>p.page_number));
       for(const data of valid){const page=batch.find(page=>page.page_number===data.pageNumber)!;await saveResponseCheckpoint(env,pageCheckpoint(page),data);}
       if (!valid.length) throw new AppError('AI_OUTPUT_INVALID','视觉模型未返回有效页面正文',422,false);
-    } catch (err) { if (!attempted) throw err; caught = err; }
+    } catch (err) { if (isExecutionPaused(err)||isBackgroundContinuation(err)||!attempted) throw err; caught = err; }
     const rejected = batch.length > 1 && caught instanceof AppError && caught.details?.multipleImagesRejected === true;
     await recordAiCall(env,{projectId:version.project_id,jobId,purpose:'visionEconomy',configVersionId:config.id,promptVersion:OCR_PROMPT_VERSION,model:vision.model,
       input:{sourceVersionId:version.id,batchId,pageNumbers:batch.map(p=>p.page_number),mode:batch.length>1?'batch':'single',contextChars:context.length},
@@ -329,7 +331,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     if (rejected) {
       await env.DB.prepare('INSERT INTO ocr_model_capabilities(endpoint_model_hash,single_image_only,updated_at) VALUES (?1,1,?2) ON CONFLICT(endpoint_model_hash) DO UPDATE SET single_image_only=1,updated_at=excluded.updated_at').bind(modelKey,nowIso()).run();
       await env.DB.batch(batch.map(page=>env.DB.prepare(`UPDATE source_pages SET ocr_status='pending' WHERE id=?1 AND ${processingGuard('?2','?3','?4')}`).bind(page.id,version.id,version.lifecycleVersion,jobId ?? null)));
-      singleOnly=true; continue;
+      singleOnly=true; if(env.AI_EXECUTION_SLICE)throw new BackgroundContinuation();continue;
     }
     for (const page of batch) {
       const data = valid.find(result=>result.pageNumber===page.page_number);
@@ -341,6 +343,11 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
       }
     }
     offset += count;
+    if(env.AI_EXECUTION_SLICE){
+      if(offset<pages.results.length)throw new BackgroundContinuation();
+      // Requirements run in another invocation after the final OCR batch.
+      if(jobId)throw new BackgroundContinuation();
+    }
     if(jobId)await recordActivity(env,jobId,'ocr','completed',{completed:offset,total:pages.results.length,unit:'page'});
   }
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND image_status='none' AND text_status='none'").bind(version.id).first<{n:number}>();
@@ -610,6 +617,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 }
 
 async function handleJobError(env: Env, jobId: string, sourceVersionId: string, err: unknown, expectedLifecycleVersion: number): Promise<void> {
+  if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
   const code = err instanceof AppError ? err.code : 'INTERNAL';
   const message = err instanceof Error ? err.message : String(err);
   const details = err instanceof AppError ? err.details : undefined;

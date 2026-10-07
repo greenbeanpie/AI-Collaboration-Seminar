@@ -1,6 +1,11 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { settleReservation } from './ai-reservations';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
+
+export class BackgroundContinuation extends Error { constructor(message='已保存后台处理检查点，将在独立实例继续'){super(message);this.name='BackgroundContinuation';} }
+export function isBackgroundContinuation(error:unknown):boolean {return error instanceof BackgroundContinuation || error instanceof InvestigationContinuation;}
 
 export interface ExecutionSlice { job_id:string; slice:number; instance_id:string; status:string }
 export async function activeExecutionSlice(env:Env,jobId:string):Promise<ExecutionSlice|null>{
@@ -14,10 +19,11 @@ export async function ensureInitialExecutionSlice(env:Env,jobId:string):Promise<
 export async function dispatchExecutionSlice(env:Env,row:ExecutionSlice):Promise<boolean>{
   const active=await activeExecutionSlice(env,row.job_id);
   if(!active || active.slice!==row.slice || active.status!=='pending') return false;
-  const job=await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(row.job_id).first<{status:string}>();
+  const job=await env.DB.prepare('SELECT status,kind FROM jobs WHERE id=?1').bind(row.job_id).first<{status:string;kind:string}>();
   if(job?.status!=='running') return false;
   try{
-    await env.AGENT_WORKFLOW.create({id:row.instance_id,params:{jobId:row.job_id,...(row.slice ? {slice:row.slice} : {})}});
+    const workflow=env.AGENT_WORKFLOW;
+    await workflow.create({id:row.instance_id,params:{jobId:row.job_id,...(row.slice ? {slice:row.slice} : {})}});
   }catch(error){
     if(!(error instanceof Error) || !error.message.includes('already exists')){
       await env.DB.prepare("UPDATE ai_execution_slices SET attempts=attempts+1,last_error=?3,updated_at=?4 WHERE job_id=?1 AND slice=?2 AND status='pending'").bind(row.job_id,row.slice,error instanceof Error?error.message:String(error),nowIso()).run();
@@ -34,7 +40,6 @@ export async function claimExecutionSlice(env:Env,jobId:string,slice:number):Pro
 }
 /** Called only after a durable safe checkpoint. Atomically advance the active pointer. */
 export async function continueExecutionSlice(env:Env,jobId:string,slice:number):Promise<void>{
-  if(slice>=511) throw new Error('自主调查超过安全执行分片数量，请核对任务');
   const now=nowIso(),next=slice+1;
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO ai_execution_slices(job_id,slice,instance_id,status,created_at,updated_at) SELECT ?1,?3,?4,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?2 AND status='running') AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status='running')").bind(jobId,slice,next,`${jobId}-s${next}`,now),
@@ -57,7 +62,18 @@ export async function executeAiSlice(env:Env,jobId:string,slice:number,run:()=>P
     await run();
     await completeExecutionSlice(env,jobId,slice);
   }catch(error){
-    if(!(error instanceof InvestigationContinuation)) throw error;
+    if(isExecutionPaused(error)){await settleReservation(env,jobId,'settled');await completeExecutionSlice(env,jobId,slice);return;}
+    if(!isBackgroundContinuation(error)) throw error;
     await continueExecutionSlice(env,jobId,slice);
   }
+}
+
+/** A user action always gets a fresh deterministic instance; a completed engine is never replayed. */
+export async function dispatchResumedExecution(env:Env,jobId:string):Promise<void>{
+  const active=await activeExecutionSlice(env,jobId),next=(active?.slice??-1)+1,now=nowIso();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE ai_execution_slices SET status='continued',updated_at=?2 WHERE job_id=?1 AND status IN ('running','pending','dispatched')").bind(jobId,now),
+    env.DB.prepare("INSERT OR IGNORE INTO ai_execution_slices(job_id,slice,instance_id,status,created_at,updated_at) SELECT ?1,?2,?3,'pending',?4,?4 WHERE EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status='running')").bind(jobId,next,`${jobId}-s${next}`,now),
+  ]);
+  const resumed=await activeExecutionSlice(env,jobId);if(resumed)await dispatchExecutionSlice(env,resumed);
 }

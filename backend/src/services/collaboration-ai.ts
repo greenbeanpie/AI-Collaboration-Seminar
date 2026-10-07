@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { decompositionSchema, adjustmentSchema, evaluationRubricSnapshotSchema, rubricScoringSchema, groundedDecompositionSchema, groundedAdjustmentSchema, groundedRule, validateProjectSourceCitations, taskEvaluationSchema, persistedEvaluationSchema, type TaskEvaluation, type EvaluationRubricSnapshot } from './collaboration-ai-contracts';
 import { unreadMaterialReview, assessEvidence, buildAssistiveRubricScoring, type EvaluationMaterial } from './collaboration-ai-evidence';
 export { decompositionSchema, adjustmentSchema, evaluationRubricSnapshotSchema, rubricScoringSchema, projectSourceCitationSchema, validateProjectSourceCitations, taskEvaluationSchema, type TaskEvaluation, type EvaluationRubricSnapshot } from './collaboration-ai-contracts';
@@ -11,7 +13,6 @@ import { assertProjectSourceContext, projectSourceContextGuard, type ProjectSour
 import { profileStamp, assertProfileStamp, profileSnapshotGuard, finishRecommendationJob } from './personal-profiles';
 import { z } from 'zod';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { loadAiConfig, type LoadedAiConfig } from '../ai/config';
 import { AppError, invalidState } from '../core/errors';
 import { newId, nowIso } from '../core/db';
@@ -113,7 +114,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
                     { role: 'user', content: JSON.stringify({ request: input.brief, scope: input.tasks, sourceContext: input.sourceSnapshots,materials:input.materialSnapshots,adminFeedback:feedback }) },
                 ], schema: input.progression ? z.object({tasks:adjustmentSchema.shape.tasks,updates:adjustmentSchema.shape.updates}).strict() : input.sourceSnapshots?.length ? groundedAdjustmentSchema : adjustmentSchema });
                 const {data}=answer;effectiveStandardsVersionId=answer.effectiveStandardsVersionId??null;references=('references' in answer?answer.references:[]) as unknown[];decisionReferences=('decisionReferences' in answer?answer.decisionReferences:[]) as unknown[];
-                if(input.progression&&!data.tasks.length&&!data.updates.length){await assertEffectiveStandardCapture(env,input.projectId,effectiveStandardsVersionId);await assertSnapshot(env,input,true);await settleReservation(env,jobId,'settled');let followupJobId:string|null=null;const followupSettings=await env.DB.prepare('SELECT assignment_mode FROM projects WHERE id=?1').bind(input.projectId).first<{assignment_mode:string}>();let followupError:string|null=null;if(followupSettings?.assignment_mode==='automatic'){try{followupJobId=await enqueueDecompositionAssignment(env,jobId,input,config,true);}catch(error){followupError=error instanceof Error?error.message:'后续分工暂不可用';}}await succeedJob(env,jobId,{noChange:true,references,decisionReferences,causeEventId:input.causeEventId,followupJobId,followupError});return;}
+                if(input.progression&&!data.tasks.length&&!data.updates.length){await assertEffectiveStandardCapture(env,input.projectId,effectiveStandardsVersionId);await assertSnapshot(env,input,true);await settleReservation(env,jobId,'settled');let followupJobId:string|null=null;const followupSettings=await env.DB.prepare('SELECT assignment_mode FROM projects WHERE id=?1').bind(input.projectId).first<{assignment_mode:string}>();let followupError:string|null=null;if(followupSettings?.assignment_mode==='automatic'){try{followupJobId=await enqueueDecompositionAssignment(env,jobId,input,config,true);}catch(error){ if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;followupError=error instanceof Error?error.message:'后续分工暂不可用';}}await succeedJob(env,jobId,{noChange:true,references,decisionReferences,causeEventId:input.causeEventId,followupJobId,followupError});return;}
                 if (new Set(data.updates.map(t => t.taskId)).size !== data.updates.length || data.updates.some(t => !input.tasks!.some(snapshot => snapshot.taskId === t.taskId))) throw new AppError('AI_OUTPUT_INVALID', '调整超出指定任务范围或包含重复任务', 502, false);
                 payload = { ...data, updates: data.updates.map(t => ({ ...t, expectedRevision: input.tasks!.find(snapshot => snapshot.taskId === t.taskId)!.revision })), brief: input.brief };
             } else {
@@ -181,7 +182,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
             await applyProposal(env, input.projectId, proposalId, 1, input.requestedBy, true, config.id);
             autoApplied = true;
         }
-        catch (error) {
+        catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
             applyError = error instanceof Error ? error.message : String(error);
         }
     }
@@ -191,7 +192,7 @@ async function propose(env: Env, jobId: string, input: CollaborationAiInput, con
         try {
             followupJobId = await enqueueDecompositionAssignment(env, proposalId, input, config,!!input.progression);
         }
-        catch (error) {
+        catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
             followupError = error instanceof Error ? error.message : String(error);
         }
     }
@@ -241,7 +242,7 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
                 members: members.results.map(m => ({ userId: m.user_id, loadHours: m.load_hours })),
             } });
     }
-    catch (error) {
+    catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
         // Preserve any persisted job/outbox for the existing recovery path; release only absent work.
         if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(followupId).first())
             await settleReservation(env, followupId, 'released');
@@ -253,7 +254,7 @@ async function enqueueDecompositionAssignment(env: Env, proposalId: string, inpu
 export async function continueConfirmedPlan(env:Env,projectId:string,proposalId:string,actorId:string):Promise<{followupJobId:string|null;followupError:string|null}>{
   const row=await env.DB.prepare("SELECT j.input_json,p.kind FROM collaboration_proposals p JOIN jobs j ON j.id=p.job_id JOIN projects project ON project.id=p.project_id WHERE p.id=?1 AND p.project_id=?2 AND p.status='applied' AND project.assignment_mode='automatic' AND project.ai_collaboration_enabled=1").bind(proposalId,projectId).first<{input_json:string;kind:string}>();
   if(!row||row.kind!=='decompose')return {followupJobId:null,followupError:null};
-  try{const input={...JSON.parse(row.input_json) as CollaborationAiInput,requestedBy:actorId},config=await currentConfig(env,input);return {followupJobId:await enqueueDecompositionAssignment(env,proposalId,input,config),followupError:null};}catch(error){return {followupJobId:null,followupError:error instanceof Error?error.message:'自动分工暂不可用，可手动分工'};}
+  try{const input={...JSON.parse(row.input_json) as CollaborationAiInput,requestedBy:actorId},config=await currentConfig(env,input);return {followupJobId:await enqueueDecompositionAssignment(env,proposalId,input,config),followupError:null};}catch(error){ if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;return {followupJobId:null,followupError:error instanceof Error?error.message:'自动分工暂不可用，可手动分工'};}
 }
 async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, config: LoadedAiConfig) {
     if (!input.submissionId)
@@ -290,7 +291,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
         const model = config.config.review;
         const schema = taskEvaluationSchema.superRefine((output, ctx) => {
             try { buildAssistiveRubricScoring(output, rubric); }
-            catch (error) { ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) }); }
+            catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error; ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) }); }
         });
         const scoringRule = rubric?.weights.length
             ? '另按提供的rubricSnapshot逐项给出非官方的成果辅助分数scores，必须且只能覆盖其weights中的全部key，每项score为0至100，confidence为0至1，comment为具体成果评语，evidence为至少一条材料版本ID和正文逐字引用。低置信度或证据不全需列出limitations且coverage=needs_human。不得给出总分、修改权重、官方课程成绩、人员评分或排名。scores格式为[{"key":"评分维度key","score":80,"confidence":0.8,"comment":"成果评语","evidence":[{"materialVersionId":"版本ID","quote":"正文逐字原文"}]}]。总分由服务器计算。'
@@ -340,7 +341,7 @@ async function evaluate(env: Env, jobId: string, input: CollaborationAiInput, co
             await decideSubmission(env, input.projectId, submission.id, latest.revision, report.decision, report.feedback, input.requestedBy, true, input.settingsRevision, config.id, input.rubricSnapshot === undefined ? undefined : decisionRubric, provisional ? externalReview : undefined);
             autoApplied = true;
         }
-        catch (error) {
+        catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
             applyError = error instanceof Error ? error.message : String(error);
         }
     }
@@ -373,9 +374,8 @@ export async function runCollaborationAiJob(env: Env, jobId: string): Promise<vo
         else
             await propose(env, jobId, input, config);
     }
-    catch (error) {
+    catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
         if (error instanceof UserClarificationPending) return;
-        if (error instanceof InvestigationContinuation) throw error;
         await settleReservation(env, jobId, 'released');
         await failJob(env, jobId, { code: error instanceof AppError ? error.code : 'INTERNAL', message: error instanceof Error ? error.message : String(error) });
     }

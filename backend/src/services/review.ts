@@ -1,7 +1,8 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { assertSourceInputs, snapshotRequirementSources, sourceInputsGuard, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
@@ -180,8 +181,7 @@ export async function runReviewJob(env: Env, jobId: string): Promise<void> {
       payload: { overall: total },
     });
     await succeedJob(env, jobId, { reviewId: review.id });
-  } catch (err) {
-    if (err instanceof InvestigationContinuation) throw err;
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     const message = err instanceof Error ? err.message : String(err);
     await env.DB.prepare("UPDATE reviews SET status = 'failed' WHERE id = ?1 AND status IN ('pending', 'running') AND (job_id IS NULL OR job_id=?2) AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))").bind(input.reviewId,jobId).run();
     await settleReservation(env, jobId, 'released');

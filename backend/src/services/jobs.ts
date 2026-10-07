@@ -1,3 +1,4 @@
+import { isExecutionPaused, readExecution, resolveExecutionTarget, completeExecution, markInterruptedExecution } from './ai-execution-control';
 import { recordActivity } from './ai-activity';
 import { prepareAutomaticJobRetry } from './ai-automatic-retries';
 import { currentProjectFeedback } from './project-feedback';
@@ -104,10 +105,8 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
 
   try {
     const job = await getJob(env, jobId);
-    const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
     await assertDispatchActive(env, jobId);
-    if(PARSE_JOB_KINDS.has(job.kind)) await workflow.create({ id: jobId, params: { jobId } });
-    else {
+    {
       await ensureInitialExecutionSlice(env,jobId);
       const slice=await activeExecutionSlice(env,jobId);
       if(!slice || !await dispatchExecutionSlice(env,slice)) return 'engine';
@@ -127,8 +126,7 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
       return 'dispatched';
     }
     // A persisted relay must stay running: its pending slice is the recovery outbox.
-    const current=await getJob(env,jobId);
-    if(!PARSE_JOB_KINDS.has(current.kind) && await activeExecutionSlice(env,jobId)) return 'engine';
+    if(await activeExecutionSlice(env,jobId)) return 'engine';
     // 引擎不可用（如本地/测试无 Workflow 运行时）：交由恢复器或同步执行兜底
     console.warn(`[jobs] workflow dispatch failed for ${jobId}: ${message}`);
     await env.DB.prepare("UPDATE jobs SET status = 'queued', updated_at = ?2 WHERE id = ?1 AND status = 'running'")
@@ -149,6 +147,7 @@ export async function getJob(env: Env, jobId: string): Promise<JobRow> {
 }
 
 export async function failJob(env: Env, jobId: string, error: { code: string; message: string; details?: unknown }, expectedUpdatedAt?: string, expectedInstanceId?: string): Promise<boolean> {
+  if(isExecutionPaused(error)||(await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:jobId})))?.state==='paused')return false;
   const failedAt=nowIso(),serializedError=JSON.stringify(error);
   const writes=[
     env.DB.prepare(
@@ -171,6 +170,7 @@ export async function succeedJob(env: Env, jobId: string, result: unknown): Prom
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
   if ((transition.meta?.changes ?? 0) === 0) return;
+  await completeExecution(env,await resolveExecutionTarget(env,{kind:'job',id:jobId}));
   await env.DB.prepare("UPDATE job_outbox SET status = 'done', updated_at = ?2 WHERE job_id = ?1")
     .bind(jobId, nowIso())
     .run();
@@ -199,10 +199,17 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return;
   try { await assertDispatchActive(env, jobId); } catch { return; }
-  const workflow = PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
-  const active = PARSE_JOB_KINDS.has(job.kind) ? null : await activeExecutionSlice(env,jobId);
+  const workflow = (await activeExecutionSlice(env,jobId)) ? env.AGENT_WORKFLOW : PARSE_JOB_KINDS.has(job.kind) ? env.PARSE_WORKFLOW : env.AGENT_WORKFLOW;
+  const active = await activeExecutionSlice(env,jobId);
   if(active?.status==='pending') { await dispatchExecutionSlice(env,active); return; }
   const instanceId=active?.instance_id ?? jobId;
+  const target=await resolveExecutionTarget(env,{kind:'job',id:jobId}),execution=await readExecution(env,target);
+  const interrupt=async()=>{
+    if(!execution)return false;
+    if((await activeExecutionSlice(env,jobId))?.instance_id!==active?.instance_id)return true;
+    if(await markInterruptedExecution(env,target,execution.generation))await settleReservation(env,jobId,'settled');
+    return true;
+  };
   let state: InstanceStatus;
   try {
     const instance = await workflow.get(instanceId);
@@ -219,6 +226,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
          OR EXISTS (SELECT 1 FROM usage_reservations WHERE job_id = ?1 AND attempts_started > 0) AS started`,
     ).bind(jobId).first<{ started: number }>();
     if ((!active && started?.started) || active?.status === 'running' || active?.status === 'complete') {
+      if(await interrupt())return;
       const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 实例缺失且模型调用已开始；为避免重复请求，请重新发起新任务' }, job.updated_at, active?.instance_id);
       if (failed) await settleReservation(env, jobId, 'released');
       return;
@@ -243,6 +251,7 @@ export async function reconcileWorkflowJob(env: Env, jobId: string): Promise<voi
     return;
   }
   if (['errored', 'terminated', 'complete'].includes(state.status)) {
+    if(await interrupt())return;
     const failed = await failJob(env, jobId, { code: 'INTERNAL', message: 'Workflow 已结束但业务任务未提交结果，请重试新任务', details: { workflowStatus: state.status } }, job.updated_at, active?.instance_id);
     if (failed) await settleReservation(env, jobId, 'released');
   } else {

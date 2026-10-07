@@ -1,3 +1,4 @@
+import { executionSchema, readExecution, resolveExecutionTarget } from '../services/ai-execution-control';
 import { aiActivitySchema, aiActivityEventsSchema, readActivity, readActivityEvents, recordActivity } from '../services/ai-activity';
 import { retryFailedAiJob } from '../services/admin-ai-retries';
 import { withIdempotency } from '../services/idempotency';
@@ -27,6 +28,7 @@ const jobResponse = apiEnvelope(
     updatedAt: z.string(),
     finishedAt: z.string().nullable(),
     activity: aiActivitySchema,
+    execution: executionSchema.nullable(),
     retry: z.object({ status: z.string(), attempts: z.number().int(), nextAttemptAt: z.string(), originalJobId: z.string().uuid() }).optional(),
   }),
   'JobResponse',
@@ -55,7 +57,7 @@ const retryRoute = createRoute({
   },
 });
 
-async function authorizedJob(env: import('../env').Env,jobId:string,userId:string){
+export async function authorizedJob(env: import('../env').Env,jobId:string,userId:string){
  const job=await getJob(env,jobId);
  if(job.project_id){
   const member=await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(job.project_id,userId).first();
@@ -67,7 +69,7 @@ async function authorizedJob(env: import('../env').Env,jobId:string,userId:strin
  }
  return job;
 }
-async function currentSuccessor(env:import('../env').Env,jobId:string){
+export async function currentSuccessor(env:import('../env').Env,jobId:string){
  const row=await env.DB.prepare(`WITH RECURSIVE chain(id,depth) AS (SELECT ?1,0 UNION ALL SELECT l.retry_job_id,chain.depth+1 FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id WHERE chain.depth<128) SELECT id FROM chain ORDER BY depth DESC LIMIT 1`).bind(jobId).first<{id:string}>();
  return row?.id??jobId;
 }
@@ -110,6 +112,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
         updatedAt: job.updated_at,
         finishedAt: job.finished_at??null,
         activity,
+        execution: await readExecution(c.env,await resolveExecutionTarget(c.env,{kind:'job',id:job.id})),
         ...(retry ? {retry:{status:retry.status,attempts:retry.attempts,nextAttemptAt:retry.next_attempt_at,originalJobId}} : {}),
       }),
       200,

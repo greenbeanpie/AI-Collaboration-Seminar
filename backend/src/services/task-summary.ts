@@ -1,3 +1,5 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { z } from 'zod';
 import type { Env } from '../env';
 import { loadAiConfig } from '../ai/config';
@@ -78,7 +80,7 @@ export async function enqueueTaskSummary(env: Env, projectId: string, taskId: st
   try {
     await reserveAiSlot(env,{projectId,jobId,purpose:'agent_run',maxCalls:2,configVersionId:config.id});
     await createJobAndDispatch(env,{projectId,jobId,kind:'agent_run',createdBy:userId,input:{operation:'collaboration.summary',projectId,taskId,requestedBy:userId,sourceHash:current.summarySourceHash,configVersionId:config.id}});
-  } catch (error) {
+  } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
     if (!await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?1').bind(jobId).first()) {
       await settleReservation(env,jobId,'released');
       await env.DB.prepare("UPDATE task_summaries SET status='failed',updated_at=?2 WHERE job_id=?1").bind(jobId,nowIso()).run();
@@ -120,7 +122,7 @@ export async function runTaskSummaryJob(env: Env, jobId: string): Promise<void> 
     if (!saved.meta.changes) throw invalidState('摘要结果已过期');
     await settleReservation(env,jobId,'settled');
     await succeedJob(env,jobId,{taskId:task.id,sourceHash:input.sourceHash,summary:output.data.summary});
-  } catch (error) {
+  } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
     await env.DB.prepare("UPDATE task_summaries SET status='failed',updated_at=?2 WHERE job_id=?1 AND status!='ready'").bind(jobId,nowIso()).run();
     await settleReservation(env,jobId,'released');
     await failJob(env,jobId,{code:error instanceof AppError?error.code:'INTERNAL',message:error instanceof Error?error.message:String(error)});

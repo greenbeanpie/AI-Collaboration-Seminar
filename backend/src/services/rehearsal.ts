@@ -1,7 +1,8 @@
+import { isExecutionPaused } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
 import { assertEffectiveStandard, effectiveStandardGuardSql } from './effective-standard';
 import { assertSourceInputs, type SourceInputSnapshot } from './source-inputs';
 import type { Env } from '../env';
-import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
 import { aiJsonCall } from './agent';
@@ -213,8 +214,7 @@ export async function runRehearsalTurnJob(env: Env, jobId: string): Promise<void
     if(!inserted.meta.changes)throw new AppError('INVALID_STATE','项目标准或演练已变化，结果未发布',409,false);
     await settleReservation(env, jobId, 'settled');
     await env.DB.prepare('UPDATE rehearsals SET processing_job_id=NULL WHERE id=?1 AND processing_job_id=?2').bind(rehearsal.id,jobId).run();await succeedJob(env, jobId, { rehearsalId: rehearsal.id, action: data.action });
-  } catch (err) {
-    if (err instanceof InvestigationContinuation) throw err;
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     const message = err instanceof Error ? err.message : String(err);
     await settleReservation(env, jobId, 'released');
     if(input.phase==='summary')await env.DB.prepare("UPDATE assessments SET status='failed' WHERE entity_id=?1 AND status!='succeeded' AND (job_id IS NULL OR job_id=?2) AND EXISTS(SELECT 1 FROM jobs WHERE id=?2 AND status IN ('queued','running'))").bind(input.rehearsalId,jobId).run();

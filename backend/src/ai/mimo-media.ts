@@ -37,7 +37,7 @@ function record(value: unknown): Record<string, unknown> { return value !== null
 async function boundedJson(response: Response): Promise<unknown> {
   if (!response.ok || response.redirected) {
     await response.body?.cancel();
-    throw new AppError('AI_UNAVAILABLE', `MiMo 媒体请求失败（HTTP ${response.status}）；请核对后主动重试`, 502, false);
+    throw new AppError('AI_UNAVAILABLE', `MiMo 媒体请求失败（HTTP ${response.status}）；请核对后主动重试`, 502, false, {status:response.status});
   }
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > MAX_RESPONSE_BYTES) {
@@ -63,7 +63,8 @@ async function boundedJson(response: Response): Promise<unknown> {
     return JSON.parse(text);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw invalid('MiMo 媒体响应读取失败或 JSON 无效；请求状态未知，请核对后主动重试');
+    if(error instanceof SyntaxError)throw invalid('MiMo 媒体响应 JSON 无效');
+    throw new AppError('AI_UNAVAILABLE','MiMo 媒体响应读取中断；结果未知，请核对后主动重试',502,false);
   } finally { reader.releaseLock(); }
 }
 
