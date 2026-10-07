@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { FileProcessingActions } from './FileProcessingActions';
 import { getFileProcessing, prepareFileScanPages, startFileProcessing, type FileProcessingState } from './file-processing-client';
+const project = vi.hoisted(() => ({ aiCollaborationEnabled: true }));
+vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: true }, limits: {} } }) }));
 vi.mock('./file-processing-client', () => ({ fileProcessingKey: (projectId: string, fileId: string) => ['fileProcessing', projectId, fileId], getFileProcessing: vi.fn(), startFileProcessing: vi.fn(), prepareFileScanPages: vi.fn() }));
 const state: FileProcessingState = { fileId: 'f', lifecycleVersion: 4, sourceId: 's', sourceVersionId: 'v', jobId: null, textStatus: 'pending', summaryStatus: 'pending', requirementsStatus: 'skipped', error: null, materialIds: [], textAvailable: false, canProcess: true, needsImages: 0 };
@@ -11,7 +13,7 @@ function show(value = state, disabled = false) {
   vi.mocked(getFileProcessing).mockResolvedValue(value);
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><FileProcessingActions projectId="p" fileId="f" disabled={disabled} /></MemoryRouter></QueryClientProvider>);
 }
-beforeEach(() => { vi.clearAllMocks(); Object.defineProperty(navigator, 'onLine', { value: true, configurable: true }); });
+beforeEach(() => { project.aiCollaborationEnabled = true; vi.clearAllMocks(); Object.defineProperty(navigator, 'onLine', { value: true, configurable: true }); });
 afterEach(cleanup);
 describe('visible file processing actions', () => {
   it('offers extraction outside details and submits the current lifecycle version', async () => {
@@ -37,6 +39,13 @@ describe('visible file processing actions', () => {
     show({ ...state, textStatus: 'waiting_input', needsImages: 2 });
     fireEvent.click(await screen.findByRole('button', { name: '准备扫描页并识别' }));
     await waitFor(() => expect(prepareFileScanPages).toHaveBeenCalledWith('p', expect.objectContaining({ needsImages: 2 }), {}, expect.any(Function)));
+  });
+  it('blocks scan OCR when project AI is off while allowing manual text extraction', async () => {
+    project.aiCollaborationEnabled = false;
+    show({ ...state, textStatus: 'waiting_input', needsImages: 1 });
+    expect(await screen.findByRole('button', { name: '准备扫描页并识别' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '提取正文' })).toBeEnabled();
+    expect(prepareFileScanPages).not.toHaveBeenCalled();
   });
   it('blocks processing without permission and when a dirty material disables it', async () => {
     show({ ...state, canProcess: false }, true);
