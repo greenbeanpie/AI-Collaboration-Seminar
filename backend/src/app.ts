@@ -1,3 +1,4 @@
+import { isD1DailyQuotaError, d1QuotaError } from './core/d1-quota';
 import { registerFileProcessingRoutes } from './api/file-processing';
 import { registerAiExecutionPolicyRoutes } from './api/ai-execution-policy';
 import { registerJobExecutionRoutes } from './api/job-execution';
@@ -86,6 +87,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
 
   app.onError((err, c) => {
     const requestId = c.get('requestId') ?? crypto.randomUUID();
+    if(isD1DailyQuotaError(err)){const failure=d1QuotaError();c.header('Retry-After',String(Math.max(1,Math.ceil((Date.parse(String(failure.details!.resetAt))-Date.now())/1000))));return c.json(failureBody(failure.code,failure.message,failure.retryable,requestId,failure.details),503);}
     if (err instanceof AppError) {
       if (err.status >= 500) {
         console.error(JSON.stringify({event:'request_failed',requestId,code:err.code,httpStatus:err.status,retryable:err.retryable}));

@@ -1,3 +1,4 @@
+import { isD1DailyQuotaError } from './core/d1-quota';
 import { createApp } from './app';
 import { handleScheduled } from './cron';
 import { ParseSourceWorkflow } from './workflows/parse-source';
@@ -32,8 +33,8 @@ export default {
         // The producer is internal; malformed messages are discarded rather
         // than retried forever.
         message.ack();
-      }catch{
-        message.retry({delaySeconds:5});
+      }catch(error){
+        message.retry({delaySeconds:isD1DailyQuotaError(error)?3600:5});
       }
     }
   },

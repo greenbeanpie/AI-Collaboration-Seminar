@@ -1,3 +1,4 @@
+import { isD1DailyQuotaError } from './core/d1-quota';
 import { backfillFileProcessing } from './services/file-processing';
 import { recoverChatContextCleanup } from './services/project-ai-chat';
 import { backfillTaskAgentEligibility } from './services/task-agent-eligibility';
@@ -30,7 +31,7 @@ export function scheduledGroups(cron?: string): Array<keyof typeof CRON_GROUPS> 
   return (Object.keys(CRON_GROUPS) as Array<keyof typeof CRON_GROUPS>).filter(group => CRON_GROUPS[group] === cron);
 }
 async function attempt(name: string, task: () => Promise<unknown>): Promise<boolean> {
-  try { await task(); return true; } catch { console.error(JSON.stringify({ event: 'cron_operation_failed', operation: name })); return false; }
+  try { await task(); return true; } catch(error) { if(isD1DailyQuotaError(error))throw error;console.error(JSON.stringify({ event: 'cron_operation_failed', operation: name })); return false; }
 }
 export async function handleScheduled(env: Env, cron?: string): Promise<void> {
   const now = nowIso();
@@ -41,7 +42,6 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
     try {
       if (group === 'recovery') {
         await run('reservations_before_admission', () => releaseStaleReservations(env, now));
-        await run('file_processing', () => backfillFileProcessing(env, undefined, 10));
         await run('progression', () => dispatchProjectProgression(env));
         await run('notifications', () => dispatchNotifications(env));
         await run('admin_retry', () => recoverAdminAiRetries(env));
@@ -57,6 +57,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
         await recoverJobs(env, nowIso());
         await run('reservations', () => releaseStaleReservations(env, now));
       } else if (group === 'backfill') {
+        await run('file_processing', () => backfillFileProcessing(env, undefined, 10));
         await run('task_eligibility', () => backfillTaskAgentEligibility(env));
         await run('resource_indexes', () => backfillResourceIndexes(env, 5));
         await run('clarifications', () => invalidateStaleProjectClarifications(env));
@@ -66,7 +67,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
         await run('media_files', () => cleanupMediaFiles(env));
         await cleanupRecords(env, now);
       } else await cleanupOrphans(env, now);
-    } catch { failures++; console.error(JSON.stringify({event: 'cron_group_failed', group})); }
+    } catch(error) { if(isD1DailyQuotaError(error)){console.error(JSON.stringify({event:'database_quota_exhausted',group}));return;}failures++; console.error(JSON.stringify({event: 'cron_group_failed', group})); }
     finally { console.log(JSON.stringify({event: 'cron_group_completed', group, failures, elapsedMs: Date.now() - started})); }
   }
 }
