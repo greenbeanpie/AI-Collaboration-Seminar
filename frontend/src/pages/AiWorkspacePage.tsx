@@ -13,7 +13,7 @@ import { useCapabilities } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, Field, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
 import type { DataOf } from '../api/types';
-import { clearPendingJob, completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, markdownToTiptapDoc, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
+import { completeIntent, formatWorkflowDate, idempotencyKeyForIntent, isRecord, markdownToTiptapDoc, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 
 type AgentSession = DataOf<'AgentSessionResponse'>;
 type MaterialItem = DataOf<'MaterialListResponse'>['items'][number];
@@ -128,9 +128,6 @@ export function AiWorkspacePage({ embedded = false }: { embedded?: boolean }) {
       ]).finally(() => {
         // Retain terminal activity alongside its result.
       });
-    } else {
-      clearPendingJob(pendingJobKey(projectId), pendingAgentJob.jobId);
-      setPendingAgentJob((current) => current?.jobId === pendingAgentJob.jobId ? null : current);
     }
   }, [job.job, job.jobId, job.isSettled, pendingAgentJob, projectId, queryClient]);
 
