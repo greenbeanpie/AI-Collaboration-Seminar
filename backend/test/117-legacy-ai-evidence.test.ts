@@ -56,8 +56,10 @@ describe('legacy AI compatibility retains trustworthy evidence',()=>{
     expect(result.status).toBe('unscorable');expect(result.overall.score).toBeNull();expect(result.scores.every((score:{score:unknown})=>score.score===null)).toBe(true);expect(result.limitations).toHaveLength(2);
   });
   it('rejects invented fixed-material quotes',async()=>{
-    const f=await fixture(),r=await review(f),output=report(f);output.scores[0]!.evidence[0]!.quote='并不存在的资料';provider(output);await runReviewJob(env,r.jobId);
-    expect((await getJob(env,r.jobId)).status).toBe('failed');expect((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string|null}>())!.report_json).toBeNull();
+    const f=await fixture(),r=await review(f),output=report(f);output.scores[0]!.evidence[0]!.quote='并不存在的资料';provider(output);
+    await expect(runReviewJob(env,r.jobId)).rejects.toMatchObject({name:'ExecutionPaused'});
+    expect((await env.DB.prepare('SELECT state,pause_reason FROM ai_executions WHERE target_id=?1').bind(r.jobId).first())).toMatchObject({state:'paused',pause_reason:'output_invalid'});
+    expect((await env.DB.prepare('SELECT report_json FROM reviews WHERE id=?1').bind(r.id).first<{report_json:string|null}>())!.report_json).toBeNull();
   });
   it('rejects explicit untracked rubric choices and queued reviews without a tracked project standard',async()=>{
     const f=await fixture(),otherRubric=newId();

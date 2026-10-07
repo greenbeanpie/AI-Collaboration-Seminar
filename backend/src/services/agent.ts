@@ -20,7 +20,7 @@ import { markAiCallStarted, settleReservation } from './ai-reservations';
 import { recordEvent } from './events';
 import { markdownToDoc } from './tiptap';
 import { z } from 'zod';
-import { decisionReferences,extractDecisionReferences,validateReadReferences,modelOutputIssues } from './project-evidence';
+import { decisionReferences,extractDecisionReferences,validateReadReferences,modelOutputIssues,referenceRepairContext } from './project-evidence';
 
 export type AgentCapability = 'do' | 'guide' | 'review_only';
 
@@ -133,14 +133,14 @@ export async function aiJsonCall<S extends z.ZodType>(
         // Preserve the full result; gateway input limits stop oversized repairs
         // before dispatch instead of silently dropping the end of a document.
         {role:'assistant',content:out.content},
-        {role:'user',content:'最终JSON未通过业务结构校验。字段错误：'+JSON.stringify(modelOutputIssues(validationError))+'。请修正这些字段和引用，证据必须使用有效正文逐字引用，证据不足时保留未知；保持有依据的调查结论，不调用工具；参考资料只能使用已实际读取ID：'+JSON.stringify(out.references.map(r=>r.id))},
+        {role:'user',content:'最终JSON未通过业务结构校验。字段错误：'+JSON.stringify(modelOutputIssues(validationError))+'。请修正这些字段和引用，证据必须使用有效正文逐字引用，证据不足时保留未知；保持有依据的调查结论，不调用工具；参考资料只能使用已实际读取ID：'+referenceRepairContext(out.references,params.messages)},
       ];
       const repairSchema=z.unknown().transform(raw=>{
         const text=JSON.stringify(raw);
         return {data:params.schema.parse(businessJson(text)),references:decisionReferences(text,out.references),decisionReferences:extractDecisionReferences(text,out.references)};
       });
       const repaired=await aiJsonCall(env,{...params,projectTools:undefined,sessionId:stableSessionId,maxAttempts:2,
-        promptVersion:params.promptVersion+'-final-repair-v2',messages:[...params.messages,...repairTail],schema:repairSchema,
+        promptVersion:params.promptVersion+'-final-repair-v3',messages:[...params.messages,...repairTail],schema:repairSchema,
         beforeCall:async()=>{
           await assertEffectiveStandardCapture(env,params.projectId,out.effectiveStandardsVersionId);
           await params.beforeCall?.();
