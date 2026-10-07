@@ -21,6 +21,17 @@ const selectionParameters = ['assessmentId', 'reviewId', 'rehearsalId', 'review'
 const activeAssessmentStatuses = ['pending', 'running', 'active', 'finishing', 'failed'];
 const pendingKey = (id: string) => `ai-office:pending-assessment-job:${id}`;
 function isScoringReport(report: Assessment['report']): report is AssessmentReport { return Boolean(report && (report.status === 'scored' || report.status === 'unscorable') && Array.isArray(report.scores)); }
+function assessmentStatusLabel(row: Assessment) {
+  if (row.status === 'succeeded' && isScoringReport(row.report)) return row.report.status === 'unscorable' ? '已完成 · 无法评分' : '已评分';
+  switch (row.status) {
+    case 'pending': return '等待处理';
+    case 'active': return '进行中';
+    case 'finishing': return '正在完成';
+    case 'finished': return '已完成';
+    case 'cancelled': case 'running': case 'waiting_input': case 'failed': case 'queued': case 'succeeded': return jobStatusLabel(row.status);
+    default: return row.status;
+  }
+}
 async function assessmentHistory(projectId: string, signal?: AbortSignal) {
   const items: Assessment[] = []; const seen = new Set<string>(); let cursor: string | null = null;
   do { const page: { items: Assessment[]; nextCursor: string | null } = await projectRequest(projectId, '/assessments', { signal, query: { cursor, limit: 100 } }); items.push(...page.items); cursor = page.nextCursor; if (cursor && seen.has(cursor)) throw new Error('评分历史返回重复游标。'); if (cursor) seen.add(cursor); } while (cursor);
@@ -112,7 +123,7 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </SectionCard>
       <SectionCard title="独立评分记录" detail="每一轮保留自己的依据和结果。历史演练文字反馈也在此查看。">
         {history.isLoading && <Spinner label="读取评分历史" />}{history.error && <ErrorNotice error={history.error} onRetry={() => void history.refetch()} />}
-        <div className="assessment-history">{rows.map(row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{row.status}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>)}</div>
+        <div className="assessment-history">{rows.map(row => <button className={`assessment-history-row ${selectedId === row.assessmentId ? 'active' : ''}`} key={row.assessmentId} onClick={() => select(row.assessmentId)}><strong>{row.historical ? '历史记录' : kind === 'rehearsal' ? '答辩演练' : '材料检查'} · {new Date(row.createdAt).toLocaleString('zh-CN')}</strong><small>{assessmentStatusLabel(row)}{row.historical ? ' · 原有反馈' : ` · 标准 v${row.standardsVersion ?? '—'}`}</small></button>)}</div>
         {!history.isLoading && !history.error && !rows.length && <EmptyState title="尚无此形式的评分记录" detail="完成一轮检查或演练后，反馈会独立保存。" />}
     {(assessment && !assessment.historical && projectPermission(project,'scoreCorrect') && ['succeeded','failed'].includes(assessment.status)) && <ManualAssessmentEditor key={selectedId || 'new'} projectId={projectId} standard={currentStandard ?? undefined} assessment={assessment} goalRevision={goal.data?.revision} materialVersionIds={materialVersions} onSaved={async result => { select(result.assessmentId); await client.invalidateQueries({ queryKey: ['assessments', projectId] }); await client.invalidateQueries({ queryKey: ['assessment', projectId] }); }} />}
       </SectionCard>

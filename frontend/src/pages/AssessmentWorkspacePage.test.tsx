@@ -58,6 +58,12 @@ it('recovers a failed assessment job from server history and retries its real jo
 });
 
 const aliases = ['assessmentId', 'reviewId', 'rehearsalId', 'review', 'rehearsal'];
+it('labels completed unscorable history separately from a scored result',async()=>{
+  showRecords([record('empty','material_review'),record('scored','material_review','succeeded',{report:{...report,status:'scored',weightedTotal:80}})],'/assessment?section=checks&assessmentId=empty');
+  expect(await screen.findByText('已完成 · 无法评分 · 标准 v1')).toBeInTheDocument();
+  expect(screen.getByText('已评分 · 标准 v1')).toBeInTheDocument();
+  expect(screen.queryByText(/succeeded/)).toBeNull();
+});
 function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.search}</output>; }
 function record(id: string, kind: Assessment['kind'], status = 'succeeded', extra: Partial<Assessment> = {}): Assessment {
   return { assessmentId: id, kind, status, goal: { projectId:'p', title: id + '-goal', detail: '', revision:1, graphRevision:1 }, goalRevision:1, standardsVersionId:'s', standardsVersion:1, materialVersionIds:[], rehearsalId:kind === 'rehearsal' ? id + '-session' : null, report: { ...report, summary:id + '-summary' }, createdAt:'2026-10-03T00:00:00Z', historical:false, canOperate:true, ...extra };

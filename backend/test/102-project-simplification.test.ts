@@ -147,6 +147,47 @@ describe('independent goal assessments with complete evidence',()=>{
   it('grades rehearsal from frozen actual answers independently of material review',async()=>{const f=await fixture(),s=await standard(f),created=await json(await f.request('/assessments',{kind:'rehearsal',standardsVersionId:s.standardsVersionId,materialVersionIds:[]}));vi.stubGlobal('fetch',model({action:'question',content:'请说明案例结果。'}));await runRehearsalTurnJob(offline,created.jobId);const answer=await json(await f.request(`/rehearsals/${created.rehearsalId}/answers`,{content:'案例有明确结果。'}));expect(answer.turnId).toBeTruthy();expect((await f.request(`/rehearsals/${created.rehearsalId}/finish`,{})).status).toBe(409);await runRehearsalTurnJob(offline,answer.jobId);const end=await json(await f.request(`/rehearsals/${created.rehearsalId}/finish`,{}));const evidence=[{type:'answer',turnSequence:2,quote:'案例有明确结果。'}];vi.stubGlobal('fetch',model({scores:s.rubric.weights.map(w=>({key:w.key,score:90,confidence:.9,comment:'回答有依据',evidence})),summary:'演练评分',limitations:[],requirementChecks:[{requirementId:s.requirements[0]!.requirementId,status:'met',comment:'明确说明',evidence}]}));await runRehearsalTurnJob(offline,end.jobId);const result=await json(await f.request(`/assessments/${created.assessmentId}`));expect(result.report.weightedTotal).toBe(90);expect(result.report.scores[0].evidence[0].turnSequence).toBe(2);expect((await json(await f.request('/assessments'))).items).toHaveLength(1);});
 });
 
+describe('material assessment input and evidence repair',()=>{
+  it('rejects absent, blank, attachment-only, archived and background-only outputs before reserving a job',async()=>{
+    for(const mode of ['absent','blank','attachment','archived','background']){
+      const f=await fixture();await standard(f);
+      const selected:string[]=[];
+      if(mode!=='absent'){
+        const id=await material(f,mode==='blank'?' \n\t':mode==='attachment'?'':'真实成果正文');
+        await env.DB.prepare('UPDATE materials SET current_version_id=?1 WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)').bind(id).run();
+        if(mode==='attachment')await env.DB.prepare('UPDATE material_versions SET attachments_json=?2 WHERE id=?1').bind(id,JSON.stringify([{fileId:newId(),name:'成果.docx'}])).run();
+        if(mode==='archived')await env.DB.prepare('UPDATE materials SET archived_at=?2 WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)').bind(id,nowIso()).run();
+        if(mode==='background'){await env.DB.prepare("UPDATE materials SET purpose='background' WHERE id=(SELECT material_id FROM material_versions WHERE id=?1)").bind(id).run();selected.push(id);}
+      }
+      const response=await f.request('/assessments',{kind:'material_review',materialVersionIds:selected});
+      expect(response.status,mode).toBe(409);expect(await response.text()).toContain('没有可核对的成果正文');
+      expect((await env.DB.prepare('SELECT COUNT(*) n FROM jobs WHERE project_id=?1').bind(f.projectId).first<{n:number}>())!.n).toBe(0);
+      expect((await env.DB.prepare('SELECT COUNT(*) n FROM assessments WHERE project_id=?1').bind(f.projectId).first<{n:number}>())!.n).toBe(0);
+    }
+  });
+  it('repairs a mismatched quote once using the frozen body and publishes only verified evidence',async()=>{
+    const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',materialVersionIds:[versionId]}));
+    const output=(quote:string)=>({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'可核对',evidence:[{type:'material',materialVersionId:versionId,quote}]})),summary:'检查结果',limitations:[],requirementChecks:s.requirements.map(r=>({requirementId:r.requirementId,status:'met',comment:'有依据',evidence:[{type:'material',materialVersionId:versionId,quote}]}))});
+    const first=model(output('改写的案例结果')),second=model(output('案例有明确结果。'),body=>{
+      expect(JSON.stringify(body.messages)).toContain('评分证据与固定材料或实际回答不符');
+      expect(JSON.stringify(body.messages)).toContain('案例有明确结果。');
+      expect(body.tools).toBeUndefined();
+    });
+    const fetch=vi.fn().mockImplementationOnce(first).mockImplementationOnce(second);vi.stubGlobal('fetch',fetch);
+    await runMaterialAssessmentJob(offline,created.jobId);
+    expect(fetch).toHaveBeenCalledTimes(2);expect((await getJob(env,created.jobId)).status).toBe('succeeded');
+    const result=await json(await f.request(`/assessments/${created.assessmentId}`));
+    expect(result.report.weightedTotal).toBe(80);expect(result.report.scores[0].evidence[0].quote).toBe('案例有明确结果。');
+  });
+  it('still rejects fabricated evidence after the single repair attempt',async()=>{
+    const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',materialVersionIds:[versionId]}));
+    const evidence=[{type:'material',materialVersionId:versionId,quote:'从未存在的句子'}];
+    const fetch=model({scores:s.rubric.weights.map(w=>({key:w.key,score:80,confidence:.9,comment:'虚构',evidence})),summary:'检查',limitations:[],requirementChecks:s.requirements.map(r=>({requirementId:r.requirementId,status:'met',comment:'虚构',evidence}))});vi.stubGlobal('fetch',fetch);
+    await runMaterialAssessmentJob(offline,created.jobId);expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await getJob(env,created.jobId)).status).toBe('failed');expect((await json(await f.request(`/assessments/${created.assessmentId}`))).report).toBeNull();
+  });
+});
+
 describe('material assessment execution continuation',()=>{
   it('keeps the assessment and reservation active during safe continuation and publishes only the final report',async()=>{
     const f=await fixture(),s=await standard(f),versionId=await material(f),created=await json(await f.request('/assessments',{kind:'material_review',standardsVersionId:s.standardsVersionId,materialVersionIds:[versionId]}));

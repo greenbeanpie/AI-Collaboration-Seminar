@@ -73,13 +73,21 @@ export function registerProjectSimplificationRoutes(app:OpenAPIHono<AppEnv>){
   endpoint(app,'post','/assessments','AssessmentCreateResponse',z.object({assessmentId:z.string().uuid(),jobId:z.string().uuid(),rehearsalId:z.string().uuid().optional()}),async c=>{
     const b=create.parse(await c.req.json()),projectId=c.req.param('projectId')!,userId=c.get('user')!.id;
     const preferredMaterials=[...b.materialVersionIds];
-    const found=await c.env.DB.prepare("SELECT id,current_version_id FROM materials WHERE project_id=?1 AND purpose='output' AND current_version_id IS NOT NULL ORDER BY updated_at DESC,id").bind(projectId).all<{id:string;current_version_id:string}>();
+    const found=await c.env.DB.prepare("SELECT id,current_version_id FROM materials WHERE project_id=?1 AND purpose='output' AND archived_at IS NULL AND current_version_id IS NOT NULL ORDER BY updated_at DESC,id").bind(projectId).all<{id:string;current_version_id:string}>();
     const frozen=new Map(found.results.map(m=>[m.id,m.current_version_id]));
     for(const versionId of preferredMaterials){const material=await c.env.DB.prepare("SELECT m.id,m.purpose FROM material_versions v JOIN materials m ON m.id=v.material_id WHERE v.id=?1 AND m.project_id=?2").bind(versionId,projectId).first<{id:string;purpose:string}>();if(!material)throw notFound('优先参考文档不属于本项目');if(material.purpose==='output')frozen.set(material.id,versionId);}
     const evaluationVersions=[...frozen.values()];
     const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),userId,operation:'assessment.create',rawBody:JSON.stringify({projectId,...b})},async()=>{
       const input=await assessmentInputs(c.env,projectId,b.standardsVersionId,evaluationVersions,b.goalRevision,b.sourceVersionIds,preferredMaterials);
       await requireProjectPermission(c.env,projectId,userId,'scoreInitiate');
+      if(b.kind==='material_review'){
+        let hasBody=false;
+        for(const versionId of input.materialVersionIds){
+          const version=await c.env.DB.prepare('SELECT markdown FROM material_versions WHERE id=?1 AND project_id=?2').bind(versionId,projectId).first<{markdown:string}>();
+          if(version?.markdown.trim()){hasBody=true;break;}
+        }
+        if(!hasBody)throw invalidState('没有可核对的成果正文。请先在项目文档中保存用途为“成果”的文档正文，再开始材料检查；仅有上传附件尚不能评分，需提供可核对正文；背景和参考资料不能替代成果。');
+      }
       return withReservedAiJob(c.env,{projectId,purpose:b.kind==='material_review'?'review_run':'rehearsal_turn',maxCalls:24},async(jobId,configVersionId)=>{
         const id=newId(),rehearsalId=b.kind==='rehearsal'?newId():null,now=nowIso(),batch=[c.env.DB.prepare(`INSERT INTO assessments(id,project_id,kind,entity_id,goal_revision,standards_version_id,inputs_json,status,job_id,created_by,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11 WHERE ${projectPermissionSql('?2','?10','scoreInitiate')} AND ${effectiveStandardGuardSql('?2','?6')}`).bind(id,projectId,b.kind,rehearsalId,input.goal.revision,input.standard.standardsVersionId,JSON.stringify(input),b.kind==='rehearsal'?'active':'pending',jobId,userId,now)];
         if(rehearsalId)batch.push(c.env.DB.prepare(`INSERT INTO rehearsals(id,project_id,scope,material_version_ids_json,status,created_by,created_at,processing_job_id) SELECT ?1,?2,'all',?3,'active',?4,?5,?6 WHERE ${projectPermissionSql('?2','?4','scoreInitiate')} AND EXISTS(SELECT 1 FROM assessments WHERE id=?7 AND project_id=?2 AND job_id=?6)`).bind(rehearsalId,projectId,JSON.stringify(evaluationVersions),userId,now,jobId,id));
