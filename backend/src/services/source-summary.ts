@@ -1,3 +1,5 @@
+import { readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
+import { BackgroundContinuation, isBackgroundContinuation } from './ai-execution-slices';
 import { checkpointRootId } from './ai-checkpoints';
 import { recordActivity } from './ai-activity';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
@@ -53,7 +55,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
     ]);
     const revision=(claim[1]?.results[0] as {summary_revision:number}|undefined)?.summary_revision;
     if(revision===undefined)throw invalidState('媒体总结版本已变化或已有处理任务');
-    try{await createJobAndDispatch(env,{projectId:active.projectId,kind:'parse_source',jobId,createdBy,input:{operation:'media.summary',sourceId:active.sourceId,sourceVersionId:versionId,sourceLifecycleVersion:active.lifecycleVersion,phase:'extract',configVersionId:config.id,mediaProvider:selectedMediaProvider(config,mediaFile.mime)}});}catch(error){await env.DB.prepare("UPDATE source_processing SET summary_status='failed',summary_error='媒体任务未能创建' WHERE source_version_id=?1 AND summary_job_id=?2 AND summary_status='queued'").bind(versionId,jobId).run();throw error;}
+    try{await createJobAndDispatch(env,{projectId:active.projectId,kind:'parse_source',jobId,createdBy,input:{operation:'media.summary',sourceId:active.sourceId,sourceVersionId:versionId,sourceLifecycleVersion:active.lifecycleVersion,phase:'extract',configVersionId:config.id,mediaProvider:selectedMediaProvider(config,mediaFile.mime)}});}catch(error){ if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;await env.DB.prepare("UPDATE source_processing SET summary_status='failed',summary_error='媒体任务未能创建' WHERE source_version_id=?1 AND summary_job_id=?2 AND summary_status='queued'").bind(versionId,jobId).run();throw error;}
     return {jobId,revision:revision+1};
   }
   const missing = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(versionId).first<{ n: number }>();
@@ -70,7 +72,7 @@ export async function enqueueSourceSummary(env: Env, versionId: string, createdB
   try {
     await createJobAndDispatch(env, { projectId: active.projectId, kind: 'requirement_extract', jobId, createdBy,
       input: { operation: 'source.summary', sourceId: active.sourceId, sourceVersionId: versionId, sourceLifecycleVersion: active.lifecycleVersion, phase: 'summary', configVersionId: config.id, summaryRevision: claim.summary_revision } });
-  } catch (err) {
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     await env.DB.prepare(`UPDATE source_processing SET summary_status = 'failed', summary_error = '总结任务未能创建，请重试', updated_at = ?3 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_status = 'queued' AND ${sourceLifecycleGuard('?1', '?4')}`).bind(versionId, jobId, nowIso(), active.lifecycleVersion).run();
     throw err;
   }
@@ -100,15 +102,16 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     await loadActiveSourceVersion(env, input.sourceVersionId, expectedLifecycleVersion);
     await assertSourceJobActive(env, jobId);
   };
-  try { await assertActive(); } catch (err) {
+  try { await assertActive(); } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     await failJob(env, jobId, { code: 'INVALID_STATE', message: err instanceof Error ? err.message : String(err) });
     return { status: (await getJob(env, jobId)).status };
   }
-  const state = await env.DB.prepare(`UPDATE source_processing SET summary_status = 'running', updated_at = ?4 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'queued' AND ${processingGuard("?1", "?5", "?2")} RETURNING project_id`).bind(input.sourceVersionId, jobId, input.summaryRevision, nowIso(), expectedLifecycleVersion).first<{ project_id: string }>();
+  let state = await env.DB.prepare(`UPDATE source_processing SET summary_status = 'running', updated_at = ?4 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'queued' AND ${processingGuard("?1", "?5", "?2")} RETURNING project_id`).bind(input.sourceVersionId, jobId, input.summaryRevision, nowIso(), expectedLifecycleVersion).first<{ project_id: string }>();
   if (!state) {
-    const running = await env.DB.prepare("SELECT 1 FROM source_processing WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'running'").bind(input.sourceVersionId,jobId,input.summaryRevision).first();
-    if (running) return { status: 'running' };
-    await failJob(env, jobId, { code: 'INVALID_STATE', message: '总结任务已被替换或取消' }); return { status: (await getJob(env, jobId)).status };
+    const running = await env.DB.prepare("SELECT project_id FROM source_processing WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'running'").bind(input.sourceVersionId,jobId,input.summaryRevision).first<{project_id:string}>();
+    if (running&&!env.AI_EXECUTION_SLICE) return { status: 'running' };
+    if(running)state=running;
+    if(!state){await failJob(env, jobId, { code: 'INVALID_STATE', message: '总结任务已被替换或取消' }); return { status: (await getJob(env, jobId)).status };}
   }
   try {
     const config = await loadAiConfig(env.DB, input.configVersionId);
@@ -124,7 +127,8 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     const contextReserve = 2 * contextLimit + 300 + coverageContext.length;
     const chunks=streamingDocumentChunks(sourceFragmentPages(env.DB,input.sourceVersionId,state.project_id,assertActive),model.maxInputChars,SUMMARY_SYSTEM.length + contextReserve);
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND ((text_status='none' AND ocr_status!='ok') OR (image_status='uploaded' AND ocr_status IN ('pending','failed')))").bind(input.sourceVersionId).first<{n:number}>();
-    const totalChars=totals.chars;const coveredChars=totalChars;
+    const totalChars=totals.chars;let coveredChars=0,partial=false;
+    const finalizing=(await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:jobId})))?.state==='finalizing';
     const summaries:z.infer<typeof chunkSummarySchema>[]=[];
     for await(const {index,chunk,boundaries,single} of documentChunkWindows(chunks,contextLimit)){
       await assertActive();const readFragments=[...chunk,...boundaries];const content=renderDocumentChunk(chunk)+coverageContext+(boundaries.length?'\n相邻片段仅辅助跨段理解，主总结范围是上方片段，避免重复总结。'+renderDocumentChunk(boundaries):'');
@@ -133,24 +137,26 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
       const cached=await env.FILES.get(cacheKey);let data:z.infer<typeof chunkSummarySchema>;
       if(cached){data=chunkSummarySchema.parse(await cached.json());}
       else {
+        if(finalizing&&summaries.length){partial=true;break;}
+        if(env.AI_EXECUTION_CONTEXT&&env.AI_EXECUTION_CONTEXT.modelCalls>=1)throw new BackgroundContinuation();
         await reserveAiSlot(env,{projectId:state.project_id,jobId,purpose:'source_summary',configVersionId:config.id});
-        const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:single?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema,beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
+        const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:single?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema.superRefine((data,ctx)=>{try{validateChunkCitations(readFragments,data.citations);}catch(error){ctx.addIssue({code:'custom',message:error instanceof Error?error.message:'引用原文不匹配'});}}),beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
         data=result.data;validateChunkCitations(readFragments,data.citations);await assertActive();
         await settleReservation(env,jobId,'settled');await env.FILES.put(cacheKey,JSON.stringify(data));
       }
-      validateChunkCitations(readFragments,data.citations);summaries.push(data);
+      validateChunkCitations(readFragments,data.citations);summaries.push(data);coveredChars+=chunk.reduce((sum,f)=>sum+f.content.length,0);
     }
     const unique=<T,>(rows:T[])=>Array.from(new Map(rows.map(row=>[JSON.stringify(row),row])).values());
     const data=summaries.length===1?summaries[0]!:documentSummarySchema.parse({title:summaries[0]!.title,summary:summaries.map((part,index)=>'第 '+(index+1)+' 部分：'+part.summary).join('\n\n'),keyPoints:unique(summaries.flatMap(part=>part.keyPoints)),citations:unique(summaries.flatMap(part=>part.citations)),caveats:unique(summaries.flatMap(part=>part.caveats))});
-    data.caveats=unique([...data.caveats,...extractionWarnings]);
+    data.caveats=unique([...data.caveats,...extractionWarnings,...(partial?['用户主动输出当前结果；仅汇总已处理的正文块，剩余正文尚未总结。']:[])]);
     if (incomplete?.n) data.caveats.push(`有 ${incomplete.n} 页尚未读取或补充识别未完成，本总结仅覆盖成功提取的正文；缺页不得推断。`);
     await assertActive();
     const saved = await env.DB.prepare(`UPDATE source_processing SET summary_status = 'ready', summary_json = ?4, summary_error = NULL, covered_chars = ?5, total_chars = ?6, updated_at = ?7 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status = 'running' AND ${processingGuard("?1", "?8", "?2")}`).bind(input.sourceVersionId, jobId, input.summaryRevision, JSON.stringify(data), coveredChars, totalChars, nowIso(), expectedLifecycleVersion).run();
     await settleReservation(env, jobId, 'settled');
     if (!(saved.meta?.changes ?? 0)) throw invalidState('总结任务已被替换或取消');
-    await succeedJob(env, jobId, { sourceVersionId: input.sourceVersionId, summaryRevision: input.summaryRevision });
+    await succeedJob(env, jobId, { sourceVersionId: input.sourceVersionId, summaryRevision: input.summaryRevision,...(partial?{partial:true,complete:false,coverage:{coveredChars,totalChars}}:{}) });
     return { status: (await getJob(env, jobId)).status };
-  } catch (err) {
+  } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     await settleReservation(env, jobId, 'released');
     const error = err instanceof AppError ? err : new AppError('INTERNAL', '总结失败；原文和原文件已保留，请重试', 500, true);
     await env.DB.prepare(`UPDATE source_processing SET summary_status = 'failed', summary_error = ?4, updated_at = ?5 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status IN ('queued','running') AND ${processingGuard("?1", "?6", "?2")}`).bind(input.sourceVersionId, jobId, input.summaryRevision, error.message.slice(0,500), nowIso(), expectedLifecycleVersion).run();
