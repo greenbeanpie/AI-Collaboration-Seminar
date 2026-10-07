@@ -2,6 +2,7 @@ import { checkpointSecret, type SecretKeyring } from '../ai/secrets';
 import type { Env } from '../env';
 import type { GatewayCallOutput } from '../ai/gateway';
 import type { ToolExchange } from '../ai/tool-transport';
+import type { ContextPhase } from '../ai/context-phases';
 import type { DraftPayload, creationGoal } from './creation-drafts';
 import type { z } from 'zod';
 import { invalidState } from '../core/errors';
@@ -28,6 +29,7 @@ export interface DraftPreviewCheckpoint {
   finalizing?: boolean;
   providerRetry?: {attempt:number;deadline:number;nextAttemptAt:number};
   exchanges: ToolExchange[];
+  contextPhase?: ContextPhase;
   readProgress?: Array<{fileId:string;lastOffset:number;lastCharOffset:number;nextOffset:number|null;nextCharOffset:number;locators:Array<{locator:string;pageNumber:number|null}>}>;
   clarificationProgress?: unknown[];
   pendingDispatch?: boolean;

@@ -29,13 +29,14 @@ describe('durable draft execution windows',()=>{
   const snapshot=(await loadDraftCheckpoint(env,f.attempt))!,state=snapshot.checkpoint;
   const exchange=(i:number)=>({assistant:{role:'assistant',content:null,tool_calls:[call(String(i),f.fileId)]},results:[{call:{id:String(i),name:'read_draft_document',args:{fileId:f.fileId,offset:i}},output:{blocks:[{locator:`block:${i}`,pageNumber:null,text:'😀原文'.repeat(400)}],nextOffset:i+1,nextCharOffset:0}}]});
   state.exchanges=Array.from({length:500},(_,i)=>exchange(i));
+  state.contextPhase=undefined;
   const small=structuredClone(state);compactDraftHistory(small,4000,2400);const size500=JSON.stringify(small).length;
   small.exchanges.push(...Array.from({length:500},(_,i)=>exchange(i+500)));compactDraftHistory(small,4000,2400);expect(JSON.stringify(small).length).toBeLessThan(size500+1000);expect(small.readProgress?.[0]?.nextOffset).toBeGreaterThan(900);expect(draftTextPrefix('😀😀',3)).toBe('😀');
   await saveDraftCheckpoint(env,state,snapshot.etag);await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason='round_limit',window_calls=100,total_calls=500 WHERE target_kind='draft_preview' AND target_id=?1").bind(f.attempt).run();
   await controlDraftExecution(f.local,f.id,f.userId,1,'continue');
   const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const body=JSON.parse(String(init?.body)),input=body.messages.reduce((n:number,m:{content:unknown})=>n+(typeof m.content==='string'?m.content.length:JSON.stringify(m.content).length),0);expect(input).toBeLessThanOrEqual(12000);return response();});vi.stubGlobal('fetch',fetch);
   const ready=await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,2,0);expect(ready.execution?.totalCalls).toBe(501);
-  const bounded=(await loadDraftCheckpoint(env,f.attempt))!.checkpoint;expect(JSON.stringify(bounded).length).toBeLessThan(16000);expect(bounded.readProgress?.[0]?.nextOffset).toBeGreaterThan(490);
+  const bounded=(await loadDraftCheckpoint(env,f.attempt))!.checkpoint;expect(JSON.stringify(bounded).length).toBeLessThan(18000);expect(bounded.contextPhase?.stage).toBe(1);expect(JSON.stringify(bounded.contextPhase?.summaryData)).toContain('nextOffset');
  });
  it('never marks a continued segment failed because its predecessor completed',async()=>{
   const f=await fixture();vi.stubGlobal('fetch',vi.fn(async()=>response([call('read',f.fileId)])));
@@ -79,6 +80,25 @@ describe('durable draft execution windows',()=>{
   await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).rejects.toBeInstanceOf(DraftPreviewYield);
   const snapshot=await loadDraftCheckpoint(env,f.attempt);expect(snapshot?.checkpoint.content).toBeUndefined();expect(snapshot?.checkpoint.feedback).toContain('未通过校验');
   expect((await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt)).previewState).toBe('ready');expect(fetch).toHaveBeenCalledTimes(2);
+ });
+ it.each(['deepseek','deepseek-anthropic'] as const)('freezes %s directory prefix and appends repair feedback after complete tool exchanges',async(preset)=>{
+  const f=await fixture(),cfg=(await loadAiConfig(env.DB))!,originalConfig=structuredClone(cfg.config),messagesProtocol=preset==='deepseek-anthropic';
+  Object.assign(cfg.config.textEconomy,{providerPreset:preset,apiProtocol:messagesProtocol?'messages':'chat-completions',apiUrl:messagesProtocol?'https://api.deepseek.com/anthropic/v1/messages':'https://api.deepseek.com/chat/completions',model:'deepseek-v4-pro',supportsJson:!messagesProtocol,reasoningEffort:undefined,temperature:undefined,topP:undefined});
+  await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(cfg.id,JSON.stringify(cfg.config)).run();
+  const bodies:Array<{messages:Array<{role:string;content:unknown}>;tools:unknown;system?:unknown}>=[];
+  const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+   bodies.push(JSON.parse(String(init?.body)));const reading=bodies.length===1;
+   return messagesProtocol?Response.json({stop_reason:reading?'tool_use':'end_turn',content:reading?[{type:'thinking',thinking:'Fixture thinking',signature:'fixture'},{type:'tool_use',id:'read',name:'read_draft_document',input:{fileId:f.fileId,offset:0}}]:[{type:'text',text:JSON.stringify(plan)}],usage:{input_tokens:10,output_tokens:10}}):response(reading?[call('read',f.fileId)]:[]);
+  });vi.stubGlobal('fetch',fetch);
+  await expect(previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,0)).rejects.toBeInstanceOf(DraftPreviewYield);
+  const snapshot=(await loadDraftCheckpoint(env,f.attempt))!;expect(snapshot.checkpoint.context[0]?.pages).toEqual([]);expect(snapshot.checkpoint.contextPhase?.timeline[0]?.kind).toBe('exchange');
+  snapshot.checkpoint.feedback='修复新增需求';await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);
+  expect((await previewDraft(f.local,f.id,f.userId,1,'ai',[],false,undefined,f.attempt,1,1)).previewState).toBe('ready');
+  expect(bodies[1]!.messages.slice(0,bodies[0]!.messages.length)).toEqual(bodies[0]!.messages);expect(bodies[1]!.tools).toEqual(bodies[0]!.tools);
+  expect(bodies[1]!.system).toEqual(bodies[0]!.system);expect(JSON.stringify(bodies[0]!.messages.at(-1)!.content)).not.toContain('证据');
+  if(messagesProtocol)expect(JSON.stringify(bodies[1]!.messages.at(-1)!.content)).toContain('修复新增需求');
+  else {expect(bodies[1]!.messages.at(-1)).toMatchObject({role:'user',content:'修复新增需求'});expect(bodies[1]!.messages.at(-2)?.role).toBe('tool');}
+  await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(cfg.id,JSON.stringify(originalConfig)).run();
  });
  it('keeps an invalid explicit final result paused without another automatic call',async()=>{
   const f=await fixture(1),fetch=vi.fn(async()=>fetch.mock.calls.length===1?response([call('read',f.fileId)]):Response.json({choices:[{message:{content:'invalid final JSON'}}]}));vi.stubGlobal('fetch',fetch);
