@@ -9962,6 +9962,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @enum {string} */
+                        purpose?: "background" | "reference" | "output";
                         contributorIds?: string[];
                         /** Format: uuid */
                         derivedFromFileId?: string;

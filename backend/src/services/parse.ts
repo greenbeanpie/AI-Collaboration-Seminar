@@ -542,6 +542,11 @@ async function skipSourceRequirements(env:Env,versionId:string):Promise<boolean>
 }
 
 /** 任务编排：按 job input 的阶段执行对应步骤（Workflow 与恢复器共用） */
+async function markTextReady(env:Env,versionId:string,lifecycle:number,jobId:string):Promise<void>{
+  await setSourceStage(env,versionId,'text','ready',null,lifecycle,jobId);
+  await env.DB.prepare(`UPDATE source_versions SET status='ready',parse_error=NULL WHERE id=?1 AND ${processingGuard('?1','?2','?3')}`).bind(versionId,lifecycle,jobId).run();
+}
+
 export async function runParseJob(env: Env, jobId: string): Promise<{ status: string }> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
@@ -604,7 +609,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         await waitJobInput(env, jobId, { needsImages, message: '存在扫描页，请上传页面图片' });
         return { status: (await getJob(env, jobId)).status };
       }
-      await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+      await markTextReady(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
       await syncFileProcessingText(env,input.sourceVersionId,jobId);
       if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.text'){
         await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,textReady:true});
@@ -636,7 +641,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
     }
     const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id = ?1 AND text_status = 'none' AND ocr_status != 'ok'").bind(input.sourceVersionId).first<{ n: number }>();
     if (incomplete?.n) throw new AppError('AI_OUTPUT_INVALID', '部分页面 OCR 未完成，请重新上传失败页图片后重试', 422, false);
-    await setSourceStage(env, input.sourceVersionId, 'text', 'ready', null, expectedLifecycleVersion, jobId);
+    await markTextReady(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
     await syncFileProcessingText(env,input.sourceVersionId,jobId);
     if((JSON.parse(job.input_json) as {operation?:string}).operation==='source.ocr'){await succeedJob(env,jobId,{sourceVersionId:input.sourceVersionId,ocrReady:true});return {status:(await getJob(env,jobId)).status};}
     await maybeEnqueueSourceSummary(env, input.sourceVersionId, expectedLifecycleVersion, jobId);

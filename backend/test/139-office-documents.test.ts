@@ -46,6 +46,7 @@ describe('Office upload and browser text imports',()=>{
   const job=crypto.randomUUID(),now=new Date().toISOString();
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','queued',?3,?4,?5,?5)").bind(job,f.project,JSON.stringify({operation:'source.text',sourceId,sourceVersionId,phase:'extract',sourceLifecycleVersion:1}),f.user.userId,now).run();
   expect((await runParseJob(env,job)).status).toBe('succeeded');
+  expect(await env.DB.prepare('SELECT status FROM source_versions WHERE id=?1').bind(sourceVersionId).first()).toEqual({status:'ready'});
   expect(await env.DB.prepare('SELECT page_count,extraction_method FROM source_versions WHERE id=?1').bind(sourceVersionId).first()).toEqual({page_count:null,extraction_method:'server-'+ext.slice(1)});
   const fragments=await env.DB.prepare('SELECT content,page_number FROM source_fragments WHERE source_version_id=?1').bind(sourceVersionId).all();
   expect(fragments.results.map(row=>row.content).join('')).toContain('可核对的采访原文');expect(fragments.results.every(row=>row.page_number===null)).toBe(true);

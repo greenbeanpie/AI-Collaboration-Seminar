@@ -38707,6 +38707,14 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "background",
+                      "reference",
+                      "output"
+                    ]
+                  },
                   "contributorIds": {
                     "type": "array",
                     "items": {
