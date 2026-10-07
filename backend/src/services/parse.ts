@@ -98,7 +98,7 @@ function chunkPage(text: string): string[] {
 async function insertFragments(
   env: Env,
   version: SourceVersionRow,
-  pages: Array<{ pageNumber: number | null; text: string; kind: FragmentRow['kind'] }>,
+  pages: Array<{ pageNumber: number | null; text: string; kind: FragmentRow['kind']; headingPath?:string[] }>,
   jobId?: string,
 ): Promise<number> {
   const inserts = [];
@@ -107,7 +107,7 @@ async function insertFragments(
     for (const chunk of chunkPage(page.text)) {
       inserts.push(
         env.DB.prepare(
-          `INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at) SELECT ?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(seq), 0) + 1 FROM source_fragments WHERE source_version_id = ?2), ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM source_fragments WHERE source_version_id = ?2 AND page_number IS ?4 AND kind = ?6 AND content = ?7) AND ${processingGuard("?2", "?9", "?10")}`,
+          `INSERT INTO source_fragments (id, source_version_id, project_id, page_number, seq, kind, content, created_at,heading_path) SELECT ?1, ?2, ?3, ?4, (SELECT COALESCE(MAX(seq), 0) + 1 FROM source_fragments WHERE source_version_id = ?2), ?6, ?7, ?8,?11 WHERE NOT EXISTS (SELECT 1 FROM source_fragments WHERE source_version_id = ?2 AND page_number IS ?4 AND kind = ?6 AND content = ?7 AND COALESCE(heading_path,'[]')=?11) AND ${processingGuard("?2", "?9", "?10")}`,
         ).bind(
           crypto.randomUUID(),
           version.id,
@@ -119,6 +119,7 @@ async function insertFragments(
           nowIso(),
           version.lifecycleVersion,
           jobId ?? null,
+          JSON.stringify(page.headingPath??[]),
         ),
       );
     }
@@ -159,6 +160,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   let perPage: Array<{ pageNumber: number; text: string }> = [];
   let pageCount = 0;
   let office = false;
+  let officeBlocks:Array<{text:string;headingPath?:string[]}>=[];
 
   if (version.origin === 'file' && version.file_id) {
     const file = await env.DB.prepare('SELECT r2_key, ext, mime_detected FROM files WHERE id = ?1')
@@ -173,6 +175,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
     if (['.docx','.xlsx','.pptx'].includes(file.ext)) {
       office=true;
       const result = await extractOfficeText(bytes,file.ext);
+      officeBlocks=result.blocks;
       if(!result.blocks.some(b=>b.text.trim()))throw new AppError('SOURCE_PARSE_FAILED','Office 文件没有可提取正文；请检查原文件内容',422,false);
       // Office blocks have no real page numbers. A single logical unit is used only for progress.
       pageCount=1;perPage=[{pageNumber:1,text:result.blocks.map(b=>b.text).join('\n\n')}];
@@ -211,7 +214,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   // 记录页状态并写入整册文本
   let needsImages = 0;
   const pageRows = [];
-  for (const p of perPage) {
+  for (const p of office ? [] : perPage) {
     const hasText = hasExtractableText(p.text);
     if (!hasText && version.origin === 'file') needsImages++;
     pageRows.push(
@@ -242,7 +245,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   await insertFragments(
     env,
     version,
-    perPage.filter((p) => hasExtractableText(p.text)).map((p) => ({
+    office ? officeBlocks.map(block=>({pageNumber:null,text:block.text,kind:'text' as const,headingPath:block.headingPath})) : perPage.filter((p) => hasExtractableText(p.text)).map((p) => ({
       pageNumber: version.origin === 'file' && !office ? p.pageNumber : null,
       text: p.text,
       kind: (version.origin === 'web' ? 'web' : version.origin === 'paste' ? 'paste' : 'text') as FragmentRow['kind'],
@@ -253,7 +256,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   await env.DB.prepare(
     `UPDATE source_versions SET text_r2_key = ?2, char_count = ?3, page_count = ?4 WHERE id = ?1 AND ${processingGuard('?1', '?5', '?6')}`,
   )
-    .bind(version.id, textKey, allText.length, pageCount, version.lifecycleVersion, jobId ?? null)
+    .bind(version.id, textKey, allText.length, office ? null : pageCount, version.lifecycleVersion, jobId ?? null)
     .run();
 
   await assertProcessingActive(env, version, jobId);

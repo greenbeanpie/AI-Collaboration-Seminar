@@ -21,13 +21,35 @@ function zip(entries:Record<string,string>) {
  const directoryLength=central.reduce((a,b)=>a+b.length,0),end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,central.length,true);e.setUint16(10,central.length,true);e.setUint32(12,directoryLength,true);e.setUint32(16,offset,true);
  const bytes=new Uint8Array(offset+directoryLength+22);let pos=0;for(const b of [...chunks,...central,end]){bytes.set(b,pos);pos+=b.length;}return bytes;
 }
-function office(ext:'.xlsx'|'.pptx') {const s=OFFICE_PACKAGES[ext];return zip({'[Content_Types].xml':`<Types><Override PartName="/${s.part}" ContentType="${s.contentType}"/></Types>`,[s.part]:'<document/>','_rels/.rels':'<Relationships/>'});}
+function office(ext:'.xlsx'|'.pptx',parts:Record<string,string>={}) {const s=OFFICE_PACKAGES[ext];return zip({'[Content_Types].xml':`<Types><Override PartName="/${s.part}" ContentType="${s.contentType}"/></Types>`,[s.part]:'<document/>','_rels/.rels':'<Relationships/>',...parts});}
 async function fixture(ext:'.xlsx'|'.pptx'){
  const user=await seedUser(),project=await seedProject(user.userId),headers={cookie:authCookie(user.token),'content-type':'application/json'};
  const response=await SELF.fetch(`${BASE}/api/v1/projects/${project}/files`,{method:'POST',headers,body:JSON.stringify({fileName:'资料'+ext})});expect(response.status).toBe(201);
  const f=(await response.json() as {data:{fileId:string;upload:{url:string}}}).data;return {user,project,headers,file:f.fileId,url:BASE+f.upload.url,bytes:office(ext)};
 }
 describe('Office upload and browser text imports',()=>{
+ it.each(['.xlsx','.pptx'] as const)('completes %s server text processing without browser or AI calls',async ext=>{
+  const f=await fixture(ext);
+  const parts:Record<string,string>=ext==='.xlsx'?{
+   'xl/workbook.xml':'<workbook xmlns:r="r"><sheets><sheet name="访谈记录" r:id="s"/></sheets></workbook>',
+   'xl/_rels/workbook.xml.rels':'<Relationships><Relationship Id="s" Type="x/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+   'xl/worksheets/sheet1.xml':'<worksheet><sheetData><row><c r="A1" t="inlineStr"><is><t>可核对的采访原文</t></is></c></row></sheetData></worksheet>',
+  }:{
+   'ppt/presentation.xml':'<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst><p:sldId r:id="s"/></p:sldIdLst></p:presentation>',
+   'ppt/_rels/presentation.xml.rels':'<Relationships><Relationship Id="s" Type="x/slide" Target="slides/slide1.xml"/></Relationships>',
+   'ppt/slides/slide1.xml':'<p:sld xmlns:p="p" xmlns:a="a"><a:p><a:r><a:t>可核对的采访原文</a:t></a:r></a:p></p:sld>',
+  };
+  const bytes=office(ext,parts);
+  expect((await SELF.fetch(f.url,{method:'PUT',headers:{cookie:f.headers.cookie},body:bytes})).status).toBe(201);
+  const response=await SELF.fetch(`${BASE}/api/v1/projects/${f.project}/sources`,{method:'POST',headers:f.headers,body:JSON.stringify({kind:'file',fileId:f.file,purpose:'output'})});
+  const {sourceVersionId,sourceId}=(await response.json() as {data:{sourceVersionId:string;sourceId:string}}).data;
+  const job=crypto.randomUUID(),now=new Date().toISOString();
+  await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'parse_source','queued',?3,?4,?5,?5)").bind(job,f.project,JSON.stringify({operation:'source.text',sourceId,sourceVersionId,phase:'extract',sourceLifecycleVersion:1}),f.user.userId,now).run();
+  expect((await runParseJob(env,job)).status).toBe('succeeded');
+  expect(await env.DB.prepare('SELECT page_count,extraction_method FROM source_versions WHERE id=?1').bind(sourceVersionId).first()).toEqual({page_count:null,extraction_method:'server-'+ext.slice(1)});
+  const fragments=await env.DB.prepare('SELECT content,page_number FROM source_fragments WHERE source_version_id=?1').bind(sourceVersionId).all();
+  expect(fragments.results.map(row=>row.content).join('')).toContain('可核对的采访原文');expect(fragments.results.every(row=>row.page_number===null)).toBe(true);
+ });
  it.each(['.xlsx','.pptx'] as const)('rejects spoofed, mismatched and encrypted %s packages',async ext=>{
   const good=office(ext);expect(await validateOfficePackage(ext,good.length,async(o,n)=>good.slice(o,o+n))).toBe(OFFICE_PACKAGES[ext].mime);
   for(const bad of [zip({'ordinary.txt':'hello'}),office(ext==='.xlsx'?'.pptx':'.xlsx'),zip({'[Content_Types].xml':`<Types><Override PartName="/${OFFICE_PACKAGES[ext].part}" ContentType="wrong"/><Override PartName="/unrelated" ContentType="${OFFICE_PACKAGES[ext].contentType}"/></Types>`,[OFFICE_PACKAGES[ext].part]:'<document/>'})])await expect(validateOfficePackage(ext,bad.length,async(o,n)=>bad.slice(o,o+n))).rejects.toThrow();
