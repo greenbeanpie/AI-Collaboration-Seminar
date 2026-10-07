@@ -44,3 +44,13 @@ it('continues uncertain requests directly and blocks repeated click while pendin
   expect(resume).toHaveBeenCalledOnce();
   await act(async () => finish());
 });
+it('refreshes expanded operation history when server activity advances', async () => {
+  read.mockResolvedValueOnce({ items: [{ id: 1, code: 'calling_model', state: 'started', at: '2026-10-07T02:03:04Z', progress: null }], nextCursor: null }).mockResolvedValueOnce({ items: [{ id: 2, code: 'saving', state: 'started', at: '2026-10-07T02:03:05Z', progress: null }], nextCursor: null });
+  const known = job('running');
+  const { rerender } = render(<AiActivityStatus job={known} />);
+  await act(async () => { const details = screen.getByText('操作记录').closest('details')!; details.open = true; fireEvent(details, new Event('toggle')); });
+  await waitFor(() => expect(screen.getByText('调用模型 · 开始')).toBeInTheDocument());
+  rerender(<AiActivityStatus job={{ ...known, activity: { ...known.activity!, updatedAt: '2026-10-07T02:03:05Z' } }} />);
+  await waitFor(() => expect(screen.getByText('保存结果 · 开始')).toBeInTheDocument());
+  expect(read.mock.calls[1]?.[1]).toBe(1);
+});
