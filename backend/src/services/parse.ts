@@ -16,7 +16,7 @@ import { AppError } from '../core/errors';
 import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
-import { failJob, succeedJob, waitJobInput, getJob } from './jobs';
+import { createJobAndDispatch, failJob, succeedJob, waitJobInput, getJob } from './jobs';
 import { markAiCallStarted, reserveAiSlot, settleReservation } from './ai-reservations';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
@@ -542,13 +542,15 @@ async function outputSource(env:Env,versionId:string):Promise<boolean>{
 export async function runParseJob(env: Env, jobId: string): Promise<{ status: string }> {
   const job = await getJob(env, jobId);
   if (['succeeded', 'failed', 'cancelled', 'waiting_input'].includes(job.status)) return { status: job.status };
-  if ((JSON.parse(job.input_json) as { operation?: string }).operation === 'source.summary') return runSourceSummary(env, jobId);
   const input = JSON.parse(job.input_json) as ParseJobInput;
-  if((JSON.parse(job.input_json) as {operation?:string}).operation==='file.process'){
+  const operation=(JSON.parse(job.input_json) as {operation?:string}).operation;
+  const binding=await env.DB.prepare('SELECT 1 FROM file_processing WHERE source_version_id=?1').bind(input.sourceVersionId??null).first();
+  if(operation==='file.process'||(binding&&(operation!=='source.text'||input.phase==='ocr'))){
     const project=await env.DB.prepare('SELECT ai_collaboration_enabled FROM projects WHERE id=?1').bind(job.project_id).first<{ai_collaboration_enabled:number}>();
     const config=await loadAiConfig(env.DB);
     if(!project?.ai_collaboration_enabled||!config?.enabled){await failJob(env,jobId,{code:'INVALID_STATE',message:'项目 AI 或全局模型已关闭；原文件和已提取正文保留'});return {status:'failed'};}
   }
+  if(operation==='source.summary')return runSourceSummary(env,jobId);
   if(input.phase==='extract'){
     const mediaFile=await env.DB.prepare('SELECT f.ext FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?1').bind(input.sourceVersionId).first<{ext:string}>();
     if(mediaFile&&isMediaExtension(mediaFile.ext)){
@@ -566,7 +568,15 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
         }catch(error){await handleJobError(env,jobId,input.sourceVersionId,error,lifecycle);}
         return {status:(await getJob(env,jobId)).status};
       }
-      return runMediaJob(env,jobId,input.sourceVersionId);
+      const result=await runMediaJob(env,jobId,input.sourceVersionId);
+      if(result.status==='succeeded'&&operation==='file.process'){
+        if(await outputSource(env,input.sourceVersionId))await setSourceStage(env,input.sourceVersionId,'requirements','ready',null,input.sourceLifecycleVersion);
+        else {
+          const claim=await env.DB.prepare("UPDATE source_processing SET requirements_status='processing' WHERE source_version_id=?1 AND requirements_status='pending'").bind(input.sourceVersionId).run();
+          if(claim.meta.changes){try{const next=await createJobAndDispatch(env,{projectId:job.project_id,kind:'parse_source',createdBy:job.created_by,input:{...input,operation:'file.process',phase:'analyze'}});await env.DB.prepare('UPDATE file_processing SET job_id=?2,updated_at=?3 WHERE source_version_id=?1 AND job_id=?4').bind(input.sourceVersionId,next,nowIso(),jobId).run();}catch(error){await setSourceStage(env,input.sourceVersionId,'requirements','failed',error instanceof Error?error.message:'要求提取未能启动',input.sourceLifecycleVersion);}}
+        }
+      }
+      return result;
     }
   }
   const expectedLifecycleVersion = input.sourceLifecycleVersion ?? 1;

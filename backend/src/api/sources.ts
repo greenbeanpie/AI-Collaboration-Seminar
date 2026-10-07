@@ -8,7 +8,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { invalidState, notFound, validationFailed } from '../core/errors';
+import { invalidState, notFound, permissionDenied, validationFailed } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { loadActiveSourceVersion, sourceLifecycleGuard } from '../services/source-lifecycle';
@@ -19,6 +19,7 @@ import { projectParams } from './projects';
 import { resourcePurposeSchema } from './resources';
 import type { ResourcePurpose } from '../services/resources';
 import { ensureFileProcessing, syncFileProcessingText } from '../services/file-processing';
+import { projectPermissionSql } from '../services/project-permissions';
 
 const sourceParams = projectParams.extend({ sourceId: z.string().uuid() });
 const versionParams = sourceParams.extend({ sourceVersionId: z.string().uuid() });
@@ -269,11 +270,13 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       fileLifecycleVersion=file.lifecycle_version;
       if (file.status !== 'available') throw invalidState('文件尚未上传或不可用');
       if (!['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.md'].includes(file.ext)) throw validationFailed('来源文件仅支持 PDF/DOCX/XLSX/PPTX/TXT/Markdown');
-      const existing=await c.env.DB.prepare(`SELECT s.id,s.current_version_id,s.created_at,s.lifecycle_version,s.resource_revision FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE v.file_id=?1 AND s.project_id=?2 AND s.deleted_at IS NULL ORDER BY s.created_at LIMIT 1`).bind(body.fileId!,member.projectId).first<{id:string;current_version_id:string;created_at:string;lifecycle_version:number;resource_revision:number}>();
+      const existing=await c.env.DB.prepare(`SELECT s.id,s.current_version_id,s.created_at,s.created_by,s.lifecycle_version,s.resource_revision FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE v.file_id=?1 AND s.project_id=?2 AND s.deleted_at IS NULL ORDER BY s.created_at LIMIT 1`).bind(body.fileId!,member.projectId).first<{id:string;current_version_id:string;created_at:string;created_by:string;lifecycle_version:number;resource_revision:number}>();
       if(existing){
-        await c.env.DB.prepare('UPDATE sources SET title=?2,purpose=?3,resource_revision=resource_revision+1,updated_at=?4 WHERE id=?1').bind(existing.id,title,body.purpose,now).run();
+        if(!member.permissions.resourceManage&&existing.created_by!==user.id)throw permissionDenied('需要来源作者或资料管理权限');
+        const update=await c.env.DB.prepare(`UPDATE sources SET title=?2,purpose=?3,resource_revision=resource_revision+1,updated_at=?4 WHERE id=?1 AND deleted_at IS NULL AND lifecycle_version=?5 AND current_version_id=?6 AND project_id=?7 AND (created_by=?8 OR ${projectPermissionSql('?7','?8','resourceManage')}) AND EXISTS(SELECT 1 FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?6 AND f.id=?9 AND f.lifecycle_version=?10 AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')})`).bind(existing.id,title,body.purpose,now,existing.lifecycle_version,existing.current_version_id,member.projectId,user.id,body.fileId!,fileLifecycleVersion).run();
+        if(!update.meta.changes)throw invalidState('来源权限或文件生命周期已变化，请刷新');
         await syncFileProcessingText(c.env,existing.current_version_id);
-        return c.json(apiData(c,{sourceId:existing.id,sourceVersionId:existing.current_version_id,kind:body.kind,title,purpose:body.purpose,revision:existing.resource_revision+existing.lifecycle_version,currentVersionId:existing.current_version_id,contributors:await fileContributors(c.env,member.projectId,body.fileId!),createdAt:existing.created_at,lifecycleVersion:existing.lifecycle_version,canDelete:member.permissions.resourceManage,deletedAt:null,fileId:body.fileId!}),201);
+        return c.json(apiData(c,{sourceId:existing.id,sourceVersionId:existing.current_version_id,kind:body.kind,title,purpose:body.purpose,revision:existing.resource_revision+existing.lifecycle_version,currentVersionId:existing.current_version_id,contributors:await fileContributors(c.env,member.projectId,body.fileId!),createdAt:existing.created_at,lifecycleVersion:existing.lifecycle_version,canDelete:true,deletedAt:null,fileId:body.fileId!}),201);
       }
     }
     if (body.kind === 'web') {
