@@ -1,11 +1,11 @@
+import { AppError } from '../core/errors';
 import { isExecutionPaused } from './ai-execution-control';
-import { settleReservation } from './ai-reservations';
 import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 
 export class BackgroundContinuation extends Error { constructor(message='已保存后台处理检查点，将在独立实例继续'){super(message);this.name='BackgroundContinuation';} }
-export function isBackgroundContinuation(error:unknown):boolean {return error instanceof BackgroundContinuation || error instanceof InvestigationContinuation;}
+export function isBackgroundContinuation(error:unknown):boolean {return error instanceof BackgroundContinuation || error instanceof InvestigationContinuation || error instanceof AppError&&error.details?.executionSuperseded===true;}
 
 export interface ExecutionSlice { job_id:string; slice:number; instance_id:string; status:string }
 export async function activeExecutionSlice(env:Env,jobId:string):Promise<ExecutionSlice|null>{
@@ -62,7 +62,13 @@ export async function executeAiSlice(env:Env,jobId:string,slice:number,run:()=>P
     await run();
     await completeExecutionSlice(env,jobId,slice);
   }catch(error){
-    if(isExecutionPaused(error)){await settleReservation(env,jobId,'settled');await completeExecutionSlice(env,jobId,slice);return;}
+    if(error instanceof AppError&&error.details?.executionSuperseded===true){await completeExecutionSlice(env,jobId,slice);return;}
+    if(isExecutionPaused(error)){
+      const execution=error.execution;
+      // One SQL statement prevents a late pause handler from releasing a resumed window's slot.
+      await env.DB.prepare("UPDATE usage_reservations SET status=CASE WHEN attempts_started=0 THEN 'released' ELSE 'settled' END,settled_at=?2 WHERE job_id=?1 AND status='reserved' AND EXISTS(SELECT 1 FROM ai_executions e WHERE e.target_kind='job' AND e.generation=?3 AND e.state='paused' AND (e.target_id=?1 OR e.target_id=(SELECT REPLACE(json_extract(input_json,'$.autoRetryRootId'),'job:','') FROM jobs WHERE id=?1) OR e.target_id IN (WITH RECURSIVE parents(id) AS (SELECT ?1 UNION SELECT l.parent_job_id FROM admin_ai_retry_links l JOIN parents ON l.retry_job_id=parents.id) SELECT id FROM parents)))").bind(jobId,nowIso(),execution.generation).run();
+      await completeExecutionSlice(env,jobId,slice);return;
+    }
     if(!isBackgroundContinuation(error)) throw error;
     await continueExecutionSlice(env,jobId,slice);
   }

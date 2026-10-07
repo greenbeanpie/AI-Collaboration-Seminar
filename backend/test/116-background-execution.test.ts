@@ -12,9 +12,9 @@ import { seedUser, seedProject, authCookie } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
 import { AppError } from '../src/core/errors';
 import { backgroundModelCall } from '../src/services/background-model-call';
-import { ensureExecution, pauseExecution, readExecution, resumeExecution, cancelExecution } from '../src/services/ai-execution-control';
+import { ExecutionPaused, ensureExecution, pauseExecution, readExecution, resumeExecution, cancelExecution } from '../src/services/ai-execution-control';
 import { activeExecutionSlice, BackgroundContinuation, executeAiSlice } from '../src/services/ai-execution-slices';
-import { failJob, getJob, reconcileWorkflowJob } from '../src/services/jobs';
+import { failJob, getJob, reconcileWorkflowJob, succeedJob } from '../src/services/jobs';
 import { recoverAutomaticAiRetries } from '../src/services/ai-automatic-retries';
 import { registerJobExecutionRoutes } from '../src/api/job-execution';
 
@@ -91,6 +91,43 @@ describe('background processing windows',()=>{
   const response=await routes().request(`https://example.com/api/v1/jobs/${f.jobId}/execution/output`,{method:'POST',headers:{cookie:authCookie(f.owner.token),'content-type':'application/json','idempotency-key':newId()},body:'{"expectedGeneration":1}'},env);
   expect(response.status).toBe(202);expect(JSON.parse((await getJob(env,f.jobId)).result_json!)).toMatchObject({partial:true,complete:false,coverage:{completedPages:[1],remainingPages:[2]}});
   expect(await env.DB.prepare('SELECT status FROM source_versions WHERE id=?1').bind(versionId).first()).toEqual({status:'processing'});
+ });
+ it('allows only one concurrent generation action and retains the winning reservation',async()=>{
+  const f=await fixture();await pauseExecution(env,f.target,'round_limit');const create=vi.fn(async()=>({})),local={...env,AGENT_WORKFLOW:{create}} as unknown as Env,app=routes();
+  const invoke=()=>app.request(`https://example.com/api/v1/jobs/${f.jobId}/execution/continue`,{method:'POST',headers:{cookie:authCookie(f.owner.token),'content-type':'application/json','idempotency-key':newId()},body:'{"expectedGeneration":1}'},local);
+  const responses=await Promise.all([invoke(),invoke()]);expect(responses.map(r=>r.status).sort()).toEqual([202,409]);expect(create).toHaveBeenCalledOnce();
+  expect(await env.DB.prepare("SELECT COUNT(*) n FROM usage_reservations WHERE job_id=?1 AND status='reserved'").bind(f.jobId).first()).toEqual({n:1});
+  expect(await readExecution(env,f.target)).toMatchObject({generation:2,state:'running'});
+ });
+ it('atomically fences job publication during cancellation and ignores stale generations',async()=>{
+  const f=await fixture();await cancelExecution(env,f.target,1);await succeedJob(env,f.jobId,{late:true});expect((await getJob(env,f.jobId)).status).toBe('cancelled');expect((await getJob(env,f.jobId)).result_json).toBeNull();
+  const other=await fixture();await pauseExecution(env,other.target,'round_limit');await resumeExecution(env,other.target,1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(other.jobId).run();
+  await succeedJob({...env,AI_EXECUTION_CONTEXT:{modelCalls:0,generation:1}},other.jobId,{stale:true});expect((await getJob(env,other.jobId)).status).toBe('running');expect((await getJob(env,other.jobId)).result_json).toBeNull();
+ });
+ it('stops an old media worker without consuming or pausing the new finalization generation',async()=>{
+  const f=await fixture();await pauseExecution(env,f.target,'round_limit');await resumeExecution(env,f.target,1,'output');const call=vi.fn(async()=>({}));
+  await expect(backgroundModelCall({...env,AI_EXECUTION_CONTEXT:{modelCalls:0,generation:1}},f.jobId,call)).rejects.toMatchObject({details:{executionSuperseded:true}});expect(call).not.toHaveBeenCalled();
+  expect(await readExecution(env,f.target)).toMatchObject({generation:2,state:'finalizing',totalCalls:0});
+ });
+ it('keeps a committed job success consistent when cancellation arrives before control completion',async()=>{
+  const f=await fixture();await env.DB.prepare("UPDATE jobs SET status='succeeded' WHERE id=?1").bind(f.jobId).run();await expect(cancelExecution(env,f.target,1)).rejects.toMatchObject({code:'VERSION_CONFLICT'});
+  expect(await readExecution(env,f.target)).toMatchObject({state:'running'});expect((await getJob(env,f.jobId)).status).toBe('succeeded');
+ });
+ it('does not release a resumed window slot from a late pause handler',async()=>{
+  const f=await fixture();await reserveAiSlot(env,{projectId:f.projectId,jobId:f.jobId,purpose:'agent_run'});
+  await env.DB.prepare("INSERT INTO ai_execution_slices(job_id,slice,instance_id,status,created_at,updated_at) VALUES(?1,0,?1,'pending',?2,?2)").bind(f.jobId,nowIso()).run();
+  await executeAiSlice(env,f.jobId,0,async()=>{
+    await pauseExecution(env,f.target,'round_limit');const stopped=new ExecutionPaused((await readExecution(env,f.target))!);
+    await resumeExecution(env,f.target,1,'continue');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(f.jobId).run();
+    await reserveAiSlot(env,{projectId:f.projectId,jobId:f.jobId,purpose:'execution_resume'});throw stopped;
+  });
+  expect(await env.DB.prepare("SELECT COUNT(*) n FROM usage_reservations WHERE job_id=?1 AND status='reserved'").bind(f.jobId).first()).toEqual({n:1});expect(await readExecution(env,f.target)).toMatchObject({state:'running',generation:2});
+ });
+ it.each(['invalid-json','http-rejection'] as const)('pauses one explicit final output after %s without marking the job failed',async mode=>{
+  await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;await pauseExecution(env,f.target,'round_limit');await resumeExecution(env,f.target,1,'output');await env.DB.prepare("UPDATE jobs SET status='running' WHERE id=?1").bind(f.jobId).run();await reserveAiSlot(env,{projectId:f.projectId,jobId:f.jobId,purpose:'execution_resume'});
+  const request=vi.fn(async()=>mode==='http-rejection'?Response.json({error:{message:'invalid input'}},{status:400}):Response.json({choices:[{message:{content:'invalid json'}}],usage:{prompt_tokens:10,completion_tokens:10}}));vi.stubGlobal('fetch',request);
+  await expect(aiJsonCall({...env,AI_EXECUTION_CONTEXT:{modelCalls:0,generation:2}},{projectId:f.projectId,jobId:f.jobId,purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'explicit-output-test',schema:z.object({summary:z.string()}),messages:[{role:'user',content:'输出当前结果'}]})).rejects.toMatchObject({details:{executionPause:true}});
+  expect(request).toHaveBeenCalledOnce();expect(await readExecution(env,f.target)).toMatchObject({state:'paused',pauseReason:'output_invalid',totalCalls:1});expect((await getJob(env,f.jobId)).status).toBe('waiting_input');
  });
  it('repairs multiple invalid outputs across independent slices without replaying rejected responses',async()=>{
   await configureGoFixture();const f=await fixture(),config=(await loadAiConfig(env.DB))!;

@@ -1,4 +1,4 @@
-import { ExecutionPaused, pauseExecution, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
+import { ExecutionPaused, assertExecutionGeneration, pauseExecution, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
 import { checkpointRootId, checkpointAttemptIds, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
@@ -115,6 +115,9 @@ export async function aiJsonCall<S extends z.ZodType>(
     prepareMessages?: () => Promise<Array<{role:'system'|'user'|'assistant';content:string}>>;
   },
 ): Promise<{ data: z.infer<S>; repaired: boolean; effectiveStandardsVersionId?:string|null; toolTrace?: Array<{name:string;status:string;fileId?:string}>; citations?: import('../ai/tool-transport').WebCitation[]; references?: import('./project-evidence').ProjectReference[]; decisionReferences?: import('./project-evidence').DecisionReference[] }> {
+  const executionTarget=params.jobId?await resolveExecutionTarget(env,{kind:'job',id:params.jobId}):null;
+  if(executionTarget)await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);
+  const finalizing=executionTarget?(await readExecution(env,executionTarget))?.state==='finalizing':false;
   if (params.projectTools) {
     const stableSessionId=params.sessionId??params.runId??params.jobId??crypto.randomUUID();
     const out = await projectToolConversation(env, { context:params.projectTools,config:params.modelConfig,configVersionId:params.configVersionId,messages:params.messages,promptVersion:params.promptVersion,runId:params.runId,sessionId:stableSessionId,beforeCall:params.beforeCall,purpose:params.purpose,privateContext:params.privateContext,prepareMessages:params.prepareMessages });
@@ -191,8 +194,6 @@ export async function aiJsonCall<S extends z.ZodType>(
   const repairStateKey=root?`ai/responses/${root}/${fingerprint}/repair-state.json`:undefined;
   const repairState=repairStateKey?await loadResponseCheckpoint<{attempt:number;messages:typeof messages}>(env,repairStateKey):null;
   const firstAttempt=repairState?.attempt??0;if(repairState)messages=repairState.messages;
-  const executionTarget=params.jobId?await resolveExecutionTarget(env,{kind:'job',id:params.jobId}):null;
-  const finalizing=executionTarget?(await readExecution(env,executionTarget))?.state==='finalizing':false;
   const maxAttempts=params.jobId?finalizing?1:Number.POSITIVE_INFINITY:params.maxAttempts??2;
   for (let attempt = firstAttempt; attempt < (finalizing?firstAttempt+1:maxAttempts); attempt++) {
     const started = Date.now();
@@ -210,7 +211,7 @@ export async function aiJsonCall<S extends z.ZodType>(
     if(saved?.pending && !await allowsUncertainCheckpointRetry(env,params.jobId))throw new AppError('INVALID_STATE','上次模型请求结果未确认，请从停止处继续，该步骤可能再次计费',409,false);
     const replayed=!!saved?.output;
     try {
-      if(saved?.output) { await params.beforeCall?.();await params.prepareMessages?.();out=saved.output; }
+      if(saved?.output) { if(executionTarget)await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);await params.beforeCall?.();await params.prepareMessages?.();out=saved.output; }
       else out = await gatewayChat(endpoint, {
         projectId: params.projectId, jobId: params.jobId, config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
         beforeFetch: async () => {
@@ -248,7 +249,8 @@ export async function aiJsonCall<S extends z.ZodType>(
     if(!replayed)await record(messages, out?.content ?? { error: failure instanceof Error ? failure.message : String(failure) },
       out ? (failure ? 'invalid' : attempt ? 'repaired' : 'ok') : 'failed',
       out ?? { promptTokens: null, completionTokens: null }, out?.latencyMs ?? Date.now() - started);
-    if (!failure) return { data: data!, repaired: attempt > 0 };
+    if (!failure) {if(executionTarget)await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);return { data: data!, repaired: attempt > 0 };}
+    if(finalizing&&executionTarget){await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);}
     // An exhausted output budget cannot be repaired using the same cap. Keep JSON/schema repairs.
     if (!executionTarget && !out && failure instanceof AppError && failure.code === 'AI_OUTPUT_INVALID' && failure.details?.cause === 'output_limit') throw failure;
     // Transport recovery belongs to gatewayChat. Never restart its recovery window

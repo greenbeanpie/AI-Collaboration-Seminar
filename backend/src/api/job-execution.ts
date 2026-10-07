@@ -43,20 +43,23 @@ export function registerJobExecutionRoutes(app:OpenAPIHono<AppEnv>):void{
   await authorizedJob(c.env,original,user.id);
   const job=await authorizedJob(c.env,await currentSuccessor(c.env,original),user.id);
   const input=JSON.parse(job.input_json) as {requestedBy?:string;sourceVersionId?:string;sourceLifecycleVersion?:number;configVersionId?:string};
-  if((input.requestedBy??job.created_by)!==user.id)throw permissionDenied('仅原请求账户可继续、输出或取消任务');
+  const requestedActor=input.requestedBy??job.created_by;
+  if(requestedActor&&requestedActor!==user.id)throw permissionDenied('仅原请求账户可继续、输出或取消任务');
+  if(!requestedActor&&job.project_id&&!await c.env.DB.prepare("SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2 AND role='owner'").bind(job.project_id,user.id).first())throw permissionDenied('自动任务仅项目负责人可继续、输出或取消');
   if(input.sourceVersionId)await loadActiveSourceVersion(c.env,input.sourceVersionId,input.sourceLifecycleVersion);
   const target=await resolveExecutionTarget(c.env,{kind:'job',id:job.id});
   const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId:user.id,operation:'ai.execution:'+job.id+':'+action,rawBody:JSON.stringify(body)},async()=>{
     if(['succeeded','cancelled'].includes((await getJob(c.env,job.id)).status))throw invalidState('任务已结束');
     if(action==='cancel'){
       await cancelExecution(c.env,target,body.expectedGeneration);
-      await c.env.DB.prepare("UPDATE jobs SET status='cancelled',finished_at=?2,updated_at=?2 WHERE id=?1 AND status IN ('queued','running','waiting_input','failed')").bind(job.id,nowIso()).run();
+      // The execution and active retry descendants were cancelled atomically by the controller.
       await settleReservation(c.env,job.id,'settled');
     }else{
       const execution=await readExecution(c.env,target);
       if(!execution)throw invalidState('该任务没有可继续的 AI 检查点');
-      if(job.project_id)await reserveAiSlot(c.env,{projectId:job.project_id,jobId:job.id,purpose:'execution_resume',configVersionId:input.configVersionId});
-      try{await resumeExecution(c.env,target,body.expectedGeneration,action);}catch(error){await settleReservation(c.env,job.id,'released');throw error;}
+      await resumeExecution(c.env,target,body.expectedGeneration,action);
+      try{if(job.project_id)await reserveAiSlot(c.env,{projectId:job.project_id,jobId:job.id,purpose:'execution_resume',configVersionId:input.configVersionId});}
+      catch(error){await pauseExecution(c.env,target,'interrupted');throw error;}
       await c.env.DB.prepare("UPDATE jobs SET status='running',error_json=NULL,finished_at=NULL,updated_at=?2 WHERE id=?1 AND status IN ('waiting_input','failed')").bind(job.id,nowIso()).run();
       const material=action==='output'?await partialMaterial(c.env,job):null;
       if(material){await succeedJob(c.env,job.id,material);await settleReservation(c.env,job.id,'settled');}

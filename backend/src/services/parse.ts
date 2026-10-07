@@ -516,6 +516,7 @@ async function withAiSlot<T>(
     await settleReservation(env, jobId, 'settled');
     return result;
   } catch (err) {
+    if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
     await settleReservation(env, jobId, 'released');
     throw err;
   }

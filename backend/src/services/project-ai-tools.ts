@@ -1,4 +1,5 @@
-import { readExecution } from './ai-execution-control';
+import { isBackgroundContinuation } from './ai-execution-slices';
+import { assertExecutionGeneration, pauseExecution, ExecutionPaused, isExecutionPaused, readExecution, resolveExecutionTarget } from './ai-execution-control';
 import { recordActivity } from './ai-activity';
 import { checkpointRootId, allowsUncertainCheckpointRetry, clearUncertainCheckpointRetry } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
@@ -328,6 +329,7 @@ export async function projectToolConversation(env: Env, params: {
     accountId: env.CLOUDFLARE_ACCOUNT_ID, apiToken: env.CLOUDFLARE_API_TOKEN, gatewayId: env.AI_GATEWAY_ID, authSecret: aiSecret(env), envName: env.ENV_NAME, diagnostics: env
   };
   const guard = async () => {
+    if(context.jobId)await assertExecutionGeneration(env,await resolveExecutionTarget(env,{kind:'job',id:context.jobId}),env.AI_EXECUTION_CONTEXT?.generation);
     if(await activeStandardId()!==effectiveStandardsVersionId)throw new ToolLifecycleChanged('本轮项目标准已更新，工具调用已停止；请重新发起');
     await params.beforeCall?.();
     const current = await loadAiConfig(env.DB);
@@ -392,6 +394,7 @@ export async function projectToolConversation(env: Env, params: {
       });
     }
     if (error) {
+      if(finalizing&&context.jobId&&!isExecutionPaused(error)&&!isBackgroundContinuation(error)){const target=await resolveExecutionTarget(env,{kind:'job',id:context.jobId});await checkpoint(false);await pauseExecution(env,target,'output_invalid');throw new ExecutionPaused((await readExecution(env,target))!);}
       if(!dispatched||error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')) await checkpoint(false);
       throw error;
     }

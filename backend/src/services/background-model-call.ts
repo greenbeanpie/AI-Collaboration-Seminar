@@ -1,17 +1,17 @@
 import type { Env } from '../env';
-import { AppError, invalidState } from '../core/errors';
+import { AppError } from '../core/errors';
 import { acquireExecutionCall, abortExecutionCall, finishExecutionCall, isExecutionPaused, readExecution, resolveExecutionTarget } from './ai-execution-control';
 import { BackgroundContinuation, isBackgroundContinuation } from './ai-execution-slices';
 
 /** Only wrap generation, never provider uploads, polling, probes or cached responses. */
 export async function backgroundModelCall<T>(env:Env,jobId:string,callAndCheckpoint:()=>Promise<T>):Promise<T>{
   if(env.AI_EXECUTION_CONTEXT && env.AI_EXECUTION_CONTEXT.modelCalls>=1)throw new BackgroundContinuation();
-  const target=await resolveExecutionTarget(env,{kind:'job',id:jobId}),token=await acquireExecutionCall(env,target);
-  if(env.AI_EXECUTION_CONTEXT)env.AI_EXECUTION_CONTEXT.modelCalls++;
+  const target=await resolveExecutionTarget(env,{kind:'job',id:jobId}),token=await acquireExecutionCall(env,target,env.AI_EXECUTION_CONTEXT?.generation);
+  if(env.AI_EXECUTION_CONTEXT){env.AI_EXECUTION_CONTEXT.modelCalls++;env.AI_EXECUTION_CONTEXT.generation=token.generation;}
   let received=false;
   try{
     const result=await callAndCheckpoint();received=true;
-    if(!await finishExecutionCall(env,target,token))throw invalidState('任务已取消或执行代次已变化；迟到结果不发布');
+    if(!await finishExecutionCall(env,target,token))throw new AppError('INVALID_STATE','任务已取消或执行代次已变化；迟到结果不发布',409,false,{executionSuperseded:true});
     return result;
   }catch(error){
     if(received||isExecutionPaused(error)||isBackgroundContinuation(error))throw error;

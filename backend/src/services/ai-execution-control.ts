@@ -29,7 +29,7 @@ export async function acquireExecutionCall(env:Env,t:ExecutionTarget,expectedGen
  await ensureExecution(env,t);const token={id:newId(),generation:0};const now=nowIso();
  const granted=await env.DB.prepare(`UPDATE ai_executions SET inflight_token=?3,inflight_generation=generation,window_calls=window_calls+1,total_calls=total_calls+1,final_call_used=CASE WHEN state='finalizing' THEN 1 ELSE final_call_used END,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND inflight_token IS NULL AND (?5 IS NULL OR generation=?5) AND ((state='running' AND window_calls<call_limit) OR (state='finalizing' AND final_call_used=0)) RETURNING generation`).bind(t.kind,t.id,token.id,now,expectedGeneration??null).first<{generation:number}>();
  if(granted)return {...token,generation:granted.generation};
- const r=(await row(env,t))!;if(r.state==='running' && !r.inflight_token && r.window_calls>=r.call_limit){await pauseExecution(env,t,'round_limit');throw new ExecutionPaused((await readExecution(env,t))!);}
+ const r=(await row(env,t))!;if(expectedGeneration!==undefined&&r.generation!==expectedGeneration)throw new AppError('VERSION_CONFLICT','执行代次已变化，旧执行已停止',409,false,{currentRevision:r.generation,executionSuperseded:true});if(r.state==='running' && !r.inflight_token && r.window_calls>=r.call_limit){await pauseExecution(env,t,'round_limit');throw new ExecutionPaused((await readExecution(env,t))!);}
  if(r.state==='finalizing' && !r.inflight_token){await pauseExecution(env,t,'output_invalid');throw new ExecutionPaused((await readExecution(env,t))!);}
  if(r.state==='paused')throw new ExecutionPaused(view(r));throw invalidState(r.inflight_token?'已有模型请求正在处理':'当前执行状态不允许发出请求');
 }
@@ -44,7 +44,18 @@ export async function resumeExecution(env:Env,t:ExecutionTarget,expectedGenerati
  const p=await loadExecutionPolicy(env);const updated=await env.DB.prepare(`UPDATE ai_executions SET generation=generation+1,window_calls=0,call_limit=?4,state=?5,pause_reason=NULL,final_call_used=0,updated_at=?6 WHERE target_kind=?1 AND target_id=?2 AND generation=?3 AND state='paused' AND inflight_token IS NULL AND pause_reason<>'request_uncertain' RETURNING generation`).bind(t.kind,t.id,expectedGeneration,p.maxModelCalls,mode==='output'?'finalizing':'running',nowIso()).first();
  if(!updated){const r=await row(env,t);if(!r)throw notFound();if(r.generation!==expectedGeneration)throw versionConflict(r.generation);throw invalidState('该执行无法继续；请求结果未知时需要先确认供应商结果');}return (await readExecution(env,t))!;
 }
-export async function cancelExecution(env:Env,t:ExecutionTarget,expectedGeneration?:number):Promise<void>{const r=await row(env,t);if(!r)return;if(expectedGeneration!==undefined && r.generation!==expectedGeneration)throw versionConflict(r.generation);await env.DB.prepare("UPDATE ai_executions SET state='cancelled',inflight_token=NULL,inflight_generation=NULL,updated_at=?3 WHERE target_kind=?1 AND target_id=?2 AND generation=?4").bind(t.kind,t.id,nowIso(),r.generation).run();}
+export async function cancelExecution(env:Env,t:ExecutionTarget,expectedGeneration?:number):Promise<void>{
+ const r=await row(env,t);if(!r)return;
+ if(expectedGeneration!==undefined&&r.generation!==expectedGeneration)throw versionConflict(r.generation);
+ if(r.state==='completed')throw invalidState('任务已完成，无法取消');if(r.state==='cancelled')return;
+ const now=nowIso(),writes=[env.DB.prepare(`WITH RECURSIVE chain(id) AS (SELECT ?2 UNION SELECT l.retry_job_id FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id)
+ UPDATE ai_executions SET state='cancelled',inflight_token=NULL,inflight_generation=NULL,updated_at=?3 WHERE target_kind=?1 AND target_id=?2 AND generation=?4 AND state IN ('running','paused','finalizing')
+ AND (?1!='job' OR NOT EXISTS(SELECT 1 FROM jobs WHERE status='succeeded' AND (id IN (SELECT id FROM chain) OR json_extract(input_json,'$.autoRetryRootId')='job:'||?2)))`).bind(t.kind,t.id,now,r.generation)];
+ if(t.kind==='job')writes.push(env.DB.prepare(`WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT l.retry_job_id FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id)
+  UPDATE jobs SET status='cancelled',finished_at=?2,updated_at=?2 WHERE status IN ('running','queued','waiting_input') AND (id IN (SELECT id FROM chain) OR json_extract(input_json,'$.autoRetryRootId')='job:'||?1)
+    AND EXISTS(SELECT 1 FROM ai_executions WHERE target_kind='job' AND target_id=?1 AND state='cancelled' AND generation=?3 AND updated_at=?2)`).bind(t.id,now,r.generation));
+ const result=await env.DB.batch(writes);if(!result[0]?.meta.changes)throw versionConflict((await row(env,t))?.generation??r.generation);
+}
 export async function completeExecution(env:Env,t:ExecutionTarget,expectedGeneration?:number):Promise<boolean>{const r=await row(env,t);if(!r)return false;const result=await env.DB.prepare("UPDATE ai_executions SET state='completed',pause_reason=NULL,updated_at=?3 WHERE target_kind=?1 AND target_id=?2 AND generation=?4 AND state IN ('running','finalizing') AND inflight_token IS NULL").bind(t.kind,t.id,nowIso(),expectedGeneration??r.generation).run();return result.meta.changes>0;}
 /** Only call when dispatch is known not to have happened. */
 export async function abortExecutionCall(env:Env,t:ExecutionTarget,token:ExecutionCallToken):Promise<boolean>{const result=await env.DB.prepare(`UPDATE ai_executions SET inflight_token=NULL,inflight_generation=NULL,window_calls=max(0,window_calls-1),total_calls=max(0,total_calls-1),final_call_used=CASE WHEN state='finalizing' THEN 0 ELSE final_call_used END,updated_at=?5 WHERE target_kind=?1 AND target_id=?2 AND inflight_token=?3 AND generation=?4 AND state IN ('running','finalizing')`).bind(t.kind,t.id,token.id,token.generation,nowIso()).run();return result.meta.changes>0;}
@@ -63,4 +74,12 @@ export const executionSchema=z.object({generation:z.number().int(),windowCalls:z
 export async function markInterruptedExecution(env:Env,t:ExecutionTarget,expectedGeneration:number):Promise<boolean>{
  const result=await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason=CASE WHEN inflight_token IS NULL THEN 'interrupted' ELSE 'request_uncertain' END,inflight_token=NULL,inflight_generation=NULL,updated_at=?4 WHERE target_kind=?1 AND target_id=?2 AND generation=?3 AND state IN ('running','finalizing')").bind(t.kind,t.id,expectedGeneration,nowIso()).run();
  if(result.meta.changes)await syncPausedTarget(env,t);return result.meta.changes>0;
+}
+
+/** Cached outputs and tool-only steps obey the same generation fence as paid requests. */
+export async function assertExecutionGeneration(env:Env,t:ExecutionTarget,expectedGeneration?:number):Promise<void>{
+ if(expectedGeneration===undefined)return;const execution=await readExecution(env,t);
+ if(execution&&execution.generation!==expectedGeneration)throw new AppError('VERSION_CONFLICT','执行代次已变化，旧执行已停止',409,false,{executionSuperseded:true,currentRevision:execution.generation});
+ if(execution?.state==='paused')throw new ExecutionPaused(execution);
+ if(execution&&['cancelled','completed'].includes(execution.state))throw new AppError('INVALID_STATE','执行已结束，旧执行已停止',409,false,{executionSuperseded:true});
 }

@@ -163,14 +163,17 @@ export async function failJob(env: Env, jobId: string, error: { code: string; me
 
 export async function succeedJob(env: Env, jobId: string, result: unknown): Promise<void> {
   await recordActivity(env,jobId,'saving');
+  const target=await resolveExecutionTarget(env,{kind:'job',id:jobId}),execution=await readExecution(env,target);
+  const generation=env.AI_EXECUTION_CONTEXT?.generation??execution?.generation??null;
   const transition = await env.DB.prepare(
     `UPDATE jobs SET status = 'succeeded', result_json = ?2, finished_at = ?3, updated_at = ?3 WHERE id = ?1 AND status IN ('running', 'queued')
+      AND NOT EXISTS(SELECT 1 FROM ai_executions WHERE target_kind='job' AND target_id=?4 AND (state NOT IN ('running','finalizing') OR generation!=?5))
       AND (json_extract(input_json, '$.sourceVersionId') IS NULL OR ${sourceLifecycleGuard("json_extract(jobs.input_json, '$.sourceVersionId')", "COALESCE(json_extract(jobs.input_json, '$.sourceLifecycleVersion'), 1)")})`,
   )
-    .bind(jobId, JSON.stringify(result ?? null), nowIso())
+    .bind(jobId, JSON.stringify(result ?? null), nowIso(),target.id,generation)
     .run();
   if ((transition.meta?.changes ?? 0) === 0) return;
-  await completeExecution(env,await resolveExecutionTarget(env,{kind:'job',id:jobId}));
+  await completeExecution(env,target,generation??undefined);
   await env.DB.prepare("UPDATE job_outbox SET status = 'done', updated_at = ?2 WHERE job_id = ?1")
     .bind(jobId, nowIso())
     .run();
