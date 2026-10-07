@@ -154,10 +154,10 @@ describe('complete final output repair context', () => {
   it.each([false, true])('does not dispatch a truncated repair when the complete output exceeds the input budget (projectTools=%s)', async useTools => {
     const f = await fixture();
     const fetch = vi.fn(async () => Response.json({ choices: [{ finish_reason: 'stop', message: {
-      content: JSON.stringify({ title: 123, markdown: '正文'.repeat(4500) }),
+      content: JSON.stringify({ title: 123, markdown: '正文'.repeat(15000) }),
     } }], usage: { prompt_tokens: 10, completion_tokens: 10 } }));
     vi.stubGlobal('fetch', fetch);
-    const modelConfig = { ...f.config.config.textEconomy, maxInputChars: 8000 };
+    const modelConfig = { ...f.config.config.textEconomy, maxInputChars: 24000 };
     await expect(aiJsonCall(env, {
       projectId: f.projectId, projectTools: useTools ? { projectId: f.projectId, userId: f.owner.userId } : undefined,
       purpose: 'textEconomy', configVersionId: f.config.id, model: modelConfig.model, modelConfig,

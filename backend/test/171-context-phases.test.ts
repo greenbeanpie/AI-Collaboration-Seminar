@@ -31,7 +31,7 @@ describe('stable context phases',()=>{
     await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
     await expect(projectToolConversation(local,params)).rejects.toBeInstanceOf(InvestigationContinuation);
     source='new authorized input';
-    await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.feedbackSnapshot',json(?2)) WHERE id=?1").bind(jobId,JSON.stringify({version:2,versionId:'feedback2',feedback:'new feedback'})).run();
+    await env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.feedbackSnapshot',json(?2)) WHERE id=?1").bind(jobId,JSON.stringify({version:2,versionId:'feedback2',feedback:''})).run();
     await projectToolConversation(local,params);
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests)).not.toContain('never dispatch stale placeholder');
@@ -41,7 +41,9 @@ describe('stable context phases',()=>{
     expect(JSON.stringify(requests[1])).toContain(preset==='deepseek'?'reasoning_content':'signature');
     const body=JSON.stringify(requests[1]!.messages);
     expect(body.indexOf('new authorized input')).toBeGreaterThan(body.indexOf('overview'));
-    expect(body.indexOf('new feedback')).toBeGreaterThan(body.indexOf('new authorized input'));
+    expect(body.indexOf('feedback2')).toBeGreaterThan(body.indexOf('new authorized input'));
+    const feedback=requests[1]!.messages.filter((message:{content:unknown})=>typeof message.content==='string'&&message.content.startsWith('{"contextType":"持续项目反馈"')).at(-1);
+    expect(JSON.parse(feedback.content)).toMatchObject({version:2,feedback:''});
     const saved=await loadInvestigation(env,jobId+'-stable-phase-test');
     expect(saved?.contextPhase?.compactions).toBe(0);
     expect(await env.DB.prepare('SELECT cached_tokens,cache_miss_tokens,context_metadata_json FROM ai_calls WHERE job_id=?1 LIMIT 1').bind(jobId).first()).toMatchObject({cached_tokens:80,cache_miss_tokens:20,context_metadata_json:expect.any(String)});
@@ -65,5 +67,10 @@ describe('stable context phases',()=>{
     expect(phase.baseMessages[1]!.content).toBe('request');
     expect(phase.timeline.at(-1)?.kind).toBe('message');
     expect(()=>prepareContextPhase({...config,maxInputChars:100},phase)).toThrow('输入容量');
+  });
+  it('keeps encoded images outside the text budget',async()=>{
+    const cfg=(await loadAiConfig(env.DB))!.config.review;
+    const phase=createContextPhase([{role:'user',content:[{type:'text',text:'image task'},{type:'image_url',image_url:{url:'data:image/png;base64,'+'AAAA'.repeat(4000)}}]}],[]);
+    expect(prepareContextPhase({...cfg,maxInputChars:2000},phase).metadata.inputChars).toBeLessThan(2000);
   });
 });

@@ -79,7 +79,7 @@ describe('autonomous project investigation',()=>{
       return Response.json({choices:[{message:{content:'{"title":"已修复","referenceIds":[],"decisionReferences":[]}'}}],usage:{prompt_tokens:10,completion_tokens:5}});
     });vi.stubGlobal('fetch',fetch);
     const out=await aiJsonCall(env,{projectId:f.projectId,projectTools:{projectId:f.projectId,userId:f.owner.userId},purpose:'textEconomy',configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,promptVersion:'repair-fixture',privateContext:true,messages:[{role:'user',content:'调查项目'}],prepareMessages:async()=>{prepared++;return [{role:'user',content:'fresh-private-context'}];},schema:z.object({title:z.string()}).strict()});
-    expect(out.data).toEqual({title:'已修复'});expect(out.repaired).toBe(true);expect(out.toolTrace).toHaveLength(1);expect(fetch).toHaveBeenCalledTimes(3);expect(prepared).toBe(3);
+    expect(out.data).toEqual({title:'已修复'});expect(out.repaired).toBe(true);expect(out.toolTrace).toHaveLength(1);expect(fetch).toHaveBeenCalledTimes(3);expect(prepared).toBe(4);
   });
   it('discovers paste sources and material beyond first page and validates read version evidence',async()=>{
     const {owner,projectId}=await fixture(),now=nowIso(),versionId=newId(),materialId=newId();

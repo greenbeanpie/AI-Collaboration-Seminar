@@ -249,7 +249,6 @@ async function gatewayChatAttempt(
   const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
   const base=JSON.stringify({messages,definitions:input.toolMode?.definitions??[]});
   const contextMetadata:AiContextMetadata={protocol,step:input.contextMetadata?.step,stage:input.contextMetadata?.stage??0,compactionCount:input.contextMetadata?.compactions??0,baseHash:hash(base),baseChars:base.length,inputHash:hash(serializedBody),inputChars:serializedBody.length,...(input.contextMetadata?.repeatedReads!==undefined?{repeatedReads:input.contextMetadata.repeatedReads,readTrackingWindow:input.contextMetadata.readTrackingWindow}:{})};
-  if(input.contextMetadata && serializedBody.length>input.config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
   const images = messages.flatMap(message => typeof message.content === 'string' ? [] : message.content.filter(part => part.type === 'image_url'));
   if (images.length && !input.config.supportsVision) throw new AppError('AI_UNAVAILABLE','当前模型不支持图像；不会回落到其他端点',503,false);
   if (images.length > MULTIMODAL_LIMITS.images) throw new AppError('QUOTA_EXCEEDED', '单次视觉请求最多包含3张图片', 422, false);
@@ -267,6 +266,8 @@ async function gatewayChatAttempt(
     }
   }
   if (encodedImages > MULTIMODAL_LIMITS.imagePayloadBytes || serializedBody.length - encodedImages > input.config.maxInputChars * 6 + 32000) throw new AppError('QUOTA_EXCEEDED', '工具或文字上下文超过当前模型输入限制', 429, false);
+  contextMetadata.inputChars=serializedBody.length-encodedImages;
+  if(input.contextMetadata && contextMetadata.inputChars>input.config.maxInputChars)throw new AppError('QUOTA_EXCEEDED','完整工具上下文超过模型输入容量；请提高输入字符限制或缩减需求',429,false);
   if (images.length && new TextEncoder().encode(serializedBody).length > MULTIMODAL_LIMITS.requestBytes) throw new AppError('QUOTA_EXCEEDED', '视觉请求超过9 MiB传输边界', 422, false);
   if (input.config.providerPreset === 'opencode-go') {
     const sessionId = requireOpenCodeGoSessionId(input.sessionId);

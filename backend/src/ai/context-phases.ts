@@ -64,7 +64,9 @@ function messages(phase:ContextPhase):ChatMessage[] {
 export function contextRequestChars(config:AiModelConfig,phase:ContextPhase,options:{final?:boolean;jsonMode?:boolean}={}):number {
   const request=buildProviderRequest(config,messages(phase),'',options.jsonMode!==false);
   applyToolMode(config,request.protocol,request.body,toolMode(phase,options.final));
-  return JSON.stringify(request.body).length;
+  const ordinary=[...messages(phase),...phase.timeline.flatMap(entry=>entry.kind==='message'?[entry.message]:[])];
+  const imageChars=ordinary.reduce((sum,message)=>sum+(typeof message.content==='string'?0:message.content.reduce((n,part)=>n+(part.type==='image_url'?/^data:[^;,]+;base64,(.*)$/u.exec(part.image_url.url)?.[1]?.length??0:0),0)),0);
+  return JSON.stringify(request.body).length-imageChars;
 }
 function locator(value:unknown):unknown {
   if(Array.isArray(value))return value.map(locator);
