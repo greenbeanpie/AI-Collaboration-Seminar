@@ -1,16 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../backend/package.json', import.meta.url));
-const ts = require('typescript');
+const { experimental_readRawConfig } = require('wrangler');
 const environment = process.argv[2];
 if (!['staging', 'production'].includes(environment)) {
   console.error('Usage: npm run preflight:deploy -- staging|production');
   process.exit(1);
 }
 function config(path) {
-  const parsed = ts.parseConfigFileTextToJson(path, readFileSync(new URL(path, import.meta.url), 'utf8'));
-  if (parsed.error) throw new Error(`Invalid config ${path}`);
-  return parsed.config;
+  return experimental_readRawConfig({ config: fileURLToPath(new URL(path, import.meta.url)) }).rawConfig;
 }
 const backend = config('../backend/wrangler.jsonc');
 const frontend = config('../frontend/wrangler.jsonc');
