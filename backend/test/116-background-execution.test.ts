@@ -45,7 +45,7 @@ describe('background processing windows',()=>{
  });
  it('halts unknown requests and discards cancelled late responses',async()=>{
   const f=await fixture();await expect(backgroundModelCall(env,f.jobId,async()=>{throw new Error('network');})).rejects.toMatchObject({details:{executionPause:true}});
-  expect(await readExecution(env,f.target)).toMatchObject({state:'paused',pauseReason:'request_uncertain',canContinue:false});
+  expect(await readExecution(env,f.target)).toMatchObject({state:'paused',pauseReason:'request_uncertain',canContinue:true});
   const second=await fixture();await expect(backgroundModelCall(env,second.jobId,async()=>{await cancelExecution(env,second.target);return 'late';})).rejects.toThrow('迟到结果');
   expect(await readExecution(env,second.target)).toMatchObject({state:'cancelled',totalCalls:1});
  });

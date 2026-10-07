@@ -1,6 +1,6 @@
 import { recordActivity } from './ai-activity';
 import { saveDraftCheckpoint } from './draft-preview-checkpoints';
-import { ensureExecution, readExecution, resumeExecution, cancelExecution } from './ai-execution-control';
+import { ensureExecution, readExecution, resumeExecution, cancelExecution, pauseExecution, markInterruptedExecution } from './ai-execution-control';
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
@@ -54,13 +54,18 @@ export async function dispatchDraftPreview(env:Env,dispatch:DraftDispatch):Promi
   return true;
 }
 async function failStoppedDispatch(env:Env,row:DraftDispatch) {
-  const snapshot=await loadDraftCheckpoint(env,row.attempt_id),execution=await readExecution(env,{kind:'draft_preview',id:row.attempt_id});
-  if(!execution||!['running','finalizing'].includes(execution.state)||!snapshot)return;
+  const snapshot=await loadDraftCheckpoint(env,row.attempt_id),target={kind:'draft_preview' as const,id:row.attempt_id};
+  const current=await env.DB.prepare("SELECT owner_id FROM project_creation_drafts WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND status='active' AND preview_state='running'").bind(row.draft_id,row.attempt_id,row.context_revision).first<{owner_id:string}>();
+  if(!current)return;
+  const execution=await readExecution(env,target)??await ensureExecution(env,target,{draftId:row.draft_id,userId:current.owner_id});
+  if(!['running','finalizing'].includes(execution.state))return;
+  if(!snapshot){await pauseExecution(env,target,'output_invalid');return;}
   const checkpoint=snapshot.checkpoint,segment=checkpoint.segment??0;
   const currentId=checkpoint.dispatchGeneration===execution.generation&&checkpoint.dispatchSegment===segment?checkpoint.dispatchInstanceId:`${row.attempt_id}-g${execution.generation}-s${segment}`;
   const legacyInitial=!checkpoint.dispatchInstanceId&&execution.generation===1&&segment===0&&row.instance_id===row.attempt_id;
   if(!legacyInitial&&row.instance_id!==currentId)return;
-  await env.DB.prepare("UPDATE project_creation_drafts SET preview_state='failed',preview_error='后台预览已停止；若请求已发出，用量可能已产生，未自动重放。请核对后主动重新生成',updated_at=?4 WHERE id=?1 AND preview_attempt_id=?2 AND revision=?3 AND preview_state='running' AND preview_waiting_id IS NULL AND NOT EXISTS(SELECT 1 FROM draft_preview_dispatches newer WHERE newer.attempt_id=?2 AND newer.question_id IS NOT NULL AND (SELECT round FROM ai_clarifications WHERE id=newer.question_id)>COALESCE((SELECT round FROM ai_clarifications WHERE id=?5),0))").bind(row.draft_id,row.attempt_id,row.context_revision,nowIso(),row.question_id).run();
+  if(checkpoint.pendingDispatch)await pauseExecution(env,target,'request_uncertain');
+  else await markInterruptedExecution(env,target,execution.generation);
 }
 
 export async function enqueueDraftPreview(env:Env,id:string,userId:string,revision:number,tasks:DraftPreviewInput['tasks'],regenerate:boolean,goal?:DraftPreviewInput['goal']) {
@@ -97,7 +102,7 @@ export async function enqueueDraftPreviewSegment(env:Env,input:DraftPreviewInput
   await dispatchDraftPreview(env,{instance_id:instanceId,draft_id:input.draftId,attempt_id:input.attempt,context_revision:input.revision,question_id:null,status:'pending',updated_at:now});
 }
 
-export async function controlDraftExecution(env:Env,id:string,userId:string,expectedGeneration:number,action:'continue'|'output'|'cancel') {
+export async function controlDraftExecution(env:Env,id:string,userId:string,expectedGeneration:number,action:'continue'|'output'|'cancel',options:{allowUncertainDispatch?:boolean}={}) {
   const row=await getDraft(env,id,userId);
   if(row.status!=='active'||!row.preview_attempt_id)throw invalidState('草稿没有可控制的执行');
   if(action==='cancel') {
@@ -116,7 +121,7 @@ export async function controlDraftExecution(env:Env,id:string,userId:string,expe
     ]);
   }
   else {
-    const execution=await resumeExecution(env,target,expectedGeneration,action);
+    const execution=await resumeExecution(env,target,expectedGeneration,action,options);
     if(action==='output'&&snapshot.checkpoint.pendingOutput?.toolOutput) {
       const out=snapshot.checkpoint.pendingOutput.toolOutput;
       snapshot.checkpoint.exchanges.push({assistant:out.assistant,results:out.toolCalls.map(call=>snapshot.checkpoint.pendingResults?.find(result=>result.call.id===call.id)??{call,output:{skipped:true,reason:'用户要求基于已有资料输出'}})});
@@ -125,7 +130,7 @@ export async function controlDraftExecution(env:Env,id:string,userId:string,expe
       snapshot.etag=(await loadDraftCheckpoint(env,row.preview_attempt_id))!.etag;
     }
     // Keep completed provider output and tool results intact when a window resumes.
-    if(snapshot.checkpoint.pendingDispatch){snapshot.checkpoint.pendingDispatch=false;await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);}
+    if(snapshot.checkpoint.pendingDispatch||snapshot.checkpoint.providerRetry){snapshot.checkpoint.pendingDispatch=false;snapshot.checkpoint.providerRetry=undefined;await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);}
     await enqueueDraftPreviewSegment(env,{draftId:id,userId,revision:row.revision,attempt:row.preview_attempt_id,generation:execution.generation,tasks:[]});
   }
   return draftView(env,await getDraft(env,id,userId));

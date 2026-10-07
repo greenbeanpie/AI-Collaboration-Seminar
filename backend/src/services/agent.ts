@@ -1,3 +1,4 @@
+import { InvestigationContinuation } from './project-investigation';
 import { ExecutionPaused, assertExecutionGeneration, pauseExecution, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
@@ -11,7 +12,7 @@ import { buildGuideHistory, assertGuideHistoryAccess } from './guide-history';
 import { projectReferenceGuard } from './project-reference-guard';
 import { nowIso } from '../core/db';
 import { AppError } from '../core/errors';
-import { gatewayChat } from '../ai/gateway';
+import { gatewayChat, type ProviderRetryState } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { failJob, getJob, succeedJob } from './jobs';
@@ -192,7 +193,9 @@ export async function aiJsonCall<S extends z.ZodType>(
   const sessionId = params.sessionId ?? params.runId ?? root ?? params.jobId ?? crypto.randomUUID();
   let messages = params.messages;
   const repairStateKey=root?`ai/responses/${root}/${fingerprint}/repair-state.json`:undefined;
-  const repairState=repairStateKey?await loadResponseCheckpoint<{attempt:number;messages:typeof messages}>(env,repairStateKey):null;
+  const repairState=repairStateKey?await loadResponseCheckpoint<{attempt:number;messages:typeof messages;providerRetry?:ProviderRetryState;generation?:number}>(env,repairStateKey):null;
+  let providerRetry=repairState?.providerRetry;
+  if(executionTarget && (repairState?.generation??1)!==(await readExecution(env,executionTarget))?.generation)providerRetry=undefined;
   const firstAttempt=repairState?.attempt??0;if(repairState)messages=repairState.messages;
   const maxAttempts=params.jobId?finalizing?1:Number.POSITIVE_INFINITY:params.maxAttempts??2;
   for (let attempt = firstAttempt; attempt < (finalizing?firstAttempt+1:maxAttempts); attempt++) {
@@ -214,6 +217,13 @@ export async function aiJsonCall<S extends z.ZodType>(
       if(saved?.output) { if(executionTarget)await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);await params.beforeCall?.();await params.prepareMessages?.();out=saved.output; }
       else out = await gatewayChat(endpoint, {
         projectId: params.projectId, jobId: params.jobId, config: params.modelConfig, messages, jsonMode: true, sessionId, privateContext: params.privateContext,
+        providerRetry,
+        onProviderRetry: repairStateKey && env.AI_EXECUTION_CONTEXT ? async state => {
+          providerRetry=state;
+          if(dispatchKey)await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true});
+          await saveResponseCheckpoint(env,repairStateKey,{attempt,messages,providerRetry:state,generation:env.AI_EXECUTION_CONTEXT?.generation},{mutable:true});
+          throw new InvestigationContinuation('供应商已明确拒绝本次请求，退避后在下一执行分段重试');
+        } : undefined,
         beforeFetch: async () => {
           await params.beforeCall?.();
           await markAiCallStarted(env, params.jobId);
@@ -235,6 +245,7 @@ export async function aiJsonCall<S extends z.ZodType>(
       if(dispatchKey&&error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number'))await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true});
       failure = error;
     }
+    providerRetry=undefined;
     // Persist the paid response before schema validation, ledger writes, or business writes.
     if(out && responseKey && !replayed) {
       if(await env.DB.prepare('SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?1').bind(params.jobId!).first())throw new AppError('INVALID_STATE','任务已由新尝试继续，旧结果不会保存',409,false);

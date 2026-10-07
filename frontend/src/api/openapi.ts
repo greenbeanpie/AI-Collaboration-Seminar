@@ -1660,6 +1660,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         expectedGeneration: number;
+                        allowUncertainDispatch?: boolean;
                     };
                 };
             };
@@ -4543,6 +4544,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         expectedGeneration: number;
+                        allowUncertainDispatch?: boolean;
                     };
                 };
             };

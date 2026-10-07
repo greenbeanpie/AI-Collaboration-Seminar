@@ -19,7 +19,7 @@ export function ExecutionControlPanel({ execution, path, enabled = true, onUpdat
     lock.current = true; setPending(true); setError(null); onBeforeAction?.();
     const namespace = `execution:${path}:${generation}:${action}`;
     try {
-      const body = { expectedGeneration: generation };
+      const body = { expectedGeneration: generation, ...(execution.pauseReason === 'request_uncertain' && action !== 'cancel' ? { allowUncertainDispatch: true } : {}) };
       const idempotencyKey = await idempotencyKeyForIntent(namespace, body);
       const snapshot = await request(`${path}/execution/${action}`, { method: 'POST', body, idempotencyKey, networkOnly: true });
       completeIntent(namespace);
@@ -31,6 +31,6 @@ export function ExecutionControlPanel({ execution, path, enabled = true, onUpdat
   return <section className="callout" aria-label="AI 持续处理控制"><p role="status" aria-live="polite">已处理 {execution.windowCalls} 轮 / {execution.limit} 轮 · 累计 {execution.totalCalls} 轮 · {states[execution.state]}</p>
     {execution.pauseReason && <p>{reasons[execution.pauseReason] ?? execution.pauseReason}</p>}
     <div className="form-actions">{execution.canContinue && <button type="button" className="button button-primary" disabled={pending || !enabled} onClick={() => void act('continue')}>继续处理</button>}{execution.canOutput && <button type="button" className="button button-quiet" disabled={pending || !enabled} onClick={() => void act('output')}>输出当前结果</button>}{!['completed', 'cancelled'].includes(execution.state) && <button type="button" className="button button-quiet" disabled={pending || !enabled} onClick={() => void act('cancel')}>取消处理</button>}</div>
-    {execution.canOutput && <p className="muted">输出将使用已保存的资料，可能额外调用一次模型；结果通过校验后才会保存。</p>}{pending && <p role="status">正在更新处理状态…</p>}{error !== null && <ErrorNotice error={error} />}
+    {execution.pauseReason === 'request_uncertain' && <p className="muted">上次请求是否完成尚不明确；点击继续或输出将允许重新请求未完成步骤，可能再次产生用量。</p>}{execution.canOutput && <p className="muted">输出将使用已保存的资料，可能额外调用一次模型；结果通过校验后才会保存。</p>}{pending && <p role="status">正在更新处理状态…</p>}{error !== null && <ErrorNotice error={error} />}
   </section>;
 }

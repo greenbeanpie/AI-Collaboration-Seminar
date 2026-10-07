@@ -303,9 +303,9 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
       return c.json(apiData(c,await draftView(c.env,row)),200);
     }
   });
-  app.openapi(createRoute({method:'post',path:base+'/{draftId}/execution/{action}',tags:['creation'],request:{params:params.extend({action:z.enum(['continue','output','cancel'])}),body:json(z.object({expectedGeneration:z.number().int().min(1)}).strict())},responses:{200:{description:'继续、输出已有结果或取消后台执行',content:{'application/json':{schema:response}}}}}),async c=>{
-    const p=c.req.valid('param'),body=c.req.valid('json') as {expectedGeneration:number},userId=c.get('user')!.id;
-    const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId,operation:`creation-draft.execution.${p.action}`,rawBody:JSON.stringify({draftId:p.draftId,...body})},async()=>({status:200 as const,body:await controlDraftExecution(c.env,p.draftId,userId,body.expectedGeneration,p.action)}));
+  app.openapi(createRoute({method:'post',path:base+'/{draftId}/execution/{action}',tags:['creation'],request:{params:params.extend({action:z.enum(['continue','output','cancel'])}),body:json(z.object({expectedGeneration:z.number().int().min(1),allowUncertainDispatch:z.boolean().optional()}).strict())},responses:{200:{description:'继续、输出已有结果或取消后台执行',content:{'application/json':{schema:response}}}}}),async c=>{
+    const p=c.req.valid('param'),body=c.req.valid('json') as {expectedGeneration:number;allowUncertainDispatch?:boolean},userId=c.get('user')!.id;
+    const result=await withIdempotency(c.env,{key:c.req.header('idempotency-key'),required:true,userId,operation:`creation-draft.execution.${p.action}`,rawBody:JSON.stringify({draftId:p.draftId,...body})},async()=>({status:200 as const,body:await controlDraftExecution(c.env,p.draftId,userId,body.expectedGeneration,p.action,{allowUncertainDispatch:body.allowUncertainDispatch})}));
     return c.json(apiData(c,result.body),200);
   });
   const questionParams=params.extend({questionId:z.string().uuid()});

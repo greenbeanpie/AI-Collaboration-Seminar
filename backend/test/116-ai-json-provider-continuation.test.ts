@@ -1,0 +1,25 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import { env } from './helpers/env';
+import { seedUser, seedProject } from './helpers/seed';
+import { configureGoFixture } from './helpers/provider-config';
+import { loadAiConfig } from '../src/ai/config';
+import { aiJsonCall } from '../src/services/agent';
+import { reserveAiSlot } from '../src/services/ai-reservations';
+import { readExecution } from '../src/services/ai-execution-control';
+import { InvestigationContinuation } from '../src/services/project-investigation';
+afterEach(() => vi.unstubAllGlobals());
+it('checkpoints a known rejection and resumes a plain JSON call without treating it as uncertain', async () => {
+ await configureGoFixture(); const owner=await seedUser(),projectId=await seedProject(owner.userId),jobId=crypto.randomUUID(),config=(await loadAiConfig(env.DB))!;
+ await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,created_by,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running',?3,'{}',?4,?4)").bind(jobId,projectId,owner.userId,new Date().toISOString()).run();
+ await reserveAiSlot(env,{projectId,jobId,purpose:'agent_run',configVersionId:config.id});
+ const model=vi.fn().mockResolvedValueOnce(Response.json({error:{message:'temporary'}},{status:429})).mockResolvedValueOnce(Response.json({choices:[{message:{content:'{"summary":"恢复成功"}'}}],usage:{prompt_tokens:1,completion_tokens:1}}));
+ vi.stubGlobal('fetch',model);
+ const params={projectId,jobId,configVersionId:config.id,model:config.config.textEconomy.model,modelConfig:config.config.textEconomy,purpose:'textEconomy' as const,promptVersion:'retry-test',messages:[{role:'user' as const,content:'summarize'}],schema:z.object({summary:z.string()})};
+ await expect(aiJsonCall({...env,AI_EXECUTION_CONTEXT:{modelCalls:0,generation:1}},params)).rejects.toBeInstanceOf(InvestigationContinuation);
+ expect(model).toHaveBeenCalledTimes(1);
+ expect(await readExecution(env,{kind:'job',id:jobId})).toMatchObject({state:'running',totalCalls:1});
+ const result=await aiJsonCall({...env,AI_EXECUTION_CONTEXT:{modelCalls:0,generation:1}},params);
+ expect(result.data.summary).toBe('恢复成功'); expect(model).toHaveBeenCalledTimes(2);
+ expect(await readExecution(env,{kind:'job',id:jobId})).toMatchObject({state:'running',totalCalls:2});
+});

@@ -25,6 +25,7 @@ export interface InvestigationCheckpoint {
   citations?: WebCitation[];
   searchUsed?: boolean;
   providerRetry?: ProviderRetryState;
+  executionGeneration?: number;
 }
 interface EncryptedCheckpoint {
   format:'encrypted-investigation-v1';step:number;phase:'complete'|'read';chunks:string[];

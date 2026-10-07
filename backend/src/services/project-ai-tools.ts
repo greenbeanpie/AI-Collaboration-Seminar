@@ -343,10 +343,11 @@ export async function projectToolConversation(env: Env, params: {
   let pendingOutput=restored?.pendingOutput;
   let pendingSearchOutput=restored?.pendingSearchOutput;
   let pendingResults:ToolExchange['results']=restored?.pendingResults??[];
-  let providerRetry=restored?.providerRetry;
+  const executionGeneration=context.jobId?(await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:context.jobId})))?.generation:undefined;
+  let providerRetry=(restored?.executionGeneration??1)===(executionGeneration??1)?restored?.providerRetry:undefined;
   let toolsInSlice=0;
   const checkpoint=async(pendingDispatch=false,content?:string)=>{if(investigationId) await saveInvestigation(env,context,investigationId,params.promptVersion,{step:currentStep,exchanges,references,trace,compacted,
-    pendingDispatch,content,pendingOutput,pendingResults,pendingSearchOutput,citations,searchUsed,providerRetry,effectiveStandardsVersionId},params.privateContext);};
+    pendingDispatch,content,pendingOutput,pendingResults,pendingSearchOutput,citations,searchUsed,providerRetry,executionGeneration,effectiveStandardsVersionId},params.privateContext);};
   const call = async (messages: ChatMessage[], toolMode: import('../ai/tool-transport').ToolMode) => {
     if(pendingSearchOutput && toolMode.nativeSearch){await guard();return pendingSearchOutput;}
     if(pendingOutput && toolMode.definitions.length){await guard();return pendingOutput;}

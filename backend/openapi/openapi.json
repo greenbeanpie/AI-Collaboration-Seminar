@@ -26835,6 +26835,9 @@
                   "expectedGeneration": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "allowUncertainDispatch": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -30936,7 +30939,10 @@
                 "properties": {
                   "expectedGeneration": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 1
+                  },
+                  "allowUncertainDispatch": {
+                    "type": "boolean"
                   }
                 },
                 "required": [

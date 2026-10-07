@@ -70,18 +70,18 @@ describe('chat durable recovery',()=>{
  it('requires manual consent for an unconfirmed provider response and resumes the same question',async()=>{
   const f=await fixture(),q=await question(f);let calls=0;
   vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{assertGoRequest(url,init);calls++;if(calls===1)throw new Error('network response lost');return Response.json({choices:[{message:{content:JSON.stringify({markdown:'继续成功',referenceIds:[]})}}],usage:{prompt_tokens:10,completion_tokens:10}});}));
-  await runProjectChatJob(env,q.jobId);expect((await getJob(env,q.jobId)).status).toBe('failed');
+  await expect(runProjectChatJob(env,q.jobId)).rejects.toMatchObject({details:{executionPause:true}});expect((await getJob(env,q.jobId)).status).toBe('waiting_input');
   const state=(await (await request(f.owner.token,`/jobs/${q.jobId}`)).json() as any).data;expect(state.activity.uncertain).toBe(true);
   const automatic=await env.DB.prepare("SELECT 1 FROM ai_automatic_retries WHERE target_id=?1 AND status IN ('pending','dispatching')").bind(q.jobId).first();expect(automatic).toBeNull();
-  const next=await retryFailedAiJob(env,q.jobId,undefined,undefined,{actorId:f.owner.userId,allowUncertainDispatch:true});await runProjectChatJob(env,next.jobId!);expect((await getJob(env,next.jobId!)).status).toBe('succeeded');expect(calls).toBe(2);
+  const continued=await request(f.owner.token,`/jobs/${q.jobId}/execution/continue`,{expectedGeneration:1,allowUncertainDispatch:true});expect(continued.status).toBe(202);await runProjectChatJob(env,q.jobId);expect((await getJob(env,q.jobId)).status).toBe('succeeded');expect(calls).toBe(2);
  });
  it('preserves completed tools when interrupted before the next model step',async()=>{
   const f=await fixture(),q=await question(f);let calls=0;
   vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{assertGoRequest(url,init);calls++;if(calls===1)return Response.json({choices:[{message:{content:null,tool_calls:[{id:'task-call',type:'function',function:{name:'list_tasks',arguments:'{"offset":0}'}}]}}],usage:{prompt_tokens:10,completion_tokens:10}});if(calls===2)throw new Error('interrupted after tools');return Response.json({choices:[{message:{content:JSON.stringify({markdown:'任务情况已核对',referenceIds:[]})}}],usage:{prompt_tokens:10,completion_tokens:10}});}));
-  await runProjectChatJob(env,q.jobId);expect((await getJob(env,q.jobId)).status).toBe('failed');
+  await expect(runProjectChatJob(env,q.jobId)).rejects.toMatchObject({details:{executionPause:true}});expect((await getJob(env,q.jobId)).status).toBe('waiting_input');
   const first=await env.DB.prepare("SELECT COUNT(*) n FROM ai_tool_calls WHERE job_id=?1 AND name='list_tasks'").bind(q.jobId).first<{n:number}>();expect(first?.n).toBe(1);
-  const next=await retryFailedAiJob(env,q.jobId,undefined,undefined,{actorId:f.owner.userId,allowUncertainDispatch:true});await runProjectChatJob(env,next.jobId!);expect((await getJob(env,next.jobId!)).status).toBe('succeeded');
-  const repeat=await env.DB.prepare("SELECT COUNT(*) n FROM ai_tool_calls WHERE job_id=?1 AND name='list_tasks'").bind(next.jobId!).first<{n:number}>();expect(repeat?.n).toBe(0);expect(calls).toBe(3);
+  const continued=await request(f.owner.token,`/jobs/${q.jobId}/execution/continue`,{expectedGeneration:1,allowUncertainDispatch:true});expect(continued.status).toBe(202);await runProjectChatJob(env,q.jobId);expect((await getJob(env,q.jobId)).status).toBe('succeeded');
+  const repeat=await env.DB.prepare("SELECT COUNT(*) n FROM ai_tool_calls WHERE job_id=?1 AND name='list_tasks'").bind(q.jobId).first<{n:number}>();expect(repeat?.n).toBe(1);expect(calls).toBe(3);
  });
  it('does not invoke the provider when AI is disabled, but retains read and clear access',async()=>{
   const f=await fixture(),q=await question(f),mock=provider();await env.DB.prepare('UPDATE projects SET ai_collaboration_enabled=0 WHERE id=?1').bind(f.projectId).run();await runProjectChatJob(env,q.jobId);expect(mock).not.toHaveBeenCalled();expect((await getJob(env,q.jobId)).status).toBe('failed');expect((await request(f.owner.token,f.path,{content:'disabled'})).status).toBe(503);expect((await request(f.owner.token,f.path)).status).toBe(200);expect((await request(f.owner.token,f.path,undefined,'DELETE')).status).toBe(200);

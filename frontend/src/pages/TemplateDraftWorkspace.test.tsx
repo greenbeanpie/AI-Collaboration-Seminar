@@ -16,7 +16,7 @@ let writes: Array<{ path: string; method: string; body: unknown }>;
 let forceConflict = false;
 let commitGate: Promise<void> | null = null;
 beforeEach(() => {
-  stored = { activity: null, id: 'draft-template', status: 'active', revision: 1, payload: { name: '未命名项目', description: '', teamSize: 1, aiCollaborationEnabled: false, inviteUsernames: [], inviteLabels: [], brief: '', workspace: { templateId: 'blank', materials: [], standards: null } }, preview: null, previewRevision: null, previewState: 'none', clarification: null, previewError: null, files: [], removedFiles: [], projectId: null, updatedAt: '2026-10-02' };
+  stored = { activity: null, execution: null, id: 'draft-template', status: 'active', revision: 1, payload: { name: '未命名项目', description: '', teamSize: 1, aiCollaborationEnabled: false, inviteUsernames: [], inviteLabels: [], brief: '', workspace: { templateId: 'blank', materials: [], standards: null } }, preview: null, previewRevision: null, previewState: 'none', clarification: null, previewError: null, files: [], removedFiles: [], projectId: null, updatedAt: '2026-10-02' };
   writes = []; forceConflict = false; commitGate = null; sessionStorage.clear(); vi.stubGlobal('crypto', webcrypto);
   vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
     const current = new URL(String(url), 'http://localhost'); const method = init?.method ?? 'GET';

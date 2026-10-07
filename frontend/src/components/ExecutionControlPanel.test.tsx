@@ -31,3 +31,10 @@ it('permits cancelling a running window and hides continue and output unless all
  expect(screen.queryByRole('button', { name: '继续处理' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: '取消处理' }));
  await waitFor(() => expect(transport).toHaveBeenCalledWith('/api/v1/jobs/a/execution/cancel', expect.anything()));
 });
+it('requires an explicit user action to allow replay after an unknown response', async () => {
+ transport.mockResolvedValue({ execution: { ...paused, generation: 5, state: 'running' } });
+ render(<ExecutionControlPanel execution={{ ...paused, pauseReason: 'request_uncertain' }} path="/api/v1/jobs/a" onUpdated={vi.fn()} />);
+ expect(screen.getByText(/点击继续或输出将允许重新请求/)).toBeInTheDocument(); expect(transport).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button', { name: '继续处理' }));
+ await waitFor(() => expect(transport).toHaveBeenCalledWith('/api/v1/jobs/a/execution/continue', expect.objectContaining({ body: { expectedGeneration: 4, allowUncertainDispatch: true } })));
+});

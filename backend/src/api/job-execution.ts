@@ -38,7 +38,7 @@ async function partialMaterial(env:Env,job:JobRow):Promise<unknown|null>{
 
 export function registerJobExecutionRoutes(app:OpenAPIHono<AppEnv>):void{
  app.use('/api/v1/jobs/:jobId/execution/*',requireUser);
- app.openapi(createRoute({method:'post',path:'/api/v1/jobs/{jobId}/execution/{action}',tags:['jobs'],summary:'继续、输出当前结果或取消后台 AI 处理',request:{params:z.object({jobId:z.string().uuid(),action:z.enum(['continue','output','cancel'])}),body:{content:{'application/json':{schema:z.object({expectedGeneration:z.number().int().min(0)}).strict()}}}},responses:{202:{description:'执行操作已保存',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid(),execution:executionSchema.nullable()}),'JobExecutionResponse')}}},409:{description:'执行代次变化或状态不允许',content:{'application/json':{schema:apiErrorEnvelope}}}}}),async c=>{
+ app.openapi(createRoute({method:'post',path:'/api/v1/jobs/{jobId}/execution/{action}',tags:['jobs'],summary:'继续、输出当前结果或取消后台 AI 处理',request:{params:z.object({jobId:z.string().uuid(),action:z.enum(['continue','output','cancel'])}),body:{content:{'application/json':{schema:z.object({expectedGeneration:z.number().int().min(1),allowUncertainDispatch:z.boolean().optional()}).strict()}}}},responses:{202:{description:'执行操作已保存',content:{'application/json':{schema:apiEnvelope(z.object({jobId:z.string().uuid(),execution:executionSchema.nullable()}),'JobExecutionResponse')}}},409:{description:'执行代次变化或状态不允许',content:{'application/json':{schema:apiErrorEnvelope}}}}}),async c=>{
   const {jobId:original,action}=c.req.valid('param'),body=c.req.valid('json'),user=c.get('user')!;
   await authorizedJob(c.env,original,user.id);
   const job=await authorizedJob(c.env,await currentSuccessor(c.env,original),user.id);
@@ -57,9 +57,10 @@ export function registerJobExecutionRoutes(app:OpenAPIHono<AppEnv>):void{
     }else{
       const execution=await readExecution(c.env,target);
       if(!execution)throw invalidState('该任务没有可继续的 AI 检查点');
-      await resumeExecution(c.env,target,body.expectedGeneration,action);
+      await resumeExecution(c.env,target,body.expectedGeneration,action,{allowUncertainDispatch:body.allowUncertainDispatch});
       try{if(job.project_id)await reserveAiSlot(c.env,{projectId:job.project_id,jobId:job.id,purpose:'execution_resume',configVersionId:input.configVersionId});}
       catch(error){await pauseExecution(c.env,target,'interrupted');throw error;}
+      if(execution.pauseReason==='request_uncertain'&&body.allowUncertainDispatch)await c.env.DB.prepare("UPDATE jobs SET input_json=json_set(input_json,'$.allowUncertainCheckpointRetry',json('true')) WHERE id=?1 AND status='waiting_input'").bind(job.id).run();
       await c.env.DB.prepare("UPDATE jobs SET status='running',error_json=NULL,finished_at=NULL,updated_at=?2 WHERE id=?1 AND status IN ('waiting_input','failed')").bind(job.id,nowIso()).run();
       const material=action==='output'?await partialMaterial(c.env,job):null;
       if(material){await succeedJob(c.env,job.id,material);await settleReservation(c.env,job.id,'settled');}

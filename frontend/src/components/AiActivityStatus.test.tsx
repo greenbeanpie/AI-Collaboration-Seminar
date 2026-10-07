@@ -62,3 +62,9 @@ it('refreshes expanded operation history when server activity advances', async (
   await waitFor(() => expect(screen.getByText('保存结果 · 开始')).toBeInTheDocument());
   expect(read.mock.calls[1]?.[1]).toBe(1);
 });
+it('labels partial media output and displays saved text without claiming complete processing', () => {
+ const current={ ...job('succeeded'), result: { partial:true,complete:false,summary:'已经核对的前半段摘要',caveats:['后半段尚未处理'] } };
+ render(<AiActivityStatus job={current} />);
+ expect(screen.getByRole('region',{name:'部分 AI 结果'})).toBeInTheDocument();
+ expect(screen.getByText(/不能视为全文处理成功/)).toBeInTheDocument(); expect(screen.getByText('已经核对的前半段摘要')).toBeInTheDocument();
+});
