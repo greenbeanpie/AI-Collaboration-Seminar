@@ -131,6 +131,7 @@ async fn poll(
     }
     Ok(())
 }
+#[cfg(windows)]
 fn toast(app: AppHandle, account: String, epoch: u64, count: u32, route: String) {
     #[cfg(windows)]
     {
@@ -163,3 +164,6 @@ fn toast(app: AppHandle, account: String, epoch: u64, count: u32, route: String)
         });
     }
 }
+
+#[cfg(not(windows))]
+fn toast(_app: AppHandle, _account: String, _epoch: u64, _count: u32, _route: String) {}

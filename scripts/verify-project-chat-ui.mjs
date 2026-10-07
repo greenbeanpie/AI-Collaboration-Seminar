@@ -1,5 +1,6 @@
 /** Built UI acceptance with deterministic local API fixtures; does not invoke a real model. */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -58,7 +59,7 @@ try {
           data = { jobId, kind: 'agent_run', status, result: null, error: status === 'failed' ? { code: 'AI_UNAVAILABLE', message: '模拟生成中断' } : null, attempts: 1, createdAt: now, updatedAt: now, finishedAt: status === 'succeeded' ? now : null, activity: { code: status === 'succeeded' ? 'completed' : 'calling_model', updatedAt: now, lastResponseAt: now, progress: null, canResume: status === 'failed', resumeReason: null, uncertain: status === 'failed' } };
         }
       }
-      return route.fulfill({ status: responseStatus, contentType: 'application/json', body: JSON.stringify({ data, requestId: 'fixture' }) });
+      return route.fulfill({ status: responseStatus, contentType: 'application/json', headers: { ETag: '"' + createHash('sha256').update(JSON.stringify(data)).digest('hex') + '"' }, body: JSON.stringify({ data, requestId: 'fixture' }) });
     });
     await page.goto(`${origin}/app/projects/${projectId}`);
     const card = page.locator('.project-ai-chat');

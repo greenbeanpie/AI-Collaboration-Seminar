@@ -74,6 +74,7 @@ pub fn validate_source(window: &WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(windows)]
 pub fn diagnostic(app: &AppHandle, area: &str, message: &str) {
     use std::io::Write;
     if let Ok(root) = app.path().app_local_data_dir() {
@@ -112,16 +113,16 @@ pub fn dispatch(app: &AppHandle, name: &str, detail: serde_json::Value) {
 }
 pub fn resume(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.with_webview(|webview| {
+        let _ = w.with_webview(|_webview| {
             #[cfg(windows)]
             unsafe {
                 use windows::core::Interface;
-                if let Ok(v) = webview.controller().CoreWebView2().and_then(|c| {
+                if let Ok(v) = _webview.controller().CoreWebView2().and_then(|c| {
                     c.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
                 }) {
                     let _ = v.Resume();
                 }
-                let _ = webview.controller().SetIsVisible(true);
+                let _ = _webview.controller().SetIsVisible(true);
             }
         });
     }
@@ -155,20 +156,21 @@ pub fn suspend(app: &AppHandle) {
         return;
     }
     if let Some(w) = app.get_webview_window("main") {
+        #[cfg(windows)]
         let handle = app.clone();
-        let _ = w.with_webview(move |webview| {
+        let _ = w.with_webview(move |_webview| {
             #[cfg(windows)]
             unsafe {
                 use webview2_com::{
                     Microsoft::Web::WebView2::Win32::ICoreWebView2_3, TrySuspendCompletedHandler,
                 };
                 use windows::core::Interface;
-                if let Ok(v) = webview
+                if let Ok(v) = _webview
                     .controller()
                     .CoreWebView2()
                     .and_then(|c| c.cast::<ICoreWebView2_3>())
                 {
-                    let _ = webview.controller().SetIsVisible(false);
+                    let _ = _webview.controller().SetIsVisible(false);
                     let callback =
                         TrySuspendCompletedHandler::create(Box::new(move |result, suspended| {
                             diagnostic(
@@ -245,6 +247,7 @@ pub async fn session_client(
     }
     Ok((client, cookie))
 }
+#[cfg(windows)]
 pub fn open_external(url: &url::Url) {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return;
@@ -289,3 +292,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(not(windows))]
+pub fn open_external(_url: &url::Url) {}
