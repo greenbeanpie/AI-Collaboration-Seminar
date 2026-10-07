@@ -1,3 +1,4 @@
+import { JobAiActivity } from './JobAiActivity';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { AudioPipelineStatus } from './AudioPipelineStatus';
 import { useRef, useState } from 'react';
@@ -10,20 +11,22 @@ const names: Record<string,string> = { pending: '尚未开始', processing: '正
 
 export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled, active }: { projectId: string; sourceId: string; versionId: string; aiEnabled: boolean; active: boolean }) {
   const path = projectPath(projectId, `/sources/${sourceId}/versions/${versionId}/processing`);
+  const [summarySubmitting,setSummarySubmitting] = useState(false);
   const [error,setError] = useState<unknown>(null); const [submitting,setSubmitting] = useState(false);
   const action = useRef(false); const intent = useRef<{key:string;revision:number}|null>(null);
   const query = useQuery({ queryKey: ['sourceProcessing',projectId,sourceId,versionId], queryFn: () => api.get<'SourceProcessingResponse'>(path), retry: false,
-    refetchInterval: q => active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' || (q.state.data?.media?.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(q.state.data?.media?.stage ?? '')) ? 2500 : false,
+    refetchInterval: q => document.visibilityState !== 'hidden' && (active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' || (q.state.data?.media?.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(q.state.data?.media?.stage ?? ''))  ) ? 2500 : false,
     refetchIntervalInBackground: false,
   });
   const state = query.data;
+  const processingJobId = (state as typeof state & { processingJobId?: string | null })?.processingJobId;
   const start = async () => {
-    if (action.current || !state) return; action.current = true; setSubmitting(true); setError(null);
+    if (action.current || !state) return; action.current = true; setSubmitting(true); setSummarySubmitting(true); setError(null);
     try {
       if (!intent.current || intent.current.revision !== state.summaryRevision) intent.current = { key:createIntentKey(), revision:state.summaryRevision };
       await api.post<'SourceSummaryStartResponse'>(`${path}/summary`, { expectedSummaryRevision: intent.current.revision }, { idempotencyKey: intent.current.key });
       intent.current = null; await query.refetch();
-    } catch (err) { setError(err); } finally { action.current = false; setSubmitting(false); }
+    } catch (err) { setError(err); } finally { action.current = false; setSubmitting(false); setSummarySubmitting(false); }
   };
   const resume = async () => {
     if (action.current || !state?.media?.jobId) return;
@@ -38,6 +41,9 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
     {query.error && <ErrorNotice error={query.error} onRetry={() => void query.refetch()} />}
     {state && <>
       <p>正文提取：{state.media?.audio?.phase === 'waiting_config' ? '等待回退配置' : names[state.textStatus]} · 要求提取：{names[state.requirementsStatus]} · 文件总结：<StatusPill tone={state.summaryStatus === 'ready' ? 'good' : state.summaryStatus === 'failed' ? 'bad' : 'neutral'}>{names[state.summaryStatus]}</StatusPill></p>
+      {processingJobId !== state.media?.jobId && processingJobId !== state.summaryJobId && <JobAiActivity projectId={projectId} jobId={processingJobId} onSettled={() => void query.refetch()} canResume={aiEnabled} />}
+      <JobAiActivity projectId={projectId} jobId={state.summaryJobId} submitting={summarySubmitting} onSettled={() => void query.refetch()} canResume={aiEnabled} />
+      <JobAiActivity projectId={projectId} jobId={state.media?.jobId} onSettled={() => void query.refetch()} canResume={aiEnabled} />
       <AudioPipelineStatus audio={state.media?.audio} disabled={submitting} onResume={() => void resume()} onRefresh={() => void query.refetch()} />
       {state.media && <div className="callout"><strong>音视频 AI 摘要（非逐字原文）<AiReferenceBadge ariaHidden /></strong><p>处理阶段：{({pending:'排队',uploading:'上传',processing:'处理文件',generating:'生成摘要',ready:'完成',failed:'失败'} as Record<string,string>)[state.media.stage] ?? state.media.stage} · 已完成 {state.media.completedWindows} 个时间窗口</p>{state.media.error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{state.media.error}</p>}{state.media.summary && !state.media.summary.complete && <><p>部分摘要，尚未完整覆盖：</p><p style={{whiteSpace:'pre-wrap'}}>{state.media.summary.summary}</p></>}{state.media.summary?.timestamps.map((point,index) => <p key={index}>[{point.seconds}s] {point.description}</p>)}</div>}
       {state.requirementsError && <p className="callout warning-callout" style={{whiteSpace:'pre-wrap'}}>{state.requirementsError}</p>}

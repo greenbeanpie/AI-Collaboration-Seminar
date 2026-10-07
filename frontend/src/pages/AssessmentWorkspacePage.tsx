@@ -1,3 +1,5 @@
+import { JobAiActivity } from './JobAiActivity';
+import { AiActivityStatus } from '../components/AiActivityStatus';
 import { usePagedRecords } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { VirtualList } from '../components/VirtualList';
@@ -12,7 +14,7 @@ import { projectPermission } from '../project-permissions';
 import { useCapabilities, useSession } from '../auth';
 import { useProject } from '../components/ProjectShell';
 import { EmptyState, ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
-import { clearPendingJob, completeIntent, idempotencyKeyForIntent, jobStatusLabel, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
+import { clearPendingJob, completeIntent, idempotencyKeyForIntent, readPendingJob, retryBackendJob, useVisibleJobPoller, writePendingJob } from './aiWorkflowSupport';
 import { StandardsEditor } from './StandardsEditor';
 import { ReferencePicker } from './ReferencePicker';
 import { RehearsalsPage } from './RehearsalsPage';
@@ -127,10 +129,11 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
       </SectionCard>
     </div>
 
-    {activePending && <div className="notice"><strong>本轮评分任务：{job.job ? jobStatusLabel(job.job.status) : '正在读取'}</strong>{canRetry && <><p>评分未完成，服务端失败状态与已有证据已保留。</p><button className="button button-quiet" disabled={retry.isPending || !aiEnabled || !canRetry} onClick={() => retry.mutate()}>重试本轮任务</button></>}{job.job?.status === 'failed' && <ErrorNotice error={job.job.error ?? new Error('评分任务失败。')} />}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
+    {create.isPending && !activePending && <AiActivityStatus submitting />}
+    {activePending && <div className="notice"><AiActivityStatus job={job.job} jobId={activeJobId ?? undefined} submitting={create.isPending} loading={job.loading} readError={job.error} onRefresh={() => job.refresh()} onResume={canRetry && aiEnabled ? async () => { await retry.mutateAsync(); } : undefined} resuming={retry.isPending} />{canRetry && <><p>评分未完成，服务端失败状态与已有证据已保留。</p></>}{job.job?.status === 'failed' && <ErrorNotice error={job.job.error ?? new Error('评分任务失败。')} />}{Boolean(job.error) && <ErrorNotice error={job.error} />}{retry.error && <ErrorNotice error={retry.error} />}</div>}
     {selectedId && <SectionCard aiReference title="本轮评分与证据" detail="总分由服务端按本轮固定权重计算；证据不足时显示反馈与无法评分的原因。" action={<button className="button button-quiet button-small" onClick={() => void selected.refetch()}><RefreshCw size={14} />刷新结果</button>}>
       {selected.isLoading && <Spinner label="读取本轮评分" />}{selected.error && <ErrorNotice error={selected.error} onRetry={() => void selected.refetch()} />}
-      {assessment && <><div className="callout">{assessment.historical ? <strong>历史反馈：本记录未绑定新版主目标与统一标准，不补造新版评分。</strong> : <><strong>{assessment.goal?.title} <AiReferenceBadge ariaHidden /></strong><p>{assessment.goal?.detail} <AiReferenceBadge /></p><small>目标 r{assessment.goalRevision} · 标准 v{assessment.standardsVersion} · 固定文档版本 {assessment.materialVersionIds.join('、')}</small></>}</div>
+      {assessment && <>{!activePending && <JobAiActivity projectId={projectId} jobId={assessment.jobId} canResume={false} />}<div className="callout">{assessment.historical ? <strong>历史反馈：本记录未绑定新版主目标与统一标准，不补造新版评分。</strong> : <><strong>{assessment.goal?.title} <AiReferenceBadge ariaHidden /></strong><p>{assessment.goal?.detail} <AiReferenceBadge /></p><small>目标 r{assessment.goalRevision} · 标准 v{assessment.standardsVersion} · 固定文档版本 {assessment.materialVersionIds.join('、')}</small></>}</div>
         {assessment.jobError && <p className="notice notice-warn">{assessment.status === 'succeeded' ? '本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。' : assessment.jobError}</p>}
         {assessment.rehearsalId && <RehearsalsPage key={assessment.rehearsalId} embedded rehearsalId={assessment.rehearsalId} />}
         {isScoringReport(assessment.report) ? <AssessmentReportView report={assessment.report} /> : assessment.report ? <div className="assessment-historical-feedback"><h3>历史文字反馈 <AiReferenceBadge ariaHidden /></h3><pre>{JSON.stringify(assessment.report, null, 2)}</pre></div> : <p className="muted">{assessment.historical ? '原有文字反馈保留在问答记录中。' : assessment.kind === 'rehearsal' ? '完成真实回答并结束本轮演练后，将依据冻结问答生成评分。' : '本轮评分尚未返回结果。'}</p>}

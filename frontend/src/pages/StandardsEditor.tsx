@@ -1,3 +1,4 @@
+import { JobAiActivity } from './JobAiActivity';
 import { ProjectFlowReturn } from '../features/assessment/ProjectFlowReturn';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
@@ -39,12 +40,13 @@ function ProjectStandardsEditor() {
   const pendingKey=`standards-generation:${projectId}`;
   const [generationJobId,setGenerationJobId]=useState<string|null>(()=>readPendingJob(pendingKey)?.jobId??null);
   const generationPoll=useVisibleJobPoller(generationJobId);
+  const [lastGenerationJobId,setLastGenerationJobId]=useState(generationJobId);
   const generate=useMutation({mutationFn:async()=>{
     const body={};const namespace=`standards-generate:${projectId}`;
     const key=await idempotencyKeyForIntent(namespace,body);
     const response=await projectRequest<{jobId:string}>(projectId,'/standards/generate',{method:'POST',body,idempotencyKey:key});
     completeIntent(namespace);return response;
-  },onSuccess:result=>{setValidationError(null);writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);}});
+  },onSuccess:result=>{setValidationError(null);writePendingJob(pendingKey,{jobId:result.jobId,entityId:projectId,action:'standards.generate'});setGenerationJobId(result.jobId);setLastGenerationJobId(result.jobId);}});
   const generating=generate.isPending || Boolean(generationJobId && !generationPoll.isSettled);
   useEffect(()=>{
     const job=generationPoll.job;
@@ -78,7 +80,7 @@ function ProjectStandardsEditor() {
   return <div className="page-stack"><ProjectFlowReturn />
     <p className="notice notice-warn">该页面标准为项目级标准，任务标准请前往<strong><Link to={`/app/projects/${projectId}/tasks`}>任务</Link></strong>页面选择对应任务进行查看</p>
     <SectionCard title="项目标准" action={project.myRole === 'owner' && !draft ? <div className="form-actions">{selected && <button className="button button-quiet" disabled={generating} onClick={() => { setDraft(fromVersion(selected)); setConflicted(false); save.reset(); }}>修订生效标准</button>}<button className="button button-quiet" disabled={generating} onClick={()=>generate.mutate()}>AI 生成标准</button><button className="button button-primary" disabled={generating} onClick={() => { setDraft({ title: '项目标准', rows: [newRow()], notes: '' }); setConflicted(false); save.reset(); }}><Plus size={16} />新建标准</button></div> : undefined}>
-      {generating && <Spinner label="生成项目标准" />}{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
+      <JobAiActivity projectId={projectId} jobId={generationJobId ?? lastGenerationJobId ?? (selected as StandardVersion & { generatedJobId?: string | null } | undefined)?.generatedJobId} submitting={generate.isPending} canResume={project.myRole === 'owner'} onResumed={id => { setGenerationJobId(id); setLastGenerationJobId(id); writePendingJob(pendingKey,{jobId:id,entityId:projectId,action:'standards.generate'}); }} />{generate.error && <ErrorNotice error={generate.error} />}{generationPoll.error !== null && <ErrorNotice error={generationPoll.error} />}{!draft && validationError !== null && <ErrorNotice error={validationError} />}
       {current.isLoading && <Spinner label="读取标准版本" />}{current.error && <ErrorNotice error={current.error} onRetry={() => void current.refetch()} />}
       {draft ? <form className="stack standards-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <Field aiReference label="标准名称"><input className="input" required maxLength={200} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} /></Field>

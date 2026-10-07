@@ -1,3 +1,4 @@
+import { JobAiActivity } from './JobAiActivity';
 import { usePagedItems } from '../features/pagination/usePagedItems';
 import { LoadMore } from '../features/pagination/LoadMore';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
@@ -55,6 +56,7 @@ function SourceContextRow({ projectId, source, enabled, selected, selectionFull,
   const waitingForPages = serverJob?.status === 'waiting_input' || processing.data?.textStatus === 'waiting_input';
   const running = parse.isPending || Boolean(serverJob || jobId && !job.isSettled);
   return <article className="collab-proposal stack">
+    <JobAiActivity projectId={projectId} jobId={jobId ?? (processing.data as {processingJobId?: string | null} | undefined)?.processingJobId} submitting={parse.isPending} canResume={enabled} onSettled={() => { void version.refetch(); void processing.refetch(); }} />
     <label className="checkbox-row"><input type="checkbox" aria-label={`使用来源：${source.title}`} checked={selected} disabled={!versionId || (!selected && selectionFull)} onChange={event => versionId && onSelection(versionId, event.target.checked)} /><span>{source.title}</span><AiReferenceBadge ariaHidden /><StatusPill tone={ready ? 'good' : 'warn'}>{ready ? '正文已就绪' : waitingForPages ? '等待缺页识别' : running ? '正在处理资料' : '等待正文处理'}</StatusPill></label>
     {!ready && <p className="form-note">原文件或来源已保留，此来源尚未完整读取。AI会说明信息缺口，可在来源页面补齐识别后继续。</p>}
     {!ready && <button className="button button-quiet button-small" type="button" disabled={!enabled || !versionId || running} onClick={() => parse.mutate()}>{waitingForPages ? '请到来源页面补齐缺页' : running ? '资料处理进行中…' : '读取资料正文'}</button>}

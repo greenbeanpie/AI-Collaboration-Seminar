@@ -1,3 +1,4 @@
+import { AiActivityStatus } from '../../components/AiActivityStatus';
 import { AiReferenceBadge } from '../../components/AiReferenceBadge';
 import { errorMessage } from '../../api/error-info';
 import { ResourceIndexView, BrowserSourceRecovery, PageReviewActions } from '../../pages/ResourceIndexView';
@@ -57,18 +58,25 @@ function SourceJobProgress({
   tracked: TrackedSourceJob;
   capability?: CapabilityData;
   onUpdate: (jobId: string, status: Job['status']) => void;
-  onRetryJob: (tracked: TrackedSourceJob) => void;
+  onRetryJob: (tracked: TrackedSourceJob) => Promise<void> | void;
   onScan: (tracked: TrackedSourceJob) => void;
   scanning: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [resuming, setResuming] = useState(false);
+  const resumeLock = useRef(false);
+  const resume = async () => {
+    if (resumeLock.current) return;
+    resumeLock.current = true; setResuming(true);
+    try { await onRetryJob(tracked); } finally { resumeLock.current = false; setResuming(false); }
+  };
   const [pollInterval, setPollInterval] = useState(2_000);
   const lastUpdatedAt = useRef(0);
   const notifiedStatus = useRef<string | null>(null);
   const query = useQuery({
     queryKey: ['job', tracked.jobId],
     queryFn: () => api.get<'JobResponse'>(`/api/v1/jobs/${encodeURIComponent(tracked.jobId)}`),
-    refetchInterval: (current) => terminalStatuses.has(current.state.data?.status ?? '') ? false : pollInterval,
+    refetchInterval: (current) => document.visibilityState === 'hidden' || terminalStatuses.has(current.state.data?.status ?? '') ? false : pollInterval,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: 'always',
     retry: false,
@@ -103,6 +111,7 @@ function SourceJobProgress({
         : job?.status === 'cancelled' ? '任务已取消。' : '正在解析来源并生成要求草稿。';
 
   return <div className="sources-job" aria-live="polite">
+    <AiActivityStatus job={job ?? null} jobId={tracked.jobId} loading={query.isLoading} readError={query.error} onRefresh={() => void query.refetch()} onResume={capability?.features.aiEnabled ? resume : undefined} resuming={resuming} />
     <div className="sources-job-head">
       <div><strong>{query.isLoading ? '正在读取解析任务' : job ? `解析任务：${job.status}` : '解析任务状态暂不可用'}</strong><p style={{whiteSpace:'pre-wrap'}}>{query.error ? classifySourceError(query.error) : progress}</p></div>
       <div className="sources-record-actions">
@@ -111,7 +120,7 @@ function SourceJobProgress({
             {scanning ? <><LoaderCircle className="spin" size={14} /> 正在处理页面</> : <><ScanText size={14} /> 渲染并上传扫描页</>}
           </button>
         )}
-        {job?.status === 'failed' && <button className="button button-quiet button-small" type="button" disabled={!capability?.features.aiEnabled} onClick={() => onRetryJob(tracked)}>重试任务</button>}
+
         {job?.status === 'succeeded' && <ResultSetLink result={job.result} />}
         {query.error && <button className="button button-quiet button-small" type="button" onClick={() => void query.refetch()}>重新查询</button>}
       </div>
@@ -153,7 +162,7 @@ export function SourceRecord({
   scanJobId: string | null;
   scanProgress: string;
   onParse: (source: SourceItem, sourceVersionId: string) => void;
-  onRetryJob: (tracked: TrackedSourceJob) => void;
+  onRetryJob: (tracked: TrackedSourceJob) => Promise<void> | void;
   onScan: (tracked: TrackedSourceJob) => void;
   onJobUpdate: (jobId: string, status: Job['status']) => void;
   onRemove?: (source: SourceItem) => void;

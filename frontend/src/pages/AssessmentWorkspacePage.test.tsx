@@ -49,10 +49,10 @@ it('recovers a failed assessment job from server history and retries its real jo
   const writes: string[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
     if (init?.method === 'POST') { writes.push(String(url)); return Response.json({ requestId: 'retry', data: { jobId: 'j-retry' } }); }
-    return Response.json({ requestId: 'job', data: { jobId: String(url).includes('j-retry') ? 'j-retry' : 'j-failed', status: String(url).includes('j-retry') ? 'running' : 'failed', attempts: 1 } });
+    return Response.json({ requestId: 'job', data: { jobId: String(url).includes('j-retry') ? 'j-retry' : 'j-failed', status: String(url).includes('j-retry') ? 'running' : 'failed', activity:{code:'failed',updatedAt:null,lastResponseAt:null,progress:null,canResume:true,resumeReason:null,uncertain:false}, attempts: 1 } });
   }));
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/assessment?section=checks&assessmentId=failed']}><AssessmentWorkspacePage /></MemoryRouter></QueryClientProvider>);
-  const retry = await screen.findByRole('button', { name: '重试本轮任务' });
+  const retry = await screen.findByRole('button', { name: '从停止处继续' });
   expect(screen.getByText('评分作业失败，请重试')).toBeInTheDocument(); expect(retry).not.toBeDisabled();
   fireEvent.click(retry);
   await waitFor(() => expect(writes).toEqual(['/api/v1/jobs/j-failed/retry']));
@@ -104,7 +104,7 @@ it('ignores a legacy failed pending job for another entity while viewing success
   showRecords([record('saved','material_review')],'/assessment?section=checks&assessmentId=saved');
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   expect(screen.queryByText(/本轮评分任务/)).toBeNull();
-  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'从停止处继续'})).toBeNull();
   expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
 });
 it('keeps a saved score authoritative when its original job failed and explains that failure as history',async()=>{
@@ -115,8 +115,8 @@ it('keeps a saved score authoritative when its original job failed and explains 
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   expect(screen.getByText('本轮评分已保存；原作业曾失败，此历史提示不影响已保存评分。')).toBeInTheDocument();
   expect(screen.queryByText('评分未完成，服务端失败状态与已有证据已保留。')).toBeNull();
-  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
-  expect(fetch.mock.calls.every(([url]) => String(url).includes('/assessments?'))).toBe(true);
+  expect(screen.queryByRole('button',{name:'从停止处继续'})).toBeNull();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes('/jobs/original-failed'))).toBe(true);
 });
 it('retries only the selected real failure even when another kind owns the old local pending job',async()=>{
   authState.enabled=true;
@@ -126,23 +126,23 @@ it('retries only the selected real failure even when another kind owns the old l
   vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
     const path=String(url);requests.push(path);
     if(init?.method==='POST')return Response.json({data:{jobId:'current-retry'}});
-    if(path.includes('/jobs/'))return Response.json({data:{jobId:path.endsWith('current-retry')?'current-retry':'current-failed',status:path.endsWith('current-retry')?'running':'failed',attempts:1}});
+    if(path.includes('/jobs/'))return Response.json({data:{jobId:path.endsWith('current-retry')?'current-retry':'current-failed',status:path.endsWith('current-retry')?'running':'failed',activity:{code:'failed',updatedAt:null,lastResponseAt:null,progress:null,canResume:true,resumeReason:null,uncertain:false},attempts:1}});
     if(path.includes('/assessments/failed'))return Response.json({data:failed});
     return Response.json({data:{items:[failed],nextCursor:null}});
   }));
   showRecords([failed,record('other-rehearsal','rehearsal')],'/assessment?section=checks&assessmentId=failed');
-  fireEvent.click(await screen.findByRole('button',{name:'重试本轮任务'}));
+  fireEvent.click(await screen.findByRole('button',{name:'从停止处继续'}));
   await waitFor(()=>expect(requests).toContain('/api/v1/jobs/current-failed/retry'));
   expect(requests.some(path=>path.includes('foreign-failed'))).toBe(false);
   await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'current-retry',kind:'material_review',previousJobId:'current-failed'}));
 });
 it('continues reading the selected running record after refresh without a local pending entry',async()=>{
   const running=record('running','material_review','running',{jobId:'current-running',report:null});
-  const fetch=vi.fn(async()=>Response.json({data:{jobId:'current-running',status:'running',attempts:1}}));vi.stubGlobal('fetch',fetch);
+  const fetch=vi.fn(async()=>Response.json({data:{jobId:'current-running',status:'running',activity:{code:'failed',updatedAt:null,lastResponseAt:null,progress:null,canResume:true,resumeReason:null,uncertain:false},attempts:1}}));vi.stubGlobal('fetch',fetch);
   showRecords([running],'/assessment?section=checks&assessmentId=running');
-  expect(await screen.findByText('本轮评分任务：处理中')).toBeInTheDocument();
+  expect(await screen.findByText('AI 处理中')).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledWith('/api/v1/jobs/current-running',expect.any(Object));
-  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'从停止处继续'})).toBeNull();
 });
 
 it('shows no foreign detail or correction when a deep link has no record of the current kind',async()=>{
@@ -162,18 +162,18 @@ it('keeps a retry response attached to its originating record after selection ch
   vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
     const path=String(url);
     if(init?.method==='POST'){writes.push(path);return retryResponse;}
-    if(path.includes('/jobs/'))return Response.json({data:{jobId:'failed-job',status:'failed',attempts:1}});
+    if(path.includes('/jobs/'))return Response.json({data:{jobId:'failed-job',status:'failed',activity:{code:'failed',updatedAt:null,lastResponseAt:null,progress:null,canResume:true,resumeReason:null,uncertain:false},attempts:1}});
     if(path.endsWith('/assessments/failed'))return Response.json({data:failed});
     return Response.json({data:{items:[failed,saved],nextCursor:null}});
   }));
   showRecords([failed,saved],'/assessment?section=checks&assessmentId=failed');
-  fireEvent.click(await screen.findByRole('button',{name:'重试本轮任务'}));
+  fireEvent.click(await screen.findByRole('button',{name:'从停止处继续'}));
   await waitFor(()=>expect(writes).toEqual(['/api/v1/jobs/failed-job/retry']));
   fireEvent.click(screen.getAllByRole('button',{name:/材料检查 ·/})[1]!);
   expect(await screen.findByText('saved-summary',{selector:'p'})).toBeInTheDocument();
   releaseRetry!(Response.json({data:{jobId:'retried-job'}}));
   await waitFor(()=>expect(JSON.parse(localStorage.getItem('ai-office:account:user:pending-assessment-job:p')!)).toMatchObject({entityId:'failed',jobId:'retried-job'}));
-  expect(screen.queryByRole('button',{name:'重试本轮任务'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'从停止处继续'})).toBeNull();
   expect(screen.queryByText(/本轮评分任务/)).toBeNull();
 });
 
