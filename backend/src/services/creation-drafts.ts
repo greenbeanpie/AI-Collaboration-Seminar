@@ -403,7 +403,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     for (const t of output)for (const c of t.citations) {
       if(c.locator) {
         const seq=Number(c.locator.replace(/^block:/,''));
-        const block=await env.DB.prepare('SELECT content,page_number FROM draft_document_blocks WHERE draft_id=?1 AND file_id=?2 AND seq=?3').bind(id,c.fileId,seq).first<{content:string;page_number:number|null}>();
+        const block=await env.DB.prepare('SELECT content,page_number FROM draft_document_blocks WHERE draft_id=?1 AND file_id=?2 AND seq=?3 AND EXISTS(SELECT 1 FROM creation_draft_files f WHERE f.id=?2 AND f.draft_id=?1 AND f.removed=0)').bind(id,c.fileId,seq).first<{content:string;page_number:number|null}>();
         if(!block||block.page_number!==c.pageNumber||!block.content.includes(c.quote))throw invalidState('预览引用与导入原文不符');
       } else {
         const matches=await env.DB.prepare('SELECT b.seq,b.page_number FROM draft_document_blocks b JOIN creation_draft_files f ON f.id=b.file_id WHERE b.draft_id=?1 AND b.file_id=?2 AND f.removed=0 AND instr(b.content,?3)>0 LIMIT 2').bind(id,c.fileId,c.quote).all<{seq:number;page_number:number|null}>();

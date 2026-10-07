@@ -14,7 +14,7 @@ import { newId, nowIso } from '../core/db';
 import { invalidState, versionConflict, fileTooLarge } from '../core/errors';
 import { LIMITS } from '../core/limits';
 import { withIdempotency } from '../services/idempotency';
-import { newCreationPayload, creationPayload, creationGoal, creationTask, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
+import { newCreationPayload, creationPayload, creationGoal, creationTask, prepareDraftEdit, getDraft, draftView, updateDraft, uploadDraftFile, previewDraft, commitDraft, type DraftRow } from '../services/creation-drafts';
 import { enqueueDraftPreview, enqueueDraftContinuation, controlDraftExecution, enqueueDraftPreviewSegment } from '../services/draft-preview-jobs';
 import { answerClarification, answerSchema, cancelClarification, clarificationSchema } from '../services/ai-clarifications';
 import { loadDraftCheckpoint, DraftPreviewYield } from '../services/draft-preview-checkpoints';
@@ -260,7 +260,7 @@ export function registerCreationDraftRoutes(app: OpenAPIHono<AppEnv>) {
     const { draftId, fileId } = c.req.valid('param'), b = c.req.valid('json') as {
       expectedRevision: number;
       removed: boolean;
-    }, user = c.get('user')!.id, row = await getDraft(c.env, draftId, user);
+    }, user = c.get('user')!.id, row = await prepareDraftEdit(c.env, draftId, user, b.expectedRevision);
     if (row.status !== 'active' || row.revision !== b.expectedRevision || row.preview_state === 'running') {
       throw invalidState('草稿状态已变化');
     }
