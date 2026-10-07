@@ -10180,6 +10180,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/files/{fileId}/processing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取文件正文及后续处理阶段 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 真实文件处理状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileProcessingResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** 启动或继续文件处理，不重复上传原文件 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    projectId: string;
+                    fileId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedLifecycleVersion: number;
+                        retry?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 处理已启动或当前任务复用 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FileProcessingResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/files/{fileId}/uploads": {
         parameters: {
             query?: never;
@@ -17646,6 +17715,29 @@ export interface components {
                 sizeBytes: number;
                 sha256: string;
                 mimeDetected: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        FileProcessingResponse: {
+            data: {
+                /** Format: uuid */
+                fileId: string;
+                lifecycleVersion: number;
+                /** Format: uuid */
+                sourceId: string | null;
+                /** Format: uuid */
+                sourceVersionId: string | null;
+                /** Format: uuid */
+                jobId: string | null;
+                textStatus: string;
+                summaryStatus: string;
+                requirementsStatus: string;
+                error: string | null;
+                materialIds: string[];
+                textAvailable: boolean;
+                canProcess: boolean;
+                needsImages: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

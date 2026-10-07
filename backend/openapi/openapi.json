@@ -22293,6 +22293,100 @@
           "requestId"
         ]
       },
+      "FileProcessingResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "lifecycleVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "sourceId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "sourceVersionId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "textStatus": {
+                "type": "string"
+              },
+              "summaryStatus": {
+                "type": "string"
+              },
+              "requirementsStatus": {
+                "type": "string"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "materialIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "textAvailable": {
+                "type": "boolean"
+              },
+              "canProcess": {
+                "type": "boolean"
+              },
+              "needsImages": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "fileId",
+              "lifecycleVersion",
+              "sourceId",
+              "sourceVersionId",
+              "jobId",
+              "textStatus",
+              "summaryStatus",
+              "requirementsStatus",
+              "error",
+              "materialIds",
+              "textAvailable",
+              "canProcess",
+              "needsImages"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "MultipartInitResponse": {
         "type": "object",
         "properties": {
@@ -38897,6 +38991,107 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/files/{fileId}/processing": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "读取文件正文及后续处理阶段",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "真实文件处理状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProcessingResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "启动或继续文件处理，不重复上传原文件",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "retry": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "处理已启动或当前任务复用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProcessingResponse"
                 }
               }
             }
