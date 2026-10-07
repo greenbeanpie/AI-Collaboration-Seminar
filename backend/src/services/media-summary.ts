@@ -1,5 +1,5 @@
 import { backgroundModelCall } from './background-model-call';
-import { assertExecutionGeneration, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
+import { pauseExecution, ExecutionPaused, assertExecutionGeneration, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { clearUncertainCheckpointRetry, checkpointRootId, checkpointFingerprint, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { recordActivity } from './ai-activity';
@@ -39,7 +39,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     if(sourceVersionId){await loadActiveSourceVersion(env,sourceVersionId,input.sourceLifecycleVersion);await assertSourceJobActive(env,jobId);}
     else if(!await env.DB.prepare("SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=?1 AND d.id=?2 AND f.removed=0 AND d.status='active'").bind(input.fileId!,input.draftId!).first())throw invalidState('草稿或文件已删除、取消或提交');
   };
-  let client:GeminiMediaClient|undefined,state:State|null=null,continuing=false,ownsLease=false,mimoRequest=input.mediaProvider==='mimo';const leaseToken=newId();
+  let client:GeminiMediaClient|undefined,state:State|null=null,continuing=false,ownsLease=false,mimoRequest=input.mediaProvider==='mimo';const leaseToken=newId();let responseBaseKey:string|undefined;
   try {
     await assertActive();
     await recordActivity(env,jobId,'reading_sources');
@@ -87,10 +87,10 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,status,provider,created_at) VALUES(?1,?2,?3,?4,0,'started','mimo',?5)").bind(callId,jobId,config.id,mimoModel.model,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try{await assertActive();await recordActivity(env,jobId,'summarizing');const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([config.id,file.r2_key,file.mime,'mimo'])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof mimo.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{await clearUncertainCheckpointRetry(env,jobId);const value=await mimo.summarize(url,file.mime);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try{await assertActive();await recordActivity(env,jobId,'summarizing');const baseKey=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([config.id,file.r2_key,file.mime,'mimo'])}.json`;responseBaseKey=baseKey;const repair=await mediaResponseRepair(env,jobId,baseKey);const key=repair.key;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof mimo.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{await clearUncertainCheckpointRetry(env,jobId);const value=await mimo.summarize(url,file.mime,repair.reason);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status=?2 WHERE id=?1").bind(callId,error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')?'failed':'unknown').run();throw error;}await env.DB.prepare("UPDATE media_calls SET status=?2 WHERE id=?1").bind(callId,error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')?'failed':'unknown').run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3,cached_tokens=?4,audio_tokens=?5,video_tokens=?6,window_end=?7 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens,result.cachedTokens,result.audioTokens,result.videoTokens,result.summary.durationSeconds??null).run();
       await assertActive();
-      await env.DB.prepare("UPDATE media_processing SET summary_json=?3,duration_seconds=?4,windows_json=?5,updated_at=?6 WHERE id=?1 AND lease_token=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=media_processing.job_id AND status IN ('queued','running'))").bind(state.id,leaseToken,JSON.stringify(result.summary),result.summary.durationSeconds??null,JSON.stringify([result.summary]),nowIso()).run();
+      await env.DB.prepare("UPDATE media_processing SET summary_json=?3,duration_seconds=?4,windows_json=?5,updated_at=?6 WHERE id=?1 AND lease_token=?2 AND EXISTS(SELECT 1 FROM jobs WHERE id=media_processing.job_id AND status IN ('queued','running'))").bind(state.id,leaseToken,JSON.stringify(result.summary),result.summary.durationSeconds??null,JSON.stringify(result.summary.complete?[result.summary]:[]),nowIso()).run();
       if(!result.summary.complete)throw new AppError('AI_OUTPUT_INVALID','MiMo 摘要未完整覆盖；部分结果已保留，请核对原文件',422,false);
       summary=result.summary;
     }
@@ -126,9 +126,10 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       const callId=newId();await env.DB.prepare("INSERT INTO media_calls(id,job_id,config_version_id,model,window_start,window_end,status,created_at) VALUES(?1,?2,?3,?4,?5,?6,'started',?7)").bind(callId,jobId,mediaConfig!.id,model.model,window.start,window.end??null,nowIso()).run();
       if(job.project_id)await markAiCallStarted(env,jobId);
       let result;
-      try {await recordActivity(env,jobId,'summarizing','started',{completed:index,total:windows.length,unit:'window'});const key=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([mediaConfig!.id,file.r2_key,file.mime,window.start,window.end])}.json`;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof client.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{await clearUncertainCheckpointRetry(env,jobId);const value=await client!.summarize(remote,file.mime,window.start,window.end);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(callId).run();throw error;}
+      try {await recordActivity(env,jobId,'summarizing','started',{completed:index,total:windows.length,unit:'window'});const baseKey=`ai/media-responses/${await checkpointRootId(env,jobId)}/${await checkpointFingerprint([mediaConfig!.id,file.r2_key,file.mime,window.start,window.end])}.json`;responseBaseKey=baseKey;const repair=await mediaResponseRepair(env,jobId,baseKey);const key=repair.key;const cached=await loadResponseCheckpoint<Awaited<ReturnType<typeof client.summarize>>>(env,key);if(cached){result=cached;}else{result=await backgroundModelCall(env,jobId,async()=>{await clearUncertainCheckpointRetry(env,jobId);const value=await client!.summarize(remote,file.mime,window.start,window.end,repair.reason);await saveResponseCheckpoint(env,key,value);return value;});}}catch(error){if(isExecutionPaused(error)||isBackgroundContinuation(error)){if(isExecutionPaused(error)&&error.execution.pauseReason==='request_uncertain')await env.DB.prepare("UPDATE media_calls SET status=?2 WHERE id=?1").bind(callId,error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')?'failed':'unknown').run();throw error;}await env.DB.prepare("UPDATE media_calls SET status=?2 WHERE id=?1").bind(callId,error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')?'failed':'unknown').run();throw error;}
       await env.DB.prepare("UPDATE media_calls SET status='ok',prompt_tokens=?2,completion_tokens=?3 WHERE id=?1").bind(callId,result.promptTokens,result.completionTokens).run();
       await recordActivity(env,jobId,'saving');
+      if(!result.summary.complete){await env.DB.prepare('UPDATE media_processing SET summary_json=?2 WHERE id=?1').bind(state.id,JSON.stringify(result.summary)).run();throw new AppError('AI_OUTPUT_INVALID','媒体摘要未完整覆盖；部分结果已保留，请核对',422,false);}
       completed.push(result.summary);await env.DB.prepare("UPDATE media_processing SET windows_json=?2,summary_json=?3,stage='processing',updated_at=?4 WHERE id=?1").bind(state.id,JSON.stringify(completed),JSON.stringify({...result.summary,complete:false,caveats:[...result.summary.caveats,'处理中；尚未确认完整覆盖']}),nowIso()).run();
       await recordActivity(env,jobId,'summarizing','completed',{completed:completed.length,total:windows.length,unit:'window'});
       if(file.mime.startsWith('audio/') && index===0){
@@ -138,7 +139,6 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
         await env.DB.prepare('UPDATE media_processing SET duration_seconds=?2 WHERE id=?1').bind(state.id,audioDuration).run();
         if(job.project_id && !whisperEnabled(env,config,file.mime))await env.DB.prepare("UPDATE usage_reservations SET max_calls=?2 WHERE job_id=?1 AND status='reserved'").bind(jobId,Math.max(2,windows.length)).run();
       }
-      if(!result.summary.complete)throw new AppError('AI_OUTPUT_INVALID','媒体摘要未完整覆盖；部分结果已保留，请核对',422,false);
       if(index-startingWindow+1>=maxWindows && completed.length<windows.length){continuing=true;return {status:'running'};}
 
     }
@@ -173,6 +173,16 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
       continuing=true;
       if(state&&ownsLease)await env.DB.prepare("UPDATE media_processing SET stage=CASE WHEN stage='generating' THEN 'processing' ELSE stage END WHERE id=?1 AND lease_token=?2").bind(state.id,leaseToken).run();
       throw error;
+    }
+    const executionTarget=await resolveExecutionTarget(env,{kind:'job',id:jobId}),execution=await readExecution(env,executionTarget);
+    if(error instanceof AppError&&error.code==='AI_OUTPUT_INVALID'||execution?.state==='finalizing'){
+      await assertExecutionGeneration(env,executionTarget,env.AI_EXECUTION_CONTEXT?.generation);
+      if(execution&&['running','finalizing'].includes(execution.state)){
+        const reason=error instanceof Error?error.message.slice(0,400):'媒体模型输出无效';
+        if(responseBaseKey)await saveResponseCheckpoint(env,responseBaseKey+'.repair',{reason,rejectedGeneration:execution.generation},{mutable:true});
+        if(state&&ownsLease)await env.DB.prepare("UPDATE media_processing SET stage='processing',error=?2,updated_at=?3 WHERE id=?1 AND lease_token=?4").bind(state.id,reason,nowIso(),leaseToken).run();
+        continuing=true;await pauseExecution(env,executionTarget,'output_invalid');throw new ExecutionPaused((await readExecution(env,executionTarget))!);
+      }
     }
     if(ownsLease&&state){
       const held=await env.DB.prepare('SELECT 1 FROM media_processing WHERE id=?1 AND lease_token=?2').bind(state.id,leaseToken).first();
@@ -214,4 +224,12 @@ export async function prepareUncertainMediaResume(env:Env,jobId:string,leaseToke
    env.DB.prepare(`UPDATE audio_pipeline SET phase=?5,error=NULL,updated_at=?6 WHERE job_id=?1 AND phase IN ('unknown','transcribing','checking','summarizing','merging') AND ${active}`).bind(jobId,target.kind,target.id,execution.generation,safePhase??'pending',nowIso(),leaseToken??null),
    env.DB.prepare(`UPDATE media_processing SET stage=CASE WHEN stage='uploading' AND provider_name IS NULL THEN 'pending' WHEN stage IN ('uploading','generating','failed') THEN 'processing' ELSE stage END,error=NULL,updated_at=?5 WHERE job_id=?1 AND ${active}`).bind(jobId,target.kind,target.id,execution.generation,nowIso(),nowIso(),leaseToken??null),
  ]);
+}
+
+/** A rejected paid response remains preserved; the next user window gets a distinct repair key. */
+async function mediaResponseRepair(env:Env,jobId:string,baseKey:string):Promise<{key:string;reason?:string}>{
+ const repair=await loadResponseCheckpoint<{reason:string;responseGeneration?:number}>(env,baseKey+'.repair');if(!repair)return {key:baseKey};
+ const target=await resolveExecutionTarget(env,{kind:'job',id:jobId}),execution=await readExecution(env,target);const responseGeneration=repair.responseGeneration??execution?.generation??1;
+ if(repair.responseGeneration===undefined)await saveResponseCheckpoint(env,baseKey+'.repair',{...repair,responseGeneration},{mutable:true});
+ return {key:baseKey+'-repair-g'+responseGeneration,reason:repair.reason.slice(0,400)};
 }
