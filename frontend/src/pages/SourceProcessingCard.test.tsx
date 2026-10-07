@@ -7,7 +7,7 @@ import type { DataOf } from '../api/types';
 
 vi.mock('../api/client', async original => ({ ...await original<typeof import('../api/client')>(), api:{ get:vi.fn(),post:vi.fn() } }));
 afterEach(cleanup);
-const base: DataOf<'SourceProcessingResponse'> = { textStatus:'ready',requirementsStatus:'ready',requirementsError:null,summaryStatus:'pending',summary:null,summaryError:null,summaryJobId:null,summaryRevision:0,coveredChars:null,totalChars:null };
+const base: DataOf<'SourceProcessingResponse'> = { activity:null,processingJobId:null,textStatus:'ready',requirementsStatus:'ready',requirementsError:null,summaryStatus:'pending',summary:null,summaryError:null,summaryJobId:null,summaryRevision:0,coveredChars:null,totalChars:null };
 function view(state=base,aiEnabled=true) {
   vi.mocked(api.get).mockResolvedValue(state as never);
   render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><SourceProcessingCard projectId="p" sourceId="s" versionId="v" aiEnabled={aiEnabled} active={false}/></QueryClientProvider>);

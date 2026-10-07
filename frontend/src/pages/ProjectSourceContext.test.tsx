@@ -18,7 +18,7 @@ function version(source: Source, ready = false): Version {
     pages: [{ pageNumber: 1, textStatus: ready ? 'extracted' : 'none', imageStatus: 'none', ocrStatus: 'none', needsReview: false }] };
 }
 function processing(textStatus: DataOf<'SourceProcessingResponse'>['textStatus']): DataOf<'SourceProcessingResponse'> {
-  return { textStatus, requirementsStatus: textStatus === 'ready' ? 'ready' : 'pending', requirementsError: null, summaryStatus: 'pending', summary: null, summaryError: null, summaryJobId: null, summaryRevision: 0, coveredChars: null, totalChars: null };
+  return { activity: null, processingJobId: null, textStatus, requirementsStatus: textStatus === 'ready' ? 'ready' : 'pending', requirementsError: null, summaryStatus: 'pending', summary: null, summaryError: null, summaryJobId: null, summaryRevision: 0, coveredChars: null, totalChars: null };
 }
 function SelectionState({ projectId, enabled }: { projectId: string; enabled: boolean }) {
   const [selected, setSelected] = useState<string[]>([]);

@@ -37,7 +37,7 @@ beforeEach(() => {
     if (path.endsWith('/capabilities')) return { features: { aiEnabled: true, webFetch: true }, limits: { listMaxPageSize: 2, maxFileBytes: 1_000_000, maxPdfPages: 100 } };
     if (path.endsWith('/files')) return { items: files.filter(file => Boolean(file.deletedAt) === Boolean(query?.deleted)), nextCursor: null };
     if (path.endsWith('/sources')) return { items: sources.filter(source => Boolean(source.deletedAt) === Boolean(query?.deleted)), nextCursor: null };
-    if (path.startsWith('/api/v1/jobs/')) return { jobId: 'old-job', status: 'failed', result: null, error: { message: '处理失败' } };
+    if (path.startsWith('/api/v1/jobs/')) return { jobId: 'old-job', status: 'failed', activity: { code: 'failed', updatedAt: null, lastResponseAt: null, progress: null, canResume: true, resumeReason: null, uncertain: false }, result: null, error: { message: '处理失败' } };
     throw new Error(`Unexpected GET ${path}`);
   });
   mocked.delete.mockImplementation(async (path: string) => {
@@ -229,11 +229,11 @@ describe('project file recycle library', () => {
     sources = [{ purpose: 'reference', revision: 1, sourceId: 's', kind: 'file', fileId: 'f', title: '文件关联来源', currentVersionId: null, createdAt: now, deletedAt: null, lifecycleVersion: 1, canDelete: true }];
     writeTrackedSourceJobs('p', [{ jobId: 'old-job', sourceId: 's', sourceVersionId: 'v', sourceTitle: '文件关联来源', fileId: 'f', status: 'failed' }]);
     mount(true);
-    await screen.findByRole('button', { name: '重试任务' });
+    await screen.findByRole('button', { name: '从停止处继续' });
     fireEvent.click(await screen.findByRole('button', { name: '移入回收站：未完成.pdf' }));
     fireEvent.click(await screen.findByRole('button', { name: '确认移入回收站' }));
     await waitFor(() => expect(readTrackedSourceJobs('p')).toEqual([]));
-    await waitFor(() => expect(screen.queryByRole('button', { name: '重试任务' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: '从停止处继续' })).not.toBeInTheDocument());
     expect(mocked.post).not.toHaveBeenCalled();
   });
 });
