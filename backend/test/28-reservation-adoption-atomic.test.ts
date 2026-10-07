@@ -1,3 +1,5 @@
+import { executeAiSlice, ensureInitialExecutionSlice } from '../src/services/ai-execution-slices';
+import { readExecution } from '../src/services/ai-execution-control';
 import { SELF } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -57,13 +59,18 @@ describe('AI admission, call tracking and bounded inputs', () => {
     expect(rows.results.every(row => row.reservation_id && row.prompt_tokens === 10 && row.completion_tokens === 5)).toBe(true);
   });
 
-  it('closes terminal reservations after timeouts and missing call records', async () => {
+  it('settles a paused unknown request at the Workflow boundary without charging or occupying the concurrency slot again', async () => {
     const { pid, cfg } = await projectFixture();
-    const jobId = crypto.randomUUID();
+    const jobId = crypto.randomUUID(),now=new Date().toISOString();
+    await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running','{}',?3,?3)").bind(jobId,pid,now).run();
+    await ensureInitialExecutionSlice(env,jobId);
     await reserveAiSlot(env, { projectId: pid, jobId, purpose: 'agent_run' });
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); }));
-    await expect(aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
-    await settleReservation(env, jobId, 'released');
+    const provider=vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); });vi.stubGlobal('fetch', provider);
+    const run=async()=>{await aiJsonCall(env, { projectId: pid, jobId, configVersionId: cfg.id, model: cfg.config.textEconomy.model, modelConfig: cfg.config.textEconomy, purpose: 'textEconomy', promptVersion: 'test', messages: [{ role: 'user', content: '你好' }], schema: z.object({ ok: z.literal(true) }) });};
+    await executeAiSlice(env,jobId,0,run);await executeAiSlice(env,jobId,0,run);
+    expect(provider).toHaveBeenCalledOnce();
+    expect(await readExecution(env,{kind:'job',id:jobId})).toMatchObject({state:'paused',pauseReason:'request_uncertain',totalCalls:1});
+    expect(await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first()).toMatchObject({status:'waiting_input'});
     expect(await reservation(jobId)).toMatchObject({ status: 'settled', attempts_started: 1 });
     const lost = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId: lost, purpose: 'agent_run' });

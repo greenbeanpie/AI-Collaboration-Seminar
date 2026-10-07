@@ -34,7 +34,7 @@ async function fixture(origin: 'paste' | 'file' = 'paste') {
 }
 
 const dispatch = () => vi.fn(async ({ id }: { id: string }) => ({ id }));
-function quietEnv(create = dispatch()): Env { return { ...env, PARSE_WORKFLOW: { create } } as unknown as Env; }
+function quietEnv(create = dispatch()): Env { return { ...env, AGENT_WORKFLOW: { create }, PARSE_WORKFLOW: { create } } as unknown as Env; }
 
 async function recycle(f: Awaited<ReturnType<typeof fixture>>, restore: boolean) {
   if (f.fileId) {
