@@ -1,4 +1,6 @@
-# 补位 Windows 客户端
+# 补位客户端
+
+## Windows
 
 客户端使用系统 Evergreen WebView2，连接既有线上服务。安装包为 Windows 10/11 x64 的当前用户 NSIS 安装，无开机启动。安装器在缺少 WebView2 时安装共享运行时。
 
@@ -62,3 +64,7 @@ node ./desktop/scripts/update-smoke-server.mjs ./desktop/src-tauri/target/debug/
 ```
 
 脚本每秒重新发现完整进程树，将宿主与所有 WebView2 子进程的工作集、私有内存及机器总 CPU 百分比累加。CPU 第一帧无基线，不参与汇总。Edge PWA 应在独立 Edge 会话中运行，用该会话浏览器根 PID 测量，避免遗漏兄弟进程或纳入日常浏览页面。工作集可能包含共享页，私有内存同时报告。报告记录硬件、系统/运行时版本、场景和观测值，不承诺固定内存上限。
+
+## Android
+
+Android 8+ 的 ARM64 与 x86_64 APK 构建及签名：`pwsh -File desktop/scripts/build-android.ps1`（从仓库根目录运行）。环境和稳定版本见 [ANDROID-DEPENDENCIES.md](ANDROID-DEPENDENCIES.md)，功能、验证和限制见 [Android 验收报告](../docs/ANDROID-CLIENT-ACCEPTANCE.md)。

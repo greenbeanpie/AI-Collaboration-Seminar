@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { DESKTOP_PROTOCOL, desktopInvoke, isDesktop, type DesktopHello } from './bridge';
+import { DESKTOP_PROTOCOL, desktopInvoke, isDesktop, setNativePlatform, type DesktopHello } from './bridge';
 import { desktopSafeToReload, markDesktopReady } from './lifecycle';
 
 export function DesktopRuntime() {
@@ -11,8 +11,8 @@ export function DesktopRuntime() {
     if (!isDesktop()) return;
     let mounted = true;
     void desktopInvoke<DesktopHello>('desktop_hello').then(hello => {
-      if (mounted && hello.protocol !== DESKTOP_PROTOCOL) setError('网页与客户端版本不兼容，请通过托盘菜单更新客户端。');
-      if (mounted && hello.protocol === DESKTOP_PROTOCOL) markDesktopReady();
+      if (mounted && hello.protocol !== DESKTOP_PROTOCOL) setError('网页与客户端版本不兼容，请安装新版客户端。');
+      if (mounted && hello.protocol === DESKTOP_PROTOCOL) { setNativePlatform(hello.platform); markDesktopReady(); }
     }).catch(() => { if (mounted) setError('客户端连接未完成，请更新或重新打开客户端。'); });
     const failure = (event: Event) => setError(String((event as CustomEvent<string>).detail));
     const blocked = (event: Event) => setError((event as CustomEvent<{ message?: string }>).detail?.message ?? '请先保存编辑并等待传输完成，再从托盘退出。');
@@ -36,6 +36,7 @@ export function DesktopSettings() {
     return () => window.removeEventListener('desktop-update-state', updated);
   }, []);
   if (!isDesktop()) return null;
+  if (hello?.platform === 'android') return <section className="delivery-card" data-desktop-managed><h2>Android 客户端</h2><p>版本 {hello.version}。离线附件保存在此设备；进入后台暂停传输，返回前台后恢复。请使用同一签名的新版 APK 覆盖安装以保留本地数据。</p><p>通知可在应用内查看，后台不常驻轮询。</p></section>;
   const run = async (operation: () => Promise<unknown>, success: string) => {
     setBusy(true); setMessage('');
     try { await operation(); await refresh(); setMessage(success); }

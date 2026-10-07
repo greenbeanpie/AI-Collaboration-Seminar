@@ -14,6 +14,7 @@ import { RemovedSourceNotice } from './RemovedSourceNotice';
 import { TaskAiAssistance } from './TaskAiAssistance';
 import { TaskAgentAction } from './TaskAgentAction';
 import { TaskInquiries } from './TaskInquiries';
+import { isDesktop } from '../desktop/bridge';
 import { ProjectSearchOption,ProjectToolCalls } from './ProjectAiTools';
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -55,7 +56,7 @@ function ProjectCollaborationWorkspace() {
   const [taskSearch, setTaskSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const taskPages = useInfiniteQuery({ queryKey: ['collaboration-tasks', projectId, 'pages', taskSearch, statusFilter], initialPageParam: null as string | null,
-    queryFn: ({ signal, pageParam }) => collaborationApi.tasks(projectId, { networkOnly: navigator.onLine !== false, signal, cursor: pageParam, q: taskSearch, ...(statusFilter === 'pending_review' ? { pendingReview: true } : statusFilter !== 'all' ? { lifecycleState: statusFilter } : {}) }),
+    queryFn: ({ signal, pageParam }) => collaborationApi.tasks(projectId, { networkOnly: navigator.onLine !== false, offlineReadFallback: isDesktop(), signal, cursor: pageParam, q: taskSearch, ...(statusFilter === 'pending_review' ? { pendingReview: true } : statusFilter !== 'all' ? { lifecycleState: statusFilter } : {}) }),
     getNextPageParam: page => page.nextCursor ?? undefined, placeholderData: previous => previous, refetchInterval: 30_000 });
   const tasks = { ...taskPages, data: taskPages.data ? { items: taskPages.data.pages.flatMap(page => page.items) } : undefined };
   const aiEnabled = modelEnabled && settings.data?.aiCollaborationEnabled === true;

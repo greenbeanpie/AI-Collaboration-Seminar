@@ -39,6 +39,8 @@ export type RequestOptions = {
   rawBody?: BodyInit;
   /** Internal sync/revalidation path: never read a local snapshot or enqueue work. */
   networkOnly?: boolean;
+  /** Display-only network-first GET: allow an account-owned snapshot on transport failure, never HTTP failures. */
+  offlineReadFallback?: boolean;
   requireOfflinePersistence?: boolean;
   /** Background conditional request bound to the originating account snapshot. */
   conditionalSnapshot?: { accountId: string; data: unknown; etag?: string };
@@ -149,6 +151,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     if (method === 'GET' && !options.networkOnly && offlineAccount()) return local();
+    if (method === 'GET' && options.offlineReadFallback && cacheable(url) && accountAtStart && offlineAccount()?.id === accountAtStart) return local();
     throw new ApiError(0, {
       error: { code: 'NETWORK_ERROR', message: '无法连接服务，请检查网络或后端是否启动。', retryable: true, stage:'network',action:'check_connection' },
       requestId,
@@ -233,7 +236,7 @@ type ItemsOf<Name extends SchemaName> = DataOf<Name> extends { items: infer Item
 export async function listAllItems<Name extends SchemaName>(
   path: string,
   query: RequestOptions['query'] = {},
-  options: { requireNextCursor?: boolean; signal?: AbortSignal; networkOnly?: boolean } = {},
+  options: { requireNextCursor?: boolean; signal?: AbortSignal; networkOnly?: boolean; offlineReadFallback?: boolean } = {},
 ): Promise<ItemsOf<Name>> {
   const all: unknown[] = [];
   const seenCursors = new Set<string>();
@@ -241,7 +244,7 @@ export async function listAllItems<Name extends SchemaName>(
   let pageCount = 0;
   do {
     const page: DataOf<Name> = options.networkOnly
-      ? await request<Name>(path, { query: { ...query, cursor }, signal: options.signal, networkOnly: true })
+      ? await request<Name>(path, { query: { ...query, cursor }, signal: options.signal, networkOnly: true, offlineReadFallback: options.offlineReadFallback })
       : await api.get<Name>(path, { ...query, cursor }, options.signal);
     if (!page || typeof page !== 'object' || !('items' in page) || !Array.isArray(page.items)) {
       throw new ApiError(200, {
