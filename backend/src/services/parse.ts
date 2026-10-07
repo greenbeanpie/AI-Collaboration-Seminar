@@ -1,5 +1,5 @@
 import { assertExecutionGeneration, pauseExecution, readExecution, resolveExecutionTarget, ExecutionPaused, isExecutionPaused } from './ai-execution-control';
-import { BackgroundContinuation, isBackgroundContinuation } from './ai-execution-slices';
+import { BackgroundContinuation, ConcurrencyWait, isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
 import { clearUncertainCheckpointRetry, checkpointRootId, saveResponseCheckpoint, loadResponseCheckpoint } from './ai-checkpoints';
 import { aiSecret } from '../ai/secrets';
@@ -17,7 +17,7 @@ import { gatewayChat } from '../ai/gateway';
 import { loadAiConfig } from '../ai/config';
 import { recordAiCall } from '../ai/calls';
 import { createJobAndDispatch, failJob, succeedJob, waitJobInput, getJob } from './jobs';
-import { markAiCallStarted, reserveAiSlot, settleReservation } from './ai-reservations';
+import { isConcurrencyLimitError, markAiCallStarted, reserveAiSlot, settleReservation } from './ai-reservations';
 import { fetchWebPage } from './web-fetch';
 import { z } from 'zod';
 import { aiJsonCall } from './agent';
@@ -598,7 +598,8 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 
   if (input.phase === 'extract' || input.phase === 'analyze') {
     try {
-      let { needsImages } = input.phase === 'analyze' ? { needsImages: 0 } : await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
+      const existingText = await env.DB.prepare("SELECT 1 FROM source_processing WHERE source_version_id=?1 AND text_status='ready'").bind(input.sourceVersionId).first();
+      let { needsImages } = input.phase === 'analyze' || existingText ? { needsImages: 0 } : await extractSourceVersionText(env, input.sourceVersionId, expectedLifecycleVersion, jobId);
       if(needsImages){const supplied=await env.DB.prepare("SELECT COUNT(*) n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND image_status!='uploaded'").bind(input.sourceVersionId).first<{n:number}>();if(!supplied?.n){const result=await withAiSlot(env,jobId,job.project_id,'ocr_pages',()=>ocrPendingPages(env,input.sourceVersionId,input.configVersionId,jobId,expectedLifecycleVersion));needsImages=result.stillMissing;}}
       if (input.phase === 'analyze') {
         const incomplete = await env.DB.prepare("SELECT COUNT(*) AS n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(input.sourceVersionId).first<{n:number}>();
@@ -660,6 +661,7 @@ export async function runParseJob(env: Env, jobId: string): Promise<{ status: st
 }
 
 async function handleJobError(env: Env, jobId: string, sourceVersionId: string, err: unknown, expectedLifecycleVersion: number): Promise<void> {
+  if(isConcurrencyLimitError(err)) throw new ConcurrencyWait();
   if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
   const code = err instanceof AppError ? err.code : 'INTERNAL';
   const message = err instanceof Error ? err.message : String(err);

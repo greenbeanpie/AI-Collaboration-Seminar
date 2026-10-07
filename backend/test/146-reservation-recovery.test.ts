@@ -3,7 +3,7 @@ import { env } from './helpers/env';
 import { seedProject, seedUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
 import { quotaExceeded } from '../src/core/errors';
-import { ensureExecution } from '../src/services/ai-execution-control';
+import { cancelExecution,ensureExecution } from '../src/services/ai-execution-control';
 import { failJob, succeedJob, waitJobInput } from '../src/services/jobs';
 import { isConcurrencyLimitError, releaseIdleReservation, releaseStaleReservations, reserveAiSlot } from '../src/services/ai-reservations';
 
@@ -17,6 +17,13 @@ async function fixture(status = 'running', input: Record<string,unknown> = {}) {
 const status = async (jobId:string) => (await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1 ORDER BY created_at DESC LIMIT 1').bind(jobId).first<{status:string}>())?.status;
 
 describe('safe idle concurrency reservation release', () => {
+  it('releases explicit cancellation immediately while rejecting an obsolete generation',async()=>{
+    const f=await fixture(),execution=await ensureExecution(env,{kind:'job',id:f.jobId});
+    await expect(cancelExecution(env,{kind:'job',id:f.jobId},execution.generation+1)).rejects.toThrow();
+    expect(await status(f.jobId)).toBe('reserved');
+    await cancelExecution(env,{kind:'job',id:f.jobId},execution.generation);
+    expect(await status(f.jobId)).toBe('released');
+  });
   it('releases recently terminal records on the next minute sweep', async () => {
     for (const state of ['failed','succeeded','cancelled']) {
       const f = await fixture(state);

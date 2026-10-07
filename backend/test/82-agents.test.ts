@@ -323,7 +323,7 @@ describe('预算并发预占（每项目 2）', () => {
     await reserveAiSlot(env, { projectId: pid, jobId: `job-4-${pid}`, purpose: 'agent_run' });
   });
 
-  it('并发预占原子限制在 2 个；清理只释放超过 2 小时的记录', async () => {
+  it('并发预占原子限制在 2 个；孤儿清理保留创建宽限期', async () => {
     const owner = await seedUser();
     const pid = await seedProject(owner.userId);
     const concurrent = await Promise.allSettled(
@@ -342,7 +342,7 @@ describe('预算并发预占（每项目 2）', () => {
         "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'stale', 'agent_run', 'reserved', '2026-09-30T09:59:59.000Z')",
       ).bind(crypto.randomUUID(), pid),
       env.DB.prepare(
-        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'fresh', 'agent_run', 'reserved', '2026-09-30T10:00:01.000Z')",
+        "INSERT INTO usage_reservations (id, project_id, job_id, purpose, status, created_at) VALUES (?1, ?2, 'fresh', 'agent_run', 'reserved', '2026-09-30T11:59:01.000Z')",
       ).bind(crypto.randomUUID(), pid),
     ]);
     await releaseStaleReservations(env, now);

@@ -111,7 +111,7 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
       const slice=await activeExecutionSlice(env,jobId);
       if(!slice || !await dispatchExecutionSlice(env,slice)) return 'engine';
     }
-    await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
+    await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending' AND COALESCE(last_error,'')!='AI_CONCURRENCY_WAIT'")
       .bind(jobId, nowIso())
       .run();
     return 'dispatched';
@@ -120,7 +120,7 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
     if (message.includes('already exists')) {
       await reconcileWorkflowJob(env, jobId);
       // 只在已核对实例状态后标记派发。
-      await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending'")
+      await env.DB.prepare("UPDATE job_outbox SET status = 'dispatched', updated_at = ?2 WHERE job_id = ?1 AND status = 'pending' AND COALESCE(last_error,'')!='AI_CONCURRENCY_WAIT'")
         .bind(jobId, nowIso())
         .run();
       return 'dispatched';

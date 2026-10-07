@@ -25,6 +25,19 @@ async function ready(f:Awaited<ReturnType<typeof fixture>>,purpose='output'){
  ]);return {sourceId,versionId};
 }
 describe('durable uploaded file processing',()=>{
+ it('ignores obsolete scan waiting_input after a newer OCR job completes',async()=>{
+  const f=await fixture(),s=await ready(f),old=newId(),next=newId();
+  for(const [id,status,date] of [[old,'waiting_input','2026-01-01T00:00:00.000Z'],[next,'succeeded','2026-01-01T00:01:00.000Z']])await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'ocr_pages',?3,?4,?5,?5)").bind(id!,f.projectId,status!,JSON.stringify({sourceVersionId:s.versionId}),date!).run();
+  await env.DB.prepare('UPDATE file_processing SET job_id=?2 WHERE source_version_id=?1').bind(s.versionId,old).run();
+  expect(await readFileProcessing(env,f.projectId,f.fileId,f.owner.userId)).toMatchObject({jobStatus:'succeeded',needsImages:0});
+ });
+ it('reports old concurrency errors separately from the current empty capacity and true job status',async()=>{
+  const f=await fixture(),s=await ready(f),jobId=newId();
+  await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'requirement_extract','failed',?3,?4,?4)").bind(jobId,f.projectId,JSON.stringify({operation:'source.summary',sourceVersionId:s.versionId}),f.now).run();
+  await env.DB.prepare("UPDATE source_processing SET summary_status='running',summary_error='该项目的 AI 任务并发已达上限',summary_job_id=?2 WHERE source_version_id=?1").bind(s.versionId,jobId).run();
+  const view=await readFileProcessing(env,f.projectId,f.fileId,f.owner.userId);
+  expect(view).toMatchObject({jobStatus:'failed',errorIsHistorical:true,concurrency:{active:0,limit:2},waitingForConcurrency:false,textAvailable:true});
+ });
  it('does not start automatic work when project AI is disabled and rejects stale lifecycle',async()=>{
   const f=await fixture();const result=await ensureFileProcessing(env,f.projectId,f.fileId,f.owner.userId,{automatic:true});
   expect(result).toMatchObject({sourceId:null,jobId:null,textStatus:'pending'});

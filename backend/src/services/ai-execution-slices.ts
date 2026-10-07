@@ -4,8 +4,11 @@ import type { Env } from '../env';
 import { InvestigationContinuation } from './project-investigation';
 import { nowIso } from '../core/db';
 import { enqueueContinuation } from './continuation-queue';
+import { releaseIdleReservation } from './ai-reservations';
 
 export class BackgroundContinuation extends Error { constructor(message='已保存后台处理检查点，将在独立实例继续'){super(message);this.name='BackgroundContinuation';} }
+/** No provider request was sent. Keep the same job/checkpoints and retry after one minute. */
+export class ConcurrencyWait extends BackgroundContinuation { constructor(){super('等待项目 AI 并发名额');this.name='ConcurrencyWait';} }
 export function isBackgroundContinuation(error:unknown):boolean {return error instanceof BackgroundContinuation || error instanceof InvestigationContinuation || error instanceof AppError&&error.details?.executionSuperseded===true;}
 
 export interface ExecutionSlice { job_id:string; slice:number; instance_id:string; status:string }
@@ -22,6 +25,8 @@ export async function dispatchExecutionSlice(env:Env,row:ExecutionSlice):Promise
   if(!active || active.slice!==row.slice || active.status!=='pending') return false;
   const job=await env.DB.prepare('SELECT status,kind FROM jobs WHERE id=?1').bind(row.job_id).first<{status:string;kind:string}>();
   if(job?.status!=='running') return false;
+  const deferred = await env.DB.prepare("SELECT 1 FROM job_outbox WHERE job_id=?1 AND last_error='AI_CONCURRENCY_WAIT' AND available_at>?2").bind(row.job_id,nowIso()).first();
+  if(deferred) return false;
   try{
     const workflow=env.AGENT_WORKFLOW;
     await workflow.create({id:row.instance_id,params:{jobId:row.job_id,...(row.slice ? {slice:row.slice} : {})}});
@@ -32,6 +37,7 @@ export async function dispatchExecutionSlice(env:Env,row:ExecutionSlice):Promise
     }
   }
   await env.DB.prepare("UPDATE ai_execution_slices SET status='dispatched',attempts=attempts+1,last_error=NULL,updated_at=?3 WHERE job_id=?1 AND slice=?2 AND status='pending'").bind(row.job_id,row.slice,nowIso()).run();
+  await env.DB.prepare("UPDATE job_outbox SET status='dispatched',last_error=NULL,updated_at=?2 WHERE job_id=?1 AND last_error='AI_CONCURRENCY_WAIT' AND EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?3 AND status='dispatched') AND NOT EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice>?3)").bind(row.job_id,nowIso(),row.slice).run();
   return true;
 }
 /** Claim once, including on engine replay. An uncertain paid slice is never retried. */
@@ -40,15 +46,19 @@ export async function claimExecutionSlice(env:Env,jobId:string,slice:number):Pro
   return !!result.meta.changes;
 }
 /** Called only after a durable safe checkpoint. Atomically advance the active pointer. */
-export async function continueExecutionSlice(env:Env,jobId:string,slice:number):Promise<void>{
+export async function continueExecutionSlice(env:Env,jobId:string,slice:number,waitForConcurrency=false):Promise<void>{
   const now=nowIso(),next=slice+1;
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO ai_execution_slices(job_id,slice,instance_id,status,created_at,updated_at) SELECT ?1,?3,?4,'pending',?5,?5 WHERE EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?2 AND status='running') AND EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND status='running')").bind(jobId,slice,next,`${jobId}-s${next}`,now),
     env.DB.prepare("UPDATE ai_execution_slices SET status='continued',updated_at=?3 WHERE job_id=?1 AND slice=?2 AND status='running' AND EXISTS(SELECT 1 FROM ai_execution_slices next WHERE next.job_id=?1 AND next.slice=?2+1)").bind(jobId,slice,now),
     env.DB.prepare("UPDATE jobs SET updated_at=?3 WHERE id=?1 AND status='running' AND EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?2+1)").bind(jobId,slice,now),
+    ...(waitForConcurrency ? [env.DB.prepare(`INSERT INTO job_outbox(id,job_id,status,available_at,attempts,last_error,created_at,updated_at)
+      SELECT ?1,?1,'pending',?2,0,'AI_CONCURRENCY_WAIT',?3,?3 WHERE EXISTS(SELECT 1 FROM ai_execution_slices WHERE job_id=?1 AND slice=?4 AND status='pending')
+      ON CONFLICT(job_id) DO UPDATE SET status='pending',available_at=excluded.available_at,last_error=excluded.last_error,lease_until=NULL,updated_at=excluded.updated_at`).bind(jobId,new Date(Date.now()+60_000).toISOString(),now,next)] : []),
   ]);
   const active=await activeExecutionSlice(env,jobId);
   if(active?.slice===next) {
+    if(waitForConcurrency) return;
     // Never recursively create Workflow N+1 from Workflow N. Cloudflare caps a
     // single Worker pipeline at 32 invocations. Queue delivery starts a fresh
     // event; if Queue is unavailable, leave the durable pending row for cron.
@@ -71,13 +81,12 @@ export async function executeAiSlice(env:Env,jobId:string,slice:number,run:()=>P
   }catch(error){
     if(error instanceof AppError&&error.details?.executionSuperseded===true){await completeExecutionSlice(env,jobId,slice);return;}
     if(isExecutionPaused(error)){
-      const execution=error.execution;
-      // One SQL statement prevents a late pause handler from releasing a resumed window's slot.
-      await env.DB.prepare("UPDATE usage_reservations SET status=CASE WHEN attempts_started=0 THEN 'released' ELSE 'settled' END,settled_at=?2 WHERE job_id=?1 AND status='reserved' AND EXISTS(SELECT 1 FROM ai_executions e WHERE e.target_kind='job' AND e.generation=?3 AND e.state='paused' AND (e.target_id=?1 OR e.target_id=(SELECT REPLACE(json_extract(input_json,'$.autoRetryRootId'),'job:','') FROM jobs WHERE id=?1) OR e.target_id IN (WITH RECURSIVE parents(id) AS (SELECT ?1 UNION SELECT l.parent_job_id FROM admin_ai_retry_links l JOIN parents ON l.retry_job_id=parents.id) SELECT id FROM parents)))").bind(jobId,nowIso(),execution.generation).run();
+      // Atomic state fences preserve uncertain requests and already-resumed windows.
+      await releaseIdleReservation(env,jobId);
       await completeExecutionSlice(env,jobId,slice);return;
     }
     if(!isBackgroundContinuation(error)) throw error;
-    await continueExecutionSlice(env,jobId,slice);
+    await continueExecutionSlice(env,jobId,slice,error instanceof ConcurrencyWait);
   }
 }
 

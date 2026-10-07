@@ -1,6 +1,6 @@
 import { backgroundModelCall } from './background-model-call';
 import { pauseExecution, ExecutionPaused, assertExecutionGeneration, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
-import { isBackgroundContinuation } from './ai-execution-slices';
+import { ConcurrencyWait, isBackgroundContinuation } from './ai-execution-slices';
 import { clearUncertainCheckpointRetry, checkpointRootId, checkpointFingerprint, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
 import { recordActivity } from './ai-activity';
 import { aiSecret } from '../ai/secrets';
@@ -13,7 +13,7 @@ import { nowIso, newId } from '../core/db';
 import { AppError, invalidState } from '../core/errors';
 import { createJobAndDispatch, getJob, failJob, succeedJob } from './jobs';
 import { loadActiveSourceVersion, assertSourceJobActive, sourceLifecycleGuard } from './source-lifecycle';
-import { reserveAiSlot, markAiCallStarted, settleReservation } from './ai-reservations';
+import { isConcurrencyLimitError, reserveAiSlot, markAiCallStarted, settleReservation } from './ai-reservations';
 import { MimoMediaClient } from '../ai/mimo-media';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { createMediaFetchUrl } from './media-fetch';
@@ -169,6 +169,7 @@ export async function runMediaJob(env:Env,jobId:string,sourceVersionId?:string,m
     await env.DB.prepare("UPDATE audio_pipeline SET phase='ready',final_summary_json=?2,updated_at=?3 WHERE job_id=?1 AND phase='fallback'").bind(jobId,JSON.stringify(summary),nowIso()).run();
     await settleReservation(env,jobId,'settled');await succeedJob(env,jobId,{mediaSummary:true,sourceVersionId:sourceVersionId??null,fileId:input.fileId??null});
   }catch(error){
+    if(isConcurrencyLimitError(error)){continuing=true;throw new ConcurrencyWait();}
     if(isExecutionPaused(error)||isBackgroundContinuation(error)){
       continuing=true;
       if(state&&ownsLease)await env.DB.prepare("UPDATE media_processing SET stage=CASE WHEN stage='generating' THEN 'processing' ELSE stage END WHERE id=?1 AND lease_token=?2").bind(state.id,leaseToken).run();

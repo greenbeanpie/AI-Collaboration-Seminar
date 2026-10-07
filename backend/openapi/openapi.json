@@ -22359,6 +22359,41 @@
               "needsImages": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "jobStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "executionState": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "concurrency": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "active",
+                  "limit"
+                ]
+              },
+              "errorIsHistorical": {
+                "type": "boolean"
+              },
+              "waitingForConcurrency": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -22374,7 +22409,12 @@
               "materialIds",
               "textAvailable",
               "canProcess",
-              "needsImages"
+              "needsImages",
+              "jobStatus",
+              "executionState",
+              "concurrency",
+              "errorIsHistorical",
+              "waitingForConcurrency"
             ]
           },
           "requestId": {

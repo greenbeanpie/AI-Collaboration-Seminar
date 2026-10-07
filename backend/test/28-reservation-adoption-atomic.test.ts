@@ -59,7 +59,7 @@ describe('AI admission, call tracking and bounded inputs', () => {
     expect(rows.results.every(row => row.reservation_id && row.prompt_tokens === 10 && row.completion_tokens === 5)).toBe(true);
   });
 
-  it('settles a paused unknown request at the Workflow boundary without charging or occupying the concurrency slot again', async () => {
+  it('protects a paused unknown request at the Workflow boundary without replaying it', async () => {
     const { pid, cfg } = await projectFixture();
     const jobId = crypto.randomUUID(),now=new Date().toISOString();
     await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running','{}',?3,?3)").bind(jobId,pid,now).run();
@@ -71,7 +71,7 @@ describe('AI admission, call tracking and bounded inputs', () => {
     expect(provider).toHaveBeenCalledOnce();
     expect(await readExecution(env,{kind:'job',id:jobId})).toMatchObject({state:'paused',pauseReason:'request_uncertain',totalCalls:1});
     expect(await env.DB.prepare('SELECT status FROM jobs WHERE id=?1').bind(jobId).first()).toMatchObject({status:'waiting_input'});
-    expect(await reservation(jobId)).toMatchObject({ status: 'settled', attempts_started: 1 });
+    expect(await reservation(jobId)).toMatchObject({ status: 'reserved', attempts_started: 1 });
     const lost = crypto.randomUUID();
     await reserveAiSlot(env, { projectId: pid, jobId: lost, purpose: 'agent_run' });
     await markAiCallStarted(env, lost); // simulate crash before recording response

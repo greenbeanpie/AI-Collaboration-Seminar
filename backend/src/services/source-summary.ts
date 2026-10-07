@@ -1,5 +1,5 @@
 import { readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
-import { BackgroundContinuation, isBackgroundContinuation } from './ai-execution-slices';
+import { BackgroundContinuation, ConcurrencyWait, isBackgroundContinuation } from './ai-execution-slices';
 import { checkpointRootId } from './ai-checkpoints';
 import { recordActivity } from './ai-activity';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
@@ -11,7 +11,7 @@ import { nowIso, sha256Hex } from '../core/db';
 import { loadAiConfig, requireEnabledAiConfig } from '../ai/config';
 import { aiJsonCall } from './agent';
 import { createJobAndDispatch, failJob, getJob, succeedJob } from './jobs';
-import { reserveAiSlot, settleReservation } from './ai-reservations';
+import { isConcurrencyLimitError, reserveAiSlot, settleReservation } from './ai-reservations';
 import { assertSourceJobActive, loadActiveSourceVersion, sourceLifecycleGuard } from './source-lifecycle';
 import { isMediaExtension } from './files';
 
@@ -157,10 +157,11 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
     await succeedJob(env, jobId, { sourceVersionId: input.sourceVersionId, summaryRevision: input.summaryRevision,...(partial?{partial:true,complete:false,coverage:{coveredChars,totalChars}}:{}) });
     return { status: (await getJob(env, jobId)).status };
   } catch (err) { if(isExecutionPaused(err)||isBackgroundContinuation(err))throw err;
+    if(isConcurrencyLimitError(err)) throw new ConcurrencyWait();
     await settleReservation(env, jobId, 'released');
     const error = err instanceof AppError ? err : new AppError('INTERNAL', '总结失败；原文和原文件已保留，请重试', 500, true);
     await env.DB.prepare(`UPDATE source_processing SET summary_status = 'failed', summary_error = ?4, updated_at = ?5 WHERE source_version_id = ?1 AND summary_job_id = ?2 AND summary_revision = ?3 AND summary_status IN ('queued','running') AND ${processingGuard("?1", "?6", "?2")}`).bind(input.sourceVersionId, jobId, input.summaryRevision, error.message.slice(0,500), nowIso(), expectedLifecycleVersion).run();
-    await failJob(env, jobId, { code: error.code, message: error.message });
+    await failJob(env, jobId, { code: error.code, message: error.message,details:error.details });
     return { status: (await getJob(env, jobId)).status };
   }
 }

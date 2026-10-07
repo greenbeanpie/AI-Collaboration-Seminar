@@ -17740,6 +17740,14 @@ export interface components {
                 textAvailable: boolean;
                 canProcess: boolean;
                 needsImages: number;
+                jobStatus: string | null;
+                executionState: string | null;
+                concurrency: {
+                    active: number;
+                    limit: number;
+                };
+                errorIsHistorical: boolean;
+                waitingForConcurrency: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

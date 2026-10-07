@@ -9,11 +9,14 @@ import { isMediaExtension } from './files';
 import { loadActiveSourceVersion } from './source-lifecycle';
 import { invalidateResourceIndex } from './resource-index';
 import { enqueueSourceSummary } from './source-summary';
+import { readExecution, resolveExecutionTarget } from './ai-execution-control';
+import { LIMITS } from '../core/limits';
 
 export interface FileProcessingView {
  fileId:string;lifecycleVersion:number;sourceId:string|null;sourceVersionId:string|null;jobId:string|null;
  textStatus:string;summaryStatus:string;requirementsStatus:string;error:string|null;materialIds:string[];
  textAvailable:boolean;canProcess:boolean;needsImages:number;textPreview?:string;
+ jobStatus:string|null;executionState:string|null;concurrency:{active:number;limit:number};errorIsHistorical:boolean;waitingForConcurrency:boolean;
 }
 type FileRow={id:string;project_id:string;lifecycle_version:number;ext:string;original_name:string;uploader_user_id:string;ai_collaboration_enabled:number;can_process:number;processing_purpose:string|null};
 type Binding={source_id:string;source_version_id:string;job_id:string|null;attempted:number;error:string|null};
@@ -33,9 +36,21 @@ export async function readFileProcessing(env:Env,projectId:string,fileId:string,
  FROM file_processing b LEFT JOIN sources s ON s.id=b.source_id LEFT JOIN source_processing p ON p.source_version_id=b.source_version_id LEFT JOIN source_versions v ON v.id=b.source_version_id WHERE b.file_id=?1 AND b.lifecycle_version=?2`)
  .bind(fileId,f.lifecycle_version).first<Binding & {purpose:string;text_status:string|null;summary_status:string|null;requirements_status:string|null;summary_error:string|null;requirements_error:string|null;parse_error:string|null;needs_images:number;preview:string|null}>();
  const materials=row?await env.DB.prepare('SELECT material_id FROM file_processing_materials WHERE source_version_id=?1').bind(row.source_version_id).all<{material_id:string}>():null;
+ const jobs=row?await env.DB.prepare(`SELECT j.id,j.status,EXISTS(SELECT 1 FROM job_outbox o WHERE o.job_id=j.id AND o.last_error='AI_CONCURRENCY_WAIT' AND o.status='pending') waiting
+ FROM jobs j WHERE json_extract(j.input_json,'$.sourceVersionId')=?1
+ ORDER BY CASE WHEN j.status IN ('queued','running') THEN 0 ELSE 1 END,j.created_at DESC,j.id DESC LIMIT 20`).bind(row.source_version_id).all<{id:string;status:string;waiting:number}>():null;
+ let job=jobs?.results[0]??null;
+ if(job&&!['queued','running'].includes(job.status))for(const candidate of jobs?.results??[]){
+  if(candidate.status!=='waiting_input')continue;
+  const execution=await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:candidate.id}));
+  if(execution?.state==='paused'||(row?.needs_images&&row?.text_status==='waiting_input')){job=candidate;break;}
+ }
+ const execution=job?await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:job.id})):null;
+ const capacity=await env.DB.prepare("SELECT COUNT(*) active FROM usage_reservations WHERE project_id=?1 AND status='reserved'").bind(projectId).first<{active:number}>();
+ const error=row?.error??row?.parse_error??row?.summary_error??row?.requirements_error??null;
  return {fileId,lifecycleVersion:f.lifecycle_version,sourceId:row?.source_id??null,sourceVersionId:row?.source_version_id??null,jobId:row?.job_id??null,
  textStatus:row?.text_status??(row?.job_id?'queued':'pending'),summaryStatus:row?.summary_status??'pending',requirementsStatus:row&&['output','background'].includes(row.purpose)?'skipped':row?.requirements_status??'pending',
- error:row?.error??row?.parse_error??row?.summary_error??row?.requirements_error??null,materialIds:materials?.results.map(m=>m.material_id)??[],
+ error,jobStatus:job?.status??null,executionState:execution?.state??null,concurrency:{active:capacity?.active??0,limit:LIMITS.concurrentAiTasksPerProject},errorIsHistorical:!!error,waitingForConcurrency:!!job?.waiting,materialIds:materials?.results.map(m=>m.material_id)??[],
  textAvailable:!!row?.preview?.trim()&&!isMediaExtension(f.ext),canProcess:!!f.can_process,needsImages:row?.needs_images??0,...(row?.preview?{textPreview:row.preview.slice(0,2000)}:{})};
 }
 export async function ensureFileProcessing(env:Env,projectId:string,fileId:string,actorId:string,options:{expectedLifecycleVersion?:number;retry?:boolean;automatic?:boolean}={}):Promise<FileProcessingView>{
@@ -60,6 +75,11 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
  await syncFileProcessingText(env,b.source_version_id);
  const active=await env.DB.prepare("SELECT id FROM jobs WHERE json_extract(input_json,'$.sourceVersionId')=?1 AND status IN ('queued','running') LIMIT 1").bind(b.source_version_id).first<{id:string}>();
  if(active)return readFileProcessing(env,projectId,fileId,actorId);
+ const paused=await env.DB.prepare("SELECT id FROM jobs WHERE json_extract(input_json,'$.sourceVersionId')=?1 AND status='waiting_input'").bind(b.source_version_id).all<{id:string}>();
+ for(const j of paused.results){const execution=await readExecution(env,await resolveExecutionTarget(env,{kind:'job',id:j.id}));if(execution?.state==='paused')return readFileProcessing(env,projectId,fileId,actorId);}
+ // Only a user retry reconciles stale phase flags; never overwrite an active replacement.
+ if(options.retry)await env.DB.prepare(`UPDATE source_processing SET summary_status=(SELECT status FROM jobs WHERE id=summary_job_id),summary_error=COALESCE(summary_error,'上次总结未完成，请重试')
+ WHERE source_version_id=?1 AND summary_status IN ('queued','running') AND EXISTS(SELECT 1 FROM jobs WHERE id=summary_job_id AND status IN ('failed','cancelled'))`).bind(b.source_version_id).run();
  await env.DB.prepare(`INSERT INTO source_processing(source_version_id,project_id,text_status,requirements_status,updated_at)
  SELECT v.id,v.project_id,'ready',CASE WHEN EXISTS(SELECT 1 FROM requirement_sets WHERE source_version_id=v.id) THEN 'ready' ELSE 'pending' END,?2 FROM source_versions v
  WHERE v.id=?1 AND v.status='ready' AND EXISTS(SELECT 1 FROM source_fragments WHERE source_version_id=v.id AND trim(content)!='') ON CONFLICT DO NOTHING`).bind(b.source_version_id,now).run();

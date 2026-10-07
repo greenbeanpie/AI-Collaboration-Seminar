@@ -11,6 +11,7 @@ const view = z.object({
   sourceId: z.string().uuid().nullable(), sourceVersionId: z.string().uuid().nullable(), jobId: z.string().uuid().nullable(),
   textStatus: z.string(), summaryStatus: z.string(), requirementsStatus: z.string(), error: z.string().nullable(),
   materialIds: z.array(z.string().uuid()), textAvailable: z.boolean(), canProcess: z.boolean(), needsImages: z.number().int().nonnegative(),
+  jobStatus:z.string().nullable(),executionState:z.string().nullable(),concurrency:z.object({active:z.number().int().nonnegative(),limit:z.number().int().positive()}),errorIsHistorical:z.boolean(),waitingForConcurrency:z.boolean(),
 });
 const path = '/api/v1/projects/{projectId}/files/{fileId}/processing';
 const response = apiEnvelope(view, 'FileProcessingResponse');
