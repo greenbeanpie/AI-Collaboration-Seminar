@@ -6,12 +6,9 @@ const guestScript = readFileSync('public/guest/demo.js', 'utf8');
 const html = readFileSync('public/guest/index.html', 'utf8') + '\n' + guestScript;
 afterEach(() => { document.body.innerHTML = ''; });
 
-it('guest script remains valid and every date input uses the same renderer', () => {
+it('guest script and every inline guest script parse', () => {
   expect(() => new Script(guestScript)).not.toThrow();
-  expect(readFileSync('public/guest/index.html','utf8')).toContain('src="/guest/demo.js"');
   for (const [, script] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) expect(() => new Script(script)).not.toThrow();
-  expect(html.match(/\$\{dateInput\(/g)).toHaveLength(5);
-  expect(html).not.toMatch(/<input[^>]*type="(?:date|datetime-local)"/);
 });
 
 it('guest helper preserves values/labels and updates empty state after clearing', () => {

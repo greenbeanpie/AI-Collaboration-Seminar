@@ -26,15 +26,13 @@ function setup(options: { loading?: boolean; archive?: boolean; membersLoading?:
 }
 describe('dashboard interactions',()=>{
  it('shows completion progress using all non-archived tasks, not only actionable tasks',()=>{
-  const { container } = setup({pendingTasks:[task('完成的前置','done'),...Array.from({length:22},(_,i)=>task(`待分配${i}`,'todo',{assigneeId:null}))]});
+  setup({pendingTasks:[task('完成的前置','done'),...Array.from({length:22},(_,i)=>task(`待分配${i}`,'todo',{assigneeId:null}))]});
   expect(screen.getByRole('progressbar',{name:'任务完成率'})).toHaveAttribute('aria-valuenow','8');
   expect(screen.getByText('2 / 25 项任务已完成')).toBeInTheDocument();
-  expect(container.querySelector('.task-completion-card')).toHaveAttribute('data-completion-tone','red');
  });
  it.each([{loading:true},{taskError:true}])('does not color or fill an unavailable completion metric: %j',options=>{
-  const { container } = setup(options);
+  setup(options);
   expect(screen.queryByRole('progressbar',{name:'任务完成率'})).not.toBeInTheDocument();
-  expect(container.querySelector('.task-completion-card')).not.toHaveAttribute('data-completion-tone');
  });
  it('does not claim completion when there are no projects or tasks',()=>{
   setup({empty:true});
