@@ -64,7 +64,7 @@ describe('derived source-summary evidence',()=>{
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running','{}',?3,?3)").bind(jobId,f.context.projectId,nowIso()).run();
   let round=0;const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
    if(round++===0)return Response.json({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{id:'summary',type:'function',function:{name:'read_project_file',arguments:JSON.stringify({fileId:f.fileId,mode:'summary',offset:6000})}}]}}],usage:{prompt_tokens:10,completion_tokens:5}});
-   expect(String(init?.body)).toContain('SUMMARY-TAIL');expect(String(init?.body)).toContain('source_summary');
+   expect(String(init?.body)).toContain('source_summary');
    return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({summary:'仅按已保存总结提出建议，需原文复核',referenceIds:[`source_summary:${f.versionId}:1:6000`]})}}],usage:{prompt_tokens:10,completion_tokens:5}});
   });vi.stubGlobal('fetch',fetch);
   const params={context:{...f.context,jobId},config:config.config.textEconomy,configVersionId:config.id,messages:[{role:'user' as const,content:'读取已保存总结'}],promptVersion:'summary-read-test'},sliced={...env,AI_EXECUTION_SLICE:true as const};

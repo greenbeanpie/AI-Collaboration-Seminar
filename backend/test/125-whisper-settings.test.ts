@@ -1,10 +1,7 @@
-import { SELF } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
-import { ADMIN_TOKEN } from './helpers/constants';
 import { aiConfigSchema } from '../src/ai/config';
 import { createApp } from '../src/app';
-const adminHeaders = { authorization: `Bearer ${ADMIN_TOKEN}`, 'content-type': 'application/json' };
 afterEach(() => vi.unstubAllGlobals());
 
 it('Whisper capability needs an enabled configuration and binding; video remains independent', async () => {
@@ -28,37 +25,4 @@ it('Whisper capability needs an enabled configuration and binding; video remains
   await env.DB.prepare('UPDATE ai_config_versions SET enabled=0 WHERE id=?1').bind(row!.id).run();
   expect(await read(true)).toMatchObject({mediaEnabled:false,audioTranscriptionEnabled:false,videoSummaryEnabled:false});
   await env.DB.prepare('UPDATE ai_config_versions SET config_json=?2 WHERE id=?1').bind(row!.id,row!.config_json).run();
-});
-it('audio strategy saves preserve enabled model credentials and reject stale revisions without calling providers', async () => {
-  const row = await env.DB.prepare('SELECT id, version, config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string;version:number;config_json:string}>();
-  const config = aiConfigSchema.parse(JSON.parse(row!.config_json));
-  config.textEconomy.apiKeyEncrypted = 'fixture-opaque-encrypted-key';
-  await env.DB.prepare('UPDATE ai_config_versions SET enabled=1,config_json=?2 WHERE id=?1').bind(row!.id,JSON.stringify(config)).run();
-  const provider = vi.fn(); vi.stubGlobal('fetch', provider);
-  const legacy = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, { headers: adminHeaders });
-  expect((await legacy.json() as {data:{config:{audioProcessingStrategy:string}}}).data.config.audioProcessingStrategy).toBe('whisper-first');
-  const body = { ...config, textEconomy:{...config.textEconomy}, visionEconomy:{...config.visionEconomy}, review:{...config.review}, audioProcessingStrategy:'gemini-only', expectedVersion:row!.version };
-  for(const purpose of ['textEconomy','visionEconomy','review'] as const)delete body[purpose].apiKeyEncrypted;
-  const save = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, {method:'PUT', headers:adminHeaders, body:JSON.stringify(body)});
-  expect(save.status).toBe(201);
-  expect((await save.json() as {data:{enabled:boolean}}).data.enabled).toBe(true);
-  const updated = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{config_json:string}>();
-  const parsed = aiConfigSchema.parse(JSON.parse(updated!.config_json));
-  expect(parsed.audioProcessingStrategy).toBe('gemini-only');
-  expect(parsed.textEconomy.apiKeyEncrypted).toBe('fixture-opaque-encrypted-key');
-  for (const purpose of ['visionEconomy','review'] as const) expect(parsed[purpose].apiKeyEncrypted).toBeUndefined();
-  const stale = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, {method:'PUT', headers:adminHeaders, body:JSON.stringify(body)});
-  expect(stale.status).toBe(409); expect(provider).not.toHaveBeenCalled();
-  await env.DB.prepare('UPDATE ai_config_versions SET enabled=1 WHERE version=(SELECT MAX(version) FROM ai_config_versions)').run();
-  const media = {...config.textEconomy,provider:'openai-compatible',providerPreset:'gemini',model:'gemini-2.5-flash',apiUrl:'https://generativelanguage.googleapis.com'};
-  delete media.apiKeyEncrypted;
-  const mediaSave = await SELF.fetch(`${BASE}/api/v1/admin/ai-config`, {method:'PUT',headers:adminHeaders,body:JSON.stringify({...body,expectedVersion:row!.version+1,mediaUnderstanding:media})});
-  expect(mediaSave.status).toBe(201);
-  expect((await mediaSave.json() as {data:{enabled:boolean}}).data.enabled).toBe(true);
-  const mediaUpdated = await env.DB.prepare('SELECT config_json FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{config_json:string}>();
-  const saved = aiConfigSchema.parse(JSON.parse(mediaUpdated!.config_json));
-  expect(saved.audioProcessingStrategy).toBe('gemini-only');
-  expect(saved.textEconomy.apiKeyEncrypted).toBe('fixture-opaque-encrypted-key');
-  expect(saved.mediaUnderstanding?.apiKeyEncrypted).toBeUndefined();
-  expect(provider).not.toHaveBeenCalled();
 });

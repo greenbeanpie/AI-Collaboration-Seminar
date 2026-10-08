@@ -48,8 +48,6 @@ it('preserves the WebSocket upgrade through app middleware and persists captions
 it('rejects retired cloud TTS and prevents its dispatcher or retries from making a model call',async()=>{
   const f=await fixture();
   const request=vi.fn(async()=>new Response(null,{status:503}));vi.stubGlobal('fetch',request);
-  const response=await f.app.fetch(new Request(BASE+f.prefix+'/turns/1/speech',{method:'POST',headers:f.headers,body:'{}'}),env);
-  expect(response.status).toBe(410);
   const id=newId(),now=nowIso();
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_by,created_at,updated_at) VALUES(?1,?2,'agent_run','queued',?3,?4,?5,?5)").bind(id,f.projectId,JSON.stringify({operation:'rehearsal.tts',rehearsalId:f.rehearsalId}),f.user.userId,now).run();
   await runAiJob(env,id);

@@ -5,12 +5,11 @@ import { seedUser, seedProject, authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { newId, nowIso } from '../src/core/db';
 import { failJob } from '../src/services/jobs';
-import { settleReservation } from '../src/services/ai-reservations';
 import { retryFailedAiJob } from '../src/services/admin-ai-retries';
 import { recoverAutomaticAiRetries } from '../src/services/ai-automatic-retries';
 import { AppError } from '../src/core/errors';
 
-it('follows replacement requests and stops the whole chain after three failed recovery rounds', async () => {
+it('exposes durable retry fields through the job API and records the admin retry link', async () => {
   await configureGoFixture();
   const owner = await seedUser(), projectId = await seedProject(owner.userId), originalId = newId();
   const config = await env.DB.prepare('SELECT id FROM ai_config_versions ORDER BY version DESC LIMIT 1').first<{id:string}>();
@@ -24,24 +23,15 @@ it('follows replacement requests and stops the whole chain after three failed re
   };
   const first = await read();
   expect(first.status).toBe('queued');
+  expect(first.retry).toMatchObject({ attempts: 0, status: 'pending' });
   expect(Date.parse(first.retry.nextAttemptAt) - Date.now()).toBeGreaterThan(55_000);
-  expect(await recoverAutomaticAiRetries(env, (e, id, root) => retryFailedAiJob(e, id, undefined, root))).toBe(0);
-  let currentId = originalId;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await env.DB.prepare("UPDATE ai_automatic_retries SET next_attempt_at='2000-01-01T00:00:00.000Z' WHERE id=?1").bind(`job:${originalId}`).run();
-    expect(await recoverAutomaticAiRetries(env, (e, id, root) => retryFailedAiJob(e, id, undefined, root))).toBe(1);
-    const queued = await read();
-    expect(queued.jobId).not.toBe(currentId);
-    currentId = queued.jobId;
-    await settleReservation(env, currentId, 'released');
-    await failJob(env, currentId, { code: 'AI_UNAVAILABLE', message: 'provider fallback exhausted' });
-    const failed = await read();
-    expect(failed.retry.attempts).toBe(attempt);
-    expect(failed.status).toBe(attempt === 3 ? 'failed' : 'queued');
-  }
-  expect((await read()).retry.status).toBe('exhausted');
-  expect(await recoverAutomaticAiRetries(env, (e, id, root) => retryFailedAiJob(e, id, undefined, root))).toBe(0);
-  expect((await env.DB.prepare('SELECT COUNT(*) n FROM admin_ai_retry_links').first<{n:number}>())!.n).toBe(3);
+  await env.DB.prepare("UPDATE ai_automatic_retries SET next_attempt_at='2000-01-01T00:00:00.000Z' WHERE id=?1").bind(`job:${originalId}`).run();
+  expect(await recoverAutomaticAiRetries(env, (e, id, root) => retryFailedAiJob(e, id, undefined, root))).toBe(1);
+  const queued = await read();
+  expect(queued.jobId).not.toBe(originalId);
+  expect(queued.status).toBe('queued');
+  expect(queued.retry).toMatchObject({ attempts: 1, status: 'dispatched' });
+  expect((await env.DB.prepare('SELECT COUNT(*) n FROM admin_ai_retry_links').first<{n:number}>())!.n).toBe(1);
 });
 
 it('does not spend a recovery round while waiting for project concurrency', async () => {

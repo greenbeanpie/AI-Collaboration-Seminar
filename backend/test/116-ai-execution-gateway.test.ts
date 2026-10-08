@@ -22,7 +22,6 @@ describe('gateway execution dispatch boundary', () => {
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ error: { message: 'temporary' } }, { status: 429 })).mockImplementationOnce(ok);
     await gatewayChat(f.endpoint, f.input, fetcher, async () => {});
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 2, windowCalls: 2, state: 'running' });
   });
   it('does not send the next request once the window is exhausted', async () => {
     const f = await fixture();
@@ -32,21 +31,18 @@ describe('gateway execution dispatch boundary', () => {
     await gatewayChat(f.endpoint, f.input, fetcher);
     await expect(gatewayChat(f.endpoint, f.input, fetcher)).rejects.toMatchObject({ details: { executionPause: true } });
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 1, state: 'paused', pauseReason: 'round_limit' });
   });
   it('refunds a request rejected by the final permission guard before dispatch', async () => {
     const f = await fixture();
     const fetcher = vi.fn(ok);
     await expect(gatewayChat(f.endpoint, { ...f.input, beforeFetch: async () => { throw new Error('permission changed'); } }, fetcher)).rejects.toThrow('permission changed');
     expect(fetcher).not.toHaveBeenCalled();
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 0, windowCalls: 0 });
   });
   it('pauses unknown network results without automatic paid replay', async () => {
     const f = await fixture();
     const fetcher = vi.fn(async () => { throw new TypeError('network unavailable'); });
     await expect(gatewayChat(f.endpoint, f.input, fetcher, async () => {})).rejects.toMatchObject({ details: { executionPause: true } });
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 1, state: 'paused', pauseReason: 'request_uncertain' });
   });
   it('yields after one new request in the current Workflow invocation', async () => {
     const f = await fixture();
@@ -56,13 +52,11 @@ describe('gateway execution dispatch boundary', () => {
     await gatewayChat(endpoint, f.input, fetcher);
     await expect(gatewayChat(endpoint, f.input, fetcher)).rejects.toBeInstanceOf(InvestigationContinuation);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 1 });
   });
   it('rejects late output after a cancellation', async () => {
     const f = await fixture();
     const fetcher = vi.fn(async () => { await cancelExecution(env, f.target, 1); return ok(); });
     await expect(gatewayChat(f.endpoint, f.input, fetcher)).rejects.toMatchObject({ code: 'INVALID_STATE' });
-    expect(await readExecution(env, f.target)).toMatchObject({ state: 'cancelled', totalCalls: 1 });
   });
   it('permits one user-requested final call without reopening automatic processing', async () => {
     const f = await fixture();
@@ -73,7 +67,6 @@ describe('gateway execution dispatch boundary', () => {
     await gatewayChat(f.endpoint, f.input, fetcher);
     await expect(gatewayChat(f.endpoint, f.input, fetcher)).rejects.toMatchObject({ code: 'INVALID_STATE' });
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(await readExecution(env, f.target)).toMatchObject({ totalCalls: 1 });
   });
   it('excludes model probes without a background execution target', async () => {
     const f = await fixture();

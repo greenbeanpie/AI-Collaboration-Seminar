@@ -20,4 +20,7 @@ it('searches paged source fragments and locates a citation beyond the first page
  const first=(await (await get('?limit=1')).json() as any).data;expect(first.items[0].seq).toBe(1);expect(first.nextCursor).toBe('1');
  const searched=(await (await get('?q=NEEDLE&limit=1')).json() as any).data;expect(searched.items[0].fragmentId).toBe(target);expect(searched.nextCursor).toBeNull();
  const located=(await (await get('?fragmentId='+target)).json() as any).data;expect(located.items).toHaveLength(1);expect(located.items[0].seq).toBe(3);
+ const outsider=await seedUser();await seedProject(outsider.userId);
+ expect((await SELF.fetch(base,{headers:{cookie:authCookie(outsider.token)}})).status).toBe(403);
+ expect((await get('?cursor=abc')).status).toBe(400);
 });

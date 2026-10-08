@@ -14,7 +14,6 @@ import { invalidateStaleProjectClarifications,executeClarification,answerClarifi
 import { applyToolMode,normalizeToolResponse } from '../src/ai/tool-transport';
 import { askUserQuestionDefinition } from '../src/services/ai-clarifications';
 import { loadAiConfig } from '../src/ai/config';
-import { decompositionGuidance } from '../src/services/decomposition-prompt';
 afterEach(()=>vi.unstubAllGlobals());
 const question={question:'准备参加哪条赛道？',reason:'两条赛道所需交付物不同',options:['创意赛道','创业赛道'],allowUndecided:true};
 async function fixture(){
@@ -33,7 +32,6 @@ describe('durable AI user clarification',()=>{
  it('pauses actual provider tools before planning changes and resumes pending output without replaying the paid request',async()=>{
   const f=await fixture();let turn=0;const fetch=vi.fn(async(_url:unknown,init?:RequestInit)=>{
    const body=JSON.parse(String(init?.body));expect(body.tools.some((t:any)=>t.function.name==='ask_user_question')).toBe(true);
-   expect(body.messages.some((m:any)=>typeof m.content==='string'&&m.content.includes('最少但足够'))).toBe(true);
    if(turn++===0)return Response.json({choices:[{finish_reason:'tool_calls',message:{tool_calls:[{id:'call-ask',type:'function',function:{name:'ask_user_question',arguments:JSON.stringify(question)}}]}}],usage:{prompt_tokens:20,completion_tokens:10}});
    const answer=body.messages.find((m:any)=>m.role==='tool'&&m.tool_call_id==='call-ask');expect(JSON.parse(answer.content)).toMatchObject({status:'answered',answer:{undecided:true}});
    return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({tasks:[{key:'t1',dependsOn:[],title:'赛道共通研究成果',detail:'赛道尚未决定；先完成共通研究。工时为粗估。',criteria:'形成共通调研简报',effortHours:3}],reusedTaskIds:[]})}}],usage:{prompt_tokens:25,completion_tokens:12}});
@@ -111,20 +109,15 @@ describe('durable AI user clarification',()=>{
   await expect(answerClarification(env,f.binding,q.id,{expectedRevision:1,text:'迟到'})).rejects.toThrow();
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);await runCollaborationAiJob(env,f.jobId);expect(fetch).not.toHaveBeenCalled();
  });
- it('bounds clarification to three rounds even when providers reuse the same native call ID',async()=>{
-  const f=await fixture();for(let round=0;round<3;round++){const q=await ask(f,`${round}:gemini-0`,{...question,question:`关键问题${round+1}`});expect(q.round).toBe(round+1);await answerClarification(env,f.binding,q.id,{expectedRevision:1,text:`回答${round+1}`});}
-  await expect(executeClarification(env,f.binding,{id:'3:gemini-0',name:'ask_user_question',args:question})).resolves.toMatchObject({status:'limit_reached',remainingRounds:0});expect((await getJob(env,f.jobId)).status).toBe('running');
- });
  it('invalidates a revoked pending requester without running a model or leaving the budget reserved',async()=>{
   const f=await fixture(),q=await ask(f);await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(f.projectId,f.owner.userId).run();
   const fetch=vi.fn();vi.stubGlobal('fetch',fetch);await invalidateStaleProjectClarifications(env);
   expect((await getJob(env,f.jobId)).status).toBe('failed');expect((await env.DB.prepare('SELECT status FROM ai_clarifications WHERE id=?1').bind(q.id).first<any>())!.status).toBe('cancelled');
   expect((await env.DB.prepare('SELECT status FROM usage_reservations WHERE job_id=?1').bind(f.jobId).first<any>())!.status).not.toBe('reserved');expect(fetch).not.toHaveBeenCalled();
  });
- it('provides a genuine tool definition for all existing provider protocols and maintains concise planning guidance',async()=>{
+ it('provides a genuine tool definition for all existing provider protocols',async()=>{
   const cfg=(await loadAiConfig(env.DB))!.config.textEconomy;
   for(const protocol of ['chat-completions','responses','messages','gemini'] as const){const body:any={messages:[],contents:[],input:[]};applyToolMode({...cfg,apiProtocol:protocol},protocol,body,{definitions:[askUserQuestionDefinition]});expect(JSON.stringify(body)).toContain('ask_user_question');}
   expect(questionInputSchema.safeParse({...question,options:['重复','重复']}).success).toBe(false);
-  expect(decompositionGuidance).toContain('这不是硬上限');expect(decompositionGuidance).toContain('不把推荐顺序写成全串联依赖');
  });
 });

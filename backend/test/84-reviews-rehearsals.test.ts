@@ -250,4 +250,18 @@ describe('答辩演练', () => {
     await runAiJob(env, activeJobId);
     expect(await env.DB.prepare('SELECT id FROM rehearsals WHERE id=?1').bind(created.rehearsalId).first()).toBeNull();
   });
+
+  it('项目成员可列出答辩历史并携带空列表游标契约，非成员被拒绝', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.userId);
+    const list = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals?limit=20`, { headers: { cookie: authCookie(owner.token) } });
+    expect(list.status).toBe(200);
+    const body = (await list.json() as { data: { items: unknown[]; nextCursor: string | null } }).data;
+    expect(body.items).toEqual([]);
+    expect(body.nextCursor).toBeNull();
+    const outsider = await seedUser();
+    await seedProject(outsider.userId);
+    const denied = await SELF.fetch(`${BASE}/api/v1/projects/${pid}/rehearsals`, { headers: { cookie: authCookie(outsider.token) } });
+    expect(denied.status).toBe(403);
+  });
 });
