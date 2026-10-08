@@ -1,7 +1,7 @@
 import { request,projectPath } from '../api/client';
 import type { RequestOptions } from '../api/client';
 export async function documentRequest<T>(path:string,options:RequestOptions={}):Promise<T> {
- return await request<'FileInitResponse'>(path,{...options,networkOnly:true}) as unknown as T;
+ return await request<'FileInitResponse'>(path,{...options,networkOnly:true}) as T;
 }
 export async function uploadMultipartFile(projectId:string,fileId:string,file:File,signal?:AbortSignal,onProgress?:(message:string)=>void) {
  const path=projectPath(projectId,`/files/${fileId}/uploads`);

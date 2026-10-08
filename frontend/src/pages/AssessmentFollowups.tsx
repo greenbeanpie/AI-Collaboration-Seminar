@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectRequest, type Assessment, type AssessmentReport } from '../api/simplification';
+import { assertPage } from '../api/page-contract';
 import { useSession } from '../auth';
 import { ErrorNotice, SectionCard, Spinner, StatusPill } from '../components/ui';
 import { completeIntent, idempotencyKeyForIntent } from './aiWorkflowSupport';
@@ -49,8 +50,9 @@ export function AssessmentFollowups({ projectId, assessment, canCorrect, aiEnabl
   const history = useInfiniteQuery({
     queryKey: key, initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      const page = await projectRequest<FollowupPage>(projectId, path, { query: { limit: 20, cursor: pageParam }, signal, networkOnly: true });
-      if (!Array.isArray(page.items) || page.nextCursor && page.nextCursor === pageParam) throw new Error('追问记录分页无效，请刷新重试。');
+      const response = await projectRequest<FollowupPage>(projectId, path, { query: { limit: 20, cursor: pageParam }, signal, networkOnly: true });
+      const page = assertPage<AssessmentFollowup>(response, { missingItems: () => new Error('追问记录分页无效，请刷新重试。') });
+      if (page.nextCursor && page.nextCursor === pageParam) throw new Error('追问记录分页无效，请刷新重试。');
       return page;
     },
     getNextPageParam: page => page.nextCursor || undefined,

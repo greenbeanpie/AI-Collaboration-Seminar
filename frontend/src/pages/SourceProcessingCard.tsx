@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, projectPath } from '../api/client';
 import { ErrorNotice, StatusPill } from '../components/ui';
 import { createIntentKey } from './source-workflows';
+import { isMediaProcessing } from './media-processing';
 
 const names: Record<string,string> = { pending: '尚未开始', processing: '正在处理', waiting_input: '等待缺页识别', ready: '已完成', failed: '失败，可重试', queued: '已排队', running: '正在生成', cancelled: '已取消' };
 
@@ -15,7 +16,7 @@ export function SourceProcessingCard({ projectId, sourceId, versionId, aiEnabled
   const [error,setError] = useState<unknown>(null); const [submitting,setSubmitting] = useState(false);
   const action = useRef(false); const intent = useRef<{key:string;revision:number}|null>(null);
   const query = useQuery({ queryKey: ['sourceProcessing',projectId,sourceId,versionId], queryFn: () => api.get<'SourceProcessingResponse'>(path), retry: false,
-    refetchInterval: q => document.visibilityState !== 'hidden' && (active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' || (q.state.data?.media?.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(q.state.data?.media?.stage ?? ''))  ) ? 2500 : false,
+    refetchInterval: q => document.visibilityState !== 'hidden' && (active || ['queued','running'].includes(q.state.data?.summaryStatus ?? '') || q.state.data?.textStatus === 'processing' || q.state.data?.requirementsStatus === 'processing' || (q.state.data?.media?.audio?.phase !== 'waiting_config' && isMediaProcessing(q.state.data?.media?.stage))  ) ? 2500 : false,
     refetchIntervalInBackground: false,
   });
   const state = query.data;

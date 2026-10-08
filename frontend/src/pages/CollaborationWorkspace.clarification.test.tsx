@@ -7,7 +7,6 @@ import type { ProjectClarification } from '../api/clarifications';
 
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'project-1', project: { myRole: 'owner' } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { features: { aiEnabled: true } } }) }));
-vi.mock('./ProjectSourceContext', () => ({ ProjectSourceContext: () => null }));
 vi.mock('./ProjectAiTools', () => ({ ProjectSearchOption: () => null, ProjectToolCalls: () => null }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 const question: ProjectClarification = { id: 'question-project', jobId: 'existing-job', question: '谁负责审核最终成果？', reason: '决定分工与验收顺序', options: ['项目负责人', '全体成员'], allowUndecided: true, round: 1, maxRounds: 3, status: 'pending', revision: 5, createdAt: '2026-10-03T08:00:00Z' };

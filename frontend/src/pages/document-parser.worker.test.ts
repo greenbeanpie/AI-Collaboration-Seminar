@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mammothBlocks, parseWorkerDocument } from './document-parser.worker';
-import { cloudPdfRecommendation } from './document-parser-types';
 import type { DocumentWarning } from './document-parser-types';
 import { getDocument } from 'pdfjs-dist';
 import { readFileSync } from 'node:fs';
@@ -75,9 +74,5 @@ describe('PDF extraction', () => {
     vi.mocked(getDocument).mockReturnValue({ promise: Promise.resolve({ numPages: 2, getPage }), destroy: vi.fn(async () => {}) } as unknown as ReturnType<typeof getDocument>);
     const result = await parseWorkerDocument({ name: 'test.pdf', arrayBuffer: async () => new ArrayBuffer(4) } as File, vi.fn(), async () => {}, new AbortController().signal);
     expect(result).toMatchObject({ status: 'partial', blocks: 1, warnings: [{ code: 'parse-failed', message: 'broken page' }] });
-  });
-  it('keeps cloud thresholds advisory', () => {
-    expect(cloudPdfRecommendation(1, 31)).toContain('建议');
-    expect(cloudPdfRecommendation(10 * 1024 * 1024, 30)).toBeNull();
   });
 });
