@@ -22,6 +22,12 @@ export default defineConfig({
   ],
   test: {
     maxWorkers: 4,
+    // These are workerd + D1 + Workflow integration cases, not unit tests: one case can run a
+    // full parse/review pipeline. Under a 4-core CI runner that exceeds vitest's 5s default,
+    // which failed two CI runs with "Test timed out in 5000ms" (70-sources-parse, 82-agents).
+    // draft-execution-continuation already had to raise its own limit to 30s for the same reason.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // Dispose Workflow instances from setup before per-file fetch mocks are removed.
     sequence: { hooks: 'list' },
     // setup 在 worker 运行时内执行：按序应用 migrations/ 下的 D1 迁移
