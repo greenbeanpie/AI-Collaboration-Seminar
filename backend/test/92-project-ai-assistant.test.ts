@@ -7,6 +7,7 @@ import { newId, nowIso } from '../src/core/db';
 import { getJob } from '../src/services/jobs';
 import { reserveAiSlot } from '../src/services/ai-reservations';
 import { runCollaborationAiJob, adjustmentSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
+import { ExecutionPaused, readExecution } from '../src/services/ai-execution-control';
 
 afterEach(() => vi.unstubAllGlobals());
 const request = (token: string, path: string, body?: unknown, method = body ? 'POST' : 'GET', key = newId()) => SELF.fetch(BASE + '/api/v1' + path, { method, headers: { cookie: authCookie(token), 'content-type': 'application/json', 'idempotency-key': key }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -131,8 +132,11 @@ describe('bounded owner task instructions', () => {
     expect(adjustmentSchema.safeParse({ tasks: [], updates: [], deleteProject: true }).success).toBe(false);
     const f = await fixture();
     provider({ tasks: [], updates: [update(newId())] });
-    await runCollaborationAiJob(env, f.jobId);
-    expect((await getJob(env, f.jobId)).status).toBe('failed');
+    // A scope-escaping update is repairable model output: after the bounded repair it pauses for an
+    // explicit resume instead of applying, so no privileged edit ever reaches the task.
+    await expect(runCollaborationAiJob(env, f.jobId)).rejects.toBeInstanceOf(ExecutionPaused);
+    expect((await getJob(env, f.jobId)).status).toBe('waiting_input');
+    expect(await readExecution(env, { kind: 'job', id: f.jobId })).toMatchObject({ state: 'paused', pauseReason: 'output_invalid' });
     expect((await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1').bind(f.taskId).first<{ revision: number }>())?.revision).toBe(1);
   });
 });

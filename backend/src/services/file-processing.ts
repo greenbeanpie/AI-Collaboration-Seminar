@@ -28,7 +28,24 @@ async function file(env:Env,projectId:string,fileId:string,actorId:string):Promi
  .bind(projectId,fileId,actorId).first<FileRow>();
  if(!row)throw notFound('文件不可用、已归档或没有项目访问权限');return row;
 }
+/**
+ * Bridge artifacts are transport payloads owned by one handoff: they are outputs, never project
+ * inputs, so they must not create sources, extracted text or background jobs. Reporting them as
+ * "not applicable" keeps the file library honest instead of failing as an inaccessible file.
+ */
+async function bridgeArtifactView(env:Env,projectId:string,fileId:string,actorId:string):Promise<FileProcessingView|null>{
+ const row=await env.DB.prepare(`SELECT f.lifecycle_version FROM files f JOIN agent_bridge_artifacts a ON a.file_id=f.id
+ WHERE f.id=?1 AND f.project_id=?2 AND f.status='available' AND f.deleted_at IS NULL
+ AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=?3)`)
+ .bind(fileId,projectId,actorId).first<{lifecycle_version:number}>();
+ if(!row)return null;
+ return {fileId,lifecycleVersion:row.lifecycle_version,sourceId:null,sourceVersionId:null,jobId:null,
+ textStatus:'not_applicable',summaryStatus:'not_applicable',requirementsStatus:'not_applicable',error:null,
+ materialIds:[],textAvailable:false,canProcess:false,needsImages:0,jobStatus:null,executionState:null,
+ concurrency:{active:0,limit:LIMITS.concurrentAiTasksPerProject},errorIsHistorical:false,waitingForConcurrency:false};
+}
 export async function readFileProcessing(env:Env,projectId:string,fileId:string,actorId:string):Promise<FileProcessingView>{
+ const artifact=await bridgeArtifactView(env,projectId,fileId,actorId);if(artifact)return artifact;
  const f=await file(env,projectId,fileId,actorId);
  const row=await env.DB.prepare(`SELECT b.*,s.purpose,p.text_status,p.summary_status,p.requirements_status,p.summary_error,p.requirements_error,v.parse_error,
  (SELECT COUNT(*) FROM source_pages WHERE source_version_id=b.source_version_id AND text_status='none' AND ocr_status!='ok') needs_images,
@@ -54,6 +71,7 @@ export async function readFileProcessing(env:Env,projectId:string,fileId:string,
  textAvailable:!!row?.preview?.trim()&&!isMediaExtension(f.ext),canProcess:!!f.can_process,needsImages:row?.needs_images??0,...(row?.preview?{textPreview:row.preview.slice(0,2000)}:{})};
 }
 export async function ensureFileProcessing(env:Env,projectId:string,fileId:string,actorId:string,options:{expectedLifecycleVersion?:number;retry?:boolean;automatic?:boolean}={}):Promise<FileProcessingView>{
+ const artifact=await bridgeArtifactView(env,projectId,fileId,actorId);if(artifact)return artifact;
  const f=await file(env,projectId,fileId,actorId);
  if(!f.can_process)throw permissionDenied('需要文件管理权限');
  if(options.expectedLifecycleVersion!==undefined&&options.expectedLifecycleVersion!==f.lifecycle_version)throw invalidState('文件生命周期已变化，请刷新');
@@ -116,6 +134,7 @@ export async function backfillFileProcessing(env:Env,projectId?:string,limit=20)
  AND ${eligibleActor} IS NOT NULL
  AND f.ext IN ('.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm')
  AND NOT EXISTS(SELECT 1 FROM file_derivations WHERE file_id=f.id)
+ AND NOT EXISTS(SELECT 1 FROM agent_bridge_artifacts artifact WHERE artifact.file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM source_pages WHERE image_file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM file_processing b WHERE b.file_id=f.id AND b.lifecycle_version=f.lifecycle_version AND b.attempted=1 AND NOT EXISTS(SELECT 1 FROM jobs j JOIN source_processing sp ON sp.source_version_id=b.source_version_id WHERE j.id=b.job_id AND j.status='succeeded' AND json_extract(j.input_json,'$.operation')='source.text' AND sp.requirements_status='pending'))
  ORDER BY f.created_at LIMIT ?2`).bind(projectId??null,Math.min(100,Math.max(1,limit))).all<{id:string;project_id:string;uploader_user_id:string}>();
