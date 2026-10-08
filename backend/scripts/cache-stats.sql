@@ -1,4 +1,4 @@
--- Read-only; run with wrangler d1 execute <database> --remote --file scripts/cache-stats.sql.
+-- Read-only; the Windows command is documented in cache-context.md.
 -- Missing cache usage is excluded from the cache-rate denominator and shown in coverage.
 -- repeatedReads counts repeated tool-read attempts for each call's step, not a cumulative total.
 SELECT
