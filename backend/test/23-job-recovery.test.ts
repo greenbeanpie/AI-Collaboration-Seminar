@@ -4,7 +4,7 @@ import { handleScheduled, recoverJobs } from '../src/cron';
 import { env } from './helpers/env';
 import { newId, nowIso } from '../src/core/db';
 import { seedProject, seedUser } from './helpers/seed';
-import { assertNotTerminal, failJob, getJob, succeedJob, reconcileWorkflowJob } from '../src/services/jobs';
+import { failJob, getJob, succeedJob, reconcileWorkflowJob } from '../src/services/jobs';
 
 const seededJobIds: string[] = [];
 
@@ -60,12 +60,6 @@ describe('A07 任务恢复与重复执行边界', () => {
     const job = await getJob(env, jobId);
     expect(job.status).toBe('failed');
     expect(job.error_json).toContain('AI_UNAVAILABLE');
-  });
-
-  it('assertNotTerminal 对终态任务抛出 INVALID_STATE', async () => {
-    const { jobId } = await seedJob('running');
-    await succeedJob(env, jobId, { ok: true });
-    await expect(assertNotTerminal(env, jobId)).rejects.toMatchObject({ code: 'INVALID_STATE' });
   });
 
   it('outbox 租约只允许一次抢占，租约过期后才可再次抢占', async () => {

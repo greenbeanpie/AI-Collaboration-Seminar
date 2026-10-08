@@ -68,6 +68,11 @@ const capabilitiesRoute = createRoute({
   },
 });
 
+/** D1 表尚未建立（如纯 M0 环境）时的唯一可容忍错误。 */
+function isMissingTableError(error: unknown): boolean {
+  return error instanceof Error && /no such table/i.test(error.message);
+}
+
 /** 读取最新 AI 配置版本的启用状态；表尚未建立（如纯 M0 环境）时按未启用处理 */
 async function isAiEnabled(db: D1Database): Promise<boolean> {
   try {
@@ -75,7 +80,8 @@ async function isAiEnabled(db: D1Database): Promise<boolean> {
       .prepare('SELECT enabled FROM ai_config_versions ORDER BY version DESC LIMIT 1')
       .first<{ enabled: number }>();
     return row?.enabled === 1;
-  } catch {
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
     return false;
   }
 }
@@ -89,7 +95,8 @@ async function competitionTemplate(db: D1Database): Promise<{ teamSizeLimit: num
     if (!row) return { teamSizeLimit: null };
     const parsed = JSON.parse(row.value_json) as { teamSizeLimit?: number };
     return { teamSizeLimit: typeof parsed.teamSizeLimit === 'number' ? parsed.teamSizeLimit : null };
-  } catch {
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
     return { teamSizeLimit: null };
   }
 }
@@ -100,7 +107,7 @@ async function competitionTemplate(db: D1Database): Promise<{ teamSizeLimit: num
  */
 export function registerCapabilitiesRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(capabilitiesRoute, async (c) => {
-    const [aiEnabled, template, mediaConfig] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB), loadAiConfig(c.env.DB).catch(()=>null)]);
+    const [aiEnabled, template, mediaConfig] = await Promise.all([isAiEnabled(c.env.DB), competitionTemplate(c.env.DB), loadAiConfig(c.env.DB).catch(error => { if (isMissingTableError(error)) return null; throw error; })]);
     const videoSummaryEnabled = Boolean(mediaConfig&&!mediaRouteError(c.env,mediaConfig,'video/mp4'));
     const audioSummaryEnabled = Boolean(mediaConfig&&!mediaRouteError(c.env,mediaConfig,'audio/mpeg'));
     const audioTranscriptionEnabled = Boolean(mediaConfig?.enabled && (mediaConfig.config.processingStrategies?.audioFiles ?? (mediaConfig.config.audioProcessingStrategy==='gemini-only'?'media-only':'whisper-first')) === 'whisper-first' && c.env.AI);

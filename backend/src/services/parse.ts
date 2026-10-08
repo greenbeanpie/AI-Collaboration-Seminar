@@ -188,8 +188,7 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
       if (LIMITS.maxPdfPages !== null && pageCount > LIMITS.maxPdfPages) {
         throw new AppError('SOURCE_PARSE_FAILED', `PDF 超过 ${LIMITS.maxPdfPages} 页限制`, 422, false, { pageCount });
       }
-      const texts = Array.isArray(result.text) ? result.text : [result.text];
-      perPage = texts.map((t, i) => ({ pageNumber: i + 1, text: t ?? '' }));
+      perPage = result.text.map((t, i) => ({ pageNumber: i + 1, text: t }));
     } else if (file.ext === '.txt' || file.ext === '.md') {
       pageCount = 1;
       perPage = [{ pageNumber: 1, text: new TextDecoder().decode(bytes) }];

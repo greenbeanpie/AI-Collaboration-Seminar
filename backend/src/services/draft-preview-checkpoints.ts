@@ -47,41 +47,6 @@ export function draftTextPrefix(text:string,maxUnits:number):string {
   if(end>0&&/[\uD800-\uDBFF]/u.test(text[end-1]!))end--;
   return text.slice(0,end);
 }
-/** Dropped tool text remains in immutable document blocks and can be read again. */
-export function compactDraftHistory(state:DraftPreviewCheckpoint,budget:number,metadataBudget=12000):void {
-  let size=state.exchanges.reduce((n,e)=>n+JSON.stringify(e).length,0);
-  state.readProgress??=[];state.clarificationProgress??=[];
-  while(state.exchanges.length&&size>Math.max(0,budget)) {
-    const old=state.exchanges.shift()!;size-=JSON.stringify(old).length;
-    for(const result of old.results) {
-      if(result.call.name==='read_draft_document') {
-        const args=result.call.args as {fileId?:unknown;offset?:unknown;charOffset?:unknown}|null;
-        const output=result.output as {nextOffset?:number|null;nextCharOffset?:number;blocks?:Array<{locator:string;pageNumber:number|null}>}|null;
-        if(!args||typeof args.fileId!=='string'||args.fileId.length>100)continue;
-        const previous=state.readProgress.find(p=>p.fileId===args.fileId);
-        const locators=[...(previous?.locators??[]),...(output?.blocks??[]).map(b=>({locator:draftTextPrefix(String(b.locator),100),pageNumber:b.pageNumber}))];
-        const unique=new Map(locators.map(l=>[l.locator,l]));
-        const progress={fileId:args.fileId,lastOffset:Number(args.offset)||0,lastCharOffset:Number(args.charOffset)||0,nextOffset:typeof output?.nextOffset==='number'?output.nextOffset:null,nextCharOffset:Number(output?.nextCharOffset)||0,locators:[...unique.values()].slice(-50)};
-        state.readProgress=state.readProgress.filter(p=>p.fileId!==args.fileId);state.readProgress.push(progress);state.readProgress=state.readProgress.slice(-10);
-      }else if(result.call.name==='ask_user_question') {
-        // Clarification rounds are bounded separately; retain their answers as data.
-        state.clarificationProgress.push({question:draftTextPrefix(JSON.stringify(result.call.args)??'null',1000),result:draftTextPrefix(JSON.stringify(result.output)??'null',2000)});
-        state.clarificationProgress=state.clarificationProgress.slice(-3);
-      }
-    }
-  }
-  // Also bound migrated metadata and invalid-output feedback before every save.
-  state.readProgress=state.readProgress.slice(-10).map(p=>({...p,locators:p.locators.slice(-50)}));
-  state.clarificationProgress=state.clarificationProgress.slice(-3);
-  while(JSON.stringify({reads:state.readProgress,clarifications:state.clarificationProgress}).length>metadataBudget) {
-    const withLocators=state.readProgress.find(p=>p.locators.length>0);
-    if(withLocators){withLocators.locators.shift();continue;}
-    if(state.clarificationProgress.length){state.clarificationProgress.shift();continue;}
-    if(state.readProgress.length){state.readProgress.shift();continue;}
-    break;
-  }
-  if(state.feedback)state.feedback=draftTextPrefix(state.feedback,2000);
-}
 interface Envelope { format:'encrypted-draft-preview-v1';chunks:string[] }
 export class DraftCheckpointBusy extends Error {
   constructor() { super('同一预览已由另一请求处理；请刷新状态'); this.name='DraftCheckpointBusy'; }

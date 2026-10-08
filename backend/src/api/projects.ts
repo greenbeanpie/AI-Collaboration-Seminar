@@ -5,7 +5,7 @@ import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { newId, nowIso } from '../core/db';
-import { notFound, permissionDenied, validationFailed, versionConflict } from '../core/errors';
+import { notFound, permissionDenied, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
 import { recordEvent } from '../services/events';
@@ -236,8 +236,6 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
       .first<ProjectRow>();
     if (!current) throw notFound('项目不存在');
     if (current.revision !== body.expectedRevision) throw versionConflict(current.revision);
-
-    if (body.status && body.status !== 'active' && body.status !== 'archived') throw validationFailed();
 
     const updated = await c.env.DB.prepare(
       `UPDATE projects SET

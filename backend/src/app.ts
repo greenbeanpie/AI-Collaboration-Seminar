@@ -86,7 +86,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   app.use('*', requireAllowedOrigin);
 
   app.onError((err, c) => {
-    const requestId = c.get('requestId') ?? crypto.randomUUID();
+    const requestId = c.get('requestId');
     if(isD1DailyQuotaError(err)){const failure=d1QuotaError();c.header('Retry-After',String(Math.max(1,Math.ceil((Date.parse(String(failure.details!.resetAt))-Date.now())/1000))));return c.json(failureBody(failure.code,failure.message,failure.retryable,requestId,failure.details),503);}
     if (err instanceof AppError) {
       if (err.status >= 500) {
@@ -99,7 +99,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   });
 
   app.notFound((c) => {
-    const requestId = c.get('requestId') ?? crypto.randomUUID();
+    const requestId = c.get('requestId');
     return c.json(failureBody('NOT_FOUND', '接口不存在', false, requestId), 404);
   });
 

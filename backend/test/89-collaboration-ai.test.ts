@@ -8,7 +8,7 @@ import { assignmentOutputSchema } from '../src/services/assignment';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { reserveAiSlot } from '../src/services/ai-reservations';
 import { getJob } from '../src/services/jobs';
-import { applyProposal, decideSubmission, pendingTaskHumanReview, toSubmission, type Submission } from '../src/services/collaboration';
+import { applyProposal, decideSubmission, toSubmission, type Submission } from '../src/services/collaboration';
 import { continueConfirmedPlan, runCollaborationAiJob, assessEvidence, taskEvaluationSchema, decompositionSchema, type CollaborationAiInput } from '../src/services/collaboration-ai';
 afterEach(async () => { vi.unstubAllGlobals(); await env.DB.prepare("UPDATE ai_execution_policy SET max_model_calls=100 WHERE id='global'").run(); });
 await configureGoFixture();
@@ -88,7 +88,6 @@ describe('artifact-only evaluation safety', () => {
         expect(JSON.parse(persisted!.ai_report_json)).toMatchObject({ coverage: 'needs_human' });
         expect(JSON.parse(persisted!.ai_report_json).manualReviewReason).toContain('附件');
         expect(JSON.parse(persisted!.ai_report_json).humanReview).toMatchObject({status:'pending',reasonCodes:['unread_attachments']});
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
         expect((await env.DB.prepare('SELECT status FROM tasks WHERE id=?1').bind(f.taskId).first<{
             status: string;
         }>())?.status).toBe('done');
@@ -100,7 +99,6 @@ describe('artifact-only evaluation safety', () => {
         await env.DB.prepare('INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) VALUES(?1,?2,?3,?4)').bind(f.projectId,dependent,f.taskId,stamp()).run();
         vi.stubGlobal('fetch',model(report(f.versionId)));
         await runCollaborationAiJob(env,f.jobId);
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
         expect((await env.DB.prepare('SELECT ready FROM task_readiness_current WHERE task_id=?1').bind(dependent).first<{ready:number}>())?.ready).toBe(1);
         const saved=await env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(f.submissionId).first<Submission>();
         expect(toSubmission(saved!).pendingHumanReview).toBe(true);
@@ -112,7 +110,6 @@ describe('artifact-only evaluation safety', () => {
         await runCollaborationAiJob(env,f.jobId);
         const saved=await env.DB.prepare('SELECT revision FROM task_submissions WHERE id=?1').bind(f.submissionId).first<{revision:number}>();
         await decideSubmission(env,f.projectId,f.submissionId,saved!.revision,decision,'人工核验完成',f.user.userId);
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
         const submission=await env.DB.prepare('SELECT * FROM task_submissions WHERE id=?1').bind(f.submissionId).first<Submission>();
         expect(toSubmission(submission!).pendingHumanReview).toBe(false);
         expect(JSON.parse(submission!.ai_report_json!).humanReview).toMatchObject({status:'resolved',decision,decidedBy:f.user.userId});
@@ -127,14 +124,12 @@ describe('artifact-only evaluation safety', () => {
         vi.stubGlobal('fetch',model({...report(f.versionId),...patch}));
         await runCollaborationAiJob(env,f.jobId);
         expect(JSON.parse((await getJob(env,f.jobId)).result_json!).autoApplied).toBe(false);
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
     });
     it('manual evaluation mode still requires an explicit decision for external references',async()=>{
         const f=await fixture('manual',[{fileId:id()}]);
         vi.stubGlobal('fetch',model(report(f.versionId)));
         await runCollaborationAiJob(env,f.jobId);
         expect(JSON.parse((await getJob(env,f.jobId)).result_json!).autoApplied).toBe(false);
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
     });
     it('a human decision during the model call wins over provisional acceptance',async()=>{
         const f=await fixture('automatic',[{fileId:id()}]);
@@ -143,7 +138,6 @@ describe('artifact-only evaluation safety', () => {
         }));
         await runCollaborationAiJob(env,f.jobId);
         expect((await getJob(env,f.jobId)).status).toBe('failed');
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(false);
         expect((await env.DB.prepare('SELECT status,ai_report_json FROM task_submissions WHERE id=?1').bind(f.submissionId).first())).toMatchObject({status:'rework',ai_report_json:null});
     });
     it('API exposes pending review on task list/detail and submission history, then clears after human confirmation',async()=>{
@@ -172,7 +166,6 @@ describe('artifact-only evaluation safety', () => {
         vi.stubGlobal('fetch',fetchMock);
         await runCollaborationAiJob(env,f.jobId);
         expect(fetchMock).not.toHaveBeenCalled();
-        expect(await pendingTaskHumanReview(env,f.projectId,f.taskId)).toBe(true);
     });
     it('an unrelated unfinished task does not block automatic acceptance', async () => {
         const f = await fixture('automatic');

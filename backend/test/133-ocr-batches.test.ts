@@ -9,7 +9,7 @@ import { env, BASE } from './helpers/env';
 import { seedProject, seedUser, authCookie } from './helpers/seed';
 import { configureGoFixture } from './helpers/provider-config';
 import { extractSourceVersionText, ocrPendingPages } from '../src/services/parse';
-import { ocrBatchSize, ocrContext, parseOcrBatch, removeOcrDuplicates, summaryBoundaryContext } from '../src/services/ocr-batches';
+import { ocrBatchSize, ocrContext, parseOcrBatch, removeOcrDuplicates } from '../src/services/ocr-batches';
 import { gatewayChat } from '../src/ai/gateway';
 import { aiModelConfigSchema } from '../src/ai/config';
 
@@ -51,7 +51,6 @@ describe('bounded OCR batches',()=>{
   it('rejects duplicate, foreign and malformed pages without discarding valid neighbours',()=>{
     expect(parseOcrBatch({pages:[{pageNumber:1,text:'甲'},{pageNumber:1,text:'乙'},{pageNumber:2,text:'有效'},{pageNumber:3,text:''},{pageNumber:8,text:'外部'}]},[1,2,3])).toEqual([{pageNumber:2,text:'有效',confidence:null,unrecognizedRegions:[]}]);
     expect(removeOcrDuplicates('已有文字\n新文字',['已有 文字'])).toBe('新文字');
-    expect(summaryBoundaryContext([[{id:'a',page_number:1,content:'abcd'}],[{id:'b',page_number:2,content:'efgh'}]],1,2)[0]?.content).toBe('cd');
   });
   it('uploads three images in one request with bounded previous-page context and audit',async()=>{
     const f=await fixture();const fetch=vi.fn(async(_input: RequestInfo | URL, _init?: RequestInit)=>response({pages:[2,3,4].map(pageNumber=>({pageNumber,text:`第${pageNumber}页内容`,confidence:.9}))}));vi.stubGlobal('fetch',fetch);

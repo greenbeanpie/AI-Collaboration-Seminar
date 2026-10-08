@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { nowIso } from '../core/db';
-import { invalidState, notFound, permissionDenied } from '../core/errors';
+import { invalidState, notFound } from '../core/errors';
 import { readProjectSourceContext } from './collaboration-context';
 import { docToMarkdown, isTiptapDoc } from './tiptap';
 
@@ -33,16 +33,6 @@ export function projectBackgroundStatements(env: Env, projectId: string, descrip
         AND NOT EXISTS(SELECT 1 FROM material_versions WHERE material_id=?2)
       ON CONFLICT DO NOTHING`).bind(versionId, materialId, projectId, JSON.stringify(doc), description, actorId, createdAt),
   ];
-}
-
-/** Idempotent repair helper; never replaces a user's edited background. */
-export async function ensureProjectBackground(env: Env, projectId: string, description: string, actorId: string): Promise<{ materialId: string; versionId: string } | null> {
-  if (!description.trim()) return null;
-  if (!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(projectId, actorId).first()) throw permissionDenied();
-  await env.DB.batch(projectBackgroundStatements(env, projectId, description, actorId));
-  const row = await env.DB.prepare('SELECT id,current_version_id FROM materials WHERE project_id=?1 AND is_default_background=1').bind(projectId).first<{ id: string; current_version_id: string }>();
-  if (!row) throw invalidState('项目背景未保存，请重新读取项目');
-  return { materialId: row.id, versionId: row.current_version_id };
 }
 
 export interface ResourceVersionText {

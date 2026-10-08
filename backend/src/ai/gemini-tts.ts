@@ -1,8 +1,7 @@
-import { AppError, aiUnavailable, validationFailed } from '../core/errors';
+import { AppError } from '../core/errors';
 
 export const TTS_MODELS = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'] as const;
 export const TTS_VOICES = ['Kore', 'Aoede', 'Puck'] as const;
-const JSON_LIMIT = 20 * 1024 * 1024;
 export const TTS_AUDIO_LIMIT = 10 * 1024 * 1024;
 export interface GeminiSpeechRequest {
   accountId: string; gatewayId: string; gatewayToken: string;
@@ -38,46 +37,4 @@ export function inspectSpeechWav(bytes: Uint8Array): number {
   const duration = dataBytes / rate;
   if (offset !== bytes.length || !formatSeen || !dataSeen || !dataBytes || dataBytes % alignment !== 0 || !Number.isFinite(duration) || duration <= 0 || duration > 600) throw invalid('TTS WAV 缺少有效音频或超过十分钟');
   return duration;
-}
-
-async function boundedJson(response: Response): Promise<unknown> {
-  if (Number(response.headers.get('content-length')) > JSON_LIMIT) { await response.body?.cancel(); throw invalid('TTS 响应超过大小限制'); }
-  if (!response.body) throw invalid('TTS 未返回内容');
-  const reader = response.body.getReader(), chunks: Uint8Array[] = []; let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      total += value.length; if (total > JSON_LIMIT) { await reader.cancel(); throw invalid('TTS 响应超过大小限制'); }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  const bytes = new Uint8Array(total); let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-  try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { throw invalid('TTS 返回了无效 JSON'); }
-}
-const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
-/** One attempt only. Durable job retries own the recovery policy. */
-export async function geminiSpeech(input: GeminiSpeechRequest, request: typeof fetch = fetch): Promise<GeminiSpeechOutput> {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.accountId) || !/^[a-z0-9-]{1,64}$/.test(input.gatewayId) || !TTS_MODELS.includes(input.model) || !TTS_VOICES.includes(input.voice)) throw validationFailed('TTS Gateway 或模型配置无效');
-  if (!input.text.trim() || input.text.length > 8000) throw validationFailed('朗读正文必须为 1 至 8000 字符，不会截断');
-  if (!input.gatewayToken || /[\x00-\x20\x7f]/.test(input.gatewayToken)) throw validationFailed('TTS Gateway 认证配置无效');
-  const url = `https://gateway.ai.cloudflare.com/v1/${input.accountId}/${input.gatewayId}/google-ai-studio/v1beta/interactions`;
-  let response: Response;
-  try {
-    response = await request(url, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(90_000),
-      headers: { 'content-type': 'application/json', 'cf-aig-authorization': `Bearer ${input.gatewayToken}`, 'cf-aig-skip-cache': 'true', 'cf-aig-collect-log': 'false' },
-      body: JSON.stringify({ model: input.model, input: [{ type: 'user_input', content: [{ type: 'text', text: input.text }] }], response_format: { type: 'audio', mime_type: 'audio/wav' }, generation_config: { speech_config: [{ voice: input.voice }] } }),
-    });
-  } catch { throw aiUnavailable('TTS Gateway 请求失败或超时；本次结果未知', { cause: 'network_error' }); }
-  if (!response.ok) { await response.body?.cancel(); throw new AppError('AI_UNAVAILABLE', response.status===402?'后台模型余额不足，请等待或联系管理员处理':`TTS Gateway 请求失败（HTTP ${response.status}）`, 502, [429,500,502,503,504].includes(response.status), { status: response.status }); }
-  const data = object(await boundedJson(response));
-  if (data.status !== 'completed' || !Array.isArray(data.steps)) throw invalid('TTS 未完整生成音频');
-  const audio = data.steps.flatMap(step => { const value = object(step); return value.type === 'model_output' && Array.isArray(value.content) ? value.content : []; }).filter(part => object(part).type === 'audio');
-  if (audio.length !== 1) throw invalid('TTS 必须返回一个完整音频');
-  const part = object(audio[0]);
-  if (part.mime_type !== 'audio/wav' || typeof part.data !== 'string' || !part.data || part.data.length > Math.ceil(TTS_AUDIO_LIMIT / 3) * 4 || part.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(part.data)) throw invalid('TTS 音频格式或编码无效');
-  let decoded: string; try { decoded = atob(part.data); } catch { throw invalid('TTS 音频编码无效'); }
-  const bytes = Uint8Array.from(decoded, char => char.charCodeAt(0));
-  return { bytes, mime: 'audio/wav', durationSeconds: inspectSpeechWav(bytes), usage: data.usage ?? null };
 }

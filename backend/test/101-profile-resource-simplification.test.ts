@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { registerResourceRoutes } from '../src/api/resources';
-import { ensureProjectBackground, loadResourceVersionText } from '../src/services/resources';
+import { loadResourceVersionText, projectBackgroundStatements } from '../src/services/resources';
 import { profileStamp, recommendationDispatch } from '../src/services/personal-profiles';
 import { loadAiConfig } from '../src/ai/config';
 import { configureGoFixture } from './helpers/provider-config';
@@ -13,6 +13,14 @@ const profilePath = '/api/v1/auth/personal-profile';
 const blank = { searchable: false, aiUseAllowed: false, bio: '', major: '', specialties: '', preferredRoles: '', visibility: { bio: false, major: false, specialties: false, preferredRoles: false }, expectedRevision: 0 };
 const headers = (token: string) => ({ cookie: authCookie(token), 'content-type': 'application/json', 'X-Account-Settings': '1' });
 const saveProfile = (token: string, body: object) => SELF.fetch(BASE + profilePath, { method: 'PUT', headers: headers(token), body: JSON.stringify(body) });
+
+/** Test-only stand-in for the removed repair helper: create/inspect the default background through the production statement builder. */
+async function seedBackground(projectId: string, description: string, actorId: string) {
+  if (!description.trim()) return null;
+  await env.DB.batch(projectBackgroundStatements(env, projectId, description, actorId));
+  const row = await env.DB.prepare('SELECT id,current_version_id FROM materials WHERE project_id=?1 AND is_default_background=1').bind(projectId).first<{ id: string; current_version_id: string }>();
+  return { materialId: row!.id, versionId: row!.current_version_id };
+}
 
 async function candidate(userId: string, projectId: string, major: string, hours: number | null = 0) {
   const id = crypto.randomUUID();
@@ -107,22 +115,22 @@ async function readySource(projectId: string, userId: string, text: string, id =
 describe('unified resource library and editable background', () => {
   it('initializes a background once and retains edited immutable versions when called again', async () => {
     const owner = await seedUser(), project = await seedProject(owner.userId);
-    const background = (await ensureProjectBackground(env,project,'原始背景\n第二行',owner.userId))!;
-    expect(await ensureProjectBackground(env,project,'不应覆盖',owner.userId)).toEqual(background);
+    const background = (await seedBackground(project,'原始背景\n第二行',owner.userId))!;
+    expect(await seedBackground(project,'不应覆盖',owner.userId)).toEqual(background);
     const note = await SELF.fetch(`${BASE}/api/v1/projects/${project}/materials/${background.materialId}`,{method:'PUT',headers:headers(owner.token),body:JSON.stringify({expectedRevision:1,doc:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'修改后的背景'}]}]}})});
     expect(note.status).toBe(201); const version = (await note.json() as any).data.versionId;
-    expect(await ensureProjectBackground(env,project,'再次创建不可覆盖',owner.userId)).toEqual({materialId:background.materialId,versionId:version});
+    expect(await seedBackground(project,'再次创建不可覆盖',owner.userId)).toEqual({materialId:background.materialId,versionId:version});
     expect((await loadResourceVersionText(env,project,'material',background.versionId)).text).toContain('原始背景');
     expect((await loadResourceVersionText(env,project,'material',version)).text).toBe('修改后的背景');
     expect((await env.DB.prepare('SELECT COUNT(*) n FROM materials WHERE project_id=?1 AND is_default_background=1').bind(project).first())?.n).toBe(1);
-    expect(await ensureProjectBackground(env,project,'  ',owner.userId)).toBeNull();
+    expect(await seedBackground(project,'  ',owner.userId)).toBeNull();
   });
 
   it('paginates mixed resources with same IDs and timestamps, filters purposes, and preserves source version identity', async () => {
     const owner = await seedUser(), project = await seedProject(owner.userId);
     const source = await readySource(project,owner.userId,'全文证据，不截断');
     await env.DB.prepare("INSERT INTO materials(id,project_id,title,kind,created_by,created_at,updated_at) VALUES(?1,?2,'输出资料','document',?3,'2026-10-02T00:00:00.000Z','2026-10-02T00:00:00.000Z')").bind(source.id,project,owner.userId).run();
-    await ensureProjectBackground(env,project,'背景',owner.userId);
+    await seedBackground(project,'背景',owner.userId);
     let cursor: string | null = null; const found: string[] = [];
     do {
       const response = await resourceRequest(`/api/v1/projects/${project}/resource-library?limit=1${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`,owner.token);
@@ -142,7 +150,7 @@ describe('unified resource library and editable background', () => {
 
   it('purpose changes share the editor CAS while retaining the existing immutable material version', async () => {
     const owner=await seedUser(), project=await seedProject(owner.userId);
-    const note=(await ensureProjectBackground(env,project,'固定旧版本',owner.userId))!;
+    const note=(await seedBackground(project,'固定旧版本',owner.userId))!;
     const path=`/api/v1/projects/${project}/resource-library/material/${note.materialId}`;
     const changed=await resourceRequest(path,owner.token,'PATCH',{purpose:'reference',expectedRevision:1});
     expect(changed.status).toBe(200); expect((await changed.json() as any).data).toMatchObject({revision:2,currentVersionId:note.versionId,purpose:'reference'});

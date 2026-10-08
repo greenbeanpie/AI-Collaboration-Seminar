@@ -34,13 +34,6 @@ export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string
     WHERE ai_automatic_retries.status IN ('dispatching','dispatched')`)
     .bind(jobId,failedAt,due,error.message.slice(0,500),JSON.stringify(error));
 }
-/** Standalone scheduling verifies the stored failure before inserting. */
-export async function scheduleAutomaticJobRetry(env:Env,jobId:string,error:{code:string;message:string;details?:unknown}):Promise<void> {
-  if(!isAutomaticAiFailure(error.code)) return;
-  const job=await env.DB.prepare("SELECT updated_at FROM jobs WHERE id=?1 AND status='failed'").bind(jobId).first<{updated_at:string}>();
-  if(!job) return;
-  await prepareAutomaticJobRetry(env,jobId,error,job.updated_at)?.run();
-}
 export async function scheduleAutomaticDraftRetry(env:Env,draftId:string,attemptId:string,error:unknown):Promise<void> {
   if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code) || error.details?.status===402 || error.message==='后台模型余额不足，请等待或联系管理员处理') return;
   const draft=await env.DB.prepare("SELECT 1 FROM project_creation_drafts WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND preview_state='failed' AND preview_waiting_id IS NULL").bind(draftId,attemptId).first();

@@ -53,9 +53,6 @@ export interface Submission {
     created_at: string;
     updated_at: string;
 }
-export async function pendingTaskHumanReview(env: Env, projectId: string, taskId: string): Promise<boolean> {
-    return !!await env.DB.prepare("SELECT 1 FROM tasks t JOIN task_submissions s ON s.id=t.current_submission_id AND s.task_id=t.id AND s.project_id=t.project_id WHERE t.id=?1 AND t.project_id=?2 AND t.status='done' AND t.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending'").bind(taskId,projectId).first();
-}
 export const toSubmission = (r: Submission) => ({ pendingHumanReview: r.status === 'accept' && !!r.ai_report_json && JSON.parse(r.ai_report_json).humanReview?.status === 'pending', submissionId: r.id, taskId: r.task_id, round: r.round, submittedBy: r.submitted_by, body: r.body, materialVersionIds: JSON.parse(r.material_versions_json) as string[], criteria: r.criteria, status: r.status, aiDecision: r.ai_decision, aiFeedback: r.ai_feedback, aiReport: r.ai_report_json ? JSON.parse(r.ai_report_json) : null, humanScoreOverride: r.human_score_override_json ? JSON.parse(r.human_score_override_json) : null, decision: r.decision, feedback: r.feedback, evaluationJobId: r.evaluation_job_id, evaluationAttempts: r.evaluation_attempts, revision: r.revision, createdAt: r.created_at, updatedAt: r.updated_at });
 export interface Proposal {
     id: string;

@@ -1,7 +1,6 @@
 import { MULTIMODAL_LIMITS } from '../ai/multimodal-limits';
 import { z } from 'zod';
 import { AppError } from '../core/errors';
-import type { DocumentFragment } from './document-chunks';
 
 export const ocrPageSchema = z.object({
   pageNumber: z.number().int().positive(), text: z.string().max(20000).default(''),
@@ -43,13 +42,4 @@ export function removeOcrDuplicates(text: string, existing: string[]): string {
   const normalize = (s: string) => s.replace(/\s+/gu, '').toLowerCase();
   const known = existing.map(normalize);
   return text.split(/\n+/u).filter(line => { const n = normalize(line); return n && !known.some(content => content.includes(n)); }).join('\n');
-}
-/** Context is read, citable original text; callers count coverage on core chunks only. */
-export function summaryBoundaryContext<T extends DocumentFragment>(chunks: T[][], index: number, limit: number): T[] {
-  if (!limit) return [];
-  const previous = chunks[index - 1]?.at(-1); const next = chunks[index + 1]?.[0];
-  const tail = previous?.content.slice(-limit).replace(/^[\uDC00-\uDFFF]/u, '');
-  const head = next?.content.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, '');
-  return [previous ? { ...previous, content: tail! } : null,
-    next ? { ...next, content: head! } : null].filter((f): f is T => f !== null);
 }

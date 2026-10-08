@@ -104,8 +104,6 @@ export async function tryDispatchJob(env: Env, jobId: string): Promise<'dispatch
   if ((claim.meta?.changes ?? 0) === 0) return 'deferred';
 
   try {
-    const job = await getJob(env, jobId);
-    await assertDispatchActive(env, jobId);
     {
       await ensureInitialExecutionSlice(env,jobId);
       const slice=await activeExecutionSlice(env,jobId);
@@ -190,15 +188,6 @@ export async function waitJobInput(env: Env, jobId: string, result: unknown): Pr
     .bind(jobId, JSON.stringify(result ?? null), nowIso())
     .run();
   if ((transition.meta?.changes ?? 0)>0) await releaseIdleReservation(env, jobId);
-}
-
-/** 终态不可逆：终态任务拒绝 retry/继续（PLAN 二.7） */
-export async function assertNotTerminal(env: Env, jobId: string): Promise<JobRow> {
-  const job = await getJob(env, jobId);
-  if (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled') {
-    throw invalidState('任务已进入终态');
-  }
-  return job;
 }
 
 /** Inspect the engine before recovering a stale dispatch; transient lookup errors never permit replay. */

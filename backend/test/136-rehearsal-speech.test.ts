@@ -7,7 +7,7 @@ import { seal } from '../src/ai/secrets';
 import { createApp } from '../src/app';
 import { reserveAiSlot, markAiCallStarted } from '../src/services/ai-reservations';
 import { recordAiCall } from '../src/ai/calls';
-import { geminiSpeech, inspectSpeechWav } from '../src/ai/gemini-tts';
+import { inspectSpeechWav } from '../src/ai/gemini-tts';
 import { enqueueRehearsalSpeech, readRehearsalSpeechAudio, runRehearsalSpeechJob, retireCloudRehearsalSpeechJobs, readRehearsalSpeech } from '../src/services/rehearsal-speech';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -15,7 +15,6 @@ function wav() {
   const b = new Uint8Array(2044), v = new DataView(b.buffer), text = (offset: number, s: string) => { b.set(new TextEncoder().encode(s),offset); };
   text(0,'RIFF'); v.setUint32(4,b.length-8,true); text(8,'WAVE'); text(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,24000,true); v.setUint32(28,48000,true); v.setUint16(32,2,true); v.setUint16(34,16,true); text(36,'data'); v.setUint32(40,2000,true); return b;
 }
-function result() { return {status:'completed',steps:[{type:'model_output',content:[{type:'audio',mime_type:'audio/wav',data:btoa(String.fromCharCode(...wav()))}]}],usage:{total_tokens:42}}; }
 const input = {accountId:'account',gatewayId:'speech',gatewayToken:'gateway-secret',model:'gemini-3.8-flash-lite-tts' as const,voice:'Kore' as const,text:'请解释项目目标。'};
 async function fixture() {
   const owner=await seedUser(), projectId=await seedProject(owner.userId), rehearsalId=newId(), turnId=newId(), config=(await loadAiConfig(env.DB))!, now=nowIso();
@@ -33,27 +32,10 @@ async function openAsr(f: Awaited<ReturnType<typeof fixture>>) {
   await env.DB.prepare("INSERT INTO rehearsal_voice_sessions(id,project_id,rehearsal_id,question_sequence,actor_id,config_version_id,model,status,root_session_id,expires_at,created_at,updated_at) VALUES(?1,?2,?3,1,?4,?5,'gemini-3.5-transcribe-live','reserved',?1,?6,?7,?7)").bind(id,f.projectId,f.rehearsalId,f.owner.userId,config.id,new Date(Date.now()+600_000).toISOString(),now).run();
 }
 describe('Gateway-only TTS transport',()=>{
-  it('sends exactly saved text and the fixed REST audio contract',async()=>{
-    const request=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
-      expect(String(url)).toBe('https://gateway.ai.cloudflare.com/v1/account/speech/google-ai-studio/v1beta/interactions'); expect(init?.redirect).toBe('manual');
-      expect(new Headers(init?.headers).get('cf-aig-authorization')).toBe('Bearer gateway-secret');
-      expect(new Headers(init?.headers).has('x-goog-api-key')).toBe(false);
-      expect(JSON.parse(String(init?.body))).toEqual({model:input.model,input:[{type:'user_input',content:[{type:'text',text:input.text}]}],response_format:{type:'audio',mime_type:'audio/wav'},generation_config:{speech_config:[{voice:'Kore'}]}});
-      return Response.json(result());
-    });
-    expect((await geminiSpeech(input,request)).mime).toBe('audio/wav'); expect(request).toHaveBeenCalledOnce();
-  });
-  it('rejects empty WAV, incomplete output and direct redirect without retries',async()=>{
+  it('rejects an empty WAV',async()=>{
     expect(()=>inspectSpeechWav(new Uint8Array(44))).toThrow();
-    await expect(geminiSpeech(input,async()=>Response.json({...result(),status:'in_progress'}))).rejects.toMatchObject({code:'AI_OUTPUT_INVALID'});
-    const request=vi.fn(async()=>new Response(null,{status:307,headers:{location:'https://generativelanguage.googleapis.com'}}));
-    await expect(geminiSpeech(input,request)).rejects.toMatchObject({details:{status:307}}); expect(request).toHaveBeenCalledOnce();
   });
-  it('rejects invalid JSON, unsupported MIME, oversized advertised response and truncated RIFF',async()=>{
-    await expect(geminiSpeech(input,async()=>new Response('invalid'))).rejects.toMatchObject({code:'AI_OUTPUT_INVALID'});
-    const bad=result(); bad.steps[0]!.content[0]!.mime_type='audio/pcm';
-    await expect(geminiSpeech(input,async()=>Response.json(bad))).rejects.toMatchObject({code:'AI_OUTPUT_INVALID'});
-    await expect(geminiSpeech(input,async()=>new Response('{}',{headers:{'content-length':String(21*1024*1024)}}))).rejects.toThrow('大小限制');
+  it('rejects a truncated RIFF header',async()=>{
     expect(()=>inspectSpeechWav(wav().subarray(0,100))).toThrow();
   });
 });

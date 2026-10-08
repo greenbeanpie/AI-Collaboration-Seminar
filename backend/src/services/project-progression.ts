@@ -7,10 +7,6 @@ import { createJobAndDispatch } from './jobs';
 import { projectGoal } from './project-simplification';
 import type { CollaborationAiInput } from './collaboration-ai';
 
-export async function projectFeedback(env:Env,projectId:string):Promise<unknown[]>{
- const rows=await env.DB.prepare('SELECT target_type,target_id,feedback,created_at FROM project_admin_feedback WHERE project_id=?1 AND target_type!="project" ORDER BY created_at,id').bind(projectId).all();
- return [...rows.results,{target_type:'project',...(await currentProjectFeedback(env,projectId))}];
-}
 /** Feedback rows are immutable; this stamp detects insertion/removal without loading all text. */
 export async function projectFeedbackStamp(env:Env,projectId:string):Promise<string>{
  const row=await env.DB.prepare('SELECT COUNT(*) count,MAX(created_at) latest_at,MAX(id) latest_id FROM project_admin_feedback WHERE project_id=?1').bind(projectId).first();

@@ -7,7 +7,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { creationPayload } from '../src/services/creation-drafts';
 import { loadDraftCheckpoint, saveDraftCheckpoint } from '../src/services/draft-preview-checkpoints';
 import { failJob } from '../src/services/jobs';
-import { prepareAutomaticJobRetry, retryFailedDraftPreview, recoverAutomaticAiRetries, scheduleAutomaticJobRetry, isAutomaticAiFailure, AUTOMATIC_AI_RETRY_DELAY_MS } from '../src/services/ai-automatic-retries';
+import { prepareAutomaticJobRetry, retryFailedDraftPreview, recoverAutomaticAiRetries, isAutomaticAiFailure, AUTOMATIC_AI_RETRY_DELAY_MS } from '../src/services/ai-automatic-retries';
 
 async function job(input:unknown={}) {
   const id=newId(),now=nowIso();
@@ -35,8 +35,6 @@ describe('durable 60-second AI recovery',()=>{
     const callback=vi.fn(async()=>({jobId:newId()}));
     await recoverAutomaticAiRetries(env,callback);
     expect(callback).not.toHaveBeenCalled();
-    await scheduleAutomaticJobRetry(env,id,providerFailure);
-    expect((await retryRow(`job:${id}`))?.next_attempt_at).toBe(row.next_attempt_at);
     const blocked=await job();await failJob(env,blocked,{code:'QUOTA_EXCEEDED',message:'预算不足'});
     expect(await retryRow(`job:${blocked}`)).toBeNull();
   });

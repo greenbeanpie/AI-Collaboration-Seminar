@@ -27,9 +27,9 @@ export async function extractPdfText(bytes: Uint8Array): Promise<{ totalPages: n
   class BundledBinaryDataFactory {
     async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
       if (kind !== 'cMapUrl') throw new Error('PDF resource unavailable');
-      try { return readBundledCmap(filename); } catch {
+      try { return readBundledCmap(filename); } catch (err) {
         missingCharacterMap = true;
-        throw new Error('PDF character map unavailable');
+        throw err;
       }
     }
   }
@@ -49,7 +49,7 @@ export async function extractPdfText(bytes: Uint8Array): Promise<{ totalPages: n
     return { totalPages: pdf.numPages, text };
   } catch (err) {
     if (err instanceof AppError) throw err;
-    throw new AppError('SOURCE_PARSE_FAILED', 'PDF 解析失败（可能为加密、损坏或不支持的字体）；原文件已保留', 422, false);
+    throw new AppError('SOURCE_PARSE_FAILED', 'PDF 解析失败（可能为加密、损坏或不支持的字体）；原文件已保留', 422, false, undefined, { cause: err });
   } finally {
     await task.destroy();
   }

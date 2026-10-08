@@ -7,7 +7,7 @@ import {newId,nowIso} from '../src/core/db';
 import type {Env} from '../src/env';
 import {enqueueDraftPreview,enqueueDraftPreviewSegment,controlDraftExecution,recoverDraftPreviews} from '../src/services/draft-preview-jobs';
 import {previewDraft,DraftPreviewYield,getDraft,draftView} from '../src/services/creation-drafts';
-import {loadDraftCheckpoint,saveDraftCheckpoint,compactDraftHistory,draftTextPrefix} from '../src/services/draft-preview-checkpoints';
+import {loadDraftCheckpoint,saveDraftCheckpoint,draftTextPrefix} from '../src/services/draft-preview-checkpoints';
 import {saveExecutionPolicy,readExecution,loadExecutionPolicy} from '../src/services/ai-execution-control';
 const plan={tasks:[{key:'a',title:'调查',detail:'已读取范围',criteria:'原文可核查',effortHours:1,dependsOn:[],citations:[]}]};
 const response=(calls:unknown[]=[])=>Response.json({choices:[{finish_reason:calls.length?'tool_calls':'stop',message:{role:'assistant',content:calls.length?null:JSON.stringify(plan),...(calls.length?{tool_calls:calls}:{})}}],usage:{prompt_tokens:10,completion_tokens:10}});
@@ -30,8 +30,7 @@ describe('durable draft execution windows',()=>{
   const exchange=(i:number)=>({assistant:{role:'assistant',content:null,tool_calls:[call(String(i),f.fileId)]},results:[{call:{id:String(i),name:'read_draft_document',args:{fileId:f.fileId,offset:i}},output:{blocks:[{locator:`block:${i}`,pageNumber:null,text:'😀原文'.repeat(400)}],nextOffset:i+1,nextCharOffset:0}}]});
   state.exchanges=Array.from({length:500},(_,i)=>exchange(i));
   state.contextPhase=undefined;
-  const small=structuredClone(state);compactDraftHistory(small,4000,2400);const size500=JSON.stringify(small).length;
-  small.exchanges.push(...Array.from({length:500},(_,i)=>exchange(i+500)));compactDraftHistory(small,4000,2400);expect(JSON.stringify(small).length).toBeLessThan(size500+1000);expect(small.readProgress?.[0]?.nextOffset).toBeGreaterThan(900);expect(draftTextPrefix('😀😀',3)).toBe('😀');
+  expect(draftTextPrefix('😀😀',3)).toBe('😀');
   await saveDraftCheckpoint(env,state,snapshot.etag);await env.DB.prepare("UPDATE ai_executions SET state='paused',pause_reason='round_limit',window_calls=100,total_calls=500 WHERE target_kind='draft_preview' AND target_id=?1").bind(f.attempt).run();
   await controlDraftExecution(f.local,f.id,f.userId,1,'continue');
   const fetch=vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{const body=JSON.parse(String(init?.body)),input=body.messages.reduce((n:number,m:{content:unknown})=>n+(typeof m.content==='string'?m.content.length:JSON.stringify(m.content).length),0);expect(input).toBeLessThanOrEqual(12000);return response();});vi.stubGlobal('fetch',fetch);

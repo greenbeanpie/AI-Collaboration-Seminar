@@ -50,15 +50,6 @@ async function decryptCheckpoint(envelope:EncryptedCheckpoint,id:string,secret:s
   }
   return JSON.parse(text) as InvestigationCheckpoint;
 }
-/** Keep protocol IDs/tool calls for restart, never assistant prose containing private preferences. */
-export function redactPrivateExchanges(exchanges:ToolExchange[]):ToolExchange[] {
-  const scrub=(value:unknown):unknown=>{
-    if(Array.isArray(value))return value.filter(item=>!item||typeof item!=='object'||!['text','output_text','message'].includes(String((item as Record<string,unknown>).type))).map(scrub);
-    if(!value||typeof value!=='object')return value;
-    return Object.fromEntries(Object.entries(value).filter(([key])=>!['content','text'].includes(key)).map(([key,v])=>[key,scrub(v)]));
-  };
-  return exchanges.map(e=>({...e,assistant:scrub(e.assistant)}));
-}
 export async function loadInvestigation(env: Env, id: string, allowUncertainDispatch=false,jobId?:string): Promise<InvestigationCheckpoint | null> {
   let stored:R2ObjectBody|null=null;
   if(jobId){for(const attempt of await checkpointAttemptIds(env,jobId)){stored=await env.FILES.get(`ai/investigations/${id}/${attempt}.json`);if(stored)break;}}

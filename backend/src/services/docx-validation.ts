@@ -13,7 +13,6 @@ export function isOfficeExtension(ext: string): ext is keyof typeof OFFICE_PACKA
 type Reader = (offset: number, length: number) => Promise<Uint8Array>;
 
 /** Read ZIP directory and only package metadata, never inflate the document/media. */
-export async function validateDocx(size: number, source: Reader): Promise<string> { return validateOfficePackage('.docx', size, source); }
 export async function validateOfficePackage(ext: keyof typeof OFFICE_PACKAGES, size: number, source: Reader): Promise<string> {
   const spec = OFFICE_PACKAGES[ext];
   let cache:Uint8Array = new Uint8Array(), cacheStart = -1;
