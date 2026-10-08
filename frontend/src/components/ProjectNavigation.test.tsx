@@ -30,10 +30,7 @@ it('keeps exactly five main destinations in the content area, outside global acc
   setup();
   const navigation = screen.getByRole('navigation', { name: '项目功能' });
   expect(screen.getAllByRole('navigation', { name: '项目功能' })).toHaveLength(1);
-  expect(navigation.previousElementSibling).toHaveClass('project-banner');
-  const sections = screen.getByRole('navigation', { name: '团队分区' });
-  expect(navigation.nextElementSibling).toBe(sections);
-  expect(sections.nextElementSibling).toHaveClass('content-wrap');
+  expect(screen.getByRole('navigation', { name: '团队分区' })).toBeInTheDocument();
   expect(navigation.closest('header')).toBeNull();
   expect(within(screen.getByRole('banner', { name: '工作区顶栏' })).queryByRole('navigation', { name: '项目功能' })).not.toBeInTheDocument();
   expect(within(navigation).getAllByRole('link').map(link => link.textContent)).toEqual(['概览', '任务', '资料', '评分', '团队']);

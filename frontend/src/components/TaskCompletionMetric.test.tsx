@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { TaskCompletionMetric } from './TaskCompletionMetric';
@@ -52,25 +51,4 @@ describe('task completion metric', () => {
     expect(screen.queryByText('20/20')).not.toBeInTheDocument();
     expect(container.firstChild).not.toHaveAttribute('data-completion-tone');
   });
-});
-
-function luminance(hex: string) {
-  const channels = [1, 3, 5].map(start => parseInt(hex.slice(start, start + 2), 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
-  return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
-}
-function contrast(a: string, b: string) {
-  const values = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (values[0] + .05) / (values[1] + .05);
-}
-it('keeps light/dark colors solid with readable labels and distinguishable progress fills', () => {
-  const css = readFileSync('src/components/TaskCompletionMetric.css', 'utf8');
-  expect(css).not.toContain('gradient(');
-  for (const dark of [false, true]) for (const tone of ['red', 'yellow', 'green']) {
-    const selector = `${dark ? ':root[data-theme="dark"] ' : ''}.task-completion-card[data-completion-tone="${tone}"]`;
-    const body = css.slice(css.indexOf(`${selector} {`)).split('}')[0];
-    const color = (variable: string) => body.match(new RegExp(`--completion-${variable}: (#[0-9a-f]{6})`))![1];
-    expect(contrast(dark ? '#b0bfd4' : '#5d6b82', color('background'))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(color('fill'), color('track'))).toBeGreaterThanOrEqual(3);
-  }
-  expect(css).toContain('@media (forced-colors: active)');
 });

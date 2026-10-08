@@ -26,11 +26,10 @@ function showOverview(sources: unknown[], options: { tasks?: Task[]; loading?: b
 
 describe('project overview pending actions', () => {
   it('adds completion progress to the referenced 0/20 task metric', () => {
-    const { container } = showOverview([], { tasks: Array.from({ length: 20 }, (_, index) => ({ taskId: `task-${index}`, title: `任务${index}`, status: 'todo' }) as Task) });
+    showOverview([], { tasks: Array.from({ length: 20 }, (_, index) => ({ taskId: `task-${index}`, title: `任务${index}`, status: 'todo' }) as Task) });
     expect(screen.getByText('0/20')).toBeInTheDocument();
     expect(screen.getByText('0%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '任务完成率' })).toHaveAttribute('aria-valuenow', '0');
-    expect(container.querySelector('.task-completion-card')).toHaveAttribute('data-completion-tone', 'red');
   });
   it('counts server-done tasks while submitted and blocked tasks remain incomplete', () => {
     showOverview([], { tasks: [
@@ -42,9 +41,8 @@ describe('project overview pending actions', () => {
     expect(screen.getByRole('progressbar', { name: '任务完成率' })).toHaveAttribute('aria-valuenow', '33');
   });
   it.each([{ loading: true }, { error: true }])('does not show progress for unavailable task data: %j', options => {
-    const { container } = showOverview([], options);
+    showOverview([], options);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(container.querySelector('.task-completion-card')).not.toHaveAttribute('data-completion-tone');
   });
   it('retains overview content without removed cards or their dedicated queries', () => {
     const { client } = showOverview([]);

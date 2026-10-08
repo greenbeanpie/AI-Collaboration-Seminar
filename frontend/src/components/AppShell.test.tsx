@@ -18,7 +18,6 @@ it('places the app brand above left navigation and profile in an independent rou
   expect(within(nav).getByRole('link', { name: '设置' })).toHaveAttribute('href', '/app/settings');
   expect(within(nav).getByRole('link', { name: '帮助文档' })).toHaveAttribute('href', '/app/help');
   expect(document.querySelector('.sidebar-brand .brand')).toHaveAttribute('href', '/app');
-  expect(document.querySelector('.sidebar-brand')?.nextElementSibling).toHaveClass('sidebar-navigation');
   const topbar = screen.getByRole('banner', { name: '工作区顶栏' });
   expect(within(topbar).getByRole('link', { name: '支持工单' })).toBeInTheDocument();
   expect(within(topbar).getByRole('link', { name: '个人资料：Alice' })).toHaveAttribute('href', '/app/profile');

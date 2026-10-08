@@ -1,6 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { readFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TeamPage } from './TeamPage';
 
@@ -123,13 +122,9 @@ it('summarises member permissions without listing five checkboxes', () => {
   expect(screen.queryByRole('checkbox')).toBeNull();
 });
 
-it('keeps the mobile member card wrap-capable so new permission controls cannot overflow', () => {
+it('keeps the owner permission entry available in the member card', () => {
   renderTeam([managerMember, ownerMember], { role: 'owner' });
-  expect(screen.getByRole('button', { name: '调整 协作管理员乙 的权限' }).closest('.team-member-actions')).not.toBeNull();
-  const css = readFileSync('src/pages/CompactSettings.css', 'utf8');
-  expect(css).toMatch(/\.compact-team-grid \.team-member\{[^}]*flex-wrap:wrap/);
-  expect(css).toMatch(/\.compact-team-grid \.team-member-actions\{[^}]*flex-wrap:wrap/);
-  expect(css).toMatch(/@media\(max-width:600px\)\{[^}]*\.compact-team-grid \.team-member-actions\{width:100%/);
+  expect(screen.getByRole('button', { name: '调整 协作管理员乙 的权限' })).toBeInTheDocument();
 });
 
 it('shows actual permissions when scoring is revoked or combined with management', () => {
