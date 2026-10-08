@@ -25,9 +25,3 @@ export type ParserResponse =
   | { type: 'done'; result: BrowserDocumentResult }
   | { type: 'error'; message: string; name?: string };
 
-// Cloud conversion recommendations, never enforced by browser extraction.
-export const CLOUD_PDF_RECOMMENDATION = { maxBytes: 10 * 1024 * 1024, maxPages: 30 } as const;
-export function cloudPdfRecommendation(size: number, pages: number): string | null {
-  return size > CLOUD_PDF_RECOMMENDATION.maxBytes || pages > CLOUD_PDF_RECOMMENDATION.maxPages
-    ? '建议将云端 PDF 分为不超过 10 MiB、30 页的批次；浏览器读取不受此建议限制。' : null;
-}

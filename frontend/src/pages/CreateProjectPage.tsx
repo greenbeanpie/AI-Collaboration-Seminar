@@ -5,7 +5,7 @@ import type { AiActivity } from '../api/ai-activity';
 import { JobAiActivity } from './JobAiActivity';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { AudioPipelineStatus } from './AudioPipelineStatus';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
@@ -23,6 +23,7 @@ import { emptyWizardPayload, wizardSteps, canConfirmDraft, confirmationIssue, sa
 import './ProjectWizard.css';
 import { CreationBehaviorFields } from './CreationBehaviorFields';
 import { creationBehaviors, creationBehavior } from './project-wizard';
+import { isMediaProcessing } from './media-processing';
 type LocalFile = {
   id: string;
   name: string;
@@ -31,6 +32,12 @@ type LocalFile = {
   error?: string;
 };
 const draftPath = (id: string, tail = '') => `/api/v1/creation-drafts/${id}${tail}`;
+function previewTasks(preview: WizardDraft['preview'] | undefined): WizardTask[] {
+  return preview?.tasks ?? [];
+}
+function previewGoal(draft: WizardDraft, fallbackDetail = ''): WizardGoal {
+  return draft.preview?.goal ?? draft.payload.goal ?? { title: draft.payload.name, detail: fallbackDetail };
+}
 export { NewProjectEntryPage as CreateProjectPage } from './NewProjectEntryPage';
 export function CreateProjectWizardPage() {
   const session = useSession();
@@ -71,12 +78,21 @@ function CreationWizard({ userId }: {
   const [previewSubmitting, setPreviewSubmitting] = useState(false);
   const previewActivity = (draft as WizardDraft & { activity?: AiActivity | null } | null)?.activity;
   const previewRunning = draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused';
-  const mediaPending = draft?.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
-  const mediaPolling = draft?.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
+  const mediaPending = draft?.files.some(file => isMediaProcessing(file.mediaStatus)) ?? false;
+  const mediaPolling = draft?.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) ?? false;
   const previewWaiting = draft?.previewState === 'waiting_input';
   const busy = actionBusy || previewRunning || previewWaiting;
-  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => document.visibilityState === 'hidden' ? false : query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
-  useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? ''))) || next.revision < latestDraft.current.revision || olderExecution(next, latestDraft.current)) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); if (next.revision !== previous.revision) setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); setConfirmed(false); } }, [draftPoll.data]);
+  const applyDraft = useCallback((next: WizardDraft, previous: WizardDraft, resetConfirmed: boolean) => {
+    setDraft(next);
+    setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current);
+    if (resetConfirmed) setConfirmed(false);
+    if (next.previewState === 'ready') {
+      setManual(previewTasks(next.preview));
+      setManualGoal(previewGoal(next));
+    }
+  }, []);
+  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => document.visibilityState === 'hidden' ? false : query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => isMediaProcessing(file.mediaStatus))) || next.revision < latestDraft.current.revision || olderExecution(next, latestDraft.current)) return; applyDraft(next, latestDraft.current, next.revision !== latestDraft.current.revision || next.previewState === 'ready'); }, [draftPoll.data, applyDraft]);
   const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
@@ -109,7 +125,7 @@ function CreationWizard({ userId }: {
     }
     setDraft(next);
     setPayload(next.payload);
-    setManualGoal(current => current.title.trim() ? current : next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
+    setManualGoal(current => current.title.trim() ? current : previewGoal(next));
     setConfirmed(false);
     remember(next.id);
   };
@@ -127,8 +143,8 @@ function CreationWizard({ userId }: {
         setDraft(next);
         if (['waiting_input','running','paused_round_limit','ready','failed'].includes(next.previewState)) setStep(3);
         setPayload(next.payload);
-        setManual(next.preview?.tasks ?? []);
-        setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
+        setManual(previewTasks(next.preview));
+        setManualGoal(previewGoal(next));
         setLocals(items => items.filter(f => !next.files.some(done => done.id === f.id)));
       }).catch(setError);
     }
@@ -263,8 +279,8 @@ function CreationWizard({ userId }: {
     });
     accept(next);
     setManualGoalEdited(false);
-    setManual(next.preview?.tasks ?? []);
-    setManualGoal(mode === 'ai' && manualGoalEdited ? manualGoal : next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
+    setManual(previewTasks(next.preview));
+    setManualGoal(mode === 'ai' && manualGoalEdited ? manualGoal : previewGoal(next));
     }); } finally { setPreviewSubmitting(false); }
   };
   const openDraft = (id: string) => run(async () => {
@@ -274,8 +290,8 @@ function CreationWizard({ userId }: {
     setLocals([]);
     setManualGoalEdited(false);
     remember(id, []);
-    setManual(next.preview?.tasks ?? []);
-    setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' });
+    setManual(previewTasks(next.preview));
+    setManualGoal(previewGoal(next));
     setStep(['waiting_input','running','paused_round_limit','ready','failed'].includes(next.previewState) ? 3 : 0);
     setResult(null);
   });
@@ -290,8 +306,8 @@ function CreationWizard({ userId }: {
         : await clarificationApi.cancelDraft(draft.id, draft.clarification);
       accept(updated);
       if (updated.previewState === 'ready') {
-        setManual(updated.preview?.tasks ?? []);
-        setManualGoal(updated.preview?.goal ?? updated.payload.goal ?? { title: updated.payload.name, detail: updated.payload.brief || updated.payload.description });
+        setManual(previewTasks(updated.preview));
+        setManualGoal(previewGoal(updated, updated.payload.brief || updated.payload.description));
       }
       setStep(3);
     } finally {
@@ -305,8 +321,8 @@ function CreationWizard({ userId }: {
     const updated = await api.get<'CreationDraftResponse'>(draftPath(draft.id));
     accept(updated);
     if (updated.previewState === 'ready') {
-      setManual(updated.preview?.tasks ?? []);
-      setManualGoal(updated.preview?.goal ?? updated.payload.goal ?? { title: updated.payload.name, detail: updated.payload.brief || updated.payload.description });
+      setManual(previewTasks(updated.preview));
+      setManualGoal(previewGoal(updated, updated.payload.brief || updated.payload.description));
     }
   };
   const setField = <K extends keyof WizardPayload>(key: K, value: WizardPayload[K]) => {
@@ -334,7 +350,7 @@ function CreationWizard({ userId }: {
       expectedRevision: draft.revision, confirmed: true
     })))}>恢复创建结果与邀请</button></section> : <>
  <h2>{wizardSteps[step]}</h2>
- {draft && <ExecutionControlPanel execution={executionOf(draft)} path={draftPath(draft.id)} enabled={!actionBusy} processingEnabled={sameWizardPayload(payload,draft.payload) && !manualGoalEdited} onBeforeAction={() => { previewEpoch.current++; }} onUpdated={snapshot => { const next = snapshot as WizardDraft; if (next.id !== latestDraft.current?.id || olderExecution(next, latestDraft.current)) return; const previous = latestDraft.current; setDraft(next); setPayload(current => sameWizardPayload(current, previous.payload) ? next.payload : current); setConfirmed(false); if (next.previewState === 'ready') { setManual(next.preview?.tasks ?? []); setManualGoal(next.preview?.goal ?? next.payload.goal ?? { title: next.payload.name, detail: '' }); } }} />}
+ {draft && <ExecutionControlPanel execution={executionOf(draft)} path={draftPath(draft.id)} enabled={!actionBusy} processingEnabled={sameWizardPayload(payload,draft.payload) && !manualGoalEdited} onBeforeAction={() => { previewEpoch.current++; }} onUpdated={snapshot => { const next = snapshot as WizardDraft; if (next.id !== latestDraft.current?.id || olderExecution(next, latestDraft.current)) return; applyDraft(next, latestDraft.current, true); }} />}
  {(previewActivity || previewSubmitting || previewRunning || previewWaiting || draft?.previewState === 'failed') && <AiActivityStatus execution={executionOf(draft)} activity={previewActivity} jobId={draft?.id} status={previewRunning ? 'running' : previewWaiting ? 'waiting_input' : draft?.previewState === 'ready' ? 'succeeded' : draft?.previewState === 'failed' ? 'failed' : 'queued'} submitting={previewSubmitting} readError={draftPoll.error} eventsPath={draft ? `${draftPath(draft.id)}/activity-events` : undefined} onRefresh={() => void refreshClarification().catch(setError)} onResume={executionOf(draft) ? undefined : () => preview('ai',true)} resuming={previewSubmitting} />}
  {previewWaiting && draft?.clarification?.status === 'pending' && <AiClarificationCard question={draft.clarification} disabled={actionBusy} onAnswer={resolveClarification} onCancel={() => resolveClarification()} onRefresh={refreshClarification} />}
  {previewWaiting && !draft?.clarification && <div className="callout"><p>AI 正在等待补充信息，正在核对问题状态。</p><button type="button" className="button button-quiet" disabled={actionBusy} onClick={() => void refreshClarification().catch(setError)}>重新读取待回答问题</button></div>}
@@ -393,7 +409,7 @@ function CreationWizard({ userId }: {
           if (issue) {
             accept(latest);
             // Keep locally reviewed goal/tasks on a failed or unfinished preview.
-            if (canConfirmDraft(latest)) { setManual(latest.preview?.tasks ?? []); setManualGoal(latest.preview?.goal ?? latest.payload.goal ?? {title:latest.payload.name,detail:''}); }
+            if (canConfirmDraft(latest)) { setManual(previewTasks(latest.preview)); setManualGoal(previewGoal(latest)); }
             setStep(canConfirmDraft(latest) ? 4 : 3);
             throw new Error(issue);
           }
@@ -409,7 +425,7 @@ function CreationWizard({ userId }: {
  <div className="form-actions">{step > 0 && <button type="button" className="button button-quiet" disabled={busy} onClick={() => {
       setStep(s => s - 1);
       setConfirmed(false);
-    }}>上一步</button>}{step < 3 && <button type="submit" className="button button-primary" disabled={busy || !payload.name.trim()}>下一步</button>}{step === 3 && <button type="button" className="button button-primary" disabled={busy || !previewCurrent || !sameTasks(manual, draft?.preview?.tasks ?? []) || Boolean(draft?.preview?.goal && JSON.stringify(manualGoal) !== JSON.stringify(draft.preview.goal))} onClick={() => {
+    }}>上一步</button>}{step < 3 && <button type="submit" className="button button-primary" disabled={busy || !payload.name.trim()}>下一步</button>}{step === 3 && <button type="button" className="button button-primary" disabled={busy || !previewCurrent || !sameTasks(manual, previewTasks(draft?.preview)) || Boolean(draft?.preview?.goal && JSON.stringify(manualGoal) !== JSON.stringify(draft.preview.goal))} onClick={() => {
       setStep(4);
       setConfirmed(false);
     }}>进入创建预览</button>}<button type="button" className="button button-quiet" disabled={busy} onClick={() => void run(async () => {

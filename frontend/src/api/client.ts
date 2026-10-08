@@ -1,5 +1,7 @@
 import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { errorMessage } from './error-info';
+import { newId } from './ids';
+import { iteratePages } from './page-contract';
 import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
 import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
 import { beginDesktopActivity } from '../desktop/lifecycle';
@@ -47,7 +49,7 @@ export type RequestOptions = {
 };
 
 function makeRequestId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return newId();
 }
 
 const revalidations = new Map<string, Promise<void>>();
@@ -238,45 +240,20 @@ export async function listAllItems<Name extends SchemaName>(
   query: RequestOptions['query'] = {},
   options: { requireNextCursor?: boolean; signal?: AbortSignal; networkOnly?: boolean; offlineReadFallback?: boolean } = {},
 ): Promise<ItemsOf<Name>> {
-  const all: unknown[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | null = null;
-  let pageCount = 0;
-  do {
-    const page: DataOf<Name> = options.networkOnly
-      ? await request<Name>(path, { query: { ...query, cursor }, signal: options.signal, networkOnly: true, offlineReadFallback: options.offlineReadFallback })
-      : await api.get<Name>(path, { ...query, cursor }, options.signal);
-    if (!page || typeof page !== 'object' || !('items' in page) || !Array.isArray(page.items)) {
-      throw new ApiError(200, {
-        error: { code: 'INVALID_PAGINATION', message: '服务端列表响应缺少 items 字段。', retryable: false },
-        requestId: makeRequestId(),
-      });
-    }
-    if (options.requireNextCursor && !('nextCursor' in page)) {
-      throw new ApiError(200, {
-        error: { code: 'INVALID_PAGINATION', message: '游标分页响应缺少 nextCursor 字段，无法确认列表是否完整。', retryable: false },
-        requestId: makeRequestId(),
-      });
-    }
-    all.push(...page.items);
-    const nextCursor: string | null = 'nextCursor' in page && typeof page.nextCursor === 'string' ? page.nextCursor : null;
-    if (nextCursor && seenCursors.has(nextCursor)) {
-      throw new ApiError(200, {
-        error: { code: 'INVALID_PAGINATION', message: '服务端返回了重复分页游标，已停止加载以避免重复记录。', retryable: false },
-        requestId: makeRequestId(),
-      });
-    }
-    if (nextCursor) seenCursors.add(nextCursor);
-    cursor = nextCursor;
-    pageCount += 1;
-    if (pageCount > 200) {
-      throw new ApiError(200, {
-        error: { code: 'PAGINATION_LIMIT', message: '项目数据页数超出安全加载上限，请联系管理员。', retryable: false },
-        requestId: makeRequestId(),
-      });
-    }
-  } while (cursor);
-  return all as ItemsOf<Name>;
+  const items = await iteratePages<unknown>(
+    (cursor) => options.networkOnly
+      ? request<Name>(path, { query: { ...query, cursor }, signal: options.signal, networkOnly: true, offlineReadFallback: options.offlineReadFallback })
+      : api.get<Name>(path, { ...query, cursor }, options.signal),
+    {
+      missingItems: () => new ApiError(200, { error: { code: 'INVALID_PAGINATION', message: '服务端列表响应缺少 items 字段。', retryable: false }, requestId: makeRequestId() }),
+      requireNextCursor: options.requireNextCursor,
+      missingCursor: () => new ApiError(200, { error: { code: 'INVALID_PAGINATION', message: '游标分页响应缺少 nextCursor 字段，无法确认列表是否完整。', retryable: false }, requestId: makeRequestId() }),
+      repeatedCursor: () => new ApiError(200, { error: { code: 'INVALID_PAGINATION', message: '服务端返回了重复分页游标，已停止加载以避免重复记录。', retryable: false }, requestId: makeRequestId() }),
+      limitExceeded: () => new ApiError(200, { error: { code: 'PAGINATION_LIMIT', message: '项目数据页数超出安全加载上限，请联系管理员。', retryable: false }, requestId: makeRequestId() }),
+      maxPages: 200,
+    },
+  );
+  return items as ItemsOf<Name>;
 }
 
 export const projectPath = (projectId: string, tail = '') => `/api/v1/projects/${encodeURIComponent(projectId)}${tail}`;

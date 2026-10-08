@@ -9,7 +9,7 @@ export type AiActivityEvent = { id: number; code: string; state: 'started' | 'co
 export type ActivityEventPage = { items: AiActivityEvent[]; nextCursor: number | null };
 export async function readActivityEvents(jobId: string, cursor?: number, signal?: AbortSignal, eventsPath?: string, order?: 'asc' | 'desc'): Promise<ActivityEventPage> {
   // Uses the shared authenticated transport; no offline snapshot can imply live AI execution.
-  return await request(eventsPath ?? `/api/v1/jobs/${encodeURIComponent(jobId)}/activity-events`, { query: { cursor, limit: 20, order }, signal, networkOnly: true }) as unknown as ActivityEventPage;
+  return await request<'AiActivityEventsResponse'>(eventsPath ?? `/api/v1/jobs/${encodeURIComponent(jobId)}/activity-events`, { query: { cursor, limit: 20, order }, signal, networkOnly: true });
 }
 
 const labels: Record<string, string> = {

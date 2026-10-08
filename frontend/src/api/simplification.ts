@@ -3,10 +3,10 @@ import type { DataOf } from './types';
 
 /** Uses the shared envelope/error/credential handling for the additive project APIs. */
 export async function projectRequest<T>(projectId: string, tail: string, options: RequestOptions = {}): Promise<T> {
-  return await request<'ProjectResponse'>(projectPath(projectId, tail), options) as unknown as T;
+  return await request<'ProjectResponse'>(projectPath(projectId, tail), options) as T;
 }
 export async function accountRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  return await request<'PersonalProfileResponse'>(path, options) as unknown as T;
+  return await request<'PersonalProfileResponse'>(path, options) as T;
 }
 export type ProjectGoal = { projectId: string; title: string; detail: string; revision: number; graphRevision: number };
 export type ResourcePurpose = 'background' | 'reference' | 'output';

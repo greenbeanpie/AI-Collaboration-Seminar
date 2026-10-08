@@ -4,28 +4,25 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { MessageCircle, Send } from 'lucide-react';
 import { api, projectPath } from '../api/client';
+import { iteratePages, type CursorPage } from '../api/page-contract';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, Spinner } from '../components/ui';
 
-export type CursorPage<T> = { items: T[]; nextCursor: string | null };
+export type { CursorPage };
 export type CommentEntry = DataOf<'CommentListResponse'>['items'][number];
 export type CommentTarget = 'task' | 'material';
 
 export async function loadCursorPages<T>(loadPage: (cursor?: string) => Promise<CursorPage<T>>): Promise<T[]> {
-  const items: T[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-
-  for (let pageNumber = 0; pageNumber < 1000; pageNumber += 1) {
-    const page = await loadPage(cursor);
-    if (!page || !Array.isArray(page.items) || !('nextCursor' in page) || (page.nextCursor !== null && typeof page.nextCursor !== 'string')) throw new Error('服务端列表响应缺少分页字段，无法确认完整结果。');
-    items.push(...page.items);
-    if (!page.nextCursor) return items;
-    if (seenCursors.has(page.nextCursor)) throw new Error('服务端返回了重复分页游标，已停止加载以避免遗漏记录。');
-    seenCursors.add(page.nextCursor);
-    cursor = page.nextCursor;
-  }
-  throw new Error('列表超过安全分页上限，无法确认完整结果。');
+  const missingFields = () => new Error('服务端列表响应缺少分页字段，无法确认完整结果。');
+  return iteratePages<T>((cursor) => loadPage(cursor ?? undefined), {
+    missingItems: missingFields,
+    requireNextCursor: true,
+    missingCursor: missingFields,
+    invalidCursor: missingFields,
+    repeatedCursor: () => new Error('服务端返回了重复分页游标，已停止加载以避免遗漏记录。'),
+    limitExceeded: () => new Error('列表超过安全分页上限，无法确认完整结果。'),
+    maxPages: 1000,
+  });
 }
 
 type TiptapNode = {

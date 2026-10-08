@@ -1,4 +1,5 @@
 import { executionOf, olderExecution } from '../api/ai-execution';
+import { newId } from '../api/ids';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { Job } from '../api/types';
@@ -36,7 +37,7 @@ export function useVisibleJobPoller(jobId: string | null, refreshKey = 0) {
     const schedule = () => {
       if (!active || document.visibilityState !== 'visible' || navigator.onLine === false) return;
       if (timer !== undefined) window.clearTimeout(timer);
-      const delay = pollDelays[Math.min(delayIndex, pollDelays.length - 1)] ?? 10_000;
+      const delay = pollDelays[Math.min(delayIndex, pollDelays.length - 1)];
       delayIndex += 1;
       timer = window.setTimeout(() => { void poll(); }, delay);
     };
@@ -151,7 +152,7 @@ export async function idempotencyKeyForIntent(namespace: string, input: unknown)
   } catch { /* Private browsing can disable session storage; the in-memory key still covers retries. */ }
   const cached = intentFallback.get(namespace);
   if (cached?.signature === signature) return cached.key;
-  const key = globalThis.crypto?.randomUUID?.() ?? `intent-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const key = newId();
   intentFallback.set(namespace, { signature, key });
   try { sessionStorage.setItem(storageKey, JSON.stringify({ signature, key } satisfies StoredIntent)); }
   catch { /* Keep the stable key in memory for this page lifetime. */ }

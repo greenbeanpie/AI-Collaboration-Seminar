@@ -32,24 +32,6 @@ export function removeDraft(accountId: string, projectId: string, materialId: st
   } catch { return false; }
 }
 
-export function saveRecentSession(accountId: string, projectId: string, sessionId: string): boolean {
-  const storage = browserStorage();
-  if (!storage) return false;
-  const key = `${prefix}sessions:${accountId}:${projectId}`;
-  try {
-    const current = JSON.parse(storage.getItem(key) ?? '[]') as string[];
-    storage.setItem(key, JSON.stringify([sessionId, ...current.filter((id) => id !== sessionId)].slice(0, 20)));
-    return true;
-  } catch { return false; }
-}
-
-export function getRecentSessions(accountId: string, projectId: string): string[] {
-  const storage = browserStorage();
-  if (!storage) return [];
-  try { return JSON.parse(storage.getItem(`${prefix}sessions:${accountId}:${projectId}`) ?? '[]') as string[]; }
-  catch { return []; }
-}
-
 export function clearAccountStorage(accountId: string, strict = false): void {
   const storage = browserStorage();
   if (!storage) { if (strict) throw new Error('无法清除本机草稿，请检查存储权限后重试'); return; }

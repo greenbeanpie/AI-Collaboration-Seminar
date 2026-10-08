@@ -18,6 +18,7 @@ import { canConfirmDraft } from './project-wizard';
 import { creationFileExtensions, validateCreationFiles } from './project-creation-workflow';
 import { useSettingsDirty } from './settings-dirty';
 import { normalizedTemplate, sameTemplateValue, templateFormFromDraft, templateSignature, validateTemplateForm, type TemplateForm } from './template-workspace';
+import { isMediaProcessing } from './media-processing';
 import './TemplateDraftWorkspace.css';
 import { CreationBehaviorFields } from './CreationBehaviorFields';
 
@@ -60,8 +61,8 @@ function PrivateTemplateDraft({ draftId, userId }: { draftId: string; userId: st
     void projectTemplateApi.get(draftId, controller.signal).then(next => { if (!controller.signal.aborted) hydrate(next); }).catch(reason => { if (!controller.signal.aborted) setError(reason); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); mounted.current = false; };
   }, [draftId, hydrate]);
-  const mediaPending = draft?.files.some(file => ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) ?? false;
-  const mediaPoll = useQuery({ queryKey: ['template-media',draftId], queryFn: () => projectTemplateApi.get(draftId), enabled: (draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused') || mediaPending && draft?.files.some(file => file.audio?.phase !== 'waiting_config' && ['pending','uploading','processing','generating'].includes(file.mediaStatus ?? '')) && !busy, refetchInterval: () => document.visibilityState !== 'hidden' ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  const mediaPending = draft?.files.some(file => isMediaProcessing(file.mediaStatus)) ?? false;
+  const mediaPoll = useQuery({ queryKey: ['template-media',draftId], queryFn: () => projectTemplateApi.get(draftId), enabled: (draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused') || mediaPending && draft?.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) && !busy, refetchInterval: () => document.visibilityState !== 'hidden' ? 3000 : false, refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const next = mediaPoll.data; if (next && !lock.current && next.revision >= (draftRef.current?.revision ?? 0)) rememberServer(next); }, [mediaPoll.data, rememberServer]);
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;

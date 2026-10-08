@@ -9,11 +9,10 @@ function wasShown(): boolean {
 }
 
 const DISMISSED_KEY = 'ai-office:install-banner-dismissed';
-// Storage can be unavailable; preserve dismissal across route remounts anyway.
-const dismissedInMemory = false;
+// Session storage is the only dismissal record; its absence is treated as not dismissed.
 function wasDismissed(): boolean {
-  try { return dismissedInMemory || sessionStorage.getItem(DISMISSED_KEY) === '1'; }
-  catch { return dismissedInMemory; }
+  try { return sessionStorage.getItem(DISMISSED_KEY) === '1'; }
+  catch { return false; }
 }
 
 export function PwaInstallBanner() {

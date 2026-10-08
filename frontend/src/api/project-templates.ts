@@ -12,7 +12,7 @@ export type TemplatePayload = WizardPayload & { workspace?: TemplateWorkspace };
 export type TemplateDraft = Omit<WizardDraft, 'payload'> & { payload: TemplatePayload };
 export type TemplateTask = WizardTask & { key: string; dependsOn: string[] };
 export type ProjectTemplate = { templateId: 'blank'; name: string; description: string };
-async function templateRequest<T>(path: string, options: RequestOptions = {}): Promise<T> { return await request<'CreationDraftResponse'>(path, options) as unknown as T; }
+async function templateRequest<T>(path: string, options: RequestOptions = {}): Promise<T> { return await request<'CreationDraftResponse'>(path, options) as T; }
 export const templateDraftPath = (draftId: string, tail = '') => `/api/v1/creation-drafts/${encodeURIComponent(draftId)}${tail}`;
 export function isTemplatePayload(payload: unknown): payload is TemplatePayload & { workspace: TemplateWorkspace } {
   if (!payload || typeof payload !== 'object' || !('workspace' in payload)) return false;

@@ -1,4 +1,5 @@
 import { ApiError, api, request, projectPath } from './client';
+import { assertPage } from './page-contract';
 import type { DataOf, SchemaName } from './types';
 import { idempotencyKeyForIntent, completeIntent } from '../pages/aiWorkflowSupport';
 import { projectRequest } from './simplification';
@@ -55,6 +56,7 @@ async function taskPost<T>(id: string, tail: string, body: unknown): Promise<T> 
 }
 
 function requireCursor<T extends { items: unknown[] }>(page: T): T {
-  if (!Array.isArray(page.items) || !('nextCursor' in page)) throw new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应缺少游标，请重试。', retryable: true } });
+  const invalid = () => new ApiError(502, { requestId: '', error: { code: 'INVALID_PAGINATION', message: '列表分页响应缺少游标，请重试。', retryable: true } });
+  assertPage(page, { missingItems: invalid, requireNextCursor: true, missingCursor: invalid });
   return page;
 }
