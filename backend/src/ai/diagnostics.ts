@@ -149,13 +149,20 @@ async function readBoundedProviderJson(response: Response): Promise<unknown> {
 
 // INSERT and both retention bounds are one serialized D1 transaction, including
 // concurrent writers. Byte cost uses the complete UTF-8 JSON plus its separator.
-const trimSql = `DELETE FROM ai_diagnostics WHERE id IN (
-  SELECT id FROM (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY id DESC) AS entry_rank,
-      SUM(byte_size) OVER (ORDER BY id DESC ROWS UNBOUNDED PRECEDING) AS newest_bytes
-    FROM ai_diagnostics
-  ) WHERE entry_rank > ${MAX_DIAGNOSTIC_ENTRIES} OR newest_bytes > ${MAX_DIAGNOSTIC_BYTES - 512}
-)`;
+const trimSql = `WITH RECURSIVE excess(entries, bytes) AS (
+  SELECT MAX(entry_count - ${MAX_DIAGNOSTIC_ENTRIES}, 0), MAX(byte_count - ${MAX_DIAGNOSTIC_BYTES - 512}, 0)
+  FROM ai_diagnostic_retention WHERE id = 1
+), oldest(id, entries, bytes) AS (
+  SELECT id, 1, byte_size FROM ai_diagnostics
+  WHERE id = (SELECT MIN(id) FROM ai_diagnostics)
+    AND EXISTS (SELECT 1 FROM excess WHERE entries > 0 OR bytes > 0)
+  UNION ALL
+  SELECT next.id, oldest.entries + 1, oldest.bytes + next.byte_size
+  FROM oldest JOIN ai_diagnostics AS next
+    ON next.id = (SELECT MIN(id) FROM ai_diagnostics WHERE id > oldest.id)
+  WHERE oldest.entries < (SELECT entries FROM excess) OR oldest.bytes < (SELECT bytes FROM excess)
+)
+DELETE FROM ai_diagnostics WHERE id <= (SELECT MAX(id) FROM oldest)`;
 
 /** Best effort, bounded latency; a diagnostics failure never changes a business result. */
 export async function recordAiDiagnostic(env: Pick<Env, 'DB'>, input: DiagnosticInput): Promise<boolean> {
