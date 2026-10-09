@@ -3,7 +3,6 @@ import { SELF } from 'cloudflare:test';
 import { env, BASE } from './helpers/env';
 import { configureGoFixture } from './helpers/provider-config';
 import { seedProject, seedUser, authCookie } from './helpers/seed';
-import type { Env } from '../src/env';
 import { readTaskAgentEligibility, readTaskAgentEligibilityBatch } from '../src/services/task-agent-eligibility';
 await configureGoFixture();
 afterEach(()=>vi.unstubAllGlobals());
@@ -86,7 +85,11 @@ describe('batch task Agent eligibility reads',()=>{
         return Reflect.get(target,property,target);
       },
     });
-    const measured={...env,DB:{prepare:(sql:string)=>{queries.push(sql);return wrap(env.DB.prepare(sql));}}} as unknown as Env;
+    const measured={...env,DB:new Proxy(env.DB,{get(target,property){
+      if(property==='prepare')return (sql:string)=>{queries.push(sql);return wrap(target.prepare(sql));};
+      const value=Reflect.get(target,property,target);
+      return typeof value==='function'?value.bind(target):value;
+    }})};
     for(const taskId of f.taskIds)await readTaskAgentEligibility(measured,f.projectId,taskId,f.user.userId);
     expect(queries).toHaveLength(120);const single={queries:queries.length,...metrics};queries.length=0;metrics.rowsRead=0;metrics.rowsWritten=0;metrics.durationMs=0;
     await readTaskAgentEligibilityBatch(measured,f.projectId,f.taskIds,f.user.userId);expect(queries).toHaveLength(5);
