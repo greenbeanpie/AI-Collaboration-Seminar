@@ -197,3 +197,45 @@ it('shares pending checks and prevents another reader from racing a new GET', as
   await act(async () => finishCheck(verdict('ready')));
   await waitFor(() => expect(screen.getAllByRole('button', { name: '代实施' }).every(button => !button.hasAttribute('disabled'))).toBe(true));
 });
+
+it.each(['hidden', 'offline'] as const)('revalidates after becoming %s during a check and returning before its response', async environment => {
+  let finishCheck: (value: ReturnType<typeof verdict>) => void = () => {};
+  request.mockResolvedValueOnce(batch(verdict('failed')));
+  setup(); await screen.findByText('自动检查失败，可重试。');
+  request.mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
+  fireEvent.click(screen.getByRole('button', { name: '检查' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  const visibility = vi.spyOn(document, 'visibilityState', 'get');
+  const online = vi.spyOn(navigator, 'onLine', 'get');
+  visibility.mockReturnValue(environment === 'hidden' ? 'hidden' : 'visible'); online.mockReturnValue(environment !== 'offline');
+  act(() => environment === 'hidden' ? document.dispatchEvent(new Event('visibilitychange')) : window.dispatchEvent(new Event('offline')));
+  visibility.mockReturnValue('visible'); online.mockReturnValue(true);
+  act(() => environment === 'hidden' ? document.dispatchEvent(new Event('visibilitychange')) : window.dispatchEvent(new Event('online')));
+  await act(async () => {}); expect(request).toHaveBeenCalledTimes(2);
+  request.mockResolvedValueOnce(batch({ ...verdict('ready'), eligible: false }));
+  await act(async () => finishCheck(verdict('ready')));
+  await screen.findByText('此任务暂不支持代实施。');
+  expect(request).toHaveBeenCalledTimes(3); expect(action()).toBeDisabled();
+  expect(request.mock.calls.filter(call => call[2]?.method === 'POST')).toHaveLength(1);
+});
+
+it.each(['hidden', 'offline'] as const)('releases a check completed while %s and reads fresh data after returning', async environment => {
+  let finishCheck: (value: ReturnType<typeof verdict>) => void = () => {};
+  request.mockResolvedValueOnce(batch(verdict('failed')));
+  setup(); await screen.findByText('自动检查失败，可重试。');
+  request.mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
+  fireEvent.click(screen.getByRole('button', { name: '检查' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  const visibility = vi.spyOn(document, 'visibilityState', 'get');
+  const online = vi.spyOn(navigator, 'onLine', 'get');
+  visibility.mockReturnValue(environment === 'hidden' ? 'hidden' : 'visible'); online.mockReturnValue(environment !== 'offline');
+  act(() => environment === 'hidden' ? document.dispatchEvent(new Event('visibilitychange')) : window.dispatchEvent(new Event('offline')));
+  await act(async () => finishCheck(verdict('queued')));
+  expect(request).toHaveBeenCalledTimes(2);
+  request.mockResolvedValueOnce(batch(verdict('ready')));
+  visibility.mockReturnValue('visible'); online.mockReturnValue(true);
+  act(() => environment === 'hidden' ? document.dispatchEvent(new Event('visibilitychange')) : window.dispatchEvent(new Event('online')));
+  await waitFor(() => expect(action()).toBeEnabled());
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(request.mock.calls.filter(call => call[2]?.method === 'POST')).toHaveLength(1);
+});

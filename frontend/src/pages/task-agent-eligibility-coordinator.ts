@@ -4,7 +4,7 @@ import type { DataOf } from '../api/types';
 
 type Eligibility = DataOf<'TaskAgentEligibilityResponse'>;
 type Key = readonly ['task-agent-eligibility', string, string, number];
-type Entry = { key: Key; users: number; epoch: number; due: number; transition: string; since: number; checking: boolean };
+type Entry = { key: Key; users: number; epoch: number; mutationEpoch: number; due: number; transition: string; since: number; checking: boolean; revalidateAfterCheck: boolean };
 type Pending = { entry: Entry; epoch: number; signal: AbortSignal; resolve: (value: Eligibility) => void; reject: (error: Error) => void };
 type BatchResponse = DataOf<'TaskAgentEligibilityBatchResponse'>;
 const clients = new WeakMap<QueryClient, Map<string, EligibilityCoordinator>>();
@@ -38,7 +38,7 @@ class EligibilityCoordinator {
     const id = this.identity(key);
     let entry = this.entries.get(id);
     if (!entry) {
-      entry = { key, users: 0, epoch: 0, due: Infinity, transition: '', since: Date.now(), checking: false };
+      entry = { key, users: 0, epoch: 0, mutationEpoch: 0, due: Infinity, transition: '', since: Date.now(), checking: false, revalidateAfterCheck: false };
       this.entries.set(id, entry);
     }
     entry.users++;
@@ -89,18 +89,24 @@ class EligibilityCoordinator {
   }
   async invalidate(key: Key) {
     const entry = this.entries.get(this.identity(key));
-    if (entry) { entry.epoch++; entry.due = Infinity; }
+    if (entry) { entry.epoch++; entry.mutationEpoch++; entry.due = Infinity; }
     await this.client.cancelQueries({ queryKey: key, exact: true });
     this.schedule();
   }
   current(key: Key) {
     const entry = this.entries.get(this.identity(key));
-    const epoch = entry?.epoch;
-    return () => Boolean(entry && this.entries.get(this.identity(key)) === entry && entry.epoch === epoch);
+    const mutationEpoch = entry?.mutationEpoch;
+    return () => Boolean(entry && this.entries.get(this.identity(key)) === entry && entry.mutationEpoch === mutationEpoch);
   }
   checking(key: Key, checking: boolean) {
     const entry = this.entries.get(this.identity(key));
-    if (entry) entry.checking = checking;
+    if (entry) {
+      entry.checking = checking;
+      if (!checking && entry.revalidateAfterCheck && this.active()) {
+        entry.revalidateAfterCheck = false;
+        this.fetch(entry);
+      }
+    }
   }
   updated(key: Key, value: Eligibility) {
     const entry = this.entries.get(this.identity(key));
@@ -149,8 +155,15 @@ class EligibilityCoordinator {
   private environmentChanged = () => {
     if (!this.active()) {
       for (const batch of this.batches) batch.controller.abort();
-      for (const entry of this.entries.values()) { entry.epoch++; void this.client.cancelQueries({ queryKey: entry.key, exact: true }); }
-    } else for (const entry of this.entries.values()) this.fetch(entry);
+      for (const entry of this.entries.values()) {
+        entry.epoch++;
+        if (entry.checking) entry.revalidateAfterCheck = true;
+        void this.client.cancelQueries({ queryKey: entry.key, exact: true });
+      }
+    } else for (const entry of this.entries.values()) {
+      if (!entry.checking) entry.revalidateAfterCheck = false;
+      this.fetch(entry);
+    }
     this.schedule();
   };
   private schedule() {
