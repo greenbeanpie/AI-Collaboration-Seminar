@@ -1,7 +1,7 @@
 import { isExecutionPaused } from './ai-execution-control';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { z } from 'zod';
-import type { Env } from '../env';
+import type { Env, ProjectMember } from '../env';
 import { loadAiConfig } from '../ai/config';
 import { AppError, invalidState, notFound, permissionDenied, versionConflict } from '../core/errors';
 import { newId, nowIso, sha256Hex } from '../core/db';
@@ -15,6 +15,11 @@ export const taskAgentEligibilitySchema = z.object({
   taskRevision: z.number().int().positive(), sourceHash: z.string(),
   eligible: z.boolean().nullable(), reason: z.string().nullable(), jobId: z.string().uuid().nullable(),
 });
+export const taskAgentEligibilityIdsSchema = z.array(z.string().uuid().transform(value => value.toLowerCase())).min(1).max(25)
+  .refine(ids => new Set(ids).size === ids.length, '任务 ID 不得重复');
+export const taskAgentEligibilityBatchSchema = z.object({items:z.array(z.object({
+  taskId:z.string().uuid(), eligibility:taskAgentEligibilitySchema.nullable(), errorCode:z.literal('NOT_FOUND').optional(),
+}))});
 type Eligibility = z.infer<typeof taskAgentEligibilitySchema>;
 type Cache = { eligible: number | null; reason: string | null; status: 'queued'|'running'|'ready'|'failed'; job_id: string; job_status: string | null; updated_at: string };
 const promptVersion = 'task-agent-eligibility-v1';
@@ -31,12 +36,9 @@ async function accessibleTask(env: Env, projectId: string, taskId: string, userI
   if (!task) throw notFound('任务不存在或已归档');
   return task;
 }
-export async function readTaskAgentEligibility(env: Env, projectId: string, taskId: string, userId: string): Promise<Eligibility> {
-  const task = await accessibleTask(env,projectId,taskId,userId), config = await enabled(env,projectId);
-  const sourceHash = await hash(task,config?.id ?? null,await activationEpoch(env,taskId));
+function eligibilityResult(task: Pick<CollaborationTask,'revision'>, sourceHash:string, available:boolean, cached?:Cache | null):Eligibility {
   const base = {taskRevision:task.revision,sourceHash,eligible:null,reason:null,jobId:null};
-  if (!config) return {...base,status:'disabled'};
-  const cached = await env.DB.prepare(`SELECT s.*,j.status AS job_status FROM task_agent_eligibility s LEFT JOIN jobs j ON j.id=s.job_id WHERE s.project_id=?1 AND s.task_id=?2 AND s.source_hash=?3`).bind(projectId,taskId,sourceHash).first<Cache>();
+  if (!available) return {...base,status:'disabled'};
   if (!cached) return {...base,status:'missing'};
   if (cached.status === 'ready') {
     if (![0,1].includes(cached.eligible ?? -1) || !cached.reason?.trim() || cached.reason.length > 800) return {...base,status:'failed',jobId:cached.job_id};
@@ -45,6 +47,35 @@ export async function readTaskAgentEligibility(env: Env, projectId: string, task
   const abandoned = !cached.job_status && cached.updated_at < new Date(Date.now()-300_000).toISOString();
   const status = abandoned || ['failed','cancelled','succeeded'].includes(cached.job_status ?? '') ? 'failed' : cached.status;
   return {...base,status,jobId:cached.job_id};
+}
+export async function readTaskAgentEligibility(env: Env, projectId: string, taskId: string, userId: string): Promise<Eligibility> {
+  const task = await accessibleTask(env,projectId,taskId,userId), config = await enabled(env,projectId);
+  const sourceHash = await hash(task,config?.id ?? null,await activationEpoch(env,taskId));
+  const cached = config ? await env.DB.prepare(`SELECT s.*,j.status AS job_status FROM task_agent_eligibility s LEFT JOIN jobs j ON j.id=s.job_id WHERE s.project_id=?1 AND s.task_id=?2 AND s.source_hash=?3`).bind(projectId,taskId,sourceHash).first<Cache>() : null;
+  return eligibilityResult(task,sourceHash,Boolean(config),cached);
+}
+export async function readTaskAgentEligibilityBatch(env:Env,projectId:string,taskIds:string[],actor:string | ProjectMember):Promise<z.infer<typeof taskAgentEligibilityBatchSchema>> {
+  const ids = taskAgentEligibilityIdsSchema.parse(taskIds);
+  if (typeof actor === 'string') {
+    if (!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(projectId,actor).first()) throw permissionDenied();
+  } else if (actor.projectId !== projectId) throw permissionDenied();
+  const config = await enabled(env,projectId);
+  const tasks = (await env.DB.prepare(`SELECT t.id,t.revision,t.title,t.detail,t.criteria,COALESCE(a.activation_epoch,0) AS activation_epoch
+    FROM tasks t LEFT JOIN task_agent_auto_checks a ON a.task_id=t.id
+    WHERE t.project_id=? AND t.archived_at IS NULL AND t.id IN (${ids.map(() => '?').join(',')})`).bind(projectId,...ids)
+    .all<Pick<CollaborationTask,'id'|'revision'|'title'|'detail'|'criteria'> & {activation_epoch:number}>()).results;
+  const inputs = await Promise.all(tasks.map(async task => ({task,sourceHash:await hash(task,config?.id ?? null,task.activation_epoch)})));
+  const cached = config && inputs.length ? (await env.DB.prepare(`WITH inputs(task_id,source_hash) AS (VALUES ${inputs.map(() => '(?,?)').join(',')})
+    SELECT s.*,j.status AS job_status FROM inputs i JOIN task_agent_eligibility s
+    ON s.project_id=? AND s.task_id=i.task_id AND s.source_hash=i.source_hash LEFT JOIN jobs j ON j.id=s.job_id`)
+    .bind(...inputs.flatMap(input => [input.task.id,input.sourceHash]),projectId).all<Cache & {task_id:string}>()).results : [];
+  const byTask = new Map(inputs.map(input => [input.task.id,input]));
+  const byCache = new Map(cached.map(row => [row.task_id,row]));
+  return {items:ids.map(taskId => {
+    const input=byTask.get(taskId);
+    return input ? {taskId,eligibility:eligibilityResult(input.task,input.sourceHash,Boolean(config),byCache.get(taskId))}
+      : {taskId,eligibility:null,errorCode:'NOT_FOUND' as const};
+  })};
 }
 export async function enqueueTaskAgentEligibility(env: Env, projectId: string, taskId: string, userId: string, expectedRevision: number, retry = false): Promise<Eligibility> {
   const task = await accessibleTask(env,projectId,taskId,userId);
