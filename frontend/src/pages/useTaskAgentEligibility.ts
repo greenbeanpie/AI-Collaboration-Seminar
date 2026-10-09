@@ -1,9 +1,10 @@
 import { errorMessage } from '../api/error-info';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CollaborationTask } from '../api/collaboration';
 import type { DataOf } from '../api/types';
 import { projectRequest } from '../api/simplification';
+import { eligibilityCoordinator } from './task-agent-eligibility-coordinator';
 
 export type TaskAgentEligibility = DataOf<'TaskAgentEligibilityResponse'>;
 export const taskAgentEligibilityKey = (projectId: string, task: Pick<CollaborationTask, 'taskId' | 'revision'>) => ['task-agent-eligibility', projectId, task.taskId, task.revision] as const;
@@ -13,19 +14,14 @@ export function useTaskAgentEligibility(projectId: string, task: CollaborationTa
   const client = useQueryClient();
   const key = taskAgentEligibilityKey(projectId, task);
   const path = `/collaboration/tasks/${encodeURIComponent(task.taskId)}/agent-eligibility`;
-  const [visible, setVisible] = useState(document.visibilityState !== 'hidden');
-  useEffect(() => {
-    const changed = () => setVisible(document.visibilityState !== 'hidden');
-    document.addEventListener('visibilitychange', changed);
-    return () => document.removeEventListener('visibilitychange', changed);
-  }, []);
+  const coordinator = eligibilityCoordinator(client, projectId);
+  useEffect(() => coordinator.register(['task-agent-eligibility', projectId, task.taskId, task.revision]), [coordinator, projectId, task.taskId, task.revision]);
   const query = useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => projectRequest<TaskAgentEligibility>(projectId, path, { signal, networkOnly: true }),
+    queryFn: ({ signal }) => coordinator.read(key, signal),
+    enabled: false,
     retry: false,
-    staleTime: 0,
-    refetchInterval: state => visible && ['missing', 'queued', 'running'].includes(state.state.data?.status ?? '') ? 1500 : false,
-    refetchIntervalInBackground: false,
+    staleTime: Infinity,
   });
   const check = useMutation({
     mutationKey: key,
@@ -34,17 +30,25 @@ export function useTaskAgentEligibility(projectId: string, task: CollaborationTa
       const previous = client.getQueryData<TaskAgentEligibility>(key);
       if (previous?.status === 'queued' || previous?.status === 'running') return previous;
       // Cancel an older GET before writing the shared pending state.
-      await client.cancelQueries({ queryKey: key });
+      await coordinator.invalidate(key);
+      const currentRequest = coordinator.current(key);
+      if (!currentRequest()) throw new Error('检查已取消');
       const current = client.getQueryData<TaskAgentEligibility>(key);
       if (current?.status === 'queued' || current?.status === 'running') return current;
+      coordinator.checking(key, true);
       client.setQueryData<TaskAgentEligibility>(key, { status: 'queued', taskRevision: task.revision, sourceHash: '', eligible: null, reason: null, jobId: null });
       try {
         const result = await projectRequest<TaskAgentEligibility>(projectId, path, { method: 'POST', body: { expectedRevision: task.revision, ...(current?.status === 'failed' ? { retry: true } : {}) }, networkOnly: true, idempotencyKey: crypto.randomUUID() });
-        client.setQueryData(key, result);
+        if (currentRequest()) {
+          client.setQueryData(key, result);
+          coordinator.updated(key, result);
+        }
         return result;
       } catch (error) {
-        client.setQueryData<TaskAgentEligibility>(key, { status: 'failed', taskRevision: task.revision, sourceHash: '', eligible: null, reason: error instanceof Error ? error.message : '检查请求失败，请重试。', jobId: null });
+        if (currentRequest()) client.setQueryData<TaskAgentEligibility>(key, { status: 'failed', taskRevision: task.revision, sourceHash: '', eligible: null, reason: error instanceof Error ? error.message : '检查请求失败，请重试。', jobId: null });
         throw error;
+      } finally {
+        if (currentRequest()) coordinator.checking(key, false);
       }
     },
   });
