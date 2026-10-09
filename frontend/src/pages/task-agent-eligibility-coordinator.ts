@@ -6,7 +6,7 @@ type Eligibility = DataOf<'TaskAgentEligibilityResponse'>;
 type Key = readonly ['task-agent-eligibility', string, string, number];
 type Entry = { key: Key; users: number; epoch: number; due: number; transition: string; since: number; checking: boolean };
 type Pending = { entry: Entry; epoch: number; signal: AbortSignal; resolve: (value: Eligibility) => void; reject: (error: Error) => void };
-type BatchResponse = { items: { taskId: string; eligibility: Eligibility | null; errorCode?: 'NOT_FOUND' }[] };
+type BatchResponse = DataOf<'TaskAgentEligibilityBatchResponse'>;
 const clients = new WeakMap<QueryClient, Map<string, EligibilityCoordinator>>();
 
 export function eligibilityPollDelay(status: string, elapsed: number) {

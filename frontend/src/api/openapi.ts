@@ -6877,6 +6877,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collaboration/agent-eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 批量读取任务 AI 执行适用性检查 */
+        get: {
+            parameters: {
+                query: {
+                    taskIds: string;
+                };
+                header?: never;
+                path: {
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 逐任务适用性状态 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskAgentEligibilityBatchResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility": {
         parameters: {
             query?: never;
@@ -16150,6 +16190,28 @@ export interface components {
             data: {
                 /** Format: uuid */
                 jobId: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskAgentEligibilityBatchResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    taskId: string;
+                    eligibility: {
+                        /** @enum {string} */
+                        status: "missing" | "queued" | "running" | "ready" | "failed" | "disabled";
+                        taskRevision: number;
+                        sourceHash: string;
+                        eligible: boolean | null;
+                        reason: string | null;
+                        /** Format: uuid */
+                        jobId: string | null;
+                    } | null;
+                    /** @enum {string} */
+                    errorCode?: "NOT_FOUND";
+                }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
