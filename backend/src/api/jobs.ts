@@ -83,8 +83,9 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(getRoute, async (c) => {
     const originalJobId = c.req.valid('param').jobId;
-    await authorizedJob(c.env,originalJobId,c.get('user')!.id);
-    const job=await authorizedJob(c.env,await currentSuccessor(c.env,originalJobId),c.get('user')!.id);
+    const originalJob = await authorizedJob(c.env,originalJobId,c.get('user')!.id);
+    const successorId = await currentSuccessor(c.env,originalJobId);
+    const job = successorId === originalJobId ? originalJob : await authorizedJob(c.env,successorId,c.get('user')!.id);
     const input = JSON.parse(job.input_json) as {operation?:string;profileStamp?:string;feedbackSnapshot?:FeedbackSnapshot};
     if (job.project_id && (job.kind === 'assignment_suggest' || input.operation === 'collaboration.assign')) {
       await assertProfileStamp(c.env,job.project_id,input.profileStamp);
@@ -133,7 +134,7 @@ export function registerJobRoutes(app: OpenAPIHono<AppEnv>): void {
     const original=c.req.valid('param').jobId,user=c.get('user')!;
     await authorizedJob(c.env,original,user.id);
     const id=await currentSuccessor(c.env,original);
-    await authorizedJob(c.env,id,user.id);
+    if (id !== original) await authorizedJob(c.env,id,user.id);
     const query=c.req.valid('query');
     return c.json(apiData(c,await readActivityEvents(c.env,id,query.cursor,query.limit,query.order)),200);
   });
