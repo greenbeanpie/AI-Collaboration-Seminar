@@ -116,13 +116,14 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                 } else if (pauseAt != null) {
                     devices?.let { selected ->
                         val inputId = selected.optString("inputDeviceId")
-                        if (inputId.isNotBlank()) {
+                        if (selected.has("inputDeviceId")) {
                             val available = (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getDevices(AudioManager.GET_DEVICES_INPUTS)
-                            require(audio!!.setPreferredDevice(available.firstOrNull { it.id.toString() == inputId } ?: error("所选麦克风不可用"))) { "无法切换麦克风" }
+                            val device = if (inputId.isBlank()) null else available.firstOrNull { it.id.toString() == inputId } ?: error("所选麦克风不可用")
+                            require(audio!!.setPreferredDevice(device)) { "无法切换麦克风" }
                             args.put("inputDeviceId", inputId)
                         }
                         val cameraId = selected.optString("cameraDeviceId")
-                        if (video && cameraId.isNotBlank() && cameraId != args.optString("cameraDeviceId")) {
+                        if (video && selected.has("cameraDeviceId") && cameraId != args.optString("cameraDeviceId")) {
                             capture?.close(); camera?.close(); capture = null; camera = null
                             args.put("cameraDeviceId", cameraId)
                             cameraTimelineOffsetUs = null

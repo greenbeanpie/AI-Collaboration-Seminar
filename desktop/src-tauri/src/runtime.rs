@@ -26,6 +26,7 @@ pub struct PageState {
 pub struct NativeState {
     pub page: Mutex<PageState>,
     pub active_transfers: AtomicUsize,
+    pub active_recordings: AtomicUsize,
     pub exiting: AtomicBool,
     pub hidden_since: Mutex<Option<Instant>>,
     pub nonce: AtomicU64,
@@ -38,6 +39,7 @@ impl Default for NativeState {
         Self {
             page: Mutex::new(PageState::default()),
             active_transfers: AtomicUsize::new(0),
+            active_recordings: AtomicUsize::new(0),
             exiting: AtomicBool::new(false),
             hidden_since: Mutex::new(None),
             nonce: AtomicU64::new(0),
@@ -50,11 +52,16 @@ impl Default for NativeState {
 impl NativeState {
     pub fn safe(&self) -> bool {
         let p = self.page.lock().unwrap();
+        #[cfg(target_os = "android")]
+        let recording_idle = !crate::android::recording_active();
+        #[cfg(not(target_os = "android"))]
+        let recording_idle = self.active_recordings.load(Ordering::SeqCst) == 0;
         p.protocol == 1
             && p.durable
             && !p.dirty
             && !p.busy
             && self.active_transfers.load(Ordering::SeqCst) == 0
+            && recording_idle
     }
     pub fn hidden_idle(&self) -> bool {
         self.hidden_since
@@ -295,6 +302,21 @@ mod tests {
     fn safe_defaults() {
         assert!(!NativeState::default().safe());
     }
+    #[cfg(windows)]
+    #[test]
+    fn active_recording_blocks_restart_and_exit() {
+        let state = NativeState::default();
+        {
+            let mut page = state.page.lock().unwrap();
+            page.protocol = 1;
+            page.durable = true;
+        }
+        assert!(state.safe());
+        state.active_recordings.store(1, Ordering::SeqCst);
+        assert!(!state.safe());
+        state.active_recordings.store(0, Ordering::SeqCst);
+        assert!(state.safe());
+    }
     #[test]
     fn routes() {
         assert!(safe_route("/app/projects/123"));
@@ -310,5 +332,5 @@ mod tests {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "android")))]
 pub fn open_external(_url: &url::Url) {}

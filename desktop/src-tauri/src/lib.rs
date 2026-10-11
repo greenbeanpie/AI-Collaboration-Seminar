@@ -3,6 +3,9 @@ mod android;
 mod cache;
 #[cfg(windows)]
 mod notifications;
+mod recording;
+#[cfg(windows)]
+mod recording_windows;
 mod runtime;
 #[cfg(windows)]
 mod updater;
@@ -41,6 +44,8 @@ fn desktop_report_state(
     {
         let mut page = native.page.lock().unwrap();
         if page.account_id != state.account_id {
+            #[cfg(windows)]
+            recording_windows::stop_for_account_change(&app);
             native.auth_epoch.fetch_add(1, Ordering::SeqCst);
             #[cfg(target_os = "android")]
             android::invalidate_session();
@@ -184,8 +189,18 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(NativeState::default())
         .manage(cache::CacheState::default())
+        .manage(recording::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
             desktop_hello,
+            recording::recording_capabilities,
+            recording::recording_start,
+            recording::recording_action,
+            recording::recording_list,
+            recording::recording_preview,
+            recording::recording_export_tail,
+            recording::recording_export,
+            recording::recording_upload,
+            recording::recording_remove,
             desktop_report_state,
             desktop_update_state,
             desktop_check_update,

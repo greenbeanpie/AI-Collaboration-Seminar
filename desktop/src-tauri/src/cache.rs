@@ -231,7 +231,7 @@ fn still_active(app: &AppHandle, row: &NativeFile) -> Result<()> {
     }
     Ok(())
 }
-async fn api(request: reqwest::RequestBuilder) -> Result<Value> {
+pub(crate) async fn api(request: reqwest::RequestBuilder) -> Result<Value> {
     let response = request
         .send()
         .await

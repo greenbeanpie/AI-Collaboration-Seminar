@@ -8644,6 +8644,269 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/recording-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: string;
+                    cursor?: string;
+                    materialId?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 会话列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingListResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        clientSessionId: string;
+                        title: string;
+                        /** @enum {string} */
+                        kind: "audio" | "video" | "photo";
+                        /** @enum {string} */
+                        purpose?: "background" | "reference" | "output";
+                        contributorIds?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 录制会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingSessionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/recording-sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 会话详情与分页片段 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingDetailResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/segments/{sequence}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sessionId: string;
+                    sequence: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        fileId: string;
+                        startMs: number;
+                        endMs: number;
+                        sha256: string;
+                        interruptions?: {
+                            startMs: number;
+                            endMs: number;
+                            reason: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 幂等片段登记 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingSegmentResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        segmentCount: number;
+                        interruptions?: {
+                            startMs: number;
+                            endMs: number;
+                            reason: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 录制会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingSessionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 录制会话 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecordingSessionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/resource-library": {
         parameters: {
             query?: never;
@@ -17040,6 +17303,127 @@ export interface components {
                     createdAt: string;
                 }[];
                 nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RecordingSessionResponse: {
+            data: {
+                /** Format: uuid */
+                sessionId: string;
+                /** Format: uuid */
+                clientSessionId: string;
+                /** Format: uuid */
+                materialId: string;
+                title: string;
+                /** @enum {string} */
+                kind: "audio" | "video" | "photo";
+                /** @enum {string} */
+                status: "uploading" | "complete";
+                /** @enum {string} */
+                processingStatus: "pending" | "running" | "ready" | "partial" | "unconfigured" | "failed";
+                segmentCount: number;
+                summaryRevision: number;
+                createdAt: string;
+                updatedAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RecordingListResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    sessionId: string;
+                    /** Format: uuid */
+                    clientSessionId: string;
+                    /** Format: uuid */
+                    materialId: string;
+                    title: string;
+                    /** @enum {string} */
+                    kind: "audio" | "video" | "photo";
+                    /** @enum {string} */
+                    status: "uploading" | "complete";
+                    /** @enum {string} */
+                    processingStatus: "pending" | "running" | "ready" | "partial" | "unconfigured" | "failed";
+                    segmentCount: number;
+                    summaryRevision: number;
+                    createdAt: string;
+                    updatedAt: string;
+                }[];
+                nextCursor: string | null;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RecordingDetailResponse: {
+            data: {
+                /** Format: uuid */
+                sessionId: string;
+                /** Format: uuid */
+                clientSessionId: string;
+                /** Format: uuid */
+                materialId: string;
+                title: string;
+                /** @enum {string} */
+                kind: "audio" | "video" | "photo";
+                /** @enum {string} */
+                status: "uploading" | "complete";
+                /** @enum {string} */
+                processingStatus: "pending" | "running" | "ready" | "partial" | "unconfigured" | "failed";
+                segmentCount: number;
+                summaryRevision: number;
+                createdAt: string;
+                updatedAt: string;
+                segments: {
+                    sequence: number;
+                    /** Format: uuid */
+                    fileId: string;
+                    /** Format: uuid */
+                    sourceId: string;
+                    /** Format: uuid */
+                    sourceVersionId: string;
+                    startMs: number;
+                    endMs: number;
+                    sha256: string;
+                    status: string;
+                    error: string | null;
+                    interruptions: {
+                        startMs: number;
+                        endMs: number;
+                        reason: string;
+                    }[];
+                }[];
+                nextCursor: string | null;
+                summaryMarkdown: string;
+                interruptions: {
+                    startMs: number;
+                    endMs: number;
+                    reason: string;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        RecordingSegmentResponse: {
+            data: {
+                sequence: number;
+                /** Format: uuid */
+                fileId: string;
+                /** Format: uuid */
+                sourceId: string;
+                /** Format: uuid */
+                sourceVersionId: string;
+                startMs: number;
+                endMs: number;
+                sha256: string;
+                status: string;
+                error: string | null;
+                interruptions: {
+                    startMs: number;
+                    endMs: number;
+                    reason: string;
+                }[];
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

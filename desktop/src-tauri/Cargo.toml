@@ -19,6 +19,8 @@ url = "2"
 base64 = "0.22"
 minisign-verify = "0.2"
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting"] }
 [target.'cfg(windows)'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
@@ -26,7 +28,7 @@ tauri-plugin-updater = "2"
 rfd = "0.15"
 tauri-winrt-notification = "0.8"
 webview2-com = "0.39"
-windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Media_MediaFoundation", "Win32_Storage_FileSystem", "Media_Capture", "Media_MediaProperties", "Storage", "Storage_Streams", "Storage_Search", "Foundation_Collections"] }
 
 [profile.release]
 opt-level = "s"

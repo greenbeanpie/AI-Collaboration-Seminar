@@ -1,0 +1,7 @@
+.recording-intake { display: grid; gap: 12px; min-width: 0; }
+.recording-intake > label { display: grid; gap: 6px; }
+.recording-intake > .form-actions { justify-content: flex-start; align-items: end; }
+.recording-intake > .form-actions > label { display: grid; gap: 6px; min-width: 140px; max-width: 100%; }
+.recording-intake audio { max-width: 100%; }
+.recording-intake article { display: grid; gap: 8px; }
+.recording-intake article .form-actions { justify-content: flex-start; }

@@ -46,6 +46,7 @@ pub fn run() {
             crate::recording::recording_list,
             crate::recording::recording_export,
             crate::recording::recording_preview,
+            crate::recording::recording_export_tail,
             crate::recording::recording_upload,
             crate::recording::recording_remove,
             cache::desktop_list_files,
