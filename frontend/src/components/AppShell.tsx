@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, BookOpen, FolderKanban, KeyRound, LifeBuoy, LogOut, MoreHorizontal, Plus, Search, Settings, UserRound, UsersRound } from 'lucide-react';
+import { ChevronDown, FolderKanban, LifeBuoy, LogOut, Search, UserRound } from 'lucide-react';
 import { api } from '../api/client';
 import type { User } from '../api/types';
 import { clearAccountStorage } from '../storage';
@@ -49,6 +49,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   }, [accountMenuOpen]);
   const queryClient = useQueryClient();
   const label = user.displayName || user.username || user.email || '项目成员';
+  const projectsActive = pathname === '/app' || pathname.startsWith('/app/projects/') || pathname === '/app/join';
 
   async function offerClearLogout() {
     if (busy) return;
@@ -103,34 +104,30 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       <div className="sidebar-navigation">
       <div className="nav-label">工作空间</div>
       <nav className="main-nav" aria-label="主导航">
-        <NavLink to="/app" end aria-label="我的项目" data-phone-label="项目" className={({ isActive }) => `nav-item ${isActive || pathname.startsWith('/app/projects/') ? 'active' : ''}`}><FolderKanban size={18} /><span className="nav-text">我的项目</span></NavLink>
-        <NavLink to="/app/join" aria-label="加入项目" data-phone-label="加入" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UsersRound size={18} /><span className="nav-text">加入项目</span></NavLink>
-        <NavLink to="/app/support" aria-label="支持工单" data-phone-label="支持" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><KeyRound size={18} /><span className="nav-text">支持工单</span></NavLink>
-        <NavLink to="/app/help" aria-label="帮助文档" data-phone-label="帮助" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><BookOpen size={18} /><span className="nav-text">帮助文档</span></NavLink>
+        <Link to="/app" aria-label="我的项目" aria-current={projectsActive ? 'page' : undefined} data-phone-label="项目" className={`nav-item ${projectsActive ? 'active' : ''}`}><FolderKanban size={18} /><span className="nav-text">我的项目</span></Link>
+        <NavLink to="/app/support" aria-label="支持与帮助" data-phone-label="支持" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><LifeBuoy size={18} /><span className="nav-text">支持与帮助</span></NavLink>
         <NavLink to="/app/profile" aria-label="个人资料" data-phone-label="我的" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><UserRound size={18} /><span className="nav-text">个人资料</span></NavLink>
-        <NavLink to="/app/settings" aria-label="设置" data-phone-label="设置" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings size={18} /><span className="nav-text">设置</span></NavLink>
         <NavLink to="/app/people" aria-label="搜索用户" data-phone-label="搜索" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Search size={18} /><span className="nav-text">搜索用户</span></NavLink>
       </nav>
-      <Link className="sidebar-create" to="/app/projects/new"><Plus size={17} />新建项目</Link>
       </div>
       <div className="sidebar-spacer" />
-      {logoutError !== null && <div className="sidebar-error"><ErrorNotice error={logoutError} /></div>}
       <div className="sidebar-note">登录账户的数据由项目服务保存</div>
     </aside>
     <div className="workspace-frame">
       <header className="workspace-topbar" aria-label="工作区顶栏">
         <Link to="/app" className="brand phone-brand"><span className="brand-mark"><BrandMark /></span><strong>补位</strong></Link>
         <span className="workspace-context">工作空间</span>
-        <div className="workspace-top-actions" ref={accountControls}>
-          <Link className="icon-button topbar-archive" to="/app?archive=1" aria-label="查看归档任务" title="查看归档任务" aria-haspopup="dialog"><Archive size={18} /></Link>
-            <NotificationControls/>
-          <Link className="topbar-account" to="/app/profile" aria-label={`个人资料：${label}`}><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="topbar-account-name">{label}</span></Link>
-          <button ref={accountMenuButton} className="icon-button topbar-actions-toggle" type="button" aria-label="主题与账户操作" aria-expanded={accountMenuOpen} aria-controls="workspace-account-actions" onClick={() => setAccountMenuOpen(open => !open)}><MoreHorizontal size={20} /></button>
-          <div id="workspace-account-actions" className="workspace-account-panel" data-open={accountMenuOpen}>
+        <div className="workspace-top-actions">
+          <NotificationControls/>
+          <div className="workspace-account-controls" ref={accountControls}>
+          <button ref={accountMenuButton} className="topbar-account" type="button" aria-label="个人资料菜单" title={`个人资料：${label}`} aria-expanded={accountMenuOpen} aria-controls="workspace-account-actions" onClick={() => setAccountMenuOpen(open => !open)}><span className="avatar">{label.slice(0, 1).toLocaleUpperCase()}</span><span className="topbar-account-name">{label}</span><ChevronDown size={16} /></button>
+          <div id="workspace-account-actions" className="workspace-account-panel" aria-label="个人资料下拉栏" hidden={!accountMenuOpen} data-open={accountMenuOpen}>
+            {logoutError !== null && clearCount === null && <ErrorNotice error={logoutError} />}
+            <Link className="topbar-profile" to="/app/profile" onClick={() => setAccountMenuOpen(false)}><UserRound size={17} /><span>个人资料</span></Link>
             <ThemeSelector/>
-            <Link className="topbar-support" to="/app/support" aria-label="支持工单"><LifeBuoy size={17}/><span>支持</span></Link>
             <button className="icon-button topbar-logout" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /><span className="topbar-action-label">退出登录</span></button>
             <button className="button button-quiet button-small" disabled={busy} onClick={() => void offerClearLogout()}>退出并清除此设备数据</button>
+          </div>
           </div>
         </div>
       </header>

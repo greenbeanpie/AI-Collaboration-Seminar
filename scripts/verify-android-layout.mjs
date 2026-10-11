@@ -23,7 +23,7 @@ const profiles = [
   { name: 'tablet-1024', width: 1024, height: 768, phone: false },
 ].filter(p => !process.env.UI_ANDROID_PROFILES || process.env.UI_ANDROID_PROFILES.split(',').includes(p.name));
 const routes = [
-  ['/app', 'home'], ['/app/projects/fixture', 'overview'],
+  ['/app', 'home'], ['/app/profile', 'profile'], ['/app/support', 'support'], ['/app/support/help', 'help'], ['/app/projects/fixture', 'overview'],
   ['/app/projects/fixture/tasks', 'tasks'], ['/app/projects/fixture/tasks?task=task1', 'task-detail'],
   ['/app/projects/fixture/data', 'data'], ['/app/projects/fixture/data?mode=import', 'import'],
   ['/app/projects/fixture/data?mode=files', 'files'],
@@ -82,7 +82,7 @@ const server = http.createServer(async (req, res) => {
 let previousUrl;
 let nativeViewport;
 async function connectVisible(width) {
-  if (socket?.readyState === WebSocket.OPEN) { await cdp('Fetch.disable'); socket.close(); }
+  if (socket?.readyState === WebSocket.OPEN) socket.close();
   for(let attempt=0;attempt<30;attempt++) {
     const pid=adbCall(['shell','pidof',appId]).trim().split(' ')[0];
     adbCall(['forward','tcp:9224','localabstract:webview_devtools_remote_'+pid]);
@@ -98,14 +98,10 @@ async function connectVisible(width) {
       const r=JSON.parse(event.data),request=pending.get(r.id);
       if(request){pending.delete(r.id);r.error?request.reject(new Error(r.error.message)):request.resolve(r.result);}
       if(r.method==='Runtime.exceptionThrown')runtimeErrors.push(r.params.exceptionDetails.exception?.description||r.params.exceptionDetails.text);
-      if(r.method==='Fetch.requestPaused')void cdp(r.params.request.url.startsWith(origin+'/')?'Fetch.continueRequest':'Fetch.failRequest',{requestId:r.params.requestId,...(r.params.request.url.startsWith(origin+'/')?{}:{errorReason:'BlockedByClient'})}).catch(error=>{
-        // Navigating away can cancel an intercepted request before it is continued.
-        if(!error.message.includes('Invalid InterceptionId'))failures.push({networkInterception:String(error)});
-      });
     });
     await cdp('Runtime.enable');await cdp('Network.enable');
     await cdp('Network.setBypassServiceWorker',{bypass:true});await cdp('Network.setCacheDisabled',{cacheDisabled:true});
-    await cdp('Fetch.enable',{patterns:[{urlPattern:'*'}]});
+    await cdp('Network.setBlockedURLs',{urls:['https://*']});
     return;
   }
   throw new Error('Visible Android WebView target did not resize to '+width);
@@ -164,7 +160,7 @@ try {
       }
       const result = { profile, route, name, nativeViewport, geometry, errors }; results.push(result);
       if (errors.length) failures.push(result);
-      if (['home', 'tasks', 'data', 'standards', 'template', 'task-detail'].includes(name)) {
+      if (['home', 'profile', 'support', 'help', 'tasks', 'data', 'standards', 'template', 'task-detail'].includes(name)) {
         await writeFile(path.join(output, `${profile.name}-${name}.png`), adbCall(['exec-out', 'screencap', '-p'], true));
       }
       if (name === 'home') await writeFile(path.join(output, `${profile.name}-emulator.png`), adbCall(['exec-out', 'screencap', '-p'], true));
@@ -175,21 +171,39 @@ try {
   if (phase !== 'before' && profiles.some(p=>p.phone)) {
     const phone = profiles.find(p=>p.phone);
     adbCall(['shell','wm','size',`${phone.width*2}x${phone.height*2}`]); await delay(500); await connectVisible(phone.width);
-    await cdp('Page.navigate',{url:origin+'/app'}); await until("document.querySelector('.dashboard-page')");
-    await evaluate('scrollTo(0,document.documentElement.scrollHeight)'); await delay(200);
+    await cdp('Page.navigate',{url:origin+'/app'}); await until("location.pathname==='/app' && document.querySelector('a.dashboard-project')");
+    await evaluate('document.fonts.ready.then(()=>true)'); await delay(300);
+    for(let attempt=0;attempt<4;attempt++) {
+      const height=await evaluate('document.documentElement.scrollHeight');
+      await evaluate('scrollTo(0,document.documentElement.scrollHeight)'); await delay(250);
+      if(height===await evaluate('document.documentElement.scrollHeight'))break;
+    }
     const clearance = await evaluate(`(()=>{const n=document.querySelector('.main-nav').getBoundingClientRect(),m=document.querySelector('main').getBoundingClientRect();return {navTop:n.top,navBottom:n.bottom,viewport:innerHeight,contentBottom:m.bottom-parseFloat(getComputedStyle(document.querySelector('main')).paddingBottom)};})()`);
     assert(clearance.navBottom <= clearance.viewport+1 && clearance.navTop > 0);
-    assert(clearance.contentBottom <= clearance.navTop, 'Bottom navigation covers final content');
+    assert(clearance.contentBottom <= clearance.navTop, 'Bottom navigation covers final content: '+JSON.stringify(clearance));
     const link = await evaluate("document.querySelector('.main-nav a[href=\"/app/people\"]').getBoundingClientRect().toJSON()");
     await cdp('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:link.x+link.width/2,y:link.y+link.height/2}]});
     await cdp('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await until("location.pathname==='/app/people'");
     results.push({name:'phone-fixed-navigation-scroll-clearance-and-touch',clearance,passed:true});
+    assert.equal(await evaluate("Boolean(document.querySelector('.workspace-account-panel')?.hidden)"),true);
+    const account=await evaluate("document.querySelector('.topbar-account').getBoundingClientRect().toJSON()");
+    await cdp('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:account.x+account.width/2,y:account.y+account.height/2}]});
+    await cdp('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await until("document.querySelector('.topbar-account').getAttribute('aria-expanded')==='true'");
+    const menu=await evaluate("(()=>{const e=document.querySelector('.workspace-account-panel'),r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,viewport:innerWidth,logoutButtons:[...e.querySelectorAll('button')].map(b=>b.textContent.trim())};})()");
+    assert(menu.x>=0 && menu.x+menu.width<=phone.width+1);
+    assert(menu.logoutButtons.includes('退出登录') && menu.logoutButtons.includes('退出并清除此设备数据'));
+    await writeFile(path.join(output,'phone-account-menu.png'),adbCall(['exec-out','screencap','-p'],true));
+    await cdp('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await cdp('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+    await until("document.querySelector('.workspace-account-panel').hidden");
+    results.push({name:'phone-account-dropdown-touch-and-logout-visibility',menu,passed:true});
   }
 } catch (error) { failures.push({error:String(error)}); console.error(error); }
 finally {
   if (socket?.readyState === WebSocket.OPEN) {
-    await cdp('Fetch.disable').catch(()=>{}); await cdp('Network.setBypassServiceWorker',{bypass:false}).catch(()=>{});
+    await cdp('Network.setBlockedURLs',{urls:[]}).catch(()=>{}); await cdp('Network.setBypassServiceWorker',{bypass:false}).catch(()=>{});
     await cdp('Network.setCacheDisabled',{cacheDisabled:false}).catch(()=>{});
     if (previousUrl) await cdp('Page.navigate',{url:previousUrl}).catch(()=>{});
     socket.close();

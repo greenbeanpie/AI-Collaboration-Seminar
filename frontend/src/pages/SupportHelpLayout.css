@@ -1,0 +1,6 @@
+.support-help-layout { width: min(100%, 1260px); margin: 0 auto; padding: 24px 0 30px; min-width: 0; }
+.support-help-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.support-help-tabs a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); white-space: nowrap; }
+.support-help-tabs a.active { color: var(--blue-dark); background: var(--blue-soft); border-color: var(--blue); }
+.support-help-layout > .page-stack { padding-top: 20px; }
+@media (max-width: 600px) { .support-help-tabs a { flex: 1; } }

@@ -82,7 +82,7 @@ export function DashboardPage() {
   return <div className="page-stack dashboard-page">
     {projectsQuery.search?.trim() && <p className="form-note">统计与待响应事项仅包含当前搜索匹配的项目。</p>}
     {projectsQuery.hasNextPage && <p className="form-note">还有项目尚未加载；跨项目统计将在加载全部项目后显示。</p>}
-    <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="让每个项目有序向前，让下一步清晰可见。" action={<Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link>} />
+    <PageHeading eyebrow="工作空间 / 总览" title="我的项目" detail="让每个项目有序向前，让下一步清晰可见。" action={<><Link className="button button-quiet" to="/app?archive=1" aria-haspopup="dialog">查看归档任务</Link><Link className="button button-primary" to="/app/projects/new"><Plus size={17} />新建项目</Link></>} />
     {projectsQuery.error && <ErrorNotice error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />}<LoadMore query={projectsQuery} label="项目" />
     <div className="dashboard-metrics">
       <div className="dashboard-metric"><span className="dashboard-metric-label"><FolderKanban size={16} />进行中的项目</span><strong className="dashboard-metric-value">{available ? current.filter(entry => entry.status !== 'done').length : '—'}<small>个</small></strong><span className="dashboard-metric-foot">{projectsQuery.error ? '项目暂不可用' : `共 ${current.length} 个项目 · ${archived.length} 个已归档`}</span></div>

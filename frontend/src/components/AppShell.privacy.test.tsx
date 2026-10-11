@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import * as store from '../offline/store';
 import { AppShell } from './AppShell';
 const user={id:'privacy-a',username:'alice',displayName:'Alice',email:null,isAdmin:false,role:'user' as const};
-function setup(){const router=createMemoryRouter([{path:'*',element:<AppShell user={user}>workspace</AppShell>}],{initialEntries:['/app']});render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router}/></QueryClientProvider>);return router;}
+function setup(){const router=createMemoryRouter([{path:'*',element:<AppShell user={user}>workspace</AppShell>}],{initialEntries:['/app']});render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router}/></QueryClientProvider>);fireEvent.click(screen.getByRole('button',{name:'个人资料菜单'}));return router;}
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();localStorage.clear();});
 it('ordinary logout retains account drafts',async()=>{
  localStorage.setItem('buwei:draft:privacy-a:p:m','draft');vi.stubGlobal('navigator',{onLine:true});vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:{revoked:true}})));

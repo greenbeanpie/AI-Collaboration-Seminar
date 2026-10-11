@@ -110,7 +110,7 @@ export function HelpPage() {
     <PageHeading eyebrow="补位 · 阅读与参考" title="帮助文档" detail="使用说明介绍操作流程；技术实现与数据库字典记录系统结构和运行机制。" />
     <div className="card help-toolbar">
       <nav aria-label="文档选择" className="help-document-nav">
-        {(['user', 'technical', 'database'] as const).map(key => <Link key={key} to={`/app/help?doc=${key}`} aria-current={kind === key ? 'page' : undefined} className={`button ${kind === key ? 'button-primary' : 'button-quiet'}`}>{documents[key].label}</Link>)}
+        {(['user', 'technical', 'database'] as const).map(key => <Link key={key} to={`/app/support/help?doc=${key}`} aria-current={kind === key ? 'page' : undefined} className={`button ${kind === key ? 'button-primary' : 'button-quiet'}`}>{documents[key].label}</Link>)}
       </nav>
       <label className="help-search"><Search size={17} aria-hidden="true" /><span className="help-sr-only">搜索当前文档</span><input type="search" value={query} placeholder="搜索当前文档，如：任务、版本" onChange={event => { const next = new URLSearchParams(params); next.set('q', event.target.value); setParams(next, { replace: true }); }} /></label>
       <button type="button" className="button button-quiet" onClick={download}><Download size={16} aria-hidden="true" />下载文档</button>

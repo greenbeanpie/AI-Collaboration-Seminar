@@ -4,6 +4,8 @@ import { NotificationRuntime } from './notifications/NotificationRuntime';
 import { NotificationSettings } from './notifications/NotificationSettings';
 import { InstallationSettings } from './notifications/InstallationSettings';
 import { SettingsLayout } from './pages/SettingsLayout';
+import { SupportHelpLayout } from './pages/SupportHelpLayout';
+import { WorkspaceLegacyRedirect } from './pages/WorkspaceLegacyRedirect';
 import { SettingsEditGuard } from './pages/SettingsEditGuard';
 import { AppearanceSettings } from './pages/AppearanceSettings';
 import { Suspense, useEffect } from 'react';
@@ -115,14 +117,18 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
-        <Route path="/app/help" element={<HelpPage />} />
+        <Route path="/app/help" element={<WorkspaceLegacyRedirect from="/app/help" to="/app/support/help" />} />
         <Route path="/app/agent-bridges/connect" element={<AgentBridgesPage />} />
-        <Route path="/app/support" element={<SupportTicketsPage />} />
-        <Route path="/app/support/:ticketId" element={<SupportTicketDetailPage />} />
+        <Route path="/app/support" element={<SupportHelpLayout />}>
+          <Route index element={<SupportTicketsPage />} />
+          <Route path="help" element={<HelpPage />} />
+          <Route path=":ticketId" element={<SupportTicketDetailPage />} />
+        </Route>
         <Route path="/app/people" element={<ProfileSearchPage />} />
         <Route path="/app/people/:username" element={<PublicProfilePage />} />
         <Route path="/app/profile" element={<SettingsEditGuard><PersonalProfilePage /></SettingsEditGuard>} />
-        <Route path="/app/settings" element={<SettingsLayout />}>
+        <Route path="/app/settings/*" element={<WorkspaceLegacyRedirect from="/app/settings" to="/app/profile/settings" />} />
+        <Route path="/app/profile/settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
           <Route path="profile" element={<AccountSettingsPage section="profile" />} />
           <Route path="privacy" element={<Navigate to="/app/profile" replace />} />
@@ -136,10 +142,10 @@ export default function App() {
             <Route path="system" element={<SystemOverviewPage />} />
             <Route element={<SystemAdminOnly superOnly />}><Route path="ai" element={<div className="page-stack ai-settings-page"><AiSettings /></div>} /></Route>
           </Route>
-          <Route path="*" element={<Navigate to="/app/settings/profile" replace />} />
+          <Route path="*" element={<Navigate to="/app/profile/settings/profile" replace />} />
         </Route>
-        <Route path="/app/admin/accounts" element={<Navigate to="/app/settings/accounts" replace />} />
-        <Route path="/app/admin/ai" element={<Navigate to="/app/settings/ai" replace />} />
+        <Route path="/app/admin/accounts" element={<Navigate to="/app/profile/settings/accounts" replace />} />
+        <Route path="/app/admin/ai" element={<Navigate to="/app/profile/settings/ai" replace />} />
         <Route path="/app/projects/new" element={<CreateProjectPage />} />
         <Route path="/app/projects/new/wizard" element={<CreateProjectWizardPage />} />
         <Route path="/app/projects/new/template/:draftId" element={<SettingsEditGuard message="模板预览有尚未保存的编辑。确定放弃这些编辑并离开吗？"><TemplateDraftWorkspace /></SettingsEditGuard>} />
