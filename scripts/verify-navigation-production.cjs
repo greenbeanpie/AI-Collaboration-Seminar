@@ -74,6 +74,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
       await context.route('**/api/v1/**', route => { const r = route.request(), url = new URL(r.url()); if (r.method() !== 'GET') { report.blockedWrites.push({ method: r.method(), path: url.pathname }); return route.abort(); } return route.fulfill({ json: { data: fixture(url.pathname, url.searchParams), requestId: 'deployed-navigation-fixture' } }); });
       const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', error => report.browserErrors.push(error.message));
       await page.goto(origin + '/app'); const nav = page.getByRole('navigation', { name: '主导航' }); await nav.waitFor();
+      await page.getByRole('link', { name: '新建项目', exact: true }).waitFor();
       assert.deepEqual(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))), ['我的项目', '支持与帮助', '个人资料', '搜索用户']);
       assert.equal(await page.locator('.sidebar-create,.topbar-archive').count(), 0);
       assert.equal(await page.getByRole('link', { name: '新建项目', exact: true }).count(), 1);
