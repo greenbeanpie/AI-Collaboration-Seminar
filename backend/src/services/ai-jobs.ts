@@ -1,3 +1,4 @@
+import { runRecordingSummary } from './recording-summary';
 import { BackgroundContinuation } from './ai-execution-slices';
 import { runProjectChatJob } from './project-ai-chat';
 import { runTaskAssistancePlanJob } from './task-assistance-plan';
@@ -26,6 +27,7 @@ export async function runAiJob(env: Env, jobId: string): Promise<void> {
       { const result = await runParseJob(env, jobId); if (['running','busy'].includes(result.status)) throw new BackgroundContinuation(); }
       return;
     case 'agent_run':
+      if(JSON.parse(job.input_json).operation==='recording.summary'){await runRecordingSummary(env,jobId);return;}
       if(JSON.parse(job.input_json).operation==='project.chat'){await runProjectChatJob(env,jobId);return;}
       if (JSON.parse(job.input_json).operation === 'rehearsal.tts') { await runRehearsalSpeechJob(env,jobId); return; }
       if (JSON.parse(job.input_json).operation === 'collaboration.assistance-plan') { await runTaskAssistancePlanJob(env,jobId); return; }

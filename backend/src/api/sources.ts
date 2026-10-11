@@ -344,7 +344,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const rows = await c.env.DB.prepare(
       `SELECT id, project_id, kind, title, purpose, resource_revision, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
         (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
-       WHERE project_id = ?1 AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
+       WHERE project_id = ?1 AND NOT EXISTS(SELECT 1 FROM recording_segments WHERE source_id=sources.id) AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
        AND (?6='' OR instr(lower(title),lower(?6))>0)
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
        ORDER BY created_at DESC, id DESC LIMIT ?4`,

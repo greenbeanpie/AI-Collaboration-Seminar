@@ -77,7 +77,7 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const member = c.get('member')!;
     const query = c.req.valid('query'), paging = parsePaging(query);
     const rows = await c.env.DB.prepare(`SELECT * FROM (${resourceUnion})
-      WHERE (deleted_at IS NOT NULL)=?4 AND (archived_at IS NOT NULL)=?9 AND (?5 IS NULL OR purpose=?5)
+      WHERE NOT EXISTS(SELECT 1 FROM recording_segments recording_child WHERE resource_type='source' AND recording_child.source_id=id) AND (deleted_at IS NOT NULL)=?4 AND (archived_at IS NOT NULL)=?9 AND (?5 IS NULL OR purpose=?5)
         AND (?10='' OR instr(lower(title),lower(?10))>0)
         AND (?6 IS NULL OR created_at<?6 OR (created_at=?6 AND sort_key<?7))
       ORDER BY created_at DESC,sort_key DESC LIMIT ?8`)

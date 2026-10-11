@@ -1,3 +1,4 @@
+import { backfillRecordings } from './services/recordings';
 import { isD1DailyQuotaError } from './core/d1-quota';
 import { backfillFileProcessing } from './services/file-processing';
 import { recoverChatContextCleanup } from './services/project-ai-chat';
@@ -57,6 +58,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
         await recoverJobs(env, nowIso());
         await run('reservations', () => releaseStaleReservations(env, now));
       } else if (group === 'backfill') {
+        await run('recordings', () => backfillRecordings(env));
         await run('file_processing', () => backfillFileProcessing(env, undefined, 10));
         await run('task_eligibility', () => backfillTaskAgentEligibility(env));
         await run('resource_indexes', () => backfillResourceIndexes(env, 5));

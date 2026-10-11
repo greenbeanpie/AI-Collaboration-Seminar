@@ -6,5 +6,5 @@ export function discoverableFileSql(alias = 'f'): string {
   return `${alias}.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM task_file_uploads archive_mapping JOIN materials archive_material ON archive_material.id=archive_mapping.material_id WHERE archive_mapping.file_id=${alias}.id AND (archive_material.archived_at IS NOT NULL OR NOT EXISTS(SELECT 1 FROM material_versions archive_current,json_each(archive_current.attachments_json) archive_attachment WHERE archive_current.id=archive_material.current_version_id AND json_extract(archive_attachment.value,'$.fileId')=${alias}.id)))`;
 }
 export function discoverableSourceSql(versionAlias = 'v'): string {
-  return `(${versionAlias}.origin!='file' OR EXISTS(SELECT 1 FROM files archive_source_file WHERE archive_source_file.id=${versionAlias}.file_id AND ${discoverableFileSql('archive_source_file')}))`;
+  return `NOT EXISTS(SELECT 1 FROM recording_segments recording_child WHERE recording_child.source_version_id=${versionAlias}.id) AND (${versionAlias}.origin!='file' OR EXISTS(SELECT 1 FROM files archive_source_file WHERE archive_source_file.id=${versionAlias}.file_id AND ${discoverableFileSql('archive_source_file')}))`;
 }

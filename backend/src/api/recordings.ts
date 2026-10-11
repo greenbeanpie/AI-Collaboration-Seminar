@@ -1,0 +1,31 @@
+import {createRoute,OpenAPIHono,z} from '@hono/zod-openapi';
+import type {AppEnv} from '../env';
+import {apiData} from '../core/api';
+import {apiEnvelope} from '../core/openapi';
+import {requireUser,requireProjectMember} from '../core/auth';
+import {projectParams} from './projects';
+import {createRecording,recordingRow,sessionView,recordingSegments,registerSegment,completeRecording,listRecordings,processRecording} from '../services/recordings';
+import {invalidState,validationFailed} from '../core/errors';
+const params=projectParams.extend({sessionId:z.string().uuid()});
+const interruption=z.object({startMs:z.number().int().nonnegative(),endMs:z.number().int().nonnegative(),reason:z.string().min(1).max(500)}).refine(v=>v.endMs>=v.startMs);
+const interruptions=z.array(interruption).max(1000).optional();
+const session=z.object({sessionId:z.string().uuid(),clientSessionId:z.string().uuid(),materialId:z.string().uuid(),title:z.string(),kind:z.enum(['audio','video','photo']),status:z.enum(['uploading','complete']),processingStatus:z.enum(['pending','running','ready','partial','unconfigured','failed']),segmentCount:z.number().int(),summaryRevision:z.number().int(),createdAt:z.string(),updatedAt:z.string()});
+const segment=z.object({sequence:z.number().int(),fileId:z.string().uuid(),sourceId:z.string().uuid(),sourceVersionId:z.string().uuid(),startMs:z.number().int(),endMs:z.number().int(),sha256:z.string(),status:z.string(),error:z.string().nullable(),interruptions:z.array(interruption)});
+const root='/api/v1/projects/{projectId}/recording-sessions';
+const responses={200:{description:'录制会话',content:{'application/json':{schema:apiEnvelope(session,'RecordingSessionResponse')}}}};
+const create=createRoute({method:'post',path:root,tags:['recordings'],request:{params:projectParams,body:{required:true,content:{'application/json':{schema:z.object({clientSessionId:z.string().uuid(),title:z.string().trim().min(1).max(200),kind:z.enum(['audio','video','photo']),purpose:z.enum(['background','reference','output']).optional(),contributorIds:z.array(z.string().uuid()).max(100).optional()}).strict()}}}},responses});
+const list=createRoute({method:'get',path:root,tags:['recordings'],request:{params:projectParams,query:z.object({limit:z.string().optional(),cursor:z.string().optional(),materialId:z.string().uuid().optional()})},responses:{200:{description:'会话列表',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(session),nextCursor:z.string().nullable()}),'RecordingListResponse')}}}}});
+const detail=createRoute({method:'get',path:root+'/{sessionId}',tags:['recordings'],request:{params,query:z.object({cursor:z.string().optional(),limit:z.string().optional()})},responses:{200:{description:'会话详情与分页片段',content:{'application/json':{schema:apiEnvelope(session.extend({segments:z.array(segment),nextCursor:z.string().nullable(),summaryMarkdown:z.string(),interruptions:z.array(interruption)}),'RecordingDetailResponse')}}}}});
+const put=createRoute({method:'put',path:root+'/{sessionId}/segments/{sequence}',tags:['recordings'],request:{params:params.extend({sequence:z.string().regex(/^\d+$/)}),body:{required:true,content:{'application/json':{schema:z.object({fileId:z.string().uuid(),startMs:z.number().int().nonnegative(),endMs:z.number().int().nonnegative(),sha256:z.string().regex(/^[a-f0-9]{64}$/),interruptions}).strict()}}}},responses:{200:{description:'幂等片段登记',content:{'application/json':{schema:apiEnvelope(segment,'RecordingSegmentResponse')}}}}});
+const complete=createRoute({method:'post',path:root+'/{sessionId}/complete',tags:['recordings'],request:{params,body:{required:true,content:{'application/json':{schema:z.object({segmentCount:z.number().int().positive(),interruptions}).strict()}}}},responses});
+const retry=createRoute({method:'post',path:root+'/{sessionId}/retry',tags:['recordings'],request:{params},responses});
+export function registerRecordingRoutes(app:OpenAPIHono<AppEnv>){
+ app.use('/api/v1/projects/:projectId/recording-sessions',requireUser,requireProjectMember());
+ app.use('/api/v1/projects/:projectId/recording-sessions/*',requireUser,requireProjectMember());
+ app.openapi(create,async c=>c.json(apiData(c,await createRecording(c.env,c.req.valid('param').projectId,c.get('member')!.userId,c.req.valid('json'))),200));
+ app.openapi(list,async c=>c.json(apiData(c,await listRecordings(c.env,c.req.valid('param').projectId,c.req.valid('query'))),200));
+ app.openapi(detail,async c=>{const p=c.req.valid('param'),q=c.req.valid('query'),r=await recordingRow(c.env,p.projectId,p.sessionId);const after=q.cursor===undefined?-1:Number(q.cursor);if(!Number.isSafeInteger(after)||after< -1)throw validationFailed('片段游标无效');const limit=Math.min(100,Math.max(1,Number(q.limit)||50)),rows=await recordingSegments(c.env,r.id,after,limit+1),items=rows.slice(0,limit);const version=await c.env.DB.prepare(`SELECT markdown FROM material_versions WHERE id=(SELECT current_version_id FROM materials WHERE id=?1)`).bind(r.material_id).first<{markdown:string}>();return c.json(apiData(c,{...sessionView(r),segments:items,nextCursor:rows.length>limit?String(items.at(-1)!.sequence):null,summaryMarkdown:version?.markdown??'',interruptions:JSON.parse(r.interruptions_json)}),200);});
+ app.openapi(put,async c=>{const p=c.req.valid('param'),n=Number(p.sequence);if((!Number.isSafeInteger(n)||n<1))throw validationFailed('片段序号无效');return c.json(apiData(c,await registerSegment(c.env,p.projectId,p.sessionId,c.get('member')!.userId,n,c.req.valid('json'))),200);});
+ app.openapi(complete,async c=>{const p=c.req.valid('param');return c.json(apiData(c,await completeRecording(c.env,p.projectId,p.sessionId,c.get('member')!.userId,c.req.valid('json'))),200);});
+ app.openapi(retry,async c=>{const p=c.req.valid('param'),r=await recordingRow(c.env,p.projectId,p.sessionId,c.get('member')!.userId);if(r.archived_at||r.status!=='complete')throw invalidState('录制不可处理');await processRecording(c.env,r.id,true);return c.json(apiData(c,sessionView(await recordingRow(c.env,p.projectId,p.sessionId))),200);});
+}
