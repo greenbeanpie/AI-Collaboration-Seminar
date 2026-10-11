@@ -56,6 +56,9 @@ function fixture(path, searchParams=new URLSearchParams(), options={}) {
  if(tail==='/goal')return goal;
  if(tail==='/collaboration/settings')return {aiCollaborationEnabled:true,assignmentMode:'manual',evaluationMode:'manual',planningMode:'manual',progressionMode:'manual',revision:1};
  if(tail==='/tasks')return list([task]);
+ if(tail==='/tasks/graph')return {items:[task],memberIds:[user.id,'fixture-member'],graphRevision:1,canRegenerate:permissions.taskManage,totals:{total:1,todo:0,doing:1,blocked:0,done:0}};
+ if(tail==='/collaboration/feedback/current')return {feedback:'入口检查的持续反馈',version:1};
+ if(tail==='/collaboration/feedback/history')return list([]);
  if(tail==='/tasks/task1')return task;
  if(tail==='/tasks/task1/submissions')return list([submission]);
  if(tail==='/tasks/task1/inquiries')return {items:[],candidates:[]};
