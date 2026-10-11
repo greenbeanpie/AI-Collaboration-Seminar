@@ -35,10 +35,19 @@ pub fn run() {
         .plugin(crate::android::init())
         .manage(NativeState::default())
         .manage(cache::CacheState::default())
+        .manage(crate::recording::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
             desktop_hello,
             crate::desktop_report_state,
             mobile_set_foreground,
+            crate::recording::recording_capabilities,
+            crate::recording::recording_start,
+            crate::recording::recording_action,
+            crate::recording::recording_list,
+            crate::recording::recording_export,
+            crate::recording::recording_preview,
+            crate::recording::recording_upload,
+            crate::recording::recording_remove,
             cache::desktop_list_files,
             cache::desktop_stage_files,
             cache::desktop_cache_project,

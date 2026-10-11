@@ -60,7 +60,7 @@ try {
     $libraryDirectory = (Join-Path (Split-Path $package.manifest_path) 'mobile/android').Replace('\','/')
     $settings = "include ':tauri-android'`nproject(':tauri-android').projectDir = new File('$($libraryDirectory.Replace("'","\'"))')`n"
     [IO.File]::WriteAllText((Join-Path $project 'tauri.settings.gradle'), $settings)
-    [IO.File]::WriteAllText((Join-Path $project 'app/tauri.build.gradle.kts'), 'dependencies { implementation(project(":tauri-android")) }')
+    [IO.File]::WriteAllText((Join-Path $project 'app/tauri.build.gradle.kts'), 'dependencies { add("implementation", project(":tauri-android")) }')
   }
   Push-Location $project
   try {

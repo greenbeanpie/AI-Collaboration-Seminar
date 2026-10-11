@@ -35,6 +35,28 @@ class FixtureInstrumentation : Instrumentation() {
             val op = arguments.getString("op") ?: error("Missing fixture operation")
             val manifest = File(root, "manifest.json")
             when (op) {
+                "recording-store" -> {
+                    val recordingRoot = File(targetContext.dataDir, "recordings")
+                    val id = UUID.randomUUID().toString()
+                    val store = cn.buwei.mobile.RecordingStore(targetContext, recordingRoot.path, account, id)
+                    try {
+                        check(runCatching { cn.buwei.mobile.RecordingStore(targetContext, recordingRoot.path, "../other", id) }.isFailure)
+                        check(runCatching { cn.buwei.mobile.RecordingStore(targetContext, targetContext.cacheDir.path, account, id) }.isFailure)
+                        store.create(JSONObject().put("id", id).put("accountId", account).put("projectId", project).put("kind", "audio"))
+                        val completed = File(store.directory, "segment-0.m4a")
+                        completed.writeBytes(byteArrayOf(1, 2, 3, 4))
+                        store.complete(completed, 0, 1000)
+                        val tail = File(store.directory, "segment-1.m4a.partial")
+                        tail.writeBytes(byteArrayOf(5, 6))
+                        val recovered = cn.buwei.mobile.RecordingStore(targetContext, recordingRoot.path, account, id).recover()
+                        check(recovered.getString("state") == "interrupted")
+                        check(recovered.getJSONArray("segments").length() == 1)
+                        check(recovered.getJSONArray("segments").getJSONObject(0).getString("sha256") == "9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a")
+                        check(recovered.getJSONArray("incompleteFiles").length() == 1 && tail.exists())
+                        check(runCatching { store.create(JSONObject()) }.isFailure)
+                        result.putInt("checks", 7)
+                    } finally { store.directory.deleteRecursively() }
+                }
                 "digest", "manifest" -> {
                     val id = canonicalUuid(arguments.getString("row") ?: error("Missing row"))
                     val rows = loadRows(manifest)

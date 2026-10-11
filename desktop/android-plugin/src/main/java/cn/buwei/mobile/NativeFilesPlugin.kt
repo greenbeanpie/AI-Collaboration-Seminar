@@ -12,6 +12,9 @@ import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
+import app.tauri.plugin.JSObject
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.io.File
@@ -29,13 +32,178 @@ data class PickedFile(val path: String, val name: String, val sizeBytes: Long)
 data class Session(val cookie: String, val foreground: Boolean)
 
 /** Internal Rust-only adapter; no web capability grants this plugin commands. */
-@TauriPlugin
+@TauriPlugin(permissions = [
+    Permission(strings = [android.Manifest.permission.RECORD_AUDIO], alias = "recordingAudio"),
+    Permission(strings = [android.Manifest.permission.CAMERA], alias = "recordingCamera")
+])
 class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
     private var exportCookie: String? = null
+    private var recordingExportSource: File? = null
+    private var recordingExportEpoch: Long = -1
+    @Command
+    fun recordingExport(invoke: Invoke) {
+        try {
+            require(recordingExportSource == null) { "已有导出操作" }
+            val args = org.json.JSONObject(invoke.getRawArgs())
+            val store = RecordingStore(activity, args.getString("root"), args.getString("accountId"), args.getString("id"))
+            require(store.view().getString("projectId") == args.getString("projectId"))
+            val name = if (args.has("sequence")) store.view().getJSONArray("segments").getJSONObject(args.getInt("sequence")).getString("name") else args.getString("name")
+            require(name.matches(Regex("segment-[0-9]+\\.(m4a|mp4|jpg)(\\.partial)?"))) { "录制文件名无效" }
+            val source = File(store.directory, name).canonicalFile
+            require(source.parentFile == store.directory && source.isFile) { "录制文件不存在" }
+            recordingExportSource = source
+            recordingExportEpoch = accountEpoch()
+            exportCookie = CookieManager.getInstance().getCookie("https://greenbp-team-office.hddhp.workers.dev")
+            startActivityForResult(invoke, Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, name)
+            }, "recordingExported")
+        } catch (e: Exception) { recordingExportSource = null; invoke.reject(e.message) }
+    }
+    @ActivityCallback
+    fun recordingExported(invoke: Invoke, result: ActivityResult) {
+        val source = recordingExportSource
+        if (result.resultCode != Activity.RESULT_OK) { recordingExportSource = null; invoke.resolve(); return }
+        val uri = result.data?.data
+        worker.execute {
+            try {
+                require(source != null && uri != null)
+                require(recordingExportEpoch == accountEpoch() && exportCookie == CookieManager.getInstance().getCookie("https://greenbp-team-office.hddhp.workers.dev")) { "登录账户已变化" }
+                activity.contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
+                    FileOutputStream(descriptor.fileDescriptor).use { output ->
+                        source.inputStream().use { input ->
+                            val buffer = ByteArray(65536)
+                            while (true) {
+                                check(recordingExportEpoch == accountEpoch()) { "登录账户已变化" }
+                                val n = input.read(buffer); if (n < 0) break; output.write(buffer, 0, n)
+                            }
+                        }
+                        output.flush()
+                    }
+                } ?: error("无法写入导出位置")
+                invoke.resolve()
+            } catch (e: Exception) { invoke.reject(e.message) } finally { recordingExportSource = null }
+        }
+    }
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var foreground = true
     private external fun foregroundChanged(active: Boolean)
     private external fun accountEpoch(): Long
+    @Command
+    fun recordingCapabilities(invoke: Invoke) {
+        try {
+            val devices = org.json.JSONArray()
+            val cameras = activity.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            for (id in cameras.cameraIdList) {
+                val facing = cameras.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                devices.put(org.json.JSONObject().put("id", id).put("label", if (facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT) "前置摄像头" else "后置摄像头").put("kind", "videoinput"))
+            }
+            val audio = activity.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            for (device in audio.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS)) devices.put(org.json.JSONObject().put("id", device.id.toString()).put("label", device.productName.toString()).put("kind", "audioinput"))
+            val codecs = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos.filter { it.isEncoder }
+            val aac = codecs.any { it.supportedTypes.any { t -> t == android.media.MediaFormat.MIMETYPE_AUDIO_AAC } }
+            val avc = codecs.any { it.supportedTypes.any { t -> t == android.media.MediaFormat.MIMETYPE_VIDEO_AVC } }
+            invoke.resolve(JSObject().put("audio", aac).put("video", aac && avc && cameras.cameraIdList.isNotEmpty()).put("photo", cameras.cameraIdList.isNotEmpty()).put("background", true).put("devices", devices))
+        } catch (e: Exception) { invoke.reject(e.message) }
+    }
+    @Command
+    fun recordingStart(invoke: Invoke) {
+        if (!foreground) { invoke.reject("请在前台启动录制"); return }
+        val kind = invoke.getArgs().getString("kind")
+        if (kind !in listOf("audio", "video", "photo")) { invoke.reject("录制类型无效"); return }
+        val aliases = when (kind) { "audio" -> arrayOf("recordingAudio"); "photo" -> arrayOf("recordingCamera"); else -> arrayOf("recordingAudio", "recordingCamera") }
+        activity.runOnUiThread { requestPermissionForAliases(aliases, invoke, "recordingPermission") }
+    }
+    @PermissionCallback
+    fun recordingPermission(invoke: Invoke) {
+        try {
+            val args = org.json.JSONObject(invoke.getRawArgs())
+            val kind = args.getString("kind")
+            require(foreground) { "权限申请后页面已转入后台，请重新启动" }
+            require(RecordingService.instance == null) { "已有活动录制" }
+            if (kind != "photo") require(activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "麦克风权限未授予" }
+            if (kind != "audio") require(activity.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "摄像头权限未授予" }
+            // Validate the trusted Rust root before the foreground service creates anything.
+            val store = RecordingStore(activity, args.getString("root"), args.getString("accountId"), args.getString("id"))
+            require(store.view().length() == 0) { "录制草稿已存在" }
+            activity.startForegroundService(Intent(activity, RecordingService::class.java).putExtra("args", args.toString()))
+            worker.execute {
+                try {
+                    val deadline = android.os.SystemClock.elapsedRealtime() + 15000
+                    var result: org.json.JSONObject? = null
+                    while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                        val active = RecordingService.instance?.store
+                        if (active != null) { result = active.view(); break }
+                        Thread.sleep(30)
+                    }
+                    invoke.resolve(JSObject((result ?: error("录制服务启动失败")).toString()))
+                } catch (e: Exception) { invoke.reject(e.message) }
+            }
+        } catch (e: Exception) { invoke.reject(e.message) }
+    }
+    @Command
+    fun recordingAction(invoke: Invoke) {
+        worker.execute {
+            try {
+                val args = org.json.JSONObject(invoke.getRawArgs())
+                val id = args.getString("id")
+                val action = args.optString("action", "snapshot")
+                val active = RecordingService.instance
+                val expected = RecordingStore(activity, args.getString("root"), args.getString("accountId"), id)
+                require(expected.view().getString("projectId") == args.getString("projectId")) { "录制项目不匹配" }
+                val ownsActive = active?.store?.directory == expected.directory
+                var result = if (ownsActive) active!!.action(id, action, args) else expected.recover()
+                if (action != "snapshot" && ownsActive) {
+                    val desired = when (action) { "pause" -> "paused"; "resume" -> "recording"; else -> "stopped" }
+                    val deadline = android.os.SystemClock.elapsedRealtime() + 10000
+                    while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                        result = RecordingService.instance?.store?.view() ?: RecordingStore(activity, args.getString("root"), args.getString("accountId"), id).recover()
+                        if (result.optString("state") == desired || result.optString("state") == "interrupted") break
+                        Thread.sleep(30)
+                    }
+                }
+                invoke.resolve(JSObject(result.toString()))
+            } catch (e: Exception) { invoke.reject(e.message) }
+        }
+    }
+    @Command
+    fun recordingList(invoke: Invoke) {
+        worker.execute {
+            try {
+                val args = org.json.JSONObject(invoke.getRawArgs())
+                val account = args.getString("accountId")
+                require(account.matches(Regex("[A-Za-z0-9_-]{1,128}")))
+                val root = java.io.File(args.getString("root")).canonicalFile
+                require(root == java.io.File(activity.dataDir, "recordings").canonicalFile)
+                val items = org.json.JSONArray()
+                java.io.File(root, account).listFiles()?.filter { it.isDirectory }?.forEach { directory ->
+                    val active = RecordingService.instance?.store
+                    val store = RecordingStore(activity, root.path, account, directory.name)
+                    val snapshot = if (active?.directory == directory) active.view() else store.recover()
+                    if (snapshot.optString("projectId") == args.getString("projectId")) items.put(snapshot)
+                }
+                invoke.resolveObject(jsonValue(items)!!)
+            } catch (e: Exception) { invoke.reject(e.message) }
+        }
+    }
+    private fun jsonValue(value: Any?): Any? = when (value) {
+        org.json.JSONObject.NULL, null -> null
+        is org.json.JSONObject -> value.keys().asSequence().associateWith { jsonValue(value.get(it)) }
+        is org.json.JSONArray -> (0 until value.length()).map { jsonValue(value.get(it)) }
+        else -> value
+    }
+    @Command
+    fun recordingRemove(invoke: Invoke) {
+        worker.execute {
+            try {
+                val args = org.json.JSONObject(invoke.getRawArgs())
+                val store = RecordingStore(activity, args.getString("root"), args.getString("accountId"), args.getString("id"))
+                require(store.view().getString("projectId") == args.getString("projectId"))
+                require(RecordingService.instance?.store?.directory != store.directory) { "请先停止录制" }
+                require(store.directory.deleteRecursively()) { "草稿清理失败" }
+                invoke.resolve()
+            } catch (e: Exception) { invoke.reject(e.message) }
+        }
+    }
     override fun load(webView: WebView) {
         foregroundChanged(true)
         // Interrupted imports are disposable: only Rust manifest-owned blobs survive restart.
