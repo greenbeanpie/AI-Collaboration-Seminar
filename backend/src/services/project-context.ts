@@ -170,7 +170,16 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
     const row=await env.DB.prepare(`SELECT m.id,m.title,COALESCE(m.archived_at,(SELECT f.archived_at FROM json_each(v.attachments_json) archive_att JOIN files f ON f.id=json_extract(archive_att.value,'$.fileId') WHERE f.archived_at IS NOT NULL LIMIT 1)) archivedAt,v.revision,length(v.markdown) total,substr(v.markdown,?3+1,6000) text FROM material_versions v JOIN materials m ON m.id=v.material_id
       WHERE v.id=?1 AND v.project_id=?2 AND m.project_id=?2`).bind(a.versionId,projectId,a.offset).first<{id:string;title:string;revision:number;total:number;text:string;archivedAt:string|null}>();
     if(!row) throw notFound('材料版本不存在');
-    return {untrustedData:true,resourceType:'material',resourceId:row.id,versionId:a.versionId,title:row.title,revision:row.revision,archivedAt:row.archivedAt,text:row.text,status:'ready',offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null};
+    // Expand only citation metadata present in this bounded text page, not child bodies.
+    // The model can use read_resource with a cited source version to inspect its actual content.
+    const citedVersions=[...new Set(Array.from(row.text.matchAll(/source:\/\/[a-f0-9-]{36}\/([a-f0-9-]{36})/gi),match=>match[1]!))].slice(0,20);
+    const references=citedVersions.length?await env.DB.prepare(`SELECT g.sequence,g.source_id resourceId,g.source_version_id versionId,g.start_ms startMs,g.end_ms endMs,
+      CASE WHEN s.deleted_at IS NULL AND f.deleted_at IS NULL AND f.status='available' THEN 'available' ELSE 'unavailable' END availability
+      FROM recording_segments g JOIN recording_sessions r ON r.id=g.session_id JOIN sources s ON s.id=g.source_id JOIN files f ON f.id=g.file_id
+      WHERE r.project_id=?1 AND r.material_id=?2 AND g.source_version_id IN(SELECT value FROM json_each(?3)) ORDER BY g.sequence LIMIT 20`)
+      .bind(projectId,row.id,JSON.stringify(citedVersions)).all():null;
+    return {untrustedData:true,resourceType:'material',resourceId:row.id,versionId:a.versionId,title:row.title,revision:row.revision,archivedAt:row.archivedAt,text:row.text,status:'ready',offset:a.offset,nextOffset:row.total>a.offset+CHARS?a.offset+CHARS:null,
+      ...(references?{evidenceKind:'recording_summary',recordingReferences:references.results.map(ref=>({...ref,resourceType:'source',evidenceKind:'segment_processing_result'}))}:{})};
   }
   if(name==='list_tasks' || name==='read_task') {
     if(name==='read_task'&&!a.id) throw invalidState('缺少任务 id');

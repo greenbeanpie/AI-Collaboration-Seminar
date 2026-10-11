@@ -18,12 +18,13 @@ export async function recordingRow(env:Env,projectId:string,id:string,actorId?:s
 }
 export async function createRecording(env:Env,projectId:string,actorId:string,b:CreateRecordingSession):Promise<RecordingSession>{
  const ids=[...new Set(b.contributorIds??[actorId])];
+ if(!ids.length||ids.length>100)throw validationFailed('请指定至少一位、最多100位项目贡献人');
  if(ids.length&&!await env.DB.prepare(`SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM json_each(?1) wanted WHERE NOT EXISTS(SELECT 1 FROM project_members WHERE project_id=?2 AND user_id=wanted.value))`).bind(JSON.stringify(ids),projectId).first())throw validationFailed('贡献人必须属于本项目');
  const existing=await env.DB.prepare(`SELECT id FROM recording_sessions WHERE project_id=?1 AND created_by=?2 AND client_session_id=?3`).bind(projectId,actorId,b.clientSessionId).first<{id:string}>();
  if(existing){const r=await recordingRow(env,projectId,existing.id);if(r.title!==b.title||r.kind!==b.kind||r.contributor_ids_json!==JSON.stringify(ids))throw invalidState('本地会话标识已用于其他录制');return sessionView(r);}
  const id=newId(),material=newId(),version=newId(),now=nowIso(),doc={type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'录制资料：尚未完成上传与处理。'}]}]};
  try { await env.DB.batch([
- env.DB.prepare(`INSERT INTO materials(id,project_id,title,kind,purpose,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,?3,'recording',?4,?5,?6,?7,?7)`).bind(material,projectId,b.title,b.purpose??'reference',version,actorId,now),
+ env.DB.prepare(`INSERT INTO materials(id,project_id,title,kind,purpose,current_version_id,created_by,created_at,updated_at) VALUES(?1,?2,?3,'document',?4,?5,?6,?7,?7)`).bind(material,projectId,b.title,b.purpose??'reference',version,actorId,now),
  env.DB.prepare(`INSERT INTO material_versions(id,material_id,project_id,revision,doc_json,markdown,origin,author_id,created_at) VALUES(?1,?2,?3,1,?4,?5,'manual',?6,?7)`).bind(version,material,projectId,JSON.stringify(doc),'录制资料：尚未完成上传与处理。',actorId,now),
  env.DB.prepare(`INSERT INTO recording_sessions(id,project_id,created_by,client_session_id,material_id,title,kind,contributor_ids_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)`).bind(id,projectId,actorId,b.clientSessionId,material,b.title,b.kind,JSON.stringify(ids),now)]); } catch (error) {
  const raced=await env.DB.prepare('SELECT id FROM recording_sessions WHERE project_id=?1 AND created_by=?2 AND client_session_id=?3').bind(projectId,actorId,b.clientSessionId).first<{id:string}>();
@@ -38,6 +39,7 @@ export async function recordingSegments(env:Env,id:string,after=-1,limit=50):Pro
 }
 export async function registerSegment(env:Env,projectId:string,id:string,actorId:string,sequence:number,b:RegisterRecordingSegment){
  const r=await recordingRow(env,projectId,id,actorId);
+ if(!Number.isSafeInteger(sequence)||sequence<1||!Number.isSafeInteger(b.startMs)||!Number.isSafeInteger(b.endMs)||b.startMs<0)throw validationFailed('片段序号和时间必须为非负整数');
  const existing=(await recordingSegments(env,id,sequence-1,1))[0];
  if(existing?.sequence===sequence){if(existing.fileId!==b.fileId||existing.startMs!==b.startMs||existing.endMs!==b.endMs||existing.sha256!==b.sha256||JSON.stringify(existing.interruptions)!==JSON.stringify(b.interruptions??[]))throw invalidState('片段序号已经登记其他内容');return existing;}
  if(r.status!=='uploading'||r.archived_at)throw invalidState('录制已冻结或归档');
@@ -49,11 +51,19 @@ export async function registerSegment(env:Env,projectId:string,id:string,actorId
  await env.DB.prepare('UPDATE files SET processing_purpose=?2 WHERE id=?1').bind(b.fileId,f.purpose).run();
  // Create a source even without a model; the original remains a valid saved recording.
  const bound=await env.DB.prepare(`SELECT s.id source_id,v.id source_version_id FROM source_versions v JOIN sources s ON s.id=v.source_id WHERE v.file_id=?1 AND s.deleted_at IS NULL AND s.current_version_id=v.id ORDER BY s.created_at LIMIT 1`).bind(b.fileId).first<{source_id:string;source_version_id:string}>();
- const sid=bound?.source_id??newId(),vid=bound?.source_version_id??newId(),now=nowIso();
+ const candidateSource=bound?.source_id??newId(),candidateVersion=bound?.source_version_id??newId(),now=nowIso();
+ // Claim the same lifecycle binding used by automatic file processing before registering
+ // the segment. A racing upload-triggered worker must never process a different source.
+ await env.DB.prepare(`INSERT INTO file_processing(file_id,lifecycle_version,project_id,source_id,source_version_id,updated_at)
+   SELECT ?1,?2,?3,?4,?5,?6 WHERE EXISTS(SELECT 1 FROM files WHERE id=?1 AND project_id=?3 AND lifecycle_version=?2 AND status='available' AND deleted_at IS NULL AND archived_at IS NULL)
+   ON CONFLICT(file_id,lifecycle_version) DO NOTHING`).bind(b.fileId,f.lifecycle_version,projectId,candidateSource,candidateVersion,now).run();
+ const binding=await env.DB.prepare('SELECT source_id,source_version_id FROM file_processing WHERE file_id=?1 AND lifecycle_version=?2 AND project_id=?3').bind(b.fileId,f.lifecycle_version,projectId).first<{source_id:string;source_version_id:string}>();
+ if(!binding)throw invalidState('原文件生命周期已变化');
+ const sid=binding.source_id,vid=binding.source_version_id;
  const guard=`EXISTS(SELECT 1 FROM recording_sessions r JOIN materials m ON m.id=r.material_id WHERE r.id=?1 AND r.status='uploading' AND m.archived_at IS NULL) AND EXISTS(SELECT 1 FROM files WHERE id=?3 AND lifecycle_version=?10 AND deleted_at IS NULL AND archived_at IS NULL) AND NOT EXISTS(SELECT 1 FROM recording_segments WHERE session_id=?1 AND (sequence=?2 OR file_id=?3 OR (start_ms<?6 AND end_ms>?5)))`;
  const binds=[id,sequence,b.fileId,sid,b.startMs,b.endMs,vid,b.sha256,JSON.stringify(b.interruptions??[]),f.lifecycle_version];
  const result=await env.DB.batch([
- env.DB.prepare(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at,purpose) SELECT ?4,?11,'file',?12,?7,?13,?14,?14,?15 WHERE ${guard} ON CONFLICT DO NOTHING`).bind(...binds,projectId,`${r.title} · ${sequence}`,actorId,now,f.purpose),
+ env.DB.prepare(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at,purpose,automatic_import) SELECT ?4,?11,'file',?12,?7,?13,?14,?14,?15,1 WHERE ${guard} ON CONFLICT DO NOTHING`).bind(...binds,projectId,`${r.title} · ${sequence}`,actorId,now,f.purpose),
  env.DB.prepare(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,status,created_at) SELECT ?7,?4,?11,1,'file',?3,'pending',?12 WHERE ${guard} ON CONFLICT DO NOTHING`).bind(...binds,projectId,now),
  env.DB.prepare(`INSERT INTO recording_segments(session_id,sequence,file_id,source_id,start_ms,end_ms,source_version_id,sha256,interruptions_json,created_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?11 WHERE ${guard}`).bind(...binds,now),
  ]);

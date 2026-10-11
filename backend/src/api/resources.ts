@@ -1,3 +1,4 @@
+import { recordingChildSourceSql } from '../services/archive-policy';
 import { syncFileProcessingText } from '../services/file-processing';
 import { triggerFileProcessing, syncMaterialFileProcessing } from '../services/file-processing-triggers';
 import { materialManageSql } from '../services/task-files';
@@ -63,7 +64,7 @@ function toResource(row: ResourceRow) {
 }
 
 async function readResource(env: Env, projectId: string, type: ResourceType, id: string, actorId: string, owner: boolean): Promise<ResourceRow> {
-  const row = await env.DB.prepare(`SELECT * FROM (${resourceUnion}) WHERE resource_type=?4 AND id=?5`)
+  const row = await env.DB.prepare(`SELECT * FROM (${resourceUnion}) listed_resource WHERE resource_type=?4 AND id=?5`)
     .bind(projectId, +owner, actorId, type, id).first<ResourceRow>();
   if (!row) throw notFound('资料不存在');
   return row;
@@ -76,8 +77,8 @@ export function registerResourceRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(listRoute, async c => {
     const member = c.get('member')!;
     const query = c.req.valid('query'), paging = parsePaging(query);
-    const rows = await c.env.DB.prepare(`SELECT * FROM (${resourceUnion})
-      WHERE NOT EXISTS(SELECT 1 FROM recording_segments recording_child WHERE resource_type='source' AND recording_child.source_id=id) AND (deleted_at IS NOT NULL)=?4 AND (archived_at IS NOT NULL)=?9 AND (?5 IS NULL OR purpose=?5)
+    const rows = await c.env.DB.prepare(`SELECT * FROM (${resourceUnion}) listed_resource
+      WHERE (resource_type!='source' OR NOT ${recordingChildSourceSql('listed_resource.id')}) AND (deleted_at IS NOT NULL)=?4 AND (archived_at IS NOT NULL)=?9 AND (?5 IS NULL OR purpose=?5)
         AND (?10='' OR instr(lower(title),lower(?10))>0)
         AND (?6 IS NULL OR created_at<?6 OR (created_at=?6 AND sort_key<?7))
       ORDER BY created_at DESC,sort_key DESC LIMIT ?8`)

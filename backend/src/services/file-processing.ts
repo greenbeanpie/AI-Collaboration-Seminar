@@ -86,8 +86,8 @@ export async function ensureFileProcessing(env:Env,projectId:string,fileId:strin
  const b=await env.DB.prepare('SELECT * FROM file_processing WHERE file_id=?1 AND lifecycle_version=?2').bind(fileId,f.lifecycle_version).first<Binding>();
  if(!b)throw invalidState('文件状态已变化');
  await env.DB.batch([
- env.DB.prepare(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at,purpose) SELECT ?1,?2,'file',?3,?4,?5,?6,?6,
- COALESCE((SELECT processing_purpose FROM files WHERE id=?7),CASE WHEN EXISTS(SELECT 1 FROM materials m JOIN material_versions v ON v.id=m.current_version_id,json_each(v.attachments_json) a WHERE m.project_id=?2 AND m.purpose='output' AND json_extract(a.value,'$.fileId')=?7) THEN 'output' ELSE 'reference' END) WHERE NOT EXISTS(SELECT 1 FROM sources WHERE id=?1)`).bind(b.source_id,projectId,f.original_name,b.source_version_id,actorId,now,fileId),
+ env.DB.prepare(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at,purpose,automatic_import) SELECT ?1,?2,'file',?3,?4,?5,?6,?6,
+ COALESCE((SELECT processing_purpose FROM files WHERE id=?7),CASE WHEN EXISTS(SELECT 1 FROM materials m JOIN material_versions v ON v.id=m.current_version_id,json_each(v.attachments_json) a WHERE m.project_id=?2 AND m.purpose='output' AND json_extract(a.value,'$.fileId')=?7) THEN 'output' ELSE 'reference' END),1 WHERE NOT EXISTS(SELECT 1 FROM sources WHERE id=?1)`).bind(b.source_id,projectId,f.original_name,b.source_version_id,actorId,now,fileId),
  env.DB.prepare(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,status,created_at) SELECT ?1,?2,?3,1,'file',?4,'pending',?5 WHERE NOT EXISTS(SELECT 1 FROM source_versions WHERE id=?1)`).bind(b.source_version_id,b.source_id,projectId,fileId,now),
  ]);
  await syncFileProcessingText(env,b.source_version_id);

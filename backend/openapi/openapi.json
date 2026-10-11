@@ -38481,6 +38481,7 @@
                       "type": "string",
                       "format": "uuid"
                     },
+                    "minItems": 1,
                     "maxItems": 100
                   }
                 },

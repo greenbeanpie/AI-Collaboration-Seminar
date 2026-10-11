@@ -1,4 +1,4 @@
-import { discoverableFileSql } from '../services/archive-policy';
+import { discoverableFileSql,recordingChildSourceSql } from '../services/archive-policy';
 import { contributorSchema, fileContributors, fileContributorsForFiles } from '../services/file-contributors';
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
@@ -273,7 +273,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       const existing=await c.env.DB.prepare(`SELECT s.id,s.current_version_id,s.created_at,s.created_by,s.lifecycle_version,s.resource_revision FROM sources s JOIN source_versions v ON v.id=s.current_version_id WHERE v.file_id=?1 AND s.project_id=?2 AND s.deleted_at IS NULL ORDER BY s.created_at LIMIT 1`).bind(body.fileId!,member.projectId).first<{id:string;current_version_id:string;created_at:string;created_by:string;lifecycle_version:number;resource_revision:number}>();
       if(existing){
         if(!member.permissions.resourceManage&&existing.created_by!==user.id)throw permissionDenied('需要来源作者或资料管理权限');
-        const update=await c.env.DB.prepare(`UPDATE sources SET title=?2,purpose=?3,resource_revision=resource_revision+1,updated_at=?4 WHERE id=?1 AND deleted_at IS NULL AND lifecycle_version=?5 AND current_version_id=?6 AND project_id=?7 AND (created_by=?8 OR ${projectPermissionSql('?7','?8','resourceManage')}) AND EXISTS(SELECT 1 FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?6 AND f.id=?9 AND f.lifecycle_version=?10 AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')})`).bind(existing.id,title,body.purpose,now,existing.lifecycle_version,existing.current_version_id,member.projectId,user.id,body.fileId!,fileLifecycleVersion).run();
+        const update=await c.env.DB.prepare(`UPDATE sources SET title=?2,purpose=?3,automatic_import=0,resource_revision=resource_revision+1,updated_at=?4 WHERE id=?1 AND deleted_at IS NULL AND lifecycle_version=?5 AND current_version_id=?6 AND project_id=?7 AND (created_by=?8 OR ${projectPermissionSql('?7','?8','resourceManage')}) AND EXISTS(SELECT 1 FROM source_versions v JOIN files f ON f.id=v.file_id WHERE v.id=?6 AND f.id=?9 AND f.lifecycle_version=?10 AND f.status='available' AND f.deleted_at IS NULL AND ${discoverableFileSql('f')})`).bind(existing.id,title,body.purpose,now,existing.lifecycle_version,existing.current_version_id,member.projectId,user.id,body.fileId!,fileLifecycleVersion).run();
         if(!update.meta.changes)throw invalidState('来源权限或文件生命周期已变化，请刷新');
         await syncFileProcessingText(c.env,existing.current_version_id);
         return c.json(apiData(c,{sourceId:existing.id,sourceVersionId:existing.current_version_id,kind:body.kind,title,purpose:body.purpose,revision:existing.resource_revision+existing.lifecycle_version,currentVersionId:existing.current_version_id,contributors:await fileContributors(c.env,member.projectId,body.fileId!),createdAt:existing.created_at,lifecycleVersion:existing.lifecycle_version,canDelete:true,deletedAt:null,fileId:body.fileId!}),201);
@@ -344,7 +344,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const rows = await c.env.DB.prepare(
       `SELECT id, project_id, kind, title, purpose, resource_revision, current_version_id, created_at,created_by,deleted_at,lifecycle_version,
         (SELECT file_id FROM source_versions WHERE id=sources.current_version_id) AS file_id FROM sources
-       WHERE project_id = ?1 AND NOT EXISTS(SELECT 1 FROM recording_segments WHERE source_id=sources.id) AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
+       WHERE project_id = ?1 AND NOT ${recordingChildSourceSql('sources.id')} AND (deleted_at IS NOT NULL)=?5 AND (?5=1 OR kind!='file' OR EXISTS(SELECT 1 FROM source_versions archive_source JOIN files archive_file ON archive_file.id=archive_source.file_id WHERE archive_source.id=sources.current_version_id AND ${discoverableFileSql('archive_file')}))
        AND (?6='' OR instr(lower(title),lower(?6))>0)
        AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
        ORDER BY created_at DESC, id DESC LIMIT ?4`,
