@@ -30,7 +30,8 @@
 .sources-library-copy h3 { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 .sources-library-record > .button { flex-shrink: 0; }
 @media (max-width: 600px) {
-  .sources-file-library .section-head, .sources-library-record { align-items: stretch; flex-direction: column; }
+  .sources-file-library .section-head { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .sources-library-record { align-items: stretch; flex-direction: column; }
   .sources-record-heading, .sources-job-head { display: grid; grid-template-columns: minmax(0, 1fr); }
   .sources-record-actions { width: 100%; }
   .sources-record-actions .button { flex: 1 1 140px; min-width: 0; white-space: normal; justify-content: center; }
