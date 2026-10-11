@@ -2,9 +2,10 @@
 :root[data-theme="dark"] .dashboard-page { --pending: #efc34e; --pending-ink: #f5d573; --pending-bg: #2e2b21; --pending-soft: #44391c; --pending-border: #66552a; }
 .dashboard-page .page-heading { margin-bottom: 0; }
 .dashboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-.dashboard-metric { min-width: 0; min-height: 148px; display: grid; grid-template-rows: 22px 1fr auto; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow-soft); }
-.dashboard-metric-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-.dashboard-metric-label svg { color: var(--blue); }
+.dashboard-metric { min-width: 0; min-height: 148px; display: grid; grid-template-rows: minmax(22px, auto) 1fr auto; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow-soft); }
+.dashboard-metric-label { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.dashboard-metric-label svg { flex-shrink: 0; color: var(--blue); }
+.dashboard-metric-label .ai-reference-badge { margin-inline-start: 0; }
 .dashboard-metric-value { display: flex; align-items: baseline; width: fit-content; margin: 0; color: var(--ink); font-size: 34px; line-height: 1.4; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
 .dashboard-metric-value small { margin-left: 5px; color: var(--muted); font-size: 13px; font-weight: 400; letter-spacing: 0; }
 .dashboard-metric-foot { color: var(--muted); font-size: 11px; }
