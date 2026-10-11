@@ -9,14 +9,20 @@ Start receives root, id, accountId, projectId, kind (audio/video/photo), optiona
 inputDeviceId and cameraDeviceId. Rust injects the current account epoch. The
 root must resolve to the app data directory's recordings folder. Files reside
 at root/accountId/id/segment-N.m4a, mp4 or jpg; manifest.json is an AtomicFile.
-createdAt is ISO UTC, sequence starts at zero, times are monotonic milliseconds
+createdAt is ISO UTC, sequence starts at one, times are monotonic milliseconds
 relative to session start. Pauses remain explicit timeline interruptions.
+Tauri's Android PathPlugin getDataDir returns activity.dataDir, matching the
+strict private-root check (it does not return filesDir).
 
 AudioRecord feeds a persistent AAC MediaCodec. Camera2 feeds an AVC encoder
 surface. MediaMuxer rotates at AVC keyframes, requested before 5 minutes or
 32 MiB. Each finished muxer is independently playable. A late keyframe causes
 a stop with a preserved segment rather than an oversized upload. Encoding and
 muxing run on one worker; initialization buffers are bounded to 2 MiB.
+Camera REALTIME timestamps share elapsedRealtime. UNKNOWN timestamp clocks are
+aligned once at first encoder output; this includes encoder latency and must be
+checked for A/V offset and long-run drift on physical devices. A camera stall
+over 15 seconds stops recording. Finalized files must remain at most 32 MiB.
 
 Only a visible activity can acquire permissions and launch the non-sticky
 foreground service. A stop notification and partial wake lock support

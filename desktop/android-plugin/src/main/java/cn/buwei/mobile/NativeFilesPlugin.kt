@@ -34,12 +34,14 @@ data class Session(val cookie: String, val foreground: Boolean)
 /** Internal Rust-only adapter; no web capability grants this plugin commands. */
 @TauriPlugin(permissions = [
     Permission(strings = [android.Manifest.permission.RECORD_AUDIO], alias = "recordingAudio"),
-    Permission(strings = [android.Manifest.permission.CAMERA], alias = "recordingCamera")
+    Permission(strings = [android.Manifest.permission.CAMERA], alias = "recordingCamera"),
+    Permission(strings = [android.Manifest.permission.POST_NOTIFICATIONS], alias = "recordingNotification")
 ])
 class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
     private var exportCookie: String? = null
     private var recordingExportSource: File? = null
     private var recordingExportEpoch: Long = -1
+    @Volatile private var recordingStartPending = false
     @Command
     fun recordingExport(invoke: Invoke) {
         try {
@@ -47,7 +49,10 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
             val args = org.json.JSONObject(invoke.getRawArgs())
             val store = RecordingStore(activity, args.getString("root"), args.getString("accountId"), args.getString("id"))
             require(store.view().getString("projectId") == args.getString("projectId"))
-            val name = if (args.has("sequence")) store.view().getJSONArray("segments").getJSONObject(args.getInt("sequence")).getString("name") else args.getString("name")
+            val name = if (args.has("sequence")) {
+                val segments = store.view().getJSONArray("segments")
+                (0 until segments.length()).map { segments.getJSONObject(it) }.firstOrNull { it.getInt("sequence") == args.getInt("sequence") }?.getString("name") ?: error("录制片段不存在")
+            } else args.getString("name")
             require(name.matches(Regex("segment-[0-9]+\\.(m4a|mp4|jpg)(\\.partial)?"))) { "录制文件名无效" }
             val source = File(store.directory, name).canonicalFile
             require(source.parentFile == store.directory && source.isFile) { "录制文件不存在" }
@@ -110,21 +115,26 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
         if (!foreground) { invoke.reject("请在前台启动录制"); return }
         val kind = invoke.getArgs().getString("kind")
         if (kind !in listOf("audio", "video", "photo")) { invoke.reject("录制类型无效"); return }
-        val aliases = when (kind) { "audio" -> arrayOf("recordingAudio"); "photo" -> arrayOf("recordingCamera"); else -> arrayOf("recordingAudio", "recordingCamera") }
+        var aliases = when (kind) { "audio" -> arrayOf("recordingAudio"); "photo" -> arrayOf("recordingCamera"); else -> arrayOf("recordingAudio", "recordingCamera") }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && kind != "photo") aliases += "recordingNotification"
         activity.runOnUiThread { requestPermissionForAliases(aliases, invoke, "recordingPermission") }
     }
     @PermissionCallback
     fun recordingPermission(invoke: Invoke) {
+        var reservedStart = false
         try {
             val args = org.json.JSONObject(invoke.getRawArgs())
             val kind = args.getString("kind")
             require(foreground) { "权限申请后页面已转入后台，请重新启动" }
-            require(RecordingService.instance == null) { "已有活动录制" }
+            require(RecordingService.instance == null && !recordingStartPending) { "已有活动录制" }
             if (kind != "photo") require(activity.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "麦克风权限未授予" }
             if (kind != "audio") require(activity.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "摄像头权限未授予" }
+            if (android.os.Build.VERSION.SDK_INT >= 33 && kind != "photo") require(activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "请允许录制通知，以便在后台停止并保存" }
             // Validate the trusted Rust root before the foreground service creates anything.
             val store = RecordingStore(activity, args.getString("root"), args.getString("accountId"), args.getString("id"))
             require(store.view().length() == 0) { "录制草稿已存在" }
+            recordingStartPending = true
+            reservedStart = true
             activity.startForegroundService(Intent(activity, RecordingService::class.java).putExtra("args", args.toString()))
             worker.execute {
                 try {
@@ -136,9 +146,9 @@ class NativeFilesPlugin(private val activity: Activity) : Plugin(activity) {
                         Thread.sleep(30)
                     }
                     invoke.resolve(JSObject((result ?: error("录制服务启动失败")).toString()))
-                } catch (e: Exception) { invoke.reject(e.message) }
+                } catch (e: Exception) { invoke.reject(e.message) } finally { recordingStartPending = false }
             }
-        } catch (e: Exception) { invoke.reject(e.message) }
+        } catch (e: Exception) { if (reservedStart) recordingStartPending = false; invoke.reject(e.message) }
     }
     @Command
     fun recordingAction(invoke: Invoke) {

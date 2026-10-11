@@ -49,10 +49,11 @@ class RecordingStore(context: Context, root: String, account: String, id: String
 
     @Synchronized fun complete(file: File, start: Long, end: Long) {
         require(file.length() > 0) { "录制结果为空" }
+        require(file.length() <= 32L * 1024 * 1024) { "录制片段超过32 MiB；原文件保留，请导出后处理" }
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input -> val buffer = ByteArray(65536); while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) } }
         val segments = snapshot.getJSONArray("segments")
-        segments.put(JSONObject().put("sequence", segments.length()).put("name", file.name)
+        segments.put(JSONObject().put("sequence", segments.length() + 1).put("name", file.name)
             .put("sizeBytes", file.length()).put("startMs", start).put("endMs", end)
             .put("sha256", digest.digest().joinToString("") { "%02x".format(it) }))
         snapshot.put("elapsedMs", end)
@@ -78,11 +79,18 @@ class RecordingStore(context: Context, root: String, account: String, id: String
                 // A rename may have committed just before the process died during manifest fsync.
                 val extractor = android.media.MediaExtractor()
                 try {
-                    extractor.setDataSource(completed.path)
-                    require(extractor.trackCount > 0)
-                    val duration = (0 until extractor.trackCount).maxOf { track ->
-                        val format = extractor.getTrackFormat(track)
-                        if (format.containsKey(android.media.MediaFormat.KEY_DURATION)) format.getLong(android.media.MediaFormat.KEY_DURATION) / 1000 else 0L
+                    val duration = if (completed.extension == "jpg") {
+                        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeFile(completed.path, options)
+                        require(options.outWidth > 0 && options.outHeight > 0)
+                        0L
+                    } else {
+                        extractor.setDataSource(completed.path)
+                        require(extractor.trackCount > 0)
+                        (0 until extractor.trackCount).maxOf { track ->
+                            val format = extractor.getTrackFormat(track)
+                            if (format.containsKey(android.media.MediaFormat.KEY_DURATION)) format.getLong(android.media.MediaFormat.KEY_DURATION) / 1000 else 0L
+                        }
                     }
                     complete(completed, pending.getLong("startMs"), pending.getLong("startMs") + duration)
                 } catch (_: Exception) { snapshot.put("error", "尾段可能损坏，请导出后检查") }
@@ -95,7 +103,10 @@ class RecordingStore(context: Context, root: String, account: String, id: String
             interruption(end, end, "进程中断，尾段未完成")
         }
         // Include orphan tails for explicit export, never present them as playable segments.
-        snapshot.put("incompleteFiles", JSONArray(directory.listFiles()?.filter { it.name.endsWith(".partial") }?.map { it.name } ?: emptyList<String>()))
+        val registered = snapshot.optJSONArray("segments")?.let { segments -> (0 until segments.length()).map { segments.getJSONObject(it).getString("name") }.toSet() } ?: emptySet()
+        snapshot.put("incompleteFiles", JSONArray(directory.listFiles()?.filter {
+            it.name.matches(Regex("segment-[0-9]+\\.(m4a|mp4|jpg)(\\.partial)?")) && it.name !in registered
+        }?.map { it.name } ?: emptyList<String>()))
         return JSONObject(snapshot.toString())
     }
 

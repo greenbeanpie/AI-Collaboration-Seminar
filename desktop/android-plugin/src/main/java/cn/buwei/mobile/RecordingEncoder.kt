@@ -42,6 +42,9 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
     private var written = 0L
     private var rotateRequested = false
     private var pauseAt: Long? = null
+    private var cameraTimelineOffsetUs: Long? = null
+    private var lastVideoReceiptUs = 0L
+    private var cameraClockRealtime = false
     private val originUs = SystemClock.elapsedRealtimeNanos() / 1000
     private val pending = ArrayList<Sample>()
     private var pendingBytes = 0
@@ -120,12 +123,14 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                         if (video && cameraId.isNotBlank() && cameraId != args.optString("cameraDeviceId")) {
                             capture?.close(); camera?.close(); capture = null; camera = null
                             args.put("cameraDeviceId", cameraId)
+                            cameraTimelineOffsetUs = null
                             openCamera(surface!!, CameraDevice.TEMPLATE_RECORD)
                         }
                         devices = null
                     }
                     store.interruption(pauseAt!! / 1000, elapsed / 1000, "用户暂停")
                     pauseAt = null; audio!!.startRecording()
+                    lastVideoReceiptUs = elapsed
                     capture?.setRepeatingRequest(camera!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply { addTarget(surface!!) }.build(), null, handler)
                     requestKeyframe()
                 }
@@ -138,6 +143,7 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                     else aac!!.queueInputBuffer(index, 0, 0, nowUs(), 0)
                 }
                 drain(aac!!, false); avc?.let { drain(it, true) }
+                if (video && elapsed - lastVideoReceiptUs > 15_000_000) error("摄像头未继续输出画面，录制已中断")
                 if (muxer != null && (lastUs - segmentStartUs >= 295_000_000 || written >= 30L * 1024 * 1024) && !rotateRequested) { rotateRequested = true; requestKeyframe() }
                 if (muxer != null && (lastUs - segmentStartUs > 300_000_000 || written > 32L * 1024 * 1024 - 65536)) error("编码器未及时提供分段关键帧，录制已停止并保全文件")
             }
@@ -171,8 +177,17 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                 if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                     val buffer = codec.getOutputBuffer(index)!!; buffer.position(info.offset); buffer.limit(info.offset + info.size)
                     val bytes = ByteArray(info.size); buffer.get(bytes)
-                    // Camera timestamps are monotonic boot timestamps; AAC input is already relative.
-                    val pts = if (isVideo) info.presentationTimeUs - originUs else info.presentationTimeUs
+                    // REALTIME camera clocks share elapsedRealtime; UNKNOWN clocks require one
+                    // fixed alignment at first encoder output. The partial wake lock prevents
+                    // uptime-vs-boottime divergence while recording. Device A/V timing needs
+                    // real-device acceptance; the unknown clock alignment includes encode latency.
+                    val pts = if (isVideo) {
+                        lastVideoReceiptUs = nowUs()
+                        if (cameraClockRealtime) info.presentationTimeUs - originUs else {
+                            if (cameraTimelineOffsetUs == null) cameraTimelineOffsetUs = lastVideoReceiptUs - info.presentationTimeUs
+                            info.presentationTimeUs + cameraTimelineOffsetUs!!
+                        }
+                    } else info.presentationTimeUs
                     if (pts >= 0 && action != "paused") sample(Sample(isVideo, bytes, pts, info.flags))
                 }
             } finally { codec.releaseOutputBuffer(index, false) }
@@ -194,7 +209,7 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
             if (video && !keyframe) return
             ensureSpace()
             segmentStartUs = sample.pts; lastUs = sample.pts; written = 0
-            val number = store.view().getJSONArray("segments").length()
+            val number = store.view().getJSONArray("segments").length() + 1
             partial = File(store.directory, "segment-$number.${if (video) "mp4" else "m4a"}.partial")
             require(!partial!!.exists()) { "发现未完成尾段，请先导出或清理草稿" }
             store.pending(partial!!.name.removeSuffix(".partial"), segmentStartUs / 1000)
@@ -239,7 +254,9 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
     @SuppressLint("MissingPermission")
     private fun openCamera(target: Surface, template: Int) {
         val ready = CountDownLatch(1)
-        (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).openCamera(cameraId(), object : CameraDevice.StateCallback() {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        cameraClockRealtime = manager.getCameraCharacteristics(cameraId()).get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) == CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+        manager.openCamera(cameraId(), object : CameraDevice.StateCallback() {
             override fun onOpened(device: CameraDevice) {
                 camera = device
                 @Suppress("DEPRECATION")
@@ -271,8 +288,8 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                 try {
                     source.acquireNextImage()?.use { image ->
                         val bytes = ByteArray(image.planes[0].buffer.remaining()); image.planes[0].buffer.get(bytes)
-                        val file = File(store.directory, "segment-0.jpg")
-                        val temporary = File(store.directory, "segment-0.jpg.partial")
+                        val file = File(store.directory, "segment-1.jpg")
+                        val temporary = File(store.directory, "segment-1.jpg.partial")
                         store.pending(file.name, 0)
                         FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
                         require(temporary.renameTo(file)) { "无法保存照片" }
