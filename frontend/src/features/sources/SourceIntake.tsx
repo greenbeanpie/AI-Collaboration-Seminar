@@ -1,3 +1,4 @@
+import { RecordingIntake } from '../recordings/RecordingIntake';
 import { FileContributorPicker } from '../../components/FileContributors';
 import { FilePlus2, FileText, Globe2, LoaderCircle, Send, Type } from 'lucide-react';
 import { ErrorNotice, Field, SectionCard } from '../../components/ui';
@@ -9,7 +10,7 @@ export function SourceIntake({ model }: { model: ReturnType<typeof useSourcesCon
   if (!capability) return null;
   const canSubmit = !submitting && (kind !== 'web' || capability.features.webFetch);
   return <SectionCard title="导入资料" detail="支持粘贴原文、公开网页链接，以及 PDF/DOCX/XLSX/PPTX/TXT/Markdown 和音视频文件。">
-      <form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
+      <RecordingIntake projectId={projectId} /><form className="sources-intake" onSubmit={(event) => void submitSource(event)}>
         <div className="sources-intake-tabs" role="group" aria-label="来源类型">
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'paste'} onClick={() => setKind('paste')}><Type size={15} /> 粘贴文本</button>
           <button type="button" className="sources-intake-tab" aria-pressed={kind === 'web'} disabled={!capability.features.webFetch} onClick={() => setKind('web')}><Globe2 size={15} /> 网页链接</button>
@@ -22,8 +23,8 @@ export function SourceIntake({ model }: { model: ReturnType<typeof useSourcesCon
           <Field aiReference label="公开网页地址" hint="网页是否可读取取决于后端网络与域名规则；失败时会显示服务端原因。"><input className="input" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.org/notice" disabled={!capability.features.webFetch} /></Field>
         </>}
         {kind === 'file' && <>
-          <Field aiReference label="选择来源文件" hint="支持 PDF、DOCX、XLSX、PPTX、TXT、Markdown、MP3、WAV、M4A、MP4、WebM，没有应用层文件大小或文档页数上限。大文档建议本机解析，实际受设备和平台能力限制；音视频原文件由独立 Gemini 模型生成摘要，仍受供应商能力限制。">
-            <input className="input" type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.mp3,.wav,.m4a,.mp4,.webm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,audio/mpeg,audio/wav,audio/mp4,video/mp4,video/webm" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
+          <Field aiReference label="选择来源文件" hint="支持 JPEG、PNG、WebP、PDF、DOCX、XLSX、PPTX、TXT、Markdown、MP3、WAV、M4A、MP4、WebM，没有应用层文件大小或文档页数上限。大文档建议本机解析，实际受设备和平台能力限制；音视频原文件由独立 Gemini 模型生成摘要，仍受供应商能力限制。">
+            <input className="input" type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.jpg,.jpeg,.png,.webp,.mp3,.wav,.m4a,.mp4,.webm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,audio/mpeg,audio/wav,audio/mp4,video/mp4,video/webm" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); }} />
           </Field>
           <FileContributorPicker projectId={projectId} value={contributorIds} onChange={ids => { setContributorIds(ids); if (file) fileInitIntentKeys.current.delete(file); }} disabled={submitting || Boolean(pendingUpload)} />
           {file && <div className="callout">已选择 {file.name} · {formatBytes(file.size)}{pendingUpload?.file === file ? ' · 文件内容已上传，重试时会复用上传记录' : ''}</div>}

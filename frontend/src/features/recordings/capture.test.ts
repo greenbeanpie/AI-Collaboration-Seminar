@@ -1,0 +1,9 @@
+import { afterEach,expect,it,vi } from 'vitest';
+import { BrowserCapture } from './capture';
+import { saveDraft,type RecordingDraft } from './store';
+vi.mock('./store',async original=>({...await original<typeof import('./store')>(),saveDraft:vi.fn(async()=>undefined),saveSegment:vi.fn(async()=>undefined),appendTail:vi.fn(async()=>undefined)}));
+const originalDevices=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');
+afterEach(()=>{vi.clearAllMocks();if(originalDevices)Object.defineProperty(navigator,'mediaDevices',originalDevices);else Reflect.deleteProperty(navigator,'mediaDevices');});
+function draft():RecordingDraft{return {id:'capture',accountId:'a',projectId:'p',kind:'photo',state:'recording',createdAt:'2026-10-11',elapsedMs:0,segments:[],interruptions:[]};}
+it('does not persist a recording or contact an upload endpoint when permission is denied',async()=>{Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn().mockRejectedValue(new DOMException('拒绝','NotAllowedError'))}});const engine=new BrowserCapture(draft(),vi.fn());await expect(engine.start()).rejects.toThrow('拒绝');expect(saveDraft).not.toHaveBeenCalled();});
+it('shares one asynchronous stop operation and releases every device after an interruption',async()=>{const tracks=[{stop:vi.fn(),onended:null},{stop:vi.fn(),onended:null}];Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:vi.fn().mockResolvedValue({getTracks:()=>tracks})}});const state=draft(),update=vi.fn(),engine=new BrowserCapture(state,update);await engine.start();const first=engine.stop('设备访问被撤销'),second=engine.stop();expect(first).toBe(second);await first;expect(state.state).toBe('interrupted');expect(state.error).toBe('设备访问被撤销');expect(tracks.every(t=>t.stop.mock.calls.length===1)).toBe(true);expect(update).toHaveBeenCalledWith(expect.objectContaining({state:'interrupted'}));});

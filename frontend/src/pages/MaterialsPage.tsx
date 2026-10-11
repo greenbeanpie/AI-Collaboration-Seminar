@@ -1,3 +1,4 @@
+import { RecordingDetail } from '../features/recordings/RecordingDetail';
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { MaterialArchiveActions } from './MaterialArchiveActions';
 import { ResourceIndexView } from './ResourceIndexView';
@@ -462,7 +463,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 {editor && <EditorContent editor={editor} />}
                 {!editor && <Spinner label="正在准备编辑器" />}
               </div>
-              {material.currentVersion?.versionId && <ResourceIndexView projectId={projectId} resourceType="material" versionId={material.currentVersion?.versionId} />}
+              <RecordingDetail projectId={projectId} materialId={material.materialId} />{material.currentVersion?.versionId && <ResourceIndexView projectId={projectId} resourceType="material" versionId={material.currentVersion?.versionId} />}
               <>{material.canEdit === false && <p className="form-note">此材料为只读；归档材料需先撤销归档，任务文件需当前执行人或资料管理权限。</p>}<MaterialAttachments material={material} archiveDisabled={dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
               <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>
