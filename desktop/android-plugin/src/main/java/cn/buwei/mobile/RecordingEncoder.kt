@@ -46,9 +46,8 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
     private var lastVideoReceiptUs = 0L
     private var cameraClockRealtime = false
     private val originUs = SystemClock.elapsedRealtimeNanos() / 1000
-    private val pending = ArrayList<Sample>()
-    private var pendingBytes = 0
     private val video = args.getString("kind") == "video"
+    private val timeline = MediaTimelineBuffer<Sample>(video)
     private data class Sample(val video: Boolean, val bytes: ByteArray, val pts: Long, val flags: Int)
 
     private fun nowUs() = SystemClock.elapsedRealtimeNanos() / 1000 - originUs
@@ -107,7 +106,10 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                     if (pauseAt == null) {
                         pauseAt = elapsed
                         audio!!.stop(); capture?.stopRepeating()
-                        drain(aac!!, false); avc?.let { drain(it, true) }
+                        // Drain in-flight capture after stopping producers, then flush ordered
+                        // samples before finalizing this independent file.
+                        repeat(10) { drain(aac!!, false); avc?.let { drain(it, true) }; Thread.sleep(10) }
+                        flushPending(true)
                         finishSegment()
                     }
                     Thread.sleep(20); continue
@@ -152,11 +154,13 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
             if (i >= 0) aac!!.queueInputBuffer(i, 0, 0, nowUs(), MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             avc?.signalEndOfInputStream()
             repeat(30) { drain(aac!!, false); avc?.let { drain(it, true) }; Thread.sleep(10) }
+            flushPending(true)
             finishSegment()
             pauseAt?.let { store.interruption(it / 1000, nowUs() / 1000, "用户暂停") }
             store.state("stopped", nowUs() / 1000)
         } catch (e: Exception) {
             // A valid completed muxer is preserved even when the next device/storage operation fails.
+            runCatching { flushPending(true) }
             runCatching { finishSegment() }
             runCatching { store.state("interrupted", nowUs() / 1000, e.message ?: "设备采集失败") }
         } finally { close() }
@@ -188,28 +192,39 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                             info.presentationTimeUs + cameraTimelineOffsetUs!!
                         }
                     } else info.presentationTimeUs
-                    if (pts >= 0 && action != "paused") sample(Sample(isVideo, bytes, pts, info.flags))
+                    if (pts >= 0) sample(Sample(isVideo, bytes, pts, info.flags))
                 }
             } finally { codec.releaseOutputBuffer(index, false) }
         }
     }
 
     private fun sample(sample: Sample) {
+        timeline.push(sample, sample.pts, sample.video, sample.bytes.size)
+        flushPending(false)
+    }
+
+    private fun flushPending(force: Boolean) {
         if (audioFormat == null || (video && videoFormat == null)) {
-            require(pendingBytes + sample.bytes.size <= 2 * 1024 * 1024) { "编码器格式等待超时" }
-            pending.add(sample); pendingBytes += sample.bytes.size; return
+            if (force && !timeline.isEmpty()) error("编码器未提供完整媒体格式")
+            return
         }
-        if (pending.isNotEmpty()) {
-            val ready = pending.sortedBy { it.pts }; pending.clear(); pendingBytes = 0
-            ready.forEach { sample(it) }
-        }
+        // Neither encoder may later emit a packet before its latest delivered timestamp
+        // (B-frames disabled, each track validated monotonic). The lower track watermark
+        // therefore orders A/V exactly, instead of guessing an encoder latency duration.
+        timeline.take(force).forEach { writeSample(it) }
+    }
+
+    private fun writeSample(sample: Sample) {
         val keyframe = sample.video && sample.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-        if (rotateRequested && (!video || keyframe)) { finishSegment(); rotateRequested = false }
+        if (rotateRequested && (!video || keyframe)) { finishSegment(sample.pts); rotateRequested = false }
         if (muxer == null) {
             if (video && !keyframe) return
             ensureSpace()
             segmentStartUs = sample.pts; lastUs = sample.pts; written = 0
-            val number = store.view().getJSONArray("segments").length() + 1
+            val completedSegments = store.view().getJSONArray("segments")
+            val priorEnd = if (completedSegments.length() == 0) 0L else completedSegments.getJSONObject(completedSegments.length() - 1).getLong("endMs")
+            if (segmentStartUs / 1000 > priorEnd) store.interruption(priorEnd, segmentStartUs / 1000, if (completedSegments.length() == 0) "设备启动等待" else "暂停或编码器恢复间隙")
+            val number = completedSegments.length() + 1
             partial = File(store.directory, "segment-$number.${if (video) "mp4" else "m4a"}.partial")
             require(!partial!!.exists()) { "发现未完成尾段，请先导出或清理草稿" }
             store.pending(partial!!.name.removeSuffix(".partial"), segmentStartUs / 1000)
@@ -225,7 +240,7 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
         written += sample.bytes.size; lastUs = maxOf(lastUs, sample.pts)
     }
 
-    private fun finishSegment() {
+    private fun finishSegment(boundaryUs: Long? = null) {
         val current = muxer ?: return
         muxer = null
         try { current.stop() } finally { current.release() }
@@ -233,7 +248,9 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
         FileOutputStream(source, true).use { it.fd.sync() }
         val completed = File(source.parentFile, source.name.removeSuffix(".partial"))
         require(source.renameTo(completed)) { "无法保存完整片段" }
-        store.complete(completed, segmentStartUs / 1000, lastUs / 1000)
+        val endUs = boundaryUs ?: lastUs
+        require(endUs >= lastUs) { "分段边界与媒体时钟冲突" }
+        store.complete(completed, segmentStartUs / 1000, endUs / 1000)
         partial = null
     }
 

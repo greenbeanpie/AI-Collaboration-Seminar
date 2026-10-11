@@ -19,6 +19,10 @@ surface. MediaMuxer rotates at AVC keyframes, requested before 5 minutes or
 32 MiB. Each finished muxer is independently playable. A late keyframe causes
 a stop with a preserved segment rather than an oversized upload. Encoding and
 muxing run on one worker; initialization buffers are bounded to 2 MiB.
+The same bounded buffer orders packets using the minimum audio/video delivered
+timestamp, places video keyframes before equal-time audio, and fully drains on
+pause/stop. Adjacent rotation metadata shares the actual keyframe boundary;
+device-start and pause/recovery gaps are explicitly recorded as interruptions.
 Camera REALTIME timestamps share elapsedRealtime. UNKNOWN timestamp clocks are
 aligned once at first encoder output; this includes encoder latency and must be
 checked for A/V offset and long-run drift on physical devices. A camera stall
