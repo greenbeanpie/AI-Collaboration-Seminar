@@ -4,13 +4,14 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DataWorkspacePage } from './DataWorkspacePage';
+import { api } from '../api/client';
 import type { ResourceEntry } from '../api/simplification';
 vi.mock('../components/ProjectShell', () => ({ useProject: () => ({ projectId: 'p', project: { myRole: 'owner' } }) }));
 vi.mock('../auth', () => ({ useCapabilities: () => ({ data: { limits: { listMaxPageSize: 100 } } }) }));
 vi.mock('./MaterialsPage', () => ({ MaterialsPage: ({ materialId, versionId, embedded, header }: { header?: ReactNode; materialId?: string; versionId?: string; embedded?: boolean }) => <div className="card">{header}<p>文档 {materialId} · 固定版本 {versionId || '当前'} · {embedded ? '详情编辑' : '完整页'}</p></div> }));
-vi.mock('./SourcesPage', () => ({ SourcesPage: ({ selectedSourceId, intakeOnly, header }: { header?: ReactNode; selectedSourceId?: string; intakeOnly?: boolean }) => <div className="card">{header}<p>{intakeOnly ? '单一导入表单' : `原文详情 ${selectedSourceId}`}</p></div> }));
+vi.mock('./SourcesPage', () => ({ SourcesPage: ({ selectedSourceId, intakeOnly, header, documentForm }: { header?: ReactNode; documentForm?: ReactNode; selectedSourceId?: string; intakeOnly?: boolean }) => <div className="card">{header}{intakeOnly && documentForm}<p>{intakeOnly ? '单一导入表单' : `原文详情 ${selectedSourceId}`}</p></div> }));
 vi.mock('./FilePreview', () => ({ FilePreview: ({ fileId, name, availability }: { fileId: string; name: string; availability?: string }) => <section aria-label={`预览 ${name}`} data-file-id={fileId} data-availability={availability}>原文件预览</section> }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const entry = (id: string, type: 'source' | 'material', purpose: ResourceEntry['purpose'], title: string): ResourceEntry => ({ resourceId: id, resourceType: type, purpose, title, currentVersionId: `v-${id}`, revision: 1, lifecycleVersion: 1, deletedAt: null, fileId: null, canManage: true, createdAt: '2026-10-01', updatedAt: '2026-10-01' });
 function show(url = '/data', files: Array<{ fileId: string; name: string; status: string; canManage: boolean }> = []) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
@@ -42,7 +43,7 @@ it('searches background, imported references and outputs in one list with one em
   expect(within(list).queryByRole('button', { name: /研究背景/ })).toBeNull();
   fireEvent.click(within(list).getByRole('button', { name: /最终方案/ }));
   expect(await screen.findByText('文档 result · 固定版本 当前 · 详情编辑')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '导入资料' }));
+  fireEvent.click(screen.getByRole('button', { name: '新增资料' }));
   expect(screen.getByText('单一导入表单')).toBeInTheDocument();
 });
 it('keeps a material and historical version deep link in the single detail pane', async () => {
@@ -59,10 +60,28 @@ it('places create and import in the browser sidebar and the shared heading insid
   show();
   const list = screen.getByRole('complementary', { name: '项目资料列表' });
   expect(within(list).getByRole('heading', { name: '资料浏览' })).toBeInTheDocument();
-  expect(within(list).getByRole('button', { name: '新建文档' })).toBeInTheDocument();
-  expect(within(list).getByRole('button', { name: '导入资料' })).toBeInTheDocument();
+  expect(within(list).getByRole('button', { name: '新增资料' })).toBeInTheDocument();
+  expect(within(list).queryByRole('button', { name: '导入资料' })).toBeNull();
+  expect(within(list).queryByRole('button', { name: '新建文档' })).toBeNull();
   const heading = await screen.findByRole('heading', { name: '研究背景' });
   expect(heading.closest('.card')).toContainElement(screen.getByLabelText('修改资料用途'));
   fireEvent.click(within(list).getByRole('button', { name: /原文通知/ }));
   expect(await screen.findByRole('heading', { name: '原文通知' })).toBeInTheDocument();
+});
+
+it('creates documents through the unified entry using the existing purpose contract', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ materialId: 'result' } as never);
+  show();
+  fireEvent.click(screen.getByRole('button', { name: '新增资料' }));
+  fireEvent.change(screen.getByLabelText('文档标题'), { target: { value: '  会议资料  ' } });
+  fireEvent.change(screen.getByLabelText('文档用途'), { target: { value: 'background' } });
+  fireEvent.click(screen.getByRole('button', { name: '创建文档' }));
+  expect(await screen.findByText('文档 result · 固定版本 当前 · 详情编辑')).toBeInTheDocument();
+  expect(post).toHaveBeenCalledWith('/api/v1/projects/p/materials', { title: '会议资料', kind: 'background', purpose: 'background' });
+});
+
+it.each(['new', 'import'])('retains legacy %s links within the unified intake', mode => {
+  show(`/data?mode=${mode}`);
+  expect(screen.getByText('单一导入表单')).toBeInTheDocument();
+  expect(screen.getByLabelText('文档标题')).toBeInTheDocument();
 });

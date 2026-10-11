@@ -10,7 +10,7 @@ import './SourcesPage.css';
 
 export { SourceRecord } from '../features/sources/SourceRecord';
 
-export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = false, header }: { header?: ReactNode; embedded?: boolean; selectedSourceId?: string; intakeOnly?: boolean }) {
+export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = false, header, documentForm, initialMethod, documentBusy }: { header?: ReactNode; embedded?: boolean; selectedSourceId?: string; intakeOnly?: boolean; documentForm?: ReactNode; initialMethod?: 'document' | 'source'; documentBusy?: boolean }) {
   const model = useSourcesController(selectedSourceId);
   const { projectId, capabilityQuery, capability, sourceQuery, sources, versionQueries, versionsBySourceId, targetSourceVersionId, targetPageNumber, parsingSourceId, trackedJobs, scanJobId, scanProgressSourceId, scanProgress, sourceResources, sourceLifecycle, handleLifecycleChanged, startParse, retryJob, scanPages, onJobUpdate } = model;
   if (capabilityQuery.isLoading) return <div className="page-stack"><Spinner label="正在读取服务能力与文件限制" /></div>;
@@ -24,7 +24,7 @@ export function SourcesPage({ embedded = false, selectedSourceId, intakeOnly = f
 
     {!capability.features.aiEnabled ? <div className="callout warning-callout">AI 未启用。仍可读取文件正文；总结、要求提取与视觉 OCR 暂不可用。</div> : null}
 
-    {(!embedded || intakeOnly) && <SourceIntake model={model} />}
+    {(!embedded || intakeOnly) && <SourceIntake model={model} documentForm={documentForm} initialMethod={initialMethod} documentBusy={documentBusy} />}
 
     {!embedded && <ProjectFileLibrary key={projectId} projectId={projectId} pageSize={capability.limits.listMaxPageSize} onChanged={handleLifecycleChanged} />}
     {targetSourceVersionId && !sourceQuery.isLoading && !sources.some((source) => source.currentVersionId === targetSourceVersionId) ? <div className="callout warning-callout">引用对应的来源版本不在当前来源列表中，可能已移入回收站，或它不是当前版本。引用原句仍保留在要求条目中。</div> : null}
