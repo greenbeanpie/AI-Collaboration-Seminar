@@ -177,6 +177,11 @@
   .tm-conflict-actions { align-items: stretch; flex-direction: column-reverse; }
 }
 
+@media (max-width: 600px) {
+  .tm-comment-meta, .tm-history-detail header { flex-direction: column; gap: 4px; }
+  .tm-material-list-head { flex-wrap: wrap; }
+}
+
 @media print {
   .app-frame { display: block !important; }
   .sidebar, .mobile-bar, .project-banner, .project-tabs, .offline-banner, .tm-hide-print,

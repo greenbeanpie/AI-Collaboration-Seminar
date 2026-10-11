@@ -16,6 +16,7 @@
 .sources-page-chip-target { border-color: var(--palette-8eb4fa-border); background: var(--palette-eef4ff-surface); color: var(--blue-dark); scroll-margin-top: 96px; }
 .sources-job { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--palette-dce8fd-border); border-radius: 12px; background: var(--palette-f7faff-surface); }
 .sources-job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sources-job-head > div { min-width: 0; }
 .sources-job-head strong { color: var(--palette-365787-text); font-size: 13px; }
 .sources-job-head p { margin: 4px 0 0; color: var(--palette-71809b-text); font-size: 12px; line-height: 1.6; }
 .sources-inline-note { margin: 0; color: var(--palette-8893a7-text); font-size: 12px; line-height: 1.6; }
@@ -28,11 +29,11 @@
 .sources-library-copy { min-width: 0; display: grid; gap: 8px; }
 .sources-library-copy h3 { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 .sources-library-record > .button { flex-shrink: 0; }
-@media (max-width: 640px) {
+@media (max-width: 600px) {
   .sources-file-library .section-head, .sources-library-record { align-items: stretch; flex-direction: column; }
-  .sources-record-heading { display: grid; }
+  .sources-record-heading, .sources-job-head { display: grid; grid-template-columns: minmax(0, 1fr); }
   .sources-record-actions { width: 100%; }
-  .sources-record-actions .button { flex: 1; }
+  .sources-record-actions .button { flex: 1 1 140px; min-width: 0; white-space: normal; justify-content: center; }
 }
 
 .source-relationship { display: grid; justify-items: start; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
