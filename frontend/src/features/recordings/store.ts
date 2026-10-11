@@ -43,7 +43,7 @@ export async function readTail(draft: RecordingDraft) { const rows = await trans
 }[]>(['tails'], 'readonly', tx => tx.objectStore('tails').getAll(IDBKeyRange.bound([draft.id, 0], [draft.id, Number.MAX_SAFE_INTEGER]))); if (!rows.length)
     return null; return new Blob(rows.map(r => r.bytes), { type: rows[0].type }); }
 export async function recoverDraft(draft: RecordingDraft) { if (!['recording', 'paused', 'interrupted'].includes(draft.state))
-    return draft; const tail = await readTail(draft); draft.state = 'interrupted'; draft.error = '录制意外中断，已完成片段保留'; if (tail && draft.kind === 'audio') {
+    return draft; const tail = await readTail(draft); draft.state = 'interrupted'; draft.error = '录制意外中断，已完成片段保留';if(!draft.interruptions.some(i=>i.reason==='录制异常中断，尾段未覆盖'))draft.interruptions.push({startMs:draft.segments.at(-1)?.endMs??0,endMs:draft.elapsedMs,reason:'录制异常中断，尾段未覆盖'}); if (tail && draft.kind === 'audio') {
     const samples = new Float32Array(await tail.arrayBuffer()), blob = wav(samples);
     const start = draft.segments.at(-1)?.endMs ?? 0;
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
