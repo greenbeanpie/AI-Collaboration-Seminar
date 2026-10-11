@@ -23,9 +23,9 @@ it('keeps global navigation while a route chunk suspends and confines its loader
  expect(document.querySelector('.center-screen')).toBeNull();
 });
 it('keeps settings navigation while only the missing settings form loads', async () => {
- setup('/app/settings/security');
+ setup('/app/profile/settings/security');
  await screen.findByText('正在打开设置内容');
- expect(screen.getByRole('heading', { name: '设置' })).toBeVisible();
+ expect(screen.getByRole('heading', { name: '个人资料设置' })).toBeVisible();
  expect(screen.getByRole('link', { name: '账户信息' })).toBeVisible();
  expect(screen.getByRole('navigation', { name: '全局导航' })).toBeVisible();
  expect(document.querySelector('.center-screen')).toBeNull();

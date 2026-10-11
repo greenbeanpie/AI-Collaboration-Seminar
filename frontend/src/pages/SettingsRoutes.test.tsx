@@ -14,9 +14,16 @@ vi.mock('./PersonalProfiles', () => ({ PersonalProfilePage: () => <p>Private pro
 function setup(path: string) { const router = createMemoryRouter([{ path: '*', element: <App /> }], { initialEntries: [path] }); render(<QueryClientProvider client={new QueryClient()}><RouterProvider router={router} /></QueryClientProvider>); return router; }
 afterEach(() => { cleanup(); state.role = 'user'; state.isAdmin = false; });
 it('ordinary authenticated users can open the help route without administrator permission', async () => {
- setup('/app/help'); await screen.findByRole('heading', { name: '帮助文档' });
+ const router = setup('/app/help'); await screen.findByRole('heading', { name: '帮助文档' });
+ expect(router.state.location.pathname).toBe('/app/support/help');
+ expect(screen.getByRole('navigation', { name: '支持与帮助' })).toBeInTheDocument();
  expect(screen.getByRole('article', { name: '使用说明' })).toBeInTheDocument();
  expect(screen.queryByRole('alert')).toBeNull();
+});
+it('preserves settings section, query and fragment when opening a legacy URL', async () => {
+ const router = setup('/app/settings/security?from=notification#password'); await screen.findByText('Account section security');
+ expect(router.state.location.pathname).toBe('/app/profile/settings/security');
+ expect(router.state.location.search).toBe('?from=notification'); expect(router.state.location.hash).toBe('#password');
 });
 it('all account roles can reach privacy and people routes through authenticated routing', async () => {
  for (const role of ['user', 'admin', 'super_admin']) {
@@ -29,23 +36,23 @@ it('all account roles can reach privacy and people routes through authenticated 
  }
 });
 it('direct settings URLs do not render privileged pages for ordinary users', async () => {
- setup('/app/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull(); cleanup();
- setup('/app/settings/accounts'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged accounts content')).toBeNull(); cleanup();
- setup('/app/settings/ai'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged AI content')).toBeNull();
+ setup('/app/profile/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull(); cleanup();
+ setup('/app/profile/settings/accounts'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged accounts content')).toBeNull(); cleanup();
+ setup('/app/profile/settings/ai'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged AI content')).toBeNull();
 });
 it('admin cannot access super-admin AI configuration, including legacy URL', async () => {
- state.role = 'admin'; state.isAdmin = true; const router = setup('/app/admin/ai'); await screen.findByRole('alert'); expect(router.state.location.pathname).toBe('/app/settings/ai'); expect(screen.queryByText('Privileged AI content')).toBeNull();
+ state.role = 'admin'; state.isAdmin = true; const router = setup('/app/admin/ai'); await screen.findByRole('alert'); expect(router.state.location.pathname).toBe('/app/profile/settings/ai'); expect(screen.queryByText('Privileged AI content')).toBeNull();
 });
 it('legacy account URL redirects to authorized management tab', async () => {
- state.role = 'admin'; state.isAdmin = true; const router = setup('/app/admin/accounts'); await screen.findByText('Privileged accounts content'); expect(router.state.location.pathname).toBe('/app/settings/accounts');
+ state.role = 'admin'; state.isAdmin = true; const router = setup('/app/admin/accounts'); await screen.findByText('Privileged accounts content'); expect(router.state.location.pathname).toBe('/app/profile/settings/accounts');
 });
 it('default settings URL resolves profile while security deep link is independent', async () => {
- const router = setup('/app/settings'); await screen.findByText('Account section profile'); expect(router.state.location.pathname).toBe('/app/settings/profile'); cleanup(); setup('/app/settings/security'); await screen.findByText('Account section security');
+ const router = setup('/app/settings'); await screen.findByText('Account section profile'); expect(router.state.location.pathname).toBe('/app/profile/settings/profile'); cleanup(); setup('/app/profile/settings/security'); await screen.findByText('Account section security');
 });
 
 it.each(['admin', 'super_admin'])('system overview allows website %s accounts', async (role) => {
- state.role = role; state.isAdmin = true; setup('/app/settings/system'); await screen.findByText('Privileged system overview');
+ state.role = role; state.isAdmin = true; setup('/app/profile/settings/system'); await screen.findByText('Privileged system overview');
 });
 it('project owners without website admin permission cannot access system overview', async () => {
- state.role = 'owner'; state.isAdmin = false; setup('/app/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull();
+ state.role = 'owner'; state.isAdmin = false; setup('/app/profile/settings/system'); await screen.findByRole('alert'); expect(screen.queryByText('Privileged system overview')).toBeNull();
 });

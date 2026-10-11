@@ -23,6 +23,11 @@ function ProfileView({ profile, aiUseAllowed = false }: { profile: PublicProfile
 }
 export function PersonalProfilePage() {
   const session = useSession();
+  const settings = [['profile', '账户信息'], ['security', '账户安全'], ['appearance', '外观'], ['installation', '安装应用'], ['agent-bridges', '本地 Agent'], ['notifications', '推送与通知']];
+  if (session.data?.isAdmin === true) {
+    settings.push(['accounts', '账户管理'], ['system', '系统概况']);
+    if (session.data.role === 'super_admin') settings.push(['ai', 'AI 配置']);
+  }
   const dialogs = usePageDialogs(session.data?.id);
   const [saved, setSaved] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile | null>(null);
@@ -177,6 +182,10 @@ export function PersonalProfilePage() {
         <section aria-label="公开展示预览"><h2>公开展示预览</h2><p className="muted">草稿预览；保存后才生效。{!draft.searchable && '当前不允许搜索，其他用户无法查看个人主页。'}</p><ProfileView profile={viewProfile(draft, true)} aiUseAllowed={draft.aiUseAllowed}/></section>
       </aside>
     </div>}
+    <section className="section-card profile-settings" aria-labelledby="profile-settings-title">
+      <h2 id="profile-settings-title">设置</h2>
+      <nav className="profile-settings-links" aria-label="个人资料设置">{settings.map(([path, label]) => <Link key={path} to={`/app/profile/settings/${path}`}>{label}</Link>)}</nav>
+    </section>
   </div>;
 }
 export function ProfileSearchPage() {

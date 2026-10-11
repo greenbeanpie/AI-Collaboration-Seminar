@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { Spinner } from '../components/ui';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useSession } from '../auth';
 import { SettingsEditGuard } from './SettingsEditGuard';
 import './SettingsLayout.css';
@@ -14,8 +14,9 @@ export function SettingsLayout() {
     if (session.data.role === 'super_admin') tabs.push(['ai', 'AI 配置']);
   }
   return <div className="settings-layout">
-    <h1>设置</h1>
-    <nav className="settings-tabs" aria-label="设置分类">{tabs.map(([path, label]) => <NavLink key={path} to={`/app/settings/${path}`}>{label}</NavLink>)}</nav>
+    <Link className="settings-back" to="/app/profile">返回个人资料</Link>
+    <h1>个人资料设置</h1>
+    <nav className="settings-tabs" aria-label="设置分类">{tabs.map(([path, label]) => <NavLink key={path} to={`/app/profile/settings/${path}`}>{label}</NavLink>)}</nav>
     <SettingsEditGuard><div key={location.pathname} className="settings-content"><Suspense fallback={<Spinner label="正在打开设置内容" />}><Outlet /></Suspense></div></SettingsEditGuard>
   </div>;
 }

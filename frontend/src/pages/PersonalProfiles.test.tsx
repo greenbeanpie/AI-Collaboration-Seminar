@@ -1,7 +1,7 @@
 import { cancelPageDialog } from '../dialogs/dialog-service';
 import { cleanup,fireEvent,render,screen,waitFor,within,act } from '@testing-library/react';
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter,Routes,Route,createMemoryRouter,RouterProvider,NavLink } from 'react-router-dom';
+import { MemoryRouter,Routes,Route,createMemoryRouter,RouterProvider } from 'react-router-dom';
 import { SettingsEditGuard } from './SettingsEditGuard';
 import { afterEach,it,expect,vi } from 'vitest';
 import { PersonalProfilePage,ProfileSearchPage,PublicProfilePage } from './PersonalProfiles';
@@ -23,7 +23,21 @@ it('does not mark unauthorized profile content as available to AI',async()=>{
 });
 afterEach(async()=>{await act(async()=>{cancelPageDialog();});cleanup();vi.unstubAllGlobals();});
 async function answer(name: '确定' | '取消') { const dialog=await screen.findByRole('dialog'); await act(async()=>{fireEvent.click(within(dialog).getByRole('button', { name }));}); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); }
-function setup(path='/app/profile',dirty=vi.fn()) {const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});client.setQueryData(['session'],user);render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><SettingsDirtyContext.Provider value={dirty}><Routes><Route path="/app/profile" element={<PersonalProfilePage/>}/><Route path="/app/people" element={<ProfileSearchPage/>}/><Route path="/app/people/:username" element={<PublicProfilePage/>}/></Routes></SettingsDirtyContext.Provider></MemoryRouter></QueryClientProvider>);return dirty;}
+function setup(path='/app/profile',dirty=vi.fn(),account=user) {const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});client.setQueryData(['session'],account);render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><SettingsDirtyContext.Provider value={dirty}><Routes><Route path="/app/profile" element={<PersonalProfilePage/>}/><Route path="/app/people" element={<ProfileSearchPage/>}/><Route path="/app/people/:username" element={<PublicProfilePage/>}/></Routes></SettingsDirtyContext.Provider></MemoryRouter></QueryClientProvider>);return dirty;}
+it.each(['user', 'admin', 'super_admin'])('places visible role-appropriate settings at the bottom of the %s personal profile', async (role) => {
+ vi.stubGlobal('fetch', vi.fn(async () => response(profile)));
+ setup('/app/profile', vi.fn(), { ...user, role, isAdmin: role !== 'user' });
+ await screen.findByRole('button', { name: '编辑资料' });
+ const navigation = screen.getByRole('navigation', { name: '个人资料设置' });
+ const settings = navigation.closest('section');
+ expect(settings?.parentElement?.lastElementChild).toBe(settings);
+ expect(within(navigation).getByRole('link', { name: '账户信息' })).toHaveAttribute('href', '/app/profile/settings/profile');
+ expect(within(navigation).getByRole('link', { name: '推送与通知' })).toHaveAttribute('href', '/app/profile/settings/notifications');
+ expect(within(navigation).queryByRole('combobox')).toBeNull();
+ expect(Boolean(within(navigation).queryByRole('link', { name: '账户管理' }))).toBe(role !== 'user');
+ expect(Boolean(within(navigation).queryByRole('link', { name: '系统概况' }))).toBe(role !== 'user');
+ expect(Boolean(within(navigation).queryByRole('link', { name: 'AI 配置' }))).toBe(role === 'super_admin');
+});
 it('keeps private edits out of public preview, saves visibility with revision and dirty guard',async()=>{
  let saved:unknown;vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{if(init?.method==='PUT'){saved=JSON.parse(init.body);return response({...profile,...saved as object,revision:1});}return response(profile);}));const dirty=setup();
  fireEvent.click(await screen.findByRole('button',{name:'编辑资料'}));const major=screen.getByLabelText('专业');fireEvent.change(major,{target:{value:'PRIVATE FIELD'}});expect(within(screen.getByRole('region',{name:'公开展示预览'})).queryByText('PRIVATE FIELD',{selector:'p'})).toBeNull();expect(within(screen.getByRole('region',{name:'内容预览，仅自己可见'})).getByText('PRIVATE FIELD',{selector:'p'})).toBeInTheDocument();expect(dirty).toHaveBeenLastCalledWith(expect.any(String),true);
@@ -80,16 +94,19 @@ it('one save returns to read mode, keeps the saved Markdown and suppresses repea
  expect(within(screen.getByRole('region', { name: '我的个人主页' })).getByRole('heading', { name: 'Saved heading' })).toBeInTheDocument();
 });
 
-it('the independent profile route preserves edits when Back is canceled and supports confirmed Back/Forward', async () => {
+it('personal profile settings links and Back preserve edits until leaving is confirmed', async () => {
  vi.stubGlobal('fetch', vi.fn(async () => response(profile)));
  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); client.setQueryData(['session'], user);
  const router = createMemoryRouter([
-  { path: '/app/profile', element: <><NavLink to="/app/settings">设置</NavLink><SettingsEditGuard><PersonalProfilePage/></SettingsEditGuard></> },
-  { path: '/app/settings', element: <p>Settings destination</p> },
- ], { initialEntries: ['/app/settings', '/app/profile'], initialIndex: 1 });
+  { path: '/app/profile', element: <SettingsEditGuard><PersonalProfilePage/></SettingsEditGuard> },
+  { path: '/app/profile/settings/security', element: <p>Settings destination</p> },
+ ], { initialEntries: ['/app/profile/settings/security', '/app/profile'], initialIndex: 1 });
  render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>);
  fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }));
  fireEvent.change(screen.getByLabelText('专业'), { target: { value: 'Keep my draft' } });
+ fireEvent.click(within(screen.getByRole('navigation', { name: '个人资料设置' })).getByRole('link', { name: '账户安全' }));
+ await answer('取消'); expect(router.state.location.pathname).toBe('/app/profile');
+ expect(screen.getByLabelText('专业')).toHaveValue('Keep my draft');
  await act(() => router.navigate(-1));
  await answer('取消'); expect(router.state.location.pathname).toBe('/app/profile');
  expect(screen.getByLabelText('专业')).toHaveValue('Keep my draft');
