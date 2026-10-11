@@ -25,6 +25,7 @@ export type RecordingDraft = {
     error?: string;
     sessionId?: string;
     tailType?: string;
+    incompleteFiles?: string[];
 };
 let database: Promise<IDBDatabase> | undefined;
 function db() { return database ??= new Promise<IDBDatabase>((resolve, reject) => { const r = indexedDB.open('buwei-recordings', 2); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('drafts'))
