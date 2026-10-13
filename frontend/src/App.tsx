@@ -62,7 +62,7 @@ function Landing() {
 }
 
 function ServiceFailure({ error, retry }: { error: unknown; retry: () => unknown }) {
-  return <main className="center-screen"><div className="welcome-card"><Brand /><h1>服务暂时无法连接</h1><p>登录和项目数据来自后端服务。请稍后重试，或检查部署状态。</p><ErrorNotice error={error} onRetry={() => { void retry(); }} /><div className="welcome-actions"><Link className="button button-primary" to="/">重试服务</Link><a className="button button-quiet" href="/guest/index.html">游客演示 <ArrowUpRight size={16} /></a></div></div></main>;
+  return <main className="center-screen"><div className="welcome-card"><Brand /><h1>服务暂时无法连接</h1><p>请检查网络后重试。首次使用需要联网登录；离线时只能打开这个设备已保存的账户和项目内容。</p><ErrorNotice error={error} onRetry={() => { void retry(); }} /><div className="welcome-actions"><button className="button button-primary" onClick={() => { void retry(); }}>重试连接</button><a className="button button-quiet" href="/guest/index.html">游客演示 <ArrowUpRight size={16} /></a></div></div></main>;
 }
 
 function Brand() {

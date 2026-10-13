@@ -6,13 +6,15 @@
     <meta name="theme-color" content="#f4f6fa" />
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/date-input.css" />
+    <link rel="stylesheet" href="/startup.css" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="description" content="补位 AI 项目办公室，连接通知、团队、任务、材料与项目过程记录。" />
     <title>补位 · AI 项目办公室</title>
   </head>
   <body><script type="module" src="/app-updates.js"></script>
-    <div id="root"></div>
+    <div id="root"><main id="app-startup" aria-label="打开工作台"><img src="/icon-192.png" width="64" height="64" alt="" /><h1>正在打开补位</h1><p id="startup-message" role="status">正在加载工作台，随后恢复已保存的内容。</p><button id="startup-retry" type="button" hidden>重新加载</button><noscript><p>请启用 JavaScript 后重新打开工作台。</p></noscript></main></div>
+    <script type="module" src="/startup.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

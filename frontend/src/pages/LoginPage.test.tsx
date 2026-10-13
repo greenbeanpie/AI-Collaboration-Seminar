@@ -19,7 +19,7 @@ function setup(fail = false, configuration: Capability = capabilities) {
     throw new Error(`Unexpected API ${path}`);
   });
   vi.stubGlobal('fetch', mock);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, networkMode: 'always' } } });
   render(<QueryClientProvider client={client}><MemoryRouter><Routes><Route path="/" element={<LoginPage capabilities={configuration} />} /><Route path="/app" element={<h1>真实工作区</h1>} /></Routes></MemoryRouter></QueryClientProvider>);
   return { mock, client };
 }
@@ -33,6 +33,23 @@ function fillRegistration(email?: string) {
 afterEach(() => { cleanup(); delete window.turnstile; vi.unstubAllGlobals(); });
 
 describe('password login and invitation registration', () => {
+  it('explains offline login, preserves inputs and resumes after reconnecting', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    const { mock } = setup();
+    fireEvent.change(screen.getByLabelText('用户名或邮箱'), { target: { value: 'team_member' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'a-long-test-password' } });
+    online.mockReturnValue(false); act(() => { window.dispatchEvent(new Event('offline')); });
+    expect(screen.getByRole('button', { name: '登录工作区' })).toBeDisabled();
+    expect(screen.getByText(/当前离线，登录和注册需要联网/)).toBeVisible();
+    fireEvent.submit(screen.getByLabelText('密码').closest('form')!);
+    expect(await screen.findByRole('alert')).toHaveTextContent('登录和注册需要联网');
+    expect(mock.mock.calls.some(([path]) => path.endsWith('/auth/sessions'))).toBe(false);
+    online.mockReturnValue(true); act(() => { window.dispatchEvent(new Event('online')); });
+    expect(screen.getByLabelText('用户名或邮箱')).toHaveValue('team_member');
+    expect(screen.getByLabelText('密码')).toHaveValue('a-long-test-password');
+    expect(screen.getByRole('button', { name: '登录工作区' })).toBeEnabled();
+    online.mockRestore();
+  });
   it('submits account/password and restores the real session on keyboard submission', async () => {
     const { mock, client } = setup();
     fireEvent.change(screen.getByLabelText('用户名或邮箱'), { target: { value: ' team_member ' } });

@@ -1,0 +1,7 @@
+#app-startup{box-sizing:border-box;min-height:80vh;max-width:36rem;margin:auto;padding:4rem 1.5rem;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font:16px/1.6 system-ui,sans-serif;color:#243447}
+html[data-theme=dark] #app-startup{color:#e6edf7}
+#app-startup h1{font-size:1.4rem;margin:1rem 0 .25rem}
+#app-startup p{overflow-wrap:anywhere}
+#startup-retry{font:inherit;min-height:44px;padding:.5rem 1rem;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent;cursor:pointer}
+#startup-retry[hidden]{display:none}
+#startup-retry:focus-visible{outline:2px solid #3978c6;outline-offset:3px}
