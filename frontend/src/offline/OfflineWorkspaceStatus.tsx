@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { operations, type PendingOperation } from './store';
-import { prepareProject, resolveOperation, synchronizeOffline } from './sync';
+import { ensureProjectPrepared, preparedAt, prepareProject, resolveOperation, synchronizeOffline } from './sync';
+import { inspectStorageProtection, requestStorageProtection, storageProtectionMessage, type StorageProtection } from './storage-protection';
 import { confirmPage } from '../dialogs/dialog-service';
 import { docToMarkdown } from '../pages/TasksMaterialsShared';
 import './offline.css';
@@ -22,35 +23,64 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
   const syncing = useRef(new Map<string, Promise<void>>());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [prepared, setPrepared] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [protection, setProtection] = useState<StorageProtection | null>(null);
+  const context = `${accountId}:${projectId}`;
+  const activeContext = useRef(context); activeContext.current = context;
   const reload = useCallback(async () => {
-    try { setPending(await operations(accountId)); }
+    const key = `${accountId}:${projectId}`;
+    try {
+      const [rows, completed, status] = await Promise.all([operations(accountId), projectId ? preparedAt(projectId) : Promise.resolve(null), inspectStorageProtection()]);
+      if (activeContext.current !== key) return;
+      setPending(rows); setPrepared(completed); setProtection(previous => ({ ...status, requested: previous?.requested }));
+    }
     catch { setError('浏览器无法保存离线数据，请检查存储设置。'); }
-  }, [accountId]);
-  const sync = useCallback(() => {
+  }, [accountId, projectId]);
+  const sync = useCallback((force = false) => {
     if (!navigator.onLine) return Promise.resolve();
     const key = `${accountId}:${projectId}`;
     const existing = syncing.current.get(key);
     if (existing) return existing;
     const run = async () => {
       setBusy(true); setError('');
-      try { await synchronizeOffline(); if (projectId) await prepareProject(projectId); await client.invalidateQueries(); }
-      catch (failure) { setError(failure instanceof Error ? failure.message : '同步失败，本机内容已保留'); }
-      finally { setBusy(false); await reload(); }
+      try {
+        const hadPending = (await operations(accountId)).length > 0;
+        if (force) {
+          const status = projectId ? { ...await inspectStorageProtection(), requested: true } : await requestStorageProtection();
+          if (activeContext.current !== key) return;
+          setProtection(status);
+        }
+        await synchronizeOffline();
+        if (activeContext.current !== key) return;
+        let refreshed = false;
+        if (projectId) {
+          setPreparing(true);
+          if (force) { await prepareProject(projectId); refreshed = true; }
+          else refreshed = await ensureProjectPrepared(projectId);
+        }
+        if (activeContext.current === key && (hadPending || refreshed)) await client.invalidateQueries();
+      }
+      catch (failure) { if (activeContext.current === key) setError(failure instanceof Error ? failure.message : '同步失败，本机内容已保留'); }
+      finally { if (activeContext.current === key) { setBusy(false); setPreparing(false); await reload(); } }
     };
     const promise = run().finally(() => { syncing.current.delete(key); });
     syncing.current.set(key, promise);
     return promise;
   }, [accountId, client, projectId, reload]);
   useEffect(() => {
+    setPrepared(null); setPreparing(false); setPending([]); setError(''); setBusy(false);
     void reload();
     const refresh = () => { if (navigator.onLine && document.visibilityState !== 'hidden') { setOnline(true); void sync(); } };
     const onOffline = () => setOnline(false);
     const onChanged = () => { void reload(); };
-    const onFailure = () => setError('本机缓存写入失败；当前内容尚不能保证离线可用。');
+    const onFailure = (event: Event) => setError((event as CustomEvent<{ message?: string }>).detail?.message ?? '本机缓存写入失败；当前内容尚不能保证离线可用。');
+    const onProtection = (event: Event) => setProtection((event as CustomEvent<StorageProtection>).detail);
     window.addEventListener('online', refresh); window.addEventListener('offline', onOffline);
     window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
     window.addEventListener('offline-data-changed', onChanged); window.addEventListener('offline-sync-completed', onChanged);
     window.addEventListener('offline-storage-failed', onFailure); window.addEventListener('offline-sync-retry', refresh);
+    window.addEventListener('offline-storage-protection', onProtection);
     window.addEventListener('desktop-transfer-refresh', refresh);
     refresh();
     return () => {
@@ -58,6 +88,7 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
       window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('offline-data-changed', onChanged); window.removeEventListener('offline-sync-completed', onChanged);
       window.removeEventListener('offline-storage-failed', onFailure); window.removeEventListener('offline-sync-retry', refresh);
+      window.removeEventListener('offline-storage-protection', onProtection);
       window.removeEventListener('desktop-transfer-refresh', refresh);
     };
   }, [reload, sync]);
@@ -66,14 +97,24 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
     try { await resolveOperation(row, choice); await sync(); }
     catch (failure) { setError(failure instanceof Error ? failure.message : '处理失败，本机内容已保留'); }
   };
-  if (online && !pending.length && !error) return null;
+  if (online && !projectId && !pending.length && !error) return null;
   return <section className="offline-workspace-status" aria-label="离线工作与同步">
-    <div role="status"><strong>{!online ? '离线工作台' : busy ? '同步中…' : '本机操作待同步'}</strong>
+    <div role="status"><strong>{!online ? '离线工作台' : busy ? '同步中…' : pending.length ? '本机操作待同步' : '本机项目快照'}</strong>
       {!online && <span>正在使用本机快照，联网后自动同步；AI 和审批需联网完成。</span>}
       {pending.length > 0 && <span>{pending.length} 项本机操作待同步</span>}
     </div>
-    {online && (pending.length > 0 || error) && <button className="button button-small" disabled={busy} onClick={() => void sync()}>重试同步</button>}
+    {projectId && <div role="status">
+      <span>{preparing ? '正在准备项目文本与文件信息…' : prepared ? `上次项目准备完成：${new Date(prepared).toLocaleString('zh-CN')}` : '尚未完成项目离线准备；仅已打开的内容可能可用。'}</span>
+    </div>}
+    {online && projectId && <button className="button button-small" disabled={busy} onClick={() => void sync(true)}>{prepared ? '刷新本机项目快照' : '保存项目供离线使用'}</button>}
+    {online && (pending.length > 0 || error) && <button className="button button-small" disabled={busy} onClick={() => void sync(true)}>重试同步</button>}
     {error && <p role="alert" style={{whiteSpace:'pre-wrap'}}>{error}</p>}
+    {projectId && <details className="offline-storage-details" open={!online || Boolean(error) || Boolean(protection?.requested && protection.state !== 'persistent')}>
+      <summary>离线范围与存储</summary>
+      <p>保存当前材料正文、任务与提交记录；历史材料正文按已打开页面保存，附件原文件需另行下载。</p>
+      {protection && <p>{storageProtectionMessage(protection)}</p>}
+      {protection?.quota !== undefined && protection.usage !== undefined && <p>浏览器本机存储：已用 {(protection.usage / 1048576).toFixed(1)} / {(protection.quota / 1048576).toFixed(1)} MiB</p>}
+    </details>}
     {pending.some(row => row.state !== 'pending') && <details><summary>查看需要处理的本机操作</summary>{pending.filter(row => row.state !== 'pending').map(row => <article key={row.key}>
       <strong>{row.state === 'conflict' ? '内容存在冲突' : '操作未获服务端接受'}</strong><p style={{whiteSpace:'pre-wrap'}}>{row.error}</p>
       <div className="offline-conflict-copies"><div><h3>本机内容</h3><pre>{preview(row.body) || '本机任务操作已保留'}</pre></div><div><h3>服务端内容</h3><pre>{preview(row.server) || '请在原页面核对最新内容'}</pre></div></div>

@@ -1,5 +1,6 @@
 import type { User } from '../api/types';
 import { setDesktopAccount } from '../desktop/lifecycle';
+import { storageFailureMessage } from './storage-protection';
 
 export type Snapshot = { key: string; accountId: string; url: string; data: unknown; savedAt: string; etag?: string };
 export type PendingOperation = {
@@ -11,6 +12,7 @@ export type PendingOperation = {
 const accountKey = 'buwei:offline-account';
 let database: Promise<IDBDatabase> | undefined;
 const clearingAccounts = new Set<string>();
+const storageEpochs = new Map<string, number>();
 
 export function offlineAccount(): User | null {
   try { return JSON.parse(localStorage.getItem(accountKey) ?? 'null') as User | null; }
@@ -47,11 +49,21 @@ export async function transact<T>(name: 'snapshots' | 'operations', mode: IDBTra
   const db = await open();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(name, mode);
-    const request = action(transaction.objectStore(name));
+    let request: IDBRequest<T>;
+    try { request = action(transaction.objectStore(name)); }
+    catch (failure) {
+      transaction.abort();
+      if (mode === 'readwrite' && failure instanceof DOMException) window.dispatchEvent(new CustomEvent('offline-storage-failed', { detail: { message: storageFailureMessage(failure) } }));
+      reject(failure); return;
+    }
     let value: T;
     request.onsuccess = () => { value = request.result; };
     transaction.oncomplete = () => resolve(value);
-    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? request.error ?? new Error('离线数据写入失败'));
+    transaction.onabort = transaction.onerror = () => {
+      const failure = transaction.error ?? request.error ?? new Error('离线数据写入失败');
+      if (mode === 'readwrite') window.dispatchEvent(new CustomEvent('offline-storage-failed', { detail: { message: storageFailureMessage(failure) } }));
+      reject(failure);
+    };
   });
 }
 export function normalizeUrl(path: string): string {
@@ -65,14 +77,18 @@ export async function readSnapshot(url: string, accountId = offlineAccount()?.id
 }
 export async function writeSnapshot(url: string, data: unknown, accountId = offlineAccount()?.id, etag?: string): Promise<void> {
   if (!accountId || clearingAccounts.has(accountId)) return;
+  const epoch = storageEpochs.get(accountId) ?? 0;
   const normalized = normalizeUrl(url);
-  await transact('snapshots', 'readwrite', store => store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data, savedAt: new Date().toISOString(), ...(etag ? { etag } : {}) } satisfies Snapshot));
+  await transact('snapshots', 'readwrite', store => {
+    if (clearingAccounts.has(accountId) || (storageEpochs.get(accountId) ?? 0) !== epoch) throw new Error('此账号的本机数据已清除，已停止旧缓存写入');
+    return store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data, savedAt: new Date().toISOString(), ...(etag ? { etag } : {}) } satisfies Snapshot);
+  });
 }
 export async function snapshots(accountId = offlineAccount()?.id): Promise<Snapshot[]> {
   return accountId ? transact('snapshots', 'readonly', store => store.index('accountId').getAll(accountId)) : [];
 }
 /** Reuse a complete cached cursor chain when callers choose a different page size. */
-export async function readCachedList(url: string): Promise<unknown | undefined> {
+export async function readCachedList(url: string, accountId = offlineAccount()?.id): Promise<unknown | undefined> {
   const wanted = new URL(url, window.location.origin);
   if (wanted.searchParams.has('cursor')) return undefined;
   const filter = (candidate: URL) => {
@@ -81,7 +97,7 @@ export async function readCachedList(url: string): Promise<unknown | undefined> 
     }
     return true;
   };
-  const pages = (await snapshots()).filter(row => {
+  const pages = (await snapshots(accountId)).filter(row => {
     const candidate = new URL(row.url, window.location.origin);
     return candidate.pathname === wanted.pathname && filter(candidate) && Array.isArray((row.data as { items?: unknown[] })?.items);
   });
@@ -111,7 +127,11 @@ export async function operations(accountId = offlineAccount()?.id): Promise<Pend
 }
 export async function putOperation(operation: PendingOperation): Promise<void> {
   if (clearingAccounts.has(operation.accountId)) throw new Error('此账号的本机数据已清除，请重新登录后操作');
-  await transact('operations', 'readwrite', store => store.put(operation));
+  const epoch = storageEpochs.get(operation.accountId) ?? 0;
+  await transact('operations', 'readwrite', store => {
+    if (clearingAccounts.has(operation.accountId) || (storageEpochs.get(operation.accountId) ?? 0) !== epoch) throw new Error('此账号的本机数据已清除，已停止旧操作写入');
+    return store.put(operation);
+  });
   window.dispatchEvent(new Event('offline-data-changed'));
 }
 export async function removeOperation(key: string): Promise<void> {
@@ -120,6 +140,7 @@ export async function removeOperation(key: string): Promise<void> {
 }
 export async function clearOfflineAccount(accountId: string): Promise<void> {
   clearingAccounts.add(accountId);
+  storageEpochs.set(accountId, (storageEpochs.get(accountId) ?? 0) + 1);
   try {
     const db = await open();
     await new Promise<void>((resolve, reject) => {

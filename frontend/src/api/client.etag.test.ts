@@ -21,7 +21,14 @@ it('upgrades legacy snapshots and announces a changed validator',async()=>{
 it('never accepts a conditional result after switching identity',async()=>{
  let finish!:(r:Response)=>void;vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(r=>{finish=r;})));
  const pending=request(url,{networkOnly:true,conditionalSnapshot:{accountId:'a',data:{items:[{private:'a'}]},etag:'"one"'}});state.account='b';finish(new Response(null,{status:304}));
- await expect(pending).rejects.toMatchObject({status:304});expect(state.cache.has('b:'+url)).toBe(false);
+ await expect(pending).rejects.toMatchObject({code:'AUTH_CONTEXT_CHANGED'});expect(state.cache.has('b:'+url)).toBe(false);
+});
+it('does not announce identical legacy data when a response has no validator',async()=>{
+ state.cache.set('a:'+url,{data:{items:[{taskId:'same'}]}});
+ const updated=vi.fn();window.addEventListener('offline-snapshot-updated',updated);
+ const fetcher=vi.fn(async()=>Response.json({data:{items:[{taskId:'same'}]}}));vi.stubGlobal('fetch',fetcher);
+ await request(url);await vi.waitFor(()=>expect(fetcher).toHaveBeenCalledOnce());await new Promise(resolve=>setTimeout(resolve,20));
+ expect(updated).not.toHaveBeenCalled();window.removeEventListener('offline-snapshot-updated',updated);
 });
 it('rejects in-flight account data after device clearing even when the same account logs back in',async()=>{
  let finish!:(response:Response)=>void;

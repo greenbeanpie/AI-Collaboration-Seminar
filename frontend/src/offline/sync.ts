@@ -3,8 +3,22 @@ import { offlineAccount, operations, putOperation, readSnapshot, removeOperation
 import { replaceLocalIds } from './queue';
 import { isDesktop } from '../desktop/bridge';
 import { beginDesktopActivity } from '../desktop/lifecycle';
+import { inspectStorageProtection, requestStorageProtection } from './storage-protection';
 
 let syncing: Promise<void> | undefined;
+const preparationEpochs = new Map<string, number>();
+window.addEventListener('account-device-cleared', event => {
+  const accountId = (event as CustomEvent<{ accountId: string }>).detail?.accountId;
+  if (typeof accountId === 'string') preparationEpochs.set(accountId, (preparationEpochs.get(accountId) ?? 0) + 1);
+});
+type PreparationContext = { accountId: string | undefined; epoch: number };
+function preparationContext(): PreparationContext {
+  const accountId = offlineAccount()?.id;
+  return { accountId, epoch: accountId ? preparationEpochs.get(accountId) ?? 0 : 0 };
+}
+function assertPreparationContext(context: PreparationContext): void {
+  if (!context.accountId || offlineAccount()?.id !== context.accountId || (preparationEpochs.get(context.accountId) ?? 0) !== context.epoch) throw new Error('账户或本机数据已变化，停止缓存准备');
+}
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' ? value as Record<string, unknown> : {}; }
 export function mergeUnchangedFields(base: unknown, current: unknown, patch: Record<string, unknown>): Record<string, unknown> | null {
   const old = object(base), server = object(current);
@@ -44,7 +58,7 @@ async function performSync(): Promise<void> {
         row.desktopAttachmentsResolved = true;
         await putOperation(row);
       }
-      const saved = await request<'ProjectResponse'>(`/projects/${row.projectId}/offline-sync`, { method: 'POST', networkOnly: true, idempotencyKey: row.key, body: { method: row.method, tail, body: row.body } });
+      const saved = await request<'ProjectResponse'>(`/projects/${row.projectId}/offline-sync`, { method: 'POST', networkOnly: true, timeoutMs: 90_000, idempotencyKey: row.key, body: { method: row.method, tail, body: row.body } });
       const result = object(saved);
       const actualId = result.submissionId ?? result.commentId ?? result.versionId ?? result.materialVersionId ?? result.taskId;
       if (typeof actualId === 'string') await replaceLocalIds(account.id, row.localId, actualId);
@@ -106,11 +120,12 @@ export async function resolveOperation(row: PendingOperation, choice: 'server' |
   await removeOperation(row.key);
   window.dispatchEvent(new Event('offline-sync-completed'));
 }
-async function performPrepareProject(projectId: string): Promise<void> {
+async function performPrepareProject(projectId: string, context: PreparationContext): Promise<void> {
   const base = `/api/v1/projects/${projectId}`;
-  const accountId = offlineAccount()?.id;
+  const { accountId } = context;
   const load = (url: string, query?: Record<string, string | number | null>) => {
-    if (!accountId || offlineAccount()?.id !== accountId) throw new Error('账户已切换，停止缓存准备');
+    assertPreparationContext(context);
+    if (navigator.onLine === false) throw new Error('网络已断开，已完成的本机快照仍保留。');
     return request<'ProjectResponse'>(url, { query, networkOnly: true, requireOfflinePersistence: true });
   };
   const list = async (tail: string, query: Record<string, string | number> = {}) => {
@@ -122,6 +137,7 @@ async function performPrepareProject(projectId: string): Promise<void> {
       if (Array.isArray(data.items)) all.push(...data.items as Record<string, unknown>[]);
       cursor = typeof data.nextCursor === 'string' ? data.nextCursor : null;
       if (cursor && seen.has(cursor)) throw new Error('离线准备遇到重复分页游标');
+      if (seen.size >= 200) throw new Error('离线准备数据页数超出安全上限，请联系管理员。');
       if (cursor) seen.add(cursor);
     } while (cursor);
     return all;
@@ -151,7 +167,8 @@ async function performPrepareProject(projectId: string): Promise<void> {
     const id = String(task.taskId);
     pages.push(() => load(`${base}/tasks/${id}`),
       () => list('/comments', { targetType: 'task', targetId: id }),
-      () => load(`${base}/tasks/${id}/submissions`));
+      () => list(`/tasks/${id}/submissions`),
+      () => list(`/tasks/${id}/files`));
   }
   for (const material of materials) {
     const id = String(material.materialId);
@@ -163,8 +180,8 @@ async function performPrepareProject(projectId: string): Promise<void> {
     await Promise.all(pages.slice(i, i + 4).map(work => attempt(work)));
   }
   if (failures.length) throw failures[0];
-  if (offlineAccount()?.id !== accountId) return;
-  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString() }, accountId);
+  assertPreparationContext(context);
+  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString(), coverageVersion: 2 }, accountId);
   window.dispatchEvent(new Event('offline-data-changed'));
 }
 export async function preparedAt(projectId: string): Promise<string | null> {
@@ -173,11 +190,41 @@ export async function preparedAt(projectId: string): Promise<string | null> {
 }
 
 const preparations = new Map<string, Promise<void>>();
+/** Explicit download/save refreshes every time; never let freshness skip a requested download. */
 export function prepareProject(projectId: string): Promise<void> {
-  const key = (offlineAccount()?.id ?? '') + ':' + projectId;
+  const context = preparationContext();
+  const key = `${context.accountId ?? ''}:${context.epoch}:${projectId}`;
   const existing = preparations.get(key);
   if (existing) return existing;
-  const pending = performPrepareProject(projectId).finally(() => preparations.delete(key));
+  const pending = (async () => {
+    await requestStorageProtection();
+    assertPreparationContext(context);
+    await performPrepareProject(projectId, context);
+  })().finally(() => preparations.delete(key));
   preparations.set(key, pending);
   return pending;
+}
+
+const preparationFreshnessMs = 10 * 60_000;
+/** Automatic navigation/focus refreshes quietly and reuses a recently complete project snapshot. */
+export async function ensureProjectPrepared(projectId: string): Promise<boolean> {
+  const context = preparationContext();
+  const { accountId } = context;
+  if (!accountId || navigator.onLine === false) return false;
+  const marker = object((await readSnapshot(`/api/v1/projects/${projectId}/offline-ready`))?.data);
+  const completed = typeof marker.preparedAt === 'string' ? marker.preparedAt : null;
+  assertPreparationContext(context);
+  const age = completed ? Date.now() - Date.parse(completed) : NaN;
+  if (marker.coverageVersion === 2 && Number.isFinite(age) && age >= 0 && age < preparationFreshnessMs) return false;
+  const key = `${accountId}:${context.epoch}:${projectId}`;
+  const existing = preparations.get(key);
+  if (existing) { await existing; return false; }
+  const pending = (async () => {
+    await inspectStorageProtection();
+    assertPreparationContext(context);
+    await performPrepareProject(projectId, context);
+  })().finally(() => preparations.delete(key));
+  preparations.set(key, pending);
+  await pending;
+  return true;
 }

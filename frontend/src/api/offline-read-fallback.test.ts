@@ -20,7 +20,7 @@ it('never masks authorization errors, cancellation, account changes or writes', 
   state.account = 'a'; vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError')));
   await expect(request('/projects/p/tasks', { networkOnly: true, offlineReadFallback: true })).rejects.toMatchObject({ name: 'AbortError' });
   vi.stubGlobal('fetch', vi.fn(async () => { state.account = 'b'; throw new TypeError('Disconnected'); }));
-  await expect(request('/projects/p/tasks', { networkOnly: true, offlineReadFallback: true })).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+  await expect(request('/projects/p/tasks', { networkOnly: true, offlineReadFallback: true })).rejects.toMatchObject({ code: 'AUTH_CONTEXT_CHANGED' });
   await expect(request('/projects/p/tasks', { method: 'POST', networkOnly: true, offlineReadFallback: true })).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
   expect(state.read).not.toHaveBeenCalled();
 });

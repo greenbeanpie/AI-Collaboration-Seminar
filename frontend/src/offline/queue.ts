@@ -1,4 +1,5 @@
 import { offlineAccount, operations, putOperation, readSnapshot, snapshots, writeSnapshot, type PendingOperation } from './store';
+import { requestStorageProtection } from './storage-protection';
 
 export function offlineWritable(url: string, method: string): boolean {
   const tail = new URL(url, window.location.origin).pathname.match(/^\/api\/v1\/projects\/[^/]+\/(.+)$/)?.[1];
@@ -42,7 +43,8 @@ export async function operationBase(url: string, projectId: string): Promise<unk
   }
   return (await readSnapshot(url))?.data ?? null;
 }
-export async function queueOffline(url: string, method: string, body: unknown, idempotencyKey?: string): Promise<unknown> {
+export async function queueOffline(url: string, method: string, body: unknown, idempotencyKey?: string, assertContext?: () => void): Promise<unknown> {
+  assertContext?.();
   const account = offlineAccount();
   if (!account || !offlineWritable(url, method)) throw new Error('此操作需要联网完成');
   const projectId = url.match(/\/projects\/([^/]+)/)![1]!;
@@ -52,7 +54,11 @@ export async function queueOffline(url: string, method: string, body: unknown, i
   if (existing) return optimisticResult(existing, existing.base);
   const operation: PendingOperation = { key: idempotencyKey ?? crypto.randomUUID(), accountId: account.id, projectId, url, method, body: record(body), localId: crypto.randomUUID(), base: await operationBase(url, projectId), createdAt: new Date().toISOString(), state: 'pending' };
   // Persist intent before changing snapshots. A storage failure never masquerades as a save.
+  await requestStorageProtection();
+  assertContext?.();
+  if (offlineAccount()?.id !== account.id) throw new Error('账户已切换，请重新打开页面后保存。');
   await putOperation(operation);
+  assertContext?.();
   return optimisticResult(operation, operation.base);
 }
 export async function offlineView(url: string, cached: unknown): Promise<unknown> {

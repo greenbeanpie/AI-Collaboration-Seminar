@@ -12,3 +12,13 @@ it('atomically deletes snapshots and pending intents for one account only and pr
  expect(rememberAccount(user('a'))).toBe(false);
  rememberAccount(user('a'), true);await writeSnapshot('/api/v1/projects/p',{private:'fresh'},'a','"fresh"');expect((await readSnapshot('/api/v1/projects/p','a'))?.etag).toBe('"fresh"');await clearOfflineAccount('a');await clearOfflineAccount('b');
 });
+it('does not resurrect an old snapshot or intent after a clear races the database await and same-account login',async()=>{
+ rememberAccount(user('race'),true);
+ const snapshot = writeSnapshot('/api/v1/projects/p',{private:'old'},'race');
+ const operation = putOperation({key:'race:old',accountId:'race',projectId:'p',url:'x',method:'POST',body:{},localId:'x',base:null,createdAt:'2026-10-13',state:'pending'});
+ const outcomes = Promise.allSettled([snapshot,operation]);
+ const clearing = clearOfflineAccount('race'); rememberAccount(user('race'),true);
+ expect((await outcomes).every(result=>result.status==='rejected')).toBe(true);
+ await clearing;
+ expect(await readSnapshot('/api/v1/projects/p','race')).toBeUndefined();expect(await operations('race')).toEqual([]);
+});
