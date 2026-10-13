@@ -14,7 +14,7 @@ const now = new Date().toISOString();
 const permissions = { teamManage: true, taskManage: true, resourceManage: true, scoreInitiate: true, scoreCorrect: true };
 const user = { id: userId, displayName: '离线测试用户', username: 'offline-test', email: null, isAdmin: false, role: 'user' };
 const project = { id: projectId, name: '离线验收项目', description: '本机夹具，无生产数据', status: 'active', myRole: 'owner', permissions, revision: 1, deadlineDate: null, deadlinePrecision: 'unknown' };
-const task = { taskId, projectId, title: '缓存任务', detail: '', criteria: '核对正文', effortHours: 1, assigneeId: userId, status: 'todo', lifecycleState: 'open', revision: 1, currentSubmissionId: null, parentTaskId: null, dueDate: null, duePrecision: 'unknown', dependsOnTaskIds: [], unfinishedDependencyIds: [], createdAt: now, updatedAt: now };
+const task = { taskId, projectId, title: '缓存任务', detail: '', criteria: '核对正文', effortHours: 1, assigneeId: userId, status: 'doing', lifecycleState: 'in_progress', revision: 1, currentSubmissionId: null, parentTaskId: null, dueDate: null, duePrecision: 'unknown', dependsOnTaskIds: [], unfinishedDependencyIds: [], createdAt: now, updatedAt: now };
 const tasks = [task];
 let material = { materialId, title: '离线材料', kind: 'document', purpose: 'output', revision: 1, canEdit: true, currentVersionId: versionId, createdAt: now, updatedAt: now,
   currentVersion: { versionId, revision: 1, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '联网缓存正文' }] }] }, markdown: '联网缓存正文', attachments: [], createdAt: now } };
