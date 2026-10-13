@@ -25,6 +25,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://127.0.0.1');
     const endpoint = url.pathname, base = `/api/v1/projects/${projectId}`;
+    if (['/native/index.html', '/native/bootstrap.js'].includes(endpoint)) {
+      const bytes = await readFile(fileURLToPath(new URL('../../desktop/static/' + path.basename(endpoint), import.meta.url)));
+      res.writeHead(200, { 'Content-Type': mime[path.extname(endpoint)], 'Cache-Control': 'no-store' }); res.end(bytes); return;
+    }
     if (endpoint === '/__fixture/state') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ reads, writes, tasks, material })); return; }
     if (endpoint.startsWith('/api/v1/')) {
       reads[endpoint] = (reads[endpoint] ?? 0) + 1;
