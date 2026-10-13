@@ -16,18 +16,37 @@ import { AssistiveRubricScores } from '../../pages/AssistiveRubricScores';
 import { RemovedSourceNotice } from '../../pages/RemovedSourceNotice';
 import { decisionLabels, taskStateLabel } from './labels';
 import { JobProgress } from './JobProgress';
+import { readTaskSubmissionDraft, removeTaskSubmissionDraft, writeTaskSubmissionDraft, type TaskSubmissionDraft } from './task-submission-draft';
 
-export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, graphRevision, owner, meId, members, onChanged }: { closeGuard?: SettingsCloseGuard; view: 'submit' | 'settings'; projectId: string; task: CollaborationTask; tasks: Pick<CollaborationTask, 'taskId' | 'title'>[]; graphRevision?: number; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; onChanged: () => Promise<void> }) {
+type TaskLifecycleDetailProps = { closeGuard?: SettingsCloseGuard; view: 'submit' | 'settings'; projectId: string; task: CollaborationTask; tasks: Pick<CollaborationTask, 'taskId' | 'title'>[]; graphRevision?: number; owner: boolean; meId?: string; members: { userId: string; displayName: string }[]; onChanged: () => Promise<void> };
+
+export function TaskLifecycleDetail(props: TaskLifecycleDetailProps) {
+  return <TaskLifecycleDetailContent key={JSON.stringify([props.meId, props.projectId, props.task.taskId, props.view])} {...props} />;
+}
+
+function TaskLifecycleDetailContent({ closeGuard, view, projectId, task, tasks, graphRevision, owner, meId, members, onChanged }: TaskLifecycleDetailProps) {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const historyPage = searchParams.get('view') === 'history' && searchParams.get('historyType') === 'submissions';
   const historyId = searchParams.get('record') ?? '';
   const setHistoryId = (id: string) => { const next = new URLSearchParams(searchParams); next.set('record', id); setSearchParams(next); };
-  const [submissionBase, setSubmissionBase] = useState(task.revision);
-  const [submissionConflict, setSubmissionConflict] = useState(false);
+  const [draft, setDraft] = useState(() => {
+    const restored = meId ? readTaskSubmissionDraft(meId, projectId, task.taskId) : { draft: null, failed: false };
+    return { body: restored.draft?.body ?? '', baseRevision: restored.draft?.baseRevision ?? task.revision, conflict: restored.draft?.conflict ?? false, persisted: !restored.failed, restored: Boolean(restored.draft), readFailed: restored.failed, cleanupFailed: false };
+  });
+  const { body, baseRevision: submissionBase, conflict: submissionConflict } = draft;
   const submissionOutdated = submissionConflict || submissionBase !== task.revision;
-  const [body, setBody] = useState('');
-  useSettingsDirty(Boolean(body));
+  const persistDraft = (next: TaskSubmissionDraft) => {
+    // Save inside the input event, so reload/closing immediately after typing cannot lose a debounced edit.
+    const persisted = Boolean(meId && writeTaskSubmissionDraft(meId, projectId, task.taskId, next));
+    setDraft(current => ({ ...current, ...next, persisted, restored: false, readFailed: false, cleanupFailed: false }));
+  };
+  useEffect(() => {
+    if ((!body && !submissionConflict) || draft.persisted) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [body, submissionConflict, draft.persisted]);
   const [filesBusy, setFilesBusy] = useState(false);
   const [filesBlockedReason, setFilesBlockedReason] = useState('');
   const updateFilesStatus = useCallback((busy: boolean, reason = '') => { setFilesBusy(busy); setFilesBlockedReason(reason); }, []);
@@ -38,9 +57,15 @@ export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, 
   const history = { ...historyPages, data: historyPages.data ? { items: historyPages.data.pages.flatMap(page => page.items) } : undefined };
   const refresh = async () => { await onChanged(); await client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); };
   useEffect(() => { if (job.isSettled) { void client.invalidateQueries({ queryKey: ['collaboration-tasks', projectId] }); void client.invalidateQueries({ queryKey: ['collaboration-submissions', projectId, task.taskId] }); } }, [job.isSettled, jobId, projectId, task.taskId, client]);
-  const submit = useMutation({ mutationFn: async () => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); if (filesBusy) throw new Error('请等待文件上传或处理失败项。'); const files = await client.fetchQuery({ queryKey: taskFilesKey(projectId, task.taskId), queryFn: () => listTaskFiles(projectId, task.taskId), staleTime: 0 }); const active = files.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt); if (active.length > 10) throw new Error('每轮最多提交 10 个文件，请归档不参与本轮的文件。'); return collaborationApi.submit(projectId, { ...task, revision: submissionBase }, body.trim(), active.map(file => file.versionId)); }, onSuccess: async result => { setBody(''); setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh(); }, onError: async error => { if (error instanceof ApiError && error.status === 409) setSubmissionConflict(true); await refresh(); } });
+  const submit = useMutation({ mutationFn: async (submitted: TaskSubmissionDraft) => { if (submissionOutdated) throw new Error('任务或验收标准已变化，请重新载入并核对。'); if (filesBusy) throw new Error('请等待文件上传或处理失败项。'); persistDraft(submitted); const files = await client.fetchQuery({ queryKey: taskFilesKey(projectId, task.taskId), queryFn: () => listTaskFiles(projectId, task.taskId), staleTime: 0 }); const active = files.filter(file => !file.archivedAt && !file.materialArchivedAt && !file.deletedAt); if (active.length > 10) throw new Error('每轮最多提交 10 个文件，请归档不参与本轮的文件。'); return collaborationApi.submit(projectId, { ...task, revision: submitted.baseRevision }, submitted.body.trim(), active.map(file => file.versionId)); }, onSuccess: async (result, submitted) => {
+    // API success includes the offline queue's durable write; failed requests keep the draft.
+    const cleared = Boolean(meId && removeTaskSubmissionDraft(meId, projectId, task.taskId, submitted));
+    setDraft(current => ({ ...current, body: '', conflict: false, restored: false, persisted: true, cleanupFailed: !cleared }));
+    setEvaluationNotice(result.evaluationError ?? ''); if (result.evaluationJobId) setJobId(result.evaluationJobId); await refresh();
+  }, onError: async error => { if (error instanceof ApiError && error.status === 409) persistDraft({ body, baseRevision: submissionBase, conflict: true }); await refresh(); } });
+  useSettingsDirty(submit.isPending || (Boolean(body || submissionConflict) && !draft.persisted));
   useEffect(() => {
-    if (!body && !submissionConflict && !submit.isPending) setSubmissionBase(task.revision);
+    if (!body && !submissionConflict && !submit.isPending) setDraft(current => current.baseRevision === task.revision ? current : { ...current, baseRevision: task.revision });
   }, [body, submissionConflict, submit.isPending, task.revision]);
   const submitBlockedReason = submissionOutdated ? '任务或验收标准已更新，请先核对。' : filesBusy ? filesBlockedReason || '请等待文件上传或处理失败项。' : !body.trim() ? '请填写成果说明。' : '';
   const current = history.data?.items.find(submission => submission.submissionId === task.currentSubmissionId);
@@ -68,10 +93,14 @@ export function TaskLifecycleDetail({ closeGuard, view, projectId, task, tasks, 
     <div hidden={historyPage}>
     <section aria-label="查看与提交" hidden={view !== 'submit'} className="stack">
     {!!task.unfinishedDependencyIds?.length && <p className="notice notice-warn">尚未完成：{task.unfinishedDependencyIds.map(id => tasks.find(item => item.taskId === id)?.title ?? id).join('、')}。你可以提前认领、执行和提交。</p>}
-    {canSubmit && <section className="collab-submit"><h3>{task.currentSubmissionId ? '提交新一轮成果' : '提交成果'}</h3><form className="stack" onSubmit={event => { event.preventDefault(); submit.mutate(); }}>
-      {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请到任务设置核对最新标准，再重新填写成果说明与文件；当前草稿尚未提交。</div>}
-      {submissionOutdated && <button type="button" className="button button-quiet" onClick={() => { setBody(''); setSubmissionBase(task.revision); setSubmissionConflict(false); submit.reset(); }}>已核对标准，重新填写本轮提交</button>}
-      <Field aiReference label="成果说明"><textarea className="input" required rows={4} maxLength={12000} value={body} onChange={event => { if (!body && !submissionConflict && !submit.isPending) setSubmissionBase(task.revision); setBody(event.target.value); }} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
+    {draft.cleanupFailed && <p className="notice notice-warn" role="status">成果已保存，但浏览器未能清理旧本机草稿。刷新后若再次恢复，请先核对提交历史。</p>}
+    {canSubmit && <section className="collab-submit"><h3>{task.currentSubmissionId ? '提交新一轮成果' : '提交成果'}</h3><form className="stack" onSubmit={event => { event.preventDefault(); submit.mutate({ body, baseRevision: submissionBase, conflict: submissionConflict }); }}>
+      {submissionOutdated && <div className="notice notice-warn">任务或验收标准已更新。请先核对任务设置中的最新标准，再选择保留草稿继续提交或重新填写；当前草稿尚未提交。</div>}
+      {submissionOutdated && <div className="collab-toolbar"><button type="button" className="button button-quiet" disabled={submit.isPending} onClick={() => { persistDraft({ body, baseRevision: task.revision, conflict: false }); submit.reset(); }}>已核对标准，保留草稿继续提交</button><button type="button" className="button button-quiet" disabled={submit.isPending} onClick={() => { persistDraft({ body: '', baseRevision: task.revision, conflict: false }); submit.reset(); }}>已核对标准，重新填写本轮提交</button></div>}
+      <Field aiReference label="成果说明"><textarea className="input" required rows={4} maxLength={12000} disabled={submit.isPending} value={body} onChange={event => persistDraft({ body: event.target.value, baseRevision: !body && !submissionConflict && !submit.isPending ? task.revision : submissionBase, conflict: submissionConflict })} placeholder="逐项说明验收标准如何达成、待解决问题以及材料位置" /></Field>
+      {draft.persisted && Boolean(body || submissionConflict) && <p className="form-note" role="status">{draft.restored ? '已恢复本机成果草稿' : '成果说明已保存到本机草稿'}，尚未提交。切换页面或关闭后可继续填写。</p>}
+      {!draft.persisted && Boolean(body || submissionConflict) && <p className="notice notice-warn" role="alert">浏览器无法保存本机成果草稿；当前文字仅留在此页面内存，切换页面或关闭后会丢失。请复制备份，或连接服务后提交。</p>}
+      {draft.readFailed && <p className="notice notice-warn" role="alert">浏览器无法读取本机成果草稿，请检查存储权限或备份。当前页面不会自动覆盖无法读取的草稿。</p>}
       <TaskFileUploads projectId={projectId} taskId={task.taskId} disabled={submit.isPending} onBusy={updateFilesStatus} />
       {submitBlockedReason && <p className="form-note" role="status">{submitBlockedReason}</p>}
       {submit.error && <ErrorNotice error={submit.error} />}<button className="button button-primary" title={submitBlockedReason || undefined} disabled={submit.isPending || submissionOutdated || filesBusy || !body.trim()}>{submit.isPending ? '提交中…' : '提交本轮成果'}</button>
