@@ -47,7 +47,10 @@ const server = http.createServer(async (req, res) => {
       else if (endpoint.endsWith('/materials')) data = { items: [material], nextCursor: null };
       else if (endpoint.endsWith(`/materials/${materialId}`)) data = material;
       else if (endpoint.endsWith('/versions')) data = { items: [material.currentVersion], nextCursor: null };
-      else if (endpoint.endsWith('/resource-library')) data = { items: [{ resourceType: 'material', resourceId: materialId, title: material.title, purpose: 'output', currentVersionId: material.currentVersionId, revision: material.revision, createdAt: now, updatedAt: now, deletedAt: null, lifecycleVersion: 1, fileId: null, canManage: true }], nextCursor: null };
+      else if (endpoint.endsWith('/resource-library') || endpoint.endsWith(`/resource-library/material/${materialId}`)) {
+        const resource = { resourceType: 'material', resourceId: materialId, title: material.title, purpose: 'output', currentVersionId: material.currentVersionId, revision: material.revision, createdAt: now, updatedAt: now, deletedAt: null, archivedAt: null, lifecycleVersion: 1, fileId: null, canManage: true };
+        data = endpoint.endsWith('/resource-library') ? { items: [resource], nextCursor: null } : resource;
+      }
       else if (endpoint.includes('/collaboration/feedback')) data = { version: 0, feedback: '', history: [] };
       if (req.method !== 'GET') {
         const chunks = []; for await (const chunk of req) chunks.push(chunk);
