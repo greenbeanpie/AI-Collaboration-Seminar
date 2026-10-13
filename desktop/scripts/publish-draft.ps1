@@ -18,7 +18,7 @@ if ($NotesFile) { $manifestArgs += (Resolve-Path -LiteralPath $NotesFile).Path }
 if ($LASTEXITCODE -ne 0) { throw 'Manifest generation failed' }
 $notes = if ($NotesFile) { Get-Content -LiteralPath $NotesFile -Raw } else { 'Windows x64 client. Awaiting installation and upgrade acceptance.' }
 if (Get-Command gh -ErrorAction SilentlyContinue) {
-    $releaseArgs = @('release', 'create', "desktop-v$version", $installerPath, "$installerPath.sig", $manifestPath, '--repo', 'greenbeanpie/AI-Colleboration-Seminar', '--target', $TargetCommitish, '--draft', '--title', "补位 Windows $version")
+    $releaseArgs = @('release', 'create', "desktop-v$version", $installerPath, "$installerPath.sig", $manifestPath, '--repo', 'greenbeanpie/AI-Collaboration-Seminar', '--target', $TargetCommitish, '--draft', '--title', "补位 Windows $version")
     if ($NotesFile) { $releaseArgs += @('--notes-file', (Resolve-Path -LiteralPath $NotesFile).Path) } else { $releaseArgs += @('--notes', $notes) }
     & gh @releaseArgs
     if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed; inspect existing releases before retrying.' }
@@ -40,7 +40,7 @@ try {
     }
     if (-not $releaseToken) { throw 'GitHub credential unavailable' }
     $headers = @{ Authorization = "Bearer $releaseToken"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2026-03-10' }
-    $baseUri = 'https://api.github.com/repos/greenbeanpie/AI-Colleboration-Seminar'
+    $baseUri = 'https://api.github.com/repos/greenbeanpie/AI-Collaboration-Seminar'
     $releases = Invoke-RestMethod -Uri "$baseUri/releases?per_page=100" -Headers $headers
     $matching = @($releases | Where-Object { $_.tag_name -eq "desktop-v$version" })
     if ($matching.Count -gt 1 -or ($matching.Count -eq 1 -and -not $matching[0].draft)) { throw 'Release already published or ambiguous; do not overwrite.' }
@@ -64,7 +64,7 @@ try {
             # This flag applies only to the already-verified unpublished draft, never a public release.
             Invoke-RestMethod -Method Delete -Uri "$baseUri/releases/assets/$($existing[0].id)" -Headers $headers | Out-Null
         }
-        $assetUri = "https://uploads.github.com/repos/greenbeanpie/AI-Colleboration-Seminar/releases/$($release.id)/assets?name=$([Uri]::EscapeDataString($assetName))"
+        $assetUri = "https://uploads.github.com/repos/greenbeanpie/AI-Collaboration-Seminar/releases/$($release.id)/assets?name=$([Uri]::EscapeDataString($assetName))"
         $uploaded = Invoke-RestMethod -Method Post -Uri $assetUri -Headers $headers -ContentType 'application/octet-stream' -InFile $assetPath
         if ($uploaded.state -ne 'uploaded' -or $uploaded.digest -ne $digest) { throw "Uploaded asset verification failed: $assetName" }
     }

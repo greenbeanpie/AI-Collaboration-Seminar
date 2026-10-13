@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "startup-command"
+description = "Open the existing app from the bundled startup page"
+commands.allow = ["desktop_open_app"]

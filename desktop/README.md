@@ -4,6 +4,8 @@
 
 客户端使用系统 Evergreen WebView2，连接既有线上服务。安装包为 Windows 10/11 x64 的当前用户 NSIS 安装，无开机启动。安装器在缺少 WebView2 时安装共享运行时。
 
+Windows 和 Android 0.1.1 起先显示随安装包携带的启动页，再打开既有服务地址。服务地址、WebView 数据目录、Cookie 和 IndexedDB 均延续原版本。启动始终尝试原地址，允许其 Service Worker 在离线时提供已缓存页面；不以网络预检阻挡离线启动。20 秒内没有完成网页客户端握手时，返回本机恢复页，提供重试和恢复网络后的自动重试。首次安装离线时可看到恢复说明，但尚未下载的项目和首次登录仍需网络。本机启动页仅能调用固定地址的打开命令，不能读取账号、附件或录制数据。
+
 ## 可复现构建
 
 启动参数 `--tray` 可直接进入托盘，网页完成兼容性和保存握手后再挂起 WebView2。它不会启用开机启动。资源与验收边界见 [Windows 客户端验收记录](../docs/WINDOWS-CLIENT-ACCEPTANCE.md)。
@@ -16,7 +18,7 @@ Windows 上安装 Node.js 22+、稳定版 Rust MSVC 工具链、Visual Studio C+
 ./desktop/scripts/build.ps1 -Unsigned
 ```
 
-产物位于 `desktop/src-tauri/target/release/bundle/nsis/`。更新版本须同时更新 Tauri 配置和 Cargo 包版本。发布前运行 `cargo test --locked`、`cargo clippy -- -D warnings`、前端 typecheck/lint/test/build，以及 `node --test desktop/scripts/release-manifest.test.mjs`。
+产物位于 `desktop/src-tauri/target/release/bundle/nsis/`。更新版本须同时更新 Tauri 配置、Cargo 包及 lockfile、desktop npm 包及 lockfile 版本；Android versionCode 由 Tauri 版本派生。发布前运行 `cargo test --locked`、`cargo clippy -- -D warnings`、前端 typecheck/lint/test/build，以及 `node --test desktop/scripts/bootstrap.test.mjs desktop/scripts/release-manifest.test.mjs`。
 
 ## 密钥与草稿发布
 
@@ -26,7 +28,7 @@ Windows 上安装 Node.js 22+、稳定版 Rust MSVC 工具链、Visual Studio C+
 ./desktop/scripts/publish-draft.ps1 -Installer ./desktop/src-tauri/target/release/bundle/nsis/补位_0.1.0_x64-setup.exe -NotesFile ./release-notes.md
 ```
 
-脚本生成 `latest.json`，仅创建 `desktop-vVERSION` 草稿 Release。公开仓库 `greenbeanpie/AI-Colleboration-Seminar` 的正式 Release 发布后才会被 `releases/latest/download/latest.json` 发现。不要将其他产品 Release 设为 latest 而缺少该清单。
+脚本生成 `latest.json`，仅创建 `desktop-vVERSION` 草稿 Release。公开仓库 `greenbeanpie/AI-Collaboration-Seminar` 的正式 Release 发布后才会被 `releases/latest/download/latest.json` 发现；仅标为 prerelease 的版本不会进入该更新通道。不要将其他产品 Release 设为 latest 而缺少该清单。0.1.1 更新清单的安装器 URL 保留旧仓库名称的 GitHub 重定向，以兼容 0.1.0 的 URL 校验；新版接受新旧仓库名称，配置与发布 API 使用当前名称。
 
 GitHub Actions 手动运行 `Windows desktop draft release`。配置受保护的 `desktop-release` environment，添加 `TAURI_SIGNING_PRIVATE_KEY`（私钥内容）、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，限制可发布分支并设置审阅者。首次本机密钥的公钥必须与 CI 私钥匹配。CI 永远仅生成草稿；验收后再由维护者发布。
 
@@ -68,3 +70,23 @@ node ./desktop/scripts/update-smoke-server.mjs ./desktop/src-tauri/target/debug/
 ## Android
 
 Android 8+ 的 ARM64 与 x86_64 APK 构建及签名：`pwsh -File desktop/scripts/build-android.ps1`（从仓库根目录运行）。环境和稳定版本见 [ANDROID-DEPENDENCIES.md](ANDROID-DEPENDENCIES.md)，功能、验证和限制见 [Android 验收报告](../docs/ANDROID-CLIENT-ACCEPTANCE.md)。
+
+原生启动页和传输代码的更新必须重建安装包；网页 Worker 部署只能更新共享网页与 PWA。Windows 发布签名安装器、签名文件与 `latest.json` 后，旧客户端由 updater 获取新版本。Android 暂无自动安装更新，需分发具有同一 application ID、同一签名密钥、更高 versionCode 的 APK，由用户安装覆盖更新。独立 worktree 构建务必显式指定既有的 `-SigningKeyPath` / `-SigningDirectory`，不能生成替代密钥。
+
+### 启动恢复验收
+
+`desktop/scripts/startup-smoke.mjs` 通过真实 Windows WebView2 / Tauri 桥接验证无服务时的 20 秒恢复、本机页无法读取附件状态、恢复后重试、远程页无法调用启动命令，以及远程 Service Worker 缓存启动不会误回退。测试只使用 Debug 固定 loopback；运行前以独立标识构建和启动 Debug exe（不需安装）：
+
+```powershell
+$env:BUWEI_DESKTOP_SMOKE = '1'
+$env:BUWEI_DESKTOP_DEV_ORIGIN = '1'
+$env:TAURI_CONFIG = '{"identifier":"cn.buwei.desktop.startup-audit","app":{"security":{"capabilities":["bootstrap",{"identifier":"main-startup-audit","windows":["main"],"local":false,"remote":{"urls":["http://127.0.0.1:5173/*"]},"permissions":["desktop-commands"]}]}}}'
+# 每次使用新的测试标识，以真实覆盖尚未缓存页面的首次启动，不清除既有数据。
+$env:TAURI_CONFIG = $env:TAURI_CONFIG.Replace('cn.buwei.desktop.startup-audit', 'cn.buwei.desktop.startup-audit-' + [Guid]::NewGuid().ToString('N'))
+cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml --features tauri/custom-protocol
+Start-Process desktop/src-tauri/target/debug/buwei-desktop.exe -WindowStyle Hidden
+node desktop/scripts/startup-smoke.mjs
+# 构建正式包前恢复上述三个进程环境变量。
+```
+
+运行时端口 5173、9223 必须空闲。报告和截图写入忽略的 `output/native-startup/`。此测试不替代正式安装/升级、真实账号登录、Android 设备或完整业务离线数据验收。

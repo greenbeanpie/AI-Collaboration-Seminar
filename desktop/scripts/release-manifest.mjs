@@ -5,6 +5,8 @@ export function manifest(version, artifact, signature, notes = '') {
   if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid semver version');
   if (!artifact.endsWith('.exe') || !signature.trim()) throw new Error('Signed NSIS .exe required');
   if (!/^[A-Za-z0-9._-]+$/.test(basename(artifact))) throw new Error('Use an ASCII distribution asset name; GitHub normalizes other filenames');
+  // The 0.1.0 client's download allowlist predates the repository rename. Keep
+  // its redirected URL for this transition release so those clients can upgrade.
   const platform = { signature: signature.trim(), url: `https://github.com/greenbeanpie/AI-Colleboration-Seminar/releases/download/desktop-v${version}/${encodeURIComponent(basename(artifact))}` };
   return { version, notes, pub_date: new Date().toISOString(), platforms: { 'windows-x86_64': platform, 'windows-x86_64-nsis': platform } };
 }

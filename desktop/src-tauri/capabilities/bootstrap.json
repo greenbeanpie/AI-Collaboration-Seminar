@@ -1,0 +1,1 @@
+{"identifier":"bootstrap","description":"Bundled startup page may only open the fixed application origin","windows":["main"],"local":true,"permissions":["startup-command"]}

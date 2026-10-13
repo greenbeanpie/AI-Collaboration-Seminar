@@ -1,5 +1,6 @@
 #[cfg(target_os = "android")]
 mod android;
+mod bootstrap;
 mod cache;
 #[cfg(windows)]
 mod notifications;
@@ -24,6 +25,7 @@ use tauri::{AppHandle, Manager as _, WebviewWindow};
 #[tauri::command]
 fn desktop_hello(window: WebviewWindow, app: AppHandle) -> Result<serde_json::Value, String> {
     runtime::validate_source(&window)?;
+    bootstrap::ready(&app);
     let manager = app.state::<updater::UpdateManager>();
     Ok(
         serde_json::json!({"platform":"windows","capabilities":{"attachments":true,"updater":true,"tray":true},"protocol":1,"version":app.package_info().version.to_string(),"updateState":manager.status(),"autoRestart":manager.auto_restart()}),
@@ -188,9 +190,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(NativeState::default())
+        .manage(bootstrap::BootstrapState::default())
         .manage(cache::CacheState::default())
         .manage(recording::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
+            bootstrap::desktop_open_app,
             desktop_hello,
             recording::recording_capabilities,
             recording::recording_start,
@@ -244,7 +248,7 @@ pub fn run() {
             tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
-                tauri::WebviewUrl::External(PRODUCTION_ORIGIN.parse()?),
+                tauri::WebviewUrl::App("index.html".into()),
             )
             .additional_browser_args(
                 if cfg!(debug_assertions) && option_env!("BUWEI_DESKTOP_SMOKE") == Some("1") {
@@ -259,7 +263,7 @@ pub fn run() {
             .min_inner_size(760., 520.)
             .data_directory(data)
             .on_navigation(|url| {
-                if url.origin().ascii_serialization() == PRODUCTION_ORIGIN {
+                if bootstrap::navigation_allowed(url) {
                     true
                 } else {
                     runtime::open_external(url);
@@ -272,6 +276,7 @@ pub fn run() {
             })
             .on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    bootstrap::page_started(&window, payload.url());
                     *window.state::<NativeState>().page.lock().unwrap() =
                         runtime::PageState::default();
                 }

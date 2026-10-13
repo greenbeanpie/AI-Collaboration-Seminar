@@ -5,6 +5,7 @@ test('manifest binds both Windows targets to versioned signed installer', () => 
   const m = manifest('0.1.0', 'BuWei_0.1.0_x64-setup.exe', 'signature\n');
   assert.equal(m.platforms['windows-x86_64'].signature, 'signature');
   assert.match(m.platforms['windows-x86_64-nsis'].url, /desktop-v0\.1\.0/);
+  assert.equal(new URL(m.platforms['windows-x86_64'].url).pathname.split('/')[2], 'AI-Colleboration-Seminar', 'Legacy clients must accept the transition release URL');
 });
 test('reject invalid version or unsigned artifact', () => {
   assert.throws(() => manifest('../../main', 'app.exe', 'sig'));

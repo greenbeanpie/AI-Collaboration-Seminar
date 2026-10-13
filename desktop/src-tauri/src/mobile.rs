@@ -1,10 +1,11 @@
-use crate::{cache, runtime, NativeState, PRODUCTION_ORIGIN};
+use crate::{cache, runtime, NativeState};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 #[tauri::command]
 fn desktop_hello(window: WebviewWindow, app: AppHandle) -> Result<serde_json::Value, String> {
     runtime::validate_source(&window)?;
+    crate::bootstrap::ready(&app);
     Ok(
         serde_json::json!({"protocol":1,"version":app.package_info().version.to_string(),
         "platform":"android","capabilities":{"attachments":true,"updater":false,"tray":false},
@@ -34,9 +35,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(crate::android::init())
         .manage(NativeState::default())
+        .manage(crate::bootstrap::BootstrapState::default())
         .manage(cache::CacheState::default())
         .manage(crate::recording::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
+            crate::bootstrap::desktop_open_app,
             desktop_hello,
             crate::desktop_report_state,
             mobile_set_foreground,
@@ -69,13 +72,17 @@ pub fn run() {
             tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
-                tauri::WebviewUrl::External(PRODUCTION_ORIGIN.parse()?),
+                tauri::WebviewUrl::App("index.html".into()),
             )
             .title("补位")
-            .on_navigation(|url| url.origin().ascii_serialization() == PRODUCTION_ORIGIN)
+            // Only the new bundled startup page uses this origin; remote account
+            // data keeps its original HTTPS origin and WebView profile.
+            .use_https_scheme(true)
+            .on_navigation(crate::bootstrap::navigation_allowed)
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    crate::bootstrap::page_started(&window, payload.url());
                     // Navigation clears identity before the next page reports it. Stop old exports immediately.
                     crate::android::invalidate_session();
                     *window.state::<NativeState>().page.lock().unwrap() =

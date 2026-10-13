@@ -1,6 +1,7 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "desktop_open_app",
             "desktop_hello",
             "desktop_report_state",
             "desktop_update_state",

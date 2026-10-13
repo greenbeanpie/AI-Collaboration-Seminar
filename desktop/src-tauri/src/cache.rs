@@ -664,6 +664,15 @@ pub async fn desktop_pending_files(app: AppHandle, window: WebviewWindow) -> Res
 }
 
 /// Called by the native bounded poll loop, independent of which React panel is mounted.
+fn automatically_resumable(row: &NativeFile) -> bool {
+    row.status == "waiting"
+        || (row.status == "failed"
+            && row
+                .error
+                .as_deref()
+                .is_some_and(|error| error.starts_with("网络") || error.starts_with("下载中断")))
+}
+
 pub async fn resume_account_transfers(app: &AppHandle) -> Result<()> {
     let native = app.state::<NativeState>();
     if native.exiting.load(Ordering::Relaxed) || native.active_transfers.load(Ordering::Relaxed) > 0
@@ -688,13 +697,7 @@ pub async fn resume_account_transfers(app: &AppHandle) -> Result<()> {
         .get(&account)
         .ok_or("缓存不可用")?
         .iter()
-        .filter(|r| {
-            r.status == "waiting"
-                || (r.status == "failed"
-                    && r.error
-                        .as_deref()
-                        .is_some_and(|e| e.starts_with("网络") || e.starts_with("下载中断")))
-        })
+        .filter(|row| automatically_resumable(row))
         .map(|r| r.project_id.clone())
         .collect();
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
@@ -718,14 +721,7 @@ pub async fn desktop_transfer_files(
         .map_err(|_| "已有文件正在传输，请稍候")?;
     let _active = TransferActivity::start(&app);
     for mut row in list(&app, &account, &project_id)? {
-        if row.status == "complete"
-            || row.status == "paused"
-            || (row.status == "failed"
-                && !row
-                    .error
-                    .as_deref()
-                    .is_some_and(|e| e.starts_with("网络") || e.starts_with("下载中断")))
-        {
+        if !automatically_resumable(&row) {
             continue;
         }
         still_active(&app, &row)?;
@@ -974,6 +970,27 @@ mod tests {
             .unwrap()
             .get("sessionId")
             .is_none());
+    }
+    #[test]
+    fn session_transport_failure_resumes_but_auth_and_manual_pauses_do_not() {
+        let mut row = fixture();
+        row.status = "failed".into();
+        row.error = Some(runtime::SESSION_TRANSPORT_ERROR.into());
+        assert!(automatically_resumable(&row));
+        for error in [
+            "Session expired",
+            "Account changed",
+            "Not authenticated",
+            "磁盘空间不足",
+        ] {
+            row.error = Some(error.into());
+            assert!(!automatically_resumable(&row));
+        }
+        row.error = Some(runtime::SESSION_TRANSPORT_ERROR.into());
+        row.status = "paused".into();
+        assert!(!automatically_resumable(&row));
+        row.status = "complete".into();
+        assert!(!automatically_resumable(&row));
     }
     fn fixture() -> NativeFile {
         NativeFile {

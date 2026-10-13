@@ -1,1 +1,30 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>补位</title><body><h1>补位</h1><p>首次使用请连接网络并登录，随后可以准备项目供离线使用。</p></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>补位</title>
+  <style>
+    :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #202f43; background: #f3f6fa; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+    main { box-sizing: border-box; width: min(100% - 32px, 440px); padding: 32px; border: 1px solid #dbe3ee; border-radius: 20px; background: white; }
+    h1 { margin: 0 0 24px; font-size: 28px; } h2 { font-size: 19px; }
+    p { line-height: 1.7; overflow-wrap: anywhere; color: #526278; }
+    button { min-height: 44px; padding: 11px 18px; width: 100%; border: 0; border-radius: 10px; background: #274675; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; } button:focus-visible { outline: 3px solid #78a6e6; outline-offset: 3px; }
+    @media (prefers-color-scheme: dark) { :root { color: #e5edf8; background: #151e2b; } main { background: #202d3f; border-color: #3d4c61; } p { color: #b9c7d9; } }
+  </style>
+  <script src="bootstrap.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>补位</h1>
+    <h2 id="status" role="status" aria-live="polite">正在打开工作区…</h2>
+    <p id="detail">已联网使用并准备过的项目，可在离线时继续编辑。首次使用请联网登录。</p>
+    <button id="retry" type="button" disabled>正在打开…</button>
+    <p>本机保存的草稿和附件会在连接恢复后继续同步。</p>
+    <noscript><p>客户端启动脚本未能运行，请关闭后重新打开客户端。</p></noscript>
+  </main>
+</body>
+</html>

@@ -289,9 +289,13 @@ fn smoke_enabled() -> bool {
 fn trusted_download_url(url: &url::Url, smoke: bool) -> bool {
     let github = url.scheme() == "https"
         && url.host_str() == Some("github.com")
-        && url
-            .path()
-            .starts_with("/greenbeanpie/AI-Colleboration-Seminar/releases/download/")
+        && [
+            "/greenbeanpie/AI-Collaboration-Seminar/releases/download/",
+            // Existing 0.1.0 clients require this redirected repository path.
+            "/greenbeanpie/AI-Colleboration-Seminar/releases/download/",
+        ]
+        .iter()
+        .any(|prefix| url.path().starts_with(prefix))
         && url.username().is_empty()
         && url.password().is_none();
     let loopback = smoke
@@ -310,6 +314,20 @@ fn trusted_download_url(url: &url::Url, smoke: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn repository_rename_preserves_legacy_updates_without_allowing_other_repositories() {
+        for repo in ["AI-Collaboration-Seminar", "AI-Colleboration-Seminar"] {
+            let target = format!(
+                "https://github.com/greenbeanpie/{repo}/releases/download/desktop-v0.1.1/buwei.exe"
+            );
+            assert!(trusted_download_url(&target.parse().unwrap(), false));
+        }
+        for target in [
+            "https://github.com/other/AI-Collaboration-Seminar/releases/download/v1/app.exe",
+            "https://github.com/greenbeanpie/AI-Collaboration-Seminar-evil/releases/download/v1/app.exe",
+            "http://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/download/v1/app.exe",
+        ] { assert!(!trusted_download_url(&target.parse().unwrap(), false)); }
+    }
     #[test]
     fn default_requires_a_download() {
         let m = UpdateManager::default();

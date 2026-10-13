@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, WebviewWindow};
+pub(crate) const SESSION_TRANSPORT_ERROR: &str = "网络连接中断，附件已保留；联网后自动重试";
 pub const PRODUCTION_ORIGIN: &str =
     if cfg!(debug_assertions) && option_env!("BUWEI_DESKTOP_DEV_ORIGIN").is_some() {
         "http://127.0.0.1:5173"
@@ -245,7 +246,7 @@ pub async fn session_client(
         .get(format!("{PRODUCTION_ORIGIN}/api/v1/auth/session"))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| SESSION_TRANSPORT_ERROR)?;
     if response.status() == 401 {
         return Err("Session expired".into());
     }

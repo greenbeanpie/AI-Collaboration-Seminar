@@ -23,7 +23,7 @@ try {
   $env:ANDROID_NDK_HOME = $env:NDK_HOME
   if ($Smoke) {
     $env:BUWEI_DESKTOP_DEV_ORIGIN = '1'
-    $env:TAURI_CONFIG = @{ app = @{ security = @{ capabilities = @(@{ identifier='main-smoke'; description='Debug loopback fixture only'; windows=@('main'); remote=@{urls=@('http://127.0.0.1:5173/*')}; local=$false; permissions=@('desktop-commands') }) } } } | ConvertTo-Json -Depth 10 -Compress
+    $env:TAURI_CONFIG = @{ app = @{ security = @{ capabilities = @('bootstrap', @{ identifier='main-smoke'; description='Debug loopback fixture only'; windows=@('main'); remote=@{urls=@('http://127.0.0.1:5173/*')}; local=$false; permissions=@('desktop-commands') }) } } } | ConvertTo-Json -Depth 10 -Compress
   }
   if (!(Test-Path -LiteralPath $SigningDirectory)) { New-Item -ItemType Directory -Path $SigningDirectory | Out-Null }
   $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
