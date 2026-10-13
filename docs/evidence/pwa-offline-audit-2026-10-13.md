@@ -61,6 +61,7 @@
 7. 未发送评论：输入后刷新，再次打开讨论时恢复本机草稿；没有发送评论。截图 `08-comment-draft-restored.png`。
 8. 响应式布局：360px 与 768px 页面宽度分别为 345px、753px，无横向溢出；主要项目导航可见。截图 `06-offline-material-360.png`、`07-offline-material-768.png`。这是浏览器宽度验证，未替代 Android 真机验收。
 9. 原生 Windows 恢复：独立 Debug WebView2 测试 5/5，包括首次断网回到打包恢复页、固定业务 Origin 重试、已有缓存离线启动，以及本机页不能读取业务附件。`windows-startup-report.json`、`windows-recovery.png`。
+10. PWA 更新确认：本机更新经过人工确认后正常激活、刷新，材料正文及未发送评论草稿仍保留；新版离线提示明确显示“本机缓存版本”。
 
 ## main 验证与发布
 
@@ -84,3 +85,5 @@
 - 验证：新增/更新对应回归测试、`frontend/e2e/pwa-audit-server.mjs`、`desktop/scripts/{bootstrap.test,startup-smoke,release-manifest.test}.mjs`。完整修改清单位于 `output/pwa-audit/modified-files.txt`。
 
 三平台安装包及校验文件保留在 `output/client-release-0.1.1/`。旧 PWA 页面保存编辑后确认更新；Windows 可检查更新，Android 使用新版 APK。原生设备安装、跨版本真实会话与长期后台验收仍未执行。
+
+机器可读的验证与发布摘要：[pwa-offline-release-20261013.json](pwa-offline-release-20261013.json)。

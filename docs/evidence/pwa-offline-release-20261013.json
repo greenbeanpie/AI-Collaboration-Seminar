@@ -1,0 +1,86 @@
+{
+  "checkedAt": "2026-10-13T05:27:40.0627847Z",
+  "sourceCommit": "698f27392628663ed7b24f06d98a868e1022899a",
+  "production": {
+    "checkedAt": "2026-10-13T05:19:17.8881301Z",
+    "commit": "698f27392628663ed7b24f06d98a868e1022899a",
+    "frontendVersion": "73a7d1f2-45fb-48ad-aa1b-afdbd4425338",
+    "entryPath": "/assets/index-l6860OkZ.js",
+    "htmlMatches": true,
+    "swMatches": true,
+    "startupMatches": true,
+    "d1": "ok",
+    "r2": "ok",
+    "paidModelCalls": 0,
+    "entryMatches": true
+  },
+  "clientRelease": {
+    "url": "https://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/tag/desktop-v0.1.1",
+    "tag": "desktop-v0.1.1",
+    "latestConfirmed": true,
+    "sourceCommit": "698f27392628663ed7b24f06d98a868e1022899a",
+    "artifacts": [
+      {
+        "name": "buwei-0.1.1-arm64-v8a-release.apk",
+        "size": 9327171,
+        "digest": "sha256:882896d8c4c3c7b4fc7edec64846cbc6bbc77c7a919688cb2733d13be8456182",
+        "browser_download_url": "https://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/download/desktop-v0.1.1/buwei-0.1.1-arm64-v8a-release.apk"
+      },
+      {
+        "name": "buwei-0.1.1-windows-x64-setup.exe",
+        "size": 2367760,
+        "digest": "sha256:1382962f36e97f7a76f80647aed15ecd47d59cb77f49c66c0c0960800cb4fcf1",
+        "browser_download_url": "https://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/download/desktop-v0.1.1/buwei-0.1.1-windows-x64-setup.exe"
+      },
+      {
+        "name": "buwei-0.1.1-x86_64-release.apk",
+        "size": 10121792,
+        "digest": "sha256:b5107cfed0d92720ec0406661aca49fbe28a5f76c79c38344a513fe9bbfd40e3",
+        "browser_download_url": "https://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/download/desktop-v0.1.1/buwei-0.1.1-x86_64-release.apk"
+      }
+    ]
+  },
+  "updater": {
+    "passed": true,
+    "checkedAt": "2026-10-13T05:23:14.544Z",
+    "url": "https://github.com/greenbeanpie/AI-Collaboration-Seminar/releases/latest/download/latest.json",
+    "version": "0.1.1",
+    "installerStatus": 200,
+    "signatureMatches": true,
+    "legacyDownloadUrl": "https://github.com/greenbeanpie/AI-Colleboration-Seminar/releases/download/desktop-v0.1.1/buwei-0.1.1-windows-x64-setup.exe"
+  },
+  "tests": {
+    "frontendFiles": 167,
+    "frontendTests": 1033,
+    "frontendPassed": true,
+    "typecheckBackendAndFrontend": true,
+    "lintPassed": true,
+    "productionBuildPassed": true,
+    "rustPassed": 19,
+    "rustIgnoredHardwareTest": 1,
+    "clippyPassed": true,
+    "nativeJavaScriptPassed": 6,
+    "windowsStartupPassed": true,
+    "windowsStartupChecks": 5
+  },
+  "browser": {
+    "startupRecovery": true,
+    "offlineTaskReload": true,
+    "taskDraftReload": true,
+    "taskPreparedThenOfflineData": true,
+    "offlineMaterialQueueSurvivesReload": true,
+    "automaticSyncWrites": 1,
+    "commentDraftReload": true,
+    "confirmedUpdatePreservesCommentDraft": true,
+    "phoneWidth": 360,
+    "phoneScrollWidth": 345,
+    "tabletWidth": 768,
+    "tabletScrollWidth": 753
+  },
+  "limitations": [
+    "No production user writes or real model calls.",
+    "No physical Android install, production upgrade, cookie persistence or prolonged background acceptance.",
+    "PWA attachments need explicit separate download.",
+    "Existing Android Tauri/Gradle deprecation diagnostics remain visible."
+  ]
+}
