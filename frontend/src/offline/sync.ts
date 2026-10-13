@@ -123,12 +123,12 @@ export async function resolveOperation(row: PendingOperation, choice: 'server' |
 async function performPrepareProject(projectId: string, context: PreparationContext): Promise<void> {
   const base = `/api/v1/projects/${projectId}`;
   const { accountId } = context;
-  const load = (url: string, query?: Record<string, string | number | null>) => {
+  const load = (url: string, query?: Record<string, string | number | boolean | null>) => {
     assertPreparationContext(context);
     if (navigator.onLine === false) throw new Error('网络已断开，已完成的本机快照仍保留。');
     return request<'ProjectResponse'>(url, { query, networkOnly: true, requireOfflinePersistence: true });
   };
-  const list = async (tail: string, query: Record<string, string | number> = {}) => {
+  const list = async (tail: string, query: Record<string, string | number | boolean> = {}) => {
     const all: Record<string, unknown>[] = [];
     let cursor: string | null = null;
     const seen = new Set<string>();
@@ -153,8 +153,30 @@ async function performPrepareProject(projectId: string, context: PreparationCont
   const pages: Array<() => Promise<unknown>> = [
     () => load(base), () => load('/capabilities'), () => list('/api/v1/projects'),
     () => load(`${base}/goal`), () => load(`${base}/collaboration/settings`),
+    () => load(`${base}/tasks/graph`),
     () => list('/members'), () => load(`${base}/members/me`),
-    () => list('/resource-library'), () => list('/sources'), () => list('/requirement-sets'),
+    () => list('/resource-library'),
+    // Match the data workspace's explicit filters; do not reuse lists from other archive views.
+    async () => {
+      const resources = await list('/resource-library', { archived: false });
+      for (const resource of resources) if (['material', 'source'].includes(String(resource.resourceType)) && typeof resource.resourceId === 'string') {
+        pages.push(() => load(`${base}/resource-library/${resource.resourceType}/${encodeURIComponent(resource.resourceId as string)}`));
+      }
+    },
+    () => list('/files'), () => list('/files', { deleted: false }),
+    () => list('/sources'),
+    async () => {
+      const sources = await list('/sources', { deleted: false });
+      for (const source of sources) if (typeof source.sourceId === 'string') {
+        const id = encodeURIComponent(source.sourceId);
+        pages.push(() => load(`${base}/sources/${id}`));
+        if (typeof source.currentVersionId === 'string') {
+          const version = `${base}/sources/${id}/versions/${encodeURIComponent(source.currentVersionId)}`;
+          pages.push(() => load(version), () => load(`${version}/processing`), () => list(`${version}/fragments`));
+        }
+      }
+    },
+    () => list('/requirement-sets'),
     () => load(`${base}/collaboration/feedback/current`), () => load(`${base}/collaboration/feedback/history`),
     () => attempt(() => load(`${base}/ai/clarifications`), true),
     () => attempt(() => list('/collaboration/proposals'), true),
@@ -174,14 +196,28 @@ async function performPrepareProject(projectId: string, context: PreparationCont
     const id = String(material.materialId);
     pages.push(() => load(`${base}/materials/${id}`),
       () => list('/materials/' + id + '/versions'),
-      () => list('/comments', { targetType: 'material', targetId: id }));
+      () => list('/comments', { targetType: 'material', targetId: id }),
+      async () => {
+        const recordings = object(await load(`${base}/recording-sessions`, { materialId: id, limit: 1 }));
+        const session = Array.isArray(recordings.items) ? object(recordings.items[0]) : {};
+        if (typeof session.sessionId !== 'string') return;
+        let cursor: string | null = null;
+        const seen = new Set<string>();
+        do {
+          const page = object(await load(`${base}/recording-sessions/${session.sessionId}`, { limit: 50, cursor }));
+          cursor = typeof page.nextCursor === 'string' ? page.nextCursor : null;
+          if (cursor && (seen.has(cursor) || seen.size >= 200)) throw new Error('录制片段分页游标无效，已停止离线准备');
+          if (cursor) seen.add(cursor);
+        } while (cursor);
+      });
+    if (typeof material.currentVersionId === 'string') pages.push(() => load(`${base}/materials/${id}/versions/${encodeURIComponent(material.currentVersionId as string)}`));
   }
   for (let i = 0; i < pages.length; i += 4) {
     await Promise.all(pages.slice(i, i + 4).map(work => attempt(work)));
   }
   if (failures.length) throw failures[0];
   assertPreparationContext(context);
-  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString(), coverageVersion: 2 }, accountId);
+  await writeSnapshot(`${base}/offline-ready`, { preparedAt: new Date().toISOString(), coverageVersion: 3 }, accountId);
   window.dispatchEvent(new Event('offline-data-changed'));
 }
 export async function preparedAt(projectId: string): Promise<string | null> {
@@ -215,7 +251,7 @@ export async function ensureProjectPrepared(projectId: string): Promise<boolean>
   const completed = typeof marker.preparedAt === 'string' ? marker.preparedAt : null;
   assertPreparationContext(context);
   const age = completed ? Date.now() - Date.parse(completed) : NaN;
-  if (marker.coverageVersion === 2 && Number.isFinite(age) && age >= 0 && age < preparationFreshnessMs) return false;
+  if (marker.coverageVersion === 3 && Number.isFinite(age) && age >= 0 && age < preparationFreshnessMs) return false;
   const key = `${accountId}:${context.epoch}:${projectId}`;
   const existing = preparations.get(key);
   if (existing) { await existing; return false; }

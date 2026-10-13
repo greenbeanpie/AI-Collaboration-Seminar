@@ -40,7 +40,7 @@ it('stops a delayed preparation after clearing and logging back into the same ac
   await expect(pending).rejects.toThrow('账户或本机数据已变化'); expect(request).not.toHaveBeenCalled();
 });
 it('skips automatic preparation while a complete snapshot is fresh but forces an explicit download', async () => {
-  vi.mocked(readSnapshot).mockResolvedValue({ data: { preparedAt: new Date().toISOString(), coverageVersion: 2 } } as never);
+  vi.mocked(readSnapshot).mockResolvedValue({ data: { preparedAt: new Date().toISOString(), coverageVersion: 3 } } as never);
   vi.mocked(request).mockResolvedValue({ items: [], nextCursor: null } as never);
   expect(await ensureProjectPrepared('p')).toBe(false); expect(request).not.toHaveBeenCalled();
   await prepareProject('p'); expect(request).toHaveBeenCalled();
@@ -57,7 +57,7 @@ it('prepares complete submission and task-file metadata cursor chains instead of
     expect(request).toHaveBeenCalledWith(path, expect.objectContaining({ query: { limit: 100, cursor: null }, requireOfflinePersistence: true }));
     expect(request).toHaveBeenCalledWith(path, expect.objectContaining({ query: { limit: 100, cursor: 'next' } }));
   }
-  expect(writeSnapshot).toHaveBeenCalledWith('/api/v1/projects/p/offline-ready', expect.objectContaining({ coverageVersion: 2 }), 'a');
+  expect(writeSnapshot).toHaveBeenCalledWith('/api/v1/projects/p/offline-ready', expect.objectContaining({ coverageVersion: 3 }), 'a');
 });
 it('refreshes an old preparation marker even if its time is recent', async () => {
   vi.mocked(readSnapshot).mockResolvedValue({ data: { preparedAt: new Date().toISOString() } } as never);
