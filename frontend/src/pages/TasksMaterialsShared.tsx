@@ -1,12 +1,15 @@
 import { AiReferenceBadge } from '../components/AiReferenceBadge';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { MessageCircle, Send } from 'lucide-react';
 import { api, projectPath } from '../api/client';
 import { iteratePages, type CursorPage } from '../api/page-contract';
 import type { DataOf } from '../api/types';
 import { EmptyState, ErrorNotice, Spinner } from '../components/ui';
+import { useSession } from '../auth';
+import { useSettingsDirty } from './settings-dirty';
+import { readCommentDraft, removeCommentDraft, writeCommentDraft } from './comment-draft';
 
 export type { CursorPage };
 export type CommentEntry = DataOf<'CommentListResponse'>['items'][number];
@@ -172,12 +175,28 @@ export function MaterialDocumentView({ doc, className = '' }: { doc: unknown; cl
 type CommentsPanelProps = { projectId: string; targetType: CommentTarget; targetId: string; presentation?: 'disclosure' | 'content' };
 
 export function CommentsPanel({ projectId, targetType, targetId, presentation = 'disclosure' }: CommentsPanelProps) {
-  return <CommentsPanelContent key={`${projectId}:${targetType}:${targetId}`} projectId={projectId} targetType={targetType} targetId={targetId} presentation={presentation} />;
+  const accountId = useSession().data?.id;
+  return <CommentsPanelContent key={JSON.stringify([accountId, projectId, targetType, targetId])} accountId={accountId} projectId={projectId} targetType={targetType} targetId={targetId} presentation={presentation} />;
 }
 
-function CommentsPanelContent({ projectId, targetType, targetId, presentation }: CommentsPanelProps) {
+function CommentsPanelContent({ accountId, projectId, targetType, targetId, presentation }: CommentsPanelProps & { accountId?: string }) {
   const queryClient = useQueryClient();
-  const [body, setBody] = useState('');
+  const [draft, setDraft] = useState(() => {
+    const stored = accountId ? readCommentDraft(accountId, projectId, targetType, targetId) : { draft: null, failed: false };
+    return { body: stored.draft?.body ?? '', persisted: !stored.failed, restored: Boolean(stored.draft), readFailed: stored.failed, cleanupFailed: false };
+  });
+  const { body } = draft;
+  const persistDraft = (value: string) => {
+    // Persist synchronously inside the input event, including the last edit before closing.
+    const persisted = Boolean(accountId && writeCommentDraft(accountId, projectId, targetType, targetId, value));
+    setDraft(current => ({ ...current, body: value, persisted, restored: false, readFailed: false, cleanupFailed: false }));
+  };
+  useEffect(() => {
+    if (!body || draft.persisted) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [body, draft.persisted]);
   const [page, setPage] = useState(0);
   const queryKey = ['comments', projectId, targetType, targetId] as const;
   const commentsQuery = useQuery({
@@ -188,15 +207,21 @@ function CommentsPanelContent({ projectId, targetType, targetId, presentation }:
     )),
   });
   const createComment = useMutation({
-    mutationFn: (commentBody: string) => api.post<'CommentResponse'>(projectPath(projectId, '/comments'), { targetType, targetId, body: commentBody.trim() }),
-    onSuccess: async (created) => {
-      setBody('');
+    mutationFn: (commentBody: string) => {
+      if (!accountId) throw new Error('请确认登录状态后再发送评论。');
+      persistDraft(commentBody);
+      return api.post<'CommentResponse'>(projectPath(projectId, '/comments'), { targetType, targetId, body: commentBody.trim() });
+    },
+    onSuccess: async (created, commentBody) => {
+      const cleared = Boolean(accountId && removeCommentDraft(accountId, projectId, targetType, targetId, commentBody));
+      setDraft(current => ({ ...current, body: '', restored: false, persisted: true, cleanupFailed: !cleared }));
       await queryClient.invalidateQueries({ queryKey });
       const comments = queryClient.getQueryData<CommentEntry[]>(queryKey) ?? [];
       const index = comments.findIndex(comment => comment.commentId === created.commentId);
       if (index >= 0) setPage(Math.floor(index / 5));
     },
   });
+  useSettingsDirty(createComment.isPending || (Boolean(body) && !draft.persisted));
 
   const pageCount = Math.max(1, Math.ceil((commentsQuery.data?.length ?? 0) / 5));
   const currentPage = Math.min(page, pageCount - 1);
@@ -215,11 +240,16 @@ function CommentsPanelContent({ projectId, targetType, targetId, presentation }:
         </li>
       ))}</ol>}
       {!!commentsQuery.data?.length && <nav className="tm-list-pagination" aria-label="讨论分页"><button type="button" className="button button-quiet button-small" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {pageCount}</span><button type="button" className="button button-quiet button-small" disabled={currentPage === pageCount - 1} onClick={() => setPage(currentPage + 1)}>下一页</button></nav>}
-      <form className="tm-comment-form" onSubmit={(event) => { event.preventDefault(); if (body.trim()) createComment.mutate(body); }}>
+      <form className="tm-comment-form" data-desktop-managed onSubmit={(event) => { event.preventDefault(); if (accountId && body.trim() && !createComment.isPending) createComment.mutate(body); }}>
         <label className="tm-sr-only" htmlFor={`comment-${targetType}-${targetId}`}>发表评论</label>
-        <AiReferenceBadge /><textarea id={`comment-${targetType}-${targetId}`} value={body} onChange={(event) => setBody(event.target.value)} maxLength={4000} rows={3} placeholder="写下评论…" />
-        <button className="button button-primary button-small" type="submit" disabled={!body.trim() || createComment.isPending}><Send size={14} />{createComment.isPending ? '发送中' : '发送'}</button>
+        <AiReferenceBadge /><textarea id={`comment-${targetType}-${targetId}`} value={body} disabled={!accountId || createComment.isPending} onChange={(event) => persistDraft(event.target.value)} maxLength={4000} rows={3} placeholder="写下评论…" />
+        <button className="button button-primary button-small" type="submit" disabled={!accountId || !body.trim() || createComment.isPending}><Send size={14} />{createComment.isPending ? '发送中' : '发送'}</button>
       </form>
+      {!accountId && <p className="form-note" role="status">请等待账户恢复，确认登录后才能保存或发送评论。</p>}
+      {draft.persisted && body && <p className="form-note" role="status">{draft.restored ? '已恢复本机评论草稿' : '评论草稿已保存到本机'}，尚未发送。</p>}
+      {!draft.persisted && body && <p className="notice notice-warn" role="alert">浏览器无法保存本机评论草稿；当前文字仅留在此页面内存，切换页面或关闭后会丢失。请复制备份或联网发送。</p>}
+      {draft.readFailed && <p className="notice notice-warn" role="alert">浏览器无法读取本机评论草稿，请检查存储权限或备份。</p>}
+      {draft.cleanupFailed && <p className="notice notice-warn" role="status">评论已保存，但旧本机草稿未能清理。刷新后若再次恢复，请先核对评论列表。</p>}
       {createComment.error && <ErrorNotice error={createComment.error} />}
       </div>
     </Container>
