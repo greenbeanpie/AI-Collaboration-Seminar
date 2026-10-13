@@ -52,6 +52,9 @@ describe('password login and invitation registration', () => {
   });
   it('submits account/password and restores the real session on keyboard submission', async () => {
     const { mock, client } = setup();
+    client.setQueryData(['project', 'previous-account-project'], { title: 'Previous account' });
+    let finishOld: (value: string) => void = () => { throw new Error('Previous reader did not start'); };
+    void client.fetchQuery({ queryKey: ['previous-account-reader'], queryFn: () => new Promise<string>(resolve => { finishOld = resolve; }) }).catch(() => {});
     fireEvent.change(screen.getByLabelText('用户名或邮箱'), { target: { value: ' team_member ' } });
     const password = screen.getByLabelText('密码');
     expect(password).toHaveAttribute('type', 'password'); expect(password).toHaveAttribute('autocomplete', 'current-password');
@@ -61,6 +64,11 @@ describe('password login and invitation registration', () => {
     const call = mock.mock.calls.find(([path]) => path.endsWith('/auth/sessions'));
     expect(JSON.parse(String((call as unknown as [string, RequestInit])[1].body))).toEqual({ account: 'team_member', password: 'a-long-test-password' });
     expect(client.getQueryData(['session'])).toMatchObject({ username: 'team_member', email: null, isAdmin: false });
+    finishOld('Previous account response');
+    await Promise.resolve();
+    expect(client.getQueryData(['project', 'previous-account-project'])).toBeUndefined();
+    expect(client.getQueryData(['previous-account-reader'])).toBeUndefined();
+    expect(client.getQueryData(['session'])).toMatchObject({ username: 'team_member' });
     expect(mock.mock.calls.some(([path]) => path.endsWith('/auth/challenges'))).toBe(false);
   });
   it('registers with a single-use invitation and omits an empty email', async () => {

@@ -54,8 +54,11 @@ export function LoginPage(props: Props) {
       if (!account.trim() || !password) throw new Error('请输入账号与密码。');
       return api.post<'AuthSessionResponse'>('/api/v1/auth/sessions', { ...challenge, account: account.trim(), password });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setPassword(''); setInvitationCode(''); setError(null);
+      // Cancel previous-account readers before they can overwrite the new session.
+      await queryClient.cancelQueries();
+      queryClient.getQueryCache().clear();
       queryClient.setQueryData(['session'], result.user as User);
       const returnTo = searchParams.get('returnTo');
       // Only the bridge's local pairing route is an allowed login continuation.

@@ -6,9 +6,9 @@ export function useSession() {
   return useQuery({
     queryKey: ['session'],
     networkMode: 'always',
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
-        return (await api.get<'AuthSessionGetResponse'>('/api/v1/auth/session')).user as User;
+        return (await api.get<'AuthSessionGetResponse'>('/api/v1/auth/session', undefined, signal)).user as User;
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) return null;
         throw error;
@@ -23,7 +23,7 @@ export function useCapabilities() {
   return useQuery({
     queryKey: ['capabilities'],
     networkMode: 'always',
-    queryFn: () => api.get<'CapabilitiesResponse'>('/api/v1/capabilities') as Promise<Capability>,
+    queryFn: ({ signal }) => api.get<'CapabilitiesResponse'>('/api/v1/capabilities', undefined, signal) as Promise<Capability>,
     staleTime: 60_000,
     retry: 1,
   });
