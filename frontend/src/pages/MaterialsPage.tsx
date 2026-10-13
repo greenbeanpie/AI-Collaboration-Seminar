@@ -360,6 +360,8 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
 
   const serverDoc = material?.currentVersion?.doc ?? emptyDoc;
   const activeVersion = material?.currentVersion?.revision ?? material?.revision ?? 0;
+  const pendingVersion = (material?.currentVersion as { offlinePending?: boolean } | undefined)?.offlinePending === true;
+  const versionLabel = pendingVersion ? '本机待同步版本' : !online ? '本机缓存版本' : '服务端当前版本';
 
   const printCurrentMaterial = () => {
     setPrintDoc(editor ? editor.getJSON() as Record<string, unknown> : serverDoc);
@@ -418,7 +420,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
               <MaterialAiAssistance key={`${accountId}:${projectId}:${initialAiOpen}`} initiallyOpen={initialAiOpen} renderHeader={trigger => <>
               {header}
               <header className="tm-editor-header">
-                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}<AiReferenceBadge ariaHidden /></h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}服务端当前版本 r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
+                <div className="tm-editor-title-wrap">{!header && <h2>{material.title}<AiReferenceBadge ariaHidden /></h2>}<p>{material.systemManaged ? '系统背景 · 自动同步 · ' : ''}{versionLabel} r{activeVersion} · {material.currentVersion ? formatDate(material.currentVersion.createdAt) : '初始空版本'}</p>
                   {!online && <span className="tm-offline-indicator"><WifiOff size={13} />{draftPersisted ? '离线草稿已写入本机' : '本机草稿写入失败'}</span>}
                 </div>
                 <div className="tm-editor-actions tm-hide-print"><MaterialArchiveActions projectId={projectId} materialId={material.materialId} revision={material.revision} archivedAt={material.archivedAt} canArchive={material.canArchive ?? (material.canEdit !== false && !material.systemManaged)} disabled={dirty || saving || !online || Boolean(conflict) || Boolean(recoveryDraft)} />
@@ -465,7 +467,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
               </div>
               <RecordingDetail projectId={projectId} materialId={material.materialId} />{material.currentVersion?.versionId && <ResourceIndexView projectId={projectId} resourceType="material" versionId={material.currentVersion?.versionId} />}
               <>{material.canEdit === false && <p className="form-note">此材料为只读；归档材料需先撤销归档，任务文件需当前执行人或资料管理权限。</p>}<MaterialAttachments material={material} archiveDisabled={dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} disabled={material.canEdit === false || dirty || !online || saving || Boolean(conflict) || Boolean(recoveryDraft)} /></>
-              <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
+              <footer className="tm-editor-footer"><span>{dirty ? '有未同步修改' : pendingVersion ? '已保存到本机，等待同步' : !online ? '内容与本机缓存版本一致' : '内容与服务端版本一致'}</span><span>标题、段落、列表、表格和链接会随版本保存</span></footer>
             </section>
 
             {conflict && <section className="tm-conflict-panel" aria-labelledby="tm-conflict-title">
@@ -511,7 +513,7 @@ export function MaterialsPage({ initialAiOpen = false, embedded = false, materia
                 </section>
               </Modal>
             </div>
-            <article className="tm-print-document" aria-hidden="true"><h1>{material.title}</h1><p>项目材料 · 服务端版本 r{activeVersion}{dirty ? ' · 含本机未保存修改' : ''}</p><MaterialDocumentView doc={printDoc} className="tm-document-preview" /></article>
+            <article className="tm-print-document" aria-hidden="true"><h1>{material.title}</h1><p>项目材料 · {versionLabel} r{activeVersion}{dirty ? ' · 含本机未保存修改' : ''}</p><MaterialDocumentView doc={printDoc} className="tm-document-preview" /></article>
           </>}
         </main>
       </div>

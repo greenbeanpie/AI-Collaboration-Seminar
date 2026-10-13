@@ -27,6 +27,16 @@ it('opening a server material enables editing without generating an unsaved draf
   expect(localStorage.getItem('buwei:draft:account-1:project-1:material-1')).toBeNull();
 });
 
+it('labels cached and pending local versions without claiming a server save', async () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  const client = renderMaterial();
+  await screen.findByText('内容与本机缓存版本一致');
+  act(() => client.setQueryData(['material', 'project-1', 'material-1'], { materialId: 'material-1', title: '正式材料', revision: 2, currentVersion: { revision: 2, offlinePending: true, createdAt: '2026-09-30T00:00:00Z', doc: { type: 'doc', content: [{ type: 'paragraph' }] } } }));
+  await screen.findByText('已保存到本机，等待同步');
+  expect(screen.queryByText('内容与服务端版本一致')).not.toBeInTheDocument();
+  expect(screen.getAllByText(/本机待同步版本 r2/).length).toBeGreaterThan(0);
+});
+
 it('persists the submitted copy again when another tab cleared the draft before a conflict', async () => {
   const key = 'buwei:draft:account-1:project-1:material-1';
   const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '本机正文' }] }] };
