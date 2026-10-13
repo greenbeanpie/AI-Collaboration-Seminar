@@ -49,7 +49,7 @@ try {
   check('remote page cannot call bundled startup command', remoteRejected);
   await page.evaluate(async () => { await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-  await new Promise(resolve => server.close(resolve));
+  await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   server = undefined;
   await page.goto('http://tauri.localhost/index.html?recovery=1');
   await page.evaluate(() => { void window.__TAURI_INTERNALS__.invoke('desktop_open_app'); });
@@ -64,7 +64,7 @@ try {
 } catch (error) {
   report.passed = false; report.error = String(error); process.exitCode = 1;
 } finally {
-  if (server) await new Promise(resolve => server.close(resolve));
+  if (server) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   report.completedAt = new Date().toISOString();
   await writeFile(path.join(output, 'windows-startup-report.json'), JSON.stringify(report, null, 2));
   await browser.close();
