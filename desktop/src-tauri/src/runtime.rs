@@ -250,12 +250,7 @@ pub async fn session_client(
     if response.status() == 401 {
         return Err("Session expired".into());
     }
-    let value: serde_json::Value = response
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let value = read_session_response(response).await?;
     if value["data"]["user"]["id"].as_str() != Some(expected_account) {
         return Err("Account changed".into());
     }
@@ -271,6 +266,17 @@ pub async fn session_client(
         return Err("Account changed".into());
     }
     Ok((client, cookie))
+}
+async fn read_session_response(response: reqwest::Response) -> Result<serde_json::Value, String> {
+    // reqwest::Response::json maps both interrupted bodies and malformed JSON
+    // to Decode errors. Read transport bytes separately to retain retry semantics.
+    let bytes = response
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map_err(|_| SESSION_TRANSPORT_ERROR)?;
+    serde_json::from_slice(&bytes).map_err(|_| "服务器会话响应无法识别".into())
 }
 #[cfg(windows)]
 pub fn open_external(url: &url::Url) {
@@ -329,6 +335,37 @@ mod tests {
             "https://evil.test",
         ] {
             assert!(!safe_route(bad));
+        }
+    }
+    #[test]
+    fn interrupted_session_body_is_retryable_but_malformed_json_is_not() {
+        use std::io::{Read, Write};
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for (body, length, expected) in [
+            ("{\"data\":", 100, SESSION_TRANSPORT_ERROR),
+            ("invalid", 7, "服务器会话响应无法识别"),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let target = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 1024];
+                assert!(stream.read(&mut request).unwrap() > 0);
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}").unwrap();
+            });
+            let result = runtime.block_on(async {
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(Duration::from_secs(2))
+                    .build()
+                    .unwrap();
+                read_session_response(client.get(target).send().await.unwrap()).await
+            });
+            server.join().unwrap();
+            assert_eq!(result.unwrap_err(), expected);
         }
     }
 }
