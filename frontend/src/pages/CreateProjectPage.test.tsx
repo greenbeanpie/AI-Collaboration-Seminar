@@ -232,10 +232,12 @@ it('requests background AI preview, locks edits and adopts the polled result', a
  await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('后台目标'));
  expect(screen.getByRole('button',{name:'进入创建预览'})).not.toBeDisabled();
  // The previous ready response remains in the polling cache at the same revision.
+  const previousFinish = finish;
  fireEvent.click(screen.getByRole('button',{name:'重新生成 AI 预览'}));
  await screen.findByText(/AI 正在后台处理文件/);
  expect(screen.getByLabelText(/^主目标预览/)).toBeDisabled();
  expect(screen.getByRole('button',{name:'进入创建预览'})).toBeDisabled();
+  await waitFor(() => expect(finish).not.toBe(previousFinish));
  finish({...draft,previewState:'ready',previewRevision:draft.revision,preview:{mode:'ai',goal:{title:'第二次后台目标',detail:'新调查结果'},tasks:[]}});
  await waitFor(()=>expect(screen.getByLabelText(/^主目标预览/)).toHaveValue('第二次后台目标'));
 });
