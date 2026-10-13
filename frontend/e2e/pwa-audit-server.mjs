@@ -1,3 +1,4 @@
+/* global Buffer, URL, process, console */
 // Loopback-only production-build fixture for browser loading/offline acceptance.
 import http from 'node:http';
 import { createHash } from 'node:crypto';
