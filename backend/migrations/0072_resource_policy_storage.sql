@@ -35,12 +35,16 @@ BEGIN
  UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='user' AND scope_id=OLD.user_id AND OLD.user_id IS NOT NULL;
  UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='project' AND scope_id=OLD.project_id AND OLD.project_id IS NOT NULL;
 END;
-CREATE TRIGGER storage_objects_count_update AFTER UPDATE OF size_bytes ON storage_objects
+CREATE TRIGGER storage_objects_count_update AFTER UPDATE OF size_bytes,user_id,project_id,category ON storage_objects
 BEGIN
- UPDATE storage_counters SET bytes=bytes+NEW.size_bytes-OLD.size_bytes WHERE scope='platform' AND scope_id='all' AND 1;
- UPDATE storage_counters SET bytes=bytes+NEW.size_bytes-OLD.size_bytes WHERE scope='platform' AND scope_id='upload' AND NEW.category='upload';
- UPDATE storage_counters SET bytes=bytes+NEW.size_bytes-OLD.size_bytes WHERE scope='user' AND scope_id=NEW.user_id AND NEW.user_id IS NOT NULL;
- UPDATE storage_counters SET bytes=bytes+NEW.size_bytes-OLD.size_bytes WHERE scope='project' AND scope_id=NEW.project_id AND NEW.project_id IS NOT NULL;
+ UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='platform' AND scope_id='all' AND 1;
+ UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='platform' AND scope_id='upload' AND OLD.category='upload';
+ UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='user' AND scope_id=OLD.user_id AND OLD.user_id IS NOT NULL;
+ UPDATE storage_counters SET bytes=bytes-OLD.size_bytes WHERE scope='project' AND scope_id=OLD.project_id AND OLD.project_id IS NOT NULL;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'platform','all',NEW.size_bytes WHERE 1 ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'platform','upload',NEW.size_bytes WHERE NEW.category='upload' ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'user',NEW.user_id,NEW.size_bytes WHERE NEW.user_id IS NOT NULL ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'project',NEW.project_id,NEW.size_bytes WHERE NEW.project_id IS NOT NULL ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
 END;
 CREATE TRIGGER storage_reservations_count_insert AFTER INSERT ON storage_reservations
 BEGIN
@@ -56,10 +60,14 @@ BEGIN
  UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='user' AND scope_id=OLD.user_id AND OLD.user_id IS NOT NULL;
  UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='project' AND scope_id=OLD.project_id AND OLD.project_id IS NOT NULL;
 END;
-CREATE TRIGGER storage_reservations_count_update AFTER UPDATE OF bytes ON storage_reservations
+CREATE TRIGGER storage_reservations_count_update AFTER UPDATE OF bytes,user_id,project_id,category ON storage_reservations
 BEGIN
- UPDATE storage_counters SET bytes=bytes+NEW.bytes-OLD.bytes WHERE scope='platform' AND scope_id='all' AND 1;
- UPDATE storage_counters SET bytes=bytes+NEW.bytes-OLD.bytes WHERE scope='platform' AND scope_id='upload' AND NEW.category='upload';
- UPDATE storage_counters SET bytes=bytes+NEW.bytes-OLD.bytes WHERE scope='user' AND scope_id=NEW.user_id AND NEW.user_id IS NOT NULL;
- UPDATE storage_counters SET bytes=bytes+NEW.bytes-OLD.bytes WHERE scope='project' AND scope_id=NEW.project_id AND NEW.project_id IS NOT NULL;
+ UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='platform' AND scope_id='all' AND 1;
+ UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='platform' AND scope_id='upload' AND OLD.category='upload';
+ UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='user' AND scope_id=OLD.user_id AND OLD.user_id IS NOT NULL;
+ UPDATE storage_counters SET bytes=bytes-OLD.bytes WHERE scope='project' AND scope_id=OLD.project_id AND OLD.project_id IS NOT NULL;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'platform','all',NEW.bytes WHERE 1 ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'platform','upload',NEW.bytes WHERE NEW.category='upload' ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'user',NEW.user_id,NEW.bytes WHERE NEW.user_id IS NOT NULL ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+ INSERT INTO storage_counters(scope,scope_id,bytes) SELECT 'project',NEW.project_id,NEW.bytes WHERE NEW.project_id IS NOT NULL ON CONFLICT(scope,scope_id) DO UPDATE SET bytes=bytes+excluded.bytes;
 END;
