@@ -191,7 +191,7 @@ describe('bounded external R2 metadata refresh', () => {
     provider({ lists: { default: [APP_BUCKET, 'other-bucket'], eu: [], us: [] }, metrics: { 'other-bucket': reason === 'pending multipart' ? { uploadCount: 1 } : { payloadSize: 11_000_000_000 } } });
     const result = await refreshExternalStorageUsage(production, true);
     expect(result.externalBytes).toBeGreaterThan(10_000_000_000);
-    if (reason === 'pending multipart') expect(result.externalBytes).toBe(5 * 1024 ** 4 + 107);
+    if (reason === 'pending multipart') expect(result.externalBytes).toBe(10_000 * 5 * 1024 ** 3 + 107);
     await env.DB.prepare('UPDATE storage_inventory_state SET ready=1 WHERE id=1').run();
     await expect(reserveStorage(production, `new/${newId()}.txt`, 1, 'put', { category: 'system' })).rejects.toMatchObject({ code: 'QUOTA_EXCEEDED' });
     expect(await (await env.FILES.get(key))!.text()).toBe('original');

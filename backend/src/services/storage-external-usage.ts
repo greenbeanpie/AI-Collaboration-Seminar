@@ -21,8 +21,9 @@ export type ExternalStorageUsageResult = { refreshed: boolean; checkedAt: string
 const MAX_BUCKETS = 50, MAX_PAGES = 2, BATCH = 10, DEADLINE_MS = 20_000;
 const MAX_RESPONSE_BYTES = 512 * 1024, HOUR = 3600_000, MAX_SNAPSHOT_AGE = 4 * HOUR;
 // The documented metrics expose pending upload count, not a guaranteed byte total
-// for its incomplete parts. Reserve the maximum object size for each such upload.
-const PENDING_UPLOAD_BYTES = 5 * 1024 ** 4;
+// for its incomplete parts. The completed-object ceiling need not bound pending
+// parts, so reserve 10,000 parts at 5 GiB each for every incomplete upload.
+const PENDING_UPLOAD_BYTES = 10_000 * 5 * 1024 ** 3;
 type Failure = 'configuration' | 'permission' | 'provider' | 'incomplete' | 'stale' | 'deadline';
 function unavailable(category: Failure): AppError {
   return new AppError('INTERNAL', '其他存储桶用量核查未完成，原核查数据保留', 503, false, { storageUsageCheckRequired: true, category });
@@ -142,7 +143,7 @@ export async function refreshExternalStorageUsage(env: MonitorEnv, force = false
       WHERE id=1 AND version=?1 AND EXISTS(SELECT 1 FROM storage_inventory_state WHERE id=1 AND scanning=0 AND external_checked_at IS ?4 AND updated_at=?5 AND ready=?6)`)
       .bind(policy.version, measured.externalBytes, now, state.external_checked_at, state.updated_at, state.ready),
     env.DB.prepare('UPDATE storage_inventory_state SET external_checked_at=?1,verification_note=?2,updated_at=?3 WHERE id=1 AND changes()=1 AND external_checked_at IS ?4 AND updated_at=?5')
-      .bind(measured.checkedAt, 'Cloudflare R2 metadata; pending uploads reserved at the documented object-size ceiling', now, state.external_checked_at, state.updated_at),
+      .bind(measured.checkedAt, 'Cloudflare R2 metadata; pending uploads reserved at the documented part-count and part-size ceilings', now, state.external_checked_at, state.updated_at),
     env.DB.prepare('INSERT INTO resource_policy_audit SELECT ?1,NULL,version,policy_json,?2 FROM resource_policy WHERE id=1 AND changes()=1').bind(newId(), now),
   ]);
   if (!result[0]?.meta.changes || !result[1]?.meta.changes) throw versionConflict((await loadResourcePolicy(env)).version);
