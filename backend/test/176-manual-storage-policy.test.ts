@@ -1,9 +1,13 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,beforeEach} from 'vitest';
 import {SELF} from 'cloudflare:test';
 import {env,BASE} from './helpers/env';
 import {loadResourcePolicy,saveResourcePolicy} from '../src/services/resource-policy';
 import {reserveStorage} from '../src/services/managed-storage';
 import {newId} from '../src/core/db';
+
+beforeEach(async()=>{
+ await env.DB.batch([env.DB.prepare('DELETE FROM storage_reservations'),env.DB.prepare('DELETE FROM storage_objects'),env.DB.prepare('UPDATE storage_inventory_state SET ready=0 WHERE id=1')]);
+});
 
 describe('9 GB manual-only storage policy',()=>{
  it('migrates the total and upload ceilings and refuses raising them',async()=>{
@@ -24,6 +28,11 @@ describe('9 GB manual-only storage policy',()=>{
   await expect(reserveStorage({...env,ENV_NAME:'production'},newId(),1,'put',{category:'system'})).resolves.toMatchObject({bytes:1});
   await env.DB.prepare('UPDATE storage_inventory_state SET ready=0 WHERE id=1').run();
   await expect(reserveStorage({...env,ENV_NAME:'production'},newId(),1,'put',{category:'system'})).rejects.toMatchObject({details:{storageInventoryRequired:true}});
+ });
+ it('limits the current-bucket upload pool to 7.2 GB independently of the total',async()=>{
+  await env.DB.prepare("INSERT INTO storage_objects(object_key,size_bytes,category,updated_at) VALUES(?1,7199999999,'upload',?2)").bind(newId(),new Date().toISOString()).run();
+  await reserveStorage(env,newId(),1,'put',{category:'upload'});
+  await expect(reserveStorage(env,newId(),1,'put',{category:'upload'})).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
  });
  it('removes the automatic-query endpoint from the HTTP router',async()=>{
   const response=await SELF.fetch(BASE+'/api/v1/admin/storage-inventory/external-usage',{method:'POST',headers:{authorization:'Bearer '+env.ADMIN_TOKEN}});
