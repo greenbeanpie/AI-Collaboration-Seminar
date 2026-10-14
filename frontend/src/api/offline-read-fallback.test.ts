@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ account: 'a', read: vi.fn() }));
-vi.mock('../offline/store', () => ({ offlineAccount: () => state.account ? { id: state.account } : null, readSnapshot: state.read, readCachedList: vi.fn(), writeSnapshot: vi.fn(), forgetAccount: () => { state.account = ''; }, rememberAccount: vi.fn() }));
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(), offlineAccount: () => state.account ? { id: state.account } : null, readSnapshot: state.read, readCachedList: vi.fn(), writeSnapshot: vi.fn(), forgetAccount: () => { state.account = ''; }, rememberAccount: vi.fn() }));
 vi.mock('../offline/queue', () => ({ cacheable: () => true, offlineView: (_url: string, data: unknown) => data, seedLocalEntity: vi.fn(), queueOffline: vi.fn() }));
 import { listAllItems, request } from './client';
 afterEach(() => vi.unstubAllGlobals());

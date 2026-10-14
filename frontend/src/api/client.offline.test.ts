@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ account: 'a', cached: new Map<string, unknown>() }));
-vi.mock('../offline/store', () => ({
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(),
   offlineAccount: () => state.account ? { id: state.account } : null,
   readSnapshot: async (url: string, account = state.account) => state.cached.has(`${account}:${url}`) ? { data: state.cached.get(`${account}:${url}`) } : undefined,
   readCachedList: async () => undefined,

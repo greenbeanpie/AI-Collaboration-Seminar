@@ -49,7 +49,7 @@ it('consumes limits before verification and does not create sessions on failure'
   const after = await env.DB.prepare('SELECT COUNT(*) AS count FROM sessions').first<{ count: number }>();
   expect(after?.count).toBe(before?.count);
   const limits = await env.DB.prepare('SELECT COUNT(*) AS count FROM auth_password_rate_limits WHERE attempts = 1').first<{ count: number }>();
-  expect(limits!.count).toBeGreaterThanOrEqual(3);
+  expect(limits!.count).toBeGreaterThanOrEqual(2);
 });
 
 it('HTTP capabilities publishes protection and registration requires a fresh correct action', async () => {
@@ -69,8 +69,29 @@ it('HTTP capabilities publishes protection and registration requires a fresh cor
 });
 it('exhausted rate limit stops before the external verification call', async () => {
   const ip = crypto.randomUUID();
-  for (let attempt = 0; attempt < 30; attempt++) await consumePasswordRateLimit(env, 'login-ip', ip, 30, 3600);
+  for (let attempt = 0; attempt < 120; attempt++) await consumePasswordRateLimit(env, 'login-pre-ip', ip, 120, 600);
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
   await expect(loginPasswordAccount(config(), { account: ip, password: 'password', turnstileToken: 'token' }, ip)).rejects.toMatchObject({ status: 429 });
   expect(fetch).not.toHaveBeenCalled();
+});
+it('allows more than ten verified registrations at a shared exit while retaining per-account and invitation limits', async () => {
+  const ip = 'campus-' + crypto.randomUUID();
+  vi.stubGlobal('fetch', vi.fn(async () => reply({ ...valid(), action: 'register' })));
+  for (let index = 0; index < 11; index++) {
+    const invitation = await createAccountInvitation(env, null);
+    const result = await registerPasswordAccount(config(), { username: `campus_${crypto.randomUUID().slice(0, 8)}`, password: 'shared-network-long-password', invitationCode: invitation.code, turnstileToken: `fresh-${index}` }, ip);
+    expect(result.user.id).toBeTruthy();
+  }
+  const blockedName = `campus_${crypto.randomUUID().slice(0, 8)}`;
+  for (let index = 0; index < 10; index++) await consumePasswordRateLimit(env, 'register-account', blockedName, 10, 900);
+  const invitation = await createAccountInvitation(env, null);
+  await expect(registerPasswordAccount(config(), { username: blockedName, password: 'shared-network-long-password', invitationCode: invitation.code, turnstileToken: 'fresh' }, ip)).rejects.toMatchObject({ status: 429 });
+});
+it('verified-login allowance is wider but an individual account remains limited', async () => {
+  const ip = 'verified-' + crypto.randomUUID(), account = crypto.randomUUID();
+  for (let index = 0; index < 30; index++) await consumePasswordRateLimit(env, 'login-ip', ip, 30, 3600);
+  vi.stubGlobal('fetch', vi.fn(async () => reply(valid())));
+  await expect(loginPasswordAccount(config(), { account, password: 'wrong', turnstileToken: 'fresh' }, ip)).rejects.toMatchObject({ status: 401 });
+  for (let index = 0; index < 9; index++) await consumePasswordRateLimit(env, 'login-account', account, 10, 900);
+  await expect(loginPasswordAccount(config(), { account, password: 'wrong', turnstileToken: 'another' }, ip)).rejects.toMatchObject({ status: 429 });
 });

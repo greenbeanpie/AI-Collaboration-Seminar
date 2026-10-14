@@ -33,10 +33,14 @@ async function sessionValues(userId: string) {
 }
 
 export async function registerPasswordAccount(env: Env, input: { username: string; password: string; invitationCode: string; email?: string | null; turnstileToken?: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
-  await consumePasswordRateLimit(env, 'register-ip', ip, 10, 3600);
+  const protectedByChallenge = env.TURNSTILE_REQUIRED === 'true';
+  await consumePasswordRateLimit(env, protectedByChallenge ? 'register-pre-ip' : 'register-ip', ip, protectedByChallenge ? 120 : 10, protectedByChallenge ? 600 : 3600);
   await verifyTurnstile(env, input.turnstileToken, 'register', ip);
+  if (protectedByChallenge) await consumePasswordRateLimit(env, 'register-verified-ip', ip, 120, 3600);
   const username = input.username.trim(); const usernameNorm = normalizeUsername(username); const email = normalizeEmail(input.email);
   const codeHash = await sha256Hex(input.invitationCode.trim().toUpperCase());
+  await consumePasswordRateLimit(env, 'register-account', usernameNorm, 10, 900);
+  await consumePasswordRateLimit(env, 'register-invitation', codeHash, 10, 900);
   const invitation = await env.DB.prepare('SELECT id FROM account_invitations WHERE code_hash = ?1 AND used_at IS NULL').bind(codeHash).first();
   if (!invitation) throw validationFailed('邀请码无效或已经使用');
   const existing = await env.DB.prepare('SELECT user_id FROM auth_accounts WHERE username_norm = ?1 OR (?2 IS NOT NULL AND lower(contact_email) = ?2)').bind(usernameNorm, email).first();
@@ -70,9 +74,11 @@ export async function registerPasswordAccount(env: Env, input: { username: strin
 
 export async function loginPasswordAccount(env: Env, input: { account: string; password: string; turnstileToken?: string }, ip: string): Promise<{ user: SessionUser; token: string }> {
   const identity = input.account.trim().toLowerCase();
-  await consumePasswordRateLimit(env, 'login-ip', ip, 30, 3600);
-  await consumePasswordRateLimit(env, 'login-account', identity, 10, 900);
+  const protectedByChallenge = env.TURNSTILE_REQUIRED === 'true';
+  await consumePasswordRateLimit(env, protectedByChallenge ? 'login-pre-ip' : 'login-ip', ip, protectedByChallenge ? 120 : 30, protectedByChallenge ? 600 : 3600);
   await verifyTurnstile(env, input.turnstileToken, 'login', ip);
+  if (protectedByChallenge) await consumePasswordRateLimit(env, 'login-verified-ip', ip, 600, 3600);
+  await consumePasswordRateLimit(env, 'login-account', identity, 10, 900);
   const row = await env.DB.prepare(`SELECT a.user_id, a.username, a.contact_email, a.password_hash, a.is_admin, a.account_role, u.display_name
     FROM auth_accounts a JOIN users u ON u.id = a.user_id
     WHERE (a.username_norm = ?1 OR a.contact_email_norm = ?1) AND a.password_hash IS NOT NULL`)

@@ -9,7 +9,8 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { api, request } from '../api/client';
+import { api, request, ApiError } from '../api/client';
+import { idempotencyKeyForIntent, completeIntent } from './aiWorkflowSupport';
 import type { DataOf } from '../api/types';
 import { useSession, useCapabilities } from '../auth';
 import { Field, ErrorNotice, PageHeading, Spinner } from '../components/ui';
@@ -22,6 +23,7 @@ import { isTemplatePayload,projectTemplateApi } from '../api/project-templates';
 import { emptyWizardPayload, wizardSteps, canConfirmDraft, confirmationIssue, sameWizardPayload, wizardStorageKey, type WizardDraft, type WizardPayload, type WizardTask, type WizardGoal } from './project-wizard';
 import './ProjectWizard.css';
 import { CreationBehaviorFields } from './CreationBehaviorFields';
+import { ResourceUsageNotice } from '../components/ResourceUsageNotice';
 import { creationBehaviors, creationBehavior } from './project-wizard';
 import { isMediaProcessing } from './media-processing';
 type LocalFile = {
@@ -66,13 +68,14 @@ function CreationWizard({ userId }: {
       return JSON.parse(sessionStorage.getItem(wizardStorageKey(userId)) ?? 'null') as {
         id?: string;
         files?: LocalFile[];
+        pendingPayload?: WizardPayload;
       } | null;
     }
     catch {
       return null;
     }
   };
-  const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [actionBusy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
+  const [saved] = useState(initial), [draft, setDraft] = useState<WizardDraft | null>(null), [payload, setPayload] = useState<WizardPayload>(saved?.pendingPayload ?? emptyWizardPayload), [step, setStep] = useState(0), [locals, setLocals] = useState<LocalFile[]>(saved?.files ?? []), [actionBusy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [confirmed, setConfirmed] = useState(false), [result, setResult] = useState<DataOf<'CreationCommitResponse'> | null>(null), [manual, setManual] = useState<WizardTask[]>([]), [loaded, setLoaded] = useState(false);
   const previewEpoch = useRef(0), latestDraft = useRef(draft);
   latestDraft.current = draft;
   const [previewSubmitting, setPreviewSubmitting] = useState(false);
@@ -93,7 +96,7 @@ function CreationWizard({ userId }: {
   }, []);
   const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => document.visibilityState === 'hidden' ? false : query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => isMediaProcessing(file.mediaStatus))) || next.revision < latestDraft.current.revision || olderExecution(next, latestDraft.current)) return; applyDraft(next, latestDraft.current, next.revision !== latestDraft.current.revision || next.previewState === 'ready'); }, [draftPoll.data, applyDraft]);
-  const lock = useRef(false), createKey = useRef(crypto.randomUUID()), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
+  const lock = useRef(false), controlController = useRef<AbortController | null>(null), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');
   const [manualGoal, setManualGoal] = useState<WizardGoal>({ title: '', detail: '' });
   const [manualGoalEdited, setManualGoalEdited] = useState(false);
@@ -165,6 +168,7 @@ function CreationWizard({ userId }: {
       return;
     }
     lock.current = true;
+    controlController.current = new AbortController();
     previewEpoch.current++;
     setBusy(true);
     setError(null);
@@ -174,6 +178,18 @@ function CreationWizard({ userId }: {
     catch (e) {
       if (mounted.current) {
         setError(e);
+        if ((e instanceof ApiError && e.status === 0 || e instanceof DOMException && e.name === 'AbortError') && latestDraft.current) {
+          try {
+            const latest: WizardDraft = await api.get<'CreationDraftResponse'>(draftPath(latestDraft.current.id));
+            if (!mounted.current || latest.id !== latestDraft.current?.id) return;
+            const previous = latestDraft.current;
+            setDraft(latest); setPayload(current => sameWizardPayload(current, previous.payload) ? latest.payload : current); setConfirmed(false);
+            if (latest.status === 'committed') {
+              setResult(await api.post<'CreationCommitResponse'>(draftPath(latest.id, '/commit'), { expectedRevision: latest.revision, confirmed: true }, { networkOnly: true, shortControl: true }));
+              setError(null);
+            } else setError(new Error('请求结果尚未确认，已读取最新草稿状态。本机编辑保留，请核对状态后继续。'));
+          } catch { /* Preserve the original failure and local inputs when status lookup also fails. */ }
+        }
       }
     }
     finally {
@@ -192,14 +208,18 @@ function CreationWizard({ userId }: {
     };
     let next = draft;
     if (!next) {
+      const namespace = `creation-draft:${userId}`;
+      const idempotencyKey = await idempotencyKeyForIntent(namespace, normalized);
+      try { sessionStorage.setItem(wizardStorageKey(userId), JSON.stringify({ pendingPayload: normalized, files: locals.map(({ id, name, size }) => ({ id, name, size })) })); } catch { /* Stable in-memory intent still covers this page. */ }
       next = await api.post<'CreationDraftResponse'>('/api/v1/creation-drafts', normalized, {
-        idempotencyKey: createKey.current
+        idempotencyKey, networkOnly: true, shortControl: true, signal: controlController.current?.signal
       });
+      completeIntent(namespace);
     }
     else if (!sameWizardPayload(normalized, next.payload)) {
       next = await api.patch<'CreationDraftResponse'>(draftPath(next.id), {
         expectedRevision: next.revision, payload: normalized
-      });
+      }, { networkOnly: true, shortControl: true, signal: controlController.current?.signal });
     }
     accept(next);
     return next;
@@ -337,6 +357,8 @@ function CreationWizard({ userId }: {
   }
   return <div className="page-stack narrow-page"><Link className="back-link" to="/app"><ArrowLeft size={16}/>返回项目列表</Link><PageHeading eyebrow="新建项目" title="配置协作项目" detail="完成资料、组员与任务配置，最后确认后创建。"/>
  {!draft && list.data?.items.length !== 0 && <details className="card form-card"><summary>恢复已有创建草稿</summary>{list.data?.items.map(item => <button key={item.id} type="button" className="button button-quiet" disabled={busy} onClick={() => void openDraft(item.id)}>{item.payload.name} · {item.status === 'cancelled' ? '已取消，可恢复' : '配置中'}</button>)}</details>}
+ <ResourceUsageNotice />
+ <p className="callout">AI 使用平台已配置的模型与服务，费用由网站运营方承担，并受每日次数与存储额度限制。生成预览、自动分工及验收可能调用模型；下一步会显示自动动作与人工确认设置，请在正式创建前复核。</p>
  <ol className="wizard-steps" aria-label="创建步骤">{wizardSteps.map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
  <form className="card form-card" aria-label="分步创建项目" onSubmit={event => {
       event.preventDefault();
@@ -413,9 +435,12 @@ function CreationWizard({ userId }: {
             setStep(canConfirmDraft(latest) ? 4 : 3);
             throw new Error(issue);
           }
-          const committed = await api.post<'CreationCommitResponse'>(draftPath(reviewed.id, '/commit'), {
+          const body = {
             expectedRevision: latest.revision, confirmed: true, ...(latest.previewAttemptId ? {expectedPreviewAttemptId:latest.previewAttemptId} : {})
-          });
+          };
+          const namespace = `creation-commit:${userId}:${reviewed.id}`;
+          const committed = await api.post<'CreationCommitResponse'>(draftPath(reviewed.id, '/commit'), body, { idempotencyKey: await idempotencyKeyForIntent(namespace, body), networkOnly: true, shortControl: true, signal: controlController.current?.signal });
+          completeIntent(namespace);
           setResult(committed);
           remember(undefined, []);
           void queryClient.invalidateQueries({
@@ -440,7 +465,7 @@ function CreationWizard({ userId }: {
       void list.refetch();
     })}>取消草稿（保留资料）</button>}</div>
  </>}
- {(actionBusy || previewRunning) && <p role="status">正在保存或核对结果，请稍候…</p>}{Boolean(error) && <ErrorNotice error={error}/>}{draft && <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void openDraft(draft.id)}>刷新草稿状态</button>}
+ {(actionBusy || previewRunning) && <p role="status">正在保存或核对结果，请稍候…</p>}{actionBusy && <button type="button" className="button button-quiet" onClick={() => controlController.current?.abort(new DOMException('已取消等待，服务端结果尚未确认', 'AbortError'))}>取消短请求等待</button>}{Boolean(error) && <ErrorNotice error={error}/>}{draft && <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => void openDraft(draft.id)}>刷新草稿状态</button>}
  </form></div>;
 }
 function sameTasks(a: WizardTask[], b: WizardTask[]) {

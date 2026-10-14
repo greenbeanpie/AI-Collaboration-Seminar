@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
+import { accountRequest } from '../api/simplification';
 import { adminRequest, useSession } from '../auth';
 import type { AccountInvitation, CreatedAccountInvitation } from '../auth';
 import { ErrorNotice, PageHeading, SectionCard, Spinner, StatusPill } from '../components/ui';
@@ -61,6 +62,7 @@ export function AdminAccountsPage() {
       {accounts.data?.items.map(account => <AccountEditor key={`${account.id}:${account.role}:${account.displayName}:${editorVersion}`} account={account} superAdmin={superAdmin} pending={update.isPending || accounts.isFetching || accounts.isError} onSave={(kind, body) => { setError(null); update.mutate({ id: account.id, kind, body }); }} />)}
       <div className="button-row">{cursor && <button className="button button-quiet" onClick={() => setCursor(null)}>回到首页</button>}{accounts.data?.nextCursor && <button className="button button-quiet" onClick={() => setCursor(accounts.data!.nextCursor)}>下一页账户</button>}</div>
     </SectionCard>
+    {superAdmin && <PasswordRecoveryIssuer accounts={accounts.data?.items ?? []} onFailure={denyAccess} />}
     <SectionCard title="生成注册邀请码" detail="完整邀请码只在生成时显示一次；离开页面后无法再次读取。请及时保存并交给受邀人员。">
       <button className="button button-primary" disabled={create.isPending || created !== null} onClick={() => { setError(null); create.mutate(); }}>{create.isPending ? '正在生成……' : '生成一个邀请码'}</button>
       {created && <div className="notice notice-success invitation-reveal" role="status"><strong>新邀请码（仅本次显示）</strong><code aria-label="新注册邀请码">{created.code}</code><p>请保存邀请码。确认后将从当前页面移除，服务端不会再次返回完整值。</p><button className="button button-quiet" onClick={() => { setCreated(null); create.reset(); }}>已保存，隐藏邀请码</button></div>}
@@ -72,6 +74,24 @@ export function AdminAccountsPage() {
       {invitations.data && (invitations.data.items.length === 0 ? <p className="muted">尚未生成注册邀请码。</p> : <div className="table-scroll"><table className="data-table"><thead><tr><th>编号</th><th>创建时间</th><th>状态</th><th>使用时间</th></tr></thead><tbody>{invitations.data.items.map(item => <tr key={item.id}><td><code>{item.id}</code></td><td>{new Date(item.createdAt).toLocaleString()}</td><td><StatusPill tone={item.usedAt ? 'neutral' : 'good'}>{item.usedAt ? '已使用' : '未使用'}</StatusPill></td><td>{item.usedAt ? new Date(item.usedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table></div>)}
     </SectionCard>
   </div>;
+}
+
+function PasswordRecoveryIssuer({ accounts, onFailure }: { accounts: ManagedAccount[]; onFailure: (error: unknown) => void }) {
+  const [userId, setUserId] = useState(''), [reason, setReason] = useState(''), [verified, setVerified] = useState(false);
+  const [issued, setIssued] = useState<{ token: string; expiresAt: string } | null>(null);
+  useSettingsDirty(Boolean(issued || reason.trim()));
+  const issue = useMutation({
+    mutationFn: () => accountRequest<{ token: string; expiresAt: string }>(`/api/v1/admin/accounts/${encodeURIComponent(userId)}/password-recovery`, { method: 'POST', body: { reason, ownershipVerified: true }, headers: { 'X-Password-Recovery': '1' }, networkOnly: true, shortControl: true }),
+    onSuccess: result => { setIssued(result); setReason(''); setVerified(false); }, onError: onFailure,
+  });
+  return <SectionCard title="人工核实后的密码恢复" detail="仅超级管理员可以签发。先通过可靠渠道核实账户归属，未验证邮箱不能作为恢复依据；系统不自动发送邮件。">
+    <label>恢复账户<select className="input" value={userId} disabled={issue.isPending || Boolean(issued)} onChange={event => setUserId(event.target.value)}><option value="">请选择已核实账户</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.username || account.id} · {account.displayName}</option>)}</select></label>
+    <label>核实依据与原因<textarea className="input" minLength={10} maxLength={1000} value={reason} disabled={issue.isPending || Boolean(issued)} onChange={event => setReason(event.target.value)} /></label>
+    <label><input type="checkbox" checked={verified} disabled={issue.isPending || Boolean(issued)} onChange={event => setVerified(event.target.checked)} />我已独立核实该账户的归属</label>
+    <button className="button button-primary" disabled={!userId || reason.trim().length < 10 || !verified || issue.isPending || Boolean(issued)} onClick={() => issue.mutate()}>签发一次性恢复代码</button>
+    {issued && <div role="status"><p>仅本次显示；有效至 {new Date(issued.expiresAt).toLocaleString()}。请通过已核实的渠道人工交付。</p><code style={{ overflowWrap: 'anywhere' }} aria-label="一次性恢复代码">{issued.token}</code><p>恢复入口：{window.location.origin}/password-reset</p><button className="button button-quiet" onClick={() => { setIssued(null); issue.reset(); }}>已交付，隐藏代码</button></div>}
+    {issue.error !== null && <ErrorNotice error={issue.error} />}
+  </SectionCard>;
 }
 
 

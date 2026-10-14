@@ -38,6 +38,17 @@ window.addEventListener('offline-snapshot-updated', () => {
   clearTimeout(snapshotRefresh);
   snapshotRefresh = setTimeout(() => { void queryClient.invalidateQueries(); }, 50);
 });
+window.addEventListener('project-access-revoked', event => {
+  const { accountId, projectId } = (event as CustomEvent<{ accountId: string; projectId: string }>).detail;
+  if (offlineAccount()?.id !== accountId) return;
+  void queryClient.cancelQueries({ predicate: query => query.queryKey[1] === projectId && query.queryKey[0] !== 'project' });
+  queryClient.removeQueries({ predicate: query => query.queryKey[1] === projectId && query.queryKey[0] !== 'project' });
+  void queryClient.invalidateQueries({ queryKey: ['projects'] });
+});
+window.addEventListener('project-permissions-updated', event => {
+  const { accountId, projectId } = (event as CustomEvent<{ accountId: string; projectId: string }>).detail;
+  if (offlineAccount()?.id === accountId) void queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

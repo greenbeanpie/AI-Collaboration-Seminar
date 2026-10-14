@@ -1,0 +1,37 @@
+import 'fake-indexeddb/auto';
+import { afterEach, expect, it } from 'vitest';
+import { clearOfflineAccount, rememberAccount, writeSnapshot, readSnapshot, putOperation, operations, forgetAccount, revokeProjectAccess, restoreProjectAccess, projectRevoked } from './store';
+import { offlineView, seedLocalEntity } from './queue';
+import { saveDraft, getDraft } from '../storage';
+const user = (id: string) => ({ id, username: id, displayName: id, email: null, isAdmin: false, role: 'user' as const });
+afterEach(async () => { await clearOfflineAccount('access-a'); await clearOfflineAccount('access-b'); localStorage.clear(); forgetAccount(); });
+it('isolates a revoked project, keeps drafts and blocks intents without changing other accounts or projects', async () => {
+  rememberAccount(user('access-a'), true);
+  await writeSnapshot('/api/v1/projects/p', { private: true });
+  await writeSnapshot('/api/v1/projects/p/tasks?limit=20', { items: ['private'] });
+  await writeSnapshot('/api/v1/projects/other', { accessible: true });
+  await writeSnapshot('/api/v1/projects?status=all', { items: [{ id: 'p' }, { id: 'other' }] });
+  saveDraft('access-a', 'p', 'material', { markdown: 'unsent' });
+  await putOperation({ key: 'access-op', accountId: 'access-a', projectId: 'p', url: '/api/v1/projects/p/tasks', method: 'POST', body: { title: 'local' }, localId: 'local', base: null, createdAt: '2026-10-14', state: 'pending' });
+  rememberAccount(user('access-b'), true); await writeSnapshot('/api/v1/projects/p', { otherAccount: true });
+  rememberAccount(user('access-a'), true); await revokeProjectAccess('access-a', 'p');
+  expect(await readSnapshot('/api/v1/projects/p')).toBeUndefined(); expect(await readSnapshot('/api/v1/projects/p/tasks?limit=20')).toBeUndefined();
+  expect((await readSnapshot('/api/v1/projects?status=all'))?.data).toEqual({ items: [{ id: 'other' }] });
+  expect((await readSnapshot('/api/v1/projects/other'))?.data).toEqual({ accessible: true });
+  expect((await readSnapshot('/api/v1/projects/p', 'access-b'))?.data).toEqual({ otherAccount: true });
+  expect(getDraft('access-a', 'p', 'material')?.value).toEqual({ markdown: 'unsent' });
+  expect(await operations()).toEqual([expect.objectContaining({ key: 'access-op', state: 'blocked', blockedReason: 'project-access-revoked', body: { title: 'local' } })]);
+  expect(await seedLocalEntity('/api/v1/projects/p/tasks/local')).toBeUndefined();
+  await expect(offlineView('/api/v1/projects/p/tasks', { items: [] })).rejects.toThrow('权限');
+  await expect(writeSnapshot('/api/v1/projects/p', { resurrected: true })).rejects.toThrow('权限');
+  restoreProjectAccess('access-a', 'p'); expect(projectRevoked('access-a', 'p')).toBe(false);
+  expect((await operations())[0]?.state).toBe('blocked');
+});
+it('fences an already-started snapshot and keeps late intent blocked after revocation and permission restoration', async () => {
+  rememberAccount(user('access-a'), true);
+  const writing = writeSnapshot('/api/v1/projects/p/tasks', { old: true });
+  const outcome = writing.catch(error => error);
+  const revoking = revokeProjectAccess('access-a', 'p'); restoreProjectAccess('access-a', 'p');
+  expect(await outcome).toBeInstanceOf(Error); await revoking;
+  expect(await readSnapshot('/api/v1/projects/p/tasks')).toBeUndefined();
+});

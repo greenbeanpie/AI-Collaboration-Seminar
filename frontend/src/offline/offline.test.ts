@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PendingOperation } from './store';
 const state = vi.hoisted(() => ({ account: { id: 'account-a', displayName: '成员' }, rows: [] as PendingOperation[], cached: new Map<string, unknown>() }));
-vi.mock('./store', () => ({
+vi.mock('./store', async (original) => ({ ...await original<typeof import('./store')>(),
   offlineAccount: () => state.account,
   operations: async () => state.rows.filter(row => row.accountId === state.account.id),
   snapshots: async () => [...state.cached].map(([url, data]) => ({ url, data })),

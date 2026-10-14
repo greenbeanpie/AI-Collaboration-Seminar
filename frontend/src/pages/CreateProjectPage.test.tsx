@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { CreateProjectWizardPage as CreateProjectPage } from './CreateProjectPage';
+import { ApiError } from '../api/client';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), patch: vi.fn(), request: vi.fn()
 }));
@@ -99,6 +100,17 @@ async function reviewEmptyProject() {
   fireEvent.click(screen.getByRole('button',{name:'进入创建预览'}));
   fireEvent.click(screen.getByRole('checkbox',{name:'我已复核项目、文件、人数、邀请与任务配置'}));
 }
+it('persists an unconfirmed create intent and form payload, then reuses its key after reload', async () => {
+  mocks.post.mockRejectedValueOnce(new ApiError(0, { requestId: 'create-timeout', error: { code: 'REQUEST_TIMEOUT', message: 'result unknown', retryable: true } }));
+  mount(); fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: '结果未知草稿' } });
+  await next(); await screen.findByText('result unknown');
+  const first = mocks.post.mock.calls.find(([path]) => path === '/api/v1/creation-drafts')?.[2]?.idempotencyKey;
+  expect(first).toBeTruthy(); cleanup(); mount();
+  expect(screen.getByLabelText('项目名称')).toHaveValue('结果未知草稿');
+  await next();
+  const keys = mocks.post.mock.calls.filter(([path]) => path === '/api/v1/creation-drafts').map(([, , options]) => options.idempotencyKey);
+  expect(keys).toEqual([first, first]);
+});
 it('rechecks a same-device failed preview before commit and keeps local goal and files',async()=>{
   await reviewEmptyProject();const goal=draft.preview.goal.title;
   draft={...draft,previewState:'failed',files:[{id:'retained-file',name:'保留的资料.txt',sizeBytes:20,textReady:true}]};

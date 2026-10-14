@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ account: 'a', resolve: undefined as undefined | ((value: boolean) => void), queued: vi.fn() }));
 vi.mock('../desktop/bridge', () => ({ isDesktop: () => true }));
 vi.mock('../desktop/attachments', () => ({ hasPendingTaskFiles: () => new Promise<boolean>(resolve => { state.resolve = resolve; }) }));
-vi.mock('../offline/store', () => ({ offlineAccount: () => ({ id: state.account }), readSnapshot: vi.fn(), readCachedList: vi.fn(), writeSnapshot: vi.fn(), rememberAccount: vi.fn(), forgetAccount: vi.fn() }));
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(), offlineAccount: () => ({ id: state.account }), readSnapshot: vi.fn(), readCachedList: vi.fn(), writeSnapshot: vi.fn(), rememberAccount: vi.fn(), forgetAccount: vi.fn() }));
 vi.mock('../offline/queue', () => ({ queueOffline: state.queued, cacheable: () => false, offlineView: vi.fn(), seedLocalEntity: vi.fn() }));
 import { request } from './client';
 beforeEach(() => { state.account = 'a'; state.resolve = undefined; state.queued.mockReset(); vi.stubGlobal('navigator', { onLine: true }); });

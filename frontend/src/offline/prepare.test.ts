@@ -4,7 +4,7 @@ vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client');
   return { ...actual, request: vi.fn() };
 });
-vi.mock('./store', () => ({ offlineAccount: () => ({ id: state.account }), writeSnapshot: vi.fn(), readSnapshot: vi.fn() }));
+vi.mock('./store', async (original) => ({ ...await original<typeof import('./store')>(), offlineAccount: () => ({ id: state.account }), writeSnapshot: vi.fn(), readSnapshot: vi.fn() }));
 import { ApiError, request } from '../api/client';
 import { readSnapshot, writeSnapshot } from './store';
 import { ensureProjectPrepared, prepareProject } from './sync';

@@ -6,7 +6,7 @@ import { desktopInvoke } from '../../desktop/bridge';
 import { documentRequest } from '../../pages/document-import-client';
 const state=vi.hoisted(()=>({draft:{id:'local',accountId:'account',projectId:'project',kind:'photo',state:'stopped',createdAt:'2026-10-11',elapsedMs:0,segments:[{sequence:1,name:'photo.jpg',sizeBytes:10,startMs:0,endMs:0,sha256:'hash'}],interruptions:[]}}));
 vi.mock('../../components/FileContributors',()=>({FileContributorPicker:()=>null}));
-vi.mock('../../offline/store',()=>({offlineAccount:()=>({id:'account'})}));
+vi.mock('../../offline/store', async (original) => ({ ...await original<typeof import('../../offline/store')>(),offlineAccount:()=>({id:'account'})}));
 vi.mock('../../desktop/bridge',()=>({isDesktop:()=>true,desktopInvoke:vi.fn(async(command:string)=>command==='recording_capabilities'?{audio:true,video:true,photo:true,background:true,devices:[]}:command==='recording_list'?[state.draft]:command==='recording_upload'?{...state.draft,segments:state.draft.segments.map(s=>({...s,fileId:'stored-file'}))}:state.draft)}));
 vi.mock('../../desktop/lifecycle',()=>({setDesktopDirty:vi.fn()}));
 vi.mock('../../pages/document-import-client',()=>({documentRequest:vi.fn(async()=>({sessionId:'server-session'}))}));

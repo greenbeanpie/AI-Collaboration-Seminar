@@ -21,6 +21,7 @@ import { ErrorNotice, Spinner } from './components/ui';
 import { getInstallState } from './pwa-install';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { DesktopRuntime } from './desktop/DesktopRuntime';
+import { loginContinuation } from './auth-continuation';
 
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketsPage })));
 const SupportTicketDetailPage = lazy(() => import('./pages/SupportTicketsPage').then(module => ({ default: module.SupportTicketDetailPage })));
@@ -47,6 +48,8 @@ const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').the
 const ExportPage = lazy(() => import('./pages/ExportPage').then((module) => ({ default: module.ExportPage })));
 const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ default: module.HelpPage })));
 const AgentBridgesPage = lazy(() => import('./pages/AgentBridgesPage').then(module => ({ default: module.AgentBridgesPage })));
+const PublicHelpPage = lazy(() => import('./pages/PublicHelpPage').then(module => ({ default: module.PublicHelpPage })));
+const PasswordResetPage = lazy(() => import('./pages/PasswordResetPage').then(module => ({ default: module.PasswordResetPage })));
 
 function RouteLoading() {
   return <div className="content-wrap"><Spinner label="正在打开工作区" /></div>;
@@ -75,13 +78,13 @@ function ProtectedApp() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   useEffect(() => {
-    const expired = () => { void queryClient.clear(); navigate('/login', { replace: true }); };
+    const expired = () => { void queryClient.clear(); navigate(loginContinuation(location.pathname + location.search + location.hash), { replace: true }); };
     window.addEventListener('auth-expired', expired);
     return () => window.removeEventListener('auth-expired', expired);
-  }, [navigate, queryClient]);
+  }, [navigate, queryClient, location.pathname, location.search, location.hash]);
   if (session.isLoading) return <div className="content-wrap"><Spinner label="正在检查账户" /></div>;
   if (session.error) return <ServiceFailure error={session.error} retry={session.refetch} />;
-  if (!session.data) return <Navigate to={location.pathname === '/app/agent-bridges/connect' ? `/login?returnTo=${encodeURIComponent(location.pathname + location.search)}` : '/login'} replace />;
+  if (!session.data) return <Navigate to={loginContinuation(location.pathname + location.search + location.hash)} replace />;
   return <AppShell user={session.data}><NotificationRuntime key={session.data.id} userId={session.data.id} settingsUrl="/app/settings/notifications"/>{location.pathname.replace(/\/$/, '') === '/app' && <PwaInstallBanner />}<Suspense fallback={<RouteLoading />}><Outlet /></Suspense></AppShell>;
 }
 
@@ -115,6 +118,8 @@ export default function App() {
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/help" element={<PublicHelpPage />} />
+      <Route path="/password-reset" element={<PasswordResetPage />} />
       <Route element={<ProtectedApp />}>
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/help" element={<WorkspaceLegacyRedirect from="/app/help" to="/app/support/help" />} />

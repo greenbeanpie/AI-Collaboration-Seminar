@@ -1,27 +1,53 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError, request } from '../api/client';
 import { ErrorNotice, Field, PageHeading } from '../components/ui';
 import { ReceivedInvitations } from './UsernameInvitations';
 import { InvitationPreview } from './InvitationPreview';
 import type { DataOf } from '../api/types';
 
 export function AcceptInvitationPage() {
-  const [code, setCode] = useState(() => new URLSearchParams(window.location.search).get('code') ?? '');
+  const [searchParams] = useSearchParams();
+  const [code, setCode] = useState(() => searchParams.get('code') ?? '');
   const currentCode = useRef(code);
+  const acceptKey = useRef(crypto.randomUUID()), unknownAccept = useRef(false);
   const [review, setReview] = useState<{code:string; project:DataOf<'InvitationPreviewResponse'>} | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const accept = useMutation({
-    mutationFn: () => api.post<'InvitationAcceptResponse'>('/api/v1/invitations/accept', { code: review!.code }),
+    mutationFn: async () => {
+      const checkedMembership = async () => {
+        try { await request(`/projects/${review!.project.projectId}`, { networkOnly: true }); return { projectId: review!.project.projectId }; }
+        catch { return null; }
+      };
+      if (unknownAccept.current) {
+        const recovered = await checkedMembership();
+        if (recovered) return recovered;
+        throw new Error('上次加入结果尚未确认。请取消当前预览并重新查看邀请，核对后再确认。');
+      }
+      try { return await api.post<'InvitationAcceptResponse'>('/api/v1/invitations/accept', { code: review!.code }, { networkOnly: true, timeoutMs: 30_000, idempotencyKey: acceptKey.current }); }
+      catch (failure) {
+        if (!(failure instanceof ApiError && failure.status === 0)) throw failure;
+        unknownAccept.current = true;
+        const recovered = await checkedMembership();
+        if (recovered) return recovered;
+        throw new Error('加入结果尚未确认，本次邀请已保留。请先核对项目权限或重新查看邀请，不会自动重复加入。', { cause: failure });
+      }
+    },
     onSuccess: async (result) => { await queryClient.invalidateQueries({ queryKey: ['projects'] }); navigate(`/app/projects/${result.projectId}`); },
   });
   const preview = useMutation({
-    mutationFn: (typed: string) => api.post<'InvitationPreviewResponse'>('/api/v1/invitations/preview', {code:typed}, {networkOnly:true}),
-    onSuccess: (project, typed) => { if (currentCode.current.trim() === typed) setReview({code:typed,project}); },
+    mutationFn: (typed: string) => api.post<'InvitationPreviewResponse'>('/api/v1/invitations/preview', {code:typed}, {networkOnly:true, timeoutMs:30_000}),
+    onSuccess: (project, typed) => { if (currentCode.current.trim() === typed) { unknownAccept.current = false; acceptKey.current = crypto.randomUUID(); setReview({code:typed,project}); } },
   });
+  const initialPreview = useRef(false);
+  useEffect(() => {
+    if (initialPreview.current) return;
+    initialPreview.current = true;
+    if (code.trim().length >= 10) preview.mutate(code.trim());
+  }, [code, preview]);
   return <div className="page-stack narrow-page">
     <Link className="back-link" to="/app"><ArrowLeft size={16} />返回项目列表</Link>
     <PageHeading eyebrow="加入团队" title="项目邀请" detail="通过邀请码加入团队，或在下方处理发给你的项目邀请。" />

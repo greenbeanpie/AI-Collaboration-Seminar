@@ -125,7 +125,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
             {logoutError !== null && clearCount === null && <ErrorNotice error={logoutError} />}
             <Link className="topbar-profile" to="/app/profile" onClick={() => setAccountMenuOpen(false)}><UserRound size={17} /><span>个人资料</span></Link>
             <ThemeSelector/>
-            <button className="icon-button topbar-logout" title="退出登录" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /><span className="topbar-action-label">退出登录</span></button>
+            <button className="icon-button topbar-logout" title="退出登录；此设备仍保留当前账号的项目快照与本机修改" aria-label="退出登录" disabled={busy} onClick={() => void logout()}><LogOut size={17} /><span className="topbar-action-label">退出登录（保留本机内容）</span></button>
             <button className="button button-quiet button-small" disabled={busy} onClick={() => void offerClearLogout()}>退出并清除此设备数据</button>
           </div>
           </div>

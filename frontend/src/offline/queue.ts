@@ -1,4 +1,4 @@
-import { offlineAccount, operations, putOperation, readSnapshot, snapshots, writeSnapshot, type PendingOperation } from './store';
+import { offlineAccount, operations, putOperation, readSnapshot, snapshots, writeSnapshot, projectRevoked, projectIdForUrl, type PendingOperation } from './store';
 import { requestStorageProtection } from './storage-protection';
 
 export function offlineWritable(url: string, method: string): boolean {
@@ -63,9 +63,16 @@ export async function queueOffline(url: string, method: string, body: unknown, i
   return optimisticResult(operation, operation.base);
 }
 export async function offlineView(url: string, cached: unknown): Promise<unknown> {
+  const accountId = offlineAccount()?.id, projectId = projectIdForUrl(url);
+  if (accountId && projectId && projectRevoked(accountId, projectId)) throw new Error('项目权限已变更，本机内容已隔离。');
   let view = structuredClone(cached);
+  if (accountId && new URL(url, window.location.origin).pathname === '/api/v1/projects') {
+    const data = record(view);
+    if (Array.isArray(data.items)) view = { ...data, items: data.items.filter(item => !projectRevoked(accountId, String(record(item).id ?? record(item).projectId ?? ''))) };
+  }
   for (const operation of await operations()) {
     if (operation.accountId !== offlineAccount()?.id) continue;
+    if (operation.blockedReason === 'project-access-revoked') continue;
     if (!url.startsWith(`/api/v1/projects/${operation.projectId}/`)) continue;
     const result = optimisticResult(operation, operation.base);
     const path = new URL(url, window.location.origin).pathname;
@@ -95,7 +102,7 @@ export async function offlineView(url: string, cached: unknown): Promise<unknown
 }
 export async function seedLocalEntity(url: string): Promise<unknown | undefined> {
   const rows = await operations();
-  const row = rows.find(operation => url.endsWith(`/${operation.localId}`));
+  const row = rows.find(operation => operation.blockedReason !== 'project-access-revoked' && !projectRevoked(operation.accountId, operation.projectId) && url.endsWith(`/${operation.localId}`));
   return row ? offlineView(url, optimisticResult(row, row.base)) : undefined;
 }
 export async function replaceLocalIds(accountId: string, from: string, to: string): Promise<void> {

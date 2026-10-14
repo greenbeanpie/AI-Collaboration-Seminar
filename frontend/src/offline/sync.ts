@@ -1,5 +1,5 @@
 import { ApiError, request } from '../api/client';
-import { offlineAccount, operations, putOperation, readSnapshot, removeOperation, snapshots, writeSnapshot, type PendingOperation } from './store';
+import { offlineAccount, operations, putOperation, readSnapshot, removeOperation, snapshots, writeSnapshot, projectRevoked, type PendingOperation } from './store';
 import { replaceLocalIds } from './queue';
 import { isDesktop } from '../desktop/bridge';
 import { beginDesktopActivity } from '../desktop/lifecycle';
@@ -43,6 +43,7 @@ async function performSync(): Promise<void> {
   for (const original of await operations(account.id)) {
     if (!navigator.onLine || offlineAccount()?.id !== account.id) break;
     if (original.state !== 'pending') { blockedProjects.add(original.projectId); continue; }
+    if (projectRevoked(account.id, original.projectId)) { await putOperation({ ...original, state: 'blocked', blockedReason: 'project-access-revoked' }); blockedProjects.add(original.projectId); continue; }
     if (blockedProjects.has(original.projectId)) continue;
     // Re-read after earlier creates may have replaced local IDs in dependent intents.
     const row = (await operations(account.id)).find(item => item.key === original.key);
@@ -111,6 +112,7 @@ export async function synchronizeOffline(): Promise<void> {
 export async function resolveOperation(row: PendingOperation, choice: 'server' | 'local'): Promise<void> {
   if (row.accountId !== offlineAccount()?.id) throw new Error('请使用原账户处理这份离线记录');
   if (choice === 'local') {
+    if (row.blockedReason === 'project-access-revoked') throw new Error('项目失权操作不能自动重新提交，请导出后核对当前权限。');
     if (!navigator.onLine) throw new Error('解决冲突需要联网读取最新版本');
     const current = await currentEntity(row);
     const revision = object(current).revision;

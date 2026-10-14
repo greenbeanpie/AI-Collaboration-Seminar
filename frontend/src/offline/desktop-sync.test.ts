@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ pendingFiles: true, rows: [] as PendingOperati
 vi.mock('../desktop/bridge', () => ({ isDesktop: () => true }));
 vi.mock('../desktop/attachments', () => ({ hasPendingTaskFiles: async () => state.pendingFiles }));
 vi.mock('../api/client', async () => ({ ...await vi.importActual<typeof import('../api/client')>('../api/client'), request: state.request }));
-vi.mock('./store', () => ({
+vi.mock('./store', async (original) => ({ ...await original<typeof import('./store')>(),
   offlineAccount: () => ({ id: 'account-a' }), operations: async () => state.rows,
   snapshots: async () => [], readSnapshot: async () => undefined, writeSnapshot: vi.fn(),
   putOperation: async (row: PendingOperation) => { state.rows = state.rows.map(r => r.key === row.key ? structuredClone(row) : r); },

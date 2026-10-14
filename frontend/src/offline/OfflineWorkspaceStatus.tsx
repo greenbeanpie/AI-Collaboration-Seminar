@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
-import { operations, type PendingOperation } from './store';
+import { offlineAccount, operations, type PendingOperation } from './store';
 import { ensureProjectPrepared, preparedAt, prepareProject, resolveOperation, synchronizeOffline } from './sync';
 import { inspectStorageProtection, requestStorageProtection, storageProtectionMessage, type StorageProtection } from './storage-protection';
 import { confirmPage } from '../dialogs/dialog-service';
@@ -13,6 +13,12 @@ function preview(value: unknown): string {
   const row = value as Record<string, unknown>;
   if (row.currentVersion) return preview(row.currentVersion);
   return [row.title, row.detail, row.criteria, row.body, row.markdown ?? (row.doc ? docToMarkdown(row.doc) : null)].filter(item => typeof item === 'string').join('\n\n');
+}
+function exportLocalOperation(row: PendingOperation): void {
+  if (offlineAccount()?.id !== row.accountId) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ projectId: row.projectId, method: row.method, body: row.body, base: row.base, createdAt: row.createdAt }, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = `local-operation-${row.localId}.json`; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
   const location = useLocation();
@@ -118,7 +124,8 @@ export function OfflineWorkspaceStatus({ accountId }: { accountId: string }) {
     {pending.some(row => row.state !== 'pending') && <details><summary>查看需要处理的本机操作</summary>{pending.filter(row => row.state !== 'pending').map(row => <article key={row.key}>
       <strong>{row.state === 'conflict' ? '内容存在冲突' : '操作未获服务端接受'}</strong><p style={{whiteSpace:'pre-wrap'}}>{row.error}</p>
       <div className="offline-conflict-copies"><div><h3>本机内容</h3><pre>{preview(row.body) || '本机任务操作已保留'}</pre></div><div><h3>服务端内容</h3><pre>{preview(row.server) || '请在原页面核对最新内容'}</pre></div></div>
-      <button className="button button-quiet button-small" disabled={busy} onClick={() => void resolve(row, 'server')}>使用服务端内容</button>
+      {row.blockedReason === 'project-access-revoked' && <button className="button button-quiet button-small" disabled={busy} onClick={() => exportLocalOperation(row)}>导出本机修改</button>}
+      <button className="button button-quiet button-small" disabled={busy} onClick={() => void resolve(row, 'server')}>{row.blockedReason === 'project-access-revoked' ? '明确放弃此本机操作' : '使用服务端内容'}</button>
       {row.state === 'conflict' && ['PUT', 'PATCH'].includes(row.method) && <button className="button button-small" disabled={!online || busy} onClick={() => void resolve(row, 'local')}>已核对，提交本机内容</button>}
     </article>)}</details>}
   </section>;

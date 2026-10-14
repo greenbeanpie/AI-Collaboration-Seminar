@@ -57,3 +57,15 @@ export function clearAccountStorage(accountId: string, strict = false): void {
 function draftKey(accountId: string, projectId: string, materialId: string) {
   return `${prefix}draft:${accountId}:${projectId}:${materialId}`;
 }
+export function listProjectDrafts(accountId: string, projectId: string): Array<{ materialId: string; savedAt: string; value: unknown }> {
+  const storage = browserStorage(), drafts: Array<{ materialId: string; savedAt: string; value: unknown }> = [];
+  if (!storage) return drafts;
+  const draftPrefix = `${prefix}draft:${accountId}:${projectId}:`;
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (!key?.startsWith(draftPrefix)) continue;
+    const materialId = key.slice(draftPrefix.length), draft = getDraft(accountId, projectId, materialId);
+    if (draft) drafts.push({ materialId, ...draft });
+  }
+  return drafts;
+}

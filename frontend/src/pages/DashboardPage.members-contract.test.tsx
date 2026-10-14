@@ -11,6 +11,7 @@ it('loads actionable totals on a cold cache with the complete graph membership r
     const path = new URL(String(input), 'http://localhost').pathname;
     let data: unknown;
     if (path === '/api/v1/projects') data = { items: [{ id: 'p', name: '真实成员格式', status: 'active', myRole: 'owner', deadlineDate: null, deadlinePrecision: 'unknown' }], nextCursor: null };
+    else if (path === '/api/v1/resource-usage') data = { ai: { enabled: true, day: '2026-10-14', user: { used: 0, limit: 50, remaining: 50 }, project: null, platformDailyLimit: 500, globalConcurrencyLimit: 2 }, storage: { inventoryReady: true, externalChecked: true, user: { used: 0, limit: 1000, reserved: 0 }, project: null } };
     else if (path.endsWith('/members')) data = { items: [{ userId: 'member' }] };
     else if (path.endsWith('/tasks/graph')) data = { memberIds: ['member'], items: [{ taskId: 't', title: '已分配待推进', status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', dependsOnTaskIds: [], unfinishedDependencyIds: [], revision: 1, dueDate: null, duePrecision: 'unknown' }], nextCursor: null };
     else throw new Error(`Unexpected request ${path}`);
@@ -18,11 +19,13 @@ it('loads actionable totals on a cold cache with the complete graph membership r
   });
   vi.stubGlobal('fetch', fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(['session'], { id: 'fixture-member', username: 'fixture', displayName: 'Fixture', email: null, role: 'user', isAdmin: false });
   render(<QueryClientProvider client={client}><MemoryRouter><DashboardPage /></MemoryRouter></QueryClientProvider>);
   const attention = await screen.findByRole('complementary', { name: '待响应事项' });
   expect(await within(attention).findByText('1 项可完成', { selector: 'small' })).toBeInTheDocument();
   expect(within(attention).getByRole('link', { name: /已分配待推进/ })).toHaveAttribute('href', '/app/projects/p/tasks?task=t');
   expect(within(attention).queryByText('任务暂不可用，请重试。')).not.toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(fetchMock.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname !== '/api/v1/resource-usage')).toHaveLength(3);
+  expect(fetchMock.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/v1/resource-usage')).toHaveLength(1);
   client.clear();
 });

@@ -6,7 +6,7 @@ import { OfflineWorkspaceStatus } from './OfflineWorkspaceStatus';
 import { ensureProjectPrepared, preparedAt, prepareProject, synchronizeOffline } from './sync';
 import { operations } from './store';
 vi.mock('./sync', () => ({ ensureProjectPrepared: vi.fn(), preparedAt: vi.fn(), prepareProject: vi.fn(), synchronizeOffline: vi.fn(), resolveOperation: vi.fn() }));
-vi.mock('./store', () => ({ operations: vi.fn() }));
+vi.mock('./store', async (original) => ({ ...await original<typeof import('./store')>(), operations: vi.fn() }));
 beforeEach(() => { vi.mocked(preparedAt).mockResolvedValue(null); vi.mocked(ensureProjectPrepared).mockResolvedValue(true); });
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 function show(online = true) {

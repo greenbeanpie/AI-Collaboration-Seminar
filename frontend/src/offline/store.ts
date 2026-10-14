@@ -7,12 +7,73 @@ export type PendingOperation = {
   key: string; accountId: string; projectId: string; url: string; method: string;
   body: Record<string, unknown>; localId: string; base: unknown; createdAt: string;
   state: 'pending' | 'conflict' | 'blocked'; error?: string; server?: unknown;
+  blockedReason?: 'project-access-revoked';
   desktopAttachmentsResolved?: boolean;
 };
 const accountKey = 'buwei:offline-account';
 let database: Promise<IDBDatabase> | undefined;
 const clearingAccounts = new Set<string>();
 const storageEpochs = new Map<string, number>();
+const accessPrefix = 'buwei:project-access:';
+const accessFallback = new Map<string, { epoch: number; revoked: boolean }>();
+export function projectIdForUrl(url: string): string | undefined { return new URL(url, window.location.origin).pathname.match(/^\/api\/v1\/projects\/([^/]+)(?:\/|$)/)?.[1]; }
+function projectAccess(accountId: string, projectId: string): { epoch: number; revoked: boolean } {
+  const key = `${accessPrefix}${accountId}:${projectId}`, memory = accessFallback.get(key);
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? '{"epoch":0,"revoked":false}') as { epoch?: unknown; revoked?: unknown };
+    if (!value || typeof value.epoch !== 'number' || !Number.isSafeInteger(value.epoch) || value.epoch < 0 || typeof value.revoked !== 'boolean') return memory ?? { epoch: 0, revoked: true };
+    if (memory && memory.epoch > value.epoch) return memory;
+    return { epoch: value.epoch, revoked: value.revoked };
+  }
+  catch { return memory ?? { epoch: 0, revoked: true }; }
+}
+export const projectEpoch = (accountId: string, projectId: string): number => projectAccess(accountId, projectId).epoch;
+export const projectRevoked = (accountId: string, projectId: string): boolean => projectAccess(accountId, projectId).revoked;
+function filterRevokedProjects(url: string, data: unknown, accountId: string): unknown {
+  if (new URL(url, window.location.origin).pathname !== '/api/v1/projects' || !data || typeof data !== 'object' || !('items' in data) || !Array.isArray(data.items)) return data;
+  return { ...data, items: data.items.filter(item => !item || typeof item !== 'object' || !projectRevoked(accountId, String(item.id ?? item.projectId ?? ''))) };
+}
+export function restoreProjectAccess(accountId: string, projectId: string): void {
+  const previous = projectAccess(accountId, projectId);
+  setProjectAccess(accountId, projectId, { ...previous, revoked: false });
+}
+function setProjectAccess(accountId: string, projectId: string, value: { epoch: number; revoked: boolean }): void {
+  const key = `${accessPrefix}${accountId}:${projectId}`;
+  accessFallback.set(key, value);
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch (error) { window.dispatchEvent(new CustomEvent('offline-storage-failed', { detail: { message: storageFailureMessage(error) } })); }
+}
+
+/** Hide revoked data immediately; preserve drafts and block durable intents without deleting them. */
+export async function revokeProjectAccess(accountId: string, projectId: string): Promise<void> {
+  const previous = projectAccess(accountId, projectId);
+  setProjectAccess(accountId, projectId, { epoch: previous.epoch + 1, revoked: true });
+  window.dispatchEvent(new CustomEvent('project-access-revoked', { detail: { accountId, projectId } }));
+  const db = await open();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['snapshots', 'operations'], 'readwrite');
+    for (const name of ['snapshots', 'operations']) {
+      const store = tx.objectStore(name);
+      const cursorRequest = store.index('accountId').openCursor(IDBKeyRange.only(accountId));
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+        if (name === 'snapshots') {
+          const row = cursor.value as Snapshot;
+          if (projectIdForUrl(row.url) === projectId) cursor.delete();
+          else cursor.update({ ...row, data: filterRevokedProjects(row.url, row.data, accountId) });
+        } else {
+          const row = cursor.value as PendingOperation;
+          if (row.projectId === projectId) cursor.update({ ...row, state: 'blocked', blockedReason: 'project-access-revoked', error: '项目权限已变更，本机修改保留；不会自动重新提交。' });
+        }
+        cursor.continue();
+      };
+    }
+    tx.oncomplete = () => resolve();
+    tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('项目快照清理失败；内容已隔离，请重试清理。'));
+  });
+  window.dispatchEvent(new Event('offline-data-changed'));
+}
 
 export function offlineAccount(): User | null {
   try { return JSON.parse(localStorage.getItem(accountKey) ?? 'null') as User | null; }
@@ -73,19 +134,27 @@ export function normalizeUrl(path: string): string {
 }
 export async function readSnapshot(url: string, accountId = offlineAccount()?.id): Promise<Snapshot | undefined> {
   if (!accountId) return undefined;
-  return transact<Snapshot | undefined>('snapshots', 'readonly', store => store.get(`${accountId}:${normalizeUrl(url)}`));
+  const projectId = projectIdForUrl(url);
+  if (projectId && projectRevoked(accountId, projectId)) return undefined;
+  const row = await transact<Snapshot | undefined>('snapshots', 'readonly', store => store.get(`${accountId}:${normalizeUrl(url)}`));
+  if (projectId && projectRevoked(accountId, projectId)) return undefined;
+  return row ? { ...row, data: filterRevokedProjects(url, row.data, accountId) } : undefined;
 }
 export async function writeSnapshot(url: string, data: unknown, accountId = offlineAccount()?.id, etag?: string): Promise<void> {
   if (!accountId || clearingAccounts.has(accountId)) return;
   const epoch = storageEpochs.get(accountId) ?? 0;
+  const projectId = projectIdForUrl(url), fence = projectId ? projectEpoch(accountId, projectId) : 0;
   const normalized = normalizeUrl(url);
   await transact('snapshots', 'readwrite', store => {
     if (clearingAccounts.has(accountId) || (storageEpochs.get(accountId) ?? 0) !== epoch) throw new Error('此账号的本机数据已清除，已停止旧缓存写入');
-    return store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data, savedAt: new Date().toISOString(), ...(etag ? { etag } : {}) } satisfies Snapshot);
+    if (projectId && (projectRevoked(accountId, projectId) || projectEpoch(accountId, projectId) !== fence)) throw new Error('项目权限已变化，已停止旧缓存写入');
+    return store.put({ key: `${accountId}:${normalized}`, accountId, url: normalized, data: filterRevokedProjects(url, data, accountId), savedAt: new Date().toISOString(), ...(etag ? { etag } : {}) } satisfies Snapshot);
   });
 }
 export async function snapshots(accountId = offlineAccount()?.id): Promise<Snapshot[]> {
-  return accountId ? transact('snapshots', 'readonly', store => store.index('accountId').getAll(accountId)) : [];
+  if (!accountId) return [];
+  const rows = await transact<Snapshot[]>('snapshots', 'readonly', store => store.index('accountId').getAll(accountId));
+  return rows.filter(row => { const projectId = projectIdForUrl(row.url); return !projectId || !projectRevoked(accountId, projectId); }).map(row => ({ ...row, data: filterRevokedProjects(row.url, row.data, accountId) }));
 }
 /** Reuse a complete cached cursor chain when callers choose a different page size. */
 export async function readCachedList(url: string, accountId = offlineAccount()?.id): Promise<unknown | undefined> {
@@ -128,9 +197,11 @@ export async function operations(accountId = offlineAccount()?.id): Promise<Pend
 export async function putOperation(operation: PendingOperation): Promise<void> {
   if (clearingAccounts.has(operation.accountId)) throw new Error('此账号的本机数据已清除，请重新登录后操作');
   const epoch = storageEpochs.get(operation.accountId) ?? 0;
+  const fence = projectEpoch(operation.accountId, operation.projectId);
   await transact('operations', 'readwrite', store => {
     if (clearingAccounts.has(operation.accountId) || (storageEpochs.get(operation.accountId) ?? 0) !== epoch) throw new Error('此账号的本机数据已清除，已停止旧操作写入');
-    return store.put(operation);
+    const revoked = projectRevoked(operation.accountId, operation.projectId) || projectEpoch(operation.accountId, operation.projectId) !== fence;
+    return store.put(revoked ? { ...operation, state: 'blocked', blockedReason: 'project-access-revoked', error: '项目权限已变更，本机修改保留；不会自动重新提交。' } : operation);
   });
   window.dispatchEvent(new Event('offline-data-changed'));
 }
@@ -155,6 +226,10 @@ export async function clearOfflineAccount(accountId: string): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('清除本机数据失败，请重试'));
     });
+    const markerKeys: string[] = [];
+    for (let index = 0; index < localStorage.length; index++) { const key = localStorage.key(index); if (key?.startsWith(`${accessPrefix}${accountId}:`)) markerKeys.push(key); }
+    markerKeys.forEach(key => localStorage.removeItem(key));
+    for (const key of accessFallback.keys()) if (key.startsWith(`${accessPrefix}${accountId}:`)) accessFallback.delete(key);
     if (offlineAccount()?.id === accountId) forgetAccount();
     window.dispatchEvent(new Event('offline-data-changed'));
   } catch (error) { clearingAccounts.delete(accountId); throw error; }

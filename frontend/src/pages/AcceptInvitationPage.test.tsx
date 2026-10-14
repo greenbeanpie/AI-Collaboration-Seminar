@@ -14,7 +14,7 @@ const response = (data: unknown) => Response.json({ requestId: 'invitation-test'
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const invalidate = vi.spyOn(client, 'invalidateQueries');
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/app/join']}><Routes>
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[window.location.pathname === '/app/join' ? window.location.pathname + window.location.search : '/app/join']}><Routes>
     <Route path="/app/join" element={<AcceptInvitationPage />} />
     <Route path="/app/projects/:id" element={<h1>已进入项目</h1>} />
     <Route path="/app" element={<h1>项目列表</h1>} />

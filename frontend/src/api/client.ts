@@ -2,7 +2,7 @@ import type { ApiFailure, ApiEnvelope, DataOf, SchemaName } from './types';
 import { errorMessage } from './error-info';
 import { newId } from './ids';
 import { iteratePages } from './page-contract';
-import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot } from '../offline/store';
+import { forgetAccount, offlineAccount, readCachedList, readSnapshot, rememberAccount, writeSnapshot, projectEpoch, projectIdForUrl, projectRevoked, restoreProjectAccess, revokeProjectAccess } from '../offline/store';
 import { cacheable, offlineView, queueOffline, seedLocalEntity } from '../offline/queue';
 import { beginDesktopActivity } from '../desktop/lifecycle';
 import { isDesktop } from '../desktop/bridge';
@@ -40,6 +40,8 @@ export type RequestOptions = {
   signal?: AbortSignal;
   /** A bounded transport deadline. GET defaults to 15 seconds; writes opt in explicitly. */
   timeoutMs?: number;
+  /** Short control operations only; uploads and AI retain their independent deadlines. */
+  shortControl?: boolean;
   idempotencyKey?: string;
   rawBody?: BodyInit;
   /** Internal sync/revalidation path: never read a local snapshot or enqueue work. */
@@ -57,6 +59,24 @@ function makeRequestId(): string {
 
 const revalidations = new Map<string, Promise<void>>();
 const accountEpochs = new Map<string, number>();
+const accessChecks = new Map<string, Promise<void>>();
+async function checkProjectFailure(url: string, accountId: string): Promise<void> {
+  const projectId = projectIdForUrl(url);
+  if (!projectId) return;
+  const root = `/api/v1/projects/${projectId}`;
+  if (new URL(url, window.location.origin).pathname === root) { await revokeProjectAccess(accountId, projectId); return; }
+  const key = `${accountId}:${projectId}`;
+  if (!accessChecks.has(key)) {
+    const check = (async () => {
+      try {
+        await request(root, { networkOnly: true });
+        if (offlineAccount()?.id === accountId) window.dispatchEvent(new CustomEvent('project-permissions-updated', { detail: { accountId, projectId } }));
+      } catch { /* Root refusal handles revocation; transport failure does not prove loss of membership. */ }
+    })().finally(() => accessChecks.delete(key));
+    accessChecks.set(key, check);
+  }
+  await accessChecks.get(key);
+}
 if (typeof window !== 'undefined') window.addEventListener('account-device-cleared', event => {
   const accountId = (event as CustomEvent<{ accountId: string }>).detail?.accountId;
   if (typeof accountId === 'string') accountEpochs.set(accountId, (accountEpochs.get(accountId) ?? 0) + 1);
@@ -107,11 +127,14 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
   const url = apiUrl(path, options.query);
   const accountAtStart = offlineAccount()?.id;
   const epochAtStart = accountAtStart ? accountEpochs.get(accountAtStart) ?? 0 : 0;
+  const projectId = projectIdForUrl(url);
+  const projectFence = accountAtStart && projectId ? projectEpoch(accountAtStart, projectId) : 0;
   const startsSession = method === 'POST' && /^\/api\/v1\/auth\/(?:sessions|register)$/.test(url);
   const assertAccount = () => {
     if ((!startsSession && offlineAccount()?.id !== accountAtStart) || (accountAtStart && (accountEpochs.get(accountAtStart) ?? 0) !== epochAtStart)) {
       throw new ApiError(401, { requestId, error: { code: 'AUTH_CONTEXT_CHANGED', message: '账号或本机数据已变化，请重新打开当前页面后操作。', retryable: false } });
     }
+    if (accountAtStart && projectId && projectEpoch(accountAtStart, projectId) !== projectFence) throw new ApiError(403, { requestId, error: { code: 'PROJECT_ACCESS_CHANGED', message: '项目权限已变更，本机修改已保留，请重新核对权限。', retryable: false } });
   };
   const submission = url.match(/^\/api\/v1\/projects\/([^/]+)\/(?:collaboration\/)?tasks\/([^/]+)\/submissions$/);
   if (submission && method === 'POST' && !options.networkOnly && isDesktop()) {
@@ -124,6 +147,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
   }
   const local = async (): Promise<DataOf<Name>> => {
     assertAccount();
+    if (accountAtStart && projectId && projectRevoked(accountAtStart, projectId)) throw new ApiError(403, { requestId, error: { code: 'PROJECT_ACCESS_CHANGED', message: '项目权限已变更，原项目快照已隔离，本机修改保留。', retryable: false } });
     const cached = cacheable(url) ? await readSnapshot(url, accountAtStart) : undefined;
     const list = !cached && cacheable(url) ? await readCachedList(url, accountAtStart) : undefined;
     const value = cached ? await offlineView(url, cached.data) : list ? await offlineView(url, list) : await seedLocalEntity(url);
@@ -138,7 +162,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
         if (navigator.onLine !== false) revalidate(url, accountAtStart);
         return cached;
       }
-    } catch (error) { if (error instanceof ApiError && error.code === 'AUTH_CONTEXT_CHANGED') throw error; /* A cache miss/storage failure must not prevent an online request. */ }
+    } catch (error) { if (error instanceof ApiError && error.code === 'AUTH_CONTEXT_CHANGED') throw error; if (navigator.onLine === false && error instanceof ApiError && error.code === 'PROJECT_ACCESS_CHANGED') throw error; /* A cache miss/storage failure must not prevent an online request. */ }
   }
   if (!options.networkOnly && navigator.onLine === false) {
     if (method === 'GET') return local();
@@ -159,7 +183,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
   let responseText: string;
   const controller = new AbortController();
   let timedOut = false;
-  const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 15_000 : undefined);
+  const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 15_000 : options.shortControl || /^\/api\/v1\/(?:auth\/(?:sessions|register|password|password-recovery\/redeem)|invitations\/(?:preview|accept)|creation-drafts(?:\/[^/]+(?:\/(?:commit|state))?)?)$/.test(url) ? 30_000 : undefined);
   const abort = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) abort();
   else options.signal?.addEventListener('abort', abort, { once: true });
@@ -187,7 +211,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
     if (method === 'GET' && !options.networkOnly && accountAtStart) return local();
     if (method === 'GET' && options.offlineReadFallback && cacheable(url) && accountAtStart && offlineAccount()?.id === accountAtStart) return local();
     throw new ApiError(0, {
-      error: { code: timedOut ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR', message: timedOut ? method === 'GET' ? '读取服务超时，请检查网络后重试。' : '请求超时，服务端结果尚未确认；本机待同步内容已保留，重试时会核对同一操作。' : '无法连接服务，请检查网络或后端是否启动。', retryable: true, stage:'network',action:'check_connection' },
+      error: { code: timedOut ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR', message: timedOut ? method === 'GET' ? '读取服务超时，请检查网络后重试。' : '请求超时，服务端结果尚未确认；请先核对状态，再继续操作。' : '无法连接服务，请检查网络或后端是否启动。', retryable: true, stage:'network',action:'check_connection', ...(method !== 'GET' ? { details: { outcomeUnknown: true } } : {}) },
       requestId,
     });
   } finally {
@@ -214,6 +238,10 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
       forgetAccount();
       if (!path.endsWith('/auth/session')) window.dispatchEvent(new CustomEvent('auth-expired'));
     }
+    if (accountAtStart && projectId && [403, 404].includes(response.status)) {
+      try { await checkProjectFailure(url, accountAtStart); }
+      catch (error) { window.dispatchEvent(new CustomEvent('offline-storage-failed', { detail: { message: error instanceof Error ? error.message : '项目快照清理失败，已停止显示。' } })); }
+    }
     throw new ApiError(response.status, failure);
   }
   if (!payload || typeof payload !== 'object' || !('data' in payload)) {
@@ -223,6 +251,7 @@ async function performRequest<Name extends SchemaName>(path: string, options: Re
     });
   }
   const data = (payload as ApiEnvelope<DataOf<Name>>).data;
+  if (method === 'GET' && accountAtStart && projectId && new URL(url, window.location.origin).pathname === `/api/v1/projects/${projectId}`) restoreProjectAccess(accountAtStart, projectId);
   let establishedSession: { accountId: string; epoch: number } | undefined;
   const assertResultAccount = () => {
     if (!establishedSession) { assertAccount(); return; }

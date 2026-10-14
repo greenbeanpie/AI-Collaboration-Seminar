@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ account: 'a', read: vi.fn(), forget: vi.fn(), view: vi.fn() }));
-vi.mock('../offline/store', () => ({
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(),
   offlineAccount: () => state.account ? { id: state.account } : null,
   readSnapshot: state.read, readCachedList: vi.fn(), writeSnapshot: vi.fn(),
   forgetAccount: state.forget, rememberAccount: vi.fn((user: { id: string }) => { state.account = user.id; }),
@@ -50,6 +50,13 @@ it('ends an uncached GET when the network reports online but never responds', as
   vi.stubGlobal('fetch', hangingTransport());
   const outcome = expect(request('/projects/p/tasks', { networkOnly: true })).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT', status: 0 });
   await vi.advanceTimersByTimeAsync(15_000); await outcome;
+});
+it('bounds authentication and explicitly classified short writes at thirty seconds without promising an offline queue', async () => {
+  vi.stubGlobal('fetch', hangingTransport());
+  const outcome = expect(request('/auth/register', { method: 'POST', networkOnly: true, body: {} })).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT', details: { outcomeUnknown: true } });
+  await vi.advanceTimersByTimeAsync(30_000); await outcome;
+  const classified = expect(request('/projects/p/short-control', { method: 'PATCH', shortControl: true, body: {} })).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+  await vi.advanceTimersByTimeAsync(30_000); await classified;
 });
 it('covers a stalled response body with the same read deadline', async () => {
   vi.stubGlobal('fetch', vi.fn(async (_url: RequestInfo | URL, options?: RequestInit) => {

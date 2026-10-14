@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state=vi.hoisted(()=>({account:'a',cache:new Map<string,{data:unknown;etag?:string}>()}));
-vi.mock('../offline/store',()=>({offlineAccount:()=>state.account?{id:state.account}:null,readSnapshot:async(url:string,account=state.account)=>state.cache.get(account+':'+url),readCachedList:async()=>undefined,writeSnapshot:async(url:string,data:unknown,account:string,etag?:string)=>{state.cache.set(account+':'+url,{data,etag});},operations:async()=>[],rememberAccount:vi.fn(),forgetAccount:vi.fn()}));
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(),offlineAccount:()=>state.account?{id:state.account}:null,readSnapshot:async(url:string,account=state.account)=>state.cache.get(account+':'+url),readCachedList:async()=>undefined,writeSnapshot:async(url:string,data:unknown,account:string,etag?:string)=>{state.cache.set(account+':'+url,{data,etag});},operations:async()=>[],rememberAccount:vi.fn(),forgetAccount:vi.fn()}));
 import {request} from './client';
 const url='/api/v1/projects/p/tasks';
 beforeEach(()=>{state.account='a';state.cache.clear();vi.stubGlobal('navigator',{onLine:true});});

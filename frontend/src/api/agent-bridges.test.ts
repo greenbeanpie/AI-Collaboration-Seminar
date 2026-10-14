@@ -4,7 +4,7 @@ import { bridgeApi } from './agent-bridges';
 import { idempotencyKeyForIntent } from '../pages/aiWorkflowSupport';
 
 vi.mock('./simplification', () => ({ accountRequest: vi.fn() }));
-vi.mock('../offline/store', () => ({ offlineAccount: () => null }));
+vi.mock('../offline/store', async (original) => ({ ...await original<typeof import('../offline/store')>(), offlineAccount: () => null }));
 vi.mock('../pages/aiWorkflowSupport', () => ({ idempotencyKeyForIntent: vi.fn(async (namespace: string) => namespace), completeIntent: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 it('deduplicates within one actor but keeps identical approval requests for two actors separate', async () => {
