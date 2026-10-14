@@ -4,6 +4,7 @@ import { AppError } from '../core/errors';
 import { gatewayChat, type ChatMessage, type GatewayCallOutput } from './gateway';
 import { configForPurpose, loadAiConfig, type AiModelConfig, type AiPurpose, type LoadedAiConfig } from './config';
 import { recordAiCall } from './calls';
+import { isAiAdmissionRejection } from '../services/ai-resource-quota';
 
 export type ProbeCheckName = 'chinese_text' | 'json_output' | 'vision_accept' | 'usage_fields';
 
@@ -80,6 +81,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
       });
       return out;
     } catch (err) {
+      if(isAiAdmissionRejection(err))throw err;
       await recordAiCall(env, {
         diagnosticRequestId,
         purpose,
@@ -114,6 +116,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
     });
     usageOk = out.promptTokens !== null && out.completionTokens !== null;
   } catch (err) {
+    if(isAiAdmissionRejection(err))throw err;
     checks.push({ name: 'chinese_text', passed: false, detail: err instanceof Error ? err.message : String(err) });
     checks.push({ name: 'usage_fields', passed: false, detail: '前置调用失败，无法校验用量' });
     return finish(purpose, cfg.model, loaded.version, checks);
@@ -129,6 +132,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
     const ok = parsed.ok === true;
     checks.push({ name: 'json_output', passed: ok, detail: ok ? 'JSON 解析通过' : out.content.slice(0, 120) });
   } catch (err) {
+    if(isAiAdmissionRejection(err))throw err;
     checks.push({ name: 'json_output', passed: false, detail: err instanceof Error ? err.message : String(err) });
   }
 
@@ -150,6 +154,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
       const parsed = extractJson(out.content);
       checks.push({ name: 'vision_accept', passed: parsed.seen === true, detail: out.content.slice(0, 120) });
     } catch (err) {
+      if(isAiAdmissionRejection(err))throw err;
       checks.push({ name: 'vision_accept', passed: false, detail: err instanceof Error ? err.message : String(err) });
     }
   } else {

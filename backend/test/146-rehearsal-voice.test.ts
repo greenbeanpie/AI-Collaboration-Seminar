@@ -44,9 +44,16 @@ describe('private Gemini Transcribe Live rehearsal ASR',()=>{
     const current=await loadResourcePolicy(env),{version,...policy}=current;await saveResourcePolicy(env,version,{...policy,aiEnabled:false},f.owner.userId);
     f.browser.send(JSON.stringify({type:'start'}));await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('failed'));
     expect(f.events.some(event=>event.type==='error'&&event.code==='AI_UNAVAILABLE')).toBe(true);
+    await vi.waitFor(async()=>expect(await env.DB.prepare('SELECT status,lease_until FROM ai_resource_dispatches WHERE id=?1').bind(dispatch!.id).first()).toEqual({status:'uncertain',lease_until:null}));
     expect((await readRehearsalVoice(env,f.binding)).ready).toBe(false);
     expect((await env.DB.prepare("SELECT calls FROM ai_resource_daily WHERE quota_day=?1 AND scope='user' AND scope_id=?2").bind(dispatch!.quota_day,f.owner.userId).first<{calls:number}>())?.calls).toBe(1);
     await saveResourcePolicy(env,version+1,policy,f.owner.userId);f.browser.close();f.provider.close();
+  });
+  it('holds an abnormal upstream close beyond the original ten-minute lease',async()=>{
+    const f=await socketFixture();f.provider.close(1011,'simulated provider failure');await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('failed'));
+    await vi.waitFor(async()=>expect(await env.DB.prepare('SELECT status,lease_until FROM ai_resource_dispatches WHERE dispatch_key=?1').bind('live:'+f.session.sessionId).first()).toEqual({status:'uncertain',lease_until:null}));
+    const current=await loadResourcePolicy(env),{version,...policy}=current;await saveResourcePolicy(env,version,{...policy,globalConcurrency:1},f.owner.userId);const future=new Date(Date.now()+700000);vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(future);
+    try{const {claimAiResource,ResourceConcurrencyWait}=await import('../src/services/ai-resource-quota');await expect(claimAiResource(env,{userId:f.owner.userId,projectId:f.binding.projectId,jobId:newId()})).rejects.toBeInstanceOf(ResourceConcurrencyWait);}finally{vi.useRealTimers();await saveResourcePolicy(env,version+1,policy,f.owner.userId);f.browser.close();}
   });
   it('blocks recording while a TTS intent is saved but its job is not yet created',async()=>{
     const f=await fixture(),turn=await env.DB.prepare('SELECT id FROM rehearsal_turns WHERE rehearsal_id=?1 AND sequence=1').bind(f.binding.rehearsalId).first<{id:string}>(),now=nowIso();

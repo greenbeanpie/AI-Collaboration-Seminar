@@ -139,7 +139,7 @@ export async function openRehearsalVoiceStream(env:Env,binding:VoiceBinding,sess
     try{upstream.close(1000,'Voice session ended');}catch{/* Already closed. */}
     try{browser.close(status==='failed'?1011:1000,'Voice session ended');}catch{/* Already closed. */}
     await finishRehearsalVoiceSession(env,sessionId,status,code);
-    if(resourceClaim&&status!=='failed')await finishAiResource(env,resourceClaim,'completed');
+    if(resourceClaim)await finishAiResource(env,resourceClaim,status==='failed'?'uncertain':'completed');
   };
   const fail=async(error:unknown)=>{if(finished)return;const code=error instanceof AppError?error.code:'AI_UNAVAILABLE';send({type:'error',code,message:error instanceof AppError?error.message:'语音转录失败，已保留最终字幕；可继续文字回答',retryAfterSeconds:60});await finish('failed',code);};
   const enqueue=(fn:()=>Promise<void>,pcmBytes=0)=>{

@@ -15,7 +15,7 @@ import { LIMITS } from '../core/limits';
 import { unseal } from './secrets';
 import { acquireExecutionCall, abortExecutionCall, finishExecutionCall, readExecution, ExecutionPaused, isExecutionPaused, type ExecutionTarget, type ExecutionCallToken, resolveExecutionTarget } from '../services/ai-execution-control';
 import { InvestigationContinuation } from '../services/project-investigation';
-import { assertAiResourceEnabled, claimAiResource, finishAiResource, type AiResourceClaim } from '../services/ai-resource-quota';
+import { assertAiResourceEnabled, claimAiResource, finishAiResource, isAiAdmissionRejection, type AiResourceClaim } from '../services/ai-resource-quota';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -184,6 +184,7 @@ export async function gatewayChat(
       }
       if (isExecutionPaused(error) || error instanceof InvestigationContinuation || error instanceof AppError && error.details?.executionSuperseded === true) throw error;
       if(!dispatched && endpoint.diagnostics)await clearUncertainDispatch(endpoint.diagnostics,input.jobId);
+      if(!dispatched&&isAiAdmissionRejection(error))throw error;
       if (endpoint.diagnostics) {
         const appError = error instanceof AppError ? error : undefined;
         const providerReason = appError?.details?.providerReason;

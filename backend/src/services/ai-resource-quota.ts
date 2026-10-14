@@ -6,11 +6,14 @@ import { ConcurrencyWait } from './ai-execution-slices';
 
 export interface AiResourceContext { userId?: string | null; projectId?: string | null; jobId?: string; draftAttemptId?: string; operation?: string; requestId?:string; model?:string }
 export interface AiResourceClaim { id: string }
+/** Shared, non-secret actor for authenticated operational-token diagnostics, never accepted from request bodies. */
+export const OPERATOR_TOKEN_AI_ACTOR='system:operator-token';
 type QuotaEnv=Pick<Env,'DB'> & Partial<Pick<Env,'ENV_NAME'>>;
 /** UTC+8 calendar day, independent of the Worker/CI host timezone. */
 export const aiQuotaDay = (date = new Date()) => new Date(date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 export class ResourceConcurrencyWait extends ConcurrencyWait { constructor() { super(); this.message = '等待平台 AI 并发名额，尚未发起模型请求'; } }
 export const isAiResourceGuard=(error:unknown)=>error instanceof AppError&&error.details?.resourceQuota===true;
+export const isAiAdmissionRejection=(error:unknown)=>isAiResourceGuard(error)||error instanceof ConcurrencyWait||error instanceof AppError&&error.code==='PERMISSION_DENIED';
 
 export async function resolveAiResourceContext(env: Pick<Env, 'DB'>, context: AiResourceContext): Promise<AiResourceContext> {
   let userId = context.userId, projectId = context.projectId;
@@ -34,13 +37,14 @@ export async function resolveAiResourceContext(env: Pick<Env, 'DB'>, context: Ai
 /** One INSERT + count triggers is the admission transaction; no read/check/write quota race. */
 export async function claimAiResource(env: QuotaEnv, context: AiResourceContext, options: {dispatchKey?:string;leaseUntil?:string} = {}): Promise<AiResourceClaim> {
   const scope = await resolveAiResourceContext(env, context), id = newId(), key = options.dispatchKey ?? id, day = aiQuotaDay(), now = nowIso();
-  if(env.ENV_NAME==='production'&&(context.jobId||context.draftAttemptId)&&!scope.userId&&!scope.projectId)throw invalidState('后台模型请求缺少已授权的用户或项目归属，未发起请求');
+  if(env.ENV_NAME==='production'&&!scope.userId)throw new AppError('PERMISSION_DENIED','模型请求缺少已授权的调用者，未发起请求',403,false,{resourceQuota:true,automaticRetry:false});
   const counters = [['platform', 'global'], ...(scope.userId ? [['user', scope.userId]] : []), ...(scope.projectId ? [['project', scope.projectId]] : [])];
   const results = await env.DB.batch([
     ...counters.map(([kind, scopeId]) => env.DB.prepare('INSERT OR IGNORE INTO ai_resource_daily(quota_day,scope,scope_id,calls) VALUES(?1,?2,?3,0)').bind(day,kind,scopeId)),
     env.DB.prepare(`INSERT OR IGNORE INTO ai_resource_dispatches(id,dispatch_key,quota_day,user_id,project_id,operation,target_id,model,status,lease_until,created_at)
       SELECT ?1,?2,?3,?4,?5,?6,?11,?12,'claimed',?7,?8 FROM resource_policy p WHERE p.id=1
       AND json_extract(p.policy_json,'$.aiEnabled')=1
+      AND (?5 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?5 AND user_id=?4))
       AND (SELECT calls FROM ai_resource_daily WHERE quota_day=?3 AND scope='platform' AND scope_id='global')<json_extract(p.policy_json,'$.platformDailyCalls')
       AND (?4 IS NULL OR (SELECT calls FROM ai_resource_daily WHERE quota_day=?3 AND scope='user' AND scope_id=?4)<json_extract(p.policy_json,'$.userDailyCalls'))
       AND (?5 IS NULL OR (SELECT calls FROM ai_resource_daily WHERE quota_day=?3 AND scope='project' AND scope_id=?5)<json_extract(p.policy_json,'$.projectDailyCalls'))
@@ -51,6 +55,7 @@ export async function claimAiResource(env: QuotaEnv, context: AiResourceContext,
   ]);
   if (results.at(-1)?.meta.changes) return { id };
   if (await env.DB.prepare('SELECT 1 FROM ai_resource_dispatches WHERE dispatch_key=?1').bind(key).first()) throw invalidState('模型请求已登记，不能重复发出；请先核对原请求结果');
+  if(scope.projectId&&!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(scope.projectId,scope.userId??null).first())throw new AppError('PERMISSION_DENIED','调用者已不是当前项目成员，未发起模型请求',403,false,{resourceQuota:true,automaticRetry:false});
   const policy = await loadResourcePolicy(env);
   if (!policy.aiEnabled) throw new AppError('AI_UNAVAILABLE','平台已暂停 AI 请求，请等待管理员恢复',503,false,{resourceQuota:true,automaticRetry:false});
   if(env.ENV_NAME==='production'){
@@ -79,10 +84,10 @@ export async function assertAiResourceEnabled(env: Pick<Env,'DB'>) {
 export async function releaseAiResourceWithEvidence(env:Pick<Env,'DB'>,id:string,actorId:string,reason:string){
   const auditId=newId(),now=nowIso();
   const results=await env.DB.batch([
-    env.DB.prepare("UPDATE ai_resource_dispatches SET status='completed',completed_at=?2 WHERE id=?1 AND status IN('claimed','uncertain')").bind(id,now),
+    env.DB.prepare("UPDATE ai_resource_dispatches SET status='completed',completed_at=?2 WHERE id=?1 AND status IN('claimed','uncertain') AND EXISTS(SELECT 1 FROM auth_accounts WHERE user_id=?3 AND account_role='super_admin' AND password_hash IS NOT NULL)").bind(id,now,actorId),
     env.DB.prepare("INSERT INTO ai_resource_release_audit(id,dispatch_id,actor_id,reason,created_at) SELECT ?1,?2,?3,?4,?5 WHERE changes()=1").bind(auditId,id,actorId,reason,now),
   ]);
-  if(!results[0]?.meta.changes)throw invalidState('此并发名额已释放或请求不存在');
+  if(!results[0]?.meta.changes){if(!await env.DB.prepare("SELECT 1 FROM auth_accounts WHERE user_id=?1 AND account_role='super_admin' AND password_hash IS NOT NULL").bind(actorId).first())throw new AppError('PERMISSION_DENIED','超级管理员权限已撤销，未释放并发名额',403,false);throw invalidState('此并发名额已释放或请求不存在');}
   return {id,status:'completed' as const};
 }
 /** Wrap only a real paid request; cached provider envelopes must bypass this function. */

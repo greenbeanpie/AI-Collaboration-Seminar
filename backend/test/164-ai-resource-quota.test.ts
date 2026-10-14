@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
-import { aiQuotaDay, claimAiResource, finishAiResource, ResourceConcurrencyWait, withAiResourceDispatch } from '../src/services/ai-resource-quota';
+import { aiQuotaDay, claimAiResource, finishAiResource, OPERATOR_TOKEN_AI_ACTOR, releaseAiResourceWithEvidence, ResourceConcurrencyWait, withAiResourceDispatch } from '../src/services/ai-resource-quota';
 import { loadResourcePolicy, saveResourcePolicy } from '../src/services/resource-policy';
 import { readResourceUsage, registerResourceUsageRoutes } from '../src/api/resource-usage';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -16,6 +16,7 @@ import { backgroundModelCall } from '../src/services/background-model-call';
 import { gatewayChat } from '../src/ai/gateway';
 import { seal } from '../src/ai/secrets';
 import { AppError } from '../src/core/errors';
+import { registerAdminRoutes } from '../src/api/admin';
 
 async function configure(patch:Partial<Awaited<ReturnType<typeof loadResourcePolicy>>>){const current=await loadResourcePolicy(env),{version,...policy}=current;return saveResourcePolicy(env,version,{...policy,...patch},null);}
 async function fixture(){const user=await seedUser(),projectId=await seedProject(user.userId),jobId=newId(),now=nowIso();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,created_at,updated_at) VALUES(?1,?2,'agent_run','running',?3,?4,?4)").bind(jobId,projectId,JSON.stringify({requestedBy:user.userId}),now).run();return {userId:user.userId,projectId,jobId};}
@@ -31,7 +32,7 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
     await expect(claimAiResource(env,context)).rejects.toMatchObject({code:'QUOTA_EXCEEDED',retryable:false,details:{automaticRetry:false}});
   });
   it('enforces project and platform limits across distinct actors',async()=>{
-    const first=await fixture(),second=await fixture();await configure({projectDailyCalls:1,platformDailyCalls:2});const claim=await claimAiResource(env,first);await finishAiResource(env,claim,'completed');
+    const first=await fixture(),second=await fixture();await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),first.projectId,second.userId,nowIso()).run();await configure({projectDailyCalls:1,platformDailyCalls:2});const claim=await claimAiResource(env,first);await finishAiResource(env,claim,'completed');
     await expect(claimAiResource(env,{userId:second.userId,projectId:first.projectId})).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
     const other=await claimAiResource(env,second);await finishAiResource(env,other,'completed');await expect(claimAiResource(env,{userId:newId()})).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});expect(await count()).toBe(2);
   });
@@ -65,11 +66,11 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
     await expect(gatewayChat({accountId:'',apiToken:'',gatewayId:'',authSecret:env.AUTH_SECRET,envName:'local',diagnostics:env},{jobId:context.jobId,config:{provider:'openai-compatible',model:'m',apiUrl:'https://models.example/v1/chat/completions',apiKeyEncrypted:key,timeoutMs:1000,maxInputChars:4000,supportsJson:true,supportsVision:false},messages:[{role:'user',content:'fixture'}],beforeFetch:async()=>{await configure({aiEnabled:false});}},provider)).rejects.toMatchObject({code:'AI_UNAVAILABLE',details:{resourceQuota:true}});expect(provider).not.toHaveBeenCalled();expect(await count()).toBe(0);
   });
   it('shows only personal and authorized project usage and both stored/reserved bytes',async()=>{
-    const first=await fixture(),other=await fixture();const claim=await claimAiResource(env,first);await finishAiResource(env,claim,'completed');await env.DB.batch([env.DB.prepare("INSERT INTO storage_objects VALUES('visible',100,?1,?2,'upload',NULL,?3)").bind(first.projectId,first.userId,nowIso()),env.DB.prepare("INSERT INTO storage_reservations VALUES('pending','pending',50,?1,?2,'upload','put','reserved',NULL,?3,?3)").bind(first.projectId,first.userId,new Date(Date.now()+60000).toISOString())]);
+    const first=await fixture(),other=await fixture();const claim=await claimAiResource(env,first);await finishAiResource(env,claim,'completed');await env.DB.batch([env.DB.prepare("INSERT INTO storage_objects(object_key,size_bytes,project_id,user_id,category,etag,updated_at) VALUES('visible',100,?1,?2,'upload',NULL,?3)").bind(first.projectId,first.userId,nowIso()),env.DB.prepare("INSERT INTO storage_reservations(id,object_key,bytes,project_id,user_id,category,kind,status,upload_id,expires_at,updated_at) VALUES('pending','pending',50,?1,?2,'upload','put','reserved',NULL,?3,?3)").bind(first.projectId,first.userId,new Date(Date.now()+60000).toISOString())]);
     const usage=await readResourceUsage(env,first.userId,first.projectId);expect(usage.ai.user.used).toBe(1);expect(usage.ai.project?.used).toBe(1);expect(usage.storage.user).toMatchObject({used:100,reserved:50,remaining:249999850});await expect(readResourceUsage(env,first.userId,other.projectId)).rejects.toMatchObject({code:'PERMISSION_DENIED'});expect(JSON.stringify(usage)).not.toContain(other.userId);
   });
   it('attributes a member-initiated job to created_by rather than the project owner',async()=>{
-    const owner=await fixture(),member=await seedUser();await env.DB.prepare("UPDATE jobs SET input_json='{}',created_by=?2 WHERE id=?1").bind(owner.jobId,member.userId).run();
+    const owner=await fixture(),member=await seedUser();await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(newId(),owner.projectId,member.userId,nowIso()).run();await env.DB.prepare("UPDATE jobs SET input_json='{}',created_by=?2 WHERE id=?1").bind(owner.jobId,member.userId).run();
     const claim=await claimAiResource(env,{jobId:owner.jobId});await finishAiResource(env,claim,'completed');expect((await readResourceUsage(env,member.userId)).ai.user.used).toBe(1);expect((await readResourceUsage(env,owner.userId)).ai.user.used).toBe(0);
   });
   it('charges only real media generation, excluding metadata and cached provider envelopes',async()=>{
@@ -83,7 +84,7 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
   });
   it('applies the platform kill switch to real capability probes',async()=>{
     await configureGoFixture();await configure({aiEnabled:false});const user=await seedUser(),provider=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>{throw new Error('unexpected outbound call');});
-    try{const report=await probeModel(env,'textEconomy',undefined,newId(),user.userId);expect(report.passed).toBe(false);expect(report.checks[0]!.detail).toContain('平台已暂停');expect(provider).not.toHaveBeenCalled();expect(await count()).toBe(0);}finally{provider.mockRestore();}
+    try{await expect(probeModel(env,'textEconomy',undefined,newId(),user.userId)).rejects.toMatchObject({code:'AI_UNAVAILABLE',details:{resourceQuota:true}});expect(provider).not.toHaveBeenCalled();expect(await count()).toBe(0);}finally{provider.mockRestore();}
   });
   it('refunds the media execution window when a transport quota guard stops admission',async()=>{
     const context=await fixture();await configure({userDailyCalls:1});const first=await claimAiResource(env,context);await finishAiResource(env,first,'completed');const request=vi.fn(),executionEnv={...env,AI_EXECUTION_CONTEXT:{modelCalls:0}},mimo=new MimoMediaClient({provider:'xiaomi-mimo',model:MIMO_MEDIA_MODEL,apiUrl:MIMO_MEDIA_ENDPOINT,timeoutMs:1000,maxInputChars:4000,supportsJson:true,supportsVision:true},'key',request,env,context.jobId);
@@ -91,6 +92,27 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
   });
   it('does not let cloud callers omit the complete resource environment',async()=>{
     const provider=vi.fn();await expect(gatewayChat({accountId:'',apiToken:'',gatewayId:'',envName:'production'},{config:{provider:'openai-compatible',model:'m',apiUrl:'https://models.example/v1/chat/completions',timeoutMs:1000,maxInputChars:4000,supportsJson:true,supportsVision:false},messages:[{role:'user',content:'fixture'}]},provider)).rejects.toMatchObject({details:{resourceQuota:true}});expect(provider).not.toHaveBeenCalled();expect(await count()).toBe(0);
+  });
+  it('rejects production requests without an actor even when storage is ready',async()=>{
+    await env.DB.prepare('UPDATE storage_inventory_state SET ready=1,external_checked_at=?1 WHERE id=1').bind(nowIso()).run();const request=vi.fn();await expect(withAiResourceDispatch({...env,ENV_NAME:'production'}, {},request)).rejects.toMatchObject({code:'PERMISSION_DENIED',details:{automaticRetry:false}});expect(request).not.toHaveBeenCalled();expect(await count()).toBe(0);
+  });
+  it('checks membership inside admission after an earlier authorization becomes stale',async()=>{
+    const context=await fixture(),request=vi.fn(),revoking={...env,DB:{prepare:env.DB.prepare.bind(env.DB),batch:async(statements:D1PreparedStatement[])=>{await env.DB.prepare('DELETE FROM project_members WHERE project_id=?1 AND user_id=?2').bind(context.projectId,context.userId).run();return env.DB.batch(statements);}} as unknown as typeof env.DB};
+    await expect(withAiResourceDispatch(revoking,context,request)).rejects.toMatchObject({code:'PERMISSION_DENIED',retryable:false,details:{automaticRetry:false}});expect(request).not.toHaveBeenCalled();expect(await count()).toBe(0);
+    const whisper=vi.fn();await expect(backgroundModelCall(env,context.jobId,whisper)).rejects.toMatchObject({code:'PERMISSION_DENIED'});expect(whisper).not.toHaveBeenCalled();expect(await env.DB.prepare('SELECT 1 FROM ai_executions WHERE target_id=?1').bind(context.jobId).first()).toBeNull();
+    const provider=vi.fn(),wait=vi.fn(),key=await seal('key',env.AUTH_SECRET);await expect(gatewayChat({accountId:'',apiToken:'',gatewayId:'',authSecret:env.AUTH_SECRET,envName:'local',diagnostics:env},{jobId:context.jobId,config:{provider:'openai-compatible',model:'m',apiUrl:'https://models.example/v1/chat/completions',apiKeyEncrypted:key,timeoutMs:1000,maxInputChars:4000,supportsJson:true,supportsVision:false},messages:[{role:'user',content:'fixture'}]},provider,wait)).rejects.toMatchObject({code:'PERMISSION_DENIED'});expect(provider).not.toHaveBeenCalled();expect(wait).not.toHaveBeenCalled();
+  });
+  it('meters all Bearer capability probes under one 300-call actor and preserves prior diagnostic success on rejection',async()=>{
+    await configureGoFixture();const {loadAiConfig}=await import('../src/ai/config'),loaded=(await loadAiConfig(env.DB))!,original='{"passed":true,"marker":"prior-success"}',day=aiQuotaDay();
+    await env.DB.batch([env.DB.prepare('UPDATE storage_inventory_state SET ready=1,external_checked_at=?1 WHERE id=1').bind(nowIso()),env.DB.prepare("INSERT INTO ai_resource_daily VALUES(?1,'platform','global',299)").bind(day),env.DB.prepare("INSERT INTO ai_resource_daily VALUES(?1,'user',?2,299)").bind(day,OPERATOR_TOKEN_AI_ACTOR),env.DB.prepare('INSERT OR REPLACE INTO ai_probes(config_version_id,purpose,passed,report_json,tested_at) VALUES(?1,?2,1,?3,?4)').bind(loaded.id,'textEconomy',original,nowIso())]);
+    const app=new OpenAPIHono<AppEnv>();app.use('*',async(c,next)=>{c.set('requestId',newId());await next();});app.onError(error=>new Response(error.message,{status:error instanceof AppError?error.status:500}));registerAdminRoutes(app);
+    const provider=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>Response.json({choices:[{message:{content:'你好，测试内容。'}}],usage:{prompt_tokens:1,completion_tokens:1}})),before=(await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls').first<{n:number}>())!.n;
+    try{for(let index=0;index<2;index++){const response=await app.request('/api/v1/admin/ai-config/probe',{method:'POST',headers:{authorization:'Bearer '+env.ADMIN_TOKEN,'content-type':'application/json'},body:'{"purpose":"textEconomy"}'},{...env,ENV_NAME:'production'});expect(response.status).toBe(429);}expect(provider).toHaveBeenCalledOnce();expect(await env.DB.prepare("SELECT calls FROM ai_resource_daily WHERE quota_day=?1 AND scope='user' AND scope_id=?2").bind(day,OPERATOR_TOKEN_AI_ACTOR).first()).toEqual({calls:300});expect((await env.DB.prepare('SELECT COUNT(*) n FROM ai_calls').first<{n:number}>())!.n-before).toBe(1);expect(await env.DB.prepare('SELECT passed,report_json FROM ai_probes WHERE config_version_id=?1 AND purpose=?2').bind(loaded.id,'textEconomy').first()).toEqual({passed:1,report_json:original});}finally{provider.mockRestore();}
+  });
+  it('blocks a held-resource release if super-admin authority is revoked before its transaction',async()=>{
+    const user=await seedUser(),context=await fixture(),claim=await claimAiResource(env,context);await finishAiResource(env,claim,'uncertain');await env.DB.prepare("UPDATE auth_accounts SET account_role='super_admin' WHERE user_id=?1").bind(user.userId).run();
+    const revoking={DB:{prepare:env.DB.prepare.bind(env.DB),batch:async(statements:D1PreparedStatement[])=>{await env.DB.prepare("UPDATE auth_accounts SET account_role='user' WHERE user_id=?1").bind(user.userId).run();return env.DB.batch(statements);}} as unknown as typeof env.DB};
+    await expect(releaseAiResourceWithEvidence(revoking,claim.id,user.userId,'供应商已确认请求处理结束')).rejects.toMatchObject({code:'PERMISSION_DENIED'});expect(await env.DB.prepare('SELECT status FROM ai_resource_dispatches WHERE id=?1').bind(claim.id).first()).toEqual({status:'uncertain'});expect(await env.DB.prepare('SELECT 1 FROM ai_resource_release_audit WHERE dispatch_id=?1').bind(claim.id).first()).toBeNull();expect(await count()).toBe(1);
   });
   it('does not spend automatic retry attempts on a disabled or quota-blocked draft',async()=>{
     const prepare=vi.fn(()=>{throw new Error('no scheduling DB access expected');}),blocked=new AppError('AI_UNAVAILABLE','platform disabled',503,false,{resourceQuota:true,automaticRetry:false});await scheduleAutomaticDraftRetry({...env,DB:{prepare} as unknown as typeof env.DB},newId(),newId(),blocked);expect(prepare).not.toHaveBeenCalled();
