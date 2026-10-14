@@ -8,13 +8,13 @@ import {rawStorage,storageOwner,resolveStorageWithEvidence} from '../services/ma
 import {loadResourcePolicy,saveResourcePolicy} from '../services/resource-policy';
 import {nowIso} from '../core/db';
 const base='/api/v1/admin/storage-inventory';
-const statusSchema=z.object({ready:z.boolean(),scanning:z.boolean(),hasMore:z.boolean(),externalCheckedAt:z.string().nullable(),objectCount:z.number(),accountedBytes:z.number(),reservedBytes:z.number()});
+const statusSchema=z.object({ready:z.boolean(),scanning:z.boolean(),hasMore:z.boolean(),checkedAt:z.string().nullable(),objectCount:z.number(),accountedBytes:z.number(),reservedBytes:z.number()});
 const responses={200:{description:'仅存储元数据与盘点进度，不返回对象内容或对象名称',content:{'application/json':{schema:apiEnvelope(statusSchema,'StorageInventoryResponse')}}}};
 async function status(env:AppEnv['Bindings']){
  const s=await env.DB.prepare('SELECT ready,scanning,cursor,external_checked_at FROM storage_inventory_state WHERE id=1').first<{ready:number;scanning:number;cursor:string|null;external_checked_at:string|null}>();
  const counts=await env.DB.prepare('SELECT COUNT(*) objectCount,COALESCE(SUM(size_bytes),0) accountedBytes FROM storage_objects').first<{objectCount:number;accountedBytes:number}>();
  const held=await env.DB.prepare('SELECT COALESCE(SUM(bytes),0) bytes FROM storage_reservations').first<{bytes:number}>();
- return {ready:!!s?.ready,scanning:!!s?.scanning,hasMore:!!s?.cursor,externalCheckedAt:s?.external_checked_at??null,objectCount:counts?.objectCount??0,accountedBytes:counts?.accountedBytes??0,reservedBytes:held?.bytes??0};
+ return {ready:!!s?.ready,scanning:!!s?.scanning,hasMore:!!s?.cursor,checkedAt:s?.external_checked_at??null,objectCount:counts?.objectCount??0,accountedBytes:counts?.accountedBytes??0,reservedBytes:held?.bytes??0};
 }
 export function registerStorageInventoryRoutes(app:OpenAPIHono<AppEnv>){
  app.use(base,requireAdmin,async(c,next)=>{if(c.get('user')&&c.get('user')!.role!=='super_admin')throw permissionDenied('需要超级管理员权限');c.header('Cache-Control','no-store');await next();});
@@ -24,11 +24,11 @@ export function registerStorageInventoryRoutes(app:OpenAPIHono<AppEnv>){
   const actor=c.get('user');if(actor?.role!=='super_admin')throw permissionDenied('必须由超级管理员账户核对');
   return c.json(apiData(c,await resolveStorageWithEvidence(c.env,c.req.valid('param').id,actor.id,c.req.valid('json').reason)),200);
  });
- app.openapi(createRoute({method:'post',path:base+'/start',tags:['admin'],request:{body:{required:true,content:{'application/json':{schema:z.object({expectedVersion:z.number().int().positive(),externalStorageBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),verificationNote:z.string().trim().min(10).max(1000)}).strict()}}}},responses}),async c=>{
+ app.openapi(createRoute({method:'post',path:base+'/start',tags:['admin'],request:{body:{required:true,content:{'application/json':{schema:z.object({expectedVersion:z.number().int().positive(),verificationNote:z.string().trim().min(10).max(1000)}).strict()}}}},responses}),async c=>{
   const b=c.req.valid('json'),p=await loadResourcePolicy(c.env),{version:_,...fields}=p;
   if(await c.env.DB.prepare("SELECT 1 FROM storage_reservations WHERE kind IN('put','delete')").first())throw invalidState('仍有在途或结果未知的对象写入，先核对再开始盘点');
   await c.env.DB.prepare('UPDATE storage_inventory_state SET ready=0,scanning=0 WHERE id=1').run();
-  await saveResourcePolicy(c.env,b.expectedVersion,{...fields,externalStorageBytes:b.externalStorageBytes},c.get('user')?.id??null);
+  await saveResourcePolicy(c.env,b.expectedVersion,fields,c.get('user')?.id??null);
   await c.env.DB.prepare('UPDATE storage_inventory_state SET ready=0,scanning=1,cursor=NULL,external_checked_at=?1,verification_note=?2,updated_at=?1 WHERE id=1').bind(nowIso(),b.verificationNote).run();
   return c.json(apiData(c,await status(c.env)),200);
  });

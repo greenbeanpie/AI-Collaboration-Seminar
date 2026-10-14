@@ -118,11 +118,11 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
   it('does not spend automatic retry attempts on a disabled or quota-blocked draft',async()=>{
     const prepare=vi.fn(()=>{throw new Error('no scheduling DB access expected');}),blocked=new AppError('AI_UNAVAILABLE','platform disabled',503,false,{resourceQuota:true,automaticRetry:false});await scheduleAutomaticDraftRetry({...env,DB:{prepare} as unknown as typeof env.DB},newId(),newId(),blocked);expect(prepare).not.toHaveBeenCalled();
   });
-  it('blocks paid production dispatch before inventory, after stale external checks and at full storage',async()=>{
+  it('blocks paid production dispatch before inventory and at full current-bucket storage',async()=>{
     const context=await fixture(),production={...env,ENV_NAME:'production' as const},provider=vi.fn(async()=>({ok:true}));
     await expect(withAiResourceDispatch(production,context,provider)).rejects.toMatchObject({details:{storageInventoryRequired:true}});
-    await env.DB.prepare("UPDATE storage_inventory_state SET ready=1,external_checked_at='2000-01-01T00:00:00.000Z' WHERE id=1").run();await expect(withAiResourceDispatch(production,context,provider)).rejects.toMatchObject({details:{storageInventoryRequired:true}});
-    await env.DB.prepare('UPDATE storage_inventory_state SET external_checked_at=?1 WHERE id=1').bind(nowIso()).run();await env.DB.prepare("INSERT INTO storage_counters VALUES('platform','all',10000000000)").run();await expect(withAiResourceDispatch(production,context,provider)).rejects.toMatchObject({details:{storageQuota:true}});
+    await env.DB.prepare("UPDATE storage_inventory_state SET ready=1,external_checked_at='2000-01-01T00:00:00.000Z' WHERE id=1").run();
+    await env.DB.prepare('UPDATE storage_inventory_state SET external_checked_at=?1 WHERE id=1').bind(nowIso()).run();await env.DB.prepare("INSERT INTO storage_counters VALUES('platform','all',9000000000)").run();await expect(withAiResourceDispatch(production,context,provider)).rejects.toMatchObject({details:{storageQuota:true}});
     expect(provider).not.toHaveBeenCalled();expect(await count()).toBe(0);await env.DB.prepare("UPDATE storage_counters SET bytes=0 WHERE scope='platform' AND scope_id='all'").run();await expect(withAiResourceDispatch(production,context,provider)).resolves.toEqual({ok:true});expect(await count()).toBe(1);
   });
   it('holds concurrency when a successful HTTP header is followed by a broken response body',async()=>{

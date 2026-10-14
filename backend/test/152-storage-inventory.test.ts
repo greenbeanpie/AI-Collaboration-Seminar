@@ -12,7 +12,7 @@ describe('storage metadata inventory',()=>{
   const u=await seedUser(),project=await seedProject(u.userId),file=newId(),key=`${project}/${file}.txt`;
   await env.DB.prepare("INSERT INTO files(id,project_id,uploader_user_id,r2_key,ext,status,created_at) VALUES(?1,?2,?3,?4,'.txt','available',?5)").bind(file,project,u.userId,key,new Date().toISOString()).run();
   await env.FILES.put(key,'existing original');
-  const p=await loadResourcePolicy(env);const start=await request('/start','POST',{expectedVersion:p.version,externalStorageBytes:12,verificationNote:'local fixture: all other buckets inspected'});expect(start.status).toBe(200);
+  const p=await loadResourcePolicy(env);const start=await request('/start','POST',{expectedVersion:p.version,verificationNote:'local fixture: current application bucket inspected'});expect(start.status).toBe(200);
   let result:Response;do{result=await request('/continue','POST');expect(result.status).toBe(200);}while((await result.clone().json() as {data:{scanning:boolean}}).data.scanning);
   expect((await result.json() as {data:{ready:boolean;accountedBytes:number}}).data.ready).toBe(true);
   expect(await (await env.FILES.get(key))!.text()).toBe('existing original');
@@ -29,7 +29,7 @@ it('a delayed inventory ownership snapshot cannot remove the charge of a newly c
  await env.DB.prepare('INSERT INTO project_creation_drafts(id,owner_id,payload_json,project_id,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)').bind(draft,u.userId,'{}',project,time).run();
  await env.FILES.put(key,'abc');
  await env.DB.prepare("INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,updated_at) VALUES(?1,3,?2,NULL,'upload',?3)").bind(key,u.userId,time).run();
- const policy=await loadResourcePolicy(env);expect((await request('/start','POST',{expectedVersion:policy.version,externalStorageBytes:0,verificationNote:'all fixture metadata inspected'})).status).toBe(200);
+ const policy=await loadResourcePolicy(env);expect((await request('/start','POST',{expectedVersion:policy.version,verificationNote:'all fixture metadata inspected'})).status).toBe(200);
  let promoted=false;
  const db=new Proxy(env.DB,{get(target,property){if(property==='prepare')return (sql:string)=>{
   const stmt=target.prepare(sql);if(!sql.startsWith('SELECT owner_id user_id'))return stmt;

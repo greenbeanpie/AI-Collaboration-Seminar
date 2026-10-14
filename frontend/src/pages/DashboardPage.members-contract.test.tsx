@@ -11,7 +11,7 @@ it('loads actionable totals on a cold cache with the complete graph membership r
     const path = new URL(String(input), 'http://localhost').pathname;
     let data: unknown;
     if (path === '/api/v1/projects') data = { items: [{ id: 'p', name: '真实成员格式', status: 'active', myRole: 'owner', deadlineDate: null, deadlinePrecision: 'unknown' }], nextCursor: null };
-    else if (path === '/api/v1/resource-usage') data = { ai: { enabled: true, day: '2026-10-14', user: { used: 0, limit: 50, remaining: 50 }, project: null, platformDailyLimit: 500, globalConcurrencyLimit: 2 }, storage: { inventoryReady: true, externalChecked: true, user: { used: 0, limit: 1000, reserved: 0 }, project: null } };
+    else if (path === '/api/v1/resource-usage') data = { ai: { enabled: true, day: '2026-10-14', user: { used: 0, limit: 50, remaining: 50 }, project: null, platformDailyLimit: 500, globalConcurrencyLimit: 2 }, storage: { inventoryReady: true, user: { used: 0, limit: 1000, reserved: 0 }, project: null } };
     else if (path.endsWith('/members')) data = { items: [{ userId: 'member' }] };
     else if (path.endsWith('/tasks/graph')) data = { memberIds: ['member'], items: [{ taskId: 't', title: '已分配待推进', status: 'doing', lifecycleState: 'in_progress', assigneeId: 'member', dependsOnTaskIds: [], unfinishedDependencyIds: [], revision: 1, dueDate: null, duePrecision: 'unknown' }], nextCursor: null };
     else throw new Error(`Unexpected request ${path}`);

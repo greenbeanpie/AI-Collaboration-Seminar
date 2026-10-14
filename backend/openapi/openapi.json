@@ -11918,11 +11918,6 @@
                 "minimum": 0,
                 "maximum": 7200000000
               },
-              "externalStorageBytes": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
               "version": {
                 "type": "integer",
                 "exclusiveMinimum": 0
@@ -11938,7 +11933,6 @@
               "projectStorageBytes",
               "platformStorageBytes",
               "uploadPoolBytes",
-              "externalStorageBytes",
               "version"
             ],
             "additionalProperties": false
@@ -11968,7 +11962,7 @@
               "hasMore": {
                 "type": "boolean"
               },
-              "externalCheckedAt": {
+              "checkedAt": {
                 "type": [
                   "string",
                   "null"
@@ -11988,7 +11982,7 @@
               "ready",
               "scanning",
               "hasMore",
-              "externalCheckedAt",
+              "checkedAt",
               "objectCount",
               "accountedBytes",
               "reservedBytes"
@@ -12314,9 +12308,6 @@
                   "inventoryReady": {
                     "type": "boolean"
                   },
-                  "externalChecked": {
-                    "type": "boolean"
-                  },
                   "user": {
                     "type": "object",
                     "properties": {
@@ -12369,7 +12360,6 @@
                 },
                 "required": [
                   "inventoryReady",
-                  "externalChecked",
                   "user",
                   "project"
                 ]
@@ -33587,11 +33577,6 @@
                     "minimum": 0,
                     "maximum": 7200000000
                   },
-                  "externalStorageBytes": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
                   "expectedVersion": {
                     "type": "integer",
                     "exclusiveMinimum": 0
@@ -33607,7 +33592,6 @@
                   "projectStorageBytes",
                   "platformStorageBytes",
                   "uploadPoolBytes",
-                  "externalStorageBytes",
                   "expectedVersion"
                 ],
                 "additionalProperties": false
@@ -33742,11 +33726,6 @@
                     "type": "integer",
                     "exclusiveMinimum": 0
                   },
-                  "externalStorageBytes": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
                   "verificationNote": {
                     "type": "string",
                     "minLength": 10,
@@ -33755,7 +33734,6 @@
                 },
                 "required": [
                   "expectedVersion",
-                  "externalStorageBytes",
                   "verificationNote"
                 ],
                 "additionalProperties": false

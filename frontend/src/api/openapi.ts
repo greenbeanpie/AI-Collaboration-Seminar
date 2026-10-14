@@ -4785,7 +4785,6 @@ export interface paths {
                         projectStorageBytes: number;
                         platformStorageBytes: number;
                         uploadPoolBytes: number;
-                        externalStorageBytes: number;
                         expectedVersion: number;
                     };
                 };
@@ -4927,7 +4926,6 @@ export interface paths {
                 content: {
                     "application/json": {
                         expectedVersion: number;
-                        externalStorageBytes: number;
                         verificationNote: string;
                     };
                 };
@@ -16152,7 +16150,6 @@ export interface components {
                 projectStorageBytes: number;
                 platformStorageBytes: number;
                 uploadPoolBytes: number;
-                externalStorageBytes: number;
                 version: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
@@ -16163,7 +16160,7 @@ export interface components {
                 ready: boolean;
                 scanning: boolean;
                 hasMore: boolean;
-                externalCheckedAt: string | null;
+                checkedAt: string | null;
                 objectCount: number;
                 accountedBytes: number;
                 reservedBytes: number;
@@ -16258,7 +16255,6 @@ export interface components {
                 };
                 storage: {
                     inventoryReady: boolean;
-                    externalChecked: boolean;
                     user: {
                         limit: number;
                         used: number;

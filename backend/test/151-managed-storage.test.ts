@@ -8,14 +8,14 @@ afterEach(()=>vi.restoreAllMocks());
 beforeEach(async()=>{
  await env.DB.batch([env.DB.prepare("DELETE FROM maintenance_cursors WHERE name='storage_reservations'"),env.DB.prepare('DELETE FROM storage_reservations'),env.DB.prepare('DELETE FROM storage_objects'),env.DB.prepare('UPDATE storage_inventory_state SET ready=0,external_checked_at=NULL WHERE id=1')]);
  const {version,...p}=await loadResourcePolicy(env);
- await saveResourcePolicy(env,version,{...p,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:9000000000,uploadPoolBytes:7200000000,externalStorageBytes:0},null);
+ await saveResourcePolicy(env,version,{...p,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:9000000000,uploadPoolBytes:7200000000},null);
 });
 async function fixture(){
  const u=await seedUser(),projectId=await seedProject(u.userId);
  const base=withManagedStorage(env,{userId:u.userId,projectId,category:'upload'});
  return {base,userId:u.userId,projectId,key:`${projectId}/${newId()}.txt`};
 }
-async function limits(){const p=await loadResourcePolicy(env);await saveResourcePolicy(env,p.version,{...(({version:_,...v})=>v)(p),userStorageBytes:25,projectStorageBytes:60,platformStorageBytes:100,uploadPoolBytes:80,externalStorageBytes:0},null);}
+async function limits(){const p=await loadResourcePolicy(env);await saveResourcePolicy(env,p.version,{...(({version:_,...v})=>v)(p),userStorageBytes:25,projectStorageBytes:60,platformStorageBytes:100,uploadPoolBytes:80},null);}
 const used=async()=>Number((await env.DB.prepare("SELECT bytes FROM storage_counters WHERE scope='platform' AND scope_id='all'").first<{bytes:number}>())?.bytes??0);
 describe('physical storage admission and accounting',()=>{
  it('enforces aggregate user space, retains originals, and releases only after delete',async()=>{
@@ -49,11 +49,11 @@ describe('physical storage admission and accounting',()=>{
   expect(await env.DB.prepare('SELECT id FROM storage_reservations WHERE object_key=?1').bind(f.key).first()).toBeNull();
   await f.base.FILES.delete(f.key);expect(await used()).toBe(0);
  });
- it('fails closed when inventory or external usage is unverified',async()=>{
+ it('fails closed before inventory and allows an old census after initialization',async()=>{
   const f=await fixture(),production=withManagedStorage({...env,ENV_NAME:'production'});
   await expect(production.FILES.put(f.key,'x')).rejects.toMatchObject({details:{storageInventoryRequired:true}});
   await env.DB.prepare("UPDATE storage_inventory_state SET ready=1,external_checked_at='2020-01-01T00:00:00Z' WHERE id=1").run();
-  await expect(production.FILES.put(f.key,'x')).rejects.toMatchObject({details:{storageInventoryRequired:true}});
+  await expect(production.FILES.put(f.key,'x')).resolves.toMatchObject({size:1});
  });
  it('retains ambiguous writes and settles only verified claim metadata',async()=>{
   const f=await fixture(),rawPut=env.FILES.put.bind(env.FILES);

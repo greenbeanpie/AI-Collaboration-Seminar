@@ -9,7 +9,7 @@ import { loadResourcePolicy } from '../services/resource-policy';
 
 const amount=z.object({limit:z.number(),used:z.number(),remaining:z.number()});
 const storageAmount=amount.extend({reserved:z.number()});
-const schema=z.object({ai:z.object({day:z.string(),timezone:z.literal('Asia/Shanghai'),enabled:z.boolean(),user:amount,project:amount.nullable(),platformDailyLimit:z.number(),globalConcurrencyLimit:z.number()}),storage:z.object({inventoryReady:z.boolean(),externalChecked:z.boolean(),user:storageAmount,project:storageAmount.nullable()})});
+const schema=z.object({ai:z.object({day:z.string(),timezone:z.literal('Asia/Shanghai'),enabled:z.boolean(),user:amount,project:amount.nullable(),platformDailyLimit:z.number(),globalConcurrencyLimit:z.number()}),storage:z.object({inventoryReady:z.boolean(),user:storageAmount,project:storageAmount.nullable()})});
 const remaining=(limit:number,used:number)=>({limit,used,remaining:Math.max(0,limit-used)});
 export async function readResourceUsage(env:Pick<Env,'DB'>,userId:string,projectId?:string){
   if(projectId&&!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(projectId,userId).first())throw permissionDenied('不是项目成员，不能读取此项目用量');
@@ -20,7 +20,7 @@ export async function readResourceUsage(env:Pick<Env,'DB'>,userId:string,project
     const used=row?.used??0,reserved=row?.reserved??0;return {...remaining(limit,used),reserved,remaining:Math.max(0,limit-used-reserved)};
   };
   const [userCalls,projectCalls,userStorage,projectStorage,inventory]=await Promise.all([count('user',userId),projectId?count('project',projectId):Promise.resolve(null),storage('user_id',userId,policy.userStorageBytes),projectId?storage('project_id',projectId,policy.projectStorageBytes):Promise.resolve(null),env.DB.prepare('SELECT ready,external_checked_at FROM storage_inventory_state WHERE id=1').first<{ready:number;external_checked_at:string|null}>()]);
-  return {ai:{day,timezone:'Asia/Shanghai' as const,enabled:policy.aiEnabled,user:remaining(policy.userDailyCalls,userCalls),project:projectCalls===null?null:remaining(policy.projectDailyCalls,projectCalls),platformDailyLimit:policy.platformDailyCalls,globalConcurrencyLimit:policy.globalConcurrency},storage:{inventoryReady:inventory?.ready===1,externalChecked:Boolean(inventory?.external_checked_at&&Date.parse(inventory.external_checked_at)>Date.now()-86_400_000),user:userStorage,project:projectStorage}};
+  return {ai:{day,timezone:'Asia/Shanghai' as const,enabled:policy.aiEnabled,user:remaining(policy.userDailyCalls,userCalls),project:projectCalls===null?null:remaining(policy.projectDailyCalls,projectCalls),platformDailyLimit:policy.platformDailyCalls,globalConcurrencyLimit:policy.globalConcurrency},storage:{inventoryReady:inventory?.ready===1,user:userStorage,project:projectStorage}};
 }
 export function registerResourceUsageRoutes(app:OpenAPIHono<AppEnv>){
   app.use('/api/v1/resource-usage',requireUser);

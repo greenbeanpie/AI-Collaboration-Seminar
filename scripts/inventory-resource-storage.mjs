@@ -19,20 +19,7 @@ async function api(path,body,jurisdiction){
  const data=await r.json();assert(r.ok&&data.success,`Cloudflare metadata request failed (${r.status}; codes ${(data.errors||[]).map(e=>e.code).join(',')})`);return data;
 }
 await mkdir(output,{recursive:true});
-const buckets=[];
-for(const jurisdiction of ['default','eu','us']){
- let cursor,pages=0;const cursors=new Set();
- do{
-  assert(++pages<=10,'Complete bucket inventory exceeded bounded page limit');
-  const listed=await api('/r2/buckets?per_page=1000'+(cursor?'&cursor='+encodeURIComponent(cursor):''),undefined,jurisdiction);
-  const rows=Array.isArray(listed.result)?listed.result:listed.result.buckets;
-  assert(Array.isArray(rows),'Complete bucket inventory is required');
-  for(const b of rows)buckets.push({...b,jurisdiction});
-  cursor=listed.result_info?.cursor||undefined;
-  assert(!listed.result_info?.is_truncated||cursor,'Truncated bucket inventory requires a cursor');
-  if(cursor){assert(!cursors.has(cursor),'Repeated bucket cursor');cursors.add(cursor);}
- }while(cursor);
-}
+const buckets=[{name:bucket,jurisdiction:'default'}];
 const summaries=[],objects=[];
 for(const b of buckets){
  let cursor,bytes=0,count=0,pages=0;const cursors=new Set();
@@ -48,19 +35,9 @@ for(const b of buckets){
  }while(cursor);
  summaries.push({bucket:b.name,jurisdiction:b.jurisdiction,bytes,objects:count});
 }
-let incompleteBytes=0,incompleteObjects=0;
-for(const jurisdiction of ['default','eu','us']){
- const metrics=(await api('/r2/metrics',undefined,jurisdiction)).result;
- for(const tier of ['standard','infrequentAccess']){
- const uploaded=metrics[tier]?.uploaded;
- assert(uploaded&&['objects','payloadSize','metadataSize'].every(k=>Number.isSafeInteger(uploaded[k])&&uploaded[k]>=0),'Complete pending-upload metrics are required');
- incompleteBytes+=uploaded.payloadSize+uploaded.metadataSize;incompleteObjects+=uploaded.objects;
- }
-}
-assert(incompleteBytes===0&&incompleteObjects===0,'Uncompleted account uploads require explicit S3 reconciliation before activating inventory');
-const externalBytes=summaries.filter(b=>b.bucket!==bucket||b.jurisdiction!=='default').reduce((n,b)=>n+b.bytes,0);
-assert(Number.isSafeInteger(externalBytes),'External byte total must be exact');
 async function query(sql){const r=await api(`/d1/database/${database}/query`,{sql,params:[]});return r.result.flatMap(r=>r.results||[]);}
+const pending=await query("SELECT COUNT(*) count FROM file_upload_sessions WHERE status IN('uploading','completing','aborting') UNION ALL SELECT COUNT(*) FROM draft_document_uploads WHERE status IN('uploading','completing','aborting') UNION ALL SELECT COUNT(*) FROM storage_reservations");
+assert(pending.length===3&&pending.every(r=>r.count===0),'Current-bucket writes require reconciliation before activating inventory');
 const [files,drafts,sources,calls,jobs,bridges,investigations,tickets]=await Promise.all([
  query('SELECT id,r2_key,project_id,uploader_user_id user_id FROM files'),
  query("SELECT id,owner_id user_id,preview_attempt_id,CASE WHEN status='committed' THEN project_id ELSE NULL END project_id FROM project_creation_drafts"),
@@ -89,9 +66,7 @@ for(const o of objects){
  if(!r)for(const part of s){r=jm.get(part.split('.')[0]);if(r)break;}
  sql.push(`INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,etag,updated_at) VALUES(${quote(o.key)},${o.size},${quote(r?.user_id)},${quote(r?.project_id)},${quote(category)},${quote(o.etag)},${quote(now)}) ON CONFLICT(object_key) DO UPDATE SET user_id=COALESCE(storage_objects.user_id,excluded.user_id),project_id=COALESCE(storage_objects.project_id,excluded.project_id),category=excluded.category,size_bytes=excluded.size_bytes,etag=excluded.etag,updated_at=excluded.updated_at;`);
 }
-sql.push(`UPDATE resource_policy SET policy_json=json_set(policy_json,'$.externalStorageBytes',${externalBytes}),version=version+1,updated_at=${quote(now)} WHERE id=1;`);
-sql.push(`INSERT INTO resource_policy_audit(id,actor_id,version,policy_json,created_at) SELECT ${quote('inventory:'+now)},NULL,version,policy_json,${quote(now)} FROM resource_policy WHERE id=1;`);
-sql.push(`UPDATE storage_inventory_state SET ready=1,scanning=0,cursor=NULL,external_checked_at=${quote(now)},verification_note='Deployment census: all account buckets and incomplete uploads inspected',updated_at=${quote(now)} WHERE id=1;`);
+sql.push(`UPDATE storage_inventory_state SET ready=1,scanning=0,cursor=NULL,external_checked_at=${quote(now)},verification_note='Current application bucket census; unfinished writes reconciled',updated_at=${quote(now)} WHERE id=1;`);
 await writeFile(join(output,'storage-inventory.sql'),sql.join('\n')+'\n');
-await writeFile(join(output,'storage-inventory.private.json'),JSON.stringify({collectedAt:now,account,database,bucket,summaries,externalBytes,incompleteBytes,objects},null,2));
-console.log(JSON.stringify({collectedAt:now,buckets:summaries,externalBytes,incompleteBytes,preparedObjects:objects.length,sqlPrepared:true},null,2));
+await writeFile(join(output,'storage-inventory.private.json'),JSON.stringify({collectedAt:now,account,database,bucket,summaries,objects},null,2));
+console.log(JSON.stringify({collectedAt:now,buckets:summaries,preparedObjects:objects.length,sqlPrepared:true},null,2));

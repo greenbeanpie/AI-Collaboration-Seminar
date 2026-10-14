@@ -39,7 +39,7 @@ export async function storageOwner(env:Pick<Env,'DB'>,key:string):Promise<Storag
 async function ready(env:Env){
  if(env.ENV_NAME==='local')await env.DB.prepare('UPDATE storage_inventory_state SET ready=1 WHERE id=1 AND ready=0').run();
  const state=await env.DB.prepare('SELECT ready,external_checked_at FROM storage_inventory_state WHERE id=1').first<{ready:number;external_checked_at:string|null}>();
- if(!state?.ready||env.ENV_NAME!=='local'&&(!state.external_checked_at||Date.now()-Date.parse(state.external_checked_at)>DAY))throw new AppError('QUOTA_EXCEEDED','存储盘点未完成或其他桶用量需要重新核查，已暂停新增存储',503,false,{storageInventoryRequired:true});
+ if(!state?.ready)throw new AppError('QUOTA_EXCEEDED','当前应用存储盘点未完成，已暂停新增存储',503,false,{storageInventoryRequired:true});
 }
 const total=(scope:string,id:string)=>`COALESCE((SELECT bytes FROM storage_counters WHERE scope='${scope}' AND scope_id=${id}),0)`;
 export async function reserveStorage(env:Env,key:string,bytes:number,kind:'put'|'multipart'|'delete',owner?:StorageOwner):Promise<Reservation>{
@@ -49,12 +49,12 @@ export async function reserveStorage(env:Env,key:string,bytes:number,kind:'put'|
  const result=await env.DB.prepare(`INSERT INTO storage_reservations(id,object_key,bytes,user_id,project_id,category,kind,status,expires_at,updated_at)
  SELECT ?1,?2,?3,?4,?5,?6,?7,'reserved',?8,?9 FROM resource_policy WHERE id=1 AND version=?10
  AND NOT EXISTS(SELECT 1 FROM storage_reservations WHERE object_key=?2)
- AND (?7='delete' OR (EXISTS(SELECT 1 FROM storage_inventory_state WHERE ready=1 AND (?11='local' OR (external_checked_at IS NOT NULL AND external_checked_at>=?12))) AND
- ${total('platform',"'all'")}+?3<=MAX(0,json_extract(policy_json,'$.platformStorageBytes')-json_extract(policy_json,'$.externalStorageBytes'))
- AND (?6!='upload' OR ${total('platform',"'upload'")}+?3<=MIN(json_extract(policy_json,'$.uploadPoolBytes'),CAST(MAX(0,json_extract(policy_json,'$.platformStorageBytes')-json_extract(policy_json,'$.externalStorageBytes'))*0.8 AS INTEGER)))
+ AND (?7='delete' OR (EXISTS(SELECT 1 FROM storage_inventory_state WHERE ready=1) AND
+ ${total('platform',"'all'")}+?3<=json_extract(policy_json,'$.platformStorageBytes')
+ AND (?6!='upload' OR ${total('platform',"'upload'")}+?3<=MIN(json_extract(policy_json,'$.uploadPoolBytes'),CAST(json_extract(policy_json,'$.platformStorageBytes')*0.8 AS INTEGER)))
  AND (?4 IS NULL OR ${total('user','?4')}+?3<=json_extract(policy_json,'$.userStorageBytes'))
  AND (?5 IS NULL OR ${total('project','?5')}+?3<=json_extract(policy_json,'$.projectStorageBytes'))))
- ON CONFLICT(object_key) DO NOTHING`).bind(id,key,bytes,identity.userId??null,identity.projectId??null,identity.category,kind,new Date(Date.now()+DAY).toISOString(),now,policy.version,env.ENV_NAME,new Date(Date.now()-DAY).toISOString()).run();
+ ON CONFLICT(object_key) DO NOTHING`).bind(id,key,bytes,identity.userId??null,identity.projectId??null,identity.category,kind,new Date(Date.now()+DAY).toISOString(),now,policy.version).run();
  if(!result.meta.changes){
   const busy=await env.DB.prepare('SELECT 1 FROM storage_reservations WHERE object_key=?1').bind(key).first();
   if(busy)throw invalidState('该对象正在写入或等待结果核对，请稍后重试');
