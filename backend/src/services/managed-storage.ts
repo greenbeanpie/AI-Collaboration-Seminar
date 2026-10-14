@@ -63,7 +63,7 @@ export async function reserveStorage(env:Env,key:string,bytes:number,kind:'put'|
  return {id,object_key:key,bytes,user_id:identity.userId??null,project_id:identity.projectId??null,category:identity.category,kind,status:'reserved',upload_id:null,expires_at:new Date(Date.now()+DAY).toISOString()};
 }
 async function release(env:Env,id:string){await env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(id).run();}
-async function uncertain(env:Env,id:string){await env.DB.prepare("UPDATE storage_reservations SET status='uncertain',updated_at=?2 WHERE id=?1").bind(id,nowIso()).run();}
+async function uncertain(env:Env,id:string){await env.DB.prepare("UPDATE storage_reservations SET status='uncertain',updated_at=?2 WHERE id=?1 AND status!='reclaiming'").bind(id,nowIso()).run();}
 async function commit(env:Env,r:Reservation,object:R2Object){
  const result=await env.DB.batch([
   env.DB.prepare(`INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,etag,updated_at)

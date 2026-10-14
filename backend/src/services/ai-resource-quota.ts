@@ -29,8 +29,8 @@ export async function resolveAiResourceContext(env: Pick<Env, 'DB'>, context: Ai
     }
   }
   if (!userId && context.draftAttemptId) userId = (await env.DB.prepare('SELECT owner_id FROM project_creation_drafts WHERE preview_attempt_id=?1').bind(context.draftAttemptId).first<{owner_id:string}>())?.owner_id;
-  // Automatic project work belongs to the project creator when no initiating actor was recorded.
-  if (!userId && projectId) userId = (await env.DB.prepare('SELECT created_by FROM projects WHERE id=?1').bind(projectId).first<{created_by:string}>())?.created_by;
+  // Automatic project work without a recorded initiating actor belongs to the current owner.
+  if (!userId && projectId) userId = (await env.DB.prepare("SELECT user_id created_by FROM project_members WHERE project_id=?1 AND role='owner' ORDER BY joined_at,user_id LIMIT 1").bind(projectId).first<{created_by:string}>())?.created_by;
   return { ...context, userId, projectId };
 }
 

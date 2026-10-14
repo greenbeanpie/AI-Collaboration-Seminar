@@ -14,7 +14,7 @@ export default {
     // Missing assets remain 404. Only application routes use the SPA document,
     // so every successful HTML navigation still receives the nonce/no-store policy.
     if (response.status === 404 && ['GET', 'HEAD'].includes(request.method)
-      && (/^\/(?:login|help|password-reset)\/?$/.test(url.pathname) || url.pathname === '/app' || url.pathname.startsWith('/app/'))) {
+      && (/^\/(?:login|help|password-reset|password-forgot|email-verify)\/?$/.test(url.pathname) || url.pathname === '/app' || url.pathname.startsWith('/app/'))) {
       response = await env.ASSETS.fetch(new Request(new URL('/index.html', url), request));
     }
     return secureResponse(response);

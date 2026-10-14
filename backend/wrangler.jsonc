@@ -89,6 +89,7 @@
         "ALLOWED_ORIGINS": "https://team.greenbp.dpdns.org,https://greenbp-team-office.hddhp.workers.dev",
         "CLOUDFLARE_ACCOUNT_ID": "17a6817bca6612a9cb11d0395eeba0ac",
         "AI_GATEWAY_ID": "",
+        "APP_ORIGIN": "https://greenbp-team-office.hddhp.workers.dev",
         "EMAIL_FROM": "补位 AI 项目办公室 <login@auth.greenbp.dpdns.org>",
         "AUTH_MODE": "password",
         "EMAIL_DAILY_LIMIT": "30",

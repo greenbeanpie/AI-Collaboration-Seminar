@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AcceptInvitationPage } from './AcceptInvitationPage';
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState({}, '', '/'); });
+const clients:QueryClient[]=[];
+afterEach(() => { cleanup();clients.splice(0).forEach(client=>client.clear()); vi.unstubAllGlobals(); window.history.replaceState({}, '', '/'); });
 
 const invitation = (id: string, status = 'pending') => ({
   id, projectName: `邀请项目 ${id}`, inviterName: '测试负责人', status, expiresAt: '2026-12-31T00:00:00Z',
@@ -13,6 +14,7 @@ const projectPreview = {projectId:'joined-project',projectName:'预览项目',de
 const response = (data: unknown) => Response.json({ requestId: 'invitation-test', data });
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  clients.push(client);
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[window.location.pathname === '/app/join' ? window.location.pathname + window.location.search : '/app/join']}><Routes>
     <Route path="/app/join" element={<AcceptInvitationPage />} />
@@ -177,4 +179,18 @@ it('shows missing fields and cancels a username preview without accepting',async
  expect(screen.getAllByText('尚未填写')).toHaveLength(3);
  fireEvent.click(screen.getByRole('button',{name:'取消预览'}));
  expect(posts).toEqual([]);expect(screen.queryByRole('button',{name:'确认接受并加入'})).not.toBeInTheDocument();
+});
+
+it('cancels pending acceptance while retaining the invitation and never automatically replays it',async()=>{
+ window.history.replaceState({},'', '/app/join?code=shared-invitation-code');let signal:AbortSignal|undefined;let attempts=0;
+ vi.stubGlobal('fetch',vi.fn(async(url:unknown,init?:RequestInit)=>{
+  if(String(url).endsWith('/preview'))return response(projectPreview);
+  if(String(url).endsWith('/accept')){attempts++;signal=init?.signal??undefined;return new Promise<Response>((_,reject)=>signal!.addEventListener('abort',()=>reject(signal!.reason),{once:true}));}
+  if(String(url).includes('/projects/'))return Response.json({error:{code:'FORBIDDEN',message:'not joined'}},{status:403});
+  return response({items:[],nextOffset:null});
+ }));setup();fireEvent.click(await screen.findByRole('button',{name:'确认接受并加入'}));
+ await waitFor(()=>expect(signal).toBeDefined());fireEvent.click(screen.getByRole('button',{name:'取消等待并保留邀请'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('加入结果尚未确认');expect(signal!.aborted).toBe(true);
+ expect(screen.getByLabelText('邀请代码')).toHaveValue('shared-invitation-code');expect(attempts).toBe(1);
+ fireEvent.click(screen.getByRole('button',{name:'确认接受并加入'}));await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('上次加入结果尚未确认'));expect(attempts).toBe(1);
 });

@@ -30,6 +30,10 @@ export interface Env {
   MEDIA_GRANT_SECRET?: string;
   RATE_LIMIT_SECRET?: string;
   TURNSTILE_HOSTNAMES?: string;
+  /** Optional read-only account R2/analytics token for external storage refresh. */
+  RESOURCE_MONITOR_TOKEN?: string;
+  /** Canonical trusted email-action origin; never derived from request headers. */
+  APP_ORIGIN?: string;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;
   AI_GATEWAY_ID: string;

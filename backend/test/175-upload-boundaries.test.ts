@@ -83,3 +83,19 @@ describe('upload identity and immutable attempts',()=>{
     expect(await env.DB.prepare('SELECT status,r2_key FROM files WHERE id=?1').bind(f.fileId).first()).toEqual({status:'quarantined',r2_key:row!.r2_key});
   });
 });
+
+it('rejects cross-project object ID substitution even when the uploader belongs to both projects',async()=>{
+ const f=await fixture(),otherProject=await seedProject(f.user.userId),before=(await env.FILES.list()).objects.map(o=>o.key);
+ const response=await SELF.fetch(`${BASE}/api/v1/projects/${otherProject}/files/${f.fileId}/content`,{method:'PUT',headers:{cookie:authCookie(f.user.token)},body:bytes('cross-project')});
+ expect(response.status).toBe(404);expect((await env.FILES.list()).objects.map(o=>o.key)).toEqual(before);
+ expect(await env.DB.prepare('SELECT status FROM files WHERE id=?1').bind(f.fileId).first()).toEqual({status:'pending'});
+ expect(await env.DB.prepare('SELECT count(*) n FROM jobs WHERE project_id IN(?1,?2)').bind(f.projectId,otherProject).first()).toEqual({n:0});
+});
+it('does not add a super-admin substitute-upload privilege',async()=>{
+ const f=await fixture(),admin=await seedUser(),before=(await env.FILES.list()).objects.map(o=>o.key);
+ await env.DB.prepare("UPDATE auth_accounts SET account_role='super_admin',is_admin=1 WHERE user_id=?1").bind(admin.userId).run();
+ await env.DB.prepare("INSERT INTO project_members(id,project_id,user_id,role,joined_at) VALUES(?1,?2,?3,'member',?4)").bind(crypto.randomUUID(),f.projectId,admin.userId,new Date().toISOString()).run();
+ const response=await SELF.fetch(`${BASE}/api/v1/projects/${f.projectId}/files/${f.fileId}/content`,{method:'PUT',headers:{cookie:authCookie(admin.token)},body:bytes('admin substitute')});
+ expect(response.status).toBe(404);expect((await env.FILES.list()).objects.map(o=>o.key)).toEqual(before);
+ expect(await env.DB.prepare('SELECT count(*) n FROM jobs WHERE project_id=?1').bind(f.projectId).first()).toEqual({n:0});
+});

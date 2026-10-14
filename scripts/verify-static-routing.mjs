@@ -36,7 +36,7 @@ try {
     assert.equal(response.status,200);assert.equal(response.headers.get('x-verification-worker'),null,'Matching assets must bypass the Worker');
     assert.equal(response.headers.get('x-content-type-options'),'nosniff');assert.ok(response.headers.get('content-security-policy')?.includes("object-src 'none'"));
   }
-  for(const path of ['/','/login','/help','/password-reset/','/app/join?code=fixture','/app/projects/example/tasks','/guest/index.html']){
+  for(const path of ['/','/login','/help','/password-reset/','/password-forgot','/email-verify','/app/join?code=fixture','/app/projects/example/tasks','/guest/index.html']){
     const response=await fetch(origin+path,{headers:{'sec-fetch-mode':'navigate'}});
     assert.equal(response.status,200);assert.equal(response.headers.get('x-verification-worker'),'invoked');
     assert.equal(response.headers.get('cache-control'),'no-store');assert.match(response.headers.get('content-security-policy'),/'nonce-[^']+'/);

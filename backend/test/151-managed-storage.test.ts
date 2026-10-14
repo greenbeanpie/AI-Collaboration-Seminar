@@ -6,7 +6,7 @@ import {loadResourcePolicy,saveResourcePolicy} from '../src/services/resource-po
 import {newId} from '../src/core/db';
 afterEach(()=>vi.restoreAllMocks());
 beforeEach(async()=>{
- await env.DB.batch([env.DB.prepare('DELETE FROM storage_reservations'),env.DB.prepare('DELETE FROM storage_objects'),env.DB.prepare('UPDATE storage_inventory_state SET ready=0,external_checked_at=NULL WHERE id=1')]);
+ await env.DB.batch([env.DB.prepare("DELETE FROM maintenance_cursors WHERE name='storage_reservations'"),env.DB.prepare('DELETE FROM storage_reservations'),env.DB.prepare('DELETE FROM storage_objects'),env.DB.prepare('UPDATE storage_inventory_state SET ready=0,external_checked_at=NULL WHERE id=1')]);
  const {version,...p}=await loadResourcePolicy(env);
  await saveResourcePolicy(env,version,{...p,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:10000000000,uploadPoolBytes:8000000000,externalStorageBytes:0},null);
 });
@@ -109,4 +109,18 @@ describe('multipart recovery protects originals and active writers',()=>{
   await reconcileStorage({...env,FILES:testRaw},1);await reconcileStorage({...env,FILES:testRaw},1);
   expect(await used()).toBe(10);expect(await env.DB.prepare('SELECT object_key FROM storage_reservations').all()).toMatchObject({results:[{object_key:first}]});
  });
+});
+
+it('a late multipart completion error cannot steal a live reclamation lease',async()=>{
+ const f=await fixture(),r=await reserveStorage(env,f.key,10,'multipart');const u=await f.base.FILES.createMultipartUpload(f.key);
+ let rejectComplete!:(reason:Error)=>void,finishAbort!:()=>void;
+ const complete=vi.fn(()=>new Promise<R2Object>((_,reject)=>{rejectComplete=reject;})),abort=vi.fn(()=>new Promise<void>(resolve=>{finishAbort=resolve;}));
+ const bucket=new Proxy(env.FILES,{get(target,key){if(key==='resumeMultipartUpload')return ()=>({key:f.key,uploadId:u.uploadId,complete,abort});const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+ const managed=withManagedStorage({...env,FILES:bucket});
+ const completion=managed.FILES.resumeMultipartUpload(f.key,u.uploadId).complete([]);const expected=expect(completion).rejects.toThrow('late response');
+ await vi.waitFor(()=>expect(complete).toHaveBeenCalled());await env.DB.prepare("UPDATE storage_reservations SET expires_at='2020-01-01' WHERE id=?1").bind(r.id).run();
+ const sweep=reconcileStorage({...env,FILES:bucket});await vi.waitFor(()=>expect(abort).toHaveBeenCalled());
+ rejectComplete(Error('late response'));await expected;
+ expect(await env.DB.prepare('SELECT status FROM storage_reservations WHERE id=?1').bind(r.id).first()).toEqual({status:'reclaiming'});expect(await used()).toBe(10);
+ finishAbort();await sweep;expect(await used()).toBe(0);
 });
