@@ -14,30 +14,50 @@ const production=config.env.production,account=production.vars.CLOUDFLARE_ACCOUN
 const authPath=process.env.WRANGLER_AUTH_FILE||join(process.env.APPDATA||'', 'xdg.config','.wrangler','config','default.toml');
 const auth=await readFile(authPath,'utf8'),token=process.env.CLOUDFLARE_API_TOKEN||auth.match(/(?:oauth_token|api_token)\s*=\s*"([^"\n]+)"/)?.[1];
 assert(token,'Wrangler credential unavailable; authenticate normally without printing secrets');
-async function api(path,body){
- const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(60000)});
+async function api(path,body,jurisdiction){
+ const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(jurisdiction?{'cf-r2-jurisdiction':jurisdiction}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(60000)});
  const data=await r.json();assert(r.ok&&data.success,`Cloudflare metadata request failed (${r.status}; codes ${(data.errors||[]).map(e=>e.code).join(',')})`);return data;
 }
 await mkdir(output,{recursive:true});
-const listed=await api('/r2/buckets?per_page=1000'),buckets=Array.isArray(listed.result)?listed.result:listed.result.buckets;
-assert(Array.isArray(buckets)&&!listed.result_info?.is_truncated,'Complete bucket inventory is required');
+const buckets=[];
+for(const jurisdiction of ['default','eu','us']){
+ let cursor,pages=0;const cursors=new Set();
+ do{
+  assert(++pages<=10,'Complete bucket inventory exceeded bounded page limit');
+  const listed=await api('/r2/buckets?per_page=1000'+(cursor?'&cursor='+encodeURIComponent(cursor):''),undefined,jurisdiction);
+  const rows=Array.isArray(listed.result)?listed.result:listed.result.buckets;
+  assert(Array.isArray(rows),'Complete bucket inventory is required');
+  for(const b of rows)buckets.push({...b,jurisdiction});
+  cursor=listed.result_info?.cursor||undefined;
+  assert(!listed.result_info?.is_truncated||cursor,'Truncated bucket inventory requires a cursor');
+  if(cursor){assert(!cursors.has(cursor),'Repeated bucket cursor');cursors.add(cursor);}
+ }while(cursor);
+}
 const summaries=[],objects=[];
 for(const b of buckets){
- let cursor,bytes=0,count=0,pages=0;
+ let cursor,bytes=0,count=0,pages=0;const cursors=new Set();
  do{
   assert(++pages<=100,'Bucket metadata inventory exceeded bounded page limit');
-  const page=await api(`/r2/buckets/${encodeURIComponent(b.name)}/objects?per_page=1000${cursor?'&cursor='+encodeURIComponent(cursor):''}`);
+  const page=await api(`/r2/buckets/${encodeURIComponent(b.name)}/objects?per_page=1000${cursor?'&cursor='+encodeURIComponent(cursor):''}`,undefined,b.jurisdiction);
   const rows=Array.isArray(page.result)?page.result:page.result.objects;
   assert(Array.isArray(rows),'Unexpected R2 object metadata shape');
-  for(const o of rows){assert(Number.isSafeInteger(o.size)&&o.size>=0,'Invalid metadata byte count');bytes+=o.size;count++;if(b.name===bucket)objects.push({key:o.key,size:o.size,etag:o.etag,lastModified:o.last_modified});}
+  for(const o of rows){assert(Number.isSafeInteger(o.size)&&o.size>=0,'Invalid metadata byte count');bytes+=o.size;assert(Number.isSafeInteger(bytes),'Aggregate object bytes must be exact');count++;if(b.name===bucket&&b.jurisdiction==='default')objects.push({key:o.key,size:o.size,etag:o.etag,lastModified:o.last_modified});}
   cursor=page.result_info?.is_truncated?page.result_info.cursor:undefined;
+  assert(!page.result_info?.is_truncated||(typeof cursor==='string'&&cursor.length>0),'Truncated objects require a cursor');
+  if(cursor){assert(!cursors.has(cursor),'Repeated object cursor');cursors.add(cursor);}
  }while(cursor);
- summaries.push({bucket:b.name,bytes,objects:count});
+ summaries.push({bucket:b.name,jurisdiction:b.jurisdiction,bytes,objects:count});
 }
 const metrics=(await api('/r2/metrics')).result;
-const incompleteBytes=['standard','infrequentAccess'].reduce((sum,t)=>sum+Number(metrics[t]?.uploaded?.payloadSize||0)+Number(metrics[t]?.uploaded?.metadataSize||0),0);
-assert(incompleteBytes===0,'Uncompleted account uploads require explicit S3 reconciliation before activating inventory');
-const externalBytes=summaries.filter(b=>b.bucket!==bucket).reduce((n,b)=>n+b.bytes,0);
+let incompleteBytes=0,incompleteObjects=0;
+for(const tier of ['standard','infrequentAccess']){
+ const uploaded=metrics[tier]?.uploaded;
+ assert(uploaded&&['objects','payloadSize','metadataSize'].every(k=>Number.isSafeInteger(uploaded[k])&&uploaded[k]>=0),'Complete pending-upload metrics are required');
+ incompleteBytes+=uploaded.payloadSize+uploaded.metadataSize;incompleteObjects+=uploaded.objects;
+}
+assert(incompleteBytes===0&&incompleteObjects===0,'Uncompleted account uploads require explicit S3 reconciliation before activating inventory');
+const externalBytes=summaries.filter(b=>b.bucket!==bucket||b.jurisdiction!=='default').reduce((n,b)=>n+b.bytes,0);
+assert(Number.isSafeInteger(externalBytes),'External byte total must be exact');
 async function query(sql){const r=await api(`/d1/database/${database}/query`,{sql,params:[]});return r.result.flatMap(r=>r.results||[]);}
 const [files,drafts,sources,calls,jobs,bridges,investigations,tickets]=await Promise.all([
  query('SELECT id,r2_key,project_id,uploader_user_id user_id FROM files'),
