@@ -4,7 +4,7 @@ CREATE TABLE resource_policy (
 );
 INSERT INTO resource_policy VALUES(1,1,'{"aiEnabled":true,"userDailyCalls":300,"projectDailyCalls":1000,"platformDailyCalls":5000,"globalConcurrency":10,"userStorageBytes":250000000,"projectStorageBytes":1000000000,"platformStorageBytes":10000000000,"uploadPoolBytes":8000000000,"externalStorageBytes":0}',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 CREATE TABLE resource_policy_audit (id TEXT PRIMARY KEY, actor_id TEXT, version INTEGER NOT NULL, policy_json TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE storage_inventory_state (id INTEGER PRIMARY KEY CHECK(id=1), ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN(0,1)), external_checked_at TEXT, updated_at TEXT NOT NULL);
+CREATE TABLE storage_inventory_state (id INTEGER PRIMARY KEY CHECK(id=1), ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN(0,1)), external_checked_at TEXT, cursor TEXT, scanning INTEGER NOT NULL DEFAULT 0, verification_note TEXT, updated_at TEXT NOT NULL);
 INSERT INTO storage_inventory_state(id,ready,updated_at) VALUES(1,0,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 CREATE TABLE storage_objects (
   object_key TEXT PRIMARY KEY, size_bytes INTEGER NOT NULL DEFAULT 0 CHECK(size_bytes>=0),

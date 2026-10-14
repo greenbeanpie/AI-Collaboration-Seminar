@@ -1,4 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import {withManagedStorage} from '../services/managed-storage';
 import type { Env } from '../env';
 import { runAiJob } from '../services/ai-jobs';
 import { previewDraft, DraftPreviewYield } from '../services/creation-drafts';
@@ -11,7 +12,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string; s
   async run(event: WorkflowEvent<{ jobId: string; slice?:number; draftPreview?:DraftPreviewInput }>, step: WorkflowStep): Promise<void> {
     if(event.payload.draftPreview){
       const draft=event.payload.draftPreview;
-      const workflowEnv:Env={...this.env,AI_EXECUTION_SLICE:true};
+      const workflowEnv:Env={...withManagedStorage(this.env),AI_EXECUTION_SLICE:true};
       // A clarification pause ends this instance successfully; the answer starts a distinct
       // deterministic continuation instance and the same encrypted draft checkpoint.
       await step.do('draft-preview', { retries: { limit: 0, delay: '5 seconds' } }, async () => {
@@ -27,7 +28,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, { jobId: string; s
     }
     // A fresh instance resets invocation-local dispatch and subrequest budgets.
     await step.do('run-ai-job', { retries: { limit: 0, delay: '5 seconds' } }, async () => {
-      const sliceEnv: Env = { ...this.env, AI_EXECUTION_SLICE: true, AI_EXECUTION_CONTEXT: { modelCalls: 0 } };
+      const sliceEnv: Env = { ...withManagedStorage(this.env), AI_EXECUTION_SLICE: true, AI_EXECUTION_CONTEXT: { modelCalls: 0 } };
       const execution = await ensureExecution(sliceEnv, await resolveExecutionTarget(sliceEnv, { kind: 'job', id: event.payload.jobId }));
       sliceEnv.AI_EXECUTION_CONTEXT!.generation = execution.generation;
       await executeAiSlice(sliceEnv, event.payload.jobId, event.payload.slice ?? 0, () => runAiJob(sliceEnv, event.payload.jobId));

@@ -1,4 +1,6 @@
 import { registerRecordingRoutes } from './api/recordings';
+import {registerResourcePolicyRoutes} from './api/resource-policy';
+import {registerStorageInventoryRoutes} from './api/storage-inventory';
 import { isD1DailyQuotaError, d1QuotaError } from './core/d1-quota';
 import { registerFileProcessingRoutes } from './api/file-processing';
 import { registerAiExecutionPolicyRoutes } from './api/ai-execution-policy';
@@ -123,6 +125,8 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerJobRoutes(app);
   registerJobExecutionRoutes(app);
   registerAiExecutionPolicyRoutes(app);
+  registerResourcePolicyRoutes(app);
+  registerStorageInventoryRoutes(app);
   registerProjectChatRoutes(app);
   registerTaskRoutes(app);
   registerTaskFileRoutes(app);

@@ -32,7 +32,7 @@ export async function storageOwner(env:Pick<Env,'DB'>,key:string):Promise<Storag
  }else if(s[0]==='ai'&&s[1]==='draft-investigations'){
   row=await env.DB.prepare('SELECT owner_id user_id,NULL project_id FROM project_creation_drafts WHERE preview_attempt_id=?1').bind(s[2]!.split('.')[0]).first();
  }
- if(!row&&category==='system')for(const part of s){const id=part.split('.')[0]!;if(!UUID.test(id))continue;row=await env.DB.prepare('SELECT created_by user_id,project_id FROM jobs WHERE id=?1').bind(id).first();if(row)break;}
+ if(!row&&category==='system')for(const part of s){const id=part.split('.')[0]!;if(!UUID.test(id))continue;row=await env.DB.prepare("SELECT COALESCE(json_extract(input_json,'$.requestedBy'),created_by) user_id,project_id FROM jobs WHERE id=?1").bind(id).first();if(row)break;}
  return {userId:row?.user_id??null,projectId:row?.project_id??null,category};
 }
 
@@ -49,12 +49,12 @@ export async function reserveStorage(env:Env,key:string,bytes:number,kind:'put'|
  const result=await env.DB.prepare(`INSERT INTO storage_reservations(id,object_key,bytes,user_id,project_id,category,kind,status,expires_at,updated_at)
  SELECT ?1,?2,?3,?4,?5,?6,?7,'reserved',?8,?9 FROM resource_policy WHERE id=1 AND version=?10
  AND NOT EXISTS(SELECT 1 FROM storage_reservations WHERE object_key=?2)
- AND (?7='delete' OR (
+ AND (?7='delete' OR (EXISTS(SELECT 1 FROM storage_inventory_state WHERE ready=1 AND (?11='local' OR (external_checked_at IS NOT NULL AND external_checked_at>=?12))) AND
  ${total('platform',"'all'")}+?3<=MAX(0,json_extract(policy_json,'$.platformStorageBytes')-json_extract(policy_json,'$.externalStorageBytes'))
  AND (?6!='upload' OR ${total('platform',"'upload'")}+?3<=MIN(json_extract(policy_json,'$.uploadPoolBytes'),CAST(MAX(0,json_extract(policy_json,'$.platformStorageBytes')-json_extract(policy_json,'$.externalStorageBytes'))*0.8 AS INTEGER)))
  AND (?4 IS NULL OR ${total('user','?4')}+?3<=json_extract(policy_json,'$.userStorageBytes'))
  AND (?5 IS NULL OR ${total('project','?5')}+?3<=json_extract(policy_json,'$.projectStorageBytes'))))
- ON CONFLICT(object_key) DO NOTHING`).bind(id,key,bytes,identity.userId??null,identity.projectId??null,identity.category,kind,new Date(Date.now()+DAY).toISOString(),now,policy.version).run();
+ ON CONFLICT(object_key) DO NOTHING`).bind(id,key,bytes,identity.userId??null,identity.projectId??null,identity.category,kind,new Date(Date.now()+DAY).toISOString(),now,policy.version,env.ENV_NAME,new Date(Date.now()-DAY).toISOString()).run();
  if(!result.meta.changes){
   const busy=await env.DB.prepare('SELECT 1 FROM storage_reservations WHERE object_key=?1').bind(key).first();
   if(busy)throw invalidState('该对象正在写入或等待结果核对，请稍后重试');

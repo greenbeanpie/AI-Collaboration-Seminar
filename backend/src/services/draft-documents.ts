@@ -1,4 +1,5 @@
 import { enqueueDraftMedia } from './media-summary';
+import {reserveStorage} from './managed-storage';
 import { validateOfficePackage, isOfficeExtension } from './docx-validation';
 import { z } from 'zod';
 import type { Env } from '../env';
@@ -34,7 +35,9 @@ export async function beginDraftUpload(env:Env,draftId:string,userId:string,file
  if(!['.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
  const limit=uploadLimit(ext);if(limit!==null&&size>limit)throw validationFailed('文件超过该类型的上传限制');
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM creation_draft_files WHERE draft_id=?1 AND removed=0').bind(draftId).first<{n:number}>();if((count?.n??0)>=10)throw validationFailed('每份草稿最多10个文件');
- const key=`creation-drafts/${draftId}/${fileId}${ext}`,multipart=await env.FILES.createMultipartUpload(key,{httpMetadata:{contentType:'application/octet-stream'}});
+ const key=`creation-drafts/${draftId}/${fileId}${ext}`;
+ await reserveStorage(env,key,size,'multipart',{userId,category:'upload'});
+ const multipart=await env.FILES.createMultipartUpload(key,{httpMetadata:{contentType:'application/octet-stream'}});
  try{await env.DB.prepare('INSERT INTO draft_document_uploads(file_id,draft_id,upload_id,r2_key,name,ext,size_bytes,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)').bind(fileId,draftId,multipart.uploadId,key,name,ext,size,revision).run();}
  catch(error){await multipart.abort();const winner=await env.DB.prepare('SELECT name,size_bytes,status FROM draft_document_uploads WHERE file_id=?1 AND draft_id=?2').bind(fileId,draftId).first<{name:string;size_bytes:number;status:string}>();if(!winner||winner.name!==name||winner.size_bytes!==size||winner.status==='cancelled')throw error;}
  return draftUploadStatus(env,draftId,userId,fileId);

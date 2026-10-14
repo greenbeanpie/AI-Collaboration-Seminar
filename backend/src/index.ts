@@ -1,4 +1,5 @@
 import { isD1DailyQuotaError } from './core/d1-quota';
+import {withManagedStorage} from './services/managed-storage';
 import { createApp } from './app';
 import { handleScheduled } from './cron';
 import { ParseSourceWorkflow } from './workflows/parse-source';
@@ -10,11 +11,12 @@ import type { AiContinuationMessage, Env } from './env';
 const app = createApp();
 
 export default {
-  fetch: (request, env, ctx) => app.fetch(request, env, ctx),
+  fetch: (request, env, ctx) => app.fetch(request, withManagedStorage(env), ctx),
   scheduled: (event, env, ctx) => {
-    ctx.waitUntil(handleScheduled(env, event.cron));
+    ctx.waitUntil(handleScheduled(withManagedStorage(env), event.cron));
   },
   queue: async (batch, env) => {
+    env=withManagedStorage(env);
     for(const message of batch.messages){
       const body=message.body as AiContinuationMessage;
       try{

@@ -4,6 +4,7 @@ import { loadAiConfig, type AiPurpose } from './config';
 import { recordAiDiagnostic } from './diagnostics';
 import type { ApiProtocol } from '../../../shared/ai-providers';
 import { tokenCount } from './usage';
+import {withManagedStorage} from '../services/managed-storage';
 
 export interface AiContextMetadata {
   protocol: ApiProtocol;
@@ -42,6 +43,9 @@ export interface AiCallRecord {
 
 /** 记录模型调用、输入/输出快照、token 用量和执行状态。 */
 export async function recordAiCall(env: Env, params: AiCallRecord): Promise<string> {
+  // The call row is created after the snapshots; attribute storage before writing them.
+  const owner=params.jobId?await env.DB.prepare("SELECT COALESCE(json_extract(input_json,'$.requestedBy'),created_by) user_id FROM jobs WHERE id=?1").bind(params.jobId).first<{user_id:string|null}>():params.draftId?await env.DB.prepare('SELECT owner_id user_id FROM project_creation_drafts WHERE id=?1').bind(params.draftId).first<{user_id:string|null}>():null;
+  env=withManagedStorage(env,{userId:owner?.user_id??null,projectId:params.projectId??null,category:'system'});
   const config = await loadAiConfig(env.DB, params.configVersionId);
   const validTokens = (value: number | null): value is number => value !== null && Number.isSafeInteger(value) && value >= 0;
   const reservation = params.jobId ? await env.DB.prepare("SELECT id FROM usage_reservations WHERE job_id = ?1 AND status = 'reserved' ORDER BY created_at DESC LIMIT 1").bind(params.jobId).first<{ id: string }>() : null;
