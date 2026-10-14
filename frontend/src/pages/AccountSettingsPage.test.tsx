@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AccountSettingsPage } from './AccountSettingsPage';
+// Email controls have their own request/account-switch cases in RecoveryEmail.test.tsx.
+vi.mock('./RecoveryEmailSettings',()=>({RecoveryEmailSettings:()=>null}));
 const user = { id: 'fixture-id', username: 'fixture', email: null, displayName: '旧昵称', isAdmin: false };
 const response = (data: unknown) => new Response(JSON.stringify({ data, requestId: 'fixture' }), { headers: { 'content-type': 'application/json' } });
 function setup() {

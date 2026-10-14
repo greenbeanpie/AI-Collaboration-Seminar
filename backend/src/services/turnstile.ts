@@ -4,7 +4,7 @@ import { AppError } from '../core/errors';
 const rejected = () => new AppError('PERMISSION_DENIED', '人机验证失败，请重新验证后重试', 403, false);
 
 /** Siteverify enforces single use; never cache a successful token or retry its redemption. */
-export async function verifyTurnstile(env: Env & { TURNSTILE_HOSTNAMES?: string }, token: string | undefined, action: 'login' | 'register', ip: string): Promise<void> {
+export async function verifyTurnstile(env: Env & { TURNSTILE_HOSTNAMES?: string }, token: string | undefined, action: 'login' | 'register' | 'password_recovery' | 'recovery_email', ip: string): Promise<void> {
   if (env.TURNSTILE_REQUIRED !== 'true') return;
   const hosts = new Set((env.TURNSTILE_HOSTNAMES ?? '').split(',').map(host => host.trim()).filter(Boolean));
   if (!env.TURNSTILE_SECRET_KEY || !env.TURNSTILE_SITE_KEY || !token?.trim() || token.length > 2048 || !hosts.size ||

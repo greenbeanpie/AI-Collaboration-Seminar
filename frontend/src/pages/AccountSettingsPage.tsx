@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useSession } from '../auth';
 import { clearAccountStorage } from '../storage';
 import { ErrorNotice, PageHeading } from '../components/ui';
+import { RecoveryEmailSettings } from './RecoveryEmailSettings';
 
 export function AccountSettingsPage({ section }: { section?: 'profile' | 'security' }) {
   const session = useSession();
@@ -56,7 +57,7 @@ export function AccountSettingsPage({ section }: { section?: 'profile' | 'securi
     finally { locked.current = false; setBusy(false); }
   }
   return <div className="account-settings">
-    <PageHeading title="账户设置" detail="管理项目成员看到的昵称和登录密码。" />
+    <PageHeading title="账户设置" detail="管理项目成员看到的昵称、登录密码和恢复邮箱。" />
     {error !== null && <ErrorNotice error={error} />}
     {notice && <p role="status">{notice}</p>}
     {section !== 'security' && <section className="section-card"><h2>个人资料</h2><p>账户等级：{session.data?.role === 'super_admin' ? '超级管理员' : session.data?.role === 'admin' ? '普通管理员' : '一般用户'}</p>
@@ -77,5 +78,6 @@ export function AccountSettingsPage({ section }: { section?: 'profile' | 'securi
       </form>
       {confirming && <div role="group" aria-label="确认修改密码"><p>确认修改密码并退出全部设备？</p><button className="button button-primary" disabled={busy} onClick={() => void changePassword()}>确认修改并退出</button><button className="button button-quiet" disabled={busy} onClick={() => { clearPasswords(); setError(null); }}>取消</button></div>}
     </section>}
+    {section !== 'profile' && session.data && <RecoveryEmailSettings key={session.data.id}/>}
   </div>;
 }

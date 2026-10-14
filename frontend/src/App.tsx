@@ -50,6 +50,8 @@ const HelpPage = lazy(() => import('./pages/HelpPage').then((module) => ({ defau
 const AgentBridgesPage = lazy(() => import('./pages/AgentBridgesPage').then(module => ({ default: module.AgentBridgesPage })));
 const PublicHelpPage = lazy(() => import('./pages/PublicHelpPage').then(module => ({ default: module.PublicHelpPage })));
 const PasswordResetPage = lazy(() => import('./pages/PasswordResetPage').then(module => ({ default: module.PasswordResetPage })));
+const PasswordForgotPage = lazy(() => import('./pages/PasswordForgotPage').then(module => ({ default: module.PasswordForgotPage })));
+const EmailVerifyPage = lazy(() => import('./pages/EmailVerifyPage').then(module => ({ default: module.EmailVerifyPage })));
 
 function RouteLoading() {
   return <div className="content-wrap"><Spinner label="正在打开工作区" /></div>;
@@ -118,6 +120,8 @@ export default function App() {
     <Suspense fallback={<RouteLoading />}><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/password-forgot" element={<PasswordForgotPage />} />
+      <Route path="/email-verify" element={<EmailVerifyPage />} />
       <Route path="/help" element={<PublicHelpPage />} />
       <Route path="/password-reset" element={<PasswordResetPage />} />
       <Route element={<ProtectedApp />}>

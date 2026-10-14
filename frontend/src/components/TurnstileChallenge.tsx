@@ -20,7 +20,7 @@ function load(): Promise<void> {
   });
   return loading;
 }
-export function TurnstileChallenge({ siteKey, reset, onToken, onError, action = 'email_login' }: { siteKey: string; action?: 'login' | 'register' | 'email_login'; reset: number; onToken: (token: string) => void; onError: (message: string) => void }) {
+export function TurnstileChallenge({ siteKey, reset, onToken, onError, action = 'email_login' }: { siteKey: string; action?: 'login' | 'register' | 'email_login' | 'password_recovery' | 'recovery_email'; reset: number; onToken: (token: string) => void; onError: (message: string) => void }) {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let cancelled = false;
