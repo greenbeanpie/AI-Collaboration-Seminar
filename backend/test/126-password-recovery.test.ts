@@ -40,7 +40,7 @@ it('stores only token hash and audit reason; one atomic redemption changes passw
   expect(record?.reason).toContain('人工核实');
   const responses = await Promise.all([replacement, replacement + '-other'].map(newPassword => send('/api/v1/auth/password-recovery/redeem', { token: recovery.token, newPassword })));
   expect(responses.filter(response => response.status === 200)).toHaveLength(1);
-  expect(responses.find(response => response.status === 200)?.headers.get('set-cookie')).toContain('Max-Age=0');
+  expect(responses.find(response => response.status === 200)?.headers.get('set-cookie')).toBeNull();
   expect((await send('/api/v1/auth/password-recovery/redeem', { token: other.token, newPassword: replacement })).status).toBe(400);
   const hash = (await env.DB.prepare('SELECT password_hash FROM auth_accounts WHERE user_id=?1').bind(target.userId).first<{ password_hash: string }>())!.password_hash;
   expect(await verifyPassword(replacement, hash) || await verifyPassword(replacement + '-other', hash)).toBe(true);
@@ -66,4 +66,12 @@ it('limits anonymous guessing and never returns target account information', asy
     expect(await response.text()).not.toContain('user_id');
   }
   expect((await send('/api/v1/auth/password-recovery/redeem', { token: 'invalid-next', newPassword: replacement })).status).toBe(429);
+});
+
+it('public redemption revokes only the recovered account and cannot clear another signed-in account cookie',async()=>{
+ const {actor,target}=await setup(),other=await seedUser(),recovery=await issue(actor,target.userId);
+ const response=await send('/api/v1/auth/password-recovery/redeem',{token:recovery.token,newPassword:replacement},authCookie(other.token));
+ expect(response.status).toBe(200);expect(response.headers.get('set-cookie')).toBeNull();
+ expect((await env.DB.prepare('SELECT count(*) n FROM sessions WHERE user_id=?1 AND revoked_at IS NULL').bind(other.userId).first<{n:number}>())!.n).toBe(1);
+ expect((await env.DB.prepare('SELECT count(*) n FROM sessions WHERE user_id=?1 AND revoked_at IS NULL').bind(target.userId).first<{n:number}>())!.n).toBe(0);
 });

@@ -1,0 +1,51 @@
+{
+  "environment": "local workerd/D1; synthetic users and projects; no provider calls",
+  "capturedAt": "2026-10-14T03:35:12Z",
+  "projectList": [
+    {
+      "benchmark": "project_list_permissions_local",
+      "projects": 1,
+      "samples": 5,
+      "queriesBefore": 2,
+      "queriesAfter": 1,
+      "rowsReadBefore": 4,
+      "rowsReadAfter": 3,
+      "p50BeforeMs": 2,
+      "p95BeforeMs": 2,
+      "p50AfterMs": 1,
+      "p95AfterMs": 1
+    },
+    {
+      "benchmark": "project_list_permissions_local",
+      "projects": 20,
+      "samples": 5,
+      "queriesBefore": 21,
+      "queriesAfter": 1,
+      "rowsReadBefore": 81,
+      "rowsReadAfter": 61,
+      "p50BeforeMs": 19,
+      "p95BeforeMs": 20,
+      "p50AfterMs": 1,
+      "p95AfterMs": 2
+    },
+    {
+      "benchmark": "project_list_permissions_local",
+      "projects": 100,
+      "samples": 5,
+      "queriesBefore": 101,
+      "queriesAfter": 1,
+      "rowsReadBefore": 421,
+      "rowsReadAfter": 321,
+      "p50BeforeMs": 98,
+      "p95BeforeMs": 105,
+      "p50AfterMs": 2,
+      "p95AfterMs": 2
+    }
+  ],
+  "writesDuringList": 0,
+  "maintenance": {
+    "candidatesPerSweepMax": 25,
+    "sweepsPerRecoveryMinute": 2,
+    "protectedLeaseAndCursorTests": "backend/test/175-maintenance-pagination.test.ts"
+  }
+}

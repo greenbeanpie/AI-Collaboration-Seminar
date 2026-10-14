@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
-import { clearSessionCookie, requireUser } from '../core/auth';
+import { requireUser } from '../core/auth';
 import { permissionDenied } from '../core/errors';
 import { issuePasswordRecovery, redeemPasswordRecovery, requestEmailPasswordRecovery } from '../services/password-recovery';
 import { recoveryEmailStatus, removeRecoveryEmail, requestRecoveryEmailVerification, verifyRecoveryEmail } from '../services/recovery-email';
@@ -47,7 +47,8 @@ export function registerPasswordRecoveryRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(redeem, async c => {
     const { token, newPassword } = c.req.valid('json');
     await redeemPasswordRecovery(c.env, token, newPassword, c.req.header('cf-connecting-ip') ?? 'unknown');
-    c.header('Set-Cookie', clearSessionCookie());
+    // Session revocation is persisted for the recovered account. A late public response
+    // must not clear a different account cookie established while it was in flight.
     return c.json(apiData(c, { revoked: true as const }), 200);
   });
 }

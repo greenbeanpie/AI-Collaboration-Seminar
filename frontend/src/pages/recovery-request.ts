@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { accountRequest } from '../api/simplification';
 import { ApiError } from '../api/client';
 
@@ -8,7 +8,8 @@ export function useRecoveryRequest(context = 'public') {
   const [online,setOnline]=useState(navigator.onLine);
   const current=useRef(context);current.current=context;
   const controller=useRef<AbortController|null>(null),lock=useRef(false),mounted=useRef(true),epoch=useRef(0);
-  useEffect(()=>{mounted.current=true;setBusy(false);setError(null);setMessage('');return()=>{mounted.current=false;epoch.current++;controller.current?.abort();};},[context]);
+  const invalidate=useCallback(()=>{mounted.current=false;epoch.current++;controller.current?.abort();},[]);
+  useEffect(()=>{mounted.current=true;setBusy(false);setError(null);setMessage('');return invalidate;},[context,invalidate]);
   useEffect(()=>{const changed=()=>setOnline(navigator.onLine);window.addEventListener('online',changed);window.addEventListener('offline',changed);return()=>{window.removeEventListener('online',changed);window.removeEventListener('offline',changed);};},[]);
   const run=async(path:string,body:unknown,success:string,method:'POST'|'DELETE'='POST')=>{
     if(lock.current)return false;
