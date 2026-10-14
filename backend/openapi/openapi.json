@@ -11901,22 +11901,22 @@
               "userStorageBytes": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 10000000000
+                "maximum": 9000000000
               },
               "projectStorageBytes": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 10000000000
+                "maximum": 9000000000
               },
               "platformStorageBytes": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 10000000000
+                "maximum": 9000000000
               },
               "uploadPoolBytes": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 8000000000
+                "maximum": 7200000000
               },
               "externalStorageBytes": {
                 "type": "integer",
@@ -12019,41 +12019,6 @@
             },
             "required": [
               "resolved"
-            ]
-          },
-          "requestId": {
-            "type": "string",
-            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
-          }
-        },
-        "required": [
-          "data",
-          "requestId"
-        ]
-      },
-      "ExternalStorageUsageResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "refreshed": {
-                "type": "boolean"
-              },
-              "checkedAt": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "externalBytes": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "refreshed",
-              "checkedAt",
-              "externalBytes"
             ]
           },
           "requestId": {
@@ -33605,22 +33570,22 @@
                   "userStorageBytes": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10000000000
+                    "maximum": 9000000000
                   },
                   "projectStorageBytes": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10000000000
+                    "maximum": 9000000000
                   },
                   "platformStorageBytes": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 10000000000
+                    "maximum": 9000000000
                   },
                   "uploadPoolBytes": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 8000000000
+                    "maximum": 7200000000
                   },
                   "externalStorageBytes": {
                     "type": "integer",
@@ -33754,25 +33719,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StorageResolutionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/storage-inventory/external-usage": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "responses": {
-          "200": {
-            "description": "受控核查其他桶元数据；不自动启用新增存储",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExternalStorageUsageResponse"
                 }
               }
             }

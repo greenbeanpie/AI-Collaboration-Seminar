@@ -6,9 +6,9 @@ import {versionConflict,validationFailed} from '../core/errors';
 export const resourcePolicyFields=z.object({
   aiEnabled:z.boolean(), userDailyCalls:z.number().int().min(1).max(100000),
   projectDailyCalls:z.number().int().min(1).max(100000), platformDailyCalls:z.number().int().min(1).max(1000000),
-  globalConcurrency:z.number().int().min(1).max(100), userStorageBytes:z.number().int().min(1).max(10000000000),
-  projectStorageBytes:z.number().int().min(1).max(10000000000), platformStorageBytes:z.number().int().min(1).max(10000000000),
-  uploadPoolBytes:z.number().int().min(0).max(8000000000), externalStorageBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  globalConcurrency:z.number().int().min(1).max(100), userStorageBytes:z.number().int().min(1).max(9000000000),
+  projectStorageBytes:z.number().int().min(1).max(9000000000), platformStorageBytes:z.number().int().min(1).max(9000000000),
+  uploadPoolBytes:z.number().int().min(0).max(7200000000), externalStorageBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
 }).strict();
 export const resourcePolicySchema=resourcePolicyFields.extend({version:z.number().int().positive()});
 export type ResourcePolicy=z.infer<typeof resourcePolicySchema>;

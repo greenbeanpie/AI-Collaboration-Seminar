@@ -1,6 +1,5 @@
 import {createRoute,OpenAPIHono,z} from '@hono/zod-openapi';
 import type {AppEnv} from '../env';
-import {refreshExternalStorageUsage} from '../services/storage-external-usage';
 import {apiData} from '../core/api';
 import {apiEnvelope} from '../core/openapi';
 import {invalidState,permissionDenied} from '../core/errors';
@@ -25,7 +24,6 @@ export function registerStorageInventoryRoutes(app:OpenAPIHono<AppEnv>){
   const actor=c.get('user');if(actor?.role!=='super_admin')throw permissionDenied('必须由超级管理员账户核对');
   return c.json(apiData(c,await resolveStorageWithEvidence(c.env,c.req.valid('param').id,actor.id,c.req.valid('json').reason)),200);
  });
- app.openapi(createRoute({method:'post',path:base+'/external-usage',tags:['admin'],responses:{200:{description:'受控核查其他桶元数据；不自动启用新增存储',content:{'application/json':{schema:apiEnvelope(z.object({refreshed:z.boolean(),checkedAt:z.string().nullable(),externalBytes:z.number()}),'ExternalStorageUsageResponse')}}}}}),async c=>c.json(apiData(c,await refreshExternalStorageUsage(c.env,true)),200));
  app.openapi(createRoute({method:'post',path:base+'/start',tags:['admin'],request:{body:{required:true,content:{'application/json':{schema:z.object({expectedVersion:z.number().int().positive(),externalStorageBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),verificationNote:z.string().trim().min(10).max(1000)}).strict()}}}},responses}),async c=>{
   const b=c.req.valid('json'),p=await loadResourcePolicy(c.env),{version:_,...fields}=p;
   if(await c.env.DB.prepare("SELECT 1 FROM storage_reservations WHERE kind IN('put','delete')").first())throw invalidState('仍有在途或结果未知的对象写入，先核对再开始盘点');

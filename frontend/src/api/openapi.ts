@@ -4907,41 +4907,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/storage-inventory/external-usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 受控核查其他桶元数据；不自动启用新增存储 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ExternalStorageUsageResponse"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/admin/storage-inventory/start": {
         parameters: {
             query?: never;
@@ -16210,15 +16175,6 @@ export interface components {
             data: {
                 /** @enum {boolean} */
                 resolved: true;
-            };
-            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
-            requestId: string;
-        };
-        ExternalStorageUsageResponse: {
-            data: {
-                refreshed: boolean;
-                checkedAt: string | null;
-                externalBytes: number;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

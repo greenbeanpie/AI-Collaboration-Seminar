@@ -8,7 +8,7 @@ afterEach(()=>vi.restoreAllMocks());
 beforeEach(async()=>{
  await env.DB.batch([env.DB.prepare("DELETE FROM maintenance_cursors WHERE name='storage_reservations'"),env.DB.prepare('DELETE FROM storage_reservations'),env.DB.prepare('DELETE FROM storage_objects'),env.DB.prepare('UPDATE storage_inventory_state SET ready=0,external_checked_at=NULL WHERE id=1')]);
  const {version,...p}=await loadResourcePolicy(env);
- await saveResourcePolicy(env,version,{...p,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:10000000000,uploadPoolBytes:8000000000,externalStorageBytes:0},null);
+ await saveResourcePolicy(env,version,{...p,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:9000000000,uploadPoolBytes:7200000000,externalStorageBytes:0},null);
 });
 async function fixture(){
  const u=await seedUser(),projectId=await seedProject(u.userId);

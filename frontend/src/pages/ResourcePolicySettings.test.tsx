@@ -9,7 +9,7 @@ const mocks=vi.hoisted(()=>({request:vi.fn(),user:{id:'member',role:'user'}}));
 vi.mock('../auth',()=>({adminRequest:mocks.request,useSession:()=>({data:mocks.user})}));
 vi.mock('./settings-dirty',()=>({useSettingsDirty:()=>{}}));
 const clients:QueryClient[]=[];
-const policy={version:3,aiEnabled:true,userDailyCalls:300,projectDailyCalls:1000,platformDailyCalls:5000,globalConcurrency:10,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:10000000000,uploadPoolBytes:8000000000,externalStorageBytes:0};
+const policy={version:3,aiEnabled:true,userDailyCalls:300,projectDailyCalls:1000,platformDailyCalls:5000,globalConcurrency:10,userStorageBytes:250000000,projectStorageBytes:1000000000,platformStorageBytes:9000000000,uploadPoolBytes:7200000000,externalStorageBytes:0};
 const usage=(used=2)=>({ai:{day:'2026-10-14',timezone:'Asia/Shanghai',enabled:true,user:{used,limit:300,remaining:300-used},project:{used:4,limit:1000,remaining:996},platformDailyLimit:5000,globalConcurrencyLimit:10},storage:{inventoryReady:true,externalChecked:true,user:{used:1000000,limit:250000000,reserved:2000000,remaining:247000000},project:{used:3000000,limit:1000000000,reserved:0,remaining:997000000}}});
 function setup(content:React.ReactNode){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});clients.push(client);const view=(node:React.ReactNode)=><QueryClientProvider client={client}>{node}</QueryClientProvider>;return {...render(view(content)),view};}
 beforeEach(()=>{mocks.request.mockReset();mocks.user={id:'member',role:'user'};});

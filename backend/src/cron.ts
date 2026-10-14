@@ -1,5 +1,4 @@
 import { backfillRecordings } from './services/recordings';
-import {refreshExternalStorageUsage} from './services/storage-external-usage';
 import {reconcileStorage} from './services/managed-storage';
 import { isD1DailyQuotaError } from './core/d1-quota';
 import { backfillFileProcessing } from './services/file-processing';
@@ -68,7 +67,6 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
         await run('resource_indexes', () => backfillResourceIndexes(env, 5));
         await run('clarifications', () => invalidateStaleProjectClarifications(env));
       } else if (group === 'cleanup') {
-        await run('external_storage_usage', () => refreshExternalStorageUsage(env));
         await run('legacy_speech', () => retireCloudRehearsalSpeechJobs(env));
         await run('voice_sessions', () => cleanupExpiredRehearsalVoiceSessions(env));
         await run('media_files', () => cleanupMediaFiles(env));
