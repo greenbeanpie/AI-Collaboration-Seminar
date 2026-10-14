@@ -35,7 +35,7 @@ export function prepareAutomaticJobRetry(env:Env,jobId:string,error:{code:string
     .bind(jobId,failedAt,due,error.message.slice(0,500),JSON.stringify(error));
 }
 export async function scheduleAutomaticDraftRetry(env:Env,draftId:string,attemptId:string,error:unknown):Promise<void> {
-  if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code) || error.details?.status===402 || error.message==='后台模型余额不足，请等待或联系管理员处理') return;
+  if(!(error instanceof AppError) || !isAutomaticAiFailure(error.code) || error.details?.automaticRetry===false || error.details?.resourceQuota || error.details?.status===402 || error.message==='后台模型余额不足，请等待或联系管理员处理') return;
   const draft=await env.DB.prepare("SELECT 1 FROM project_creation_drafts WHERE id=?1 AND preview_attempt_id=?2 AND status='active' AND preview_state='failed' AND preview_waiting_id IS NULL").bind(draftId,attemptId).first();
   if(draft) await schedule(env,{id:`draft:${attemptId}`,kind:'draft_preview',target:attemptId,draftId},error.message);
 }

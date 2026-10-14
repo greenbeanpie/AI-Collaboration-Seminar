@@ -5,6 +5,8 @@ import { connectTranscribeGateway, TRANSCRIBE_LIVE_MODEL, parseTranscriptionEven
 import { AppError, aiUnavailable, invalidState, notFound, permissionDenied, quotaExceeded } from '../core/errors';
 import { newId, nowIso } from '../core/db';
 import { projectPermissionSql } from './project-permissions';
+import { assertAiResourceEnabled, claimAiResource, finishAiResource, type AiResourceClaim } from './ai-resource-quota';
+import { loadResourcePolicy } from './resource-policy';
 
 export const REHEARSAL_VOICE_TTL_MS=600_000;
 interface VoiceConfig {realtimeAudioTranscription?:RealtimeTranscriptionConfig;processingStrategies?:{rehearsal?:'text'|'voice-with-text-fallback'};rehearsalSpeech?:RehearsalSpeechConfig}
@@ -28,7 +30,8 @@ export async function readRehearsalVoice(env:Env,binding:VoiceBinding) {
   const configured=Boolean(cfg?.enabled && slot?.provider==='google-ai-studio' && slot.model===TRANSCRIBE_LIVE_MODEL && /^[a-z0-9-]{1,64}$/.test(slot.gatewayId) && slot.gatewayTokenEncrypted);
   const mode=voice?.processingStrategies?.rehearsal??'text';
   let reason:string|null=null;
-  if(mode==='text')reason='本项目使用文字答辩模式';
+  if(!(await loadResourcePolicy(env)).aiEnabled)reason='平台已暂停 AI 请求，可继续文字回答';
+  else if(mode==='text')reason='本项目使用文字答辩模式';
   else if(!configured || !/^[a-zA-Z0-9_-]+$/.test(env.CLOUDFLARE_ACCOUNT_ID))reason='实时转录Gateway配置不完整；可继续文字回答';
   else if(rehearsal.created_by!==binding.actorId)reason='只有本轮发起人可以录音';
   else {
@@ -74,6 +77,7 @@ async function getVoiceSession(env:Env,binding:VoiceBinding,sessionId:string):Pr
   return row;
 }
 export async function assertVoiceSessionActive(env:Env,binding:VoiceBinding,sessionId:string):Promise<VoiceSession> {
+  await assertAiResourceEnabled(env);
   const row=await getVoiceSession(env,binding,sessionId),cfg=await loadAiConfig(env.DB);
   if(!['reserved','connecting','open'].includes(row.status) || Date.parse(row.expires_at)<=Date.now())throw invalidState('语音请求已结束或过期');
   if(!cfg?.enabled || cfg.id!==row.config_version_id || (cfg.config as VoiceConfig).processingStrategies?.rehearsal!=='voice-with-text-fallback')throw invalidState('语音配置已变化');
@@ -106,15 +110,22 @@ export async function openRehearsalVoiceStream(env:Env,binding:VoiceBinding,sess
   if(!claim.meta.changes)throw invalidState('语音请求已连接，不能重复升级');
   const guard=async()=>{await options.authenticate?.();await assertVoiceSessionActive(env,binding,sessionId);};
   let upstream:WebSocket,slot:RealtimeTranscriptionConfig;
+  let resourceClaim:AiResourceClaim|undefined;
+  let handshakeStarted=false,connectedSocket:WebSocket|undefined;
   try {
     const cfg=(await loadAiConfig(env.DB))!,configuredSlot=(cfg.config as VoiceConfig).realtimeAudioTranscription;
     if(!configuredSlot)throw aiUnavailable('实时转录未配置');
     slot=configuredSlot;
-    const beforeHandshake=async()=>{await guard();await env.DB.prepare("UPDATE rehearsal_voice_sessions SET started_at=?2 WHERE id=?1 AND status='connecting'").bind(sessionId,nowIso()).run();};
+    await guard();
+    resourceClaim=await claimAiResource(env,{userId:binding.actorId,projectId:binding.projectId,operation:'live_transcription',requestId:sessionId,model:TRANSCRIBE_LIVE_MODEL},{dispatchKey:'live:'+sessionId,leaseUntil:row.expires_at});
+    const beforeHandshake=async()=>{await guard();await env.DB.prepare("UPDATE rehearsal_voice_sessions SET started_at=?2 WHERE id=?1 AND status='connecting'").bind(sessionId,nowIso()).run();handshakeStarted=true;};
     // Persist immediately before the outbound handshake so recovery will not replay an uncertain call.
     upstream=await (options.connect??connectTranscribeGateway)(env,slot,beforeHandshake);
+    connectedSocket=upstream;
     await guard();
   } catch(error) {
+    if(connectedSocket){try{connectedSocket.close(1000,'Voice guard failed');}catch{/* Closed upstream stays fenced for operator evidence. */}}
+    if(resourceClaim)await finishAiResource(env,resourceClaim,!handshakeStarted?'cancelled':error instanceof AppError&&typeof error.details?.status==='number'?'completed':'uncertain');
     await finishRehearsalVoiceSession(env,sessionId,'failed',error instanceof AppError?error.code:'AI_UNAVAILABLE');
     throw error instanceof AppError?error:aiUnavailable('语音Gateway连接失败');
   }
@@ -128,6 +139,7 @@ export async function openRehearsalVoiceStream(env:Env,binding:VoiceBinding,sess
     try{upstream.close(1000,'Voice session ended');}catch{/* Already closed. */}
     try{browser.close(status==='failed'?1011:1000,'Voice session ended');}catch{/* Already closed. */}
     await finishRehearsalVoiceSession(env,sessionId,status,code);
+    if(resourceClaim&&status!=='failed')await finishAiResource(env,resourceClaim,'completed');
   };
   const fail=async(error:unknown)=>{if(finished)return;const code=error instanceof AppError?error.code:'AI_UNAVAILABLE';send({type:'error',code,message:error instanceof AppError?error.message:'语音转录失败，已保留最终字幕；可继续文字回答',retryAfterSeconds:60});await finish('failed',code);};
   const enqueue=(fn:()=>Promise<void>,pcmBytes=0)=>{
@@ -136,7 +148,8 @@ export async function openRehearsalVoiceStream(env:Env,binding:VoiceBinding,sess
     if(++queued>64 || queuedPcmBytes>160_000){options.waitUntil?.(fail(quotaExceeded('语音队列繁忙，请停止录音后重试')));if(!options.waitUntil)void fail(quotaExceeded('语音队列繁忙'));return;}
     work=work.then(async()=>{if(!finished)await fn();}).catch(fail).finally(()=>{queued--;queuedPcmBytes-=pcmBytes;});options.waitUntil?.(work);
   };
-  const ttlTimer=setTimeout(()=>enqueue(async()=>{await finish('expired','TIMEOUT');}),Math.max(1,Date.parse(row.expires_at)-Date.now()));
+  // Close the upstream at the hard deadline, without waiting behind queued D1/audio work.
+  const ttlTimer=setTimeout(()=>{const closing=finish('expired','TIMEOUT');if(options.waitUntil)options.waitUntil(closing);else void closing.catch(()=>{});},Math.max(1,Date.parse(row.expires_at)-Date.now()));
   const setupTimer=setTimeout(()=>enqueue(async()=>{throw aiUnavailable('语音Gateway初始化超时');}),15_000);
   let stopTimer:ReturnType<typeof setTimeout>|undefined;
   const authTimer=setInterval(()=>enqueue(guard),5000);

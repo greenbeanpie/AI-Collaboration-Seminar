@@ -25,6 +25,7 @@ import { creationWorkspace, guardedDescriptionStatements, workspacePromotionStat
 import { askUserQuestionDefinition, clarificationRule, currentDraftClarification, executeClarification, UserClarificationPending } from './ai-clarifications';
 import { decompositionGuidance } from './decomposition-prompt';
 import { DraftCheckpointBusy, DraftPreviewYield, draftTextPrefix, loadDraftCheckpoint, saveDraftCheckpoint, type DraftPreviewCheckpoint } from './draft-preview-checkpoints';
+import { ResourceConcurrencyWait, isAiResourceGuard } from './ai-resource-quota';
 import { appendContextExchange, appendContextMessages, createContextPhase, prepareContextPhase } from '../ai/context-phases';
 import { ensureExecution, readExecution, completeExecution, pauseExecution, cancelExecution, isExecutionPaused } from './ai-execution-control';
 export { DraftPreviewYield } from './draft-preview-checkpoints';
@@ -337,9 +338,9 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
             await recordActivity(env,'draft:'+attempt,'calling_model','started',{completed:state.step,unit:'step'});
             const {messages,toolMode,metadata}=requestContext();
             out=await gatewayChat({accountId:env.CLOUDFLARE_ACCOUNT_ID,apiToken:env.CLOUDFLARE_API_TOKEN,gatewayId:env.AI_GATEWAY_ID,authSecret:aiSecret(env),envName:env.ENV_NAME,diagnostics:env,executionEnv:{...env,AI_EXECUTION_CONTEXT:{modelCalls:0}}},{
-              config:model,messages,jsonMode:true,privateContext:true,sessionId:attempt,executionTarget:{kind:'draft_preview',id:attempt},providerRetry:state.providerRetry,onProviderRetry:async retry=>{state.providerRetry=retry;state.pendingDispatch=false;await save();},
+              config:model,messages,jsonMode:true,privateContext:true,sessionId:attempt,resourceUserId:userId,executionTarget:{kind:'draft_preview',id:attempt},providerRetry:state.providerRetry,onProviderRetry:async retry=>{state.providerRetry=retry;state.pendingDispatch=false;await save();},
               toolMode,contextMetadata:{...metadata,step:state.step},
-              beforeFetch:async()=>{await guard();state.pendingDispatch=true;await save();await guard();},
+              beforeFetch:async()=>{await guard();state.resourceWaitUntil=undefined;state.pendingDispatch=true;await save();await guard();},
               onDispatch:()=>{callDispatched=true;dispatched=true;}
             });
             // Save received output before accounting/tool execution. A crash cannot duplicate the paid request.
@@ -350,6 +351,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
           } catch(e) {failure=e;}
           if(callDispatched)await recordAiCall(env,{draftId:id,purpose:'textEconomy',configVersionId,promptVersion:'creation-preview-v2',model:model.model,input:{redacted:true,draftId:id,revision,toolMode:true},output:{redacted:true,...(failure?{error:'provider_failed'}:{})},promptTokens:out?.promptTokens??null,completionTokens:out?.completionTokens??null,cachedTokens:out?.cachedTokens??null,cacheMissTokens:out?.cacheMissTokens??null,contextMetadata:out?.contextMetadata,latencyMs:out?.latencyMs??0,status:failure?'failed':'ok'});
           if(failure instanceof InvestigationContinuation){state.pendingDispatch=false;await yieldSegment();}
+          if(failure instanceof ResourceConcurrencyWait){state.pendingDispatch=false;state.resourceWaitUntil=Date.now()+60_000;await yieldSegment();}
           if(failure instanceof AppError&&failure.code==='AI_OUTPUT_INVALID') {
             state.pendingDispatch=false;state.feedback='上次模型响应格式无效，请输出符合要求的完整JSON。';state.step++;
             if(state.finalizing){await save();await pauseExecution(env,{kind:'draft_preview',id:attempt},'output_invalid');return draftView(env,await getDraft(env,id,userId));}
@@ -426,13 +428,13 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
     return draftView(env,await getDraft(env,id,userId));
   } catch(e) {
     if(e instanceof UserClarificationPending||e instanceof DraftCheckpointBusy)return draftView(env,await getDraft(env,id,userId));
-    if(e instanceof DraftPreviewYield)throw e;
+    if(e instanceof DraftPreviewYield||e instanceof ResourceConcurrencyWait)throw e;
     if(isExecutionPaused(e))return draftView(env,await getDraft(env,id,userId));
     if(savedCheckpoint) {
       const control=await readExecution(env,{kind:'draft_preview',id:attempt});
       const current=await getDraft(env,id,userId);
       if(current.preview_attempt_id!==attempt||current.status!=='active'||control&&(control.generation!==savedCheckpoint.checkpoint.executionGeneration||['cancelled','completed'].includes(control.state)))return draftView(env,current);
-      if(savedCheckpoint.checkpoint.finalizing) {
+      if(savedCheckpoint.checkpoint.finalizing&&!isAiResourceGuard(e)) {
         const snapshot=await loadDraftCheckpoint(env,attempt);
         if(snapshot){snapshot.checkpoint.content=undefined;snapshot.checkpoint.pendingOutput=undefined;snapshot.checkpoint.pendingResults=[];snapshot.checkpoint.pendingDispatch=false;snapshot.checkpoint.feedback='收尾输出未能形成有效结果：'+(e instanceof Error?e.message:'输出无效');await saveDraftCheckpoint(env,snapshot.checkpoint,snapshot.etag);}
         await pauseExecution(env,{kind:'draft_preview',id:attempt},'output_invalid');
@@ -440,7 +442,7 @@ export async function previewDraft(env: Env, id: string, userId: string, revisio
         return draftView(env,await getDraft(env,id,userId));
       }
     }
-    if(savedCheckpoint) {
+    if(savedCheckpoint&&!isAiResourceGuard(e)) {
       const invalid=await loadDraftCheckpoint(env,attempt);
       if(invalid?.checkpoint.content || (invalid?.checkpoint.pendingOutput && (!invalid.checkpoint.pendingOutput.toolOutput || invalid.checkpoint.finalizing))) {
         const state=invalid.checkpoint;

@@ -47,7 +47,7 @@ function extractJson(text: string): Record<string, unknown> {
  * 探测允许在 enabled=0 时运行，不修改配置版本或启用状态。
  * 探测调用同样计入 ai_calls 与 token 用量。
  */
-export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig, diagnosticRequestId?: string): Promise<ProbeReport> {
+export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', frozen?: LoadedAiConfig, diagnosticRequestId?: string, resourceUserId?: string | null): Promise<ProbeReport> {
   const loaded = frozen ?? await loadAiConfig(env.DB);
   if (!loaded) throw new AppError('AI_UNAVAILABLE', 'AI 配置缺失，请先通过 /admin/ai-config 写入种子配置', 503, false);
   const cfg = configForPurpose(loaded, purpose);
@@ -64,7 +64,7 @@ export async function probeModel(env: Env, purpose: AiPurpose = 'textEconomy', f
   const sessionId = `probe-${crypto.randomUUID()}`;
   async function callAndRecord(messages: ChatMessage[], jsonMode: boolean): Promise<GatewayCallOutput> {
     try {
-      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode, sessionId, diagnosticRequestId });
+      const out = await gatewayChat(endpoint, { config: cfg, messages, jsonMode, sessionId, diagnosticRequestId, resourceUserId });
       await recordAiCall(env, {
         diagnosticRequestId,
         purpose,

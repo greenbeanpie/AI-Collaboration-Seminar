@@ -1,5 +1,8 @@
 // Execution policy has its own independent interaction suite.
 vi.mock('./AiExecutionPolicySettings', () => ({ AiExecutionPolicySettings: () => null }));
+// Independent quota and audited recovery forms have their own interaction suite.
+vi.mock('./ResourcePolicySettings', () => ({ ResourcePolicySettings: () => null }));
+vi.mock('./AiResourceRecoverySettings', () => ({ AiResourceRecoverySettings: () => null }));
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';

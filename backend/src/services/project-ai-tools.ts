@@ -1,4 +1,5 @@
 import { isBackgroundContinuation } from './ai-execution-slices';
+import { isAiResourceGuard } from './ai-resource-quota';
 import { appendContextExchange, appendContextMessages, createContextPhase, prepareContextPhase, refreshContextSource, type ContextPhase } from '../ai/context-phases';
 import { feedbackForJob } from './project-feedback';
 import { assertExecutionGeneration, pauseExecution, ExecutionPaused, isExecutionPaused, readExecution, resolveExecutionTarget } from './ai-execution-control';
@@ -414,7 +415,7 @@ export async function projectToolConversation(env: Env, params: {
       });
     }
     if (error) {
-      if(finalizing&&context.jobId&&!isExecutionPaused(error)&&!isBackgroundContinuation(error)){const target=await resolveExecutionTarget(env,{kind:'job',id:context.jobId});await checkpoint(false);await pauseExecution(env,target,'output_invalid');throw new ExecutionPaused((await readExecution(env,target))!);}
+      if(finalizing&&context.jobId&&!isExecutionPaused(error)&&!isBackgroundContinuation(error)&&!isAiResourceGuard(error)){const target=await resolveExecutionTarget(env,{kind:'job',id:context.jobId});await checkpoint(false);await pauseExecution(env,target,'output_invalid');throw new ExecutionPaused((await readExecution(env,target))!);}
       if(!dispatched||error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number')) await checkpoint(false);
       throw error;
     }

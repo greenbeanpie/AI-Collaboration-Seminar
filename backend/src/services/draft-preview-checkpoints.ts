@@ -33,6 +33,7 @@ export interface DraftPreviewCheckpoint {
   readProgress?: Array<{fileId:string;lastOffset:number;lastCharOffset:number;nextOffset:number|null;nextCharOffset:number;locators:Array<{locator:string;pageNumber:number|null}>}>;
   clarificationProgress?: unknown[];
   pendingDispatch?: boolean;
+  resourceWaitUntil?: number;
   pendingOutput?: GatewayCallOutput;
   pendingResults?: ToolExchange['results'];
   content?: string;

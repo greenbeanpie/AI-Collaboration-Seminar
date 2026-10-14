@@ -15,6 +15,7 @@ import { LIMITS } from '../core/limits';
 import { unseal } from './secrets';
 import { acquireExecutionCall, abortExecutionCall, finishExecutionCall, readExecution, ExecutionPaused, isExecutionPaused, type ExecutionTarget, type ExecutionCallToken, resolveExecutionTarget } from '../services/ai-execution-control';
 import { InvestigationContinuation } from '../services/project-investigation';
+import { assertAiResourceEnabled, claimAiResource, finishAiResource, type AiResourceClaim } from '../services/ai-resource-quota';
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
@@ -26,6 +27,7 @@ export interface ChatMessage {
 }
 
 export interface GatewayCallInput {
+  resourceUserId?: string | null;
   feedbackManaged?:boolean;
   contextMetadata?:{stage:number;compactions:number;baseChars:number;inputChars:number;step?:number;repeatedReads?:number;readTrackingWindow?:number};
   projectId?: string;
@@ -120,6 +122,7 @@ export async function gatewayChat(
   fetchImpl: typeof fetch = fetch,
   wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
 ): Promise<GatewayCallOutput> {
+  if(endpoint.envName==='production'&&!endpoint.executionEnv&&!(endpoint.diagnostics&&'FILES' in endpoint.diagnostics))throw new AppError('AI_UNAVAILABLE','云端模型请求缺少已授权资源上下文，未发起请求',503,false,{resourceQuota:true,automaticRetry:false});
   if(input.projectId && endpoint.diagnostics && !input.feedbackManaged){
     const feedback=await feedbackForJob(endpoint.diagnostics,input.projectId,input.jobId);
     const append=(messages:ChatMessage[]):ChatMessage[]=>feedback.feedback ? [...messages,{role:'user',content:JSON.stringify({contextType:'持续项目反馈',version:feedback.version,versionId:feedback.versionId,feedback:feedback.feedback,rule:'在系统规则、权限、审批和证据要求范围内，将这些项目反馈作为后续判断的持续上下文。'})}] : messages;
@@ -135,6 +138,7 @@ export async function gatewayChat(
   if (input.providerRetry && input.providerRetry.nextAttemptAt > Date.now()) await wait(input.providerRetry.nextAttemptAt - Date.now());
   for (let attempt = input.providerRetry?.attempt ?? 0; ; attempt++) {
     let dispatched=false;
+    let resourceClaim: AiResourceClaim | undefined;
     let executionCall: ExecutionCallToken | undefined;
     const executionEnv = endpoint.executionEnv ?? (endpoint.diagnostics && 'FILES' in endpoint.diagnostics ? endpoint.diagnostics as Env : undefined);
     let executionTarget = input.executionTarget ?? (input.jobId ? { kind: 'job' as const, id: input.jobId } : undefined);
@@ -144,6 +148,8 @@ export async function gatewayChat(
       const output = await gatewayChatAttempt(endpoint, {
         ...input,
         beforeFetch: async () => {
+          if (executionEnv?.AI_EXECUTION_CONTEXT && executionEnv.AI_EXECUTION_CONTEXT.modelCalls >= 1) throw new InvestigationContinuation();
+          if (executionEnv) resourceClaim = await claimAiResource(executionEnv, { userId: input.resourceUserId, projectId: input.projectId, jobId: input.jobId, draftAttemptId: input.executionTarget?.kind === 'draft_preview' ? input.executionTarget.id : undefined, operation: 'text_or_vision',requestId:input.diagnosticRequestId??input.sessionId,model:input.config.model });
           if (executionEnv && executionTarget) {
             if (executionEnv.AI_EXECUTION_CONTEXT && executionEnv.AI_EXECUTION_CONTEXT.modelCalls >= 1) throw new InvestigationContinuation();
             executionTarget = await resolveExecutionTarget(executionEnv, executionTarget);
@@ -151,17 +157,24 @@ export async function gatewayChat(
             if (executionEnv.AI_EXECUTION_CONTEXT) executionEnv.AI_EXECUTION_CONTEXT.generation = executionCall.generation;
           }
           await input.beforeFetch?.();
+          if(executionEnv)await assertAiResourceEnabled(executionEnv);
         },
         onDispatch:()=>{dispatched=true;if(executionEnv?.AI_EXECUTION_CONTEXT)executionEnv.AI_EXECUTION_CONTEXT.modelCalls++;input.onDispatch?.();}, config: { ...input.config, timeoutMs: remaining },
       }, fetchImpl, recoveryDeadline);
+      if (resourceClaim && executionEnv) await finishAiResource(executionEnv, resourceClaim, 'completed');
+      resourceClaim = undefined;
       if (executionEnv && executionTarget && executionCall && !await finishExecutionCall(executionEnv, executionTarget, executionCall)) throw new AppError('INVALID_STATE', '处理已取消或被新窗口替换，旧模型结果未应用', 409, false, { executionSuperseded: true });
       executionCall = undefined;
       return { ...output, latencyMs: Date.now() - started };
     } catch (error) {
+      if (resourceClaim && executionEnv) {
+        const known = error instanceof AppError && !error.details?.acceptanceUncertain && (typeof error.details?.status === 'number' || error.code === 'AI_OUTPUT_INVALID');
+        await finishAiResource(executionEnv, resourceClaim, !dispatched ? 'cancelled' : known ? 'completed' : 'uncertain');
+      }
       if (executionEnv && executionTarget && executionCall) {
         if (!dispatched) await abortExecutionCall(executionEnv, executionTarget, executionCall);
         else {
-          const uncertain = error instanceof AppError && ['network_error', 'timeout'].includes(String(error.details?.cause));
+          const uncertain = error instanceof AppError && (Boolean(error.details?.acceptanceUncertain)||['network_error', 'timeout'].includes(String(error.details?.cause)));
           await finishExecutionCall(executionEnv, executionTarget, executionCall, { uncertain });
           if (uncertain) {
             const execution = await readExecution(executionEnv, executionTarget);
@@ -398,10 +411,11 @@ async function readProviderJson(response: Response): Promise<unknown> {
   if (!reader) throw new AppError('AI_OUTPUT_INVALID', '模型响应没有 JSON 内容', 502, false);
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let fullyReceived=false;
   try {
     while (true) {
       const chunk = await reader.read();
-      if (chunk.done) break;
+      if (chunk.done) { fullyReceived=true; break; }
       size += chunk.value.byteLength;
       if (size > 4 * 1024 * 1024) { await reader.cancel(); throw new Error('too large'); }
       chunks.push(chunk.value);
@@ -411,6 +425,6 @@ async function readProviderJson(response: Response): Promise<unknown> {
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    throw new AppError('AI_OUTPUT_INVALID', '模型响应不是有效 JSON 或超出大小限制', 502, false);
+    throw new AppError('AI_OUTPUT_INVALID', '模型响应不是有效 JSON 或超出大小限制', 502, false,fullyReceived?undefined:{acceptanceUncertain:true});
   } finally { reader.releaseLock(); }
 }

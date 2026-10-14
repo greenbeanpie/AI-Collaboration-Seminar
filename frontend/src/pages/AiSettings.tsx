@@ -1,4 +1,6 @@
 import { AiExecutionPolicySettings } from './AiExecutionPolicySettings';
+import { ResourcePolicySettings } from './ResourcePolicySettings';
+import { AiResourceRecoverySettings } from './AiResourceRecoverySettings';
 import { AudioModelSettings } from './AudioModelSettings';
 import { blankAudioSettings, localSpeechSettings, type AudioSettingsView } from './audio-settings-view';
 import { useSettingsDirty } from './settings-dirty';
@@ -154,7 +156,7 @@ export function AiSettings() {
     await qc.invalidateQueries({ queryKey: ['capabilities'] });
   }
   const requiredProbes = config.routingMode === 'unified' && !config.unified.supportsVision ? purposes.filter(p => p !== 'visionEconomy') : purposes;
-  return <><AiExecutionPolicySettings access={access} token={token} /><SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。普通供应商使用各自 API URL 与加密保存的 API key；仅 Workers AI 和单独配置的 Gateway 功能经过 Cloudflare AI Gateway。设置影响所有项目。">
+  return <><ResourcePolicySettings access={access} token={token} /><AiResourceRecoverySettings /><AiExecutionPolicySettings access={access} token={token} /><SectionCard title="AI 模型接入与测试" detail="系统级设置，使用超级管理员账户登录即可管理。普通供应商使用各自 API URL 与加密保存的 API key；仅 Workers AI 和单独配置的 Gateway 功能经过 Cloudflare AI Gateway。设置影响所有项目。">
     <div className="stack">
       {session.data?.role !== 'super_admin' && <p className="muted">需要超级管理员权限；项目负责人可请系统管理员配置，或使用下方运维令牌模式。</p>}
       <details><summary>运维管理员令牌模式（可选）</summary><Field label="管理员令牌" hint="部署时配置的 ADMIN_TOKEN；只在当前页面内存保留。"><input className="input" type="password" autoComplete="off" disabled={busy} value={token} onChange={e => { loadSequence.current++; setToken(e.target.value); setReady(false); setEdited(true); setReports({}); setError(undefined); setMessage('请先读取当前令牌可访问的已保存配置。'); }} /></Field></details>

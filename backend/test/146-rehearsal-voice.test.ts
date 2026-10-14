@@ -10,6 +10,7 @@ import { loadAiConfig } from '../src/ai/config';
 import { seal } from '../src/ai/secrets';
 import { connectTranscribeGateway, parseTranscriptionEvent, parseVoiceClientEvent, transcribeLiveSetup, TRANSCRIBE_LIVE_MODEL } from '../src/ai/gemini-live';
 import { assertVoiceSessionActive, cleanupExpiredRehearsalVoiceSessions, closeRehearsalVoiceSession, finishRehearsalVoiceSession, createRehearsalVoiceSession, openRehearsalVoiceStream, readRehearsalVoice } from '../src/services/rehearsal-voice';
+import { loadResourcePolicy, saveResourcePolicy } from '../src/services/resource-policy';
 
 async function fixture() {
   const owner=await seedUser(),projectId=await seedProject(owner.userId),rehearsalId=newId(),now=nowIso();
@@ -35,6 +36,18 @@ async function socketFixture() {
 }
 
 describe('private Gemini Transcribe Live rehearsal ASR',()=>{
+  it('charges one real live handshake, prevents duplicates and closes on the next disabled-platform guard',async()=>{
+    const f=await socketFixture();
+    const dispatch=await env.DB.prepare("SELECT id,quota_day,status,lease_until FROM ai_resource_dispatches WHERE dispatch_key=?1").bind('live:'+f.session.sessionId).first<{id:string;quota_day:string;status:string;lease_until:string}>();
+    expect(dispatch).toMatchObject({status:'claimed',lease_until:f.session.expiresAt});
+    await expect(openRehearsalVoiceStream(env,f.binding,f.session.sessionId,{connect:f.connect})).rejects.toMatchObject({code:'INVALID_STATE'});expect(f.connect).toHaveBeenCalledOnce();
+    const current=await loadResourcePolicy(env),{version,...policy}=current;await saveResourcePolicy(env,version,{...policy,aiEnabled:false},f.owner.userId);
+    f.browser.send(JSON.stringify({type:'start'}));await vi.waitFor(async()=>expect((await row(f.session.sessionId))?.status).toBe('failed'));
+    expect(f.events.some(event=>event.type==='error'&&event.code==='AI_UNAVAILABLE')).toBe(true);
+    expect((await readRehearsalVoice(env,f.binding)).ready).toBe(false);
+    expect((await env.DB.prepare("SELECT calls FROM ai_resource_daily WHERE quota_day=?1 AND scope='user' AND scope_id=?2").bind(dispatch!.quota_day,f.owner.userId).first<{calls:number}>())?.calls).toBe(1);
+    await saveResourcePolicy(env,version+1,policy,f.owner.userId);f.browser.close();f.provider.close();
+  });
   it('blocks recording while a TTS intent is saved but its job is not yet created',async()=>{
     const f=await fixture(),turn=await env.DB.prepare('SELECT id FROM rehearsal_turns WHERE rehearsal_id=?1 AND sequence=1').bind(f.binding.rehearsalId).first<{id:string}>(),now=nowIso();
     await env.DB.prepare("INSERT INTO rehearsal_speech(id,project_id,rehearsal_id,turn_id,sequence,created_by,content_hash,config_version_id,model,voice,job_id,status,created_at,updated_at) VALUES(?1,?2,?3,?4,1,?5,'fixture',?6,'gemini-3.8-flash-lite-tts','Kore',?7,'queued',?8,?8)").bind(newId(),f.binding.projectId,f.binding.rehearsalId,turn!.id,f.owner.userId,f.cfg.id,newId(),now).run();

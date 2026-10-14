@@ -63,6 +63,6 @@ export async function connectTranscribeGateway(env:Env,config:RealtimeTranscript
   let response:Response;
   try {response=await fetchImpl(url,{headers:{Upgrade:'websocket','cf-aig-authorization':`Bearer ${token}`,'cf-aig-skip-cache':'true','cf-aig-collect-log':'false'},redirect:'manual',signal:AbortSignal.timeout(15000)});}
   catch{throw aiUnavailable('语音Gateway连接失败或超时，文字回答仍可使用');}
-  if(response.status!==101 || !response.webSocket)throw aiUnavailable('语音Gateway拒绝连接，文字回答仍可使用');
+  if(response.status!==101 || !response.webSocket)throw aiUnavailable('语音Gateway拒绝连接，文字回答仍可使用',{status:response.status});
   return response.webSocket;
 }

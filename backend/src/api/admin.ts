@@ -351,7 +351,7 @@ export function registerAdminRoutes(app: OpenAPIHono<AppEnv>): void {
     const loaded = await loadAiConfig(c.env.DB, undefined, false);
     if (!loaded) throw invalidState('请先保存模型配置');
     const probeStarted = Date.now();
-    const report = await probeModel(c.env, body.purpose as AiPurpose, loaded, c.get('requestId'));
+    const report = await probeModel(c.env, body.purpose as AiPurpose, loaded, c.get('requestId'), c.get('user')?.id ?? null);
     await c.env.DB.prepare('INSERT INTO ai_probes (config_version_id, purpose, passed, report_json, tested_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(config_version_id, purpose) DO UPDATE SET passed = excluded.passed, report_json = excluded.report_json, tested_at = excluded.tested_at')
       .bind(loaded.id, report.purpose, report.passed ? 1 : 0, JSON.stringify(report), nowIso()).run();
     await recordAiDiagnostic(c.env, { requestId: c.get('requestId'), operation: 'probe', phase: 'probe_result', status: report.passed ? 'succeeded' : 'failed', durationMs: Math.min(3_600_000, Date.now() - probeStarted), errorCode: report.passed ? 'NONE' : 'PROBE_FAILED', configVersion: loaded.version, purpose: body.purpose });

@@ -24,6 +24,7 @@ export async function dispatchDraftPreview(env:Env,dispatch:DraftDispatch):Promi
   const draft=await env.DB.prepare("SELECT owner_id FROM project_creation_drafts WHERE id=?1 AND status='active' AND revision=?2 AND preview_attempt_id=?3 AND preview_state='running' AND preview_waiting_id IS NULL").bind(row.draft_id,row.context_revision,row.attempt_id).first<{owner_id:string}>();
   if(!draft)return false;
   const restored=await loadDraftCheckpoint(env,row.attempt_id);
+  if(restored?.checkpoint.resourceWaitUntil && restored.checkpoint.resourceWaitUntil>Date.now())return false;
   if(!restored||restored.checkpoint.draftId!==row.draft_id||restored.checkpoint.userId!==draft.owner_id||restored.checkpoint.revision!==row.context_revision)throw invalidState('预览恢复内容已变化，请重新预览');
   const execution=await ensureExecution(env,{kind:'draft_preview',id:row.attempt_id},{draftId:row.draft_id,userId:draft.owner_id});
   if(!['running','finalizing'].includes(execution.state))return false;
