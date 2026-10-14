@@ -1,5 +1,6 @@
+import {createApp} from '../src/app';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { env } from './helpers/env';
+import { env, BASE } from './helpers/env';
 import { authCookie, seedProject, seedUser } from './helpers/seed';
 import { newId, nowIso } from '../src/core/db';
 import { aiQuotaDay, claimAiResource, finishAiResource, OPERATOR_TOKEN_AI_ACTOR, releaseAiResourceWithEvidence, ResourceConcurrencyWait, withAiResourceDispatch } from '../src/services/ai-resource-quota';
@@ -138,4 +139,12 @@ describe('atomic UTC+8 resource dispatch quota',()=>{
     expect((await app.request(path+'/'+claim.id+'/release',{method:'POST',headers,body:JSON.stringify({providerConfirmedEnded:true,reason:'已核实供应商侧处理结束'})},env)).status).toBe(200);expect(await count()).toBe(1);expect(await env.DB.prepare('SELECT actor_id,reason FROM ai_resource_release_audit WHERE dispatch_id=?1').bind(claim.id).first()).toMatchObject({actor_id:operator.userId,reason:'已核实供应商侧处理结束'});
     expect((await app.request(path,{headers},env)).headers.get('Cache-Control')).toBe('private, no-store');
   });
+});
+
+it('prevents HTTP caching of anonymous and invalid quota-usage requests',async()=>{
+ const app=createApp(),user=await seedUser();
+ const denied=await app.request(BASE+'/api/v1/resource-usage',{},env);
+ expect(denied.status).toBe(401);expect(denied.headers.get('cache-control')).toContain('no-store');
+ const invalid=await app.request(BASE+'/api/v1/resource-usage?projectId=invalid',{headers:{cookie:authCookie(user.token)}},env);
+ expect(invalid.status).toBe(400);expect(invalid.headers.get('cache-control')).toContain('no-store');
 });
