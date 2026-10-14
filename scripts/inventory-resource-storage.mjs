@@ -48,12 +48,14 @@ for(const b of buckets){
  }while(cursor);
  summaries.push({bucket:b.name,jurisdiction:b.jurisdiction,bytes,objects:count});
 }
-const metrics=(await api('/r2/metrics')).result;
 let incompleteBytes=0,incompleteObjects=0;
-for(const tier of ['standard','infrequentAccess']){
+for(const jurisdiction of ['default','eu','us']){
+ const metrics=(await api('/r2/metrics',undefined,jurisdiction)).result;
+ for(const tier of ['standard','infrequentAccess']){
  const uploaded=metrics[tier]?.uploaded;
  assert(uploaded&&['objects','payloadSize','metadataSize'].every(k=>Number.isSafeInteger(uploaded[k])&&uploaded[k]>=0),'Complete pending-upload metrics are required');
  incompleteBytes+=uploaded.payloadSize+uploaded.metadataSize;incompleteObjects+=uploaded.objects;
+ }
 }
 assert(incompleteBytes===0&&incompleteObjects===0,'Uncompleted account uploads require explicit S3 reconciliation before activating inventory');
 const externalBytes=summaries.filter(b=>b.bucket!==bucket||b.jurisdiction!=='default').reduce((n,b)=>n+b.bytes,0);
@@ -85,7 +87,7 @@ for(const o of objects){
  else if(s[0]==='ai'&&s[1]==='investigations')r=im.get((s[2]||'').split('.')[0]);
  else if(s[0]==='ai'&&s[1]==='draft-investigations')r=attempts.get((s[2]||'').split('.')[0]);
  if(!r)for(const part of s){r=jm.get(part.split('.')[0]);if(r)break;}
- sql.push(`INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,etag,updated_at) VALUES(${quote(o.key)},${o.size},${quote(r?.user_id)},${quote(r?.project_id)},${quote(category)},${quote(o.etag)},${quote(now)}) ON CONFLICT(object_key) DO UPDATE SET user_id=excluded.user_id,project_id=excluded.project_id,category=excluded.category,size_bytes=excluded.size_bytes,etag=excluded.etag,updated_at=excluded.updated_at;`);
+ sql.push(`INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,etag,updated_at) VALUES(${quote(o.key)},${o.size},${quote(r?.user_id)},${quote(r?.project_id)},${quote(category)},${quote(o.etag)},${quote(now)}) ON CONFLICT(object_key) DO UPDATE SET user_id=COALESCE(storage_objects.user_id,excluded.user_id),project_id=COALESCE(storage_objects.project_id,excluded.project_id),category=excluded.category,size_bytes=excluded.size_bytes,etag=excluded.etag,updated_at=excluded.updated_at;`);
 }
 sql.push(`UPDATE resource_policy SET policy_json=json_set(policy_json,'$.externalStorageBytes',${externalBytes}),version=version+1,updated_at=${quote(now)} WHERE id=1;`);
 sql.push(`INSERT INTO resource_policy_audit(id,actor_id,version,policy_json,created_at) SELECT ${quote('inventory:'+now)},NULL,version,policy_json,${quote(now)} FROM resource_policy WHERE id=1;`);

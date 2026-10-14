@@ -41,7 +41,7 @@ export function registerStorageInventoryRoutes(app:OpenAPIHono<AppEnv>){
   for(const object of page.objects){
    const owner=await storageOwner(c.env,object.key);
    await c.env.DB.prepare(`INSERT INTO storage_objects(object_key,size_bytes,user_id,project_id,category,etag,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7)
-    ON CONFLICT(object_key) DO UPDATE SET user_id=excluded.user_id,project_id=excluded.project_id,category=excluded.category,size_bytes=excluded.size_bytes,etag=excluded.etag,updated_at=excluded.updated_at`).bind(object.key,object.size,owner.userId??null,owner.projectId??null,owner.category,object.etag,nowIso()).run();
+    ON CONFLICT(object_key) DO UPDATE SET user_id=COALESCE(storage_objects.user_id,excluded.user_id),project_id=COALESCE(storage_objects.project_id,excluded.project_id),category=excluded.category,size_bytes=excluded.size_bytes,etag=excluded.etag,updated_at=excluded.updated_at`).bind(object.key,object.size,owner.userId??null,owner.projectId??null,owner.category,object.etag,nowIso()).run();
   }
   if(!page.truncated){
    // Also include outstanding legacy sessions before any new multipart writes are permitted.

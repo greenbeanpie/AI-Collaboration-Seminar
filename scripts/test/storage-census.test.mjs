@@ -19,7 +19,7 @@ async function fixture(mode){
   }else if(u.pathname.includes('/objects')){
    const size=j==='default'?5:j==='eu'?7:9;
    data={success:true,result:{objects:[{key:'synthetic.txt',size,etag:'test'}]},...(mode==='objects-truncated'?{result_info:{is_truncated:true}}:{})};
-  }else if(u.pathname.endsWith('/r2/metrics'))data={success:true,result:{standard:{uploaded:mode==='metrics-incomplete'?{}:{objects:mode==='empty-multipart'?1:0,payloadSize:0,metadataSize:0}},infrequentAccess:{uploaded:{objects:0,payloadSize:0,metadataSize:0}}}};
+  }else if(u.pathname.endsWith('/r2/metrics'))data={success:true,result:{standard:{uploaded:mode==='metrics-incomplete'?{}:{objects:mode==='empty-multipart'||(mode==='eu-multipart'&&j==='eu')?1:0,payloadSize:0,metadataSize:0}},infrequentAccess:{uploaded:{objects:0,payloadSize:0,metadataSize:0}}}};
   else if(u.pathname.includes('/d1/database/')&&u.pathname.endsWith('/query')){
    if(!JSON.parse(init.body).sql.trimStart().startsWith('SELECT'))throw Error('Read-only census');
    data={success:true,result:[{results:[]}]};
@@ -32,6 +32,6 @@ async function cleanup(dir){const target=resolve(dir);assert.ok(target.startsWit
 test('metadata census includes default/eu/us and same-name external buckets',async()=>{
  const f=await fixture('complete');try{assert.equal(f.result.status,0,f.result.stderr);const data=JSON.parse(await readFile(join(f.output,'storage-inventory.private.json'),'utf8'));assert.equal(data.objects.length,1);assert.equal(data.objects[0].size,5);assert.equal(data.externalBytes,16);assert.deepEqual(data.summaries.map(b=>b.jurisdiction),['default','eu','us']);}finally{await cleanup(f.dir);}
 });
-for(const mode of ['denied','buckets-truncated','objects-truncated','metrics-incomplete','empty-multipart'])test('incomplete '+mode+' census never prepares an activation SQL',async()=>{
+for(const mode of ['denied','buckets-truncated','objects-truncated','metrics-incomplete','empty-multipart','eu-multipart'])test('incomplete '+mode+' census never prepares an activation SQL',async()=>{
  const f=await fixture(mode);try{assert.notEqual(f.result.status,0);assert.match(f.result.stderr,mode==='denied'?/Cloudflare metadata request failed/:mode==='buckets-truncated'?/Truncated bucket inventory requires a cursor/:mode==='objects-truncated'?/Truncated objects require a cursor/:mode==='metrics-incomplete'?/Complete pending-upload metrics are required/:/Uncompleted account uploads require explicit S3 reconciliation/);await assert.rejects(access(join(f.output,'storage-inventory.sql')));}finally{await cleanup(f.dir);}
 });
