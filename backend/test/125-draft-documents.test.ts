@@ -27,6 +27,7 @@ describe('draft streamed original and client text import',()=>{
   await expect(completeDraftUpload(env,f.id,f.userId,f.fileId)).rejects.toThrow('分片写入');
   await expect(cancelDraftUpload(env,f.id,f.userId,f.fileId)).rejects.toThrow('分片正在写入');
   release();await pending;expect((await completeDraftUpload(env,f.id,f.userId,f.fileId)).revision).toBe(2);
+  expect((await beginDraftUpload(env,f.id,f.userId,f.fileId,'资料.txt',bytes.length,2)).status).toBe('complete');
  });
  it('rejects DOCX name spoofing rather than trusting ZIP header and central-name strings',async()=>{
   const f=await fixture(),bytes=new TextEncoder().encode('PK [Content_Types].xml word/document.xml');
@@ -56,6 +57,7 @@ describe('draft streamed original and client text import',()=>{
   await uploadDraftPart(env,f.id,f.userId,f.fileId,1,new Response(bytes).body,bytes.length);
   let draft=await completeDraftUpload(env,f.id,f.userId,f.fileId);expect(draft.revision).toBe(2);expect(draft.files[0]?.sha256).toBe('');
   expect((await completeDraftUpload(env,f.id,f.userId,f.fileId)).revision).toBe(2);
+  expect((await beginDraftUpload(env,f.id,f.userId,f.fileId,'资料.txt',bytes.length,2)).status).toBe('complete');
   for(let seq=0;seq<10;seq++)await importDraftBlocks(env,f.id,f.userId,f.fileId,2,[{seq,pageNumber:null,text:`第${seq}节\n`+'中文😀'.repeat(4000),headingPath:[`第${seq}节`]}]);
   await expect(importDraftBlocks(env,f.id,f.userId,f.fileId,2,[{seq:0,pageNumber:null,text:'changed'}])).rejects.toThrow('改变');
   draft=await finishDraftImport(env,f.id,f.userId,f.fileId,2,10,'complete',[]);expect(draft.revision).toBe(3);expect(draft.files[0]?.textReady).toBe(true);

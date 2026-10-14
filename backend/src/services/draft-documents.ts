@@ -31,6 +31,7 @@ export async function beginDraftUpload(env:Env,draftId:string,userId:string,file
  await active(env,draftId,userId,revision);
  const existing=await env.DB.prepare('SELECT * FROM draft_document_uploads WHERE file_id=?1 AND draft_id=?2').bind(fileId,draftId).first<Upload>();
  if(existing){if(existing.name!==name||existing.size_bytes!==size||existing.status==='cancelled')throw invalidState('上传标识不能复用于其他文件或已取消的会话');return draftUploadStatus(env,draftId,userId,fileId);}
+ if(await env.DB.prepare('SELECT 1 FROM creation_draft_files WHERE id=?1').bind(fileId).first())throw invalidState('文件标识已使用，分片上传不能替换已保存原件');
  const ext=extOf(name);
  if(!['.pdf','.docx','.xlsx','.pptx','.txt','.md','.png','.jpg','.jpeg','.webp','.mp3','.wav','.m4a','.mp4','.webm'].includes(ext)||name.length>255||!Number.isSafeInteger(size)||size<1)throw validationFailed('文件类型、名称或大小不合法');
  const limit=uploadLimit(ext);if(limit!==null&&size>limit)throw validationFailed('文件超过该类型的上传限制');

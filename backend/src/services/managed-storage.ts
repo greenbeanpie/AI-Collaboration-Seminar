@@ -104,6 +104,7 @@ export function withManagedStorage(env:Env,owner?:StorageOwner):Env{
    if(property==='createMultipartUpload')return async(key:string,options?:R2MultipartOptions)=>{
     const r=await env.DB.prepare("SELECT * FROM storage_reservations WHERE object_key=?1 AND kind='multipart' AND status='reserved' AND upload_id IS NULL").bind(key).first<Reservation>();
     if(!r)throw invalidState('分片上传缺少完整字节预占');
+    if(await raw.head(key)){await release(env,r.id);throw invalidState('该对象已存在，请使用新的文件标识，已有内容保留');}
     try{const upload=await raw.createMultipartUpload(key,{...options,customMetadata:{...options?.customMetadata,storageClaim:r.id}});await env.DB.prepare('UPDATE storage_reservations SET upload_id=?2 WHERE id=?1').bind(r.id,upload.uploadId).run();return multipart(key,upload.uploadId);}
     catch(error){await uncertain(env,r.id);throw error;}
    };
@@ -113,14 +114,14 @@ export function withManagedStorage(env:Env,owner?:StorageOwner):Env{
  }) as R2Bucket;
  async function reservation(key:string,id:string){
   const r=await env.DB.prepare("SELECT * FROM storage_reservations WHERE object_key=?1 AND upload_id=?2 AND kind='multipart'").bind(key,id).first<Reservation>();
-  if(!r)throw invalidState('分片上传预占不存在或已结束');return r;
+  if(!r||r.status==='reclaiming')throw invalidState('分片上传预占不存在、正在回收或已结束');return r;
  }
  function multipart(key:string,id:string):R2MultipartUpload{
   const upload=raw.resumeMultipartUpload(key,id);
   return {key,uploadId:id,
-   uploadPart:async(part,value)=>{const r=await reservation(key,id);await ready(env);await env.DB.prepare('UPDATE storage_reservations SET expires_at=?2,updated_at=?3 WHERE id=?1').bind(r.id,new Date(Date.now()+DAY).toISOString(),nowIso()).run();return upload.uploadPart(part,value);},
+   uploadPart:async(part,value)=>{const r=await reservation(key,id);await ready(env);const extended=await env.DB.prepare("UPDATE storage_reservations SET expires_at=?2,updated_at=?3 WHERE id=?1 AND status='reserved'").bind(r.id,new Date(Date.now()+DAY).toISOString(),nowIso()).run();if(!extended.meta.changes)throw invalidState('上传正在回收或等待未知结果核对');return upload.uploadPart(part,value);},
    complete:async(parts)=>{const r=await reservation(key,id);try{const o=await upload.complete(parts);if(o.size>r.bytes)throw invalidState('对象超出预占长度，需核对');await commit(env,r,o);return o;}catch(error){await uncertain(env,r.id);throw error;}},
-   abort:async()=>{const r=await reservation(key,id);try{const object=await raw.head(key);if(object)await raw.delete(key);else await upload.abort();await env.DB.batch([env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?1').bind(key),env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(r.id)]);}catch(error){await uncertain(env,r.id);throw error;}},
+   abort:async()=>{const r=await reservation(key,id);try{const object=await raw.head(key),owned=object?.customMetadata?.storageClaim===r.id;if(owned)await raw.delete(key);else await upload.abort();await env.DB.batch([...(owned?[env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?1').bind(key)]:[]),env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(r.id)]);}catch(error){await uncertain(env,r.id);throw error;}},
   };
  }
  rawBuckets.set(bucket,raw);return {...env,FILES:bucket};
@@ -134,6 +135,7 @@ export async function reconcileStorage(env:Env,limit=25){
  const cursor=await env.DB.prepare('SELECT cursor_created_at,cursor_id,revision FROM maintenance_cursors WHERE name=?1').bind(sweep).first<{cursor_created_at:string|null;cursor_id:string|null;revision:number}>();
  const rows=await env.DB.prepare("SELECT * FROM storage_reservations WHERE (status='uncertain' OR expires_at<=?1) AND (?3 IS NULL OR updated_at>?3 OR (updated_at=?3 AND id>?4)) ORDER BY updated_at,id LIMIT ?2").bind(now,limit,cursor?.cursor_created_at??null,cursor?.cursor_id??null).all<Reservation>();
  for(const r of rows.results){
+  try{
   const object=await raw.head(r.object_key);
   if(r.kind==='delete'){if(!object){await env.DB.batch([env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?1').bind(r.object_key),env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(r.id)]);}continue;}
   if(object?.customMetadata?.storageClaim===r.id){await commit(env,r,object);continue;}
@@ -143,11 +145,19 @@ export async function reconcileStorage(env:Env,limit=25){
     UNION ALL SELECT 1 FROM file_upload_sessions WHERE upload_id=?1 AND operation_expires_at>?2
     UNION ALL SELECT 1 FROM draft_document_uploads WHERE upload_id=?1 AND operation_expires_at>?2`).bind(r.upload_id,now).first();
    if(live||r.expires_at>now)continue;
-   await raw.resumeMultipartUpload(r.object_key,r.upload_id).abort();
+   const token=newId();
+   const claim=await env.DB.prepare(`UPDATE storage_reservations SET status='reclaiming',recovery_token=?3,recovery_expires_at=?4 WHERE id=?1 AND expires_at<=?2 AND (status IN('reserved','uncertain') OR (status='reclaiming' AND recovery_expires_at<=?2))
+    AND NOT EXISTS(SELECT 1 FROM file_upload_part_leases p JOIN file_upload_sessions s ON s.id=p.session_id WHERE s.upload_id=storage_reservations.upload_id AND p.expires_at>?2)
+    AND NOT EXISTS(SELECT 1 FROM draft_document_part_leases p JOIN draft_document_uploads s ON s.file_id=p.file_id WHERE s.upload_id=storage_reservations.upload_id AND p.expires_at>?2)
+    AND NOT EXISTS(SELECT 1 FROM file_upload_sessions WHERE upload_id=storage_reservations.upload_id AND operation_expires_at>?2)
+    AND NOT EXISTS(SELECT 1 FROM draft_document_uploads WHERE upload_id=storage_reservations.upload_id AND operation_expires_at>?2)`).bind(r.id,now,token,new Date(Date.now()+300000).toISOString()).run();
+   if(!claim.meta.changes)continue;
+   try{await raw.resumeMultipartUpload(r.object_key,r.upload_id).abort();}catch(error){await env.DB.prepare("UPDATE storage_reservations SET status='uncertain',recovery_token=NULL,recovery_expires_at=NULL WHERE id=?1 AND recovery_token=?2").bind(r.id,token).run();throw error;}
    await env.DB.batch([env.DB.prepare("UPDATE file_upload_sessions SET status='aborted',operation_token=NULL,operation_expires_at=NULL WHERE upload_id=?1 AND status!='complete'").bind(r.upload_id),env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE upload_id=?1 AND status!='complete'").bind(r.upload_id)]);
-   await release(env,r.id);
+   await env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1 AND recovery_token=?2').bind(r.id,token).run();
   }
   // HTTP writes with ambiguous completion retain quota until an operator verifies absence.
+  }catch{console.error(JSON.stringify({event:'storage_reconcile_failed',reservationId:r.id}));}
  }
  const last=rows.results.length===limit?rows.results.at(-1):undefined;
  await env.DB.prepare('UPDATE maintenance_cursors SET cursor_created_at=?2,cursor_id=?3,revision=revision+1 WHERE name=?1 AND revision=?4').bind(sweep,last?(last as Reservation&{updated_at:string}).updated_at:null,last?.id??null,cursor?.revision??0).run();

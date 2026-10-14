@@ -2,6 +2,7 @@ import { registerRecordingRoutes } from './api/recordings';
 import {registerResourcePolicyRoutes} from './api/resource-policy';
 import {registerStorageInventoryRoutes} from './api/storage-inventory';
 import {registerPasswordRecoveryRoutes} from './api/password-recovery';
+import {registerResourceUsageRoutes} from './api/resource-usage';
 import { isD1DailyQuotaError, d1QuotaError } from './core/d1-quota';
 import { registerFileProcessingRoutes } from './api/file-processing';
 import { registerAiExecutionPolicyRoutes } from './api/ai-execution-policy';
@@ -85,6 +86,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   // Private account/support data, including validation, auth and Origin failures, must not be cached.
   app.use('*', async (c, next) => {
     if (/^\/api\/v1\/(?:invitations(?:\/|$)|creation-drafts(?:\/|$)|jobs(?:\/|$)|projects\/[^/]+\/(?:recording-sessions|files|sources|resource-library|goal|standards|assessments|ai-tools|ai\/clarifications|username-invitations|invitation-requests|offline-sync|collaboration\/(?:proposals|feedback))(?:\/|$)|profiles(?:\/|$)|support(?:\/|$)|notifications(?:\/|$)|admin\/(?:accounts|ai-config|ai-diagnostics)(?:\/|$)|auth(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store');
+    if (/^\/api\/v1\/admin(?:\/|$)/.test(c.req.path) && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'private, no-store');
     await next();
   });
   app.use('*', requireAllowedOrigin);
@@ -129,6 +131,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerResourcePolicyRoutes(app);
   registerStorageInventoryRoutes(app);
   registerPasswordRecoveryRoutes(app);
+  registerResourceUsageRoutes(app);
   registerProjectChatRoutes(app);
   registerTaskRoutes(app);
   registerTaskFileRoutes(app);

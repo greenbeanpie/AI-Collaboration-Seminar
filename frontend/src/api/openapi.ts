@@ -4730,6 +4730,468 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/resource-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 资源策略 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourcePolicyResponse"];
+                    };
+                };
+                /** @description 需要超级管理员权限 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        aiEnabled: boolean;
+                        userDailyCalls: number;
+                        projectDailyCalls: number;
+                        platformDailyCalls: number;
+                        globalConcurrency: number;
+                        userStorageBytes: number;
+                        projectStorageBytes: number;
+                        platformStorageBytes: number;
+                        uploadPoolBytes: number;
+                        externalStorageBytes: number;
+                        expectedVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 资源策略 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourcePolicyResponse"];
+                    };
+                };
+                /** @description 需要超级管理员权限 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 版本已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/storage-inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅存储元数据与盘点进度，不返回对象内容或对象名称 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StorageInventoryResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/storage-inventory/reservations/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        providerConfirmedEnded: true;
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已按实际对象核对并记录审计 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StorageResolutionResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/storage-inventory/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expectedVersion: number;
+                        externalStorageBytes: number;
+                        verificationNote: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 仅存储元数据与盘点进度，不返回对象内容或对象名称 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StorageInventoryResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/storage-inventory/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅存储元数据与盘点进度，不返回对象内容或对象名称 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StorageInventoryResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/accounts/{userId}/password-recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                        /** @enum {boolean} */
+                        ownershipVerified: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description 仅此一次返回恢复代码；由超级管理员人工交付 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PasswordRecoveryIssueResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-recovery/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        token: string;
+                        newPassword: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 恢复密码并撤销全部旧会话，请重新登录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PasswordRecoveryRedeemResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resource-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前账户与有权项目的资源用量 */
+        get: {
+            parameters: {
+                query?: {
+                    projectId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 资源用量（不含其他用户明细） */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ResourceUsageResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ai-resource-dispatches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 核对仍占用并发的模型请求 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 最多100个待核对请求，不含提示正文或密钥 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiResourceHeldResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/ai-resource-dispatches/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 供应商确认已结束后审计释放并发，不退当日计数 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        providerConfirmedEnded: true;
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已核对并释放 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AiResourceReleaseResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/ai-chat": {
         parameters: {
             query?: never;
@@ -15504,6 +15966,128 @@ export interface components {
             data: {
                 version: number;
                 maxModelCalls: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ResourcePolicyResponse: {
+            data: {
+                aiEnabled: boolean;
+                userDailyCalls: number;
+                projectDailyCalls: number;
+                platformDailyCalls: number;
+                globalConcurrency: number;
+                userStorageBytes: number;
+                projectStorageBytes: number;
+                platformStorageBytes: number;
+                uploadPoolBytes: number;
+                externalStorageBytes: number;
+                version: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        StorageInventoryResponse: {
+            data: {
+                ready: boolean;
+                scanning: boolean;
+                hasMore: boolean;
+                externalCheckedAt: string | null;
+                objectCount: number;
+                accountedBytes: number;
+                reservedBytes: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        StorageResolutionResponse: {
+            data: {
+                /** @enum {boolean} */
+                resolved: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        PasswordRecoveryIssueResponse: {
+            data: {
+                id: string;
+                token: string;
+                expiresAt: string;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        PasswordRecoveryRedeemResponse: {
+            data: {
+                /** @enum {boolean} */
+                revoked: true;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        ResourceUsageResponse: {
+            data: {
+                ai: {
+                    day: string;
+                    /** @enum {string} */
+                    timezone: "Asia/Shanghai";
+                    enabled: boolean;
+                    user: {
+                        limit: number;
+                        used: number;
+                        remaining: number;
+                    };
+                    project: {
+                        limit: number;
+                        used: number;
+                        remaining: number;
+                    } | null;
+                    platformDailyLimit: number;
+                    globalConcurrencyLimit: number;
+                };
+                storage: {
+                    inventoryReady: boolean;
+                    externalChecked: boolean;
+                    user: {
+                        limit: number;
+                        used: number;
+                        remaining: number;
+                        reserved: number;
+                    };
+                    project: {
+                        limit: number;
+                        used: number;
+                        remaining: number;
+                        reserved: number;
+                    } | null;
+                };
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiResourceHeldResponse: {
+            data: {
+                items: {
+                    id: string;
+                    user_id: string | null;
+                    project_id: string | null;
+                    operation: string;
+                    target_id: string | null;
+                    model: string | null;
+                    status: string;
+                    quota_day: string;
+                    created_at: string;
+                    lease_until: string | null;
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        AiResourceReleaseResponse: {
+            data: {
+                id: string;
+                /** @enum {string} */
+                status: "completed";
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

@@ -11869,6 +11869,505 @@
           "requestId"
         ]
       },
+      "ResourcePolicyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "aiEnabled": {
+                "type": "boolean"
+              },
+              "userDailyCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "projectDailyCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "platformDailyCalls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "globalConcurrency": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "userStorageBytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000000
+              },
+              "projectStorageBytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000000
+              },
+              "platformStorageBytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000000
+              },
+              "uploadPoolBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8000000000
+              },
+              "externalStorageBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "aiEnabled",
+              "userDailyCalls",
+              "projectDailyCalls",
+              "platformDailyCalls",
+              "globalConcurrency",
+              "userStorageBytes",
+              "projectStorageBytes",
+              "platformStorageBytes",
+              "uploadPoolBytes",
+              "externalStorageBytes",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "StorageInventoryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "boolean"
+              },
+              "scanning": {
+                "type": "boolean"
+              },
+              "hasMore": {
+                "type": "boolean"
+              },
+              "externalCheckedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "objectCount": {
+                "type": "number"
+              },
+              "accountedBytes": {
+                "type": "number"
+              },
+              "reservedBytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "ready",
+              "scanning",
+              "hasMore",
+              "externalCheckedAt",
+              "objectCount",
+              "accountedBytes",
+              "reservedBytes"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "StorageResolutionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "resolved": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "resolved"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "PasswordRecoveryIssueResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "token",
+              "expiresAt"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "PasswordRecoveryRedeemResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "revoked"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "ResourceUsageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "ai": {
+                "type": "object",
+                "properties": {
+                  "day": {
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "enum": [
+                      "Asia/Shanghai"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "user": {
+                    "type": "object",
+                    "properties": {
+                      "limit": {
+                        "type": "number"
+                      },
+                      "used": {
+                        "type": "number"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "limit",
+                      "used",
+                      "remaining"
+                    ]
+                  },
+                  "project": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "limit": {
+                        "type": "number"
+                      },
+                      "used": {
+                        "type": "number"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "limit",
+                      "used",
+                      "remaining"
+                    ]
+                  },
+                  "platformDailyLimit": {
+                    "type": "number"
+                  },
+                  "globalConcurrencyLimit": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "day",
+                  "timezone",
+                  "enabled",
+                  "user",
+                  "project",
+                  "platformDailyLimit",
+                  "globalConcurrencyLimit"
+                ]
+              },
+              "storage": {
+                "type": "object",
+                "properties": {
+                  "inventoryReady": {
+                    "type": "boolean"
+                  },
+                  "externalChecked": {
+                    "type": "boolean"
+                  },
+                  "user": {
+                    "type": "object",
+                    "properties": {
+                      "limit": {
+                        "type": "number"
+                      },
+                      "used": {
+                        "type": "number"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      },
+                      "reserved": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "limit",
+                      "used",
+                      "remaining",
+                      "reserved"
+                    ]
+                  },
+                  "project": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "limit": {
+                        "type": "number"
+                      },
+                      "used": {
+                        "type": "number"
+                      },
+                      "remaining": {
+                        "type": "number"
+                      },
+                      "reserved": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "limit",
+                      "used",
+                      "remaining",
+                      "reserved"
+                    ]
+                  }
+                },
+                "required": [
+                  "inventoryReady",
+                  "externalChecked",
+                  "user",
+                  "project"
+                ]
+              }
+            },
+            "required": [
+              "ai",
+              "storage"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiResourceHeldResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "project_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "quota_day": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "lease_until": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "user_id",
+                    "project_id",
+                    "operation",
+                    "target_id",
+                    "model",
+                    "status",
+                    "quota_day",
+                    "created_at",
+                    "lease_until"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "AiResourceReleaseResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "completed"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
       "ProjectChatHistoryResponse": {
         "type": "object",
         "properties": {
@@ -32860,6 +33359,510 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/resource-policy": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "资源策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePolicyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要超级管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "aiEnabled": {
+                    "type": "boolean"
+                  },
+                  "userDailyCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "projectDailyCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "platformDailyCalls": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
+                  },
+                  "globalConcurrency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "userStorageBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000000
+                  },
+                  "projectStorageBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000000
+                  },
+                  "platformStorageBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000000000
+                  },
+                  "uploadPoolBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8000000000
+                  },
+                  "externalStorageBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "aiEnabled",
+                  "userDailyCalls",
+                  "projectDailyCalls",
+                  "platformDailyCalls",
+                  "globalConcurrency",
+                  "userStorageBytes",
+                  "projectStorageBytes",
+                  "platformStorageBytes",
+                  "uploadPoolBytes",
+                  "externalStorageBytes",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "资源策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourcePolicyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要超级管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage-inventory": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "仅存储元数据与盘点进度，不返回对象内容或对象名称",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInventoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage-inventory/reservations/{id}/resolve": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerConfirmedEnded": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "providerConfirmedEnded",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已按实际对象核对并记录审计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageResolutionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage-inventory/start": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "externalStorageBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "verificationNote": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "externalStorageBytes",
+                  "verificationNote"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "仅存储元数据与盘点进度，不返回对象内容或对象名称",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInventoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage-inventory/continue": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "仅存储元数据与盘点进度，不返回对象内容或对象名称",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageInventoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{userId}/password-recovery": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 1000
+                  },
+                  "ownershipVerified": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "reason",
+                  "ownershipVerified"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "仅此一次返回恢复代码；由超级管理员人工交付",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryIssueResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password-recovery/redeem": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 12,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "token",
+                  "newPassword"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "恢复密码并撤销全部旧会话，请重新登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRecoveryRedeemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resource-usage": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "当前账户与有权项目的资源用量",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "projectId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "资源用量（不含其他用户明细）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceUsageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-resource-dispatches": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "核对仍占用并发的模型请求",
+        "responses": {
+          "200": {
+            "description": "最多100个待核对请求，不含提示正文或密钥",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiResourceHeldResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai-resource-dispatches/{id}/release": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "供应商确认已结束后审计释放并发，不退当日计数",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerConfirmedEnded": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "providerConfirmedEnded",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已核对并释放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiResourceReleaseResponse"
                 }
               }
             }

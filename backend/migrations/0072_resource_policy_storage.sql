@@ -17,7 +17,7 @@ CREATE TABLE storage_reservations (
   id TEXT PRIMARY KEY, object_key TEXT NOT NULL UNIQUE, bytes INTEGER NOT NULL CHECK(bytes>=0),
   project_id TEXT, user_id TEXT, category TEXT NOT NULL CHECK(category IN('upload','system')),
   kind TEXT NOT NULL CHECK(kind IN('put','multipart','delete')),
-  status TEXT NOT NULL CHECK(status IN('reserved','uncertain')), upload_id TEXT, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  status TEXT NOT NULL CHECK(status IN('reserved','uncertain','reclaiming')), recovery_token TEXT, recovery_expires_at TEXT, upload_id TEXT, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX idx_storage_reservations_expiry ON storage_reservations(expires_at);
 CREATE TABLE storage_resolution_audit(id TEXT PRIMARY KEY,reservation_id TEXT NOT NULL,actor_id TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);

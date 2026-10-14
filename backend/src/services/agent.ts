@@ -1,5 +1,6 @@
 import { InvestigationContinuation } from './project-investigation';
 import { ExecutionPaused, assertExecutionGeneration, pauseExecution, readExecution, resolveExecutionTarget, isExecutionPaused } from './ai-execution-control';
+import { isAiResourceGuard } from './ai-resource-quota';
 import { isBackgroundContinuation } from './ai-execution-slices';
 import { recordActivity } from './ai-activity';
 import { checkpointRootId, checkpointAttemptIds, checkpointFingerprint, clearUncertainCheckpointRetry, allowsUncertainCheckpointRetry, loadResponseCheckpoint, saveResponseCheckpoint } from './ai-checkpoints';
@@ -246,7 +247,7 @@ export async function aiJsonCall<S extends z.ZodType>(
         onDispatch: () => { attempted = true; },
       });
     } catch (error) { if(isExecutionPaused(error)||isBackgroundContinuation(error))throw error;
-      if (!attempted) { if(dispatchKey && !replayed)await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true}); if (params.privateContext && !(error instanceof AppError && error.code === 'QUOTA_EXCEEDED')) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
+      if (!attempted) { if(dispatchKey && !replayed)await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true}); if (params.privateContext && !isAiResourceGuard(error) && !(error instanceof AppError && ['QUOTA_EXCEEDED','PERMISSION_DENIED'].includes(error.code))) throw new AppError('AI_UNAVAILABLE', '任务推荐暂时不可用', 503, false); throw error; } // 验证拒绝时没有请求，也不重试。
       if(dispatchKey&&error instanceof AppError&&(error.code==='AI_OUTPUT_INVALID'||typeof error.details?.status==='number'))await saveResponseCheckpoint(env,dispatchKey,{pending:false},{mutable:true});
       failure = error;
     }
