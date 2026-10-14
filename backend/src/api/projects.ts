@@ -9,7 +9,7 @@ import { notFound, permissionDenied, versionConflict } from '../core/errors';
 import { parsePaging, nextCursor } from '../core/pagination';
 import { withIdempotency } from '../services/idempotency';
 import { recordEvent } from '../services/events';
-import { permissionSchema, projectAccess } from '../services/project-permissions';
+import { permissionSchema, effectivePermissions } from '../services/project-permissions';
 
 export const projectParams = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 
@@ -199,15 +199,15 @@ export function registerProjectRoutes(app: OpenAPIHono<AppEnv>): void {
     }
     binds.push(paging.limit + 1);
     const rows = await c.env.DB.prepare(
-      `SELECT p.*, pm.role FROM projects p JOIN project_members pm ON pm.project_id = p.id
+      `SELECT p.*, pm.role, pm.permissions_json, pm.permissions_revision FROM projects p JOIN project_members pm ON pm.project_id = p.id
        WHERE ${conditions.join(' AND ')}
        ORDER BY p.created_at DESC, p.id DESC LIMIT ?`,
     )
       .bind(...binds)
-      .all<ProjectRow & { role: 'owner' | 'member' }>();
+      .all<ProjectRow & { role: 'owner' | 'member'; permissions_json: string | null; permissions_revision: number }>();
     const hasMore = rows.results.length > paging.limit;
     const pageRows = rows.results.slice(0, paging.limit);
-    const items = await Promise.all(pageRows.map(async r => ({ ...toProject(r,r.role), ...await projectAccess(c.env,r.id,c.get('user')!.id) })));
+    const items = pageRows.map(r => ({ ...toProject(r,r.role), permissions: effectivePermissions(r.role,r.permissions_json), permissionsRevision: r.permissions_revision, canManagePermissions: r.role === 'owner' }));
     const lastRow = pageRows[pageRows.length - 1];
     return c.json(
       apiData(c, {

@@ -120,15 +120,26 @@ export async function releaseIdleReservation(env: Env, jobId: string, now = nowI
     .bind(jobId, target.id, now, new Date(Date.parse(now) - 2 * 60_000).toISOString()).run();
 }
 
-/** Minute recovery: terminal/idle slots need no age delay. Orphans retain a creation grace period. */
+/** Each sweep has a bounded stable page; protected calls still advance the cursor. */
 export async function releaseStaleReservations(env: Env, now: string): Promise<void> {
+  const sweep = 'idle_reservations', batchSize = 25;
+  await env.DB.prepare('INSERT OR IGNORE INTO maintenance_cursors(name,revision) VALUES(?1,0)').bind(sweep).run();
+  const cursor = await env.DB.prepare('SELECT cursor_created_at,cursor_id,revision FROM maintenance_cursors WHERE name=?1').bind(sweep)
+    .first<{cursor_created_at:string|null;cursor_id:string|null;revision:number}>();
+  if (!cursor) throw new Error('Reservation maintenance cursor is missing');
   const orphanBefore = new Date(Date.parse(now) - 2 * 60_000).toISOString();
-  const candidates = await env.DB.prepare(`SELECT r.job_id FROM usage_reservations r
+  const candidates = await env.DB.prepare(`SELECT r.id, r.created_at, r.job_id FROM usage_reservations r
     LEFT JOIN jobs j ON j.id = r.job_id
     WHERE r.status = 'reserved'
+      AND (?2 IS NULL OR r.created_at>?2 OR (r.created_at=?2 AND r.id>?3))
       AND (j.status IN ('succeeded','failed','cancelled','waiting_input')
         OR (j.id IS NULL AND r.created_at <= ?1)
-        OR EXISTS (SELECT 1 FROM ai_executions e WHERE e.target_kind = 'job' AND e.target_id = r.job_id AND e.state = 'paused'))`)
-    .bind(orphanBefore).all<{job_id:string}>();
+        OR EXISTS (SELECT 1 FROM ai_executions e WHERE e.target_kind = 'job' AND e.target_id = r.job_id AND e.state = 'paused'))
+    ORDER BY r.created_at,r.id LIMIT ?4`)
+    .bind(orphanBefore,cursor.cursor_created_at,cursor.cursor_id,batchSize).all<{id:string;created_at:string;job_id:string}>();
   for (const row of candidates.results) await releaseIdleReservation(env, row.job_id, now);
+  const last = candidates.results.length === batchSize ? candidates.results.at(-1) : undefined;
+  // Concurrent sweeps can repeat a safe fenced page, but cannot roll back a newer cursor.
+  await env.DB.prepare('UPDATE maintenance_cursors SET cursor_created_at=?2,cursor_id=?3,revision=revision+1 WHERE name=?1 AND revision=?4')
+    .bind(sweep,last?.created_at??null,last?.id??null,cursor.revision).run();
 }

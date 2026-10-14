@@ -3,7 +3,7 @@
 // staging / production 的资源 ID 由负责人创建真实资源后填入（见 docs/DEPLOY.md）。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "greenbp-team-office-backend",
+  "name": "ai-office-api-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-26",
   "compatibility_flags": ["nodejs_compat"],

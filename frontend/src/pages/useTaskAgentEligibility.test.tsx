@@ -5,7 +5,11 @@ import type { CollaborationTask } from '../api/collaboration';
 import { useTaskAgentEligibility } from './useTaskAgentEligibility';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../api/simplification', () => ({ projectRequest: request }));
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); vi.restoreAllMocks(); });
+const clients = new Set<QueryClient>();
+function queryClient(options?: ConstructorParameters<typeof QueryClient>[0]) {
+  const client = new QueryClient(options); clients.add(client); return client;
+}
+afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.clear(); vi.useRealTimers(); vi.resetAllMocks(); vi.restoreAllMocks(); });
 const task = { taskId: 't1', revision: 3 } as CollaborationTask;
 const verdict = (status: string, taskRevision = 3) => ({ status, taskRevision, sourceHash: 'hash', eligible: true, reason: null as string | null, jobId: 'j1' });
 function Probe({ current = task }) {
@@ -15,7 +19,7 @@ function Probe({ current = task }) {
 const batch = (value: ReturnType<typeof verdict>, taskId = 't1') => ({ items: [{ taskId, eligibility: value }] });
 const action = () => screen.getByRole('button', { name: '代实施' });
 function setup() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = queryClient({ defaultOptions: { queries: { retry: false } } });
   const content = (current = task) => <QueryClientProvider client={client}><Probe current={current} /></QueryClientProvider>;
   const view = render(content()); return { ...view, content, client };
 }
@@ -57,9 +61,11 @@ it('preserves the reason of a failed server eligibility check', async () => {
 
 it('batches twenty mounted tasks and shares a card/dialog lookup', async () => {
   request.mockImplementation(async (_project, path: string) => ({ items: path.split('taskIds=')[1].split(',').map(taskId => ({ taskId, eligibility: verdict('ready') })) }));
-  const client = new QueryClient();
+  const client = queryClient();
   render(<QueryClientProvider client={client}>{Array.from({ length: 20 }, (_, index) => <Probe key={index} current={{ ...task, taskId: `t${index}` }} />)}<Probe current={{ ...task, taskId: 't0' }} /></QueryClientProvider>);
-  await waitFor(() => expect(screen.getAllByRole('button', { name: '代实施' }).every(button => !button.hasAttribute('disabled'))).toBe(true));
+  await waitFor(() => expect(client.getQueryCache().findAll({ queryKey: ['task-agent-eligibility'] }).filter(query => query.state.data).length).toBe(20));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(screen.getAllByRole('button', { name: '代实施' }).every(button => !button.hasAttribute('disabled'))).toBe(true);
   expect(request).toHaveBeenCalledOnce();
   expect(request.mock.calls[0][1].split('taskIds=')[1].split(',')).toHaveLength(20);
 });
@@ -91,7 +97,7 @@ it('stops reads after unmount or logout clears the QueryClient', async () => {
   const view = setup(); await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   view.unmount(); await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
   expect(request).toHaveBeenCalledOnce();
-  const client = new QueryClient(); render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+  const client = queryClient(); render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   act(() => client.clear()); await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
   expect(request).toHaveBeenCalledTimes(2);
@@ -112,8 +118,11 @@ it('does not restore eligibility after a check finishes following logout', async
 
 it('splits fifty-one tasks into bounded batches', async () => {
   request.mockImplementation(async (_project, path: string) => ({ items: path.split('taskIds=')[1].split(',').map(taskId => ({ taskId, eligibility: verdict('ready') })) }));
-  render(<QueryClientProvider client={new QueryClient()}>{Array.from({ length: 51 }, (_, index) => <Probe key={index} current={{ ...task, taskId: `t${index}` }} />)}</QueryClientProvider>);
-  await waitFor(() => expect(screen.getAllByRole('button', { name: '代实施' }).every(button => !button.hasAttribute('disabled'))).toBe(true));
+  const client = queryClient();
+  render(<QueryClientProvider client={client}>{Array.from({ length: 51 }, (_, index) => <Probe key={index} current={{ ...task, taskId: `t${index}` }} />)}</QueryClientProvider>);
+  await waitFor(() => expect(client.getQueryCache().findAll({ queryKey: ['task-agent-eligibility'] }).filter(query => query.state.data).length).toBe(51));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(screen.getAllByRole('button', { name: '代实施' }).every(button => !button.hasAttribute('disabled'))).toBe(true);
   expect(request.mock.calls.map(call => call[1].split('taskIds=')[1].split(',').length)).toEqual([25, 25, 1]);
 });
 
@@ -144,7 +153,7 @@ it('pauses offline polling and immediately revalidates after reconnecting', asyn
 it('cancels undispatched later batches after logout during the first batch', async () => {
   let finishRead: (value: { items: [] }) => void = () => {};
   request.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
-  const client = new QueryClient();
+  const client = queryClient();
   render(<QueryClientProvider client={client}>{Array.from({ length: 51 }, (_, index) => <Probe key={index} current={{ ...task, taskId: `t${index}` }} />)}</QueryClientProvider>);
   await waitFor(() => expect(request).toHaveBeenCalledOnce());
   act(() => client.clear()); await act(async () => finishRead({ items: [] }));
@@ -154,7 +163,7 @@ it('cancels undispatched later batches after logout during the first batch', asy
 it('keeps a remounted registration intact when the removed read finishes', async () => {
   let finishRead: (value: ReturnType<typeof batch>) => void = () => {};
   request.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
-  const client = new QueryClient();
+  const client = queryClient();
   const content = (mounted: boolean) => <QueryClientProvider client={client}>{mounted && <Probe />}</QueryClientProvider>;
   const view = render(content(true)); await waitFor(() => expect(request).toHaveBeenCalledOnce());
   view.rerender(content(false));
@@ -186,7 +195,7 @@ it('resets running backoff when the execution job changes', async () => {
 it('shares pending checks and prevents another reader from racing a new GET', async () => {
   let finishCheck: (value: ReturnType<typeof verdict>) => void = () => {};
   request.mockResolvedValueOnce(batch(verdict('failed')));
-  const client = new QueryClient(); render(<QueryClientProvider client={client}><Probe /><Probe /></QueryClientProvider>);
+  const client = queryClient(); render(<QueryClientProvider client={client}><Probe /><Probe /></QueryClientProvider>);
   await waitFor(() => expect(screen.getAllByText('自动检查失败，可重试。')).toHaveLength(2));
   request.mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
   fireEvent.click(screen.getAllByRole('button', { name: '检查' })[0]);

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { deploymentIsolationProblems } from './lib/deployment-isolation.mjs';
 const require = createRequire(new URL('../backend/package.json', import.meta.url));
 const { experimental_readRawConfig } = require('wrangler');
 const environment = process.argv[2];
@@ -15,6 +16,8 @@ const frontend = config('../frontend/wrangler.jsonc');
 const api = backend.env?.[environment];
 const web = frontend.env?.[environment];
 const problems = [];
+problems.push(...deploymentIsolationProblems(backend,frontend,environment));
+console.log(JSON.stringify({environment,frontendWorker:web?.name,apiService:web?.services?.find(binding=>binding.binding==='API')?.service,backendWorker:api?.name,databaseId:api?.d1_databases?.find(binding=>binding.binding==='DB')?.database_id,r2Bucket:api?.r2_buckets?.find(binding=>binding.binding==='FILES')?.bucket_name,allowedOrigins:api?.vars?.ALLOWED_ORIGINS}));
 const check = (condition, message) => { if (!condition) problems.push(message); };
 check(/^[0-9a-f]{7,40}$/.test(process.env.VITE_BUILD_VERSION ?? ''), '发布必须显式提供 Git SHA: VITE_BUILD_VERSION');
 check(api && web, '缺少目标环境配置');

@@ -30,3 +30,24 @@ describe('frontend Worker routing', () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 });
+
+
+it.each(['/login','/login/','/help','/password-reset/','/app','/app/join?code=fixture','/app/projects/example/data'])('serves %s as a secured SPA navigation after an asset miss',async path=>{
+  const assets=vi.fn(async(request:Request)=>new URL(request.url).pathname==='/index.html'
+    ? new Response('<div id="root"></div>',{headers:{'content-type':'text/html'}})
+    : new Response('missing',{status:404}));
+  const response=await worker.fetch(new Request('https://example.test'+path),{ASSETS:{fetch:assets},API:{fetch:vi.fn()}});
+  expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(response.headers.get('content-security-policy')).toMatch(/'nonce-[^']+'/);
+  expect(assets).toHaveBeenCalledTimes(2);
+});
+it.each(['/assets/missing.js','/missing-page'])('keeps %s a 404 instead of returning index.html',async path=>{
+  const assets=vi.fn(async()=>new Response('missing',{status:404}));
+  const response=await worker.fetch(new Request('https://example.test'+path),{ASSETS:{fetch:assets},API:{fetch:vi.fn()}});
+  expect(response.status).toBe(404);expect(assets).toHaveBeenCalledOnce();
+});
+it('never turns an application POST into HTML',async()=>{
+  const assets=vi.fn(async()=>new Response('missing',{status:404}));
+  const response=await worker.fetch(new Request('https://example.test/app/join',{method:'POST'}),{ASSETS:{fetch:assets},API:{fetch:vi.fn()}});
+  expect(response.status).toBe(404);expect(assets).toHaveBeenCalledOnce();
+});

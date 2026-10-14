@@ -42,6 +42,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
     const run = async (name: string, task: () => Promise<unknown>) => { if (!await attempt(name, task)) failures++; };
     try {
       if (group === 'recovery') {
+        // Release a bounded page before admission, then another after recovery creates terminal states.
         await run('reservations_before_admission', () => releaseStaleReservations(env, now));
         await run('progression', () => dispatchProjectProgression(env));
         await run('notifications', () => dispatchNotifications(env));

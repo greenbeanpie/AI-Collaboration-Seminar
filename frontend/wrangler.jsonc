@@ -1,15 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "greenbp-team-office",
+  "name": "ai-office-web-local",
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-26",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": true,
-    "not_found_handling": "single-page-application"
+    "run_worker_first": ["/*", "!/assets/*"],
+    "not_found_handling": "404-page"
   },
-  "services": [{ "binding": "API", "service": "ai-office-api-staging" }],
+  "services": [{ "binding": "API", "service": "ai-office-api-local" }],
   "env": {
     "staging": {
       "name": "ai-office-web-staging",
