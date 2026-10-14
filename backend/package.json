@@ -25,7 +25,7 @@
     "typescript": "^7.0.2",
     "vitest": "^4.1.0",
     "workerd": "1.20261005.1",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.149.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
