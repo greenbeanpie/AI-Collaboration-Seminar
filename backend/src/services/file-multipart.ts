@@ -1,9 +1,9 @@
 import { triggerFileProcessing } from './file-processing-triggers';
 import type { Env } from '../env';
-import { AppError, invalidState, notFound, validationFailed, unsupportedMediaType } from '../core/errors';
+import { AppError, invalidState, notFound, validationFailed, unsupportedMediaType, fileTooLarge } from '../core/errors';
 import { nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
-import { validateUploadBytes } from './files';
+import { validateUploadBytes, uploadLimit } from './files';
 import { validateOfficePackage, isOfficeExtension } from './docx-validation';
 
 interface Upload { id:string;file_id:string;project_id:string;actor_id:string;lifecycle_version:number;upload_id:string;r2_key:string;size_bytes:number;part_bytes:number;status:string;operation_token:string|null;operation_expires_at:string|null }
@@ -29,6 +29,7 @@ export async function beginMultipart(env:Env,project:string,file:string,user:str
  const partBytes=Math.max(LIMITS.uploadPartBytes,Math.ceil(size/R2_PARTS/1048576)*1048576);
  if(partBytes>CF_REQUEST_BYTES)throw new AppError('FILE_TOO_LARGE','当前 CF Free 上传通道无法同时满足每请求100 MB与R2最多10000分片限制；需更高请求额度或R2直传通道',413,false,{platform:'Cloudflare Free request/R2 multipart',requestMaxBytes:CF_REQUEST_BYTES,maxParts:R2_PARTS});
  const f=await activeFile(env,project,file,user);
+ const limit=uploadLimit(f.ext);if(limit!==null&&size>limit)throw fileTooLarge(limit);
  const existing=()=>env.DB.prepare("SELECT * FROM file_upload_sessions WHERE file_id=?1 AND lifecycle_version=?2 AND status IN ('uploading','completing','aborting')").bind(file,f.lifecycle_version).first<Upload>();
  const old=await existing();if(old){if(old.size_bytes!==size)throw invalidState('同一文件上传大小已变化');return {sessionId:old.id,partBytes:old.part_bytes};}
  const id=crypto.randomUUID(),key=`${project}/${file}.l${f.lifecycle_version}.${id}${f.ext}`;
@@ -90,7 +91,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
   if(!object)object=await env.FILES.resumeMultipartUpload(s.r2_key,s.upload_id).complete(parts.results.map(({partNumber,etag})=>({partNumber,etag})));
   completed=true;if(object.size!==s.size_bytes)throw unsupportedMediaType('上传对象大小与登记大小不符');
   const read=async(offset:number,length:number)=>{const o=await env.FILES.get(s.r2_key,{range:{offset,length}});if(!o)throw notFound('文件内容缺失');return new Uint8Array(await o.arrayBuffer());};
-  const f=await activeFile(env,project,file,user);let mime:string;
+  const f=await activeFile(env,project,file,user);const limit=uploadLimit(f.ext);if(limit!==null&&object.size>limit)throw fileTooLarge(limit);let mime:string;
   if(isOfficeExtension(f.ext))mime=await validateOfficePackage(f.ext, object.size,read);
   else if(f.ext==='.txt'||f.ext==='.md') {
    const obj=await env.FILES.get(s.r2_key);if(!obj)throw notFound('文件内容缺失');
@@ -106,7 +107,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
   await triggerFileProcessing(env, project, file, user);
   return {fileId:file,status:'available'};
  } catch(error) {
-  if(completed&&error instanceof AppError&&error.code==='UNSUPPORTED_MEDIA_TYPE') {
+  if(completed&&error instanceof AppError&&['UNSUPPORTED_MEDIA_TYPE','FILE_TOO_LARGE'].includes(error.code)) {
    await env.DB.batch([
     env.DB.prepare(`UPDATE files SET status='quarantined',r2_key=?2,gc_after=?3 WHERE id=?1 AND ${liveGuard('?1','?4','?5','?6',true)} AND EXISTS(SELECT 1 FROM file_upload_sessions WHERE id=?7 AND operation_token=?8)`).bind(file,s.r2_key,new Date(Date.now()+48*3600000).toISOString(),project,user,s.lifecycle_version,id,token),
     env.DB.prepare("UPDATE file_upload_sessions SET status='aborted',operation_token=NULL,operation_expires_at=NULL,updated_at=?3 WHERE id=?1 AND operation_token=?2").bind(id,token,nowIso())]);

@@ -10,8 +10,7 @@ import { apiEnvelope, apiErrorEnvelope } from '../core/openapi';
 import { requireProjectMember, requireUser } from '../core/auth';
 import { nextCursor, parsePaging } from '../core/pagination';
 import { changeFileLifecycle } from '../services/file-lifecycle';
-import { createFileInit, readFileContent, storeFileContent, readBoundedUpload, uploadLimit } from '../services/files';
-import { notFound } from '../core/errors';
+import { createFileInit, readFileContent, storeFileContent, readBoundedUpload, uploadLimit, pendingFileUpload } from '../services/files';
 
 const paramsProject = z.object({ projectId: z.string().uuid().openapi({ description: '项目 ID' }) });
 const paramsFile = paramsProject.extend({ fileId: z.string().uuid() });
@@ -163,8 +162,8 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
 
   app.openapi(contentRoute, async (c) => {
     const { projectId, fileId } = c.req.valid('param');
-    const file=await c.env.DB.prepare('SELECT ext FROM files WHERE id=?1 AND project_id=?2 AND deleted_at IS NULL').bind(fileId,projectId).first<{ext:string}>();
-    if(!file)throw notFound('文件不存在');
+    const actorId=c.get('user')!.id;
+    const file=await pendingFileUpload(c.env,projectId,fileId,actorId);
     const fileLimit=uploadLimit(file.ext);
     let bytes:Uint8Array;
     try { bytes=await readBoundedUpload(c.req.raw.body,fileLimit ?? LIMITS.recommendedCloudFileBytes); }
@@ -172,7 +171,7 @@ export function registerFileRoutes(app: OpenAPIHono<AppEnv>): void {
       if(fileLimit===null&&error instanceof AppError&&error.code==='FILE_TOO_LARGE')throw new AppError('FILE_TOO_LARGE','单次快捷上传超过10 MiB，请改用分片上传；文件总大小没有应用上限',413,false);
       throw error;
     }
-    const stored = await storeFileContent(c.env, { projectId, fileId, bytes });
+    const stored = await storeFileContent(c.env, { projectId, fileId, actorId, bytes });
     return c.json(
       apiData(c, { fileId, sizeBytes: stored.sizeBytes, sha256: stored.sha256, mimeDetected: stored.mimeDetected }),
       201,

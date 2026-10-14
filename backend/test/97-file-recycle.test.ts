@@ -50,7 +50,7 @@ describe('recoverable project file lifecycle',()=>{
   });
   it('retains bytes/history, cancels parse/OCR/summary and outbox; restore cannot revive them',async()=>{
     const owner=await seedUser();const pid=await seedProject(owner.userId);const id=await init(owner.token,pid,'original.txt');
-    await storeFileContent(env,{projectId:pid,fileId:id,bytes:new TextEncoder().encode('历史来源正文')});
+    await storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:id,bytes:new TextEncoder().encode('历史来源正文')});
     const sourceResp=await request(owner.token,pid,'/sources','POST',{kind:'file',fileId:id,title:'已导入文件'});expect(sourceResp.status).toBe(201);
     const source=(await sourceResp.json() as {data:{sourceId:string;sourceVersionId:string}}).data;
     const now=nowIso();const jobs=[newId(),newId(),newId()];
@@ -76,7 +76,7 @@ describe('recoverable project file lifecycle',()=>{
   });
   it('keeps quarantined original objects safe from existing GC after recycle and restore',async()=>{
     const owner=await seedUser();const pid=await seedProject(owner.userId);const id=await init(owner.token,pid,'invalid.pdf');
-    await expect(storeFileContent(env,{projectId:pid,fileId:id,bytes:new TextEncoder().encode('invalid but retained')})).rejects.toThrow();
+    await expect(storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:id,bytes:new TextEncoder().encode('invalid but retained')})).rejects.toThrow();
     await env.DB.prepare("UPDATE files SET gc_after='2000-01-01T00:00:00Z' WHERE id=?1").bind(id).run();
     const file=await env.DB.prepare('SELECT r2_key FROM files WHERE id=?1').bind(id).first<{r2_key:string}>();
     const deletion=vi.spyOn(env.FILES,'delete');
@@ -95,7 +95,7 @@ describe('recoverable project file lifecycle',()=>{
   });
   it('restores a dependent source once all recycled original and page image files are restored',async()=>{
     const owner=await seedUser();const pid=await seedProject(owner.userId);const original=await init(owner.token,pid);
-    await storeFileContent(env,{projectId:pid,fileId:original,bytes:new TextEncoder().encode('原文')});
+    await storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:original,bytes:new TextEncoder().encode('原文')});
     const r=await request(owner.token,pid,'/sources','POST',{kind:'file',fileId:original});const source=(await r.json() as {data:{sourceId:string;sourceVersionId:string}}).data;
     const image=await init(owner.token,pid,'page.png');
     await env.DB.prepare("UPDATE files SET status='available' WHERE id=?1").bind(image).run();
@@ -109,7 +109,7 @@ describe('recoverable project file lifecycle',()=>{
   });
   it('concurrent repeat deletion changes one lifecycle only and download is never cached',async()=>{
     const owner=await seedUser();const pid=await seedProject(owner.userId);const id=await init(owner.token,pid);
-    await storeFileContent(env,{projectId:pid,fileId:id,bytes:new TextEncoder().encode('retained')});
+    await storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:id,bytes:new TextEncoder().encode('retained')});
     const read=await request(owner.token,pid,`/files/${id}/content`);expect(read.headers.get('cache-control')).toBe('no-store');
     const responses=await Promise.all([change(owner.token,pid,id,1),change(owner.token,pid,id,1)]);
     expect(responses.map(r=>r.status).sort()).toEqual([200,409]);
@@ -125,10 +125,10 @@ describe('recoverable project file lifecycle',()=>{
       if(args[0].includes('.l1.')){started();await held;}
       return originalPut(...args);
     });
-    const old=storeFileContent(env,{projectId:pid,fileId:id,bytes:new TextEncoder().encode('old upload')});
+    const old=storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:id,bytes:new TextEncoder().encode('old upload')});
     const ignored=expect(old).rejects.toThrow('文件生命周期已变化');await began;
     expect((await change(owner.token,pid,id,1)).status).toBe(200);expect((await change(owner.token,pid,id,2,true)).status).toBe(200);
-    await storeFileContent(env,{projectId:pid,fileId:id,bytes:new TextEncoder().encode('fresh upload')});release();await ignored;put.mockRestore();
+    await storeFileContent(env,{actorId:owner.userId,projectId:pid,fileId:id,bytes:new TextEncoder().encode('fresh upload')});release();await ignored;put.mockRestore();
     const file=await env.DB.prepare('SELECT status,r2_key,lifecycle_version FROM files WHERE id=?1').bind(id).first<{status:string;r2_key:string;lifecycle_version:number}>();
     expect(file?.status).toBe('available');expect(file?.lifecycle_version).toBe(3);expect(file?.r2_key).toContain('.l3.');expect(await(await env.FILES.get(file!.r2_key))?.text()).toBe('fresh upload');
   });
