@@ -15,7 +15,7 @@
     "fast-xml-parser": "^5.11.2",
     "hono": "^4.13.13",
     "unpdf": "^1.8.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
