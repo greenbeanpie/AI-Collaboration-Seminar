@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { join, resolve, sep } from 'node:path';
 const version = process.env.VITE_BUILD_VERSION;
 if (!/^[0-9a-f]{7,40}$/.test(version ?? '')) throw new Error('Set VITE_BUILD_VERSION to the Git commit SHA.');
 const root = new URL('../', import.meta.url);
@@ -17,9 +18,11 @@ function snapshot(directory, prefix = '') {
   return hashes;
 }
 function build() {
-  rmSync(dist, { recursive: true, force: true });
-  execFileSync('npm', ['run', 'build', '--prefix', 'frontend'], { cwd: root, stdio: 'inherit', env: { ...process.env, VITE_BUILD_VERSION: version } });
-  return snapshot(dist.pathname);
+  const directory=fileURLToPath(dist),workspace=fileURLToPath(root);
+  if(!resolve(directory).startsWith(resolve(workspace)+sep))throw new Error('Build directory must stay inside the workspace');
+  rmSync(directory, { recursive: true, force: true });
+  execFileSync(process.execPath, [process.env.npm_execpath ?? join(process.execPath, '..', 'node_modules/npm/bin/npm-cli.js'), 'run', 'build', '--prefix', 'frontend'], { cwd: root, stdio: 'inherit', env: { ...process.env, VITE_BUILD_VERSION: version } });
+  return snapshot(fileURLToPath(dist));
 }
 const first = build();
 const second = build();
