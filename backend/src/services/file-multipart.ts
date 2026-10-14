@@ -1,4 +1,5 @@
 import { triggerFileProcessing } from './file-processing-triggers';
+import {reserveStorage} from './managed-storage';
 import type { Env } from '../env';
 import { AppError, invalidState, notFound, validationFailed, unsupportedMediaType, fileTooLarge } from '../core/errors';
 import { nowIso } from '../core/db';
@@ -33,6 +34,7 @@ export async function beginMultipart(env:Env,project:string,file:string,user:str
  const existing=()=>env.DB.prepare("SELECT * FROM file_upload_sessions WHERE file_id=?1 AND lifecycle_version=?2 AND status IN ('uploading','completing','aborting')").bind(file,f.lifecycle_version).first<Upload>();
  const old=await existing();if(old){if(old.size_bytes!==size)throw invalidState('同一文件上传大小已变化');return {sessionId:old.id,partBytes:old.part_bytes};}
  const id=crypto.randomUUID(),key=`${project}/${file}.l${f.lifecycle_version}.${id}${f.ext}`;
+ await reserveStorage(env,key,size,'multipart',{userId:user,projectId:project,category:'upload'});
  const upload=await env.FILES.createMultipartUpload(key);
  try {
   const inserted=await env.DB.prepare(`INSERT INTO file_upload_sessions(id,file_id,project_id,actor_id,lifecycle_version,upload_id,r2_key,size_bytes,part_bytes,created_at,updated_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10 WHERE ${liveGuard('?2','?3','?4','?5',true)}`).bind(id,file,project,user,f.lifecycle_version,upload.uploadId,key,size,partBytes,nowIso()).run();
@@ -120,7 +122,8 @@ export async function abortMultipart(env:Env,project:string,file:string,user:str
  const token=await claimOperation(env,s,'aborting');
  try {
   const object=await env.FILES.head(s.r2_key);
-  if(object)await env.FILES.delete(s.r2_key);else await env.FILES.resumeMultipartUpload(s.r2_key,s.upload_id).abort();
+  const reserved=await env.DB.prepare('SELECT 1 FROM storage_reservations WHERE object_key=?1 AND upload_id=?2').bind(s.r2_key,s.upload_id).first();
+  if(object&&!reserved)await env.FILES.delete(s.r2_key);else await env.FILES.resumeMultipartUpload(s.r2_key,s.upload_id).abort();
   const update=await env.DB.prepare(`UPDATE file_upload_sessions SET status='aborted',operation_token=NULL,operation_expires_at=NULL,updated_at=?3 WHERE id=?1 AND status='aborting' AND operation_token=?2 AND ${liveGuard('?4','?5','?6','?7',true)}`).bind(id,token,nowIso(),file,project,user,s.lifecycle_version).run();
   if(!update.meta.changes)throw invalidState('取消时文件生命周期或成员身份已变化');return {status:'aborted'};
  } catch(error){await releaseOperation(env,id,token);throw error;}

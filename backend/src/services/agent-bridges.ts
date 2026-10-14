@@ -1,4 +1,6 @@
 import { projectGoal } from './project-simplification';
+import {bridgeAuthoritySql} from './bridge-authority';
+export {bridgeAuthoritySql} from './bridge-authority';
 import type { Env } from '../env';
 import { AppError, invalidState, notFound, permissionDenied, unauthenticated, validationFailed, versionConflict } from '../core/errors';
 import { newId, nowIso, sha256Hex } from '../core/db';
@@ -15,7 +17,6 @@ const active=['claimed','running','waiting_input','uploading','cancel_requested'
 const executing=['claimed','running','waiting_input','uploading'];
 export const bridgeDto=(r:HandoffRow)=>({handoffId:r.id,projectId:r.project_id,taskId:r.task_id,taskRevision:r.task_revision,deviceId:r.device_id,state:r.state,reason:r.reason,snapshotHash:r.snapshot_hash,sessionId:r.session_id,result:r.result_json?JSON.parse(r.result_json) as BridgeResult:null,stale:!!r.stale,adoptedSubmissionId:r.adopted_submission_id,createdAt:r.created_at,updatedAt:r.updated_at});
 /** Repeat capability checks inside the mutation, after network/R2 awaits. */
-export const bridgeAuthoritySql=(h='agent_bridge_handoffs')=>`EXISTS(SELECT 1 FROM agent_bridge_devices d JOIN agent_bridge_scopes s ON s.device_id=d.id JOIN project_members m ON m.project_id=s.project_id AND m.user_id=d.owner_id WHERE d.id=${h}.device_id AND d.revoked_at IS NULL AND d.owner_id=${h}.requested_by AND s.project_id=${h}.project_id) AND EXISTS(SELECT 1 FROM project_members WHERE project_id=${h}.project_id AND user_id=${h}.requested_by)`;
 export async function bridgeMember(env:Env,projectId:string,userId:string){if(!await env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(projectId,userId).first())throw permissionDenied('项目成员权限已失效');}
 export async function loadBridgeDevice(env:Env,bearer:string|undefined):Promise<DeviceRow>{
  if(!bearer?.startsWith('Bearer ')||bearer.length<40||bearer.length>520)throw unauthenticated('设备连接凭据无效');
@@ -143,7 +144,7 @@ export async function bridgeArtifactInit(env:Env,r:HandoffRow,input:{artifactId:
 }
 export async function storeBridgeArtifact(env:Env,r:HandoffRow,artifactId:string,bytes:Uint8Array){
  if(!executing.includes(r.state))throw invalidState('当前交接不能上传成果');const a=await env.DB.prepare('SELECT * FROM agent_bridge_artifacts WHERE handoff_id=?1 AND artifact_id=?2').bind(r.id,artifactId).first<ArtifactRow>();if(!a)throw notFound();if(bytes.length!==a.size_bytes||await sha256Hex(bytes)!==a.sha256)throw validationFailed('成果字节数或 SHA256 与清单不匹配');
- const existing=await env.DB.prepare("SELECT size_bytes,sha256 FROM files WHERE id=?1 AND project_id=?2 AND status='available' AND deleted_at IS NULL").bind(a.file_id,r.project_id).first<{size_bytes:number;sha256:string}>();if(existing){if(existing.size_bytes!==a.size_bytes||existing.sha256!==a.sha256)throw invalidState('已存储的成果与清单不同');}else await storeFileContent(env,{projectId:r.project_id,fileId:a.file_id,actorId:r.requested_by,bytes});
+ const existing=await env.DB.prepare("SELECT size_bytes,sha256 FROM files WHERE id=?1 AND project_id=?2 AND status='available' AND deleted_at IS NULL").bind(a.file_id,r.project_id).first<{size_bytes:number;sha256:string}>();if(existing){if(existing.size_bytes!==a.size_bytes||existing.sha256!==a.sha256)throw invalidState('已存储的成果与清单不同');}else await storeFileContent(env,{projectId:r.project_id,fileId:a.file_id,actorId:r.requested_by,bridgeHandoffId:r.id,bytes});
  const stored=await env.DB.prepare(`UPDATE agent_bridge_artifacts SET stored=1 WHERE handoff_id=?1 AND artifact_id=?2 AND EXISTS(SELECT 1 FROM agent_bridge_handoffs h WHERE h.id=?1 AND h.state IN ('claimed','running','waiting_input','uploading') AND ${bridgeAuthoritySql('h')})`).bind(r.id,artifactId).run();if(!stored.meta.changes)throw permissionDenied('交接或设备授权已变化');return{stored:true,fileId:a.file_id};
 }
 export async function completeBridgeHandoff(env:Env,r:HandoffRow,input:{summary:string;artifactIds:string[];sessionId:string}){

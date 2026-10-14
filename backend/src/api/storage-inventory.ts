@@ -4,7 +4,7 @@ import {apiData} from '../core/api';
 import {apiEnvelope} from '../core/openapi';
 import {invalidState,permissionDenied} from '../core/errors';
 import {requireAdmin} from './admin';
-import {rawStorage,storageOwner} from '../services/managed-storage';
+import {rawStorage,storageOwner,resolveStorageWithEvidence} from '../services/managed-storage';
 import {loadResourcePolicy,saveResourcePolicy} from '../services/resource-policy';
 import {nowIso} from '../core/db';
 const base='/api/v1/admin/storage-inventory';
@@ -20,6 +20,10 @@ export function registerStorageInventoryRoutes(app:OpenAPIHono<AppEnv>){
  app.use(base,requireAdmin,async(c,next)=>{if(c.get('user')&&c.get('user')!.role!=='super_admin')throw permissionDenied('需要超级管理员权限');c.header('Cache-Control','no-store');await next();});
  app.use(base+'/*',requireAdmin,async(c,next)=>{if(c.get('user')&&c.get('user')!.role!=='super_admin')throw permissionDenied('需要超级管理员权限');c.header('Cache-Control','no-store');await next();});
  app.openapi(createRoute({method:'get',path:base,tags:['admin'],responses}),async c=>c.json(apiData(c,await status(c.env)),200));
+ app.openapi(createRoute({method:'post',path:base+'/reservations/{id}/resolve',tags:['admin'],request:{params:z.object({id:z.string().uuid()}),body:{required:true,content:{'application/json':{schema:z.object({providerConfirmedEnded:z.literal(true),reason:z.string().trim().min(10).max(1000)}).strict()}}}},responses:{200:{description:'已按实际对象核对并记录审计',content:{'application/json':{schema:apiEnvelope(z.object({resolved:z.literal(true)}),'StorageResolutionResponse')}}}}}),async c=>{
+  const actor=c.get('user');if(actor?.role!=='super_admin')throw permissionDenied('必须由超级管理员账户核对');
+  return c.json(apiData(c,await resolveStorageWithEvidence(c.env,c.req.valid('param').id,actor.id,c.req.valid('json').reason)),200);
+ });
  app.openapi(createRoute({method:'post',path:base+'/start',tags:['admin'],request:{body:{required:true,content:{'application/json':{schema:z.object({expectedVersion:z.number().int().positive(),externalStorageBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),verificationNote:z.string().trim().min(10).max(1000)}).strict()}}}},responses}),async c=>{
   const b=c.req.valid('json'),p=await loadResourcePolicy(c.env),{version:_,...fields}=p;
   if(await c.env.DB.prepare("SELECT 1 FROM storage_reservations WHERE kind IN('put','delete')").first())throw invalidState('仍有在途或结果未知的对象写入，先核对再开始盘点');

@@ -147,3 +147,17 @@ export async function reconcileStorage(env:Env,limit=25){
   // HTTP writes with ambiguous completion retain quota until an operator verifies absence.
  }
 }
+
+/** The administrator must first establish that the underlying write has ended. */
+export async function resolveStorageWithEvidence(env:Env,id:string,actorId:string,reason:string){
+ const r=await env.DB.prepare("SELECT * FROM storage_reservations WHERE id=?1 AND status='uncertain' AND kind IN('put','delete')").bind(id).first<Reservation>();
+ if(!r)throw invalidState('该存储操作不是可人工核对的未知写入');
+ const object=await rawStorage(env).head(r.object_key);
+ if(object){
+  await commit(env,r,object);
+ }else{
+  await env.DB.batch([env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?1').bind(r.object_key),env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(r.id)]);
+ }
+ await env.DB.prepare('INSERT INTO storage_resolution_audit(id,reservation_id,actor_id,reason,created_at) VALUES(?1,?2,?3,?4,?5)').bind(newId(),id,actorId,reason,nowIso()).run();
+ return {resolved:true as const};
+}

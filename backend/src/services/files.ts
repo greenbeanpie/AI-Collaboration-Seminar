@@ -1,4 +1,5 @@
 import { triggerFileProcessing } from './file-processing-triggers';
+import {bridgeUploadSql} from './bridge-authority';
 import { validateOfficePackage, isOfficeExtension, OFFICE_PACKAGES } from './docx-validation';
 import { nowIso, newId, sha256Hex } from '../core/db';
 import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
@@ -125,11 +126,11 @@ export async function createFileInit(
 }
 
 /** Only the initializing member may finish an upload; contributors are attribution. */
-export async function pendingFileUpload(env: Env, projectId: string, fileId: string, actorId: string): Promise<FileRow & { uploader_user_id: string }> {
+export async function pendingFileUpload(env: Env, projectId: string, fileId: string, actorId: string, bridgeHandoffId?:string): Promise<FileRow & { uploader_user_id: string }> {
   const row = await env.DB.prepare(`SELECT f.id, f.project_id, f.r2_key, f.ext, f.status, f.deleted_at, f.lifecycle_version, f.uploader_user_id
     FROM files f WHERE f.id=?1 AND f.project_id=?2 AND f.deleted_at IS NULL AND f.uploader_user_id=?3
-    AND EXISTS(SELECT 1 FROM project_members m WHERE m.project_id=f.project_id AND m.user_id=?3)`)
-    .bind(fileId, projectId, actorId).first<FileRow & { uploader_user_id: string }>();
+    AND EXISTS(SELECT 1 FROM project_members m WHERE m.project_id=f.project_id AND m.user_id=?3) AND ${bridgeUploadSql('?4','?3','?2')}`)
+    .bind(fileId, projectId, actorId,bridgeHandoffId??null).first<FileRow & { uploader_user_id: string }>();
   if (!row) throw notFound('待上传文件不存在或不属于当前项目成员');
   if (row.status !== 'pending') throw invalidState('文件内容已上传，不能重复上传');
   return row;
@@ -139,11 +140,11 @@ function uploadAuthoritySql(actor: string, project: string): string {
 }
 
 /** 隔离暂存：校验失败但字节已接收时落 R2，等待定时回收 */
-async function quarantine(env: Env, row: FileRow, actorId: string, outputKey: string, bytes: Uint8Array, reason: string): Promise<never> {
+async function quarantine(env: Env, row: FileRow, actorId: string, outputKey: string, bytes: Uint8Array, reason: string,bridgeHandoffId?:string): Promise<never> {
   await env.FILES.put(outputKey, bytes);
   const gcAfter = new Date(Date.now() + LIMITS.quarantineGcHours * 3600_000).toISOString();
-  const updated = await env.DB.prepare(`UPDATE files SET status = 'quarantined', gc_after = ?2, r2_key=?4 WHERE id = ?1 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?3 AND ${uploadAuthoritySql('?5', '?6')}`)
-    .bind(row.id, gcAfter,row.lifecycle_version,outputKey,actorId,row.project_id)
+  const updated = await env.DB.prepare(`UPDATE files SET status = 'quarantined', gc_after = ?2, r2_key=?4 WHERE id = ?1 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?3 AND ${uploadAuthoritySql('?5', '?6')} AND ${bridgeUploadSql('?7','?5','?6')}`)
+    .bind(row.id, gcAfter,row.lifecycle_version,outputKey,actorId,row.project_id,bridgeHandoffId??null)
     .run();
   if (!updated.meta.changes) throw invalidState('文件生命周期或成员身份已变化，上传结果未应用');
   throw unsupportedMediaType(reason);
@@ -156,9 +157,9 @@ async function quarantine(env: Env, row: FileRow, actorId: string, outputKey: st
  */
 export async function storeFileContent(
   env: Env,
-  params: { projectId: string; fileId: string; actorId: string; bytes: Uint8Array },
+  params: { projectId: string; fileId: string; actorId: string; bytes: Uint8Array;bridgeHandoffId?:string },
 ): Promise<{ sizeBytes: number; sha256: string; mimeDetected: string }> {
-  const row = await pendingFileUpload(env, params.projectId, params.fileId, params.actorId);
+  const row = await pendingFileUpload(env, params.projectId, params.fileId, params.actorId,params.bridgeHandoffId);
   // Every attempt owns its object; a losing DB CAS cannot overwrite its winner.
   const outputKey = `${row.project_id}/${row.id}.l${row.lifecycle_version}.${newId()}${row.ext}`;
   if(!params.bytes.length)throw validationFailed('文件不能为空');
@@ -172,26 +173,26 @@ export async function storeFileContent(
   let mimeDetected: string;
   if (isOfficeExtension(row.ext)) {
     try { mimeDetected = await validateOfficePackage(row.ext, params.bytes.length, async (offset,length)=>params.bytes.slice(offset,offset+length)); }
-    catch { return await quarantine(env,row,params.actorId,outputKey,params.bytes,`${row.ext.slice(1).toUpperCase()} 包结构无效`); }
+    catch { return await quarantine(env,row,params.actorId,outputKey,params.bytes,`${row.ext.slice(1).toUpperCase()} 包结构无效`,params.bridgeHandoffId); }
   } else if (spec) {
     mimeDetected = spec.mime;
   } else if (row.ext === '.txt' || row.ext === '.md') {
     try {
       new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(params.bytes);
     } catch {
-      return await quarantine(env, row, params.actorId, outputKey, params.bytes, '文本文件不是有效的 UTF-8 内容');
+      return await quarantine(env, row, params.actorId, outputKey, params.bytes, '文本文件不是有效的 UTF-8 内容',params.bridgeHandoffId);
     }
     mimeDetected = row.ext === '.md' ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8';
   } else {
-    return await quarantine(env, row, params.actorId, outputKey, params.bytes, `文件头与扩展名「${row.ext}」不符`);
+    return await quarantine(env, row, params.actorId, outputKey, params.bytes, `文件头与扩展名「${row.ext}」不符`,params.bridgeHandoffId);
   }
 
   const sha = await sha256Hex(params.bytes);
   await env.FILES.put(outputKey, params.bytes);
   const updated = await env.DB.prepare(
-    `UPDATE files SET status = 'available', mime_detected = ?1, size_bytes = ?2, sha256 = ?3, r2_key=?5 WHERE id = ?4 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?6 AND ${uploadAuthoritySql('?7', '?8')}`,
+    `UPDATE files SET status = 'available', mime_detected = ?1, size_bytes = ?2, sha256 = ?3, r2_key=?5 WHERE id = ?4 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?6 AND ${uploadAuthoritySql('?7', '?8')} AND ${bridgeUploadSql('?9','?7','?8')}`,
   )
-    .bind(mimeDetected, params.bytes.byteLength, sha, row.id, outputKey,row.lifecycle_version,params.actorId,params.projectId)
+    .bind(mimeDetected, params.bytes.byteLength, sha, row.id, outputKey,row.lifecycle_version,params.actorId,params.projectId,params.bridgeHandoffId??null)
     .run();
   if(!updated.meta.changes) throw invalidState('文件生命周期已变化，上传结果未应用');
   await triggerFileProcessing(env, params.projectId, row.id, row.uploader_user_id);

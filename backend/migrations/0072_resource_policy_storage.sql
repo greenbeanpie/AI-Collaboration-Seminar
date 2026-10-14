@@ -20,6 +20,7 @@ CREATE TABLE storage_reservations (
   status TEXT NOT NULL CHECK(status IN('reserved','uncertain')), upload_id TEXT, expires_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX idx_storage_reservations_expiry ON storage_reservations(expires_at);
+CREATE TABLE storage_resolution_audit(id TEXT PRIMARY KEY,reservation_id TEXT NOT NULL,actor_id TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE storage_counters(scope TEXT NOT NULL,scope_id TEXT NOT NULL,bytes INTEGER NOT NULL DEFAULT 0 CHECK(bytes>=0),PRIMARY KEY(scope,scope_id));
 CREATE TRIGGER storage_objects_count_insert AFTER INSERT ON storage_objects
 BEGIN
