@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ResourcePolicySettings } from './ResourcePolicySettings';
 import { AiResourceRecoverySettings } from './AiResourceRecoverySettings';
 import { ResourceUsageNotice } from '../components/ResourceUsageNotice';
+import { ApiError } from '../api/client';
 const mocks=vi.hoisted(()=>({request:vi.fn(),user:{id:'member',role:'user'}}));
 vi.mock('../auth',()=>({adminRequest:mocks.request,useSession:()=>({data:mocks.user})}));
 vi.mock('./settings-dirty',()=>({useSettingsDirty:()=>{}}));
@@ -13,8 +14,28 @@ const usage=(used=2)=>({ai:{day:'2026-10-14',timezone:'Asia/Shanghai',enabled:tr
 function setup(content:React.ReactNode){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});clients.push(client);const view=(node:React.ReactNode)=><QueryClientProvider client={client}>{node}</QueryClientProvider>;return {...render(view(content)),view};}
 beforeEach(()=>{mocks.request.mockReset();mocks.user={id:'member',role:'user'};});
 afterEach(()=>{cleanup();for(const client of clients.splice(0))client.clear();});
-it('shows hard daily/remaining quotas, Beijing reset and storage reservation separately',async()=>{mocks.request.mockResolvedValue(usage());setup(<ResourceUsageNotice projectId="project"/>);await screen.findByText(/个人 AI 已用 2\/300 次，剩余 298 次/);expect(screen.getByText(/每天北京时间零点重置/)).toBeInTheDocument();expect(screen.getByText(/上传待确认 2 MB/)).toBeInTheDocument();expect(mocks.request).toHaveBeenCalledWith('/api/v1/resource-usage?projectId=project');});
+it('shows hard daily/remaining quotas, Beijing reset and storage reservation separately',async()=>{mocks.request.mockResolvedValue(usage());setup(<ResourceUsageNotice projectId="project"/>);await screen.findByText(/个人 AI 已用 2\/300 次，剩余 298 次/);expect(screen.getByText(/每天北京时间零点重置/)).toBeInTheDocument();expect(screen.getByText(/上传待确认 2 MB/)).toBeInTheDocument();expect(mocks.request).toHaveBeenCalledWith('/api/v1/resource-usage?projectId=project',expect.objectContaining({signal:expect.any(AbortSignal)}));});
 it('does not render late personal usage from a previous account',async()=>{let finish:(data:ReturnType<typeof usage>)=>void=()=>{};mocks.request.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const rendered=setup(<ResourceUsageNotice/>);await waitFor(()=>expect(mocks.request).toHaveBeenCalledOnce());mocks.user={id:'next',role:'user'};mocks.request.mockResolvedValue(usage(9));rendered.rerender(rendered.view(<ResourceUsageNotice/>));await screen.findByText(/个人 AI 已用 9\/300/);await act(async()=>finish(usage(299)));expect(screen.queryByText(/个人 AI 已用 299\/300/)).not.toBeInTheDocument();});
-it('saves the independent platform policy with expectedVersion and kill switch',async()=>{mocks.request.mockResolvedValueOnce(policy).mockResolvedValueOnce({...policy,version:4,userDailyCalls:250,aiEnabled:false});setup(<ResourcePolicySettings access token=""/>);await screen.findByDisplayValue('300');fireEvent.change(screen.getByLabelText('个人每日 AI 调用上限'),{target:{value:'250'}});fireEvent.click(screen.getByLabelText(/允许平台 AI 请求/));fireEvent.click(screen.getByRole('button',{name:'保存资源策略'}));await screen.findByText('资源策略已保存，下次请求立即按新策略检查。');const {version,...fields}=policy;expect(mocks.request.mock.calls[1]).toEqual(['/api/v1/admin/resource-policy',{method:'PUT',token:'',body:{expectedVersion:version,...fields,userDailyCalls:250,aiEnabled:false}}]);});
-it('requires a supplier acknowledgement and reason before audited release and sends no operator token',async()=>{mocks.user={id:'operator',role:'super_admin'};mocks.request.mockResolvedValue({items:[{id:'held',project_id:'p',user_id:'u',operation:'text_or_vision',status:'uncertain',quota_day:'2026-10-14',created_at:'2026-10-14T00:00:00Z',lease_until:null}]});setup(<AiResourceRecoverySettings/>);const release=await screen.findByRole('button',{name:'审计释放并发'});expect(release).toBeDisabled();fireEvent.change(screen.getByLabelText(/核对依据与原因/),{target:{value:'已核实供应商侧请求确已结束'}});expect(release).toBeDisabled();fireEvent.click(screen.getByLabelText('已向供应商确认此请求结束'));fireEvent.click(release);await screen.findByText('并发名额已释放，当日 AI 计数保留。');expect(mocks.request).toHaveBeenCalledWith('/api/v1/admin/ai-resource-dispatches/held/release',{method:'POST',body:{providerConfirmedEnded:true,reason:'已核实供应商侧请求确已结束'}});});
+it('saves the independent platform policy with expectedVersion and kill switch',async()=>{mocks.request.mockResolvedValueOnce(policy).mockResolvedValueOnce({...policy,version:4,userDailyCalls:250,aiEnabled:false});setup(<ResourcePolicySettings access token=""/>);await screen.findByDisplayValue('300');fireEvent.change(screen.getByLabelText('个人每日 AI 调用上限'),{target:{value:'250'}});fireEvent.click(screen.getByLabelText(/允许平台 AI 请求/));fireEvent.click(screen.getByRole('button',{name:'保存资源策略'}));await screen.findByText('资源策略已保存，下次请求立即按新策略检查。');const {version,...fields}=policy;expect(mocks.request.mock.calls[1]).toEqual(['/api/v1/admin/resource-policy',{method:'PUT',token:'',signal:expect.any(AbortSignal),body:{expectedVersion:version,...fields,userDailyCalls:250,aiEnabled:false}}]);});
+it('requires a supplier acknowledgement and reason before audited release and sends no operator token',async()=>{mocks.user={id:'operator',role:'super_admin'};mocks.request.mockResolvedValue({items:[{id:'held',project_id:'p',user_id:'u',operation:'text_or_vision',status:'uncertain',quota_day:'2026-10-14',created_at:'2026-10-14T00:00:00Z',lease_until:null}]});setup(<AiResourceRecoverySettings/>);const release=await screen.findByRole('button',{name:'审计释放并发'});expect(release).toBeDisabled();fireEvent.change(screen.getByLabelText(/核对依据与原因/),{target:{value:'已核实供应商侧请求确已结束'}});expect(release).toBeDisabled();fireEvent.click(screen.getByLabelText('已向供应商确认此请求结束'));fireEvent.click(release);await screen.findByText('并发名额已释放，当日 AI 计数保留。');expect(mocks.request).toHaveBeenCalledWith('/api/v1/admin/ai-resource-dispatches/held/release',{method:'POST',signal:expect.any(AbortSignal),body:{providerConfirmedEnded:true,reason:'已核实供应商侧请求确已结束'}});});
 it('does not read recovery details for ordinary users',()=>{setup(<AiResourceRecoverySettings/>);expect(screen.getByText(/运维令牌不能代替实名操作记录/)).toBeInTheDocument();expect(mocks.request).not.toHaveBeenCalled();});
+
+it('discards a policy mutation completing after authority changes',async()=>{
+ let finish:(value:typeof policy)=>void=()=>{};
+ mocks.request.mockResolvedValueOnce(policy).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ const rendered=setup(<ResourcePolicySettings access token="first"/>);
+ await screen.findByDisplayValue('300');fireEvent.change(screen.getByLabelText('个人每日 AI 调用上限'),{target:{value:'250'}});fireEvent.click(screen.getByRole('button',{name:'保存资源策略'}));
+ rendered.rerender(rendered.view(<ResourcePolicySettings access={false} token=""/>));
+ await act(async()=>finish({...policy,userDailyCalls:250}));
+ expect(screen.queryByLabelText('个人每日 AI 调用上限')).not.toBeInTheDocument();expect(screen.queryByText('资源策略已保存，下次请求立即按新策略检查。')).not.toBeInTheDocument();
+});
+
+it('hides cached privileged rows after an authority denial',async()=>{
+ mocks.user={id:'operator',role:'super_admin'};
+ mocks.request.mockResolvedValueOnce({items:[{id:'held',project_id:'p',user_id:'u',operation:'text_or_vision',status:'uncertain',quota_day:'2026-10-14',created_at:'2026-10-14T00:00:00Z',lease_until:null}]});
+ setup(<AiResourceRecoverySettings/>);await screen.findByRole('button',{name:'审计释放并发'});
+ mocks.request.mockRejectedValueOnce(new ApiError(403,{requestId:'denied',error:{code:'PERMISSION_DENIED',message:'需要超级管理员',retryable:false}}));
+ fireEvent.click(screen.getByRole('button',{name:'刷新待核对请求'}));await screen.findByText(/需要超级管理员/);
+ expect(screen.queryByRole('button',{name:'审计释放并发'})).not.toBeInTheDocument();expect(screen.queryByLabelText(/核对依据与原因/)).not.toBeInTheDocument();
+});
+

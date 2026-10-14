@@ -30,18 +30,29 @@ export function useCapabilities() {
 }
 
 /** Admin session cookies are the default; a token is an explicit operations fallback. */
-export async function adminRequest<T>(path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; token?: string } = {}): Promise<T> {
+export async function adminRequest<T>(path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown; token?: string; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
   const token = options.token?.trim();
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);
   let response: Response;
+  let result: unknown;
+  const method = options.method ?? 'GET', controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort(); else options.signal?.addEventListener('abort', abort, { once: true });
+  const deadline = options.timeoutMs ?? (method === 'GET' ? 15_000 : /^\/api\/v1\/admin\/(?:resource-policy|ai-resource-dispatches(?:\/|$)|accounts(?:\/|$)|account-invitations(?:\/|$))/.test(path) ? 30_000 : undefined);
+  const timer = deadline === undefined ? undefined : setTimeout(() => { timedOut = true; controller.abort(new DOMException('请求超时', 'TimeoutError')); }, deadline);
   try {
-    response = await fetch(path, { method: options.method ?? 'GET', credentials: 'same-origin', cache: /^\/api\/v1\/admin\/(?:accounts|ai-config|ai-diagnostics|ai-retries)(?:[/?]|$)/.test(path) ? 'no-store' : undefined, headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-  } catch {
-    throw new Error('无法连接服务，请检查网络或后端是否启动。');
+    response = await fetch(path, { method, credentials: 'same-origin', cache: /^\/api\/v1\/(?:resource-usage|admin\/(?:accounts|resource-policy|ai-resource-dispatches|ai-config|ai-diagnostics|ai-retries))(?:[/?]|$)/.test(path) ? 'no-store' : undefined, headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body), signal: controller.signal });
+    result = await response.json().catch(error => { if (controller.signal.aborted) throw error; return null; });
+  } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason ?? error;
+    if (timedOut) throw new ApiError(0, { requestId: '', error: { code: 'REQUEST_TIMEOUT', message: method === 'GET' ? '读取服务超时，请检查网络后重试。' : '请求超时，服务端结果尚未确认；请先刷新状态，再继续操作。', retryable: true, ...(method === 'GET' ? {} : { details: { outcomeUnknown: true } }) } });
+    throw new Error('无法连接服务，请检查网络或后端是否启动。', { cause: error });
+  } finally {
+    clearTimeout(timer); options.signal?.removeEventListener('abort', abort);
   }
-  const result: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401 && !token) window.dispatchEvent(new CustomEvent('auth-expired'));
     if (isApiFailure(result)) throw new ApiError(response.status, result);

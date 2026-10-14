@@ -6,7 +6,7 @@ export type ResourceUsage={ai:{day:string;timezone:'Asia/Shanghai';enabled:boole
 const mb=(bytes:number)=>(bytes/1_000_000).toLocaleString('zh-CN',{maximumFractionDigits:1})+' MB';
 export function ResourceUsageNotice({projectId}:{projectId?:string}){
   const session=useSession(),accountId=session.data?.id;
-  const query=useQuery({queryKey:['resource-usage',accountId,projectId??null],enabled:Boolean(accountId),networkMode:'always',retry:false,staleTime:30_000,queryFn:()=>adminRequest<ResourceUsage>('/api/v1/resource-usage'+(projectId?'?projectId='+encodeURIComponent(projectId):''))});
+  const query=useQuery({queryKey:['resource-usage',accountId,projectId??null],enabled:Boolean(accountId),networkMode:'always',retry:false,staleTime:30_000,queryFn:({signal})=>adminRequest<ResourceUsage>('/api/v1/resource-usage'+(projectId?'?projectId='+encodeURIComponent(projectId):''),{signal})});
   if(!accountId)return null;
   if(query.error)return <ErrorNotice error={query.error} onRetry={()=>void query.refetch()}/>;
   if(!query.data)return <p role="status">正在读取资源额度……</p>;
