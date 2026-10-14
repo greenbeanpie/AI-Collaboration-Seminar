@@ -1,4 +1,5 @@
 import { backfillRecordings } from './services/recordings';
+import {reconcileStorage} from './services/managed-storage';
 import { isD1DailyQuotaError } from './core/d1-quota';
 import { backfillFileProcessing } from './services/file-processing';
 import { recoverChatContextCleanup } from './services/project-ai-chat';
@@ -42,6 +43,7 @@ export async function handleScheduled(env: Env, cron?: string): Promise<void> {
     const run = async (name: string, task: () => Promise<unknown>) => { if (!await attempt(name, task)) failures++; };
     try {
       if (group === 'recovery') {
+        await run('storage_reconcile', () => reconcileStorage(env));
         // Release a bounded page before admission, then another after recovery creates terminal states.
         await run('reservations_before_admission', () => releaseStaleReservations(env, now));
         await run('progression', () => dispatchProjectProgression(env));

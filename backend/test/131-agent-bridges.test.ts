@@ -13,6 +13,7 @@ import { bridgeSnapshot } from '../src/services/agent-bridges';
 import { createFileInit, storeFileContent } from '../src/services/files';
 import { gcOrphanObjects } from '../src/services/gc';
 await configureGoFixture();afterEach(()=>vi.unstubAllGlobals());
+afterEach(()=>vi.restoreAllMocks());
 const offline={...env,AGENT_WORKFLOW:{create:async()=>{throw new Error('offline');}}} as unknown as Env;
 async function fixture(){
  await env.DB.prepare('UPDATE ai_config_versions SET enabled=1').run();const user=await seedUser(),projectId=await seedProject(user.userId),taskId=crypto.randomUUID(),now=new Date().toISOString(),secret=crypto.randomUUID()+crypto.randomUUID();
@@ -105,4 +106,29 @@ describe('DSH bridge capability and durable handoff',()=>{
   const f=await fixture(),r=await ready(f);await env.DB.prepare("UPDATE projects SET status='archived' WHERE id=?1").bind(f.projectId).run();expect(await claimBridgeHandoff(env,f.device)).toBeNull();expect(await loadBridgeHandoff(env,r.id)).toMatchObject({state:'blocked',stale:1});
   const g=await fixture(),active=await running(g);await env.DB.prepare("UPDATE projects SET status='archived' WHERE id=?1").bind(g.projectId).run();const draft=await completeBridgeHandoff(env,active,{summary:'保留已完成成果',artifactIds:[],sessionId:'session-1'});expect(draft).toMatchObject({state:'ready_for_review',stale:true});
  });
+});
+it.each(['device','scope','cancel'])('refuses stale Bridge initialization after %s revocation',async change=>{
+ const f=await fixture(),r=await running(f),bytes=new TextEncoder().encode('safe artifact');
+ const before=await env.DB.prepare('SELECT COUNT(*) n FROM files WHERE project_id=?1').bind(f.projectId).first<{n:number}>();
+ if(change==='device')await env.DB.prepare('UPDATE agent_bridge_devices SET revoked_at=?2 WHERE id=?1').bind(f.device.id,new Date().toISOString()).run();
+ else if(change==='scope')await env.DB.prepare('DELETE FROM agent_bridge_scopes WHERE device_id=?1').bind(f.device.id).run();
+ else await cancelBridgeHandoff(env,r);
+ await expect(bridgeArtifactInit(env,r,{artifactId:crypto.randomUUID(),name:'late.md',sizeBytes:bytes.length,sha256:await sha256Hex(bytes)})).rejects.toBeDefined();
+ expect(await env.DB.prepare('SELECT COUNT(*) n FROM files WHERE project_id=?1').bind(f.projectId).first()).toEqual(before);
+});
+it('retains upload capability for an authorized already-running handoff older than 24 hours',async()=>{
+ const f=await fixture(),r=await running(f),bytes=new TextEncoder().encode('long task result'),artifactId=crypto.randomUUID();
+ await env.DB.prepare("UPDATE agent_bridge_handoffs SET expires_at='2020-01-01T00:00:00Z' WHERE id=?1").bind(r.id).run();
+ const a=await bridgeArtifactInit(env,r,{artifactId,name:'long.md',sizeBytes:bytes.length,sha256:await sha256Hex(bytes)});
+ await storeBridgeArtifact(env,r,artifactId,bytes);
+ expect(await env.DB.prepare('SELECT status FROM files WHERE id=?1').bind(a.fileId).first()).toEqual({status:'available'});
+});
+it.each([true,false])('does not publish a Bridge file when device is revoked during R2 put (valid=%s)',async valid=>{
+ const f=await fixture(),r=await running(f),bytes=valid?new TextEncoder().encode('result'):new Uint8Array([255]),artifactId=crypto.randomUUID();
+ const a=await bridgeArtifactInit(env,r,{artifactId,name:'interleaved.md',sizeBytes:bytes.length,sha256:await sha256Hex(bytes)});
+ const put=env.FILES.put.bind(env.FILES);
+ vi.spyOn(env.FILES,'put').mockImplementation(async(key,value,options)=>{const object=await put(key,value,options);await env.DB.prepare('UPDATE agent_bridge_devices SET revoked_at=?2 WHERE id=?1').bind(f.device.id,new Date().toISOString()).run();return object;});
+ await expect(storeBridgeArtifact(env,r,artifactId,bytes)).rejects.toBeDefined();
+ expect(await env.DB.prepare('SELECT status FROM files WHERE id=?1').bind(a.fileId).first()).toEqual({status:'pending'});
+ expect(await env.DB.prepare('SELECT stored FROM agent_bridge_artifacts WHERE handoff_id=?1 AND artifact_id=?2').bind(r.id,artifactId).first()).toEqual({stored:0});
 });

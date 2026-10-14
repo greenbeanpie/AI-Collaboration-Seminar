@@ -41,7 +41,7 @@ const externalBytes=summaries.filter(b=>b.bucket!==bucket).reduce((n,b)=>n+b.byt
 async function query(sql){const r=await api(`/d1/database/${database}/query`,{sql,params:[]});return r.result.flatMap(r=>r.results||[]);}
 const [files,drafts,sources,calls,jobs,bridges,investigations,tickets]=await Promise.all([
  query('SELECT id,r2_key,project_id,uploader_user_id user_id FROM files'),
- query('SELECT id,owner_id user_id,preview_attempt_id FROM project_creation_drafts'),
+ query("SELECT id,owner_id user_id,preview_attempt_id,CASE WHEN status='committed' THEN project_id ELSE NULL END project_id FROM project_creation_drafts"),
  query('SELECT v.id,v.project_id,s.created_by user_id FROM source_versions v JOIN sources s ON s.id=v.source_id'),
  query("SELECT c.id,c.project_id,COALESCE(json_extract(j.input_json,'$.requestedBy'),j.created_by,d.owner_id) user_id FROM ai_calls c LEFT JOIN jobs j ON j.id=c.job_id LEFT JOIN project_creation_drafts d ON d.id=c.draft_id"),
  query("SELECT id,project_id,COALESCE(json_extract(input_json,'$.requestedBy'),created_by) user_id FROM jobs"),

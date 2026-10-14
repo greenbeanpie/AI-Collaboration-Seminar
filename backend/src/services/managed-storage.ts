@@ -18,7 +18,7 @@ export async function storageOwner(env:Pick<Env,'DB'>,key:string):Promise<Storag
  if(UUID.test(s[0]??'')&&UUID.test((s[1]??'').split('.')[0]??'')){
   category='upload';row=await env.DB.prepare('SELECT uploader_user_id user_id,project_id FROM files WHERE id=?1').bind(s[1]!.split('.')[0]).first();
  }else if(s[0]==='creation-drafts'){
-  category='upload';row=await env.DB.prepare('SELECT owner_id user_id,NULL project_id FROM project_creation_drafts WHERE id=?1').bind(s[1]).first();
+  category='upload';row=await env.DB.prepare("SELECT owner_id user_id,CASE WHEN status='committed' THEN project_id ELSE NULL END project_id FROM project_creation_drafts WHERE id=?1").bind(s[1]).first();
  }else if(s[0]==='support-images'){
   category='upload';row=await env.DB.prepare('SELECT owner_id user_id,NULL project_id FROM support_tickets WHERE id=?1').bind(s[1]).first();
  }else if(s[0]==='sources'){
@@ -30,7 +30,7 @@ export async function storageOwner(env:Pick<Env,'DB'>,key:string):Promise<Storag
  }else if(s[0]==='ai'&&s[1]==='investigations'){
   row=await env.DB.prepare('SELECT requested_by user_id,project_id FROM ai_investigations WHERE id=?1').bind(s[2]!.split('.')[0]).first();
  }else if(s[0]==='ai'&&s[1]==='draft-investigations'){
-  row=await env.DB.prepare('SELECT owner_id user_id,NULL project_id FROM project_creation_drafts WHERE preview_attempt_id=?1').bind(s[2]!.split('.')[0]).first();
+  row=await env.DB.prepare("SELECT owner_id user_id,CASE WHEN status='committed' THEN project_id ELSE NULL END project_id FROM project_creation_drafts WHERE preview_attempt_id=?1").bind(s[2]!.split('.')[0]).first();
  }
  if(!row&&category==='system')for(const part of s){const id=part.split('.')[0]!;if(!UUID.test(id))continue;row=await env.DB.prepare("SELECT COALESCE(json_extract(input_json,'$.requestedBy'),created_by) user_id,project_id FROM jobs WHERE id=?1").bind(id).first();if(row)break;}
  return {userId:row?.user_id??null,projectId:row?.project_id??null,category};
@@ -129,7 +129,10 @@ export function withManagedStorage(env:Env,owner?:StorageOwner):Env{
 /** Confirm uncertain writes, never expire an unknown upload merely by releasing quota. */
 export async function reconcileStorage(env:Env,limit=25){
  const raw=rawStorage(env),now=nowIso();
- const rows=await env.DB.prepare("SELECT * FROM storage_reservations WHERE status='uncertain' OR expires_at<=?1 ORDER BY updated_at,id LIMIT ?2").bind(now,limit).all<Reservation>();
+ const sweep='storage_reservations';
+ await env.DB.prepare('INSERT OR IGNORE INTO maintenance_cursors(name,revision) VALUES(?1,0)').bind(sweep).run();
+ const cursor=await env.DB.prepare('SELECT cursor_created_at,cursor_id,revision FROM maintenance_cursors WHERE name=?1').bind(sweep).first<{cursor_created_at:string|null;cursor_id:string|null;revision:number}>();
+ const rows=await env.DB.prepare("SELECT * FROM storage_reservations WHERE (status='uncertain' OR expires_at<=?1) AND (?3 IS NULL OR updated_at>?3 OR (updated_at=?3 AND id>?4)) ORDER BY updated_at,id LIMIT ?2").bind(now,limit,cursor?.cursor_created_at??null,cursor?.cursor_id??null).all<Reservation>();
  for(const r of rows.results){
   const object=await raw.head(r.object_key);
   if(r.kind==='delete'){if(!object){await env.DB.batch([env.DB.prepare('DELETE FROM storage_objects WHERE object_key=?1').bind(r.object_key),env.DB.prepare('DELETE FROM storage_reservations WHERE id=?1').bind(r.id)]);}continue;}
@@ -146,6 +149,8 @@ export async function reconcileStorage(env:Env,limit=25){
   }
   // HTTP writes with ambiguous completion retain quota until an operator verifies absence.
  }
+ const last=rows.results.length===limit?rows.results.at(-1):undefined;
+ await env.DB.prepare('UPDATE maintenance_cursors SET cursor_created_at=?2,cursor_id=?3,revision=revision+1 WHERE name=?1 AND revision=?4').bind(sweep,last?(last as Reservation&{updated_at:string}).updated_at:null,last?.id??null,cursor?.revision??0).run();
 }
 
 /** The administrator must first establish that the underlying write has ended. */
