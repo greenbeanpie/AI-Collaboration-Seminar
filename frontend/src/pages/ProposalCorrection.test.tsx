@@ -18,7 +18,15 @@ it('preserves local fields after a concurrent revision and only saves after late
  await screen.findByText(/方案修正已保存/);
 });
 it('preserves a rejected draft and reuses its idempotency key on an unchanged network retry',async()=>{
- let fail=true;const fetch=vi.fn(async(_url:unknown,options?:RequestInit)=>{if(options?.method==='PATCH'&&fail)throw new TypeError('network lost');return Response.json({data:{...proposal,revision:2},requestId:'r'});});vi.stubGlobal('fetch',fetch);render(ui({...proposal,status:'rejected'} as CorrectionProposal));fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));fireEvent.change(screen.getByLabelText('说明'),{target:{value:'保留这个修改'}});fireEvent.change(screen.getByLabelText('修正理由或重新反馈'),{target:{value:'重新核对'}});fireEvent.click(screen.getByRole('button',{name:'保存方案修正'}));await waitFor(()=>expect(fetch.mock.calls).toHaveLength(1));await waitFor(()=>expect(screen.getByRole('button',{name:'保存方案修正'})).not.toBeDisabled());expect(screen.getByLabelText('说明')).toHaveValue('保留这个修改');fail=false;fireEvent.click(screen.getByRole('button',{name:'保存方案修正'}));await screen.findByText(/方案修正已保存/);const keys=fetch.mock.calls.map(([,options])=>new Headers(options?.headers).get('idempotency-key'));expect(keys[0]).toBeTruthy();expect(keys[1]).toBe(keys[0]);
+ let fail=true;const fetch=vi.fn(async(_url:unknown,options?:RequestInit)=>{if(options?.method==='PATCH'&&fail)throw new TypeError('network lost');
+   return Response.json({data:{...proposal,revision:2},requestId:'r'});});vi.stubGlobal('fetch',fetch);
+   render(ui({...proposal,status:'rejected'} as CorrectionProposal));fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));
+   fireEvent.change(screen.getByLabelText('说明'),{target:{value:'保留这个修改'}});fireEvent.change(screen.getByLabelText('修正理由或重新反馈'),{target:{value:'重新核对'}});
+   fireEvent.click(screen.getByRole('button',{name:'保存方案修正'}));await waitFor(()=>expect(fetch.mock.calls).toHaveLength(1));
+   await waitFor(()=>expect(screen.getByRole('button',{name:'保存方案修正'})).not.toBeDisabled());expect(screen.getByLabelText('说明')).toHaveValue('保留这个修改');
+   fail=false;fireEvent.click(screen.getByRole('button',{name:'保存方案修正'}));await screen.findByText(/方案修正已保存/);
+   const keys=fetch.mock.calls.map(([,options])=>new Headers(options?.headers).get('idempotency-key'));
+   expect(keys[0]).toBeTruthy();expect(keys[1]).toBe(keys[0]);
 });
 it('blocks applying unsaved edits so another apply button cannot discard corrections',()=>{
  render(ui(proposal));fireEvent.click(screen.getByText('修正建议、部分应用或重新反馈'));expect(screen.getByRole('button',{name:'应用选中条目'})).not.toBeDisabled();fireEvent.change(screen.getByLabelText('预计工时'),{target:{value:'6'}});expect(screen.getByRole('button',{name:'应用选中条目'})).toBeDisabled();

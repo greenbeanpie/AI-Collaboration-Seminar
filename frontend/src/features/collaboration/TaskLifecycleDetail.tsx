@@ -128,7 +128,17 @@ function SubmissionDecisionForm({ projectId, submission, onChanged }: { projectI
   const [decisionConflict, setDecisionConflict] = useState(false);
   const decisionOutdated = decisionConflict || decisionBase !== submission.revision;
   const decide = useMutation({ mutationFn: () => { if (decisionOutdated) throw new Error('评价记录已变化，请先重新核对。'); return collaborationApi.decide(projectId, { ...submission, revision: decisionBase }, decision, feedback.trim()); }, onSuccess: onChanged, onError: async error => { if (error instanceof ApiError && error.status === 409) setDecisionConflict(true); await onChanged(); } });
-  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate(); }}><h4>{submission.pendingHumanReview ? '人工审核' : '人工验收'}</h4><Field aiReference label={`第 ${submission.round} 轮验收结论`}><select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field aiReference label={`第 ${submission.round} 轮验收理由`}><textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" /></Field>{decisionOutdated && <div className="notice notice-warn">本轮评价已更新，请核对新记录后重新填写验收决定。</div>}{decisionOutdated && <button type="button" className="button button-quiet" onClick={() => { setDecisionBase(submission.revision); setDecisionConflict(false); setFeedback(''); setDecision('accept'); decide.reset(); }}>已核对最新评价，重新填写决定</button>}{decide.error && <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending || decisionOutdated || !feedback.trim()}>{decide.isPending ? '记录中…' : submission.pendingHumanReview ? '确认人工审核' : '确认验收决定'}</button></form>;
+  return <form className="stack collab-decision" onSubmit={event => { event.preventDefault(); decide.mutate();
+    }}><h4>{submission.pendingHumanReview ? '人工审核' : '人工验收'}</h4><Field aiReference label={`第 ${submission.round} 轮验收结论`}>
+    <select className="input" value={decision} onChange={event => setDecision(event.target.value as SubmissionDecision)}>{Object.entries(decisionLabels).map(([value,
+    label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field aiReference label={`第 ${submission.round} 轮验收理由`}>
+    <textarea className="input" required rows={3} maxLength={4000} value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="逐项说明通过依据，或列出下轮需要改进、重做的内容" />
+    </Field>{decisionOutdated && <div className="notice notice-warn">本轮评价已更新，请核对新记录后重新填写验收决定。</div>}{decisionOutdated &&
+    <button type="button" className="button button-quiet" onClick={() => { setDecisionBase(submission.revision);
+    setDecisionConflict(false); setFeedback(''); setDecision('accept'); decide.reset(); }}>已核对最新评价，重新填写决定</button>}{decide.error &&
+    <ErrorNotice error={decide.error} />}<button className="button button-primary" disabled={decide.isPending ||
+    decisionOutdated || !feedback.trim()}>{decide.isPending ? '记录中…' : submission.pendingHumanReview ? '确认人工审核' : '确认验收决定'}</button>
+    </form>;
 }
 
 function BoundMaterialVersion({ projectId, version }: { projectId: string; version: NonNullable<TaskSubmission['materialVersions']>[number] }) {

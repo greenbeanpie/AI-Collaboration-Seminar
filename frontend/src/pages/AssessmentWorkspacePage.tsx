@@ -151,5 +151,14 @@ function AssessmentRunner({ kind }: { kind: Assessment['kind'] }) {
 }
 function Evidence({ items }: { items: AssessmentEvidence[] }) { return <>{items.map((evidence, index) => <blockquote className="quote-box" key={index}><small>{evidence.type === 'answer' ? `真实回答 · 第 ${evidence.turnSequence} 回合` : `固定文档版本 ${evidence.materialVersionId}`}</small><p>{evidence.quote} <AiReferenceBadge /></p></blockquote>)}</>; }
 export function AssessmentReportView({ report }: { report: AssessmentReport }) {
-  return <div className="stack assessment-report"><RemovedSourceNotice payload={report} /><h3>{report.status === 'scored' && report.weightedTotal !== null ? `本轮总分：${report.weightedTotal}` : '本轮无法进行数值评分'} <AiReferenceBadge ariaHidden /></h3><p>{report.summary} <AiReferenceBadge /></p>{report.scores.map(score => <article className="standard-read-row" key={score.key}><strong>{score.label}：{score.score === null ? '未评分' : score.score} <AiReferenceBadge ariaHidden /></strong><p>{score.comment} <AiReferenceBadge /></p><Evidence items={score.evidence} /></article>)}{report.requirementChecks.length > 0 && <section><h4>要求检查 <AiReferenceBadge ariaHidden /></h4>{report.requirementChecks.map(check => <article key={check.requirementId}><StatusPill tone={check.status === 'met' ? 'good' : 'warn'}>{check.status === 'met' ? '已满足' : check.status === 'unmet' ? '未满足' : '证据待核验'}</StatusPill><p>{check.comment} <AiReferenceBadge /></p><Evidence items={check.evidence} /></article>)}</section>}{report.limitations.length > 0 && <div className="notice notice-warn"><strong>限制与待核验 <AiReferenceBadge ariaHidden /></strong><ul>{report.limitations.map((limitation, index) => <li key={index}>{limitation} <AiReferenceBadge /></li>)}</ul></div>}</div>;
+  return <div className="stack assessment-report"><RemovedSourceNotice payload={report} /><h3>{report.status === 'scored' &&
+    report.weightedTotal !== null ? `本轮总分：${report.weightedTotal}` : '本轮无法进行数值评分'} <AiReferenceBadge ariaHidden />
+    </h3><p>{report.summary} <AiReferenceBadge /></p>{report.scores.map(score => <article className="standard-read-row" key={score.key}>
+    <strong>{score.label}：{score.score === null ? '未评分' : score.score} <AiReferenceBadge ariaHidden />
+    </strong><p>{score.comment} <AiReferenceBadge /></p><Evidence items={score.evidence} /></article>)}{report.requirementChecks.length > 0 &&
+    <section><h4>要求检查 <AiReferenceBadge ariaHidden /></h4>{report.requirementChecks.map(check => <article key={check.requirementId}>
+    <StatusPill tone={check.status === 'met' ? 'good' : 'warn'}>{check.status === 'met' ? '已满足' : check.status === 'unmet' ? '未满足' : '证据待核验'}</StatusPill>
+    <p>{check.comment} <AiReferenceBadge /></p><Evidence items={check.evidence} /></article>)}</section>}{report.limitations.length > 0 &&
+    <div className="notice notice-warn"><strong>限制与待核验 <AiReferenceBadge ariaHidden /></strong><ul>{report.limitations.map((limitation,
+    index) => <li key={index}>{limitation} <AiReferenceBadge /></li>)}</ul></div>}</div>;
 }

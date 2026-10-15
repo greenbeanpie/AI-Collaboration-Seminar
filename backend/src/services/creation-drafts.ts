@@ -88,6 +88,7 @@ export async function getDraft(env: Env, id: string, userId: string) {
 }
 export async function draftFiles(env: Env, id: string) {
   return (await env.DB.prepare(`SELECT f.*, (SELECT j.id FROM jobs j WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' ORDER BY j.created_at DESC,j.id DESC LIMIT 1) media_job_id, COALESCE((SELECT COALESCE(m.stage,'pending') FROM jobs j LEFT JOIN media_processing m ON m.job_id=j.id WHERE json_extract(j.input_json,'$.fileId')=f.id AND json_extract(j.input_json,'$.operation')='media.draft' AND j.status IN ('queued','running') ORDER BY j.created_at DESC LIMIT 1),(SELECT stage FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1)) media_stage, (SELECT summary_json FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_summary, (SELECT error FROM media_processing WHERE draft_file_id=f.id ORDER BY created_at DESC LIMIT 1) media_error FROM creation_draft_files f WHERE draft_id=?1 AND removed=0 ORDER BY created_at,id LIMIT 11`).bind(id).all<DraftFile>()).results;
+    
 }
 const draftReadArgs=z.object({fileId:z.string().uuid(),offset:z.number().int().min(0).max(1000000).default(0),charOffset:z.number().int().min(0).max(24000).default(0)}).strict();
 const draftReadTool={name:'read_draft_document',description:'按文件ID分页读取草稿原文块。offset是块偏移；DOCX页码null，用locator引用；继续使用nextOffset与nextCharOffset。',parameters:z.toJSONSchema(draftReadArgs,{target:'draft-7',io:'input'})};
@@ -125,7 +126,15 @@ export async function draftView(env: Env, row: DraftRow) {
       goal?:z.infer<typeof creationGoal>;
       mode: 'ai' | 'manual';
       configVersionId?: string;
-    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, activity: row.preview_attempt_id ? await readActivity(env, 'draft:'+row.preview_attempt_id, row.preview_waiting_id ? 'waiting_input' : row.preview_state==='ready'?'succeeded':row.preview_state) : null, previewState: execution?.state==='paused'?'paused_round_limit':execution?.state==='cancelled'?'none':row.preview_waiting_id && row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id && row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id, row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: await Promise.all((await draftFiles(env, row.id)).map(async f=>{const indexed=await env.DB.prepare('SELECT 1 FROM draft_document_blocks WHERE file_id=?1 LIMIT 1').bind(f.id).first();const view=await fileView(env,f);return {...view,textReady:!!indexed||view.textReady};})), removedFiles: await Promise.all(removed.results.map(f=>fileView(env,f))), projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
+    } : null, previewRevision: row.preview_revision, previewAttemptId: row.preview_attempt_id, activity: row.preview_attempt_id ? await readActivity(env,
+      'draft:'+row.preview_attempt_id, row.preview_waiting_id ? 'waiting_input' : row.preview_state==='ready'?'succeeded':row.preview_state) : null,
+      previewState: execution?.state==='paused'?'paused_round_limit':execution?.state==='cancelled'?'none':row.preview_waiting_id &&
+      row.status === 'active' ? 'waiting_input' : row.preview_state, clarification: row.preview_attempt_id &&
+      row.preview_waiting_id && row.status === 'active' ? await currentDraftClarification(env, row.id,
+      row.preview_attempt_id, row.owner_id) : null, previewError: row.preview_error, files: await Promise.all((await draftFiles(env,
+      row.id)).map(async f=>{const indexed=await env.DB.prepare('SELECT 1 FROM draft_document_blocks WHERE file_id=?1 LIMIT 1').bind(f.id).first();
+      const view=await fileView(env,f);return {...view,textReady:!!indexed||view.textReady};})), removedFiles: await Promise.all(removed.results.map(f=>fileView(env,f))),
+      projectId: row.status === 'committed' ? row.project_id : null, updatedAt: row.updated_at
   };
 }
 function editable(row: DraftRow, revision: number) {
@@ -524,7 +533,12 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
     if(missingPages)importWarnings.push('PDF仍有未读取页面，需要补充OCR或确认空白页');
     if(f.text_error&&!importWarnings.includes(f.text_error))importWarnings.push(f.text_error);
     const coverage=ready&&!importWarnings.length?'complete':'partial';
-    batch.push(stmt(`INSERT INTO files(id,project_id,uploader_user_id,r2_key,mime_detected,ext,size_bytes,sha256,status,created_at,original_name) SELECT ?4,?5,?2,?6,?7,?8,?9,?10,'available',?11,?12 WHERE ${guard}`, f.id, project, f.r2_key, f.mime, f.ext, f.size_bytes, f.sha256, now, f.name), stmt(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at) SELECT ?4,?5,'file',?6,?7,?2,?8,?8 WHERE ${guard}`, source, project, f.name, version, now), stmt(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,char_count,page_count,status,created_at) SELECT ?4,?5,?6,1,'file',?7,?8,?9,?10,?11 WHERE ${guard}`, version, source, project, f.id, imported?.chars || pages.join('').length, f.ext==='.pdf'?(imported?.pages||pages.length||null):null, ready ? 'ready' : 'pending', now), stmt(`INSERT INTO source_processing(source_version_id,project_id,text_status,updated_at) SELECT ?4,?5,?6,?7 WHERE ${guard}`, version, project, ready ? 'ready' : imported?.n?'waiting_input':'pending', now));
+    batch.push(stmt(`INSERT INTO files(id,project_id,uploader_user_id,r2_key,mime_detected,ext,size_bytes,sha256,status,created_at,original_name) SELECT ?4,?5,?2,?6,?7,?8,?9,?10,'available',?11,?12 WHERE ${guard}`,
+      f.id, project, f.r2_key, f.mime, f.ext, f.size_bytes, f.sha256, now, f.name), stmt(`INSERT INTO sources(id,project_id,kind,title,current_version_id,created_by,created_at,updated_at) SELECT ?4,?5,'file',?6,?7,?2,?8,?8 WHERE ${guard}`,
+      source, project, f.name, version, now), stmt(`INSERT INTO source_versions(id,source_id,project_id,revision,origin,file_id,char_count,page_count,status,created_at) SELECT ?4,?5,?6,1,'file',?7,?8,?9,?10,?11 WHERE ${guard}`,
+      version, source, project, f.id, imported?.chars || pages.join('').length, f.ext==='.pdf'?(imported?.pages||pages.length||null):null,
+      ready ? 'ready' : 'pending', now), stmt(`INSERT INTO source_processing(source_version_id,project_id,text_status,updated_at) SELECT ?4,?5,?6,?7 WHERE ${guard}`,
+      version, project, ready ? 'ready' : imported?.n?'waiting_input':'pending', now));
     batch.push(stmt(`UPDATE source_versions SET extraction_method=?4,extraction_warnings_json=?5,extraction_coverage=?6,parse_error=?7 WHERE id=?8 AND `+guard,imported?.n?(f.ext==='.pdf'?'browser-pdf':isOfficeExtension(f.ext)?('browser-'+f.ext.slice(1)):'browser-text'):'cloud',JSON.stringify(importWarnings),coverage,ready?null:f.text_error||'正文读取尚未完成',version));
     if(imported?.n){
       batch.push(stmt(`INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at,heading_path) SELECT b.id,?4,?5,b.page_number,b.seq,'text',b.content,?6,b.heading_json FROM draft_document_blocks b WHERE b.file_id=?7 AND b.draft_id=?1 AND `+guard,version,project,now,f.id));
