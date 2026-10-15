@@ -5,6 +5,7 @@ import { nowIso, newId, sha256Hex } from '../core/db';
 import { fileTooLarge, invalidState, notFound, unsupportedMediaType, validationFailed } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS, LIMITS } from '../core/limits';
 import type { Env } from '../env';
+import { withManagedStorage } from './managed-storage';
 
 export type FileStatus = 'pending' | 'available' | 'quarantined' | 'discarded';
 
@@ -142,7 +143,7 @@ function uploadAuthoritySql(actor: string, project: string): string {
 
 /** 隔离暂存：校验失败但字节已接收时落 R2，等待定时回收 */
 async function quarantine(env: Env, row: FileRow, actorId: string, outputKey: string, bytes: Uint8Array, reason: string,bridgeHandoffId?:string): Promise<never> {
-  await env.FILES.put(outputKey, bytes);
+  await withManagedStorage(env, { userId: actorId, projectId: row.project_id, category: 'upload' }).FILES.put(outputKey, bytes);
   const gcAfter = new Date(Date.now() + LIMITS.quarantineGcHours * 3600_000).toISOString();
   const updated = await env.DB.prepare(`UPDATE files SET status = 'quarantined', gc_after = ?2, r2_key=?4 WHERE id = ?1 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?3 AND ${uploadAuthoritySql('?5', '?6')} AND ${bridgeUploadSql('?7','?5','?6')}`)
     .bind(row.id, gcAfter,row.lifecycle_version,outputKey,actorId,row.project_id,bridgeHandoffId??null)
@@ -189,7 +190,7 @@ export async function storeFileContent(
   }
 
   const sha = await sha256Hex(params.bytes);
-  await env.FILES.put(outputKey, params.bytes);
+  await withManagedStorage(env, { userId: params.actorId, projectId: params.projectId, category: 'upload' }).FILES.put(outputKey, params.bytes);
   const updated = await env.DB.prepare(
     `UPDATE files SET status = 'available', mime_detected = ?1, size_bytes = ?2, sha256 = ?3, r2_key=?5 WHERE id = ?4 AND status='pending' AND deleted_at IS NULL AND lifecycle_version=?6 AND ${uploadAuthoritySql('?7', '?8')} AND ${bridgeUploadSql('?9','?7','?8')}`,
   )

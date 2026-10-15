@@ -11,6 +11,7 @@ import './styles/theme.css';
 import './styles/readability.css';
 import { setDesktopAccount, startDesktopLifecycle } from './desktop/lifecycle';
 import { offlineAccount } from './offline/store';
+import { createSnapshotInvalidationScheduler } from './api/snapshot-invalidation';
 
 setDesktopAccount(offlineAccount()?.id ?? null);
 startDesktopLifecycle();
@@ -33,10 +34,9 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([{ path: '*', element: <App />, errorElement: <RouteErrorPage /> }]);
 
 // Re-run active queries against the updated snapshots without replacing the page.
-let snapshotRefresh: ReturnType<typeof setTimeout> | undefined;
-window.addEventListener('offline-snapshot-updated', () => {
-  clearTimeout(snapshotRefresh);
-  snapshotRefresh = setTimeout(() => { void queryClient.invalidateQueries(); }, 50);
+const snapshotInvalidator = createSnapshotInvalidationScheduler(queryClient, () => offlineAccount()?.id, 50);
+window.addEventListener('offline-snapshot-updated', event => {
+  snapshotInvalidator.schedule((event as CustomEvent<{ accountId?: string; url?: string }>).detail);
 });
 window.addEventListener('project-access-revoked', event => {
   const { accountId, projectId } = (event as CustomEvent<{ accountId: string; projectId: string }>).detail;

@@ -10,6 +10,7 @@ import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
 import { z } from 'zod';
 import type { Env } from '../env';
+import { withManagedStorage } from './managed-storage';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { AppError, invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS } from '../core/limits';
@@ -220,7 +221,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   }
   const sha = await sha256Hex(bytes), key = `creation-drafts/${id}/${fileId}${ext}`, now = nowIso();
   // Keys are unique and immutable, even if a concurrent edit wins. Cancelled/removed bytes are retained.
-  const stored = await env.FILES.put(key, bytes, {
+  const stored = await withManagedStorage(env, { userId, projectId: null, category: 'upload' }).FILES.put(key, bytes, {
     onlyIf: {
       etagDoesNotMatch: '*'
     }, customMetadata: {
@@ -565,7 +566,7 @@ export async function commitDraft(env: Env, id: string, userId: string, revision
   }
   batch.push(stmt(`UPDATE ai_calls SET project_id=?4 WHERE draft_id=?1 AND ${guard}`, project));
   batch.push(stmt(`UPDATE storage_objects SET project_id=?4 WHERE project_id IS NULL AND (object_key IN (SELECT r2_key FROM creation_draft_files WHERE draft_id=?1 AND removed=0) OR object_key IN (SELECT input_r2_key FROM ai_calls WHERE draft_id=?1) OR object_key IN (SELECT output_r2_key FROM ai_calls WHERE draft_id=?1)) AND ${guard}`,project));
-  batch.push(...readinessStatements(env,project,[...taskIds.values()]));
+  batch.push(...readinessStatements(env,project,[...taskIds.values()],[]));
   const result = await env.DB.batch(batch);
   if (!result[0]?.meta.changes) {
     const latest = await getDraft(env, id, userId);

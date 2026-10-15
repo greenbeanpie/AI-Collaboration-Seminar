@@ -338,3 +338,34 @@ export async function responseError(response: Response, fallback: string): Promi
   if (isApiFailure(payload)) return new ApiError(response.status, payload);
   return new Error(errorMessage(payload, fallback));
 }
+
+/** Shared bounded transport fetch with abort forwarding and timeout classification. */
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<{ response: Response; timedOut: false }> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener('abort', abort, { once: true });
+  const timer =
+    options.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          controller.abort(new DOMException('请求超时', 'TimeoutError'));
+        }, options.timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return { response, timedOut: false };
+  } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason ?? error;
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { timedOut });
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+

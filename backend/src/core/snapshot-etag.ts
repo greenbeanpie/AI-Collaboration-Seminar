@@ -1,7 +1,58 @@
+import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { createHash } from 'node:crypto';
 import type { AppEnv } from '../env';
+import { apiData } from './api';
 import { sha256Hex } from './db';
+
+/**
+ * Compute deterministic snapshot ETag directly from payload data before Response wrapping,
+ * avoiding Response.clone() stream buffering when routes opt into pre-serialization hashing.
+ */
+export async function computeSnapshotDataEtag(
+  principal: string,
+  url: string,
+  data: unknown,
+): Promise<string> {
+  const serialized = '{"data":' + JSON.stringify(data);
+  const digest = createHash('sha256')
+    .update(principal)
+    .update('\0')
+    .update(url)
+    .update('\0')
+    .update(serialized)
+    .digest('hex');
+  return '"' + digest + '"';
+}
+
+/** Optional route helper for read-only snapshot endpoints to short-circuit 304 before Response cloning. */
+export async function snapshotJsonResponse<T>(c: Context<AppEnv>, data: T): Promise<Response> {
+  const user = c.get('user');
+  const principal = user?.id ?? (await sha256Hex(c.req.header('cookie') ?? 'public'));
+  const etag = await computeSnapshotDataEtag(principal, c.req.url, data);
+  c.header('ETag', etag);
+  if (!c.res.headers.get('Cache-Control')?.includes('no-store')) {
+    c.header('Cache-Control', 'private, no-store');
+  }
+  const vary = new Set(
+    (c.res.headers.get('Vary') ?? '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean),
+  );
+  vary.add('Cookie');
+  c.header('Vary', [...vary].join(', '));
+  if (
+    c.req
+      .header('if-none-match')
+      ?.split(',')
+      .some(value => value.trim() === etag)
+  ) {
+    return new Response(null, { status: 304, headers: c.res.headers });
+  }
+  return c.json(apiData(c, data), 200);
+}
+
 /** Hash serialized envelopes incrementally; do not parse/copy large documents on revalidation. */
 async function envelopeHash(response: Response, principal: string, url: string): Promise<string | null> {
   const reader = response.clone().body?.getReader();
@@ -31,6 +82,7 @@ async function envelopeHash(response: Response, principal: string, url: string):
 /** Revalidate only after authorization; validators never grant access or bypass database reads. */
 export const snapshotEtag = createMiddleware<AppEnv>(async (c, next) => {
   await next();
+  if (c.res.headers.has('ETag') || c.res.status === 304) return;
   const user = c.get('user');
   if ((!user && c.req.path !== '/api/v1/capabilities') || c.req.method !== 'GET' || c.res.status !== 200 || !c.res.headers.get('content-type')?.includes('application/json')) return;
   const path = c.req.path;

@@ -9,6 +9,7 @@ import { runMediaJob } from './media-summary';
 import { isMediaExtension } from './files';
 import { notificationStatements } from './notifications';
 import type { Env } from '../env';
+import { withManagedStorage } from './managed-storage';
 import { sourceFragmentPages, streamingDocumentChunks, documentChunkWindows, renderDocumentChunk, validateChunkCitations } from './document-chunks';
 import { nowIso, sha256Hex } from '../core/db';
 import { LIMITS } from '../core/limits';
@@ -237,7 +238,8 @@ export async function extractSourceVersionText(env: Env, sourceVersionId: string
   const allText = perPage.map((p) => p.text).join('\n\n');
   const textKey = `sources/${version.id}/lifecycle-${version.lifecycleVersion}/text.txt`;
   await assertProcessingActive(env, version, jobId);
-  await env.FILES.put(textKey, allText);
+  const parseJob = jobId ? await getJob(env, jobId) : null;
+  await withManagedStorage(env, { userId: parseJob?.created_by ?? null, projectId: version.project_id, category: 'system' }).FILES.put(textKey, allText);
   if (pageRows.length > 0) await env.DB.batch(pageRows);
   if(version.file_id){const image=await env.DB.prepare("SELECT 1 FROM files WHERE id=?1 AND ext IN ('.png','.jpg','.jpeg','.webp')").bind(version.file_id).first();if(image)await env.DB.prepare(`UPDATE source_pages SET image_file_id=?2,image_status='uploaded',ocr_status='pending' WHERE source_version_id=?1 AND ${processingGuard('?1','?3','?4')}`).bind(version.id,version.file_id,version.lifecycleVersion,jobId??null).run();}
 
@@ -291,7 +293,7 @@ export async function ocrPendingPages(env: Env, sourceVersionId: string, configV
     const current=await env.DB.prepare("SELECT image_file_id FROM source_pages WHERE id=?1 AND source_version_id=?2 AND image_status='uploaded'").bind(page.id,version.id).first<{image_file_id:string}>();
     if(current?.image_file_id!==page.image_file_id)throw new AppError('INVALID_STATE','OCR 页面图片已被替换，旧结果未应用',409,false);
     const existing=await env.DB.prepare('SELECT content FROM source_fragments WHERE source_version_id=?1 AND page_number=?2 ORDER BY seq').bind(version.id,page.page_number).all<{content:string}>();
-    const text=removeOcrDuplicates(data.text,existing.results.map(f=>f.content));await env.FILES.put(`sources/${version.id}/lifecycle-${version.lifecycleVersion}/ocr-page-${page.page_number}.txt`,data.text);
+    const text=removeOcrDuplicates(data.text,existing.results.map(f=>f.content));await withManagedStorage(env,{userId:job?.created_by??null,projectId:version.project_id,category:'system'}).FILES.put(`sources/${version.id}/lifecycle-${version.lifecycleVersion}/ocr-page-${page.page_number}.txt`,data.text);
     if(text.trim())await insertFragments(env,version,[{pageNumber:page.page_number,text,kind:'ocr'}],jobId);
     await env.DB.prepare(`UPDATE source_pages SET ocr_status='ok',ocr_method='vision',ocr_confidence=?2,needs_review=1,updated_at=?3 WHERE id=?1 AND image_file_id=?7 AND ${processingGuard('?4','?5','?6')}`).bind(page.id,data.confidence,nowIso(),version.id,version.lifecycleVersion,jobId??null,page.image_file_id).run();
   };
@@ -458,7 +460,7 @@ export async function extractRequirements(env: Env, sourceVersionId: string, con
       const call=await aiJsonCall(env,{projectId:version.project_id,jobId,sessionId:sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:textModel.model,modelConfig:textModel,promptVersion:single?AI_PROMPT_VERSION:'parse-requirements-chunks-v2',messages:[{role:'system',content:system},{role:'user',content:listing}],schema:requirementOutputSchema.superRefine((data,ctx)=>{try{validateChunkCitations(chunk,data.requirements.flatMap(req=>req.citations));}catch(error){ctx.addIssue({code:'custom',path:['requirements'],message:error instanceof Error?error.message:'要求引用与已读取原文不符'});}}),beforeCall:()=>assertProcessingActive(env,version,jobId)});
       result=call.data;validateChunkCitations(chunk,result.requirements.flatMap(req=>req.citations));await assertProcessingActive(env,version,jobId);
       if(jobId && !single)await settleReservation(env,jobId,'settled');
-      if(cacheKey)await env.FILES.put(cacheKey,JSON.stringify(result));
+      if(cacheKey)await withManagedStorage(env,{userId:null,projectId:version.project_id,category:'system'}).FILES.put(cacheKey,JSON.stringify(result));
     }
     validateChunkCitations(chunk,result.requirements.flatMap(req=>req.citations));requirements.push(...result.requirements);
     if(jobId)await recordActivity(env,jobId,'summarizing','completed',{completed:index+1,unit:'chunk'});

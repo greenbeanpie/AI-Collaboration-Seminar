@@ -5,6 +5,7 @@ import { recordActivity } from './ai-activity';
 import { mediaRouteError, selectedMediaProvider } from './media-routing';
 import { z } from 'zod';
 import type { Env } from '../env';
+import { withManagedStorage } from './managed-storage';
 import { AppError, invalidState } from '../core/errors';
 import { sourceFragmentPages, streamingDocumentChunks, documentChunkWindows, renderDocumentChunk, validateChunkCitations } from './document-chunks';
 import { nowIso, sha256Hex } from '../core/db';
@@ -142,7 +143,7 @@ export async function runSourceSummary(env: Env, jobId: string): Promise<{ statu
         await reserveAiSlot(env,{projectId:state.project_id,jobId,purpose:'source_summary',configVersionId:config.id});
         const result=await aiJsonCall(env,{projectId:state.project_id,jobId,sessionId:input.sourceVersionId,purpose:'textEconomy',configVersionId:config.id,model:model.model,modelConfig:model,promptVersion:single?'document-summary-v1':'document-summary-chunks-v2',schema:chunkSummarySchema.superRefine((data,ctx)=>{try{validateChunkCitations(readFragments,data.citations);}catch(error){ctx.addIssue({code:'custom',message:error instanceof Error?error.message:'引用原文不匹配'});}}),beforeCall:assertActive,messages:[{role:'system',content:SUMMARY_SYSTEM},{role:'user',content}]});
         data=result.data;validateChunkCitations(readFragments,data.citations);await assertActive();
-        await settleReservation(env,jobId,'settled');await env.FILES.put(cacheKey,JSON.stringify(data));
+        await settleReservation(env,jobId,'settled');await withManagedStorage(env,{userId:job.created_by??null,projectId:state.project_id,category:'system'}).FILES.put(cacheKey,JSON.stringify(data));
       }
       validateChunkCitations(readFragments,data.citations);summaries.push(data);coveredChars+=chunk.reduce((sum,f)=>sum+f.content.length,0);
     }

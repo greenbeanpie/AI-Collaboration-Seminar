@@ -8,6 +8,7 @@ import { newId,nowIso } from '../core/db';
 import { invalidState,notFound,validationFailed,versionConflict } from '../core/errors';
 import { readExecution } from './ai-execution-control';
 import { extOf,validateUploadBytes,isMediaExtension,uploadLimit } from './files';
+import { expectedPartBytes, hasCompleteMultipartParts, pipeFixedLengthPart, validateUtf8Stream } from './upload-stream-helpers';
 export const DRAFT_PART_BYTES=8*1024*1024;
 export const draftBlockSchema=z.object({seq:z.number().int().nonnegative(),pageNumber:z.number().int().positive().nullable(),text:z.string().max(24000),headingPath:z.array(z.string().max(200)).max(6).optional(),warnings:z.array(z.string().max(1000)).max(20).optional()}).strict();
 type Upload={file_id:string;draft_id:string;upload_id:string;r2_key:string;name:string;ext:string;size_bytes:number;revision:number;status:string;operation_token:string|null;operation_expires_at:string|null};
@@ -50,19 +51,17 @@ export async function draftUploadStatus(env:Env,draftId:string,userId:string,fil
 }
 export async function uploadDraftPart(env:Env,draftId:string,userId:string,fileId:string,partNumber:number,body:ReadableStream<Uint8Array>|null,length:number) {
  const {row}=await upload(env,draftId,fileId,userId);await active(env,draftId,userId,row.revision);
- const number=Math.ceil(row.size_bytes/DRAFT_PART_BYTES),expected=Math.min(DRAFT_PART_BYTES,row.size_bytes-(partNumber-1)*DRAFT_PART_BYTES);
+ const number=Math.ceil(row.size_bytes/DRAFT_PART_BYTES),expected=expectedPartBytes(row.size_bytes,DRAFT_PART_BYTES,partNumber);
  if(row.status!=='uploading'||!body||partNumber<1||partNumber>number||length!==expected)throw validationFailed('分片序号或长度不合法');
  const token=newId(),now=nowIso(),expires=new Date(Date.now()+300000).toISOString();
  const claimed=await env.DB.prepare(`INSERT INTO draft_document_part_leases(file_id,part_number,lease_owner,expires_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM draft_document_uploads WHERE file_id=?1 AND status='uploading') ON CONFLICT(file_id,part_number) DO UPDATE SET lease_owner=excluded.lease_owner,expires_at=excluded.expires_at WHERE draft_document_part_leases.expires_at<=?5`).bind(fileId,partNumber,token,expires,now).run();
  if(!claimed.meta.changes)throw invalidState('分片正在上传或会话状态已变化');
- let actual=0;
  try{
-  const fixed=new FixedLengthStream(expected),counted=body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){actual+=chunk.byteLength;controller.enqueue(chunk);}})),transfer=counted.pipeTo(fixed.writable);
-  const [part]=await Promise.all([env.FILES.resumeMultipartUpload(row.r2_key,row.upload_id).uploadPart(partNumber,fixed.readable),transfer]);
+  const { part } = await pipeFixedLengthPart(body, expected, readable => env.FILES.resumeMultipartUpload(row.r2_key, row.upload_id).uploadPart(partNumber, readable));
   await active(env,draftId,userId,row.revision);
   const saved=await env.DB.prepare(`INSERT INTO draft_document_parts(file_id,part_number,etag,size_bytes) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM draft_document_uploads u JOIN draft_document_part_leases l ON l.file_id=u.file_id WHERE u.file_id=?1 AND u.status='uploading' AND l.part_number=?2 AND l.lease_owner=?5) ON CONFLICT(file_id,part_number) DO UPDATE SET etag=excluded.etag,size_bytes=excluded.size_bytes`).bind(fileId,partNumber,part.etag,expected,token).run();
   if(!saved.meta.changes)throw invalidState('分片会话已变化');
- }catch(error){if(actual!==expected)throw validationFailed('分片实际长度不符或传输中断，请重新上传此分片');throw error;}
+ }catch(error){if((error as {actualBytes?:number})?.actualBytes!==undefined&&(error as {actualBytes?:number}).actualBytes!==expected)throw validationFailed('分片实际长度不符或传输中断，请重新上传此分片');throw error;}
  finally{await env.DB.prepare('DELETE FROM draft_document_part_leases WHERE file_id=?1 AND part_number=?2 AND lease_owner=?3').bind(fileId,partNumber,token).run();}
  return draftUploadStatus(env,draftId,userId,fileId);
 }
@@ -72,7 +71,7 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
  const editing=await active(env,draftId,userId,row.revision);
  if(!['uploading','completing'].includes(row.status))throw invalidState('上传不能完成');
  const parts=await env.DB.prepare('SELECT part_number partNumber,etag,size_bytes sizeBytes FROM draft_document_parts WHERE file_id=?1 ORDER BY part_number').bind(fileId).all<{partNumber:number;etag:string;sizeBytes:number}>();
- if(parts.results.length!==Math.ceil(row.size_bytes/DRAFT_PART_BYTES)||parts.results.some((p,i)=>p.partNumber!==i+1)||parts.results.reduce((n,p)=>n+p.sizeBytes,0)!==row.size_bytes)throw invalidState('分片尚未上传完整');
+ if(!hasCompleteMultipartParts(parts.results,row.size_bytes,DRAFT_PART_BYTES))throw invalidState('分片尚未上传完整');
  const token=newId(),expires=new Date(Date.now()+300000).toISOString();
  const claimed=await env.DB.prepare(`UPDATE draft_document_uploads SET status='completing',operation_token=?2,operation_expires_at=?3 WHERE file_id=?1 AND (status='uploading' OR (status='completing' AND operation_expires_at<=?4)) AND NOT EXISTS(SELECT 1 FROM draft_document_part_leases WHERE file_id=?1 AND expires_at>?4)`).bind(fileId,token,expires,nowIso()).run();
  if(!claimed.meta.changes)throw invalidState('上传正在完成或仍有分片写入，请稍后查询状态');
@@ -85,8 +84,7 @@ export async function completeDraftUpload(env:Env,draftId:string,userId:string,f
   if(isOfficeExtension(row.ext))await validateOfficePackage(row.ext, stored.size,async(offset,length)=>{const object=await env.FILES.get(row.r2_key,{range:{offset,length}});if(!object)throw notFound('DOCX对象不存在');return new Uint8Array(await object.arrayBuffer());});
   else if(row.ext==='.txt'||row.ext==='.md'){
    const object=await env.FILES.get(row.r2_key);if(!object)throw notFound('原文件不存在');
-   const reader=object.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true,ignoreBOM:false});
-   try {for(;;){const chunk=await reader.read();if(chunk.done)break;decoder.decode(chunk.value,{stream:true});}decoder.decode();}catch{throw validationFailed('文本文件不是有效UTF-8');}finally{reader.releaseLock();}
+   await validateUtf8Stream(object.body, () => validationFailed('文本文件不是有效UTF-8'));
   }else validateUploadBytes(row.ext,head);
  } catch(error){
   await env.DB.prepare("UPDATE draft_document_uploads SET status='cancelled',operation_token=NULL,operation_expires_at=NULL WHERE file_id=?1 AND status='completing' AND operation_token=?2").bind(fileId,token).run();

@@ -1,6 +1,7 @@
 import { invalidateResourceIndex } from './resource-index';
 import type { Env } from '../env';
-import { nowIso,sha256Hex } from '../core/db';
+import { nowIso } from '../core/db';
+import { computeImportBatchDigest, splitCodePointChunks } from './upload-stream-helpers';
 import { invalidState,notFound } from '../core/errors';
 import { loadActiveSourceVersion,sourceLifecycleGuard } from './source-lifecycle';
 import { setSourceStage } from './source-summary';
@@ -26,7 +27,7 @@ export async function startDocumentImport(env:Env,project:string,user:string,ver
 export async function documentImportStatus(env:Env,project:string,user:string,id:string) {const s=await load(env,project,user,id);const stage=await env.DB.prepare('SELECT text_status FROM source_processing WHERE source_version_id=?1').bind(s.source_version_id).first<{text_status:string}>();const missing=await env.DB.prepare("SELECT COUNT(*) n FROM source_pages WHERE source_version_id=?1 AND text_status='none' AND ocr_status!='ok'").bind(s.source_version_id).first<{n:number}>();return {sessionId:s.id,status:s.status,nextBatch:s.next_batch,processedPages:s.processed_pages,warnings:JSON.parse(s.warnings_json),textReady:stage?.text_status==='ready',needsImages:missing?.n??0};}
 export async function appendDocumentBatch(env:Env,project:string,user:string,id:string,batch:number,blocks:ImportBlock[]) {
  const s=await load(env,project,user,id);if(s.status!=='processing')throw invalidState('解析会话已结束');
- const digest=await sha256Hex(JSON.stringify(blocks));
+ const digest=await computeImportBatchDigest(blocks);
  const replay=await env.DB.prepare('SELECT digest FROM document_parse_batches WHERE session_id=?1 AND batch_number=?2').bind(id,batch).first<{digest:string}>();
  if(replay){if(replay.digest!==digest)throw invalidState('同一解析批次内容发生变化');return documentImportStatus(env,project,user,id);}
  if(batch!==s.next_batch)throw invalidState('解析批次乱序，请读取会话进度后继续');
@@ -36,8 +37,7 @@ export async function appendDocumentBatch(env:Env,project:string,user:string,id:
   if(s.method!=='browser-pdf' && block.pageNumber!==null)throw invalidState('Office 文档不提供真实页码');
   if(block.pageNumber!==null)statements.push(env.DB.prepare(`INSERT INTO source_pages(id,source_version_id,project_id,page_number,text_status,updated_at) SELECT ?1,?2,?3,?4,?5,?6 WHERE ${sourceLifecycleGuard('?2','?7')} AND EXISTS(SELECT 1 FROM document_parse_sessions WHERE id=?8 AND next_batch=?9 AND status='processing' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=document_parse_sessions.project_id AND user_id=document_parse_sessions.actor_id)) ON CONFLICT(source_version_id,page_number) DO UPDATE SET text_status=CASE WHEN source_pages.text_status='extracted' THEN 'extracted' ELSE excluded.text_status END,updated_at=excluded.updated_at`).bind(crypto.randomUUID(),s.source_version_id,project,block.pageNumber,block.text.trim()?'extracted':'none',nowIso(),s.lifecycle_version,id,batch));
   if(block.pageNumber!==null)statements.push(env.DB.prepare("INSERT OR IGNORE INTO document_parse_pages(session_id,page_number) SELECT ?1,?2 WHERE EXISTS(SELECT 1 FROM document_parse_sessions WHERE id=?1 AND next_batch=?3 AND status='processing' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=document_parse_sessions.project_id AND user_id=document_parse_sessions.actor_id))").bind(id,block.pageNumber,batch));
-  const chars=Array.from(block.text);
-  for(let offset=0;offset<chars.length;offset+=600){const text=chars.slice(offset,offset+600).join('');if(!text.trim())continue;
+  for(const text of splitCodePointChunks(block.text, 600)){
    statements.push(env.DB.prepare(`INSERT INTO source_fragments(id,source_version_id,project_id,page_number,seq,kind,content,created_at,heading_path,extraction_session_id) SELECT ?1,?2,?3,?4,(SELECT COALESCE(MAX(seq),0)+1 FROM source_fragments WHERE source_version_id=?2),'text',?6,?7,?8,?9 WHERE ${sourceLifecycleGuard('?2','?10')} AND EXISTS(SELECT 1 FROM document_parse_sessions WHERE id=?9 AND next_batch=?11 AND status='processing' AND EXISTS(SELECT 1 FROM project_members WHERE project_id=document_parse_sessions.project_id AND user_id=document_parse_sessions.actor_id))`).bind(crypto.randomUUID(),s.source_version_id,project,block.pageNumber,seq++,text,nowIso(),JSON.stringify(block.headingPath??[]),id,s.lifecycle_version,batch));
   }
  }

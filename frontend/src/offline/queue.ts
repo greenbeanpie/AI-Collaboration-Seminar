@@ -105,11 +105,36 @@ export async function seedLocalEntity(url: string): Promise<unknown | undefined>
   const row = rows.find(operation => operation.blockedReason !== 'project-access-revoked' && !projectRevoked(operation.accountId, operation.projectId) && url.endsWith(`/${operation.localId}`));
   return row ? offlineView(url, optimisticResult(row, row.base)) : undefined;
 }
+function replaceSegmentIds(url: string, from: string, to: string): string {
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return url.replace(
+    new RegExp(`(/(?:collaboration/)?tasks/|/materials/)${escaped}(?=/|$|\\?)`, 'g'),
+    `$1${to}`,
+  );
+}
+export function replaceOperationIds(operation: PendingOperation, from: string, to: string): PendingOperation {
+  if (!from || from === to) return operation;
+  const nextUrl = replaceSegmentIds(operation.url, from, to);
+  const body = { ...operation.body };
+  for (const field of ['taskId', 'targetId', 'materialId', 'submissionId', 'parentTaskId'] as const) {
+    if (body[field] === from) body[field] = to;
+  }
+  for (const listField of ['dependsOnTaskIds', 'materialVersionIds'] as const) {
+    if (Array.isArray(body[listField])) {
+      body[listField] = (body[listField] as unknown[]).map(item => (item === from ? to : item));
+    }
+  }
+  const baseObj = operation.base && typeof operation.base === 'object' ? { ...(operation.base as Record<string, unknown>) } : null;
+  if (baseObj) {
+    for (const field of ['taskId', 'materialId', 'submissionId'] as const) {
+      if (baseObj[field] === from) baseObj[field] = to;
+    }
+  }
+  return { ...operation, url: nextUrl, body, ...(baseObj ? { base: baseObj } : {}) };
+}
 export async function replaceLocalIds(accountId: string, from: string, to: string): Promise<void> {
   for (const row of await operations(accountId)) {
-    row.url = row.url.replaceAll(from, to);
-    row.body = JSON.parse(JSON.stringify(row.body).replaceAll(from, to)) as Record<string, unknown>;
-    await putOperation(row);
+    await putOperation(replaceOperationIds(row, from, to));
   }
   // List/detail snapshots will be refreshed after sync; local references in queued intents are durable.
 }

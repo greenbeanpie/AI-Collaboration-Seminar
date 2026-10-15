@@ -4,6 +4,7 @@ import { LIMITS } from '../core/limits';
 import { AppError, quotaExceeded } from '../core/errors';
 import { loadAiConfig } from '../ai/config';
 import { loadExecutionPolicy, resolveExecutionTarget } from './ai-execution-control';
+import { buildReleaseIdleReservationStatement } from './ai-execution-coordinator';
 
 /**
  * AI 并发槽位与调用额度预占：
@@ -109,15 +110,7 @@ export async function settleReservation(env: Env, jobId: string, outcome: 'settl
 /** Release only an idle job; the SQL fence protects a concurrently acquired call or resumed execution. */
 export async function releaseIdleReservation(env: Env, jobId: string, now = nowIso()): Promise<void> {
   const target = await resolveExecutionTarget(env, { kind: 'job', id: jobId });
-  await env.DB.prepare(`UPDATE usage_reservations
-    SET status = CASE WHEN attempts_started = 0 THEN 'released' ELSE 'settled' END, settled_at = ?3
-    WHERE job_id = ?1 AND status = 'reserved'
-      AND NOT EXISTS (SELECT 1 FROM ai_executions WHERE target_kind = 'job' AND target_id = ?2
-        AND (inflight_token IS NOT NULL OR (state = 'paused' AND pause_reason = 'request_uncertain')))
-      AND (EXISTS (SELECT 1 FROM jobs WHERE id = ?1 AND status IN ('succeeded','failed','cancelled','waiting_input'))
-        OR EXISTS (SELECT 1 FROM ai_executions WHERE target_kind = 'job' AND target_id = ?2 AND state = 'paused')
-        OR (NOT EXISTS (SELECT 1 FROM jobs WHERE id = ?1) AND created_at <= ?4))`)
-    .bind(jobId, target.id, now, new Date(Date.parse(now) - 2 * 60_000).toISOString()).run();
+  await buildReleaseIdleReservationStatement(env, jobId, target.id, now).run();
 }
 
 /** Each sweep has a bounded stable page; protected calls still advance the cursor. */

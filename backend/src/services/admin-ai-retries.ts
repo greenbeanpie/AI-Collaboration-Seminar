@@ -14,6 +14,7 @@ import { assertSourceInputs } from './source-inputs';
 import { assertProjectSourceContext } from './collaboration-context';
 import { assertProfileStamp } from './personal-profiles';
 import { retryFailedDraftPreview } from './ai-automatic-retries';
+import { buildAdminAiRetryGuards } from './sql-guards';
 
 const candidates = `j.status='failed' AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links l WHERE l.parent_job_id=j.id) AND (j.kind IN ('agent_run','assignment_suggest','review_run','rehearsal_turn','requirement_extract','ocr_pages','parse_source') OR json_extract(j.input_json,'$.operation') IN ('source.summary','media.summary') OR EXISTS(SELECT 1 FROM media_processing WHERE job_id=j.id) OR EXISTS(SELECT 1 FROM ai_calls WHERE job_id=j.id))`;
 export interface RetryBatch { batchId:string;status:'queued'|'running'|'completed';total:number;pending:number;queued:number;skipped:number;createdAt:string;updatedAt:string;skipReasons:Array<{reason:string;count:number}> }
@@ -69,44 +70,16 @@ export async function retryFailedAiJob(env:Env,jobId:string,expectedUpdatedAt?:s
  const actorId=effectiveActor;
  const config=await loadAiConfig(env.DB,input.configVersionId);
  if(!config?.enabled)return {status:'skipped',reason:'原模型配置不可用'};
- const guards:string[]=["EXISTS(SELECT 1 FROM auth_accounts WHERE user_id=?4 AND password_hash IS NOT NULL)","old.status='failed'","old.updated_at=?3","NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=old.id)"];
  const requiredPermission=job.kind==='review_run'?(input.followupId?'scoreCorrect':'scoreInitiate'):input.operation==='standards.generate'?'owner':input.operation?.startsWith('collaboration.')&& !['collaboration.summary','collaboration.agent-eligibility','collaboration.assistance-plan','collaboration.evaluate'].includes(input.operation)?'taskManage':null;
  if(job.project_id){
- guards.push("EXISTS(SELECT 1 FROM projects p JOIN project_members m ON m.project_id=p.id WHERE p.id=old.project_id AND p.status='active' AND m.user_id=?4)");
- if(requiredPermission==='owner')guards.push("EXISTS(SELECT 1 FROM project_members WHERE project_id=old.project_id AND user_id=?4 AND role='owner')");
- else if(requiredPermission)guards.push(projectPermissionSql('old.project_id','?4',requiredPermission));
  if(input.sourceSnapshots){if(input.operation?.startsWith('collaboration.'))await assertProjectSourceContext(env,job.project_id,input.sourceSnapshots);else await assertSourceInputs(env,job.project_id,input.preferredSourceVersionIds??input.sourceVersionIds??[],input.sourceSnapshots);}
  if(input.profileStamp)await assertProfileStamp(env,job.project_id,input.profileStamp);
  }
- if(input.goalRevision!==undefined||input.goal?.revision!==undefined)guards.push("EXISTS(SELECT 1 FROM project_goals WHERE project_id=old.project_id AND revision=COALESCE(json_extract(old.input_json,'$.goalRevision'),json_extract(old.input_json,'$.goal.revision')))");
- if(input.operation==='standards.generate'||input.operation?.startsWith('collaboration.'))guards.push("EXISTS(SELECT 1 FROM ai_config_versions WHERE id=json_extract(old.input_json,'$.configVersionId') AND enabled=1 AND version=(SELECT MAX(version) FROM ai_config_versions))");
- if(input.sourceVersionId)guards.push(sourceLifecycleGuard("json_extract(old.input_json,'$.sourceVersionId')","COALESCE(json_extract(old.input_json,'$.sourceLifecycleVersion'),1)"));
- if(input.sourceVersionId&&input.operation!=='source.summary'&&input.operation!=='media.summary')guards.push("EXISTS(SELECT 1 FROM source_versions v JOIN sources s ON s.id=v.source_id WHERE v.id=json_extract(old.input_json,'$.sourceVersionId') AND s.current_version_id=v.id) AND NOT EXISTS(SELECT 1 FROM jobs newer WHERE newer.project_id=old.project_id AND newer.id!=old.id AND json_extract(newer.input_json,'$.sourceVersionId')=json_extract(old.input_json,'$.sourceVersionId') AND newer.kind=old.kind AND COALESCE(json_extract(newer.input_json,'$.operation'),'')=COALESCE(json_extract(old.input_json,'$.operation'),'') AND COALESCE(json_extract(newer.input_json,'$.phase'),'')=COALESCE(json_extract(old.input_json,'$.phase'),'') AND (newer.created_at>old.created_at OR newer.status IN ('queued','running','waiting_input')))");
- if(input.sourceVersionId)guards.push("EXISTS(SELECT 1 FROM source_versions v JOIN sources s ON s.id=v.source_id WHERE v.id=json_extract(old.input_json,'$.sourceVersionId') AND s.current_version_id=v.id)");
- if(input.operation==='media.summary')guards.push("NOT EXISTS(SELECT 1 FROM source_processing WHERE source_version_id=json_extract(old.input_json,'$.sourceVersionId') AND summary_job_id IS NOT NULL AND summary_job_id!=old.id)");
- if(input.standardsVersionId)guards.push(effectiveStandardGuardSql('old.project_id',"json_extract(old.input_json,'$.standardsVersionId')"));
- if(input.settingsRevision!==undefined)guards.push("EXISTS(SELECT 1 FROM projects WHERE id=old.project_id AND ai_collaboration_enabled=1 AND collaboration_revision=json_extract(old.input_json,'$.settingsRevision'))");
  if(input.tasks)for(const task of input.tasks){const current=await env.DB.prepare('SELECT revision FROM tasks WHERE id=?1 AND project_id=?2').bind(task.taskId,job.project_id).first<{revision:number}>();if(current?.revision!==task.revision)return {status:'skipped',reason:'任务版本已变化'};}
  if(input.operation==='collaboration.assistance-plan' && (await readTaskAssistancePlan(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务、资料、标准或权限已变化，请重新生成计划'};
  if(input.operation==='collaboration.agent-eligibility' && (await readTaskAgentEligibility(env,job.project_id!,input.taskId,actorId)).sourceHash!==input.sourceHash)return {status:'skipped',reason:'任务内容或模型配置已变化，请重新检查'};
- if(input.operation==='project.chat'){try{await assertChatJob(env,jobId,true);}catch(error){return {status:'skipped',reason:error instanceof Error?error.message:'问答上下文已失效'};}guards.push("EXISTS(SELECT 1 FROM project_ai_chat_questions q JOIN project_ai_chat_sessions s ON s.id=q.session_id AND s.generation=q.generation WHERE q.id=json_extract(old.input_json,'$.questionId') AND q.job_id=old.id AND s.job_id=old.id AND q.user_id=?4 AND EXISTS(SELECT 1 FROM projects WHERE id=old.project_id AND ai_collaboration_enabled=1) AND q.context_stamp=("+chatContextStampSql.replaceAll('?1','old.project_id')+"))");}
- const reset:Array<{table:string;pointer:string;extra?:string}>=[];
- const requireRow=async(table:string,pointer:string,condition:string)=>{guards.push(`EXISTS(SELECT 1 FROM ${table} WHERE ${pointer}=old.id AND ${condition})`);};
- if(input.operation==='project.chat')reset.push({table:'project_ai_chat_questions',pointer:'job_id'},{table:'project_ai_chat_sessions',pointer:'job_id'});
- if(input.operation==='media.draft')guards.push("EXISTS(SELECT 1 FROM creation_draft_files f JOIN project_creation_drafts d ON d.id=f.draft_id WHERE f.id=json_extract(old.input_json,'$.fileId') AND d.id=json_extract(old.input_json,'$.draftId') AND f.removed=0 AND d.status='active' AND d.owner_id=?4)");
- if(input.operation==='source.summary'){await requireRow('source_processing','summary_job_id',"summary_status='failed'");reset.push({table:'source_processing',pointer:'summary_job_id',extra:"summary_status='queued',summary_error=NULL,"});}
- if(input.runId){await requireRow('agent_runs','job_id',"status='failed'");reset.push({table:'agent_runs',pointer:'job_id',extra:"status='running',output_json=NULL,"});}
- if(input.reviewId){await requireRow('reviews','job_id',"status='failed' AND created_by=?4");reset.push({table:'reviews',pointer:'job_id',extra:"status='pending',"});}
- if(input.rehearsalId){await requireRow('rehearsals','processing_job_id',"status='active' AND created_by=?4");reset.push({table:'rehearsals',pointer:'processing_job_id',extra:"finish_job_id=CASE WHEN finish_job_id=?1 THEN ?2 ELSE finish_job_id END,"});}
- if(input.followupId){await requireRow('assessment_followups','job_id',"status='failed' AND user_id=?4 AND EXISTS(SELECT 1 FROM assessments a WHERE a.id=assessment_followups.assessment_id AND a.revision=assessment_followups.base_revision AND a.status='succeeded')");reset.push({table:'assessment_followups',pointer:'job_id',extra:"status='queued',error_json=NULL,"});}
- if(!input.followupId&&(input.assessmentId||input.rehearsalId)){await requireRow('assessments','job_id',"status!='succeeded' AND origin='ai' AND revision=1");reset.push({table:'assessments',pointer:'job_id',extra:"status='active',"});}
- if(input.submissionId){await requireRow('task_submissions','evaluation_job_id',"status IN ('pending','evaluated') AND EXISTS(SELECT 1 FROM tasks t WHERE t.current_submission_id=task_submissions.id AND t.lifecycle_state='submitted' AND t.revision=task_submissions.task_revision AND t.assignee_id=task_submissions.submitted_by) AND (submitted_by=?4 OR "+projectPermissionSql('task_submissions.project_id','?4','taskManage')+')');reset.push({table:'task_submissions',pointer:'evaluation_job_id'});}
- if(input.operation==='collaboration.decompose'||input.operation==='collaboration.assign'){
- guards.push("NOT EXISTS(SELECT 1 FROM collaboration_proposals WHERE job_id=old.id AND status!='pending')");
- reset.push({table:'collaboration_proposals',pointer:'job_id'});
- }
- const caches:Record<string,string>={'collaboration.summary':'task_summaries','collaboration.agent-eligibility':'task_agent_eligibility','collaboration.assistance-plan':'task_assistance_plans'};
- if(caches[input.operation]){await requireRow(caches[input.operation]!,'job_id',"status='failed'");reset.push({table:caches[input.operation]!,pointer:'job_id',extra:"status='queued',"});}
+ if(input.operation==='project.chat'){try{await assertChatJob(env,jobId,true);}catch(error){return {status:'skipped',reason:error instanceof Error?error.message:'问答上下文已失效'};}}
+ const { guards, reset } = buildAdminAiRetryGuards({ projectId: job.project_id, requiredPermission, input, chatContextStampSql });
  if(input.taskId)guards.push("EXISTS(SELECT 1 FROM tasks WHERE id=json_extract(old.input_json,'$.taskId') AND project_id=old.project_id AND (assignee_id=?4 OR "+projectPermissionSql('old.project_id','?4','taskManage')+'))');
  const root=await checkpointRootId(env,jobId);
  const id=newId(),now=nowIso();

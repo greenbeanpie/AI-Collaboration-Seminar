@@ -1,13 +1,13 @@
 import { checkpointAttemptIds } from './ai-checkpoints';
-import { checkpointSecret, type SecretKeyring } from '../ai/secrets';
+import { checkpointSecret, sealChunkedEnvelope, unsealChunkedEnvelope, type SecretKeyring } from '../ai/secrets';
 import type { Env } from '../env';
+import { withManagedStorage } from './managed-storage';
 import type { ToolExchange,WebCitation } from '../ai/tool-transport';
 import type { GatewayCallOutput, ProviderRetryState } from '../ai/gateway';
 import type { ProjectReference } from './project-evidence';
 import type { ContextPhase } from '../ai/context-phases';
 import { nowIso } from '../core/db';
 import { invalidState } from '../core/errors';
-import { seal,unseal } from '../ai/secrets';
 /** Yield only after the model response/tool progress is durably checkpointed. */
 export class InvestigationContinuation extends Error {
   readonly safeToResume=true;
@@ -33,22 +33,18 @@ interface EncryptedCheckpoint {
   format:'encrypted-investigation-v1';step:number;phase:'complete'|'read';chunks:string[];
 }
 async function encryptCheckpoint(checkpoint:InvestigationCheckpoint,id:string,secret:string | SecretKeyring):Promise<EncryptedCheckpoint> {
-  // The shared seal helper spreads ciphertext bytes: keep each call bounded,
-  // and split by Unicode code points so multilingual excerpts survive exactly.
-  const characters=Array.from(JSON.stringify(checkpoint)),chunks:string[]=[];
-  const total=Math.ceil(characters.length/16000);
-  for(let index=0;index<total;index++)chunks.push(await seal(JSON.stringify({id,index,total,data:characters.slice(index*16000,(index+1)*16000).join('')}),secret));
+  const { chunks } = await sealChunkedEnvelope('encrypted-investigation-v1', 'id', id, checkpoint, secret);
   return {format:'encrypted-investigation-v1',step:checkpoint.step,phase:checkpoint.content?'complete':'read',chunks};
 }
 async function decryptCheckpoint(envelope:EncryptedCheckpoint,id:string,secret:string | SecretKeyring):Promise<InvestigationCheckpoint> {
-  if(!Array.isArray(envelope.chunks)||!envelope.chunks.length)throw invalidState('调查检查点加密格式无效');
-  let text='';
-  for(let index=0;index<envelope.chunks.length;index++) {
-    const part=JSON.parse(await unseal(envelope.chunks[index]!,secret)) as {id:string;index:number;total:number;data:string};
-    if(part.id!==id||part.index!==index||part.total!==envelope.chunks.length||typeof part.data!=='string')throw invalidState('调查检查点加密内容不匹配');
-    text+=part.data;
-  }
-  return JSON.parse(text) as InvestigationCheckpoint;
+  return unsealChunkedEnvelope<InvestigationCheckpoint>(
+    envelope,
+    'encrypted-investigation-v1',
+    'id',
+    id,
+    secret,
+    { invalidFormat: '调查检查点加密格式无效', mismatch: '调查检查点加密内容不匹配' },
+  );
 }
 export async function loadInvestigation(env: Env, id: string, allowUncertainDispatch=false,jobId?:string): Promise<InvestigationCheckpoint | null> {
   let stored:R2ObjectBody|null=null;
@@ -68,7 +64,7 @@ export async function saveInvestigation(env: Env, context:{projectId:string;user
   const key=context.jobId?`ai/investigations/${id}/${context.jobId}.json`:`ai/investigations/${id}.json`;
   const phase=checkpoint.content?'complete':'read';
   const stored=await encryptCheckpoint(checkpoint,id,checkpointSecret(env));
-  await env.FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
+  await withManagedStorage(env,{userId:context.userId,projectId:context.projectId,category:'system'}).FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
   await env.DB.prepare(`INSERT INTO ai_investigations(id,project_id,job_id,requested_by,prompt_version,checkpoint_key,phase,step,updated_at)
     SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE ?3 IS NULL OR EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running','waiting_input') AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?3)) ON CONFLICT(id) DO UPDATE SET job_id=excluded.job_id,checkpoint_key=excluded.checkpoint_key,phase=excluded.phase,step=excluded.step,updated_at=excluded.updated_at`)
     .bind(id,context.projectId,context.jobId??null,context.userId,promptVersion,key,phase,checkpoint.step,nowIso()).run();

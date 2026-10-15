@@ -26,6 +26,7 @@ import { CreationBehaviorFields } from './CreationBehaviorFields';
 import { ResourceUsageNotice } from '../components/ResourceUsageNotice';
 import { creationBehaviors, creationBehavior } from './project-wizard';
 import { isMediaProcessing } from './media-processing';
+import { draftPollIntervalMs, hasDraftMediaPending, hasDraftMediaPolling, isDraftPreviewRunning } from './useDraftWorkspacePolling';
 type LocalFile = {
   id: string;
   name: string;
@@ -80,9 +81,9 @@ function CreationWizard({ userId }: {
   latestDraft.current = draft;
   const [previewSubmitting, setPreviewSubmitting] = useState(false);
   const previewActivity = (draft as WizardDraft & { activity?: AiActivity | null } | null)?.activity;
-  const previewRunning = draft?.previewState === 'running' && executionOf(draft)?.state !== 'paused';
-  const mediaPending = draft?.files.some(file => isMediaProcessing(file.mediaStatus)) ?? false;
-  const mediaPolling = draft?.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) ?? false;
+  const previewRunning = isDraftPreviewRunning(draft);
+  const mediaPending = hasDraftMediaPending(draft);
+  const mediaPolling = hasDraftMediaPolling(draft);
   const previewWaiting = draft?.previewState === 'waiting_input';
   const busy = actionBusy || previewRunning || previewWaiting;
   const applyDraft = useCallback((next: WizardDraft, previous: WizardDraft, resetConfirmed: boolean) => {
@@ -94,7 +95,7 @@ function CreationWizard({ userId }: {
       setManualGoal(previewGoal(next));
     }
   }, []);
-  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => document.visibilityState === 'hidden' ? false : query.state.data?.draft.previewState === 'running' || query.state.data?.draft.files.some(file => file.audio?.phase !== 'waiting_config' && isMediaProcessing(file.mediaStatus)) || !query.state.data ? 3000 : false, refetchIntervalInBackground: false, retry: false });
+  const draftPoll = useQuery({ queryKey: ['creation-draft-preview', draft?.id, previewRunning], queryFn: async ({ signal }) => { const epoch=previewEpoch.current; const next=await api.get<'CreationDraftResponse'>(draftPath(draft!.id),undefined,signal); return { epoch, draft: next }; }, enabled: Boolean(draft?.id && (previewRunning || mediaPolling) && !actionBusy), refetchInterval: query => draftPollIntervalMs(query.state.data?.draft), refetchIntervalInBackground: false, retry: false });
   useEffect(() => { const snapshot = draftPoll.data; const next=snapshot?.draft; if (!next || snapshot.epoch !== previewEpoch.current || next.id !== latestDraft.current?.id || (latestDraft.current.previewState !== 'running' && !latestDraft.current.files.some(file => isMediaProcessing(file.mediaStatus))) || next.revision < latestDraft.current.revision || olderExecution(next, latestDraft.current)) return; applyDraft(next, latestDraft.current, next.revision !== latestDraft.current.revision || next.previewState === 'ready'); }, [draftPoll.data, applyDraft]);
   const lock = useRef(false), controlController = useRef<AbortController | null>(null), fileInput = useRef<HTMLInputElement>(null), mounted = useRef(true);
   const [parseMode,setParseMode]=useState<'auto'|'cloud'|'browser'>('auto');

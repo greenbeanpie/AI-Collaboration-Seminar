@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { aiSecret, checkpointSecret, purposeSecret, seal, unseal } from '../src/ai/secrets';
+import { aiSecret, checkpointSecret, purposeSecret, seal, sealChunkedEnvelope, unseal, unsealChunkedEnvelope } from '../src/ai/secrets';
 import { consumePasswordRateLimit } from '../src/services/accounts';
 import { hmacSha256Hex } from '../src/core/db';
 import { env } from './helpers/env';
@@ -29,4 +29,23 @@ it('honors a pre-upgrade exhausted rate window', async () => {
   const key = await hmacSha256Hex(env.AUTH_SECRET, `${scope}|identity|${window}`);
   await env.DB.prepare('INSERT INTO auth_password_rate_limits(bucket_key,attempts,expires_at) VALUES(?1,?2,?3)').bind(key, 5, new Date((window + 1) * 900000).toISOString()).run();
   await expect(consumePasswordRateLimit(env, scope, 'identity', 5, 900)).rejects.toThrow();
+});
+it('seals and unseals large payloads (> 256 KB) without RangeError call stack overflow and preserves chunked envelopes', async () => {
+  const largePayload = '超大加密载荷测试-🚀-'.repeat(25_000); // > 350 KB UTF-8
+  expect(new TextEncoder().encode(largePayload).byteLength).toBeGreaterThan(256 * 1024);
+  const sealed = await seal(largePayload, checkpointSecret(env));
+  expect(await unseal(sealed, checkpointSecret(env))).toBe(largePayload);
+
+  const envelope = await sealChunkedEnvelope('encrypted-response-v1', 'key', 'resp-1', { text: largePayload }, checkpointSecret(env));
+  expect(envelope.format).toBe('encrypted-response-v1');
+  expect(envelope.chunks.length).toBeGreaterThan(10);
+  const restored = await unsealChunkedEnvelope<{ text: string }>(
+    envelope,
+    'encrypted-response-v1',
+    'key',
+    'resp-1',
+    checkpointSecret(env),
+    { invalidFormat: '响应检查点格式无效', mismatch: '响应检查点内容不匹配' },
+  );
+  expect(restored.text).toBe(largePayload);
 });

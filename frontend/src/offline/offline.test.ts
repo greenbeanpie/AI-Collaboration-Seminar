@@ -46,4 +46,49 @@ describe('offline intents and conflict handling', () => {
     await replaceLocalIds('account-a', saved.versionId, 'server-version');
     expect(state.rows.find(row => row.url.endsWith('/submissions'))?.body.materialVersionIds).toEqual(['server-version']);
   });
+  it('replaces local IDs structurally in URLs and reference fields without corrupting user text payloads', async () => {
+    const taskA = await queueOffline('/api/v1/projects/project-a/tasks', 'POST', { title: '前置任务 A' }) as { taskId: string };
+    const localId = taskA.taskId;
+    await queueOffline(`/api/v1/projects/project-a/tasks/${localId}`, 'PATCH', {
+      expectedRevision: 1,
+      title: `标题提到 ${localId} 不应被改写`,
+      detail: `详情包含本地ID ${localId} 原样保留`,
+      criteria: `验收标准 ${localId}`,
+    });
+    await queueOffline('/api/v1/projects/project-a/tasks', 'POST', {
+      title: `下游任务引用 ${localId}`,
+      detail: `正文含 ${localId}`,
+      dependsOnTaskIds: [localId, 'other-task-id'],
+    });
+    await queueOffline('/api/v1/projects/project-a/comments', 'POST', {
+      targetType: 'task',
+      targetId: localId,
+      body: `评论内容提到 ${localId} 保持不变`,
+    });
+    await queueOffline(`/api/v1/projects/project-a/tasks/${localId}/submissions`, 'POST', {
+      expectedRevision: 1,
+      body: `提交说明包含 ${localId}`,
+      materialVersionIds: [localId],
+    });
+    const { replaceLocalIds } = await import('./queue');
+    await replaceLocalIds('account-a', localId, 'server-task-uuid');
+    const patchOp = state.rows.find(row => row.method === 'PATCH');
+    expect(patchOp?.url).toBe('/api/v1/projects/project-a/tasks/server-task-uuid');
+    expect(patchOp?.body).toMatchObject({
+      title: `标题提到 ${localId} 不应被改写`,
+      detail: `详情包含本地ID ${localId} 原样保留`,
+      criteria: `验收标准 ${localId}`,
+    });
+    const downstreamOp = state.rows.find(row => row.method === 'POST' && row.url.endsWith('/tasks') && row.key !== state.rows[0]!.key);
+    expect(downstreamOp?.body.dependsOnTaskIds).toEqual(['server-task-uuid', 'other-task-id']);
+    expect(downstreamOp?.body.title).toBe(`下游任务引用 ${localId}`);
+    expect(downstreamOp?.body.detail).toBe(`正文含 ${localId}`);
+    const commentOp = state.rows.find(row => row.url.endsWith('/comments'));
+    expect(commentOp?.body.targetId).toBe('server-task-uuid');
+    expect(commentOp?.body.body).toBe(`评论内容提到 ${localId} 保持不变`);
+    const submissionOp = state.rows.find(row => row.url.endsWith('/submissions'));
+    expect(submissionOp?.url).toBe('/api/v1/projects/project-a/tasks/server-task-uuid/submissions');
+    expect(submissionOp?.body.materialVersionIds).toEqual(['server-task-uuid']);
+    expect(submissionOp?.body.body).toBe(`提交说明包含 ${localId}`);
+  });
 });

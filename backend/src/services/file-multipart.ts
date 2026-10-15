@@ -6,6 +6,7 @@ import { nowIso } from '../core/db';
 import { LIMITS } from '../core/limits';
 import { validateUploadBytes, uploadLimit } from './files';
 import { validateOfficePackage, isOfficeExtension } from './docx-validation';
+import { expectedPartBytes, hasCompleteMultipartParts, pipeFixedLengthPart, validateUtf8Stream } from './upload-stream-helpers';
 
 interface Upload { id:string;file_id:string;project_id:string;actor_id:string;lifecycle_version:number;upload_id:string;r2_key:string;size_bytes:number;part_bytes:number;status:string;operation_token:string|null;operation_expires_at:string|null }
 const LEASE_MS=15*60*1000;
@@ -52,7 +53,7 @@ export async function multipartStatus(env:Env,project:string,file:string,user:st
 }
 export async function putMultipartPart(env:Env,project:string,file:string,user:string,id:string,part:number,body:ReadableStream<Uint8Array>,declaredSize:number) {
  const s=await load(env,project,file,user,id);if(s.status!=='uploading')throw invalidState('上传已结束或正在完成');
- const expected=Math.min(s.part_bytes,s.size_bytes-(part-1)*s.part_bytes);
+ const expected=expectedPartBytes(s.size_bytes,s.part_bytes,part);
  if(!Number.isSafeInteger(part)||part<1||part>Math.ceil(s.size_bytes/s.part_bytes)||declaredSize!==expected)throw validationFailed('分片编号或大小不符');
  const owner=crypto.randomUUID(),now=nowIso(),expiry=new Date(Date.now()+LEASE_MS).toISOString();
  const claim=await env.DB.prepare(`INSERT INTO file_upload_part_leases(session_id,part_number,lease_owner,expires_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM file_upload_sessions WHERE id=?1 AND status='uploading') AND ${liveGuard('?5','?6','?7','?8',true)} ON CONFLICT(session_id,part_number) DO UPDATE SET lease_owner=excluded.lease_owner,expires_at=excluded.expires_at WHERE file_upload_part_leases.expires_at<=?9`).bind(id,part,owner,expiry,file,project,user,s.lifecycle_version,now).run();
@@ -60,11 +61,7 @@ export async function putMultipartPart(env:Env,project:string,file:string,user:s
  // An in-flight replacement must not leave an older ETag eligible for completion after lease expiry.
  await env.DB.prepare('DELETE FROM file_upload_parts WHERE session_id=?1 AND part_number=?2 AND EXISTS(SELECT 1 FROM file_upload_part_leases WHERE session_id=?1 AND part_number=?2 AND lease_owner=?3)').bind(id,part,owner).run();
  try {
-  const fixed=new FixedLengthStream(expected),controller=new AbortController();
-  const transfer=body.pipeTo(fixed.writable,{signal:controller.signal});
-  const upload=env.FILES.resumeMultipartUpload(s.r2_key,s.upload_id).uploadPart(part,fixed.readable);
-  let p:R2UploadedPart;
-  try {[p]=await Promise.all([upload,transfer]);}catch(error){controller.abort(error);await Promise.allSettled([upload,transfer]);throw error;}
+  const { part: p } = await pipeFixedLengthPart(body, expected, readable => env.FILES.resumeMultipartUpload(s.r2_key, s.upload_id).uploadPart(part, readable), { abortOnFailure: true });
   const written=await env.DB.prepare(`INSERT INTO file_upload_parts(session_id,part_number,etag,size_bytes) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM file_upload_sessions WHERE id=?1 AND status='uploading') AND EXISTS(SELECT 1 FROM file_upload_part_leases WHERE session_id=?1 AND part_number=?2 AND lease_owner=?5) AND ${liveGuard('?6','?7','?8','?9',true)} ON CONFLICT(session_id,part_number) DO UPDATE SET etag=excluded.etag,size_bytes=excluded.size_bytes`).bind(id,part,p.etag,expected,owner,file,project,user,s.lifecycle_version).run();
   if(!written.meta.changes)throw invalidState('上传已取消，文件/成员身份已变化或分片租约已被替换');
   return {partNumber:part,etag:p.etag,sizeBytes:expected};
@@ -88,7 +85,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
  const token=await claimOperation(env,s,'completing');let completed=false;
  try {
   const parts=await env.DB.prepare('SELECT part_number partNumber,etag,size_bytes sizeBytes FROM file_upload_parts WHERE session_id=?1 ORDER BY part_number').bind(id).all<{partNumber:number;etag:string;sizeBytes:number}>();
-  if(parts.results.length!==Math.ceil(s.size_bytes/s.part_bytes)||parts.results.some((p,i)=>p.partNumber!==i+1||p.sizeBytes!==Math.min(s.part_bytes,s.size_bytes-i*s.part_bytes))){await releaseOperation(env,id,token,'uploading');throw invalidState('存在未完成或尺寸错误的分片');}
+  if(!hasCompleteMultipartParts(parts.results,s.size_bytes,s.part_bytes)){await releaseOperation(env,id,token,'uploading');throw invalidState('存在未完成或尺寸错误的分片');}
   let object=await env.FILES.head(s.r2_key);
   if(!object)object=await env.FILES.resumeMultipartUpload(s.r2_key,s.upload_id).complete(parts.results.map(({partNumber,etag})=>({partNumber,etag})));
   completed=true;if(object.size!==s.size_bytes)throw unsupportedMediaType('上传对象大小与登记大小不符');
@@ -97,8 +94,7 @@ export async function completeMultipart(env:Env,project:string,file:string,user:
   if(isOfficeExtension(f.ext))mime=await validateOfficePackage(f.ext, object.size,read);
   else if(f.ext==='.txt'||f.ext==='.md') {
    const obj=await env.FILES.get(s.r2_key);if(!obj)throw notFound('文件内容缺失');
-   const reader=obj.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true,ignoreBOM:false});
-   try {while(true){const {done,value}=await reader.read();if(done)break;decoder.decode(value,{stream:true});}decoder.decode();}catch{throw unsupportedMediaType('文本不是有效 UTF-8');}finally{reader.releaseLock();}
+   await validateUtf8Stream(obj.body, () => unsupportedMediaType('文本不是有效 UTF-8'));
    mime=f.ext==='.md'?'text/markdown; charset=utf-8':'text/plain; charset=utf-8';
   } else mime=validateUploadBytes(f.ext,await read(0,Math.min(16,object.size)));
   const result=await env.DB.batch([

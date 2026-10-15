@@ -3,6 +3,7 @@ import type {Env} from '../env';
 import {AppError, invalidState, notFound, validationFailed, versionConflict} from '../core/errors';
 import {newId, nowIso} from '../core/db';
 import type {AiExecutionPolicy, ExecutionPauseReason, ExecutionState, ExecutionTarget, ExecutionView} from '../../../shared/ai-execution';
+import { buildCancelExecutionBatch } from './ai-execution-coordinator';
 export type {ExecutionTarget, ExecutionView, ExecutionPauseReason} from '../../../shared/ai-execution';
 interface Row { generation:number;window_calls:number;total_calls:number;call_limit:number;state:ExecutionState;pause_reason:ExecutionPauseReason|null;inflight_token:string|null;draft_id:string|null }
 export interface ExecutionCallToken { id:string; generation:number }
@@ -48,16 +49,7 @@ export async function cancelExecution(env:Env,t:ExecutionTarget,expectedGenerati
  const r=await row(env,t);if(!r)return;
  if(expectedGeneration!==undefined&&r.generation!==expectedGeneration)throw versionConflict(r.generation);
  if(r.state==='completed')throw invalidState('任务已完成，无法取消');if(r.state==='cancelled')return;
- const now=nowIso(),writes=[env.DB.prepare(`WITH RECURSIVE chain(id) AS (SELECT ?2 UNION SELECT l.retry_job_id FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id)
- UPDATE ai_executions SET state='cancelled',inflight_token=NULL,inflight_generation=NULL,updated_at=?3 WHERE target_kind=?1 AND target_id=?2 AND generation=?4 AND state IN ('running','paused','finalizing')
- AND (?1!='job' OR NOT EXISTS(SELECT 1 FROM jobs WHERE status='succeeded' AND (id IN (SELECT id FROM chain) OR json_extract(input_json,'$.autoRetryRootId')='job:'||?2)))`).bind(t.kind,t.id,now,r.generation)];
- if(t.kind==='job')writes.push(env.DB.prepare(`WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT l.retry_job_id FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id)
-  UPDATE jobs SET status='cancelled',finished_at=?2,updated_at=?2 WHERE status IN ('running','queued','waiting_input') AND (id IN (SELECT id FROM chain) OR json_extract(input_json,'$.autoRetryRootId')='job:'||?1)
-    AND EXISTS(SELECT 1 FROM ai_executions WHERE target_kind='job' AND target_id=?1 AND state='cancelled' AND generation=?3 AND updated_at=?2)`).bind(t.id,now,r.generation));
- if(t.kind==='job')writes.push(env.DB.prepare(`WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT l.retry_job_id FROM admin_ai_retry_links l JOIN chain ON l.parent_job_id=chain.id)
- UPDATE usage_reservations SET status=CASE WHEN attempts_started=0 THEN 'released' ELSE 'settled' END,settled_at=?2
- WHERE status='reserved' AND job_id IN (SELECT id FROM jobs WHERE status='cancelled' AND (id IN (SELECT id FROM chain) OR json_extract(input_json,'$.autoRetryRootId')='job:'||?1))
- AND EXISTS(SELECT 1 FROM ai_executions WHERE target_kind='job' AND target_id=?1 AND state='cancelled' AND generation=?3 AND updated_at=?2)`).bind(t.id,now,r.generation));
+ const now=nowIso(),writes=buildCancelExecutionBatch(env,t,r.generation,now);
  const result=await env.DB.batch(writes);if(!result[0]?.meta.changes)throw versionConflict((await row(env,t))?.generation??r.generation);
 }
 export async function completeExecution(env:Env,t:ExecutionTarget,expectedGeneration?:number):Promise<boolean>{const r=await row(env,t);if(!r)return false;const result=await env.DB.prepare("UPDATE ai_executions SET state='completed',pause_reason=NULL,updated_at=?3 WHERE target_kind=?1 AND target_id=?2 AND generation=?4 AND state IN ('running','finalizing') AND inflight_token IS NULL").bind(t.kind,t.id,nowIso(),expectedGeneration??r.generation).run();return result.meta.changes>0;}

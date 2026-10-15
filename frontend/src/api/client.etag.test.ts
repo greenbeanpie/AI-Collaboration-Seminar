@@ -40,3 +40,37 @@ it('rejects in-flight account data after device clearing even when the same acco
  await expect(pending).rejects.toMatchObject({code:'AUTH_CONTEXT_CHANGED'});
  expect(state.cache.has('a:'+url)).toBe(false);
 });
+it('coalesces offline-snapshot-updated events within 50ms and invalidates only matching queryKeys across mounted queries', async () => {
+  const { QueryClient } = await import('@tanstack/react-query');
+  const { createSnapshotInvalidationScheduler, matchesSnapshotUrl } = await import('./snapshot-invalidation');
+  const queryClient = new QueryClient();
+  const tasksObserver = vi.fn().mockResolvedValue({ items: [] });
+  const membersObserver = vi.fn().mockResolvedValue({ items: [] });
+  const otherProjectTasksObserver = vi.fn().mockResolvedValue({ items: [] });
+  const sessionObserver = vi.fn().mockResolvedValue({ id: 'a' });
+
+  await queryClient.fetchQuery({ queryKey: ['tasks', 'p', 'page', 1], queryFn: tasksObserver });
+  await queryClient.fetchQuery({ queryKey: ['members', 'p'], queryFn: membersObserver });
+  await queryClient.fetchQuery({ queryKey: ['tasks', 'other-project'], queryFn: otherProjectTasksObserver });
+  await queryClient.fetchQuery({ queryKey: ['session'], queryFn: sessionObserver });
+
+  expect(matchesSnapshotUrl(['tasks', 'p', 'page', 1], '/api/v1/projects/p/tasks?limit=50')).toBe(true);
+  expect(matchesSnapshotUrl(['collaboration-tasks', 'p'], '/api/v1/projects/p/tasks?limit=50')).toBe(true);
+  expect(matchesSnapshotUrl(['members', 'p'], '/api/v1/projects/p/tasks?limit=50')).toBe(false);
+  expect(matchesSnapshotUrl(['tasks', 'other-project'], '/api/v1/projects/p/tasks?limit=50')).toBe(false);
+  expect(matchesSnapshotUrl(['session'], '/api/v1/auth/session')).toBe(true);
+  expect(matchesSnapshotUrl(['capabilities'], '/api/v1/capabilities')).toBe(true);
+
+  const scheduler = createSnapshotInvalidationScheduler(queryClient, () => state.account, 50);
+  scheduler.schedule({ accountId: 'a', url: '/api/v1/projects/p/tasks?limit=50' });
+  scheduler.schedule({ accountId: 'a', url: '/api/v1/projects/p/tasks/t-1' });
+  scheduler.schedule({ accountId: 'b', url: '/api/v1/auth/session' }); // ignored foreign account
+
+  await new Promise(resolve => setTimeout(resolve, 70));
+
+  expect(queryClient.getQueryState(['tasks', 'p', 'page', 1])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(['members', 'p'])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState(['tasks', 'other-project'])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState(['session'])?.isInvalidated).toBe(false);
+  scheduler.dispose();
+});

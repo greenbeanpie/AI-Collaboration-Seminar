@@ -1,6 +1,7 @@
 import type { Env } from '../env';
-import { checkpointSecret, seal, unseal } from '../ai/secrets';
+import { checkpointSecret, sealChunkedEnvelope, unsealChunkedEnvelope } from '../ai/secrets';
 import { invalidState } from '../core/errors';
+import { withManagedStorage, type StorageOwner } from './managed-storage';
 
 /** Retries have new execution IDs but retain the original durable checkpoint namespace. */
 export async function checkpointRootId(env:Env,jobId:string):Promise<string> {
@@ -37,20 +38,20 @@ export async function checkpointFingerprint(value:unknown):Promise<string> {
   return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
 }
 /** Encrypt every response, including non-private calls; bind each chunk to its key and index. */
-export async function saveResponseCheckpoint(env:Env,key:string,value:unknown,options:{mutable?:boolean}={}):Promise<void> {
-  const characters=Array.from(JSON.stringify(value)),chunks:string[]=[],total=Math.ceil(characters.length/16000);
-  for(let index=0;index<total;index++)chunks.push(await seal(JSON.stringify({key,index,total,data:characters.slice(index*16000,(index+1)*16000).join('')}),checkpointSecret(env)));
-  await env.FILES.put(key,JSON.stringify({format:'encrypted-response-v1',chunks}),{httpMetadata:{contentType:'application/json'},...(options.mutable?{}:{onlyIf:{etagDoesNotMatch:'*'}})});
+export async function saveResponseCheckpoint(env:Env,key:string,value:unknown,options:{mutable?:boolean;owner?:StorageOwner}={}):Promise<void> {
+  const envelope=await sealChunkedEnvelope('encrypted-response-v1','key',key,value,checkpointSecret(env));
+  const targetEnv=options.owner?withManagedStorage(env,options.owner):env;
+  await targetEnv.FILES.put(key,JSON.stringify(envelope),{httpMetadata:{contentType:'application/json'},...(options.mutable?{}:{onlyIf:{etagDoesNotMatch:'*'}})});
 }
 export async function loadResponseCheckpoint<T>(env:Env,key:string):Promise<T|null> {
   const stored=await env.FILES.get(key);if(!stored)return null;
   const envelope=await stored.json<{format:string;chunks:string[]}>();
-  if(envelope.format!=='encrypted-response-v1'||!envelope.chunks?.length)throw invalidState('响应检查点格式无效');
-  let text='';
-  for(let index=0;index<envelope.chunks.length;index++) {
-    const chunk=JSON.parse(await unseal(envelope.chunks[index]!,checkpointSecret(env))) as {key:string;index:number;total:number;data:string};
-    if(chunk.key!==key||chunk.index!==index||chunk.total!==envelope.chunks.length||typeof chunk.data!=='string')throw invalidState('响应检查点内容不匹配');
-    text+=chunk.data;
-  }
-  return JSON.parse(text) as T;
+  return unsealChunkedEnvelope<T>(
+    envelope,
+    'encrypted-response-v1',
+    'key',
+    key,
+    checkpointSecret(env),
+    { invalidFormat: '响应检查点格式无效', mismatch: '响应检查点内容不匹配' },
+  );
 }

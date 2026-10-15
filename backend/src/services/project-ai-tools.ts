@@ -144,7 +144,6 @@ function fileSnapshot(file: ToolFileRow): ToolFileInputSnapshot {
   };
 }
 export async function executeFileTool(env: Env, context: ProjectToolContext, name: string, input: unknown): Promise<unknown> {
-  await assertToolAccess(env, context);
   if (name === 'list_project_files') {
     const a = listArgs.parse(input), rows = await env.DB.prepare(`SELECT f.id,f.archived_at,f.original_name,f.size_bytes,
    f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.text_status,p.summary_status
@@ -162,7 +161,9 @@ export async function executeFileTool(env: Env, context: ProjectToolContext, nam
   if (name !== 'read_project_file') {
     throw invalidState('未授权的工具名称');
   }
-  const a = readArgs.parse(input), file = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
+  const a = readArgs.parse(input);
+  await assertToolAccess(env, context);
+  const file = await env.DB.prepare(`SELECT f.id,f.original_name,f.size_bytes,
   f.lifecycle_version file_lifecycle_version,v.id version_id,s.id source_id,s.lifecycle_version source_lifecycle_version,p.summary_status,p.summary_json,p.summary_revision,p.text_status
   FROM files f ${activeFileSourceJoin} WHERE f.id=?1 AND f.project_id=?2 AND f.status='available' AND f.deleted_at IS NULL`)
     .bind(a.fileId, context.projectId).first<ToolFileRow>();
@@ -378,7 +379,7 @@ export async function projectToolConversation(env: Env, params: {
           await checkpoint(true);
           await clearUncertainCheckpointRetry(env,context.jobId);
           await markAiCallStarted(env, context.jobId, true);
-          await guard();
+          if (toolMode.nativeSearch) await guard();
         }, prepareMessages: !toolMode.nativeSearch ? async()=>{
           if(params.prepareMessages)refreshContextSource(contextPhase!,await params.prepareMessages());
           const feedback=await feedbackForJob(env,context.projectId,context.jobId);
