@@ -7,7 +7,7 @@ import { clearUncertainCheckpointRetry, checkpointRootId, checkpointFingerprint,
 import { recordActivity, recordModelResponse } from './ai-activity';
 import { aiSecret } from '../ai/secrets';
 import type { Env } from '../env';
-import { withManagedStorage } from './managed-storage';
+import { withStorageOwner } from './managed-storage';
 import { loadAiConfig, type LoadedAiConfig, type AiPurpose } from '../ai/config';
 import { gatewayChat } from '../ai/gateway';
 import { recordAiDiagnostic, diagnosticErrorCode, safeBackendErrorReason } from '../ai/diagnostics';
@@ -134,7 +134,7 @@ export async function runAudioPipeline(env:Env,params:{jobId:string;config:Loade
     return fallback('Whisper 明确拒绝该输入格式或大小');}await env.DB.prepare("UPDATE media_calls SET status='unknown' WHERE id=?1").bind(mediaId).run();
     await env.DB.prepare("UPDATE audio_pipeline_calls SET status='unknown' WHERE id=?1").bind(id).run();
     await set('unknown','Whisper 请求结果未知，拒绝自动重放');throw error;}
-  const key=`audio-pipeline/${jobId}/transcript.json`;await assertActive();await withManagedStorage(env,{userId:job.created_by??null,projectId:job.project_id??null,category:'system'}).FILES.put(key,JSON.stringify(raw));
+  const key=`audio-pipeline/${jobId}/transcript.json`;await assertActive();await withStorageOwner(env,{userId:job.created_by??null,projectId:job.project_id??null,category:'system'}).FILES.put(key,JSON.stringify(raw));
   await env.DB.prepare('UPDATE audio_pipeline SET transcript_r2_key=?2 WHERE job_id=?1').bind(jobId,key).run();row.transcript_r2_key=key;
   const parsed=transcriptSchema.safeParse(raw),duration=parsed.success?parsed.data.transcription_info?.duration:undefined;
   await env.DB.prepare('UPDATE media_processing SET duration_seconds=?2 WHERE job_id=?1').bind(jobId,duration??null).run();

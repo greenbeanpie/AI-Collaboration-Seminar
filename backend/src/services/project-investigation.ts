@@ -1,7 +1,7 @@
 import { checkpointAttemptIds } from './ai-checkpoints';
 import { checkpointSecret, sealChunkedEnvelope, unsealChunkedEnvelope, type SecretKeyring } from '../ai/secrets';
 import type { Env } from '../env';
-import { withManagedStorage } from './managed-storage';
+import { withStorageOwner } from './managed-storage';
 import type { ToolExchange,WebCitation } from '../ai/tool-transport';
 import type { GatewayCallOutput, ProviderRetryState } from '../ai/gateway';
 import type { ProjectReference } from './project-evidence';
@@ -64,7 +64,7 @@ export async function saveInvestigation(env: Env, context:{projectId:string;user
   const key=context.jobId?`ai/investigations/${id}/${context.jobId}.json`:`ai/investigations/${id}.json`;
   const phase=checkpoint.content?'complete':'read';
   const stored=await encryptCheckpoint(checkpoint,id,checkpointSecret(env));
-  await withManagedStorage(env,{userId:context.userId,projectId:context.projectId,category:'system'}).FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
+  await withStorageOwner(env,{userId:context.userId,projectId:context.projectId,category:'system'}).FILES.put(key,JSON.stringify(stored),{httpMetadata:{contentType:'application/json'},customMetadata:{step:String(checkpoint.step),phase}});
   await env.DB.prepare(`INSERT INTO ai_investigations(id,project_id,job_id,requested_by,prompt_version,checkpoint_key,phase,step,updated_at)
     SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9 WHERE ?3 IS NULL OR EXISTS(SELECT 1 FROM jobs WHERE id=?3 AND status IN ('queued','running','waiting_input') AND NOT EXISTS(SELECT 1 FROM admin_ai_retry_links WHERE parent_job_id=?3)) ON CONFLICT(id) DO UPDATE SET job_id=excluded.job_id,checkpoint_key=excluded.checkpoint_key,phase=excluded.phase,step=excluded.step,updated_at=excluded.updated_at`)
     .bind(id,context.projectId,context.jobId??null,context.userId,promptVersion,key,phase,checkpoint.step,nowIso()).run();

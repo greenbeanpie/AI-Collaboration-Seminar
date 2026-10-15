@@ -3,7 +3,7 @@ import { contributorSchema, fileContributors, fileContributorsForFiles } from '.
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
-import { withManagedStorage } from '../services/managed-storage';
+import { withStorageOwner } from '../services/managed-storage';
 import { requireEnabledAiConfig } from '../ai/config';
 import { apiData } from '../core/api';
 import { apiErrorEnvelope, apiEnvelope } from '../core/openapi';
@@ -319,7 +319,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     if(!created[0]?.meta.changes) throw invalidState('原文件生命周期已变化，来源未创建');
     if(body.kind==='file'){try{await ensureFileProcessing(c.env,member.projectId,body.fileId!,user.id,{automatic:true});}catch{/* File import remains valid when background processing cannot start. */}}
     if (body.kind === 'paste' && body.text) {
-      await withManagedStorage(c.env, { userId: user.id, projectId: member.projectId, category: 'upload' }).FILES.put(`sources/${versionId}/paste.txt`, body.text);
+      await withStorageOwner(c.env, { userId: user.id, projectId: member.projectId, category: 'upload' }).FILES.put(`sources/${versionId}/paste.txt`, body.text);
       await c.env.DB.prepare('UPDATE source_versions SET char_count = ?2 WHERE id = ?1')
         .bind(versionId, body.text.length)
         .run();

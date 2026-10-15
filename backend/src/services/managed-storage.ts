@@ -9,6 +9,9 @@ const DAY=86400000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
 const rawBuckets=new WeakMap<object,R2Bucket>();
 export const rawStorage=(env:Pick<Env,'FILES'>):R2Bucket=>rawBuckets.get(env.FILES)??env.FILES;
+export const isManagedStorage=(env:Pick<Env,'FILES'>):boolean=>rawBuckets.has(env.FILES);
+/** Bind an explicit StorageOwner when `env.FILES` is already a managed bucket, leaving raw test stubs untouched. */
+export const withStorageOwner=(env:Env,owner:StorageOwner):Env=>rawBuckets.has(env.FILES)?withManagedStorage(env,owner):env;
 
 /** Resolve server-owned key namespaces. Unattributable legacy objects still consume platform space. */
 export async function storageOwner(env:Pick<Env,'DB'>,key:string):Promise<StorageOwner>{

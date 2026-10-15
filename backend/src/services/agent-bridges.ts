@@ -2,7 +2,7 @@ import { projectGoal } from './project-simplification';
 import {bridgeAuthoritySql} from './bridge-authority';
 export {bridgeAuthoritySql} from './bridge-authority';
 import type { Env } from '../env';
-import { withManagedStorage } from './managed-storage';
+import { withStorageOwner } from './managed-storage';
 import { AppError, invalidState, notFound, permissionDenied, unauthenticated, validationFailed, versionConflict } from '../core/errors';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { enqueueTaskAgentEligibility, readTaskAgentEligibility } from './task-agent-eligibility';
@@ -78,7 +78,7 @@ export async function refreshBridgeHandoff(env:Env,row:HandoffRow):Promise<Hando
   let eligibility;try{eligibility=await readTaskAgentEligibility(env,row.project_id,row.task_id,row.requested_by);}catch{await env.DB.prepare("UPDATE agent_bridge_handoffs SET state='blocked',reason='任务或权限不可用',updated_at=?2 WHERE id=?1 AND state='checking'").bind(row.id,nowIso()).run();return loadBridgeHandoff(env,row.id);}
   if(eligibility.sourceHash!==row.eligibility_hash||eligibility.status==='disabled'||eligibility.status==='failed'||(eligibility.status==='ready'&&!eligibility.eligible)){await env.DB.prepare("UPDATE agent_bridge_handoffs SET state='blocked',reason=?2,updated_at=?3 WHERE id=?1 AND state='checking'").bind(row.id,eligibility.reason||'AI 适用性检查失败或配置已变化，请重新检查',nowIso()).run();}
   else if(eligibility.status==='ready'&&eligibility.eligible){try{const snapshot=await buildBridgeSnapshot(env,row.project_id,row.task_id,row.id,row.context_stamp!);
-    const key=`agent-bridges/${row.project_id}/${row.id}/snapshot-${snapshot.snapshotHash}.json`;await withManagedStorage(env,{userId:row.requested_by,projectId:row.project_id,category:'system'}).FILES.put(key,JSON.stringify(snapshot),{httpMetadata:{contentType:'application/json'}});
+    const key=`agent-bridges/${row.project_id}/${row.id}/snapshot-${snapshot.snapshotHash}.json`;await withStorageOwner(env,{userId:row.requested_by,projectId:row.project_id,category:'system'}).FILES.put(key,JSON.stringify(snapshot),{httpMetadata:{contentType:'application/json'}});
     await env.DB.prepare(`UPDATE agent_bridge_handoffs SET state='waiting_device',snapshot_hash=?2,snapshot_key=?3,updated_at=?4 WHERE id=?1 AND state='checking' AND context_stamp=(SELECT ${bridgeContextStampSql} FROM tasks t WHERE t.id=agent_bridge_handoffs.task_id AND t.project_id=agent_bridge_handoffs.project_id AND t.archived_at IS NULL) AND EXISTS(SELECT 1 FROM task_agent_eligibility WHERE task_id=agent_bridge_handoffs.task_id AND source_hash=agent_bridge_handoffs.eligibility_hash AND status='ready' AND eligible=1)`).bind(row.id,snapshot.snapshotHash,key,nowIso()).run();
     }catch(e){await env.DB.prepare("UPDATE agent_bridge_handoffs SET state='blocked',reason=?2,updated_at=?3 WHERE id=?1 AND state='checking'").bind(row.id,e instanceof Error?e.message:'输入准备失败',nowIso()).run();
     }}

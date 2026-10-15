@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { checkpointSecret, sealChunkedEnvelope, unsealChunkedEnvelope } from '../ai/secrets';
 import { invalidState } from '../core/errors';
-import { withManagedStorage, type StorageOwner } from './managed-storage';
+import { withStorageOwner, type StorageOwner } from './managed-storage';
 
 /** Retries have new execution IDs but retain the original durable checkpoint namespace. */
 export async function checkpointRootId(env:Env,jobId:string):Promise<string> {
@@ -40,7 +40,7 @@ export async function checkpointFingerprint(value:unknown):Promise<string> {
 /** Encrypt every response, including non-private calls; bind each chunk to its key and index. */
 export async function saveResponseCheckpoint(env:Env,key:string,value:unknown,options:{mutable?:boolean;owner?:StorageOwner}={}):Promise<void> {
   const envelope=await sealChunkedEnvelope('encrypted-response-v1','key',key,value,checkpointSecret(env));
-  const targetEnv=options.owner?withManagedStorage(env,options.owner):env;
+  const targetEnv=options.owner?withStorageOwner(env,options.owner):env;
   await targetEnv.FILES.put(key,JSON.stringify(envelope),{httpMetadata:{contentType:'application/json'},...(options.mutable?{}:{onlyIf:{etagDoesNotMatch:'*'}})});
 }
 export async function loadResponseCheckpoint<T>(env:Env,key:string):Promise<T|null> {

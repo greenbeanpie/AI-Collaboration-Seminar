@@ -10,7 +10,7 @@ import { readinessStatements } from './task-readiness';
 import { invitationNotificationStatements, resolveInviteRecipients } from './username-invitations';
 import { z } from 'zod';
 import type { Env } from '../env';
-import { withManagedStorage } from './managed-storage';
+import { withStorageOwner } from './managed-storage';
 import { newId, nowIso, sha256Hex } from '../core/db';
 import { AppError, invalidState, notFound, validationFailed, versionConflict } from '../core/errors';
 import { ALLOWED_UPLOAD_EXTENSIONS } from '../core/limits';
@@ -230,7 +230,7 @@ export async function uploadDraftFile(env: Env, id: string, userId: string, revi
   }
   const sha = await sha256Hex(bytes), key = `creation-drafts/${id}/${fileId}${ext}`, now = nowIso();
   // Keys are unique and immutable, even if a concurrent edit wins. Cancelled/removed bytes are retained.
-  const stored = await withManagedStorage(env, { userId, projectId: null, category: 'upload' }).FILES.put(key, bytes, {
+  const stored = await withStorageOwner(env, { userId, projectId: null, category: 'upload' }).FILES.put(key, bytes, {
     onlyIf: {
       etagDoesNotMatch: '*'
     }, customMetadata: {

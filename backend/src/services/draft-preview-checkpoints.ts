@@ -1,6 +1,6 @@
 import { checkpointSecret, sealChunkedEnvelope, unsealChunkedEnvelope } from '../ai/secrets';
 import type { Env } from '../env';
-import { withManagedStorage } from './managed-storage';
+import { withStorageOwner } from './managed-storage';
 import type { GatewayCallOutput } from '../ai/gateway';
 import type { ToolExchange } from '../ai/tool-transport';
 import type { ContextPhase } from '../ai/context-phases';
@@ -73,7 +73,7 @@ export async function loadDraftCheckpoint(env:Env,attempt:string):Promise<{check
 /** Conditional writes serialize all executions of one attempt, including answer retries. */
 export async function saveDraftCheckpoint(env:Env,checkpoint:DraftPreviewCheckpoint,etag?:string):Promise<string> {
   const envelope=await sealChunkedEnvelope('encrypted-draft-preview-v1','attempt',checkpoint.attempt,checkpoint,checkpointSecret(env));
-  const object=await withManagedStorage(env,{userId:checkpoint.userId,projectId:null,category:'system'}).FILES.put(key(checkpoint.attempt),JSON.stringify(envelope satisfies Envelope),{
+  const object=await withStorageOwner(env,{userId:checkpoint.userId,projectId:null,category:'system'}).FILES.put(key(checkpoint.attempt),JSON.stringify(envelope satisfies Envelope),{
     onlyIf:etag?{etagMatches:etag}:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json'}
   });
   if(!object)throw new DraftCheckpointBusy();

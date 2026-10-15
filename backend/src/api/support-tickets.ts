@@ -1,7 +1,7 @@
 import { notificationStatements } from '../services/notifications';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv, SessionUser } from '../env';
-import { withManagedStorage } from '../services/managed-storage';
+import { withStorageOwner } from '../services/managed-storage';
 import { apiData } from '../core/api';
 import { apiEnvelope } from '../core/openapi';
 import { newId, nowIso } from '../core/db';
@@ -92,7 +92,7 @@ export function registerSupportTicketRoutes(app: OpenAPIHono<AppEnv>): void {
     if (row.sha256 !== sha256 || row.content_type !== contentType || row.size_bytes !== bytes.length) throw invalidState('图片 ID 已使用，请使用原图片重试');
     if (row.state === 'ready') return c.json(apiData(c, { image: imageData(row) }), 200);
     if (current.status === 'closed') throw invalidState('工单已关闭，请重新打开后上传');
-    try { await withManagedStorage(c.env, { userId: user.id, projectId: null, category: 'upload' }).FILES.put(imageKey(ticketId, imageId), bytes, { httpMetadata: { contentType } }); }
+    try { await withStorageOwner(c.env, { userId: user.id, projectId: null, category: 'upload' }).FILES.put(imageKey(ticketId, imageId), bytes, { httpMetadata: { contentType } }); }
     catch { throw new AppError('INTERNAL', '图片上传暂时失败，请重试', 503, true); }
     const saved = await c.env.DB.batch([
       c.env.DB.prepare(`UPDATE support_ticket_images SET state = 'ready' WHERE id = ?3 AND ticket_id = ?1
