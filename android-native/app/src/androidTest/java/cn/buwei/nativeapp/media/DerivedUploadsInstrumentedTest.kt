@@ -105,4 +105,17 @@ class DerivedUploadsInstrumentedTest {
             try {assertTrue(runCatching{uploadMissingPdfImages(f.repository,f.project,f.source,f.version,pdf,{},f.parent)}.exceptionOrNull() is IllegalStateException);assertTrue(f.initialized.isEmpty());assertFalse(f.prepared.get());assertFalse(f.calls.any{it.first=="GET /capabilities"})}finally{pdf.delete()}
         }
     }
+    @Test fun legacyRecoveryReadsOnlyMatchingAcknowledgedManifestWithoutNetworkOrNewUpload()=runBlocking {
+        Fixture().use{f->f.login();val file=File.createTempFile("legacy-", ".pdf",f.context.cacheDir).apply{writeBytes(byteArrayOf(4,5,6))}
+            try {
+                val transfer=AttachmentTransfer(f.repository);val id=transfer.upload(f.project,file,{},"output",listOf(f.owner));val count=f.calls.size
+                assertEquals(id,transfer.acknowledgedUploadId(f.project,file,"output",listOf(f.owner)))
+                assertNull(transfer.acknowledgedUploadId(f.project,file,"reference",listOf(f.owner)))
+                assertNull(transfer.acknowledgedUploadId(f.project,file,"output",listOf(f.other)))
+                file.writeBytes(byteArrayOf(4,5,7));assertNull(transfer.acknowledgedUploadId(f.project,file,"output",listOf(f.owner)))
+                assertEquals(count,f.calls.size);assertEquals(1,f.initialized.size)
+            }finally{file.delete()}
+        }
+    }
+
 }

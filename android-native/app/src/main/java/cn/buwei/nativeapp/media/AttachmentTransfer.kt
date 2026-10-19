@@ -25,6 +25,15 @@ internal fun uploadManifestName(project:String,purpose:String,identity:String,co
 
 class AttachmentTransfer(private val repository:ClientRepository) {
     private fun digest(file:File):String { val hash=MessageDigest.getInstance("SHA-256");file.inputStream().use {input->val b=ByteArray(65536);while(true){val n=input.read(b);if(n<0)break;hash.update(b,0,n)}};return hash.digest().joinToString(""){"%02x".format(it)} }
+    /** Upgrade recovery reads an acknowledged manifest; it never initializes another upload. */
+    suspend fun acknowledgedUploadId(project:String,file:File,purpose:String,contributorIds:List<String>?):String?=withContext(Dispatchers.IO){
+        val owner=repository.accountId?:error("请登录");val generation=repository.epoch
+        val name=uploadManifestName(project,purpose,digest(file),contributorIds,null)
+        val manifest=AtomicFile(File(repository.context.filesDir,"accounts/$owner/transfers/$name"))
+        val id=try{manifest.openRead().bufferedReader().use{repository.json.parseToJsonElement(it.readText()).jsonObject["fileId"]?.jsonPrimitive?.contentOrNull}}catch(_:java.io.FileNotFoundException){null}
+        check(repository.accountId==owner&&repository.epoch==generation){"账户已变化，原文件身份读取停止"}
+        id?.also{require(UUID.fromString(it).toString()==it.lowercase()){ "保留的原文件身份无效" }}
+    }
     suspend fun upload(project:String,file:File,onProgress:(String)->Unit):String=upload(project,file,onProgress,"reference",null)
     suspend fun upload(project:String,file:File,onProgress:(String)->Unit,purpose:String):String=upload(project,file,onProgress,purpose,null)
     suspend fun upload(project:String,file:File,onProgress:(String)->Unit,purpose:String,contributorIds:List<String>?,derivedFromFileId:String?=null):String=withContext(Dispatchers.IO) {

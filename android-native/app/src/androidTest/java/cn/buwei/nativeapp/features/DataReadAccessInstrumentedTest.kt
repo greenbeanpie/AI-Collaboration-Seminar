@@ -28,8 +28,8 @@ class DataReadAccessInstrumentedTest {
  private fun response(body:String)=MockResponse().setHeader("Content-Type","application/json").setBody("{\"data\":$body}")
  @Before fun setup(){
   val user=UUID.randomUUID().toString()
-  server=MockWebServer();server.dispatcher=object:Dispatcher(){override fun dispatch(r:RecordedRequest):MockResponse{
-   val path=r.requestUrl!!.encodedPath
+  server=MockWebServer();server.dispatcher=object:Dispatcher(){override fun dispatch(request:RecordedRequest):MockResponse{
+   val path=request.requestUrl!!.encodedPath
    if(path=="/api/v1/auth/native/exchange")return response("""{"user":{"id":"$user"}}""").addHeader("Set-Cookie","ai_office_session=fixture")
    val area=when{
     path.contains("/resource-index/") && path.endsWith("/section")->"section"
