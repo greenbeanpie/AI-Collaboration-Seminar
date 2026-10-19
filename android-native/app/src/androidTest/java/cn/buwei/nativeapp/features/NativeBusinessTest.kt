@@ -103,7 +103,7 @@ class NativeBusinessTest {
   runBlocking{repository.exchange("fixture-code","fixture-verifier")}
  }
  @After fun teardown(){server.shutdown()}
- private fun awaitText(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Throwable){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
+ private fun awaitText(text:String){try{compose.waitUntil(15000){if(compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()){runCatching{if(compose.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().size==1)compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))}};compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Throwable){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
  private fun screenshot(name:String){val image=compose.onRoot().captureToImage().asAndroidBitmap();val directory=File(context.getExternalFilesDir(null),"native-ui-fixtures").apply{mkdirs()};val target=File(directory,"$name.png");target.outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};assertTrue(target.length()>0)}
 
  @Test fun projectListOpensSelectedProject(){
