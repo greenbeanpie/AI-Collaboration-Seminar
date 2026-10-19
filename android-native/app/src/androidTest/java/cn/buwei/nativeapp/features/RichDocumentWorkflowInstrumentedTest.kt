@@ -77,7 +77,7 @@ class RichDocumentWorkflowInstrumentedTest {
         runBlocking{repository.exchange("fixture-code","fixture-verifier")}
     }
     @After fun teardown(){server.shutdown()}
-    private fun awaitText(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
+    private fun awaitText(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(failure:Throwable){throw AssertionError("Expected UI text: $text\nAttempted revisions: ${attempts.map{it.text("expectedRevision")}}\n${compose.onRoot().printToString()}",failure)}}
     private fun click(text:String){awaitText(text);compose.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()}
     private fun showEditor(withNavigation:Boolean=false){
         compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()) {
@@ -124,6 +124,7 @@ class RichDocumentWorkflowInstrumentedTest {
         compose.waitUntil(15000){saved.get()!=null}
         assertEquals(listOf(1,2),attempts.map{it["expectedRevision"]!!.jsonPrimitive.int})
         val body=saved.get()!!;assertTrue(richPlainText(body.obj("doc")).contains("Human edited evidence stays intact"));assertUnchangedMetadata(body.obj("doc"));assertEquals(JsonArray(listOf(JsonPrimitive(attachment))),body["attachmentIds"])
+        awaitText("已保存新版本")
         assertTrue(runBlocking{repository.pending()}.isEmpty())
     }
     @Test fun actualTableInsertionAndRowActionPreserveUnknownNodesMarksAndAttachments(){
