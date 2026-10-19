@@ -5,6 +5,7 @@ param(
     [string]$NativePackage = 'cn.buwei.mobile.nativepreview.debug',
     [string]$NativeActivity = 'cn.buwei.nativeapp.MainActivity',
     [string]$LegacyPackage = 'cn.buwei.mobile',
+    [switch]$NativeOnly,
     [ValidateRange(5, 50)][int]$Trials = 5,
     [ValidateRange(1, 60)][int]$SettleSeconds = 5,
     [ValidateRange(1, 60)][int]$CpuSampleSeconds = 3,
@@ -86,7 +87,8 @@ if ($ValidateOnly) {
     return
 }
 if (!(Test-Path -LiteralPath $Adb)) { throw "ADB not found: $Adb" }
-foreach ($identifier in @($NativePackage, $NativeActivity, $LegacyPackage)) {
+$targetPackages=@($NativePackage);if(!$NativeOnly){$targetPackages+=$LegacyPackage}
+foreach ($identifier in (@($NativeActivity)+$targetPackages)) {
     if ($identifier -notmatch '^[A-Za-z0-9_.]+$') { throw 'Invalid package/activity identifier' }
 }
 New-Item -ItemType Directory -Force -Path $Output | Out-Null
@@ -94,6 +96,7 @@ $reportDirectory = Join-Path (Resolve-Path -LiteralPath $Output) ("benchmark-" +
 New-Item -ItemType Directory -Path $reportDirectory | Out-Null
 $metadata = @{
     serial = $Serial; startedAt = (Get-Date).ToUniversalTime().ToString('o'); trials = $Trials
+    nativeOnly = [bool]$NativeOnly
     scenario = 'Initial screen after force-stop; expected unauthenticated, verify with companion smoke capture; no input or authentication performed'
     coldDefinition = 'Process cold start only; storage/page cache and compilation cache are not cleared'
     device = (Invoke-Adb @('shell', 'getprop', 'ro.product.model')).Trim()
@@ -109,7 +112,7 @@ $tickText = (Invoke-Adb @('shell', 'getconf', 'CLK_TCK') -AllowFailure).Trim()
 $tickKnown = [long]::TryParse($tickText, [ref]$tickHz) -and $tickHz -gt 0
 $metadata.cpuClockTicksPerSecond = $(if ($tickKnown) { $tickHz } else { $null })
 $metadata.packages = @{}
-foreach ($package in @($NativePackage, $LegacyPackage)) {
+foreach ($package in $targetPackages) {
     $details = Invoke-Adb @('shell', 'dumpsys', 'package', $package) -AllowFailure
     Set-Content -LiteralPath (Join-Path $reportDirectory "$package-package.txt") -Value $details -Encoding utf8
     $paths = @((Invoke-Adb @('shell', 'pm', 'path', $package) -AllowFailure) -split "`n" | Where-Object { $_ -match '^package:' } | ForEach-Object { $_.Substring(8).Trim() })
@@ -122,7 +125,8 @@ foreach ($package in @($NativePackage, $LegacyPackage)) {
     $metadata.packages[$package] = @{ debuggable = $details -match '(?m)flags=\[[^\]]*DEBUGGABLE'; installedApkBytes = $(if ($apkSizeKnown) { $apkBytes } else { $null }); installedApkPaths = $paths; installedApkSha256 = $hashes }
 }
 $results = [System.Collections.Generic.List[object]]::new()
-$packages = @(@{ label = 'native'; name = $NativePackage; activity = $NativeActivity }, @{ label = 'legacy'; name = $LegacyPackage; activity = $null })
+$packages = @(@{ label = 'native'; name = $NativePackage; activity = $NativeActivity })
+if(!$NativeOnly){$packages+=@{ label = 'legacy'; name = $LegacyPackage; activity = $null }}
 for ($trial = 1; $trial -le $Trials; $trial++) {
     foreach ($candidate in $packages) {
         $package = $candidate.name
@@ -131,8 +135,8 @@ for ($trial = 1; $trial -le $Trials; $trial++) {
         if ($packagePath -notmatch '(?m)^package:') {
             $results.Add(@{ trial = $trial; label = $candidate.label; package = $package; status = 'not-installed'; totalTimeMs = $null; relatedPssKiB = $null; idleCpuPercent = $null }); continue
         }
-        # Stop both candidates so the comparison does not count a second foreground app's work.
-        foreach ($stopPackage in @($NativePackage, $LegacyPackage)) { Invoke-Adb @('shell', 'am', 'force-stop', $stopPackage) | Out-Null }
+        # NativeOnly never queries, stops, launches, or attributes the old application.
+        foreach ($stopPackage in $targetPackages) { Invoke-Adb @('shell', 'am', 'force-stop', $stopPackage) | Out-Null }
         $component = if ($candidate.activity) { "$package/$($candidate.activity)" } else {
             ((Invoke-Adb @('shell', 'cmd', 'package', 'resolve-activity', '--brief', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.LAUNCHER', $package)) -split "`n" | Where-Object { $_ -match '^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$' } | Select-Object -Last 1)
         }
@@ -192,7 +196,7 @@ for ($trial = 1; $trial -le $Trials; $trial++) {
     }
 }
 $summary = @{}
-foreach ($label in @('native', 'legacy')) {
+foreach ($label in @($packages | ForEach-Object { $_.label })) {
     $group = @($results | Where-Object { $_.label -eq $label -and $_.status -eq 'measured' })
     $summary[$label] = @{ measuredTrials = $group.Count; coldStartMs = Stats @($group | ForEach-Object { $_.totalTimeMs }); relatedPssKiB = Stats @($group | ForEach-Object { $_.relatedPssKiB }); idleCpuPercent = Stats @($group | ForEach-Object { $_.idleCpuPercent }) }
 }
