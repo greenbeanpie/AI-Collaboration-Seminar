@@ -156,7 +156,7 @@ import java.util.UUID
  return produceState<String?>(null,lifecycle){lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){while(isActive){value=reader();delay(500)}}}
 }
 @Composable internal fun NativeRecordingControls(paused:Boolean,onAction:(String)->Unit){
- Row {TextButton({onAction("pause")},enabled=!paused){Text("暂停")};TextButton({onAction("resume")},enabled=paused){Text("继续")};TextButton({onAction("stop")}){Text("停止并保存")}}
+ FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) {TextButton({onAction("pause")},enabled=!paused){Text("暂停")};TextButton({onAction("resume")},enabled=paused){Text("继续")};TextButton({onAction("stop")}){Text("停止并保存")}}
 }
 
 @Composable internal fun RecordingMetadataEditor(repository:ClientRepository,project:String,store:RecordingStore,disabled:Boolean,onError:(String)->Unit,onUpload:()->Unit){
