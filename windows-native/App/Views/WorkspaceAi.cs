@@ -24,7 +24,7 @@ public sealed partial class WorkspaceView
         panel.Children.Add(Ui.Card(composer, Action("暂存问题", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["content"] = composer.Text })), send));
         await AddPagedAsync(panel, Base + "/ai-chat?limit=30", row =>
         {
-            var box = Ui.Stack(Ui.Label(row.Text("role") is "assistant" ? "项目 AI" : "我的问题", 18), Ui.Label(row.Text("content")), Ui.Label(row.Text("createdAt")));
+            var box = Ui.Stack(Ui.Label(row.Text("role") is "assistant" ? "项目 AI" : "我的问题", 18), Ui.Markdown(row.Text("content")), Ui.Label(row.Text("createdAt")));
             foreach (var reference in row.Rows("references")) box.Children.Add(Ui.Label("引用：" + reference.Id("title", "label") + " · " + reference.Text("quote")));
             if (row.Text("jobId").Length > 0) box.Children.Add(Action("查看执行进度", () => ReplaceAsync(ct => JobAsync(row.Text("jobId"), ct))));
             return Ui.Card(box);
@@ -67,7 +67,7 @@ public sealed partial class WorkspaceView
         foreach (var turn in row.Rows("turns"))
         {
             var payload = turn["payload"];
-            panel.Children.Add(Ui.Card(Ui.Label(turn.Text("role") == "user" ? "我的输入" : "AI 结果", 18), Ui.Label(payload.Id("content", "question", "answer", "markdown", "summary", "text")), Ui.Label(Ui.Status(turn.Text("status")))));
+            panel.Children.Add(Ui.Card(Ui.Label(turn.Text("role") == "user" ? "我的输入" : "AI 结果", 18), Ui.Markdown(payload.Id("content", "question", "answer", "markdown", "summary", "text")), Ui.Label(Ui.Status(turn.Text("status")))));
             if (turn.Text("kind") == "draft" && turn.Text("runId").Length > 0)
             {
                 var run = row.Rows("runs").FirstOrDefault(x => x.Text("runId") == turn.Text("runId"));

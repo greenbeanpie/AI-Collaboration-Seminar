@@ -4,6 +4,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Documents;
+using System.Text.RegularExpressions;
 
 namespace Buwei.Windows.Views;
 
@@ -65,4 +67,33 @@ internal static class Ui
         "waiting_user" => "待用户回复", "resolved" => "已解决", "closed" => "已关闭", "ready_for_review" => "待人工核对",
         _ => value
     };
+    internal static UIElement Markdown(string source)
+    {
+        var panel = Stack(); var code = false;
+        foreach (var raw in source.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (raw.StartsWith("```", StringComparison.Ordinal)) { code = !code; continue; }
+            if (raw.Length == 0) { panel.Children.Add(new Border { Height = 3 }); continue; }
+            var heading = Regex.Match(raw, "^(#{1,6})\\s+(.+)$");
+            var text = heading.Success ? heading.Groups[2].Value : raw.StartsWith("- ", StringComparison.Ordinal) || raw.StartsWith("* ", StringComparison.Ordinal) ? "• " + raw[2..] : raw.StartsWith("> ", StringComparison.Ordinal) ? "│ " + raw[2..] : raw;
+            var block = Label("", heading.Success ? Math.Max(16, 28 - heading.Groups[1].Length * 2) : 14); if (heading.Success) block.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+            if (code) { block.FontFamily = new FontFamily("Cascadia Mono, Consolas"); block.Text = raw; }
+            else
+            {
+                var position = 0;
+                foreach (Match match in Regex.Matches(text, "(\\*\\*([^*]+)\\*\\*|`([^`]+)`|\\[([^\\]]+)\\]\\((https?://[^ )]+)\\))"))
+                {
+                    if (match.Index > position) block.Inlines.Add(new Run { Text = text[position..match.Index] });
+                    if (match.Groups[2].Success) block.Inlines.Add(new Run { Text = match.Groups[2].Value, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+                    else if (match.Groups[3].Success) block.Inlines.Add(new Run { Text = match.Groups[3].Value, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
+                    else if (Uri.TryCreate(match.Groups[5].Value, UriKind.Absolute, out var uri) && uri.UserInfo.Length == 0)
+                    { var link = new Hyperlink { NavigateUri = uri }; link.Inlines.Add(new Run { Text = match.Groups[4].Value }); block.Inlines.Add(link); }
+                    position = match.Index + match.Length;
+                }
+                if (position < text.Length) block.Inlines.Add(new Run { Text = text[position..] });
+            }
+            panel.Children.Add(block);
+        }
+        return panel;
+    }
 }

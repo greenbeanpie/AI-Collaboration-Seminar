@@ -65,7 +65,11 @@ public sealed partial class WorkspaceView
         var panel = Page(task.Text("title"), Ui.Status(task.Text("lifecycleState")) + " · 版本 " + task.Text("revision"));
         panel.Children.Add(Action("返回任务列表", () => NavigateAsync("tasks")));
         panel.Children.Add(Ui.Card(Ui.Label("任务说明", 20), Ui.Label(task.Text("detail")), Ui.Label("验收标准", 20), Ui.Label(task.Text("criteria"))));
-        if (Can("taskManage")) panel.Children.Add(Action("编辑任务", async () => { var graph = await repository.GetAsync(Base + "/tasks/graph", PageToken); await ReplaceAsync(ct => TaskEditorAsync(task, graph, ct)); }));
+        if (Can("taskManage"))
+        {
+            panel.Children.Add(Action("编辑任务", async () => { var graph = await repository.GetAsync(Base + "/tasks/graph", PageToken); await ReplaceAsync(ct => TaskEditorAsync(task, graph, ct)); }));
+            panel.Children.Add(Action("分工与前置依赖", () => ReplaceAsync(ct => TaskAssignmentAsync(task, ct))));
+        }
         if (task.Text("assigneeId").Length == 0 && task.Text("lifecycleState") == "open") panel.Children.Add(Action("领取任务", async () => { await WriteAsync("POST", path + "/claim", new JsonObject { ["expectedRevision"] = task?["revision"].Copy() }); await ReplaceAsync(ct => TaskDetailAsync(id, ct)); }, "确认领取此任务？", true));
         var filesPanel = Ui.Stack(Ui.Label("本轮成果文件", 20));
         var files = (await repository.GetAsync(path + "/files?limit=100", token)).Rows();
@@ -107,6 +111,22 @@ public sealed partial class WorkspaceView
         var panel = Page("任务讨论", "讨论对当前项目可见。"); var path = Base + "/comments";
         await AddPagedAsync(panel, path + "?targetType=task&targetId=" + Escape(id) + "&limit=50", row => Ui.Card(Ui.Label(row.Text("authorName")), Ui.Label(row.Text("body")), Ui.Label(row.Text("createdAt"))), token);
         var text = Ui.Field("讨论内容", "", true); panel.Children.Add(Ui.Card(text, Action("发表评论", async () => { if (string.IsNullOrWhiteSpace(text.Text)) return; await WriteAsync("POST", path, new JsonObject { ["targetType"] = "task", ["targetId"] = id, ["body"] = text.Text.Trim() }); await ReplaceAsync(ct => TaskCommentsAsync(id, ct)); })));
+        return panel;
+    }
+    private async Task<UIElement> TaskAssignmentAsync(JsonNode? task, CancellationToken token)
+    {
+        var path = Base + "/tasks/" + Escape(task.Text("taskId")); var graph = await repository.GetAsync(Base + "/tasks/graph", token); var members = (await repository.GetAsync(Base + "/members?limit=100", token)).Rows();
+        var panel = Page("分工与前置依赖", "负责人和依赖图分别按读取时版本保存，后端校验循环依赖。");
+        var assigned = Ui.Choice("任务负责人", new[] { ("", "暂不分配") }.Concat(members.Select(x => (x.Text("userId"), x.Text("displayName")))), task.Text("assigneeId")); var reason = Ui.Field("分工理由", "", true, 2000);
+        panel.Children.Add(Ui.Card(assigned, reason, Action("保存分工", async () => { if (string.IsNullOrWhiteSpace(reason.Text)) throw new InvalidOperationException("请填写分工理由。"); await WriteAsync("POST", path + "/assign", new JsonObject { ["expectedRevision"] = task?["revision"].Copy(), ["assigneeId"] = assigned.Value().Length > 0 ? JsonValue.Create(assigned.Value()) : null, ["reason"] = reason.Text.Trim() }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); }, "确认调整当前任务负责人？")));
+        var dependencies = new Dictionary<string, CheckBox>(); var choices = Ui.Stack(Ui.Label("前置任务", 20));
+        foreach (var row in graph.Rows().Where(x => x.Text("taskId") != task.Text("taskId"))) { var check = new CheckBox { Content = row.Text("title"), IsChecked = task.Rows("dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = check; choices.Children.Add(check); }
+        choices.Children.Add(Action("保存前置依赖", async () => { await WriteAsync("PUT", path + "/dependencies", new JsonObject { ["expectedGraphRevision"] = graph?["graphRevision"].Copy(), ["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x => x.Value.IsChecked == true).Select(x => (JsonNode?)JsonValue.Create(x.Key)).ToArray()) }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); })); panel.Children.Add(Ui.Card(choices));
+        if (task.Text("lifecycleState") == "accepted")
+        {
+            var feedback = Ui.Field("重新开启理由", "", true);
+            panel.Children.Add(Ui.Card(feedback, Action("重新开启任务", async () => { if (feedback.Text.Trim().Length == 0) return; await WriteAsync("POST", Base + "/collaboration/tasks/" + Escape(task.Text("taskId")) + "/reopen", new JsonObject { ["expectedRevision"] = task?["revision"].Copy(), ["feedback"] = feedback.Text.Trim() }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); }, "重新开启后需要再次提交验收，历史记录保留。")));
+        }
         return panel;
     }
     private async Task<UIElement> TaskInquiriesAsync(string id, CancellationToken token)

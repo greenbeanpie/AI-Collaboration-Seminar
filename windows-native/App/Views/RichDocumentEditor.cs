@@ -28,6 +28,15 @@ public sealed class RichDocumentEditor : UserControl
             Add("撤销", () => { if (undo.TryPop(out var previous)) { redo.Push(document.ToJsonString()); document = JsonNode.Parse(previous)!.AsObject(); Refresh(); Changed?.Invoke(Document); } });
             Add("重做", () => { if (redo.TryPop(out var next)) { undo.Push(document.ToJsonString()); document = JsonNode.Parse(next)!.AsObject(); Refresh(); Changed?.Invoke(Document); } });
             foreach (var mark in new[] { ("bold", "粗体"), ("italic", "斜体"), ("strike", "删除线"), ("code", "行内代码") }) Add(mark.Item2, () => Format(mark.Item1));
+            tools.Children.Add(Ui.Button("链接", async () =>
+            {
+                var href = Ui.Field("HTTPS 地址或项目内路径", max: 2048);
+                var dialog = new ContentDialog { Title = "设置所选文字链接", Content = href, PrimaryButtonText = "保存", CloseButtonText = "取消", XamlRoot = XamlRoot };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                var value = href.Text.Trim();
+                if (value.Length > 0 && !(value.StartsWith('/') && !value.StartsWith("//", StringComparison.Ordinal)) && !(Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && uri.UserInfo.Length == 0)) { notice.Text = "请使用 HTTP/HTTPS 地址或项目内路径。"; return; }
+                Format("link", value.Length == 0 ? null : new JsonObject { ["href"] = value });
+            }));
             root.Children.Add(tools);
             root.Children.Add(Ui.Label("选中文字后设置格式；段落、列表、表格及引用按结构保存。无法识别的附加内容保持原样。", 12));
             var insert = Ui.Choice("插入内容", [("paragraph", "正文段落"), ("heading", "标题"), ("bulletList", "无序列表"), ("orderedList", "有序列表"), ("blockquote", "引用块"), ("codeBlock", "代码块"), ("table", "3 × 3 表格"), ("horizontalRule", "分隔线")]);
@@ -56,7 +65,7 @@ public sealed class RichDocumentEditor : UserControl
     }
     private void Refresh()
     { selectedField = null; selectedText = null; blocks.Children.Clear(); Render(document, blocks, 0); }
-    private void Format(string mark)
+    private void Format(string mark, JsonObject? attributes = null)
     {
         if (selectedField == null || selectedText == null || selectedField.SelectionLength == 0) { notice.Text = "请先选中需要设置格式的文字。"; return; }
         var target = selectedText; var start = selectedField.SelectionStart; var length = selectedField.SelectionLength;
@@ -67,7 +76,8 @@ public sealed class RichDocumentEditor : UserControl
             var middle = (JsonObject)target.DeepClone(); middle["text"] = text.Substring(start, length);
             var marks = middle["marks"] as JsonArray ?? new JsonArray();
             var existing = marks.FirstOrDefault(x => x.Text("type") == mark);
-            if (existing != null) marks.Remove(existing); else marks.Add(new JsonObject { ["type"] = mark });
+            if (existing != null) marks.Remove(existing);
+            if (mark == "link" ? attributes != null : existing == null) { var format = new JsonObject { ["type"] = mark }; if (attributes != null) format["attrs"] = attributes.DeepClone(); marks.Add(format); }
             middle["marks"] = marks;
             parent.RemoveAt(index); var offset = 0;
             if (start > 0) { var before = target.DeepClone().AsObject(); before["text"] = text[..start]; parent.Insert(index + offset++, before); }
