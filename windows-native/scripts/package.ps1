@@ -1,14 +1,14 @@
 param(
     [Parameter(Mandatory=$true)][string]$PublishDirectory,
     [Parameter(Mandatory=$true)][string]$RuntimeInstaller,
-    [string]$Version = '0.1.0',
+    [string]$Version,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '../artifacts'),
     [string]$SignatureFile,
     [string]$ManifestSignatureFile,
     [string]$ReleaseUrl
 )
 $ErrorActionPreference = 'Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Version must contain only numeric components.' }
+if ($Version -and $Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must contain three numeric components.' }
 $publishPath = (Resolve-Path -LiteralPath $PublishDirectory).Path
 $runtimePath = (Resolve-Path -LiteralPath $RuntimeInstaller).Path
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.exe'))) { throw 'Publish directory does not contain Buwei.Windows.Native.exe.' }
@@ -21,6 +21,10 @@ $licensePath = Join-Path $publishPath 'licenses'
 if (Get-ChildItem -LiteralPath $publishPath -Recurse -Filter '*WebView2*' | Where-Object { !$_.FullName.StartsWith($licensePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }) { throw 'WebView2 dependency is forbidden in the native package.' }
 $authenticode = Get-AuthenticodeSignature -LiteralPath $runtimePath
 if ($authenticode.Status -ne 'Valid' -or $authenticode.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Runtime installer must have a valid Microsoft Authenticode signature.' }
+$publishedVersion = [Version](Get-Item -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.exe')).VersionInfo.FileVersion
+$actualVersion = '{0}.{1}.{2}' -f $publishedVersion.Major, $publishedVersion.Minor, $publishedVersion.Build
+if (!$Version) { $Version = $actualVersion }
+elseif ($Version -ne $actualVersion) { throw 'Package version must match the published executable version.' }
 $nsisCandidates = @((Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'), 'C:\Program Files (x86)\NSIS\makensis.exe')
 $nsis = $nsisCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (!$nsis) { throw 'NSIS makensis.exe was not found.' }

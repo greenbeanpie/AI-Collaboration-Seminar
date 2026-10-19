@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Buwei.Windows.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -90,7 +91,23 @@ public sealed partial class WorkspaceView
             foreach (var option in pairing.Rows("projects")) { var check = new CheckBox { Content = option.Text("name") }; selections[option.Text("projectId")] = check; pairingPanel.Children.Add(check); }
             pairingPanel.Children.Add(Action("确认连接并授权项目", async () => { var selected = selections.Where(x => x.Value.IsChecked == true).Select(x => (JsonNode?)JsonValue.Create(x.Key)).ToArray(); if (selected.Length == 0) throw new InvalidOperationException("请至少选择一个项目。"); await WriteAsync("POST", path + "/approve", new JsonObject { ["projectIds"] = new JsonArray(selected) }); await NavigateAsync("bridge"); }, "允许该设备读取所选项目任务输入并回传成果？连接不会自行执行任务。"));
         }), pairingPanel));
-        await AddPagedAsync(panel, "/agent-bridges/devices", row => Ui.Card(Ui.Label(row.Text("deviceName"), 20), Ui.Label("DSH " + row.Text("dshVersion") + " · 桥接器 " + row.Text("bridgeVersion")), Ui.Label(row.Flag("revoked") ? "连接已撤销" : "最近在线 " + row.Text("lastSeenAt")), Action("撤销设备连接", async () => { await WriteAsync("DELETE", "/agent-bridges/devices/" + Escape(row.Text("deviceId"))); await NavigateAsync("bridge"); }, "撤销设备和项目授权，并停止其未结束交接？")), token);
+        await AddPagedAsync(panel, "/agent-bridges/devices", row =>
+        {
+            var card = Ui.Stack(Ui.Label(row.Text("deviceName"), 20), Ui.Label("DSH " + row.Text("dshVersion") + " · 桥接器 " + row.Text("bridgeVersion")), Ui.Label(row.Flag("revoked") ? "连接已撤销" : "最近在线 " + row.Text("lastSeenAt")));
+            if (!row.Flag("revoked"))
+            {
+                card.Children.Add(Action("调整设备项目授权", () => ReplaceAsync(ct => BridgeDeviceScopeAsync(row.Text("deviceId"), ct))));
+                card.Children.Add(Action("撤销设备连接", async () => { await WriteAsync("DELETE", "/agent-bridges/devices/" + Escape(row.Text("deviceId"))); await NavigateAsync("bridge"); }, "撤销设备和项目授权，并停止其未结束交接？"));
+            }
+            return Ui.Card(card);
+        }, token);
+        foreach (var intent in await repository.Store.PendingBridgeRequestsAsync())
+        {
+            var selected = Ui.Field("如需核对交接发起，请填写已核对的交接标识", max: 36);
+            panel.Children.Add(Ui.Card(Ui.Label("本机操作结果待核对", 18), Ui.Label(intent.Path + " · " + intent.Created), Ui.Label(intent.Error ?? "请求在完成确认前中断。"), selected,
+                Action("读取服务端记录并确认已生效", async () => { await repository.ReconcileBridgeRequestAsync(intent.Id, selected.Text, PageToken); await NavigateAsync("bridge"); }, "请先人工核对 DSH/任务交接记录。这里只读取状态，不重新发送操作；不匹配时继续保留请求。"),
+                Action("人工按原请求重试", async () => { await repository.RetryBridgeRequestExplicitlyAsync(intent.Id, true, PageToken); await NavigateAsync("bridge"); }, "请先核对 DSH 和服务端记录。仅本次以原参数及原请求标识重试，可能再次产生模型费用或触发后续评价。确认后才会重新发送。")));
+        }
         return panel;
     }
     private async Task<UIElement> AdminAsync(CancellationToken token)

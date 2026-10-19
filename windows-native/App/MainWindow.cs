@@ -358,7 +358,7 @@ public sealed class MainWindow : Window
         if (checkingUpdate) return; checkingUpdate = true;
         try
         {
-            readyUpdate = await updates.CheckAsync(new Version(0, 1, 0));
+            readyUpdate = await updates.CheckAsync(typeof(App).Assembly.GetName().Version ?? new Version(0, 1, 1));
             if (readyUpdate == null) { if (interactive) SetStatus("当前已是最新原生版本"); return; }
             readyInstaller = await updates.DownloadAsync(readyUpdate); SetStatus("更新已验签并缓存，等待安全重启");
             if (!interactive) return;

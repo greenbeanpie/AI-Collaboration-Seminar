@@ -6,7 +6,7 @@ namespace Buwei.Windows.Core;
 public sealed record PendingWrite(string Id, string AccountId, string ProjectId, string Method, string Path, string Body, string Status, string? Error, string? Server);
 public sealed record Snapshot(JsonNode? Data, DateTimeOffset SavedAt);
 
-public sealed class LocalStore : IDisposable
+public sealed partial class LocalStore : IDisposable
 {
     private readonly object gate = new();
     private Task tail = Task.CompletedTask;
@@ -41,6 +41,8 @@ public sealed class LocalStore : IDisposable
                 CREATE TABLE IF NOT EXISTS drafts(key TEXT PRIMARY KEY, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS writes(id TEXT PRIMARY KEY, account TEXT NOT NULL, project TEXT NOT NULL, method TEXT NOT NULL, path TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, server TEXT, created INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS revoked(project TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS bridge_requests(id TEXT PRIMARY KEY,path TEXT NOT NULL,body TEXT NOT NULL,created TEXT NOT NULL,state TEXT NOT NULL,response TEXT,error TEXT);
+                CREATE UNIQUE INDEX IF NOT EXISTS bridge_request_active ON bridge_requests(path) WHERE state IN ('pending','unknown');
                 """;
             await init.ExecuteNonQueryAsync().ConfigureAwait(false);
             return await action(connection).ConfigureAwait(false);

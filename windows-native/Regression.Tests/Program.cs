@@ -214,6 +214,132 @@ tests.Add(("fresh submission reads never fall back to cached file versions", asy
     await Reject(() => f.Repository.GetFreshAsync(TaskPath + "/files?limit=100"));
     Equal((await f.Repository.GetAsync(TaskPath + "/files?limit=100"))?["items"]?[0]?["versionId"]?.ToString(), "stale");
 }));
+tests.Add(("Bridge pending write is durable before HTTP and lost response cannot replay after reopening", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var calls = 0; string? requestKey = null;
+    var path = "/api/v1/agent-bridges/projects/" + Project + "/tasks/22222222-2222-4222-8222-222222222222/handoffs";
+    f.Handler.Route = async request => { calls++; var pending = (await f.Store.PendingBridgeRequestsAsync()).Single(); Equal(pending.Id, request.Key); requestKey = request.Key; throw new HttpRequestException("response lost after dispatch"); };
+    var body = new JsonObject { ["expectedRevision"] = 3, ["targetDeviceId"] = "33333333-3333-4333-8333-333333333333" };
+    await Reject(() => f.Repository.SendBridgeActionAsync(path, body));
+    Equal((await f.Store.PendingBridgeRequestsAsync()).Single().State, "unknown");
+    await Reject(() => f.Repository.SendBridgeActionAsync(path, body)); Equal(calls, 1);
+    using var reopened = new LocalStore(f.Store.DataDirectory); reopened.SetAccount("account-a");
+    Equal((await reopened.PendingBridgeRequestsAsync()).Single().Id, requestKey);
+    reopened.SetAccount("account-b"); Equal((await reopened.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge reconciliation only GETs a matching handoff and rejects a different device", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var path = "/api/v1/agent-bridges/projects/" + Project + "/tasks/22222222-2222-4222-8222-222222222222/handoffs";
+    var body = new JsonObject { ["expectedRevision"] = 3, ["targetDeviceId"] = "33333333-3333-4333-8333-333333333333" };
+    f.Handler.Route = _ => throw new HttpRequestException("lost"); await Reject(() => f.Repository.SendBridgeActionAsync(path, body));
+    var intent = (await f.Store.PendingBridgeRequestsAsync()).Single(); var gets = 0;
+    var proof = new JsonObject { ["projectId"] = Project, ["taskId"] = "22222222-2222-4222-8222-222222222222", ["deviceId"] = "wrong-device", ["taskRevision"] = 3 };
+    f.Handler.Route = request => { Equal(request.Method, "GET"); gets++; return Task.FromResult(Reply(proof.DeepClone())); };
+    await Reject(() => f.Repository.ReconcileBridgeRequestAsync(intent.Id, "44444444-4444-4444-8444-444444444444"));
+    Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 1);
+    proof["deviceId"] = body["targetDeviceId"]!.DeepClone();
+    await f.Repository.ReconcileBridgeRequestAsync(intent.Id, "44444444-4444-4444-8444-444444444444"); Equal(gets, 2); Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge eligibility and adoption require current version explicit review and matching artifact snapshot", async () =>
+{
+    var task = new JsonObject { ["taskId"] = "22222222-2222-4222-8222-222222222222", ["revision"] = 3, ["assigneeId"] = "account-a" };
+    var eligibility = new JsonObject { ["status"] = "ready", ["taskRevision"] = 3, ["eligible"] = true, ["sourceHash"] = new string('a', 64) };
+    True(BridgePolicy.Eligible(eligibility, task)); eligibility["taskRevision"] = 2; True(!BridgePolicy.Eligible(eligibility, task));
+    var item = new JsonObject { ["handoffId"] = "44444444-4444-4444-8444-444444444444", ["projectId"] = Project, ["taskId"] = task["taskId"]!.DeepClone(), ["taskRevision"] = 3, ["state"] = "ready_for_review", ["stale"] = false, ["updatedAt"] = "version-one", ["result"] = new JsonObject { ["summary"] = "reviewed", ["artifacts"] = new JsonArray() } };
+    var stamp = BridgePolicy.ReviewStamp(item, task);
+    Equal(BridgePolicy.Adoption(item, task, "account-a", Project, true, stamp)["expectedTaskRevision"]!.GetValue<int>(), 3);
+    await Reject(() => { BridgePolicy.Adoption(item, task, "account-a", Project, false, stamp); return Task.CompletedTask; });
+    await Reject(() => { BridgePolicy.Adoption(item, task, "account-b", Project, true, stamp); return Task.CompletedTask; });
+    item["result"]!["summary"] = "changed after review";
+    await Reject(() => { BridgePolicy.Adoption(item, task, "account-a", Project, true, stamp); return Task.CompletedTask; });
+    item["stale"] = true;
+    await Reject(() => { BridgePolicy.Adoption(item, task, "account-a", Project, true, BridgePolicy.ReviewStamp(item, task)); return Task.CompletedTask; });
+    True(BridgePolicy.Active(new JsonObject { ["state"] = "dispatch_uncertain" }));
+}));
+tests.Add(("Bridge device must be paired authorized bound and protocol compatible", () =>
+{
+    var device = new JsonObject { ["paired"] = true, ["revoked"] = false, ["protocolVersion"] = 1, ["projects"] = new JsonArray(new JsonObject { ["projectId"] = Project, ["workspaceLabel"] = "project" }) };
+    True(BridgePolicy.Bound(device, Project)); device["revoked"] = true; True(!BridgePolicy.Bound(device, Project)); device["revoked"] = false;
+    device["projects"]![0]!["workspaceLabel"] = ""; True(!BridgePolicy.Bound(device, Project));
+    return Task.CompletedTask;
+}));
+tests.Add(("Bridge cancel and adoption reconcile only after server completion evidence", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var root = "/api/v1/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444";
+    foreach (var action in new[] { "cancel", "adopt-and-submit" })
+    {
+        f.Handler.Route = _ => throw new HttpRequestException("lost");
+        var payload = action == "cancel" ? new JsonObject() : new JsonObject { ["expectedTaskRevision"] = 3, ["reviewed"] = true };
+        await Reject(() => f.Repository.SendBridgeActionAsync(root + "/" + action, payload));
+        var intent = (await f.Store.PendingBridgeRequestsAsync()).Single();
+        var proof = new JsonObject { ["state"] = "running", ["adoptedSubmissionId"] = null };
+        f.Handler.Route = request => { Equal(request.Method, "GET"); Equal(request.Path, root); return Task.FromResult(Reply(proof.DeepClone())); };
+        await Reject(() => f.Repository.ReconcileBridgeRequestAsync(intent.Id));
+        if (action == "cancel") proof["state"] = "cancel_requested";
+        else proof["adoptedSubmissionId"] = "55555555-5555-4555-8555-555555555555";
+        await f.Repository.ReconcileBridgeRequestAsync(intent.Id); Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+    }
+}));
+tests.Add(("Bridge eligibility reconciliation requires known state and original task revision", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var path = Root + "/collaboration/tasks/22222222-2222-4222-8222-222222222222/agent-eligibility";
+    f.Handler.Route = _ => throw new HttpRequestException("lost");
+    await Reject(() => f.Repository.SendBridgeActionAsync(path, new JsonObject { ["expectedRevision"] = 3 }));
+    var intent = (await f.Store.PendingBridgeRequestsAsync()).Single(); var proof = new JsonObject { ["status"] = "missing", ["taskRevision"] = 3 };
+    f.Handler.Route = request => { Equal(request.Method, "GET"); return Task.FromResult(Reply(proof.DeepClone())); };
+    await Reject(() => f.Repository.ReconcileBridgeRequestAsync(intent.Id));
+    proof["status"] = "queued"; proof["taskRevision"] = 2; await Reject(() => f.Repository.ReconcileBridgeRequestAsync(intent.Id));
+    proof["taskRevision"] = 3; await f.Repository.ReconcileBridgeRequestAsync(intent.Id); Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge action validation rejects unrelated paths and sensitive fields before persistence or HTTP", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var calls = 0; f.Handler.Route = _ => { calls++; return Task.FromResult(Reply(new JsonObject())); };
+    await Reject(() => f.Repository.SendBridgeActionAsync("/auth/password", new JsonObject { ["password"] = "must-never-persist" }));
+    await Reject(() => f.Repository.SendBridgeActionAsync("/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444/cancel", new JsonObject { ["password"] = "must-never-persist" }));
+    Equal(calls, 0); Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge response after account switch cannot confirm another account request", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var entered = NewSignal(); var release = NewSignal();
+    f.Handler.Route = async _ => { entered.SetResult(); await release.Task; return Reply(new JsonObject { ["handoffId"] = "44444444-4444-4444-8444-444444444444" }); };
+    var sending = f.Repository.SendBridgeActionAsync("/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444/cancel", new JsonObject());
+    await entered.Task; await f.Login("account-b"); release.SetResult(); await Reject(() => sending);
+    Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+    f.Store.SetAccount("account-a"); Equal((await f.Store.PendingBridgeRequestsAsync()).Single().State, "pending");
+}));
+tests.Add(("Bridge manual retry requires explicit acknowledgement and preserves original key and payload", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var requests = new List<Request>();
+    f.Handler.Route = request => { requests.Add(request); throw new HttpRequestException("lost"); };
+    var path = "/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444/adopt-and-submit";
+    await Reject(() => f.Repository.SendBridgeActionAsync(path, new JsonObject { ["expectedTaskRevision"] = 3, ["reviewed"] = true }));
+    var intent = (await f.Store.PendingBridgeRequestsAsync()).Single();
+    await Reject(() => f.Repository.RetryBridgeRequestExplicitlyAsync(intent.Id, false)); Equal(requests.Count, 1);
+    f.Handler.Route = request => { requests.Add(request); return Task.FromResult(Reply(new JsonObject { ["submissionId"] = "55555555-5555-4555-8555-555555555555" })); };
+    await f.Repository.RetryBridgeRequestExplicitlyAsync(intent.Id, true);
+    Equal(requests.Count, 2); Equal(requests[0].Key, requests[1].Key); Equal(requests[0].Body, requests[1].Body); Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge concurrent manual retries cannot send the same local intent twice", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var calls = 0; var entered = NewSignal(); var release = NewSignal();
+    f.Handler.Route = _ => { calls++; throw new HttpRequestException("lost"); };
+    await Reject(() => f.Repository.SendBridgeActionAsync("/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444/cancel", new JsonObject()));
+    var id = (await f.Store.PendingBridgeRequestsAsync()).Single().Id;
+    f.Handler.Route = async _ => { calls++; entered.SetResult(); await release.Task; return Reply(new JsonObject { ["state"] = "cancelled" }); };
+    var retry = f.Repository.RetryBridgeRequestExplicitlyAsync(id, true); await entered.Task;
+    await Reject(() => f.Repository.RetryBridgeRequestExplicitlyAsync(id, true)); Equal(calls, 2);
+    release.SetResult(); await retry; Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
+tests.Add(("Bridge HTTP throttling remains uncertain while explicit version rejection releases the guard", async () =>
+{
+    using var f = new Fixture(); await f.Login(); f.Handler.Route = _ => Task.FromResult(Error(429));
+    await Reject(() => f.Repository.SendBridgeActionAsync("/agent-bridges/handoffs/44444444-4444-4444-8444-444444444444/cancel", new JsonObject()));
+    var intent = (await f.Store.PendingBridgeRequestsAsync()).Single(); Equal(intent.State, "unknown");
+    f.Handler.Route = _ => Task.FromResult(Error(409)); await Reject(() => f.Repository.RetryBridgeRequestExplicitlyAsync(intent.Id, true));
+    Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
+}));
 var failed = 0;
 foreach (var (name, run) in tests)
 {

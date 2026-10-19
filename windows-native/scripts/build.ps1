@@ -18,6 +18,8 @@ try {
     if ($Package) {
         if ($Debug) { throw 'Debug synthetic fixture builds must never be packaged.' }
         if (!$RuntimeInstaller) { throw 'Provide the verified Microsoft Windows App Runtime 2.5.1 x64 installer.' }
-        & (Join-Path $PSScriptRoot 'package.ps1') -PublishDirectory (Join-Path $nativeRoot 'artifacts/final') -RuntimeInstaller $RuntimeInstaller
+        $fileVersion = [Version](Get-Item -LiteralPath (Join-Path $nativeRoot 'artifacts/final/Buwei.Windows.Native.exe')).VersionInfo.FileVersion
+        $packageVersion = '{0}.{1}.{2}' -f $fileVersion.Major, $fileVersion.Minor, $fileVersion.Build
+        & (Join-Path $PSScriptRoot 'package.ps1') -PublishDirectory (Join-Path $nativeRoot 'artifacts/final') -RuntimeInstaller $RuntimeInstaller -Version $packageVersion
     }
 } finally { Pop-Location }

@@ -6,7 +6,7 @@
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <RootNamespace>Buwei.Windows</RootNamespace>
     <AssemblyName>Buwei.Windows.Native</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <ApplicationManifest>app.manifest</ApplicationManifest>

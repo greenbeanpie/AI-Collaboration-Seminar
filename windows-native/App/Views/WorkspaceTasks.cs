@@ -107,6 +107,7 @@ public sealed partial class WorkspaceView
         }, token);
         panel.Children.Add(Action("任务讨论", () => ReplaceAsync(ct => TaskCommentsAsync(id, ct))));
         panel.Children.Add(Action("私密问询", () => ReplaceAsync(ct => TaskInquiriesAsync(id, ct))));
+        panel.Children.Add(Action("本地 Agent 代实施", () => ReplaceAsync(ct => TaskBridgeAsync(id, ct))));
         return panel;
     }
     private async Task<List<JsonNode>> FreshSubmissionFilesAsync(string path, CancellationToken token)

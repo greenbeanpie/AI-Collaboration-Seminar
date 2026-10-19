@@ -13,7 +13,7 @@ public sealed class ApiException(int status, string code, string message, JsonNo
     public JsonNode? Details { get; } = details;
 }
 
-public sealed class ClientRepository : IDisposable
+public sealed partial class ClientRepository : IDisposable
 {
     private readonly CookieContainer cookies;
     private readonly SecretStore secrets;
@@ -43,7 +43,8 @@ public sealed class ClientRepository : IDisposable
         if (address.AbsoluteUri.TrimEnd('/') != ClientPaths.ProductionOrigin && !(address.IsLoopback && address.Scheme == "http"))
             throw new ArgumentException("只允许固定服务地址或本机测试地址");
         Http = new HttpClient(handler ?? new HttpClientHandler { CookieContainer = cookies, AllowAutoRedirect = false }) { BaseAddress = address, Timeout = TimeSpan.FromSeconds(30) };
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("Buwei-Windows-Native/0.1.0");
+        var version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 1, 1);
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd($"Buwei-Windows-Native/{version.Major}.{version.Minor}.{version.Build}");
     }
     private void Guard(long started)
     {
