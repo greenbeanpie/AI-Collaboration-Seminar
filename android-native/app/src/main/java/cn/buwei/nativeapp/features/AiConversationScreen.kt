@@ -11,6 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
 import cn.buwei.nativeapp.data.requestDurably
@@ -20,6 +23,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 @Composable
@@ -28,11 +33,29 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
  val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  var messages by remember(projectId,repository.accountId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember{mutableStateOf<String?>(null)};var pending by remember{mutableStateOf<String?>(null)}
  var resumedJobs by remember(projectId,repository.accountId){mutableStateOf(emptyMap<String,String>())}
+ var accessBlocked by remember(projectId,repository.accountId){mutableStateOf(false)}
  var input by rememberSaveable(projectId,repository.accountId){mutableStateOf("")};var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var error by remember{mutableStateOf<String?>(null)};var confirmClear by remember{mutableStateOf(false)}
  val owner=repository.accountId;val epoch=remember(owner){repository.epoch};val drafts=remember(repository){NativeDraftStore(repository)};var draftReady by remember(projectId,owner,epoch){mutableStateOf(false)}
+ val historyLock=remember(projectId,owner,epoch){Mutex()};val lifecycle=LocalLifecycleOwner.current.lifecycle
  LaunchedEffect(projectId,owner,epoch){try{drafts.read("project-chat:$projectId",owner?:return@LaunchedEffect,epoch)?.let{input=it.text("input")};draftReady=true}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
- suspend fun readHistory(older:Boolean=false){val page=repository.get(base+(if(older&&cursor!=null)"?cursor=${Uri.encode(cursor)}"else""));val loaded=(page["items"]as? JsonArray).orEmpty().mapNotNull{it as? JsonObject};messages=(if(older)messages+loaded else loaded).distinctBy{it.text("id")}.sortedBy{it.text("createdAt")};cursor=page.text("nextCursor").takeIf{it.isNotBlank()};pending=page.text("pendingJobId").takeIf{it.isNotBlank()}}
+ suspend fun readHistory(older:Boolean=false,keepOlder:Boolean=false)=historyLock.withLock{
+  check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"}
+  val path=base+(if(older&&cursor!=null)"?cursor=${Uri.encode(cursor)}"else"")
+  val page=try{if(keepOlder)repository.networkJson("GET",path,expectedOwner=owner,expectedEpoch=epoch)else repository.get(path)}catch(e:cn.buwei.nativeapp.data.ApiException){
+   if(e.status in listOf(401,403,404)){messages=emptyList();cursor=null;pending=null;resumedJobs=emptyMap();accessBlocked=true};throw e
+  }
+  accessBlocked=false
+  val loaded=(page["items"]as? JsonArray).orEmpty().mapNotNull{it as? JsonObject}
+  messages=(if(older||keepOlder)messages+loaded else loaded).associateBy{it.text("id")}.values.sortedBy{it.text("createdAt")}
+  if(!keepOlder)cursor=page.text("nextCursor").takeIf{it.isNotBlank()}
+  pending=page.text("pendingJobId").takeIf{it.isNotBlank()}
+ }
  LaunchedEffect(projectId,repository.accountId,refresh){loading=true;try{readHistory();error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{loading=false}}
+ // Completion belongs to the screen, not to a virtualized message item that can leave composition.
+ LaunchedEffect(projectId,owner,epoch,pending,lifecycle){if(pending!=null)lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){
+  var waitMs=3000L
+  while(isActive){delay(waitMs);try{readHistory(keepOlder=true);error=null;waitMs=3000L;if(pending==null)break}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message;if(accessBlocked)break;waitMs=(waitMs*2).coerceAtMost(15000L)}}
+ }}
  Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
   Text("项目 AI",style=MaterialTheme.typography.headlineSmall)
   Row{TextButton({refresh++},enabled=!busy){Text("刷新")};TextButton({confirmClear=true},enabled=!busy&&pending==null&&messages.isNotEmpty()){Text("清空历史")}}
@@ -58,7 +81,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
    pending?.takeIf{id->messages.none{it.text("role")=="user"&&(resumedJobs[it.text("questionId")]?:it.text("jobId"))==id}}?.let{id->item{NativeJobExecution(repository,id,onResumed={pending=it},onSettled={pending=null;refresh++})}}
    item(key="composer"){Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(10.dp)){
   ReferenceOutlinedTextField(input,{if(it.length<=4000){input=it;if(owner!=null)drafts.scheduleSave("project-chat:$projectId",buildJsonObject{put("input",it)},owner,epoch){failure->error=failure.message}}},Modifier.fillMaxWidth(),label="询问项目 AI",minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy&&draftReady)
-  Button({if(!busy){focus.clearFocus();keyboard?.hide();busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
+  Button({if(!busy){focus.clearFocus();keyboard?.hide();busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!accessBlocked&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
    }}
   }
  }
@@ -69,7 +92,8 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
 private fun ChatOperations(repository:ClientRepository,base:String,questionId:String,active:Boolean){
  var operations by remember(questionId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember{mutableStateOf<String?>(null)};var error by remember{mutableStateOf<String?>(null)};var expanded by remember{mutableStateOf(active)};val scope=rememberCoroutineScope()
  suspend fun read(older:Boolean=false){val page=repository.get("$base/questions/${Uri.encode(questionId)}/operations"+(if(older&&cursor!=null)"?cursor=${Uri.encode(cursor)}"else""));val loaded=(page["items"]as? JsonArray).orEmpty().mapNotNull{it as? JsonObject};operations=(if(older)operations+loaded else loaded).associateBy{it.text("id")}.values.toList();cursor=page.text("nextCursor").takeIf{it.isNotBlank()}}
- LaunchedEffect(questionId,active){do{try{read();error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message;break};if(active)delay(3000L)}while(active&&isActive)}
+ val lifecycle=LocalLifecycleOwner.current.lifecycle
+ LaunchedEffect(questionId,active,lifecycle){lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){do{try{read();error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message;break};if(active)delay(3000L)}while(active&&isActive)}}
  if(operations.isNotEmpty()||error!=null){TextButton({expanded=!expanded}){Text("操作记录 ${if(expanded)"−"else"+"}")};if(expanded){error?.let{Text(it,color=MaterialTheme.colorScheme.error)};operations.forEach{op->Text("${op.text("label")} · ${op.text("status")} · 尝试 ${op.text("attempt")}",style=MaterialTheme.typography.bodySmall);op.text("detail").takeIf{it.isNotBlank()}?.let{Text(it,style=MaterialTheme.typography.bodySmall)}};if(cursor!=null)TextButton({scope.launch{try{read(true)}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}){Text("加载更多操作")}}}
 }
 
@@ -88,8 +112,9 @@ fun NativeJobExecution(repository:ClientRepository,jobId:String,allowResume:Bool
  var trackedId by rememberSaveable(jobId,owner,epoch){mutableStateOf(jobId)}
  var job by remember(jobId,owner,epoch){mutableStateOf<JsonObject?>(null)};var error by remember(jobId,owner,epoch){mutableStateOf<String?>(null)};var refresh by remember(jobId,owner,epoch){mutableIntStateOf(0)};var action by remember(jobId,owner,epoch){mutableStateOf<String?>(null)};var busy by remember(jobId,owner,epoch){mutableStateOf(false)};val scope=rememberCoroutineScope();val settledCallback by rememberUpdatedState(onSettled);val resumedCallback by rememberUpdatedState(onResumed)
  var reportedTerminal by remember(jobId,owner,epoch){mutableStateOf<String?>(null)}
+ val lifecycle=LocalLifecycleOwner.current.lifecycle
  suspend fun read(id:String)=repository.networkJson("GET","/api/v1/jobs/${Uri.encode(id)}",expectedOwner=owner,expectedEpoch=epoch)
- LaunchedEffect(trackedId,refresh,owner,epoch){job=null;var delayMs=2000L;while(isActive){try{val next=read(trackedId);job=next;error=null;if(next.text("status")in listOf("succeeded","failed","cancelled")){val terminal="${next.text("jobId").ifBlank{trackedId}}:${next.text("status")}";if(reportedTerminal!=terminal){reportedTerminal=terminal;settledCallback()};break}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message;break};delay(delayMs);delayMs=(delayMs+1000L).coerceAtMost(10000L)}}
+ LaunchedEffect(trackedId,refresh,owner,epoch,lifecycle){job=null;lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){var delayMs=2000L;while(isActive){try{val next=read(trackedId);job=next;error=null;if(next.text("status")in listOf("succeeded","failed","cancelled")){val terminal="${next.text("jobId").ifBlank{trackedId}}:${next.text("status")}";if(reportedTerminal!=terminal){reportedTerminal=terminal;settledCallback()};break}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message;break};delay(delayMs);delayMs=(delayMs+1000L).coerceAtMost(10000L)}}}
  Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
   Text("AI 执行 · ${job?.text("status").orEmpty()}",style=MaterialTheme.typography.titleMedium)
   job?.let{current->val activity=current.obj("activity");Text(activity.text("code"));activityProgress(activity)?.let{Text(it)};val execution=current.obj("execution");Text("模型请求累计 ${execution.text("totalCalls").ifBlank{"未知"}} 次",style=MaterialTheme.typography.bodySmall);if(activity.flag("uncertain"))Text("供应商请求结果不明确，请核对后再继续。",color=MaterialTheme.colorScheme.error);current.text("error").takeIf{it.isNotBlank()}?.let{Text(it)}
