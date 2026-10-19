@@ -67,6 +67,8 @@ class DataDocumentParityInstrumentedTest {
  @After fun teardown(){server.shutdown()}
  private fun await(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
  private fun capture(name:String){
+  // Some emulator graphics drivers crash the shell screenshot connection; capture is explicit.
+  if(InstrumentationRegistry.getArguments().getString("captureCanonical")!="true")return
   val context=InstrumentationRegistry.getInstrumentation().targetContext
   val bitmap=requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
   try{File(context.getExternalFilesDir(null),"data-parity-$name.png").outputStream().use{check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}}finally{bitmap.recycle()}

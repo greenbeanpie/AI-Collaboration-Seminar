@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.media.AttachmentActions
 import cn.buwei.nativeapp.media.MediaWorkspace
+import cn.buwei.nativeapp.media.NativeRecordingDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
@@ -78,6 +79,7 @@ internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued
  if(row.dataFlag("canArchive")){val archived=row.twText("archivedAt").isNotBlank();TaskWorkspaceAction(repository,if(archived)"撤销材料归档"else"归档材料","$path/${if(archived)"unarchive"else"archive"}",buildJsonObject{put("expectedRevision",twRevision(row))},confirmation=if(archived)"恢复这份材料？"else"归档材料将退出当前资料选择，历史固定版本保留。",onSuccess={onChanged()})}
  DataWorkspaceVersions(repository,project,row)
  MaterialDiscussionWorkspace(repository,project,resource.twText("resourceId"))
+ NativeRecordingDetail(repository,project,resource.twText("resourceId"))
 }
 @Composable private fun DataWorkspaceSource(repository:ClientRepository,project:String,resource:JsonObject,refresh:Int,onChanged:()->Unit){
  val base=twBase(project);val path="$base/sources/${resource.twText("resourceId")}";var source by remember(path){mutableStateOf<JsonObject?>(null)};var version by remember(path){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
