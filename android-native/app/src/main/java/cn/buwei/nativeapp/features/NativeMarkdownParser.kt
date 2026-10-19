@@ -4,7 +4,7 @@ import java.net.IDN
 import java.net.URI
 import java.util.Locale
 
-internal data class NativeMarkdownInline(val text:String,val bold:Boolean=false,val italic:Boolean=false,val strike:Boolean=false,val code:Boolean=false,val href:String?=null)
+internal data class NativeMarkdownInline(val text:String,val bold:Boolean=false,val italic:Boolean=false,val strike:Boolean=false,val code:Boolean=false,val href:String?=null,val underline:Boolean=false)
 internal data class NativeMarkdownBlock(
  val kind:String,val inline:List<NativeMarkdownInline> = emptyList(),val level:Int=0,val marker:String="",val depth:Int=0,
  val code:String="",val language:String="",val headers:List<List<NativeMarkdownInline>> = emptyList(),val cells:List<List<NativeMarkdownInline>> = emptyList()
@@ -87,11 +87,11 @@ internal fun nativeMarkdownTableCells(line:String):List<String>{
   if(character=='|'&&codeFence==0){cells+=cell.toString().trim();cell.setLength(0)}else cell.append(character);index++
  };cells+=cell.toString().trim();return cells
 }
-private fun nativeMarkdownChunks(value:String,limit:Int=4000):List<String>{
+internal fun nativeMarkdownChunks(value:String,limit:Int=4000):List<String>{
  if(value.isEmpty())return listOf("");val result=mutableListOf<String>();var start=0
  while(start<value.length){var end=minOf(start+limit,value.length);if(end<value.length&&value[end-1].isHighSurrogate()&&value[end].isLowSurrogate())end--;result+=value.substring(start,end);start=end};return result
 }
-private fun nativeMarkdownInlineChunks(runs:List<NativeMarkdownInline>):List<List<NativeMarkdownInline>>{
+internal fun nativeMarkdownInlineChunks(runs:List<NativeMarkdownInline>):List<List<NativeMarkdownInline>>{
  val result=mutableListOf<List<NativeMarkdownInline>>();var chunk=mutableListOf<NativeMarkdownInline>();var size=0
  runs.forEach{run->nativeMarkdownChunks(run.text).forEach{part->if(size+part.length>4000&&chunk.isNotEmpty()){result+=chunk;chunk=mutableListOf();size=0};chunk+=run.copy(text=part);size+=part.length}}
  if(chunk.isNotEmpty())result+=chunk;return result

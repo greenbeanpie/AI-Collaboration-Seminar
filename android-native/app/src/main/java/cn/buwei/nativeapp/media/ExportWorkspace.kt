@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.features.nativeMarkdownChunks
+import cn.buwei.nativeapp.features.nativeRichDocumentBlocks
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import java.io.File
@@ -27,10 +29,19 @@ private val exportJson=Json {prettyPrint=true}
 /** Export consumes the server's permission-filtered bundle; it does not reconstruct private data. */
 @Composable fun ExportWorkspace(repository:ClientRepository,project:String) {
     val scope=rememberCoroutineScope();val context=LocalContext.current
-    var bundle by remember(project) {mutableStateOf<JsonObject?>(null)}
-    var text by remember(project) {mutableStateOf("")};var error by remember {mutableStateOf<String?>(null)};var busy by remember {mutableStateOf(false)}
-    LaunchedEffect(project) {busy=true;try {bundle=repository.networkJson("GET","/projects/$project/export-bundle");text=exportText(bundle!!)}catch(e:Exception){if(e is CancellationException)throw e;error=e.message?:"导出读取失败"}finally{busy=false}}
-    fun export(format:String) {scope.launch {busy=true;try {
+    val owner=repository.accountId;val epoch=repository.epoch
+    var bundle by remember(owner,epoch,project) {mutableStateOf<JsonObject?>(null)}
+    var preview by remember(owner,epoch,project) {mutableStateOf<List<String>>(emptyList())}
+    var refresh by remember(owner,epoch,project){mutableIntStateOf(0)}
+    var error by remember(owner,epoch,project) {mutableStateOf<String?>(null)};var busy by remember(owner,epoch,project) {mutableStateOf(false)}
+    LaunchedEffect(owner,epoch,project,refresh) {busy=true;error=null;try {
+        check(owner!=null){"请登录"}
+        val fresh=repository.networkJson("GET","/projects/$project/export-bundle",expectedOwner=owner,expectedEpoch=epoch)
+        val lines=withContext(Dispatchers.Default){exportText(fresh).lineSequence().flatMap{nativeMarkdownChunks(it).asSequence()}.toList()}
+        check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化，停止读取导出"}
+        bundle=fresh;preview=lines
+    }catch(e:Exception){if(e is CancellationException)throw e;error=e.message?:"导出读取失败"}finally{busy=false}}
+    fun export(format:String) {scope.launch {busy=true;error=null;try {
         val owner=repository.accountId?:error("请登录");val epoch=repository.epoch
         val fresh=repository.networkJson("GET","/projects/$project/export-bundle",expectedOwner=owner,expectedEpoch=epoch)
         val file=withContext(Dispatchers.IO) {
@@ -43,10 +54,14 @@ private val exportJson=Json {prettyPrint=true}
     Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("成果导出",style=MaterialTheme.typography.headlineMedium)
         Text("导出当前有权查看的项目成果，附件原文件可在资料库逐个下载。")
+        Text("导出前会重新核对权限并读取最新数据。刷新可更新下方预览。",style=MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick={refresh++},enabled=!busy){Text(if(busy)"正在读取"else"刷新数据")}
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+        if(error!=null&&bundle!=null)Text("以下保留上次读取的预览；请刷新核对最新版本。",style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("pdf" to "PDF","md" to "正文","json" to "完整数据").forEach {(format,title)->OutlinedButton(onClick={export(format)},enabled=!busy&&bundle!=null){Text(title)}}}
-        LazyColumn(Modifier.weight(1f)) {items(text.lineSequence().take(1000).toList()){line->Text(line,Modifier.padding(vertical=3.dp),style=MaterialTheme.typography.bodyMedium)}}
+        bundle?.get("generatedAt")?.jsonPrimitive?.contentOrNull?.let{Text("预览生成于：$it",style=MaterialTheme.typography.bodySmall)}
+        LazyColumn(Modifier.weight(1f)) {items(preview){line->androidx.compose.foundation.text.selection.SelectionContainer{Text(line,Modifier.fillMaxWidth().padding(vertical=3.dp),style=MaterialTheme.typography.bodyMedium)}}}
     }
 }
 
@@ -55,7 +70,18 @@ internal fun exportText(bundle:JsonElement):String {
     val output=StringBuilder("# 补位 · 项目成果\n\n")
     fun append(value:JsonElement,level:Int) {
         when(value) {
-            is JsonObject -> value.forEach {(key,item)->if(key!="doc"&&item!=JsonNull){if(item is JsonPrimitive)output.append(names[key]?:key).append("：").append(item.content).append('\n') else {output.append('\n').append("#".repeat((level+2).coerceAtMost(6))).append(' ').append(names[key]?:key).append('\n');append(item,level+1)}}}
+            is JsonObject -> value.forEach {(key,item)->if(item!=JsonNull){
+                if(key=="doc"){
+                    if((value["markdown"]as? JsonPrimitive)?.contentOrNull.isNullOrBlank()&&item is JsonObject&&item["type"]==JsonPrimitive("doc")){
+                        nativeRichDocumentBlocks(item).forEach{block->
+                            if(block.marker.isNotBlank())output.append(block.marker).append(' ')
+                            if(block.kind=="code")output.append("```\n").append(block.code).append("\n```\n")
+                            else block.inline.forEach{run->output.append(run.text);run.href?.let{output.append(" (").append(it).append(')')}}
+                            output.append('\n')
+                        }
+                    }
+                }else if(item is JsonPrimitive)output.append(names[key]?:key).append("：").append(item.content).append('\n') else {output.append('\n').append("#".repeat((level+2).coerceAtMost(6))).append(' ').append(names[key]?:key).append('\n');append(item,level+1)}
+            }}
             is JsonArray -> value.forEachIndexed {index,item->output.append('\n').append(index+1).append(". ");append(item,level)}
             is JsonPrimitive -> output.append(value.content).append('\n')
         }
