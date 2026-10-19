@@ -67,7 +67,7 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
         AiVersionChoices("固定成果版本",materials,"materialId",chosenMaterials){chosenMaterials=it}
         AiVersionChoices("固定来源版本",sources,"sourceId",chosenSources){chosenSources=it}
         Row {Checkbox(search,{search=it});Text("允许联网检索")}
-        if(search)TaskWorkspaceField("检索内容",query,{query=it},500)
+        if(search)TaskWorkspaceField("检索内容",query,{query=it},500,aiReference=true)
         Button(onClick={confirm="发起 AI 协作？本次会调用已配置模型，可能产生费用。选择的材料与来源版本将固定用于本轮。" to {
             val result=write("$base/agent-sessions",buildJsonObject{put("mode",mode);role.takeIf{it.isNotBlank()}?.let{put("roleTemplate",it)};put("taskId",task?.let(::JsonPrimitive)?:JsonNull);put("instruction",instruction.takeIf{it.isNotBlank()}?.let(::JsonPrimitive)?:JsonNull);put("materialVersionIds",JsonArray(chosenMaterials.sorted().map(::JsonPrimitive)));put("sourceVersionIds",JsonArray(chosenSources.sorted().map(::JsonPrimitive)));put("allowSearch",search);if(search)put("searchQuery",query.trim())})
             selected=result.text("sessionId");job=result.text("jobId");refresh++

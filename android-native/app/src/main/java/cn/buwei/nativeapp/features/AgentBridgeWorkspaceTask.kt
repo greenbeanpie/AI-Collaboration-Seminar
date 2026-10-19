@@ -3,6 +3,7 @@ package cn.buwei.nativeapp.features
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -51,7 +52,7 @@ import kotlinx.serialization.json.*
     val stale=item["stale"]?.jsonPrimitive?.booleanOrNull==true||item["taskRevision"]!=latest["revision"]
     if(stale)Text("任务已更新，旧版本成果可查看但不能直接提交。",color=MaterialTheme.colorScheme.error)
     val result=item["result"]as? JsonObject
-    result?.let{outcome->Text("成果说明",style=MaterialTheme.typography.titleSmall);androidx.compose.foundation.text.selection.SelectionContainer{Text(outcome.text("summary"))};(outcome["artifacts"]as? JsonArray).orEmpty().forEach{artifact->val file=artifact.jsonObject;Text("${file.text("name")} · ${file.text("sizeBytes")} 字节");AttachmentActions(repository,projectId,file.text("fileId"),file.text("name"))}}
+    result?.let{outcome->NativeAiReferenceBadge();Text("成果说明",style=MaterialTheme.typography.titleSmall);androidx.compose.foundation.text.selection.SelectionContainer{Text(outcome.text("summary"))};(outcome["artifacts"]as? JsonArray).orEmpty().forEach{artifact->val file=artifact.jsonObject;Text("${file.text("name")} · ${file.text("sizeBytes")} 字节");AttachmentActions(repository,projectId,file.text("fileId"),file.text("name"))}}
     if(item.text("state")=="ready_for_review"){
      val adopted=item.text("adoptedSubmissionId").isNotBlank()||submitted;val assignee=latest.text("assigneeId")==owner
      if(!assignee)Text("仅当前任务执行人可提交，请先在任务页认领。")
