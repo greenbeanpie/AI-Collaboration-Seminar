@@ -14,13 +14,32 @@ public sealed partial class WorkspaceView
         var panel = Page("项目创建向导", "先保存私有草稿，再上传资料、生成目标与任务并人工核对。创建确认前不会建立正式项目。");
         var name = Ui.Field("项目名称", saved.Text("name"), max: 100); var brief = Ui.Field("项目背景与要求", saved.Text("brief"), true); var description = Ui.Field("项目说明", saved.Text("description"), true, 2000);
         var teamSize = Ui.Field("预计团队人数（1–100）", saved.Text("teamSize") is { Length: > 0 } size ? size : "1", max: 3);
+        JsonNode? createdDraft = null;
         JsonObject Draft() => new() { ["name"] = name.Text, ["brief"] = brief.Text, ["description"] = description.Text, ["teamSize"] = teamSize.Text };
         TrackDraft(key, Draft, name, brief, description, teamSize);
         panel.Children.Add(Ui.Card(name, description, brief, teamSize, Action("保存并进入创建草稿", async () =>
         {
-            if (name.Text.Trim().Length == 0 || !int.TryParse(teamSize.Text, out var size) || size < 1 || size > 100) throw new InvalidOperationException("请填写项目名称和 1–100 的团队人数。");
-            var draft = await WriteAsync("POST", "/creation-drafts", new JsonObject { ["name"] = name.Text.Trim(), ["description"] = description.Text, ["brief"] = brief.Text, ["teamSize"] = size, ["aiCollaborationEnabled"] = true, ["planningMode"] = "automatic", ["assignmentMode"] = "automatic", ["evaluationMode"] = "automatic", ["progressionMode"] = "automatic", ["inviteUsernames"] = new JsonArray(), ["inviteLabels"] = new JsonArray() });
-            var createdId = draft.Text("id"); await repository.Store.SaveDraftAsync(key, new JsonObject { ["draftId"] = createdId }); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(createdId, ct));
+            var submitted = Draft();
+            if (submitted.Text("name").Trim().Length == 0 || !int.TryParse(submitted.Text("teamSize"), out var size) || size < 1 || size > 100) throw new InvalidOperationException("请填写项目名称和 1–100 的团队人数。");
+            createdDraft ??= await WriteAsync("POST", "/creation-drafts", new JsonObject { ["name"] = submitted.Text("name").Trim(), ["description"] = submitted.Text("description"), ["brief"] = submitted.Text("brief"), ["teamSize"] = size, ["aiCollaborationEnabled"] = true, ["planningMode"] = "automatic", ["assignmentMode"] = "automatic", ["evaluationMode"] = "automatic", ["progressionMode"] = "automatic", ["inviteUsernames"] = new JsonArray(), ["inviteLabels"] = new JsonArray() });
+            var createdId = createdDraft.Text("id");
+            if (createdId.Length == 0) throw new InvalidOperationException("服务端未返回创建草稿标识。");
+            async Task SaveCreatedAsync()
+            {
+                var current = Draft(); var next = createdDraft?["payload"]?.DeepClone() as JsonObject ?? throw new InvalidOperationException("服务端未返回创建草稿内容。");
+                foreach (var field in new[] { "name", "description", "brief", "teamSize" }) next[field] = current[field].Copy();
+                await repository.Store.SaveDraftAsync("creation-payload:" + createdId, new JsonObject { ["expectedRevision"] = createdDraft?["revision"].Copy(), ["payload"] = next });
+                await repository.Store.SaveDraftAsync(key, new JsonObject { ["draftId"] = createdId });
+            }
+            await Task.WhenAll(draftWrites.ToArray());
+            if (!JsonNode.DeepEquals(Draft(), submitted))
+            {
+                // Future typing must update the existing server draft, rather than creating another one.
+                saveCurrentDraft = SaveCreatedAsync; await SaveCreatedAsync();
+                foreach (var field in new[] { name, brief, description, teamSize }) field.TextChanged += (_, _) => { draftDirty = true; RegisterDraftWrite(SaveCreatedAsync()); };
+                StatusChanged?.Invoke("创建草稿已建立；继续输入已保留。再次点击可进入同一草稿核对。 "); return;
+            }
+            await repository.Store.SaveDraftAsync(key, new JsonObject { ["draftId"] = createdId }); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(createdId, ct));
         }, primary: true)));
         return panel;
     }
@@ -36,19 +55,27 @@ public sealed partial class WorkspaceView
         var enabled = new ToggleSwitch { Header = "启用项目 AI 协作", IsOn = editable.Flag("aiCollaborationEnabled") };
         var choices = new Dictionary<string, ComboBox>(); var modes = Ui.Stack();
         foreach (var (key, label) in new[] { ("planningMode", "任务规划"), ("assignmentMode", "任务分工"), ("evaluationMode", "提交验收"), ("progressionMode", "项目推进") }) { var box = Ui.Choice(label, [("manual", "人工处理"), ("automatic", "AI 自动处理")], editable.Text(key)); choices[key] = box; modes.Children.Add(box); }
-        JsonObject CurrentPayload()
+        JsonObject CurrentPayload(bool validate = false)
         {
             var copy = (JsonObject)payload.DeepClone(); copy["name"] = name.Text.Trim(); copy["description"] = description.Text; copy["brief"] = brief.Text;
-            if (due.Text.Length > 0) { if (!DateOnly.TryParseExact(due.Text, "yyyy-MM-dd", out _)) throw new InvalidOperationException("截止日期格式应为 YYYY-MM-DD。"); copy["deadlineDate"] = due.Text; } else copy.Remove("deadlineDate");
-            if (!int.TryParse(teamSize.Text, out var size) || size < 1 || size > 100) throw new InvalidOperationException("团队人数应为 1–100。");
-            copy["teamSize"] = size; copy["aiCollaborationEnabled"] = enabled.IsOn;
+            if (due.Text.Length > 0) { if (validate && !DateOnly.TryParseExact(due.Text, "yyyy-MM-dd", out _)) throw new InvalidOperationException("截止日期格式应为 YYYY-MM-DD。"); copy["deadlineDate"] = due.Text; } else copy.Remove("deadlineDate");
+            var validSize = int.TryParse(teamSize.Text, out var size) && size >= 1 && size <= 100;
+            if (validate && !validSize) throw new InvalidOperationException("团队人数应为 1–100。");
+            copy["teamSize"] = validSize ? JsonValue.Create(size) : JsonValue.Create(teamSize.Text); copy["aiCollaborationEnabled"] = enabled.IsOn;
             foreach (var choice in choices) copy[choice.Key] = choice.Value.Value();
             var usernames = inviteUsernames.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries); var labels = inviteLabels.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (usernames.Length > 99 || labels.Length > 99 || usernames.Any(x => x.Length > 64) || labels.Any(x => x.Length > 80) || labels.Distinct().Count() != labels.Length) throw new InvalidOperationException("邀请用户名和标识最多各 99 个；用户名最长 64 字，标识最长 80 字且不能重复。");
+            if (validate && (usernames.Length > 99 || labels.Length > 99 || usernames.Any(x => x.Length > 64) || labels.Any(x => x.Length > 80) || labels.Distinct().Count() != labels.Length)) throw new InvalidOperationException("邀请用户名和标识最多各 99 个；用户名最长 64 字，标识最长 80 字且不能重复。");
             copy["inviteUsernames"] = new JsonArray(usernames.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()); copy["inviteLabels"] = new JsonArray(labels.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()); return copy;
         }
         TrackDraft("creation-payload:" + id, () => new JsonObject { ["expectedRevision"] = expectedRevision.Copy(), ["payload"] = CurrentPayload() }, new Control[] { name, description, brief, due, teamSize, inviteUsernames, inviteLabels, enabled }.Concat(choices.Values).ToArray());
-        panel.Children.Add(Ui.Card(name, description, brief, due, teamSize, enabled, modes, inviteUsernames, inviteLabels, Action("保存草稿配置", async () => { await WriteAsync("PATCH", path, new JsonObject { ["expectedRevision"] = expectedRevision.Copy(), ["payload"] = CurrentPayload() }); await repository.Store.DeleteDraftAsync("creation-payload:" + id); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(id, ct)); }, "保存配置后旧任务预览将失效，需重新核对。")));
+        JsonObject PayloadDraft() => new() { ["expectedRevision"] = expectedRevision.Copy(), ["payload"] = CurrentPayload() };
+        panel.Children.Add(Ui.Card(name, description, brief, due, teamSize, enabled, modes, inviteUsernames, inviteLabels, Action("保存草稿配置", async () =>
+        {
+            var submitted = PayloadDraft(); var submittedPayload = CurrentPayload(validate: true);
+            await WriteAsync("PATCH", path, new JsonObject { ["expectedRevision"] = expectedRevision.Copy(), ["payload"] = submittedPayload });
+            if (!await FinishCreationSaveAsync("creation-payload:" + id, submitted, PayloadDraft)) return;
+            draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(id, ct));
+        }, "保存配置后旧任务预览将失效，需重新核对。")));
         panel.Children.Add(Ui.Label("创建资料", 20));
         foreach (var file in draft.Rows("files")) panel.Children.Add(Ui.Card(Ui.Label(file.Text("name"), 18), Ui.Label(file.Flag("textReady") ? "正文可用于 AI" : "正文尚未就绪"), Ui.Label(file.Text("textError")), Ui.Label(file.Text("mediaError"))));
         if (AddCreationFileRequested != null) panel.Children.Add(Action("上传创建资料", async () => { await AddCreationFileRequested(id); await ReplaceAsync(ct => CreationDraftAsync(id, ct)); }));
@@ -111,21 +138,36 @@ public sealed partial class WorkspaceView
             var name = Ui.Field("任务名称", item.Text("title"), max: 200); var detail = Ui.Field("任务说明", item.Text("detail"), true); var criteria = Ui.Field("验收标准", item.Text("criteria"), true); var hours = Ui.Field("预计投入小时（0.25–200）", item.Text("effortHours") is { Length: > 0 } effort ? effort : "1", max: 8); var box = Ui.Stack(name, detail, criteria, hours); var card = Ui.Card(box); var entry = (item, name, detail, criteria, hours, card); tasks.Add(entry); cards.Children.Add(card);
             TrackDraft("creation-preview:" + id, CurrentDraft, name, detail, criteria, hours);
             if (item.Rows("citations").Count > 0) box.Children.Add(Ui.Label("已保留 " + item.Rows("citations").Count + " 条固定来源引用。"));
-            box.Children.Add(Action("删除此预览任务", () => { tasks.Remove(entry); cards.Children.Remove(card); return Task.CompletedTask; }, "从当前预览移除此任务？正式项目尚未创建。"));
+            box.Children.Add(Action("删除此预览任务", () => { tasks.Remove(entry); cards.Children.Remove(card); draftDirty = true; RegisterDraftWrite(repository.Store.SaveDraftAsync("creation-preview:" + id, CurrentDraft())); return Task.CompletedTask; }, "从当前预览移除此任务？正式项目尚未创建。"));
         }
         foreach (var item in preview.Rows("tasks")) Add(item);
         TrackDraft("creation-preview:" + id, CurrentDraft, goalTitle, goalDetail);
-        panel.Children.Add(Action("添加预览任务", () => { Add(null); return Task.CompletedTask; }));
+        panel.Children.Add(Action("添加预览任务", () => { Add(null); draftDirty = true; RegisterDraftWrite(repository.Store.SaveDraftAsync("creation-preview:" + id, CurrentDraft())); return Task.CompletedTask; }));
         panel.Children.Add(Action("保存人工核对的预览", async () =>
         {
-            if (goalTitle.Text.Trim().Length == 0) throw new InvalidOperationException("请填写项目主目标。"); var items = new JsonArray(); var keys = tasks.Select(x => x.Original.Text("key")).ToHashSet();
-            foreach (var task in tasks)
+            var submitted = CurrentDraft();
+            if (submitted["goal"].Text("title").Trim().Length == 0) throw new InvalidOperationException("请填写项目主目标。"); var items = new JsonArray(); var keys = submitted.Rows("tasks").Select(x => x.Text("key")).ToHashSet();
+            foreach (var task in submitted.Rows("tasks"))
             {
-                if (task.Title.Text.Trim().Length == 0 || task.Criteria.Text.Trim().Length == 0 || !double.TryParse(task.Hours.Text, out var hours) || !double.IsFinite(hours) || hours < .25 || hours > 200) throw new InvalidOperationException("每项任务需要名称、验收标准和 0.25–200 的投入小时。");
-                var item = (JsonObject)task.Original.DeepClone(); item["title"] = task.Title.Text.Trim(); item["detail"] = task.Detail.Text; item["criteria"] = task.Criteria.Text.Trim(); item["effortHours"] = hours; item["dependsOn"] = new JsonArray(item.Rows("dependsOn").Where(x => keys.Contains(x.ToString())).Select(x => x.DeepClone()).ToArray()); items.Add(item);
+                if (task.Text("title").Trim().Length == 0 || task.Text("criteria").Trim().Length == 0 || !double.TryParse(task.Text("effortHours"), out var hours) || !double.IsFinite(hours) || hours < .25 || hours > 200) throw new InvalidOperationException("每项任务需要名称、验收标准和 0.25–200 的投入小时。");
+                var item = (JsonObject)task.DeepClone(); item["title"] = task.Text("title").Trim(); item["detail"] = task.Text("detail"); item["criteria"] = task.Text("criteria").Trim(); item["effortHours"] = hours; item["dependsOn"] = new JsonArray(item.Rows("dependsOn").Where(x => keys.Contains(x.ToString())).Select(x => x.DeepClone()).ToArray()); items.Add(item);
             }
-            await WriteAsync("POST", path + "/preview", new JsonObject { ["expectedRevision"] = expected.Copy(), ["mode"] = "manual", ["goal"] = new JsonObject { ["title"] = goalTitle.Text.Trim(), ["detail"] = goalDetail.Text }, ["tasks"] = items, ["regenerate"] = true }); await repository.Store.DeleteDraftAsync("creation-preview:" + id); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(id, ct));
+            await WriteAsync("POST", path + "/preview", new JsonObject { ["expectedRevision"] = submitted["expectedRevision"].Copy(), ["mode"] = "manual", ["goal"] = new JsonObject { ["title"] = submitted["goal"].Text("title").Trim(), ["detail"] = submitted["goal"].Text("detail") }, ["tasks"] = items, ["regenerate"] = true });
+            if (!await FinishCreationSaveAsync("creation-preview:" + id, submitted, CurrentDraft)) return;
+            draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(id, ct));
         }, "保存此目标与任务预览？保留各项任务的原始来源引用。", true));
         return panel;
+    }
+    private async Task<bool> FinishCreationSaveAsync(string key, JsonObject submitted, Func<JsonObject> current)
+    {
+        await Task.WhenAll(draftWrites.ToArray());
+        if (JsonNode.DeepEquals(current(), submitted))
+        {
+            await repository.Store.DeleteDraftAsync(key);
+            if (JsonNode.DeepEquals(current(), submitted)) return true;
+        }
+        await repository.Store.SaveDraftAsync(key, current());
+        StatusChanged?.Invoke("提交时的内容已保存；继续编辑的内容保留在当前页面和本机草稿中。原始版本已保留，请刷新后核对版本再提交。");
+        return false;
     }
 }

@@ -85,10 +85,11 @@ public sealed partial class WorkspaceView
             panel.Children.Add(Ui.Card(text, Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() })), Action("提交本轮成果", async () =>
             {
                 if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("请输入成果说明。");
-                var submittedText=text.Text;await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = submittedText, ["expectedRevision"] = submissionRevision.Copy() });
-                var latestFiles = (await repository.GetAsync(path + "/files?limit=100", PageToken)).Rows().Where(f => f.Text("archivedAt").Length == 0 && f.Text("materialArchivedAt").Length == 0 && f.Text("deletedAt").Length == 0).ToList();
+                var submittedText = text.Text; var submittedRevision = submissionRevision.Copy(); var submissionToken = PageToken;
+                await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = submittedText, ["expectedRevision"] = submittedRevision.Copy() });
+                var latestFiles = await FreshSubmissionFilesAsync(path, submissionToken);
                 if (latestFiles.Count > 10) throw new InvalidOperationException("当前成果文件超过 10 个，请先归档不参与本轮的文件。");
-                await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submissionRevision.Copy(), ["body"] = text.Text.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
+                await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submittedRevision, ["body"] = submittedText.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
                 if(text.Text!=submittedText){await repository.Store.SaveDraftAsync(key,new JsonObject{["body"]=text.Text,["expectedRevision"]=submissionRevision.Copy()});StatusChanged?.Invoke("成果已提交；继续输入的内容仍保留为本机草稿。");return;}
                 await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => TaskDetailAsync(id, ct));
             }, "将固定当前文件版本并提交成果。项目启用 AI 时可能自动触发评价。", true)));
@@ -107,6 +108,27 @@ public sealed partial class WorkspaceView
         panel.Children.Add(Action("任务讨论", () => ReplaceAsync(ct => TaskCommentsAsync(id, ct))));
         panel.Children.Add(Action("私密问询", () => ReplaceAsync(ct => TaskInquiriesAsync(id, ct))));
         return panel;
+    }
+    private async Task<List<JsonNode>> FreshSubmissionFilesAsync(string path, CancellationToken token)
+    {
+        var files = new Dictionary<string, JsonNode>(); var cursors = new HashSet<string>(); string? cursor = null;
+        do
+        {
+            token.ThrowIfCancellationRequested();
+            var page = await repository.GetFreshAsync(path + "/files?limit=100" + (cursor == null ? "" : "&cursor=" + Escape(cursor)), token);
+            if (page?["items"] is not JsonArray) throw new InvalidOperationException("无法核对完整成果文件列表，请刷新后重试。");
+            foreach (var file in page.Rows())
+            {
+                var materialId = file.Text("materialId");
+                if (materialId.Length == 0) throw new InvalidOperationException("成果文件缺少标识，无法安全提交。");
+                files[materialId] = file;
+            }
+            cursor = page.Text("nextCursor");
+            if (cursor.Length > 0 && !cursors.Add(cursor)) throw new InvalidOperationException("成果文件分页游标重复，请刷新后重试。");
+        } while (cursor.Length > 0);
+        var active = files.Values.Where(f => f.Text("archivedAt").Length == 0 && f.Text("materialArchivedAt").Length == 0 && f.Text("deletedAt").Length == 0).ToList();
+        if (active.Any(f => f.Text("versionId").Length == 0)) throw new InvalidOperationException("成果文件尚无可固定的版本，请刷新后重试。");
+        return active;
     }
     private async Task<UIElement> TaskCommentsAsync(string id, CancellationToken token)
     {
