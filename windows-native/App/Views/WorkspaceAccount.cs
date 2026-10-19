@@ -6,23 +6,22 @@ namespace Buwei.Windows.Views;
 
 public sealed partial class WorkspaceView
 {
-    private Task<UIElement> AccountAsync(CancellationToken token)
+    private async Task<UIElement> AccountAsync(CancellationToken token)
     {
         var panel = Page("账户与安全", "账户设置仅修改当前登录账户。");
         panel.Children.Add(Ui.Label(repository.User.Text("username"), 20));
         panel.Children.Add(Action("全局个人资料与隐私", () => ReplaceAsync(PersonalProfileAsync)));
-        var name = Ui.Field("显示名称", repository.User.Text("displayName"), max: 64);
+        var profileDraft = await repository.Store.LoadDraftAsync("account-profile");
+        var name = Ui.Field("显示名称", profileDraft?["displayName"]?.ToString() ?? repository.User.Text("displayName"), max: 64);
+        TrackDraft("account-profile", () => new JsonObject { ["displayName"] = name.Text }, name);
         panel.Children.Add(Ui.Card(name, Action("保存显示名称", async () => { if (string.IsNullOrWhiteSpace(name.Text)) return; await WriteAsync("PATCH", "/auth/profile", new JsonObject { ["displayName"] = name.Text.Trim() }); StatusChanged?.Invoke("显示名称已保存。"); })));
         var current = new PasswordBox { Header = "当前密码", MaxLength = 128 }; var password = new PasswordBox { Header = "新密码", MaxLength = 128 }; var repeat = new PasswordBox { Header = "确认新密码", MaxLength = 128 };
-        current.PasswordChanged += (_, _) => sensitiveInput = current.Password.Length + password.Password.Length + repeat.Password.Length > 0;
-        password.PasswordChanged += (_, _) => sensitiveInput = current.Password.Length + password.Password.Length + repeat.Password.Length > 0;
-        repeat.PasswordChanged += (_, _) => sensitiveInput = current.Password.Length + password.Password.Length + repeat.Password.Length > 0;
         panel.Children.Add(Ui.Card(Ui.Label("修改密码", 20), current, password, repeat, Action("修改密码", async () =>
         { if (password.Password != repeat.Password) throw new InvalidOperationException("两次新密码不一致。"); if (password.Password.Length < 10) throw new InvalidOperationException("新密码至少需要 10 个字符。"); await WriteAsync("POST", "/auth/password", new JsonObject { ["currentPassword"] = current.Password, ["newPassword"] = password.Password }); current.Password = ""; password.Password = ""; repeat.Password = ""; }, "确认修改密码？修改后可能需要重新登录。")));
         var email = Ui.Field("恢复邮箱", max: 254); var emailPassword = new PasswordBox { Header = "当前密码", MaxLength = 128 };
-        emailPassword.PasswordChanged += (_, _) => sensitiveInput = emailPassword.Password.Length > 0 || current.Password.Length + password.Password.Length + repeat.Password.Length > 0;
+        foreach (var input in new[] { current, password, repeat, emailPassword }) input.PasswordChanged += (_, _) => sensitiveInput = emailPassword.Password.Length + current.Password.Length + password.Password.Length + repeat.Password.Length > 0;
         panel.Children.Add(Ui.Card(Ui.Label("恢复邮箱", 20), email, emailPassword, Action("绑定或修改恢复邮箱", async () => { await WriteAsync("POST", "/auth/recovery-email", new JsonObject { ["email"] = email.Text.Trim(), ["currentPassword"] = emailPassword.Password }); emailPassword.Password = ""; StatusChanged?.Invoke("申请已受理，请检查新邮箱并核对验证链接。"); }), Action("解绑恢复邮箱", async () => { await WriteAsync("DELETE", "/auth/recovery-email", new JsonObject { ["currentPassword"] = emailPassword.Password }); emailPassword.Password = ""; }, "确认解绑当前恢复邮箱？")));
-        return Task.FromResult<UIElement>(panel);
+        return panel;
     }
     private async Task<UIElement> NotificationsAsync(CancellationToken token)
     {
@@ -35,7 +34,7 @@ public sealed partial class WorkspaceView
             var box = Ui.Stack(Ui.Label(row.Text("title"), 18), Ui.Label(row.Text("body")), Ui.Label(row.Text("createdAt")));
             if (row.Text("readAt").Length == 0) box.Children.Add(Action("标为已读", async () => { await WriteAsync("POST", "/notifications/" + Escape(row.Text("id")) + "/read"); await NavigateAsync("notifications"); }));
             var href = row.Text("url");
-            if (href.StartsWith("/app/projects/", StringComparison.Ordinal) && !href.Contains('\\')) box.Children.Add(Action("查看相关内容", () => NavigateAsync(href.Split('?', '#')[0])));
+            if (href.StartsWith("/app/", StringComparison.Ordinal) && !href.Contains('\\')) box.Children.Add(Action("查看相关内容", () => NavigateAsync(href)));
             box.Children.Add(Action("收起通知", async () => { await WriteAsync("POST", "/notifications/" + Escape(row.Text("id")) + "/dismiss"); await NavigateAsync("notifications"); })); return Ui.Card(box);
         }, token);
         return panel;

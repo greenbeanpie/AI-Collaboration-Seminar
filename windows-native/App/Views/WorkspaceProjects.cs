@@ -53,9 +53,9 @@ public sealed partial class WorkspaceView
         var payload = draft?["payload"]?.DeepClone() as JsonObject;
         var name = Ui.Field("项目名称", restored.Text("name") is { Length: > 0 } n ? n : payload.Text("name"), max: 100);
         var description = Ui.Field("项目说明", restored.Text("description") is { Length: > 0 } d ? d : payload.Text("description"), true, 2000);
-        var goal = Ui.Field("主目标", payload?["goal"].Text("title"), max: 200);
-        var goalDetail = Ui.Field("目标说明", payload?["goal"].Text("detail"), true);
-        var due = Ui.Field("截止日期（YYYY-MM-DD，可留空）", payload.Text("deadlineDate"), max: 10);
+        var goal = Ui.Field("主目标", restored?["goalTitle"]?.ToString() ?? payload?["goal"].Text("title"), max: 200);
+        var goalDetail = Ui.Field("目标说明", restored?["goalDetail"]?.ToString() ?? payload?["goal"].Text("detail"), true);
+        var due = Ui.Field("截止日期（YYYY-MM-DD，可留空）", restored?["deadlineDate"]?.ToString() ?? payload.Text("deadlineDate"), max: 10);
         var status = Ui.Label(draft == null ? "尚未创建服务端草稿" : "服务端草稿已恢复 · 版本 " + draft.Text("revision"));
         TrackDraft(key, () => new JsonObject { ["draftId"] = draftId, ["name"] = name.Text, ["description"] = description.Text, ["goalTitle"] = goal.Text, ["goalDetail"] = goalDetail.Text, ["deadlineDate"] = due.Text }, name, description, goal, goalDetail, due);
         panel.Children.Add(Ui.Card(name, description, goal, goalDetail, due, status));
@@ -96,14 +96,14 @@ public sealed partial class WorkspaceView
     private async Task<UIElement> ActivityAsync(CancellationToken token)
     {
         var panel = Page("项目活动", "按服务端时间展示项目操作历史。");
-        await AddPagedAsync(panel, Base + "/events?limit=30", row => Ui.Card(Ui.Label(row.Id("summary", "action", "type"), 18), Ui.Label(row.Id("actorName", "displayName")), Ui.Label(row.Text("createdAt"))), token);
+        await AddPagedAsync(panel, Base + "/events?limit=30", row => Ui.Card(Ui.Label(row.Id("summary", "action", "type"), 18), Ui.Label(row.Id("actorName", "displayName")), Ui.Label(row.Id("occurredAt", "createdAt"))), token);
         return panel;
     }
     private async Task<UIElement> ProjectSettingsAsync(CancellationToken token)
     {
         var current = await repository.GetAsync(Base, token); var goal = await repository.GetAsync(Base + "/goal", token);
         var panel = Page("项目设置", "所有修改携带读取时的版本，发生冲突时保留当前输入。");
-        var name = Ui.Field("项目名称", current.Text("name"), max: 200); var description = Ui.Field("项目说明", current.Text("description"), true, 2000);
+        var name = Ui.Field("项目名称", current.Text("name"), max: 100); var description = Ui.Field("项目说明", current.Text("description"), true, 2000);
         var title = Ui.Field("项目主目标", goal.Text("title"), max: 200); var detail = Ui.Field("目标说明", goal.Text("detail"), true);
         var edit = membership.Text("role") == "owner";
         var save = Action("保存项目信息", async () => { await WriteAsync("PATCH", Base, new JsonObject { ["expectedRevision"] = current?["revision"].Copy(), ["name"] = name.Text.Trim(), ["description"] = description.Text.Trim() }); await NavigateAsync("project-settings"); }); save.IsEnabled = edit;

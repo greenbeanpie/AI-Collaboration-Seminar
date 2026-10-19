@@ -62,7 +62,8 @@ public sealed partial class WorkspaceView
         if (type == "material")
         {
             var path = Base + "/materials/" + Escape(id); var material = await repository.GetAsync(path, token); var version = material?["currentVersion"];
-            var editor = new RichDocumentEditor(version?["doc"], !(material.Flag("canEdit") && material.Text("archivedAt").Length == 0));
+            var validDocument = version?["doc"] is JsonObject && version["doc"].Text("type") == "doc";
+            var editor = new RichDocumentEditor(version?["doc"], !(material.Flag("canEdit") && material.Text("archivedAt").Length == 0 && validDocument));
             var editorHost = Ui.Stack(editor);
             var expected = material?["revision"].Copy();
             var key = "material:" + projectId + ":" + id; var saved = await repository.Store.LoadDraftAsync(key);
@@ -72,8 +73,9 @@ public sealed partial class WorkspaceView
             saveCurrentDraft = () => repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["revision"] = expected.Copy() });
             if (saved?["doc"] != null && material.Flag("canEdit")) panel.Children.Add(Action("恢复本机正文草稿", () => { editor = new RichDocumentEditor(saved["doc"]); BindEditor(); expected = saved["revision"].Copy(); editorHost.Children.Clear(); editorHost.Children.Add(editor); StatusChanged?.Invoke("已恢复基于版本 " + saved.Text("revision") + " 的本机草稿；保存时仍核对此版本。"); return Task.CompletedTask; }));
             panel.Children.Add(editorHost);
+            if (!validDocument) panel.Children.Add(Ui.Card(Ui.Label("当前正文结构无法安全编辑；保留原内容，仅显示已有 Markdown。"), Ui.Markdown(version.Text("markdown"))));
             foreach (var file in version.Rows("attachments")) { panel.Children.Add(Ui.Label(file.Text("name"))); if (OpenAttachmentRequested != null && file.Text("availability") != "unavailable") panel.Children.Add(Action("打开附件", () => OpenAttachmentRequested(projectId!, file.Text("fileId")))); }
-            if (material.Flag("canEdit") && material.Text("archivedAt").Length == 0)
+            if (material.Flag("canEdit") && material.Text("archivedAt").Length == 0 && validDocument)
             {
                 panel.Children.Add(Action("暂存正文到本机", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["revision"] = expected.Copy() })));
                 panel.Children.Add(Action("保存正文新版本", async () =>
@@ -81,7 +83,7 @@ public sealed partial class WorkspaceView
                     var doc = editor.Document; await repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = doc.DeepClone(), ["revision"] = expected.Copy() });
                     var result = await WriteAsync("PUT", path, new JsonObject { ["expectedRevision"] = expected.Copy(), ["doc"] = doc, ["attachmentIds"] = new JsonArray(version.Rows("attachments").Select(x => x["fileId"].Copy()).ToArray()) }, true);
                     if (result.Flag("queued") || result.Flag("offlinePending")) { StatusChanged?.Invoke("正文已保存到本机等待同步；服务端版本未更新。"); return; }
-                    await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => ResourceAsync(type, id, ct));
+                    await repository.Store.DeleteDraftAsync(key); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => ResourceAsync(type, id, ct));
                 }, primary: true));
             }
             if (material.Flag("canArchive")) panel.Children.Add(Action(material.Text("archivedAt").Length == 0 ? "归档文档" : "恢复文档", async () => { await WriteAsync("POST", path + (material.Text("archivedAt").Length == 0 ? "/archive" : "/unarchive"), new JsonObject { ["expectedRevision"] = material?["revision"].Copy() }); await NavigateAsync("data"); }, "修改归档状态？历史固定版本及引用会保留。"));
@@ -114,13 +116,20 @@ public sealed partial class WorkspaceView
             var data = await repository.GetAsync(path + (query.Text.Trim().Length == 0 ? "?offset=" + offset : "/search?query=" + Escape(query.Text.Trim()) + "&offset=" + offset), token);
             foreach (var entry in data.Rows()) records.Children.Add(Ui.Card(Ui.Label(entry.Id("heading", "excerpt"), 18), Ui.Label(entry.Text("excerpt")), Ui.Label("第 " + entry.Text("pageNumber") + " 页"), Action("打开完整原文", async () =>
             {
-                var detail = await repository.GetAsync(path + "/section?sectionId=" + Escape(entry.Text("sectionId")) + "&offset=0&neighbors=true", PageToken);
-                var text = Ui.Stack(Ui.Heading(entry.Id("heading", "excerpt")), Ui.Label(detail.Text("text")));
-                foreach (var fragment in detail.Rows("fragments")) text.Children.Add(Ui.Label(fragment.Text("quote")));
-                Show(text, PageToken);
+                await ReplaceAsync(ct => ResourceSectionAsync(path, entry.Text("sectionId"), entry.Id("heading", "excerpt"), 0, ct));
             })));
             if (data?["nextOffset"] is JsonValue next && int.TryParse(next.ToString(), out var following)) { if (following <= offset) throw new InvalidOperationException("目录分页未前进，请刷新重试。"); offset = following; records.Children.Add(Action("下一批目录", () => LoadAsync(true))); }
         }
         panel.Children.Add(Ui.Card(query, Action("搜索原文", () => LoadAsync(false)))); panel.Children.Add(records); await LoadAsync(false); return panel;
+    }
+    private async Task<UIElement> ResourceSectionAsync(string path, string sectionId, string title, int offset, CancellationToken token)
+    {
+        var detail = await repository.GetAsync(path + "/section?sectionId=" + Escape(sectionId) + "&offset=" + offset + "&neighbors=true", token);
+        var panel = Ui.Stack(Ui.Heading(title.Length == 0 ? "固定版本原文" : title), Ui.Label("原文覆盖：" + detail.Text("coverage")), Ui.Label(detail.Text("text")));
+        foreach (var fragment in detail.Rows("fragments")) panel.Children.Add(Ui.Card(Ui.Label("第 " + fragment.Text("pageNumber") + " 页"), Ui.Label(fragment.Text("quote"))));
+        if (int.TryParse(detail.Text("nextOffset"), out var next))
+        { if (next <= offset) throw new InvalidOperationException("原文读取位置没有前进，请刷新后重试。"); panel.Children.Add(Action("继续读取原文", () => ReplaceAsync(ct => ResourceSectionAsync(path, sectionId, title, next, ct)))); }
+        if (offset > 0) panel.Children.Add(Action("从本节开头阅读", () => ReplaceAsync(ct => ResourceSectionAsync(path, sectionId, title, 0, ct))));
+        return panel;
     }
 }

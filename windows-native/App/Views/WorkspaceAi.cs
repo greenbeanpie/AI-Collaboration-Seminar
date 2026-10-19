@@ -11,7 +11,7 @@ public sealed partial class WorkspaceView
         var capabilities = await repository.GetAsync("/capabilities", token);
         var panel = Page("项目 AI", "对话可引用当前项目资料；AI 提供的建议需要人工核对。发送操作可能调用已配置模型并产生费用。");
         var key = "chat:" + projectId; var draft = await repository.Store.LoadDraftAsync(key);
-        var composer = Ui.Field("询问项目 AI", draft.Text("content"), true, 8000);
+        var composer = Ui.Field("询问项目 AI", draft.Text("content"), true, 4000);
         TrackDraft(key, () => new JsonObject { ["content"] = composer.Text }, composer);
         var send = Action("发送问题", async () =>
         {
@@ -48,7 +48,7 @@ public sealed partial class WorkspaceView
     {
         var panel = Page("AI 补位与成果采纳", "参考资料固定版本后发起任务；生成草稿须人工复核后采纳。");
         await AddPagedAsync(panel, Base + "/agent-sessions?status=all&limit=30", row => Ui.Card(Ui.Label(row.Id("title", "instruction"), 18), Ui.Label(Ui.Status(row.Text("status"))), Action("查看会话与草稿", () => ReplaceAsync(ct => AgentSessionDetailAsync(row.Text("sessionId"), ct)))), token);
-        var instruction = Ui.Field("补位目标与要求", "", true, 8000);
+        var instruction = Ui.Field("补位目标与要求", "", true, 4000);
         var mode = Ui.Choice("工作方式", [("guide", "引导协作"), ("do", "直接起草"), ("review_only", "仅审阅")]);
         var sources = (await repository.GetAsync(Base + "/sources?limit=100", token)).Rows(); var materials = (await repository.GetAsync(Base + "/materials?limit=100", token)).Rows();
         var sourceSelection = new Dictionary<string, CheckBox>(); var materialSelection = new Dictionary<string, CheckBox>();

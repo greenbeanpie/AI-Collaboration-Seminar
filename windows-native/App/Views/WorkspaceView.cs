@@ -97,9 +97,14 @@ public sealed partial class WorkspaceView : UserControl
         try
         {
             if (repository.AccountId == null) { Show(Ui.Stack(Ui.Heading("欢迎使用补位"), Ui.Label("请先使用窗口顶部的登录按钮授权此客户端。")), token); return; }
+            var query = new Dictionary<string, string>();
+            var separator = route.IndexOf('?');
+            if (separator >= 0) { foreach (var part in route[(separator + 1)..].Split('&')) { var pair = part.Split('=', 2); if (pair.Length == 2) query[Uri.UnescapeDataString(pair[0])] = Uri.UnescapeDataString(pair[1].Split('#')[0]); } route = route[..separator]; }
+            route = route.Split('#')[0];
             if (route.StartsWith("/app/")) route = route[5..];
             if (route is "/app" or "app" or "") route = "projects";
-            route = route switch { "profile" or "profile/settings" => "account", "profile/settings/notifications" => "notifications", "profile/settings/security" => "account", "profile/settings/personal-profile" => "personal-profile", _ => route };
+            route = route switch { "profile" or "profile/settings/privacy" or "profile/settings/personal-profile" => "personal-profile", "profile/settings" or "profile/settings/profile" or "profile/settings/security" => "account", "profile/settings/notifications" => "notifications", "profile/settings/agent-bridges" or "agent-bridges/connect" => "bridge", "profile/settings/accounts" or "profile/settings/system" or "admin/accounts" => "admin", "profile/settings/ai" or "admin/ai" => "admin-ai", "projects/new/wizard" => "advanced-create", "projects/new" => "create-project", "support/help" => "support", _ => route };
+            if (route.StartsWith("support/", StringComparison.Ordinal) && Guid.TryParse(route[8..], out _)) { Show(await SupportConversationAsync(route[8..], token), token); return; }
             if (route.StartsWith("projects/"))
             {
                 var parts = route.Split('/');
@@ -108,11 +113,16 @@ public sealed partial class WorkspaceView : UserControl
                 token.ThrowIfCancellationRequested(); BuildNavigation();
                 route = parts.Length > 2 ? parts[2] : "overview";
                 if (route == "tasks" && parts.Length > 3) { Show(await TaskDetailAsync(parts[3], token), token); return; }
+                if (route == "tasks" && query.TryGetValue("task", out var taskId)) { Show(query.GetValueOrDefault("taskAction") == "inquiries" ? await TaskInquiriesAsync(taskId, token) : await TaskDetailAsync(taskId, token), token); return; }
+                if (route is "sources" or "materials" && parts.Length > 3) { Show(await ResourceAsync(route == "sources" ? "source" : "material", parts[3], token), token); return; }
+                if (route == "data" && query.TryGetValue("resourceId", out var resourceId) && query.GetValueOrDefault("resourceType") is "source" or "material") { Show(await ResourceAsync(query["resourceType"], resourceId, token), token); return; }
+                if (route == "rehearsals" && parts.Length > 3) { Show(await RehearsalAsync(parts[3], token), token); return; }
+                if (route == "settings") route = "project-settings";
             }
             if (projectId == null && route is "overview" or "tasks" or "data" or "team" or "assessment" or "ai" or "activity" or "project-settings" or "rehearsals" or "export") route = "projects";
             var content = route switch
             {
-                "projects" or "dashboard" => await DashboardAsync(token), "create-project" => await CreateProjectAsync(token),
+                "projects" or "dashboard" => await DashboardAsync(token), "create-project" => await CreateProjectAsync(token), "advanced-create" => await AdvancedCreationAsync(token),
                 "join" => await JoinAsync(token), "overview" => await OverviewAsync(token), "tasks" => await TasksAsync(token),
                 "data" or "materials" or "sources" => await DataAsync(token), "team" => await TeamAsync(token),
                 "assessment" or "assessments" or "reviews" => await AssessmentAsync(token), "ai" or "ai-chat" => await AiAsync(token),
@@ -120,7 +130,7 @@ public sealed partial class WorkspaceView : UserControl
                 "rehearsals" or "rehearsal" => await RehearsalsAsync(token), "export" => await ExportAsync(token),
                 "account" or "settings" => await AccountAsync(token), "personal-profile" => await PersonalProfileAsync(token), "notifications" => await NotificationsAsync(token),
                 "support" or "help" => await SupportAsync(token), "bridge" or "agent-bridges" => await BridgeAsync(token),
-                "admin" => await AdminAsync(token), _ => Ui.Stack(Ui.Heading("暂不支持此入口"), Ui.Label("请从侧栏选择当前原生客户端已提供的页面。"))
+                "admin" => await AdminAsync(token), "admin-ai" => await AdminAiAsync(token), _ => Ui.Stack(Ui.Heading("暂不支持此入口"), Ui.Label("请从侧栏选择当前原生客户端已提供的页面。"))
             };
             if (generation == accountGeneration) Show(content, token);
         }
