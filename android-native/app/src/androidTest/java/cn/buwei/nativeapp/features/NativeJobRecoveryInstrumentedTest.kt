@@ -59,7 +59,7 @@ class NativeJobRecoveryInstrumentedTest {
         OutlinedTextField(input,{input=it},label={Text("保留草稿")})
         NativeJobExecution(repository,original,onResumed={resumed.set(it)})
     }}}};waitFor("恢复失败执行")}
-    private fun confirmResume(){compose.onNodeWithText("恢复失败执行").performClick();compose.onNodeWithText("恢复失败执行？").assertExists();compose.onNodeWithText("确认").performClick()}
+    private fun confirmResume(scroll:Boolean=false){val button=compose.onNodeWithText("恢复失败执行");if(scroll)button.performScrollTo();button.performClick();waitFor("恢复失败执行？");compose.onNodeWithText("恢复失败执行？").assertExists();compose.onNodeWithText("确认").performClick()}
     @Test fun confirmationRequiredThenTracksReturnedJobAndKeepsDraft() {
         showJob();assertTrue(writes.isEmpty())
         compose.onNodeWithText("恢复失败执行").performClick();assertTrue(writes.isEmpty());compose.onNodeWithText("返回").performClick();assertTrue(writes.isEmpty())
@@ -94,7 +94,7 @@ class NativeJobRecoveryInstrumentedTest {
         }}
         compose.setContent{NativeTheme{Surface{AiConversationScreen(repository,project)}}}
         waitFor("恢复失败执行");compose.onNodeWithText("询问项目 AI").performTextInput("下一条本机问题草稿");androidx.test.espresso.Espresso.closeSoftKeyboard()
-        confirmResume();waitFor("恢复后的回答");assertEquals(1,writes.size)
+        confirmResume(scroll=true);waitFor("恢复后的回答");assertEquals(1,writes.size)
         assertEquals("/api/v1/jobs/$original/retry",writes.single().path)
         compose.onNodeWithText("下一条本机问题草稿").assertExists()
     }
