@@ -18,8 +18,8 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
     val seen=mutableSetOf<String>();var cursor:String?=null;val rows=mutableListOf<JsonObject>()
     do {
         val page=repository.get(path+(cursor?.let{(if(path.contains('?'))"&"else"?")+"cursor=${Uri.encode(it)}"}?:""))
-        rows+=(page["items"]as? JsonArray?:error("列表响应缺少记录")).map{it.jsonObject}
-        cursor=page.text("nextCursor").takeIf{it.isNotBlank()}
+        rows+=materialAiPageRows(page)
+        cursor=materialAiNextCursor(page)
         if(cursor!=null)check(seen.add(cursor)){"服务返回了重复分页位置，请刷新重试"}
     }while(cursor!=null)
     return rows
@@ -35,7 +35,7 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
     var selected by rememberSaveable(projectId,owner){mutableStateOf<String?>(null)}
     var session by remember(projectId,owner){mutableStateOf<JsonObject?>(null)}
     var aiEnabled by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)}
-    var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var job by remember{mutableStateOf<String?>(null)}
+    var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var job by remember(projectId,owner){mutableStateOf<String?>(null)}
     var mode by rememberSaveable(projectId,owner){mutableStateOf("do")};var instruction by rememberSaveable(projectId,owner){mutableStateOf("")}
     var role by rememberSaveable(projectId,owner){mutableStateOf("")};var task by rememberSaveable(projectId,owner){mutableStateOf<String?>(null)}
     var chosenMaterials by remember(projectId,owner){mutableStateOf<Set<String>>(emptySet())};var chosenSources by remember(projectId,owner){mutableStateOf<Set<String>>(emptySet())}
@@ -48,7 +48,10 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
         materials=aiAllPages(repository,"$base/materials?limit=100");sources=aiAllPages(repository,"$base/sources?limit=100");tasks=aiAllPages(repository,"$base/tasks?limit=100")
         error=null
     }catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
-    LaunchedEffect(projectId,owner,selected,refresh){session=null;selected?.let{id->try{session=repository.get("$base/agent-sessions/${Uri.encode(id)}");job=sessions.firstOrNull{it.text("sessionId")==id}?.text("latestJobId")?.takeIf{it.isNotBlank()&&sessions.first{row->row.text("sessionId")==id}.text("latestRunStatus") in listOf("queued","running","waiting_input","pending")}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}
+    LaunchedEffect(projectId,owner,selected,refresh){session=null;selected?.let{id->try{
+        val current=repository.networkJson("GET","$base/agent-sessions/${Uri.encode(id)}",expectedOwner=owner,expectedEpoch=epoch)
+        session=current;job=materialAiActiveJob(current)
+    }catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}
     LaunchedEffect(projectId,owner){try{drafts.read("agent-composer:$projectId")?.let{saved->instruction=saved.text("instruction");role=saved.text("roleTemplate");mode=saved.text("mode").ifBlank{"do"};task=saved.text("taskId").takeIf{it.isNotBlank()}}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
     fun rememberComposer(){drafts.scheduleSave("agent-composer:$projectId",buildJsonObject{put("instruction",instruction);put("roleTemplate",role);put("mode",mode);put("taskId",task?.let(::JsonPrimitive)?:JsonNull)})}
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -70,7 +73,7 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
             selected=result.text("sessionId");job=result.text("jobId");refresh++
         }},enabled=aiEnabled&&!busy&&(!search||query.isNotBlank())){Text("确认发起协作")}
         HorizontalDivider();Row {Text("协作历史",style=MaterialTheme.typography.titleLarge);TextButton(onClick={refresh++},enabled=!busy){Text("刷新")}}
-        sessions.forEach {row->TextButton(onClick={selected=row.text("sessionId");answer=""}){Text(row.text("title").ifBlank{"AI 协作"}+" · "+mapOf("do" to "起草","guide" to "引导","review_only" to "审阅")[row.text("capability")].orEmpty()+" · "+row.text("createdAt"))}}
+        sessions.forEach {row->TextButton(onClick={selected=row.text("sessionId");job=null;answer=""}){Text(row.text("title").ifBlank{"AI 协作"}+" · "+mapOf("do" to "起草","guide" to "引导","review_only" to "审阅")[row.text("capability")].orEmpty()+" · "+row.text("createdAt"))}}
         session?.let {current->
             Text("当前会话",style=MaterialTheme.typography.titleMedium)
             (current["turns"]as? JsonArray).orEmpty().forEach {element->val turn=element.jsonObject;val payload=turn.obj("payload")
@@ -88,7 +91,7 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
                 Button(onClick={confirm="提交回答并继续引导？这可能继续调用模型。" to {val result=write("$base/agent-sessions/${Uri.encode(selected)}/turns",buildJsonObject{put("content",answer.trim())});job=result.text("jobId");answer="";drafts.remove("agent-answer:$projectId:$selected");refresh++}},enabled=aiEnabled&&!busy&&job==null&&answer.isNotBlank()){Text("提交本轮回答")}
             }
         }
-        job?.takeIf{it.isNotBlank()}?.let{id->NativeJobExecution(repository,id){job=null;refresh++}}
+        job?.takeIf{it.isNotBlank()}?.let{id->NativeJobExecution(repository,id){if(job==id){job=null;refresh++}}}
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     }
     confirm?.let{(notice,action)->AlertDialog(onDismissRequest={confirm=null},title={Text("确认 AI 操作")},text={Text(notice)},confirmButton={TextButton(onClick={confirm=null;busy=true;scope.launch{try{action();error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"操作失败")+"；输入保留，请先核对历史，不会自动重试。"}finally{busy=false}}}){Text("确认")}},dismissButton={TextButton(onClick={confirm=null}){Text("取消")}})}
@@ -109,36 +112,79 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
 }
 
 @Composable internal fun AgentDraftAdoption(repository:ClientRepository,projectId:String,runId:String,status:String,payload:JsonObject,materials:List<JsonObject>,onAdopted:()->Unit) {
-    val originalDoc=payload["doc"]as? JsonObject
+    val owner=repository.accountId;val epoch=repository.epoch
+    val originalDoc=(payload["doc"]as? JsonObject)?.takeIf{it.text("type")=="doc"&&it["content"]is JsonArray}
     val initial=payload.text("markdown").ifBlank{originalDoc?.let(::richPlainText).orEmpty()}
-    var text by rememberSaveable(runId,repository.accountId){mutableStateOf(initial)};var target by rememberSaveable(runId,repository.accountId){mutableStateOf<String?>(null)}
-    var reviewed by remember(runId,target,text){mutableStateOf(false)};var confirm by remember{mutableStateOf(false)};var busy by remember{mutableStateOf(false)}
-    var adopted by remember(runId){mutableStateOf(status=="adopted")};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val drafts=remember(repository){NativeDraftStore(repository)}
-    LaunchedEffect(runId){drafts.read("agent-adoption:$projectId:$runId")?.let{text=it.text("text");target=it.text("target").takeIf{value->value.isNotBlank()}}}
-    fun persist(){drafts.scheduleSave("agent-adoption:$projectId:$runId",buildJsonObject{put("text",text);put("target",target?.let(::JsonPrimitive)?:JsonNull)})}
-    Text("AI 草稿 · ${if(adopted)"已采纳"else"待人工复核"}",style=MaterialTheme.typography.titleMedium)
-    OutlinedTextField(text,{if(it.length<=200000){text=it;persist()}},Modifier.fillMaxWidth(),label={Text("核对并编辑草稿 Markdown")},minLines=4,enabled=!adopted&&!busy)
+    var text by rememberSaveable(runId,owner){mutableStateOf(initial)};var target by rememberSaveable(runId,owner){mutableStateOf<String?>(null)}
     val choices=materials.filter{!it.flag("systemManaged")&&it.text("kind")!="task-file"&&it["canEdit"]?.jsonPrimitive?.booleanOrNull!=false}
-    if(!adopted){Text("采纳到已有成果材料");AiChoice(choices,"materialId","title",target){target=it;persist()};Row{Checkbox(reviewed,{reviewed=it});Text("我已人工复核，确认可保存为正式材料新版本",Modifier.weight(1f))}}
+    val selectedRevision=choices.firstOrNull{it.text("materialId")==target}?.get("revision")?.jsonPrimitive?.intOrNull
+    var reviewed by remember(runId,owner,target,text,selectedRevision,payload){mutableStateOf(false)}
+    var reviewedRevision by remember(runId,owner,target,text,selectedRevision,payload){mutableStateOf<Int?>(null)}
+    var confirm by remember{mutableStateOf(false)};var busy by remember{mutableStateOf(false)}
+    var adopted by remember(runId,owner,status){mutableStateOf(status=="adopted")};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val drafts=remember(repository){NativeDraftStore(repository)}
+    var recoveryLoaded by remember(runId,owner){mutableStateOf(false)}
+    LaunchedEffect(runId,owner){try{drafts.read("agent-adoption:$projectId:$runId",owner?:error("请登录"),epoch)?.let{text=it.text("text");target=it.text("target").takeIf{value->value.isNotBlank()}};recoveryLoaded=true}catch(e:CancellationException){throw e}catch(e:Exception){error="无法读取保留的采纳草稿：${e.message}；不会覆盖旧草稿"}}
+    fun persist(){if(recoveryLoaded)drafts.scheduleSave("agent-adoption:$projectId:$runId",buildJsonObject{put("text",text);put("target",target?.let(::JsonPrimitive)?:JsonNull)},onFailure={error="本机草稿保存失败，请保留页面并复制备份：${it.message}"})}
+    Text("AI 草稿 · ${if(adopted)"已采纳"else"待人工复核"}",style=MaterialTheme.typography.titleMedium)
+    if(originalDoc!=null&&text==initial)Text("未修改时保留原始文档的格式、表格、引用与其他内容块。",style=MaterialTheme.typography.bodySmall)
+    OutlinedTextField(text,{if(it.length<=200000){text=it;persist()}},Modifier.fillMaxWidth(),label={Text("核对并编辑草稿 Markdown")},minLines=4,enabled=!adopted&&!busy&&recoveryLoaded)
+    if(!adopted){Text("采纳到已有成果材料");if(!busy)AiChoice(choices,"materialId","title",target){target=it;persist()};Row{Checkbox(reviewed,{reviewed=it;reviewedRevision=if(it)selectedRevision else null},enabled=!busy&&recoveryLoaded&&selectedRevision!=null);Text("我已人工复核，确认可保存为正式材料新版本",Modifier.weight(1f))}}
     error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-    Button(onClick={confirm=true},enabled=reviewed&&target!=null&&text.isNotBlank()&&!busy&&!adopted&&status=="succeeded"){Text(if(adopted)"已创建正式版本"else"确认复核并采纳")}
-    if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("保存 AI 草稿为新材料版本？")},text={Text("将校验所选材料版本，并保留 AI 原草稿和人工修改。不会自动覆盖其他人的修改。")},confirmButton={TextButton(onClick={confirm=false;busy=true;scope.launch{try {
-        val selected=choices.firstOrNull{it.text("materialId")==target}?:error("目标材料已不可用，请刷新")
-        val latest=repository.networkJson("GET","/api/v1/projects/${Uri.encode(projectId)}/materials/${Uri.encode(target)}")
-        check(latest["revision"]==selected["revision"]){"材料版本已变化，请刷新后重新核对再采纳"}
-        val document=if(text==initial&&originalDoc?.text("type")=="doc")originalDoc else markdownToNativeDoc(text)
-        repository.requestDurably("agent-adoption:$projectId:$runId","POST","/api/v1/projects/${Uri.encode(projectId)}/agent-runs/${Uri.encode(runId)}/adopt",buildJsonObject{put("materialId",target);put("expectedRevision",selected["revision"]?:error("材料版本缺失"));put("reviewed",true);put("doc",document);put("markdown",text)})
-        adopted=true;drafts.remove("agent-adoption:$projectId:$runId");onAdopted()
-    }catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"采纳失败")+"；编辑仍保留，请先核对历史版本。"}finally{busy=false}}}){Text("确认采纳")}},dismissButton={TextButton(onClick={confirm=false}){Text("取消")}})
+    val hasContent=text.isNotBlank()||(originalDoc!=null&&text==initial)
+    Button(onClick={confirm=true},enabled=recoveryLoaded&&reviewed&&reviewedRevision!=null&&target!=null&&hasContent&&!busy&&!adopted&&status=="succeeded"){Text(if(adopted)"已创建正式版本"else"确认复核并采纳")}
+    if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("保存 AI 草稿为新材料版本？")},text={Text("将校验所选材料版本，并保留 AI 原草稿和人工修改。不会自动覆盖其他人的修改。")},confirmButton={TextButton(onClick={
+        val selectedTarget=target?:return@TextButton;val expected=reviewedRevision?:return@TextButton
+        val reviewedText=text;val reviewedPayload=payload;val wasReviewed=reviewed
+        confirm=false;busy=true;scope.launch{try {
+            check(owner!=null&&owner==repository.accountId&&epoch==repository.epoch){"账户已变化"}
+            require(choices.any{it.text("materialId")==selectedTarget}){"目标材料已不可用，请刷新"}
+            drafts.save("agent-adoption:$projectId:$runId",buildJsonObject{put("text",reviewedText);put("target",selectedTarget)},owner,epoch)
+            val latest=repository.networkJson("GET","/api/v1/projects/${Uri.encode(projectId)}/materials/${Uri.encode(selectedTarget)}",expectedOwner=owner,expectedEpoch=epoch)
+            check(latest["revision"]?.jsonPrimitive?.intOrNull==expected){"材料版本已变化，请刷新后重新核对再采纳"}
+            val body=materialAiAdoptionBody(reviewedPayload,reviewedText,initial,selectedTarget,expected,wasReviewed)
+            check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"}
+            repository.requestDurably("agent-adoption:$projectId:$runId","POST","/api/v1/projects/${Uri.encode(projectId)}/agent-runs/${Uri.encode(runId)}/adopt",body)
+            check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"}
+            adopted=true;drafts.remove("agent-adoption:$projectId:$runId",owner,epoch);onAdopted()
+        }catch(e:CancellationException){throw e}catch(e:Exception){reviewed=false;reviewedRevision=null;error=(e.message?:"采纳失败")+"；编辑仍保留，请先核对历史版本并重新复核。"}finally{busy=false}}
+    }){Text("确认采纳")}},dismissButton={TextButton(onClick={confirm=false}){Text("取消")}})
 }
 
+/** A preserved rich document must let the backend derive Markdown unless the draft supplied it. */
+internal fun materialAiAdoptionBody(payload:JsonObject,edited:String,initial:String,materialId:String,expectedRevision:Int,reviewed:Boolean):JsonObject {
+    require(reviewed){"采纳必须明确确认已人工复核"};require(expectedRevision>0){"材料版本无效"};require(materialId.isNotBlank()){"请选择目标材料"}
+    val original=(payload["doc"]as? JsonObject)?.takeIf{it.text("type")=="doc"&&it["content"]is JsonArray}
+    val unchanged=original!=null&&edited==initial
+    val document=if(unchanged)original!! else markdownToNativeDoc(edited)
+    require(document.toString().toByteArray().size<=200*1024){"正文超过材料文档保存上限，编辑仍会保留"}
+    require(edited.length<=200000){"Markdown 超过保存上限"}
+    return buildJsonObject {
+        put("materialId",materialId);put("expectedRevision",expectedRevision);put("reviewed",true);put("doc",document)
+        if(!unchanged)put("markdown",edited)else payload.text("markdown").takeIf{it.isNotBlank()}?.let{put("markdown",it)}
+    }
+}
+
+internal fun materialAiPageRows(page:JsonObject):List<JsonObject> =(page["items"]as? JsonArray?:error("列表响应缺少记录")).map{it as? JsonObject?:error("列表记录格式无效")}
+internal fun materialAiNextCursor(page:JsonObject):String? {
+    require(page.containsKey("nextCursor")){"列表响应缺少分页位置，请刷新重试"}
+    val cursor=page["nextCursor"]
+    if(cursor==JsonNull)return null
+    require(cursor is JsonPrimitive&&cursor.isString&&cursor.content.isNotBlank()){"列表分页位置无效，请刷新重试"}
+    return cursor.content
+}
+/** Detail runs are oldest-first by the existing backend; list summaries may lag behind a new turn. */
+internal fun materialAiActiveJob(session:JsonObject):String? {
+    val runs=session["runs"]as? JsonArray?:error("会话响应缺少运行状态，请刷新重试")
+    val latest=runs.lastOrNull()?.let{it as? JsonObject?:error("运行状态格式无效")}?:return null
+    return latest.text("jobId").takeIf{it.isNotBlank()&&latest.text("status")in listOf("queued","running","waiting_input","pending")}
+}
 internal fun richPlainText(node:JsonObject):String=if(node.text("type")=="text")node.text("text")else (node["content"]as? JsonArray).orEmpty().joinToString(if(node.text("type")in listOf("doc","table","tableRow","bulletList","orderedList"))"\n"else""){(it as? JsonObject)?.let(::richPlainText).orEmpty()}
 internal fun markdownToNativeDoc(markdown:String):JsonObject {
     val blocks=mutableListOf<JsonObject>();var list:JsonObject?=null;var code:StringBuilder?=null;var language=""
     fun flushList(){list?.let{blocks+=it};list=null}
     fun paragraph(value:String)=richNode("paragraph",markdownInlineNodes(value))
     for(line in markdown.replace("\r\n","\n").lines()) {
-        if(line.trimStart().startsWith("```")){flushList();if(code==null){code=StringBuilder();language=line.trim().removePrefix("```")}else{blocks+=richNode("codeBlock",listOf(buildJsonObject{put("type","text");put("text",code.toString().trimEnd('\n'))}),buildJsonObject{put("language",language.ifBlank{"text"})});code=null};continue}
+        if(line.trimStart().startsWith("```")){flushList();if(code==null){code=StringBuilder();language=line.trim().removePrefix("```")}else{blocks+=materialAiCodeBlock(code.toString().removeSuffix("\n"),language);code=null};continue}
         if(code!=null){code.append(line).append('\n');continue}
         val bullet=Regex("^\\s*[-*]\\s+(.*)$").matchEntire(line);val ordered=Regex("^\\s*\\d+[.)、]\\s+(.*)$").matchEntire(line)
         if(bullet!=null||ordered!=null){val kind=if(bullet!=null)"bulletList"else"orderedList";if(list?.text("type")!=kind){flushList();list=richNode(kind)};list=richReplaceChildren(list!!,richChildren(list!!)+richNode("listItem",listOf(paragraph((bullet?:ordered)!!.groupValues[1]))));continue}
@@ -148,7 +194,7 @@ internal fun markdownToNativeDoc(markdown:String):JsonObject {
             line.startsWith('>')->blocks+=richNode("blockquote",listOf(paragraph(line.drop(1).trimStart())))
             else->blocks+=paragraph(line)}
     }
-    flushList();code?.let{blocks+=richNode("codeBlock",if(it.isEmpty())emptyList()else listOf(buildJsonObject{put("type","text");put("text",it.toString().trimEnd('\n'))}))}
+    flushList();code?.let{blocks+=materialAiCodeBlock(it.toString().removeSuffix("\n"),language)}
     return richNode("doc",blocks)
 }
 private fun markdownInlineNodes(value:String):List<JsonObject> {
@@ -158,3 +204,5 @@ private fun markdownInlineNodes(value:String):List<JsonObject> {
     regex.findAll(value).forEach{match->if(match.range.first>previous)result+=text(value.substring(previous,match.range.first));val kind=when{match.groups[1]!=null->"bold";match.groups[2]!=null->"italic";match.groups[3]!=null->"code";else->"link"};result+=text(match.groups[1]?.value?:match.groups[2]?.value?:match.groups[3]?.value?:match.groupValues[4],kind,match.groups[5]?.value);previous=match.range.last+1}
     if(previous<value.length)result+=text(value.substring(previous));return result
 }
+
+private fun materialAiCodeBlock(value:String,language:String)=richNode("codeBlock",if(value.isEmpty())emptyList()else listOf(buildJsonObject{put("type","text");put("text",value)}),buildJsonObject{put("language",language.ifBlank{"text"})})

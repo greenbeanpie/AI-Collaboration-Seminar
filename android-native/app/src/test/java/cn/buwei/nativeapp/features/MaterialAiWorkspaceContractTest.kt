@@ -1,0 +1,27 @@
+package cn.buwei.nativeapp.features
+
+import kotlinx.serialization.json.*
+import org.junit.Assert.*
+import org.junit.Test
+
+class MaterialAiWorkspaceContractTest {
+    private val material="11111111-1111-4111-8111-111111111111"
+    private fun objectOf(value:String)=Json.parseToJsonElement(value).jsonObject
+    private val original get()=objectOf("""{"type":"doc","attrs":{"future":"retain"},"content":[{"type":"paragraph","content":[{"type":"text","text":"formatted","marks":[{"type":"bold"}]}]},{"type":"table","attrs":{"future":1},"content":[]},{"type":"citation","attrs":{"sourceVersionId":"fixed-version","locator":"p3"}},{"type":"futureNode","opaque":{"keep":true}}]}""")
+    private fun assertNoEmptyText(value:JsonElement){when(value){is JsonObject->{if(value.text("type")=="text")assertTrue("Empty text is invalid Tiptap",value.text("text").isNotEmpty());value.values.forEach(::assertNoEmptyText)};is JsonArray->value.forEach(::assertNoEmptyText);else->Unit}}
+    @Test fun closedEmptyCodeFenceHasNoEmptyTextNode(){val doc=markdownToNativeDoc("```kotlin\n```");val block=richChildren(doc).single();assertEquals("codeBlock",block.text("type"));assertTrue(richChildren(block).isEmpty());assertEquals("kotlin",block.obj("attrs").text("language"));assertNoEmptyText(doc)}
+    @Test fun unclosedEmptyCodeFenceHasNoEmptyTextNode(){val doc=markdownToNativeDoc("```");assertEquals("codeBlock",richChildren(doc).single().text("type"));assertTrue(richChildren(richChildren(doc).single()).isEmpty());assertNoEmptyText(doc)}
+    @Test fun fencedCodePreservesLiteralMarksAndInternalBlankLine(){val doc=markdownToNativeDoc("```text\n**literal**\n\n```");val block=richChildren(doc).single();assertEquals("**literal**\n",richChildren(block).single().text("text"));assertNull(richChildren(block).single()["marks"]);assertNoEmptyText(doc)}
+    @Test fun inlineFormattingAndListsProduceStructuredNodes(){val doc=markdownToNativeDoc("# Heading\n- **Bold**\n- *Italic*\n1. [Evidence](https://example.test)\n> Quote");val blocks=richChildren(doc);assertEquals(listOf("heading","bulletList","orderedList","blockquote"),blocks.map{it.text("type")});val bold=richChildren(richChildren(richChildren(blocks[1])[0])[0])[0];assertEquals("bold",bold["marks"]!!.jsonArray[0].jsonObject.text("type"));assertNoEmptyText(doc)}
+    @Test fun blankMarkdownProducesValidEmptyDocument(){val doc=markdownToNativeDoc("\n\n");assertEquals("doc",doc.text("type"));assertTrue(richChildren(doc).isEmpty());assertNoEmptyText(doc)}
+    @Test fun unchangedRichDocumentWithoutMarkdownIsPreservedAndDoesNotSendPlainText(){val payload=buildJsonObject{put("doc",original)};val initial=richPlainText(original);val body=materialAiAdoptionBody(payload,initial,initial,material,17,true);assertEquals(original,body["doc"]);assertFalse(body.containsKey("markdown"));assertEquals(setOf("materialId","expectedRevision","reviewed","doc"),body.keys);assertEquals(17,body["expectedRevision"]!!.jsonPrimitive.int);assertTrue(body.flag("reviewed"))}
+    @Test fun emptySuppliedMarkdownNeverErasesUnchangedRichDocumentMarkdown(){val payload=buildJsonObject{put("doc",original);put("markdown","")};val body=materialAiAdoptionBody(payload,richPlainText(original),richPlainText(original),material,2,true);assertEquals(original,body["doc"]);assertFalse(body.containsKey("markdown"))}
+    @Test fun suppliedNonemptyMarkdownRemainsWithUnchangedOriginalDoc(){val payload=buildJsonObject{put("doc",original);put("markdown","**formatted**")};val body=materialAiAdoptionBody(payload,"**formatted**","**formatted**",material,4,true);assertEquals(original,body["doc"]);assertEquals("**formatted**",body.text("markdown"))}
+    @Test fun editedMarkdownIntentionallyCreatesNewStructuredDocument(){val payload=buildJsonObject{put("doc",original)};val body=materialAiAdoptionBody(payload,"## New\n- Edited",richPlainText(original),material,4,true);assertNotEquals(original,body["doc"]);assertEquals("## New\n- Edited",body.text("markdown"));assertEquals("heading",richChildren(body["doc"]!!.jsonObject)[0].text("type"));assertNoEmptyText(body)}
+    @Test(expected=IllegalArgumentException::class) fun unreviewedAdoptionIsRejected(){materialAiAdoptionBody(buildJsonObject{put("markdown","draft")},"draft","draft",material,1,false)}
+    @Test(expected=IllegalArgumentException::class) fun absentExpectedRevisionIsRejected(){materialAiAdoptionBody(buildJsonObject{put("markdown","draft")},"draft","draft",material,0,true)}
+    @Test(expected=IllegalArgumentException::class) fun missingCursorDoesNotTruncateTheListAsSuccess(){materialAiNextCursor(objectOf("""{"items":[]}"""))}
+    @Test fun nullCursorEndsPaginationAndNonemptyStringContinues(){assertNull(materialAiNextCursor(objectOf("""{"items":[],"nextCursor":null}""")));assertEquals("next-page",materialAiNextCursor(objectOf("""{"items":[],"nextCursor":"next-page"}""")))}
+    @Test fun blankAndNumericCursorAreRejected(){for(page in listOf("""{"nextCursor":""}""","""{"nextCursor":2}""")){assertTrue(runCatching{materialAiNextCursor(objectOf(page))}.isFailure)}}
+    @Test fun freshestDetailRunWinsOverStaleSummary(){val current=objectOf("""{"latestJobId":null,"latestRunStatus":"succeeded","runs":[{"runId":"old","jobId":"old-job","status":"succeeded"},{"runId":"new","jobId":"new-job","status":"pending"}]}""");assertEquals("new-job",materialAiActiveJob(current));assertNull(materialAiActiveJob(objectOf("""{"latestJobId":"old-job","latestRunStatus":"running","runs":[{"jobId":"old-job","status":"running"},{"jobId":"new-job","status":"succeeded"}]}""")))}
+}
