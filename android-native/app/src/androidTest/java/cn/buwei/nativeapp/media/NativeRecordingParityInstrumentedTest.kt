@@ -42,6 +42,7 @@ class NativeRecordingParityInstrumentedTest {
  private val uploadSession=UUID.randomUUID().toString()
  private val fileCreates=AtomicInteger();private val uploadedParts=ConcurrentHashMap<Int,Int>();private val partAttempts=ConcurrentHashMap<Int,Int>()
  @Volatile private var uploadComplete=false;@Volatile private var rejectPartTwo=false;@Volatile private var registeredSegmentId:String?=null
+ private val lifecycleObserved=AtomicReference("unobserved")
  private val writes=ConcurrentLinkedQueue<Pair<String,JsonObject>>();private val reads=ConcurrentLinkedQueue<String>();private val destination=AtomicReference<String?>(null)
  @Volatile private var failedRead=0;@Volatile private var failCreate=false;@Volatile private var failedRetry=0;@Volatile private var availableSegment=false
  private fun response(value:JsonObject)=MockResponse().setHeader("Content-Type","application/json").setBody(buildJsonObject{put("data",value)}.toString())
@@ -103,7 +104,9 @@ class NativeRecordingParityInstrumentedTest {
  private fun store():RecordingStore{
   val context=repository.context;return RecordingStore(context,File(context.dataDir,"recordings").path,account,UUID.randomUUID().toString()).also{it.create(JSONObject().put("id",it.directory.name).put("accountId",account).put("projectId",project).put("kind","audio"));val piece=File(it.directory,"segment-1.m4a");piece.writeText("fixture bytes");it.complete(piece,0,1000);it.state("stopped",1000)}
  }
- private fun showDetail(){compose.setContent{NativeTheme{Surface{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){NativeRecordingDetail(repository,project,material){destination.set(it)}}}}};await("Recording summary fixture")}
+ private fun showDetail(){compose.setContent{val life=androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+  DisposableEffect(life){val observer=androidx.lifecycle.LifecycleEventObserver{_,_->lifecycleObserved.set(life.currentState.name)};life.addObserver(observer);lifecycleObserved.set(life.currentState.name);onDispose{life.removeObserver(observer)}}
+  NativeTheme{Surface{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){NativeRecordingDetail(repository,project,material){destination.set(it)}}}}};await("Recording summary fixture")}
  @Test fun observedPauseEnablesResumeWithoutServiceInstanceBooleanChanging(){
   val snapshot=AtomicReference("""{"state":"recording"}""");val actions=ConcurrentLinkedQueue<String>()
   compose.setContent{NativeTheme{val value by observeNativeRecordingSnapshot{snapshot.get()};NativeRecordingControls(value?.let{JSONObject(it).optString("state")=="paused"}==true){actions.add(it);snapshot.set(JSONObject().put("state",if(it=="pause")"paused"else"recording").toString())} }}
@@ -169,6 +172,7 @@ class NativeRecordingParityInstrumentedTest {
  }
  @Test fun switchingSessionDuringDelayedPollCannotApplyTheOldSessionResponse(){
   multipleSessions=true;processingRunning=true;delayOldPoll=true;showDetail()
+  compose.mainClock.advanceTimeBy(5000)
   compose.waitUntil(15000){delayedReadStarted.get()};click("Other meeting fixture");await("Other recording summary fixture")
   releaseDelayed.countDown();compose.waitUntil(15000){delayedReadFinished.get()};compose.waitForIdle()
   compose.onNodeWithText("Other recording summary fixture").assertExists();compose.onNodeWithText("Recording summary fixture").assertDoesNotExist()
@@ -176,7 +180,14 @@ class NativeRecordingParityInstrumentedTest {
  @Test fun pollingRefreshesEveryLoadedPageWithoutFetchingUnknownThirdPage(){
   processingRunning=true;thirdPageExists=true;showDetail();click("加载更多会议片段");await("Second page original fixture")
   secondPageUpdated=true;processingRunning=false;processingReady=true
-  await("Second page updated fixture");compose.onNodeWithText("Second page original fixture").assertDoesNotExist()
+  // Poll delays run on Compose's test clock. A slow API 33 renderer may advance
+  // less than 5 virtual seconds during 15 wall seconds of waitUntil.
+  compose.mainClock.advanceTimeBy(5000)
+  try{await("Second page updated fixture")}catch(e:Throwable){
+   println("Recording refresh reads="+reads.toList()+" running="+processingRunning+" ready="+processingReady+" secondUpdated="+secondPageUpdated+" lifecycle="+lifecycleObserved.get()+" clock="+compose.mainClock.currentTime+" auto="+compose.mainClock.autoAdvance)
+   try{println(compose.onRoot(useUnmergedTree=true).printToString())}catch(diagnostic:Throwable){println("Recording tree unavailable: "+diagnostic.message)}
+   throw e
+  };compose.onNodeWithText("Second page original fixture").assertDoesNotExist()
   assertTrue(reads.count{it.contains("cursor=1")}>=2);assertFalse(reads.any{it.contains("cursor=2")});compose.onNodeWithText("加载更多会议片段").assertExists()
  }
  @Test fun segmentPreviewResolvesOriginalFilenameWithAuthorizedFileIdQuery(){

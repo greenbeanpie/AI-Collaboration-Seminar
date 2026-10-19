@@ -1,6 +1,43 @@
 # 原生 Android 迁移预览版验证报告
 
-## 当前交付：0.2.3-preview（2026-10-20）
+## 当前交付：0.2.4-preview（2026-10-20）
+
+本轮补齐文件/来源处理状态、派生页归属、录制元信息与云端详情，并修复自定义来源标题破坏原文件预览的问题。业务继续使用现有后端；没有新增替代接口或独立账号体系。真实授权、外部服务及物理设备验收仍未完成，不声明全量迁移目标已达成。
+
+### 改动与文件
+
+- 文件与来源仅在前台轮询活动处理，普通网络错误标记旧快照，401/403/404 清除服务端内容。文件独立总结/要求阶段失败也允许按已有身份重试；暂停作业阻止重复创建；展示音频质量、回退权限及不完整摘要。实现：[DataWorkspaceProcessing](app/src/main/java/cn/buwei/nativeapp/features/DataWorkspaceProcessing.kt)、[状态规则](app/src/main/java/cn/buwei/nativeapp/features/NativeProcessingStatus.kt)。
+- 扫描页上传携带 `derivedFromFileId`，保持原文件贡献人和派生归属；上传 manifest 隔离父文件身份。准备前核对来源与固定版本文件；新来源本机恢复保存已上传原文件 ID，旧草稿只读恢复已确认身份，不能据此跳过未知分片。实现：[PDF 页准备](app/src/main/java/cn/buwei/nativeapp/media/PdfPageImages.kt)、[传输](app/src/main/java/cn/buwei/nativeapp/media/AttachmentTransfer.kt)、[新增资料](app/src/main/java/cn/buwei/nativeapp/features/DataWorkspaceIntake.kt)。
+- 录制状态快照可观察暂停/继续/停止，控制可换行；本机状态与磁盘轮询限制在前台。标题及贡献人可编辑，首次请求前冻结参数，未知结果重试沿用原身份；旧录制继续用原普通 manifest 和实际分片续传。当前材料接入云端会议、片段分页、固定来源、原文件与明确确认后重试；轮询只刷新已加载页，丢弃旧会话响应。实现：[MediaWorkspace](app/src/main/java/cn/buwei/nativeapp/media/MediaWorkspace.kt)、[RecordingStore](app/src/main/java/cn/buwei/mobile/RecordingStore.kt)、[云端详情](app/src/main/java/cn/buwei/nativeapp/media/NativeRecordingDetail.kt)、[资料入口](app/src/main/java/cn/buwei/nativeapp/features/DataWorkspace.kt)。
+- 来源预览按现有文件列表接口精确读取真实文件名，标题不再决定预览格式；元信息身份不符、归档/删除或拒权时不下载。中文长文件名按 UTF-8 字节截断并保留扩展名，附件状态按账户/epoch/目标隔离。实现：[AttachmentActions](app/src/main/java/cn/buwei/nativeapp/media/AttachmentActions.kt)。
+
+### 最终签名包及验证范围
+
+- [Release APK](../output/android-native/buwei-native-0.2.4-preview-release.apk)：5,586,133 bytes（约 5.33 MiB），versionCode 6；独立包名 `cn.buwei.mobile.nativepreview`，最低 API 26，ARM64 / x86_64。
+- SHA-256：`b83ae00af8e19e4c7ac9f8fa03a2d9576a3cc590818903454dde20cd1c49ae28`。复用原签名，v2/v3 校验通过。
+- [构建元数据](../output/android-native/release-artifact.json)：源提交 `63707ecb3c475fcc69a75d6efc6e3d7b3bb77ecb`，`sourceTreeDirty=false`；最后仅更新报告。已合并同期 Windows 文档/资源审计改动，没有覆盖并行成果。
+- [主分支最终构建](../output/android-native/tests/0.2.4-final-main-release.log)通过：**160 项 JVM 测试**、Lint、R8、资源压缩和签名。[Lint](../output/android-native/tests/0.2.4-lint-debug.txt)为 0 errors、1 项既有 BouncyCastle EST 告警；Release `-checkdiscard` 确认 EST 未保留。Gradle/JDK/第三方 protobuf 弃用提示仍存在，未隐瞒或全局压制。
+- 完整基础 instrumentation **161 项**（源 `4878be75`，含本轮处理与录制、尚未加入最后的原文件名修复）：[API 37 手机](../output/android-native/tests/0.2.4-full-phone.log)161/161，通过，356.370 秒；[API 33 平板](../output/android-native/tests/0.2.4-full-tablet.log)160/161，通过 160、失败 1，431.827 秒。失败与修复证据见下文，不能写成最终全套双端通过。
+- 最后原文件名修复及测试时钟修正后，**30 项相关回归双端全部通过**：[手机](../output/android-native/tests/0.2.4-final-related-phone.log)70.417 秒；[平板](../output/android-native/tests/0.2.4-final-related-tablet.log)73.045 秒。包含真实 PDF 的无扩展标题/错误 MP3 标题预览、元信息身份不符不下载、拒权去除旧导出入口；录制 14 项；资料工作区 6 项及拒权读取 6 项。不是最终 165 项全套重跑。
+- 更早的处理/上传相关 **26 项双端通过**：[手机](../output/android-native/tests/0.2.4-processing-phone.log)49.183 秒、[平板](../output/android-native/tests/0.2.4-processing-tablet.log)53.028 秒；包括派生文件归属、恢复上传身份、前后台处理轮询、失败重试及撤权。上述自动化均为 Debug、隔离账户与本机模拟接口，不代表生产账号或 R8 后全部业务验收。
+- 311 个生成契约一致，路由检查 [11 项通过](../output/android-native/tests/0.2.4-routes-tests.log)。[最终静态请求检查](../output/android-native/final-routes-0.2.4.json)：189 个绑定、138 个独立操作、错误 0，另有 189 个动态绑定未被静态验证。不能换算成业务覆盖率或迁移完成率。
+- 最终签名包覆盖安装后，[手机启动检查](../output/android-native/0.2.4-phone/smoke-20261020-003948/report.json)与 [localhost:5555 平板启动检查](../output/android-native/0.2.4-tablet/smoke-20261020-003948/report.json)通过，UI WebView 节点为 0；[同一 APK 的 DEX 扫描](../output/android-native/0.2.4-dex/smoke-20261020-003954/report.json)未发现 WebView 引用。两张最终未登录页截图均已查看，无裁切/横向溢出。未卸载旧应用或清除用户数据。
+
+### 平板失败的诊断与修复
+
+第二页片段轮询测试在平板上等待 15 秒仍未更新；单独复现同样失败，保留[初始诊断](../output/android-native/tests/0.2.4-recording-diagnostic-tablet.log)、[带时钟诊断](../output/android-native/tests/0.2.4-recording-diagnostic2-tablet.log)与[实际请求/语义树](../output/android-native/tests/0.2.4-recording-clock-diagnostic-logcat.log)。页面生命周期为 RESUMED，仍显示“处理中”，只有初始详情与第二页读取；Compose 虚拟时钟仅推进 **4880 ms**，尚未到 5000 ms 轮询延迟。此时延长真实等待或修改生产间隔均不对症。
+
+测试现明确推进 Compose 时钟 5000 ms 后再等待网络与 UI 更新；延迟切换会话测试也显式推进同一轮询间隔，保留全部页数、状态与身份断言，并保留失败诊断。没有修改业务轮询实现、增加时限或忽略异常。最终两端 30 项相关组均通过；它证明测试在触发既定轮询后更新已加载页，不代表所有设备/负载下的时序问题均已排除。
+
+### 资源与剩余验收
+
+[最终 Release 五轮采样](../output/android-native/0.2.4-performance/benchmark-20261020-004009-emulator-5556/report.json)核对已安装 APK 哈希一致且非 Debug。API 37 模拟器未登录页：进程冷启动 TotalTime 中位数 **452 ms**（381–499），PSS 中位数 **28,055 KiB**（27,902–28,136），短窗口空闲 CPU 中位数 **0%**（0–0.327%）。仅 `-NativeOnly`，未清理存储/编译缓存，非真实业务、耗电或与旧版的可比实验。
+
+用户暂不方便完成 Turnstile，本轮没有再次尝试生产登录，没有调用付费模型、OCR/语音、发送 FCM 或修改生产业务。真实授权回调/退出撤销、FCM 实际投递、模型/语音、DSH、四小时物理录制及可比业务资源负载仍按[验收清单](docs/ACCEPTANCE.md)完成；不能以代码入口、模拟测试或旧发布记录代替。
+
+测试和采样结束后已按用户要求关闭两台模拟器：[退出记录](../output/android-native/tests/0.2.4-emulators-shutdown.json)。手机 emulator/QEMU 与平板 HD-Player 目标进程均已退出，ADB 设备列表为空；保留应用及用户数据。源码、报告和复现命令保留，见 [README](README.md)。
+
+## 历史交付：0.2.3-preview（不代表当前状态）
 
 本轮继续按网页端实际交互核对缺口，补齐讨论、资料正文与首页任务入口；仍对接既有后端，真实账户授权和外部服务验收尚未闭环，不声明全量迁移目标完成。下方各旧版本仅作为历史记录。
 
@@ -17,7 +54,7 @@
 
 - [Release APK](../output/android-native/buwei-native-0.2.3-preview-release.apk)：5,553,365 bytes（约 5.30 MiB），versionCode 5，独立包名 `cn.buwei.mobile.nativepreview`，Android 8+、ARM64 / x86_64。
 - SHA-256：`33fe72775624045ca5933573938a6f53df8f468e73f5504de74802d5fe925a92`。
-- [构建元数据](../output/android-native/release-artifact.json)：源提交 `a063621d2710843a2ddea47aff6e331a415fbc17`，`sourceTreeDirty=false`；后续仅调整测试及文档，生产源码未变。复用原有签名，v2/v3 验证通过。
+- [历史构建元数据](../output/android-native/0.2.3-release-artifact.json)：源提交 `a063621d2710843a2ddea47aff6e331a415fbc17`，`sourceTreeDirty=false`；后续仅调整测试及文档，生产源码未变。复用原有签名，v2/v3 验证通过。
 - [主分支 Release 构建](../output/android-native/tests/0.2.3-main-release.log)通过：148 项 JVM 测试、Lint、R8/资源压缩、签名。Lint 为 0 errors、1 项既有 BouncyCastle EST 依赖告警，`-checkdiscard` 检查未保留 EST；工具链弃用提示仍存在。
 - 同轮基础完整 instrumentation 123 项：[API 33 平板](../output/android-native/tests/0.2.3-full-tablet.log)全部通过，333.653 秒；[API 37 手机](../output/android-native/tests/0.2.3-full-phone.log)122 项通过、1 项聊天等待失败，342.107 秒。该完整套件发生在最后的讨论共用调整之前，不能写成最终全套双端通过。
 - 最后针对受影响的 5 个测试类（材料讨论 9、任务讨论 11、任务工作区 8、NativeBusiness 7、canonical 资料 5）完整执行 **40 项相关回归**：[手机 40/40](../output/android-native/tests/0.2.3-related-phone.log)，97.289 秒；[平板 40/40](../output/android-native/tests/0.2.3-related-tablet.log)，109.937 秒。包含真实任务讨论入口、失败/queued 保稿、跨目标/账户隔离及修正后的对话轮询；不是最终全套复跑。其余读取拒权与首页用例见上述基础完整记录。全部为 Debug、隔离账号和本机模拟服务，不代表生产账户或 R8 下全部业务验收。
