@@ -9,6 +9,7 @@ import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.data.ApiException
 import cn.buwei.nativeapp.data.requestDurably
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -32,13 +33,29 @@ internal fun twState(row:JsonObject)=mapOf("open" to "待领取","in_progress" t
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text(label)},text={Text(confirmation.orEmpty())},confirmButton={TextButton({confirm=false;send()}){Text("确认")}},dismissButton={TextButton({confirm=false}){Text("取消")}})
 }
 
+internal fun Throwable.taskReadAccessDenied()=this is ApiException && status in setOf(401,403,404)
 @Composable internal fun TaskWorkspacePage(repository:ClientRepository,path:String,refresh:Int=0,content:@Composable (List<JsonObject>)->Unit){
- var rows by remember(path,repository.accountId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember(path){mutableStateOf<String?>(null)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val owner=repository.accountId;val epoch=repository.epoch
- suspend fun load(more:Boolean){busy=true;try{val data=repository.get(path+(if(more&&cursor!=null)(if(path.contains('?'))"&"else"?")+"cursor=${Uri.encode(cursor)}"else""));check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"};rows=if(more)rows+data.twRows()else data.twRows();cursor=data.twText("nextCursor").takeIf{it.isNotBlank()};error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message?:"读取失败"}finally{busy=false}}
- LaunchedEffect(path,owner,refresh){load(false)}
- if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());error?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton({scope.launch{load(false)}}){Text("重试读取")}}
- content(rows)
+ val owner=repository.accountId;val epoch=repository.epoch
+ key(path,owner,epoch){
+ var rows by remember{mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember{mutableStateOf<String?>(null)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var denied by remember{mutableStateOf(false)};var generation by remember{mutableIntStateOf(0)};val scope=rememberCoroutineScope()
+ suspend fun load(more:Boolean){
+  val request=++generation;val requested=if(more)cursor else null;busy=true
+  try{
+   val data=repository.get(path+(if(requested!=null)(if(path.contains('?'))"&"else"?")+"cursor=${Uri.encode(requested)}"else""))
+   if(request!=generation)return
+   check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"}
+   val next=data.twText("nextCursor").takeIf{it.isNotBlank()};check(next==null||next!=requested){"分页游标重复，请重新读取"}
+   rows=if(more)rows+data.twRows()else data.twRows();cursor=next;error=null;denied=false
+  }catch(e:CancellationException){throw e}catch(e:Exception){if(request==generation){
+   if(e.taskReadAccessDenied()||owner!=repository.accountId||epoch!=repository.epoch){rows=emptyList();cursor=null;denied=true}
+   error=(e.message?:"读取失败")+if(denied)"；访问已失效，已清除本页内容。"else if(rows.isNotEmpty())"；当前显示上次读取内容，请重试核对。"else""
+  }}finally{if(request==generation)busy=false}
+ }
+ LaunchedEffect(path,owner,epoch,refresh){load(false)}
+ if(busy)LinearProgressIndicator(Modifier.fillMaxWidth());error?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton({scope.launch{load(false)}},enabled=!busy){Text("重试读取")}}
+ if(!denied)content(rows)
  if(cursor!=null)OutlinedButton({scope.launch{load(true)}},enabled=!busy){Text("加载更多")}
+ }
 }
 @Composable internal fun TaskWorkspaceField(label:String,value:String,onChange:(String)->Unit,max:Int=4000,lines:Int=1,aiReference:Boolean=false){ReferenceOutlinedTextField(value,{if(it.length<=max)onChange(it)},Modifier.fillMaxWidth(),label=label,aiReference=aiReference,minLines=lines)}
 @Composable internal fun TaskWorkspaceMemberPicker(members:List<JsonObject>,selected:String?,onChange:(String?)->Unit){

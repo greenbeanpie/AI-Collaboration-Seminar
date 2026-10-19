@@ -27,7 +27,7 @@ node android-native/scripts/check-feature-routes.mjs
 ./android-native/scripts/build.ps1 -SigningDirectory 'C:/path/to/existing/signing'
 ```
 
-构建脚本从 APK 的 `output-metadata.json` 读取实际版本，输出至 `output/android-native/`。当前版本的命名为 `buwei-native-0.2.2-preview-debug.apk` 或 `buwei-native-0.2.2-preview-release.apk`，同时写入签名验证记录及 `debug-artifact.json` / `release-artifact.json`。元数据包含版本、包名、字节数、SHA-256、`sourceCommit` 和 `sourceTreeDirty`；后者记录受跟踪文件是否有未提交改动，不能用提交号代替对该标志的核对。
+构建脚本从 APK 的 `output-metadata.json` 读取实际版本，输出至 `output/android-native/`。当前版本的命名为 `buwei-native-0.2.3-preview-debug.apk` 或 `buwei-native-0.2.3-preview-release.apk`，同时写入签名验证记录及 `debug-artifact.json` / `release-artifact.json`。元数据包含版本、包名、字节数、SHA-256、`sourceCommit` 和 `sourceTreeDirty`；后者记录受跟踪文件是否有未提交改动，不能用提交号代替对该标志的核对。
 
 Release 启用 R8 和资源压缩，禁止明文网络。Debug 允许本机 MockWebServer 测试；服务源固定为现有后端。
 
