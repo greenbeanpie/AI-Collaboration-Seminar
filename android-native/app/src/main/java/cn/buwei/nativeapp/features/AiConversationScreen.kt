@@ -1,6 +1,7 @@
 package cn.buwei.nativeapp.features
 
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,7 +53,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
 
 private fun safeProjectSection(href:String,projectId:String):String?{
  if(!href.startsWith("/app/projects/${Uri.encode(projectId)}"))return null
- val prefix="/app/projects/${Uri.encode(projectId)}";val path=Uri.parse(href).path?:return null
+ val prefix="/app/projects/${Uri.encode(projectId)}";val path=href.toUri().path?:return null
  if(path!=prefix&&!path.startsWith("$prefix/"))return null
  val part=path.removePrefix(prefix).trim('/').substringBefore('/')
  return when(part){"tasks"->"tasks";"sources","files","materials","data"->"data";"assessments","standards","reviews"->"assessment";"members","team"->"team";""->"overview";else->null}

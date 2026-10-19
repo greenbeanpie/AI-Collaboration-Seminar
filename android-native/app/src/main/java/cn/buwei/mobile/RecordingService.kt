@@ -20,9 +20,14 @@ class RecordingService : Service() {
     private fun recordingActivity(active: Boolean) { activeRecording = active }
     private val lifecycleHandler = Handler(Looper.getMainLooper())
     private var epoch = -1L
+    private var renewWakeAt=0L
     private val epochWatchdog = object : Runnable {
         override fun run() {
             if (epoch != accountEpoch()) { encoder?.action = "stop"; return }
+            if(encoder!=null && SystemClock.elapsedRealtime()>=renewWakeAt) {
+                wake?.acquire(10*60*1000L)
+                renewWakeAt=SystemClock.elapsedRealtime()+5*60*1000L
+            }
             lifecycleHandler.postDelayed(this, 250)
         }
     }
@@ -47,13 +52,14 @@ class RecordingService : Service() {
                 .setContentTitle("正在录制会议资料").setContentText("录制在后台继续；点击停止后预览并上传")
                 .setOngoing(true).setContentIntent(open).addAction(Notification.Action.Builder(null, "停止并保存", stop).build()).build()
             val kind = args.getString("kind")
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (Build.VERSION.SDK_INT >= 30) {
                 val types = (if (kind != "photo") ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or
                     (if (kind != "audio") ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
                 startForeground(NOTIFICATION, notification, types)
             } else startForeground(NOTIFICATION, notification)
             store = RecordingStore(this, args.getString("root"), args.getString("accountId"), args.getString("id")).also { it.create(args) }
-            wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:meeting-recording").apply { acquire() }
+            wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:meeting-recording").apply { setReferenceCounted(false);acquire(10*60*1000L) }
+            renewWakeAt=SystemClock.elapsedRealtime()+5*60*1000L
             val capture = RecordingEncoder(this, store!!, args)
             encoder = capture
             recordingActivity(true)

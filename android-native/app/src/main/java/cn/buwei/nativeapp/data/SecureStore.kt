@@ -25,6 +25,8 @@ class SecureStore(context: Context,namespace:String="") {
         require(bytes.size > 12) { "本机凭据已损坏，请重新登录" }
         Cipher.getInstance("AES/GCM/NoPadding").run { init(Cipher.DECRYPT_MODE,key,GCMParameterSpec(128,bytes.copyOfRange(0,12))); doFinal(bytes.copyOfRange(12,bytes.size)).toString(Charsets.UTF_8) }
     }
+    // KTX edit(commit=true) discards commit's Boolean; credential persistence must check it.
+    @android.annotation.SuppressLint("UseKtx")
     @Synchronized fun put(name: String,value: String?) {
         val edit=prefs.edit()
         if(value==null) edit.remove(name) else {

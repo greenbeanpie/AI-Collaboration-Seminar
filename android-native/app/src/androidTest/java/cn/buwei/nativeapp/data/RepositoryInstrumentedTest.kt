@@ -3,6 +3,8 @@ package cn.buwei.nativeapp.data
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -59,5 +61,25 @@ class RepositoryInstrumentedTest {
         val server=MockWebServer();server.start();val repository=login(server);server.shutdown()
         try {repository.request("POST","/projects/project-1/ai-chat/messages",buildJsonObject{put("text","test")});fail("offline AI must fail")}catch(_:java.io.IOException){}
         assertTrue(repository.pending().isEmpty())
+    }
+    @Test fun successfulSafeWriteReturnsServerRevisionAndRemovesOnlyItsIntent()=runBlocking {
+        val server=MockWebServer();server.start()
+        try {
+            val repository=login(server)
+            server.enqueue(response("""{"data":{"user":$user}}"""))
+            server.enqueue(response("""{"data":{"revision":2}}"""))
+            val result=repository.request("PUT","/projects/project-1/materials/material-1",buildJsonObject{put("expectedRevision",1)},"online-intent")
+            assertEquals(2,result["revision"]!!.jsonPrimitive.int)
+            assertTrue(repository.pending().isEmpty())
+        }finally{server.shutdown()}
+    }
+    @Test fun mainThreadCallerReadsDelayedResponseOnIoDispatcher()=runBlocking {
+        val server=MockWebServer();server.start()
+        try {
+            val repository=login(server)
+            server.enqueue(response("""{"data":{"name":"delayed-body"}}""").setBodyDelay(200,java.util.concurrent.TimeUnit.MILLISECONDS))
+            val result=withContext(Dispatchers.Main) {repository.get("/projects/project-1")}
+            assertEquals("delayed-body",result["name"]!!.jsonPrimitive.content)
+        }finally{server.shutdown()}
     }
 }

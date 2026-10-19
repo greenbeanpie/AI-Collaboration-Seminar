@@ -6,7 +6,7 @@ param(
     [string]$Activity = 'cn.buwei.nativeapp.MainActivity',
     [string]$Output = (Join-Path $PSScriptRoot '../../output/android-native'),
     [string]$Apk = '',
-    [string]$Dexdump = 'D:/Android/Sdk/build-tools/36.0.0/dexdump.exe',
+    [string]$Dexdump = 'D:/Android/Sdk/build-tools/37.0.0/dexdump.exe',
     [switch]$ValidateOnly
 )
 $ErrorActionPreference = 'Stop'

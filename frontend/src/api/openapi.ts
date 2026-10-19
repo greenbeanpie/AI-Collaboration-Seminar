@@ -4184,6 +4184,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/sources/{sourceId}/page-images/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 只保存扫描页图片，不创建 OCR 或其他模型任务 */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "idempotency-key": string;
+                };
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    sourceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @default true */
+                        analyze?: boolean;
+                        /** Format: uuid */
+                        sourceVersionId: string;
+                        images: {
+                            pageNumber: number;
+                            /** Format: uuid */
+                            fileId: string;
+                        }[];
+                        expectedLifecycleVersion: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 已接收图片；jobId 恒为 null */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PageImagesResponse"];
+                    };
+                };
+                /** @description 页码或文件无效 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 来源、生命周期或文件不可用 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+                /** @description 版本或页面状态已变化 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiFailure"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing": {
         parameters: {
             query?: never;

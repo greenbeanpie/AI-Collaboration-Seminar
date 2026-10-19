@@ -6,6 +6,7 @@ import android.graphics.ImageFormat
 import android.hardware.camera2.*
 import android.media.*
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -51,7 +52,7 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
     private data class Sample(val video: Boolean, val bytes: ByteArray, val pts: Long, val flags: Int)
 
     private fun nowUs() = SystemClock.elapsedRealtimeNanos() / 1000 - originUs
-    private fun ensureSpace() { require(store.directory.usableSpace > 64L * 1024 * 1024) { "存储空间不足，已保存片段保留" } }
+    private fun ensureSpace() { require(android.os.StatFs(store.directory.path).availableBytes > 64L * 1024 * 1024) { "存储空间不足，已保存片段保留" } }
 
     @SuppressLint("MissingPermission")
     fun run() {
@@ -84,7 +85,7 @@ class RecordingEncoder(private val context: Context, private val store: Recordin
                     setInteger(MediaFormat.KEY_BIT_RATE, 1_000_000)
                     setInteger(MediaFormat.KEY_FRAME_RATE, 30)
                     setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                    setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+                    if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
                 }
                 avc = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also {
                     it.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)

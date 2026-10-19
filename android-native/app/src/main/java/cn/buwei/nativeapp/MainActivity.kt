@@ -7,8 +7,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.net.toUri
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -25,17 +27,19 @@ import cn.buwei.nativeapp.features.FeatureScreen
 import cn.buwei.nativeapp.features.AiConversationScreen
 import cn.buwei.nativeapp.features.ProjectCreationScreen
 import cn.buwei.nativeapp.media.MediaWorkspace
+import cn.buwei.nativeapp.media.ExportWorkspace
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
 class MainActivity:ComponentActivity() {
-    private val repository get()=(application as NativeApplication).repository
-    private val auth by lazy { NativeAuth(repository) }
+    private val model by viewModels<NativeViewModel>()
+    private val repository get()=model.repository
+    private val auth get()=model.auth
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    private var fatal by mutableStateOf<String?>(null)
-    private var busy by mutableStateOf(true)
-    private var section by mutableStateOf("projects")
-    private var projectId by mutableStateOf<String?>(null)
+    private var fatal:String? get()=model.fatal;set(value){model.fatal=value}
+    private var busy:Boolean get()=model.busy;set(value){model.busy=value}
+    private var section:String get()=model.section;set(value){model.section=value}
+    private var projectId:String? get()=model.projectId;set(value){model.projectId=value}
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
         section=savedInstanceState?.getString("section")?:"projects"; projectId=savedInstanceState?.getString("project")
@@ -54,38 +58,44 @@ class MainActivity:ComponentActivity() {
         }
     }
     private fun navigate(next:String) { if(cn.buwei.mobile.RecordingService.instance!=null && next=="projects") { fatal="录制期间请先停止并保存，再切换项目"; return }; section=next }
+    private fun openGlobal(next:String) {
+        if(cn.buwei.mobile.RecordingService.instance!=null && next=="projects") {fatal="录制期间请先停止并保存，再切换项目";return}
+        projectId=null;navigate(next)
+    }
     @Composable private fun AppContent() {
         val user by repository.account.collectAsStateWithLifecycle()
         val status by repository.status.collectAsStateWithLifecycle()
-        var theme by remember { mutableStateOf(getPreferences(MODE_PRIVATE).getString("theme","system")?:"system") }
+        val appearance=(application as NativeApplication).appearance
+        val theme by appearance.mode.collectAsStateWithLifecycle(initialValue="system")
         val dark=theme=="dark" || (theme=="system" && isSystemInDarkTheme())
-        val palette=if(dark) darkColorScheme(primary=Color(0xFF9DD2B9),secondary=Color(0xFFB7CCBF)) else lightColorScheme(primary=Color(0xFF356B56),secondary=Color(0xFF52685C),background=Color(0xFFF8FAF6),surface=Color(0xFFF8FAF6))
-        MaterialTheme(colorScheme=palette) {
+        NativeTheme(dark) {
             Surface(Modifier.fillMaxSize()) {
                 if(busy) Box(Modifier.fillMaxSize().padding(32.dp)) { CircularProgressIndicator() }
                 else if(user==null) LoginView()
                 else BoxWithConstraints {
                     val tablet=maxWidth>=720.dp
                     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                        if(tablet) NavigationRail { listOf("projects" to "项目","notifications" to "通知","profile" to "我的").forEach { (key,title)->NavigationRailItem(selected=section==key,onClick={projectId=null;navigate(key)},icon={Text(title.take(1))},label={Text(title)}) } }
+                        if(tablet) NavigationRail { listOf("projects" to "项目","notifications" to "通知","profile" to "我的").forEach { (key,title)->NavigationRailItem(selected=section==key,onClick={openGlobal(key)},icon={Text(title.take(1))},label={Text(title)}) } }
                         Column(Modifier.weight(1f)) {
                             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),horizontalArrangement=Arrangement.SpaceBetween) {
-                                TextButton(onClick={ if(projectId!=null && section!="overview") navigate("overview") else { projectId=null;navigate("projects") } }) { Text("补位 · "+(if(projectId==null) "原生预览" else "项目工作区")) }
+                                TextButton(onClick={ if(projectId!=null && section!="overview") navigate("overview") else openGlobal("projects") }) { Text("补位 · "+(if(projectId==null) "原生预览" else "项目工作区")) }
                                 TextButton(onClick={ lifecycleScope.launch { try { repository.sync(); repository.status.value="同步检查完成" } catch(e:Exception) { fatal=e.message } } }) { Text("同步") }
                             }
                             if(status.isNotBlank()) Text(status,Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=4.dp),style=MaterialTheme.typography.bodySmall)
                             if(projectId!=null) ProjectNavigation()
+                            if(section=="profile") AccountNavigation(user!!)
                             Box(Modifier.weight(1f).fillMaxWidth()) {
                                 when(section) {
-                                    "appearance" -> Column(Modifier.padding(20.dp)) { Text("外观",style=MaterialTheme.typography.headlineMedium); listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title)->TextButton(onClick={theme=key;getPreferences(MODE_PRIVATE).edit().putString("theme",key).apply()}) {Text((if(theme==key) "✓ " else "")+title)} } }
+                                    "appearance" -> Column(Modifier.padding(20.dp)) { Text("外观",style=MaterialTheme.typography.headlineMedium); listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title)->TextButton(onClick={lifecycleScope.launch {appearance.setMode(key)}}) {Text((if(theme==key) "✓ " else "")+title)} } }
                                     "offline" -> OfflineView(repository)
                                     "media" -> MediaWorkspace(repository,projectId)
+                                    "export" -> projectId?.let {ExportWorkspace(repository,it)}
                                     "create-project" -> ProjectCreationScreen(repository) {id->projectId=id;section="overview"}
                                     "ai-chat" -> projectId?.let {AiConversationScreen(repository,it){next->navigate(next)}}
                                     else -> FeatureScreen(repository,section,projectId,{id->projectId=id;section="overview"},{next->navigate(next)})
                                 }
                             }
-                            if(!tablet) NavigationBar { listOf("projects" to "项目","notifications" to "通知","profile" to "我的").forEach { (key,title)->NavigationBarItem(selected=section==key,onClick={projectId=null;navigate(key)},icon={Text(title.take(1))},label={Text(title)}) } }
+                            if(!tablet) NavigationBar { listOf("projects" to "项目","notifications" to "通知","profile" to "我的").forEach { (key,title)->NavigationBarItem(selected=section==key,onClick={openGlobal(key)},icon={Text(title.take(1))},label={Text(title)}) } }
                         }
                     }
                 }
@@ -104,7 +114,7 @@ class MainActivity:ComponentActivity() {
             Spacer(Modifier.height(24.dp))
             Text("原生安卓预览版",style=MaterialTheme.typography.headlineSmall)
             Text("使用原有账户登录。仅登录验证在系统浏览器完成，项目界面使用安卓原生组件。旧版未同步资料仍保留在旧版中。",Modifier.padding(vertical=16.dp))
-            Button(onClick={ lifecycleScope.launch { busy=true; try { val url=auth.begin(); CustomTabsIntent.Builder().build().launchUrl(this@MainActivity,android.net.Uri.parse(url)) } catch(e:Exception) { fatal=e.message } finally { busy=false } } },modifier=Modifier.fillMaxWidth()) {Text("登录 / 注册")}
+            Button(onClick={ lifecycleScope.launch { busy=true; try { val url=auth.begin(); CustomTabsIntent.Builder().build().launchUrl(this@MainActivity,url.toUri()) } catch(e:Exception) { fatal=e.message } finally { busy=false } } },modifier=Modifier.fillMaxWidth()) {Text("登录 / 注册")}
             Text("首次使用需要网络；登录服务需部署配套原生授权接口。",Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodySmall)
         }
     }
@@ -117,6 +127,25 @@ class MainActivity:ComponentActivity() {
                 listOf("team" to "团队","ai-chat" to "项目 AI","rehearsals" to "排练","media" to "录制与文件","ledger" to "项目记录","export" to "导出","project-settings" to "项目设置","offline" to "本机待同步").forEach { (key,title)->DropdownMenuItem(text={Text(title)},onClick={expanded=false;navigate(key)}) }
             } }
         }
+    }
+    @Composable private fun AccountNavigation(user:JsonObject) {
+        var expanded by remember {mutableStateOf(false)}
+        var logout by remember {mutableStateOf(false)}
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
+            TextButton(onClick={navigate("appearance")}){Text("外观")}
+            TextButton(onClick={navigate("offline")}){Text("离线")}
+            TextButton(onClick={navigate("support")}){Text("帮助")}
+            Box { TextButton(onClick={expanded=true}){Text("更多")};DropdownMenu(expanded,onDismissRequest={expanded=false}) {
+                DropdownMenuItem(text={Text("Agent Bridge")},onClick={expanded=false;navigate("bridges")})
+                if(user["isAdmin"]?.jsonPrimitive?.booleanOrNull==true) {
+                    DropdownMenuItem(text={Text("账户管理")},onClick={expanded=false;navigate("accounts")})
+                    DropdownMenuItem(text={Text("系统管理")},onClick={expanded=false;navigate("system")})
+                    if(user["role"]?.jsonPrimitive?.content=="super_admin")DropdownMenuItem(text={Text("AI 配置")},onClick={expanded=false;navigate("ai-settings")})
+                }
+                DropdownMenuItem(text={Text("退出登录")},onClick={expanded=false;logout=true})
+            } }
+        }
+        if(logout)AlertDialog(onDismissRequest={logout=false},title={Text("退出当前账户？")},text={Text("本机草稿保留在当前账户空间。未联网时无法撤销服务端会话。")},confirmButton={TextButton(onClick={logout=false;lifecycleScope.launch {try {check(cn.buwei.mobile.RecordingService.instance==null){"请先停止录制"};repository.logout();projectId=null;section="projects"}catch(e:Exception){if(e is CancellationException)throw e;fatal=e.message}}}){Text("确认退出")}},dismissButton={TextButton(onClick={logout=false}){Text("取消")}})
     }
 }
 

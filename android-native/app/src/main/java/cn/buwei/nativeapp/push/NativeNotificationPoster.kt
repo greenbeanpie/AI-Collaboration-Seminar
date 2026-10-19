@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import cn.buwei.nativeapp.MainActivity
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.CancellationException
@@ -73,7 +74,7 @@ object NativeNotificationPoster {
         if (repository.accountId != expectedAccount || repository.epoch != expectedEpoch) return false
         manager.notify(eventId, 0, notification)
         // The same lock covers FCM and polling so they cannot duplicate each other's alert.
-        preferences.edit().putString("events_$expectedAccount", (seen.takeLast(255) + eventId).joinToString(",")).apply()
+        preferences.edit {putString("events_$expectedAccount", (seen.takeLast(255) + eventId).joinToString(","))}
         return true
     }
 

@@ -36,7 +36,7 @@ class FeatureBehaviorTest {
   assertNotNull(validate(Json.parseToJsonElement("""{"type":"string","format":"uuid"}""").jsonObject,JsonPrimitive("wrong")))
  }
  @Test fun allGeneratedOperationsHaveUniqueIdentityAndValidBodySchemas(){
-  val operations=NativeContracts.operations
+  val operations=NativeContracts.decode(java.io.File("src/main/assets/native-contracts.json").readText())
   assertEquals(operations.size,operations.map{it.method+" "+it.path}.toSet().size)
   assertTrue(operations.size>=304)
   assertTrue(operations.any{it.method=="POST"&&it.path=="/api/v1/projects/{projectId}/tasks/{taskId}/inquiries"})

@@ -32900,6 +32900,140 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/sources/{sourceId}/page-images/prepare": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "只保存扫描页图片，不创建 OCR 或其他模型任务",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "idempotency-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "analyze": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "sourceVersionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "pageNumber": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "pageNumber",
+                        "fileId"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "expectedLifecycleVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "sourceVersionId",
+                  "images",
+                  "expectedLifecycleVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已接收图片；jobId 恒为 null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageImagesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "页码或文件无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "来源、生命周期或文件不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本或页面状态已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing": {
       "get": {
         "tags": [

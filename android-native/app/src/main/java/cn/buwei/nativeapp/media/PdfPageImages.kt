@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.AtomicFile
+import androidx.core.graphics.createBitmap
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
@@ -33,7 +34,7 @@ internal suspend fun renderPdfPageImage(page:PdfRenderer.Page,limits:PdfImageLim
             ensureActive();guard()
             val scale=edge.toDouble()/maxOf(page.width,page.height)
             val width=maxOf(1,floor(page.width*scale).toInt());val height=maxOf(1,floor(page.height*scale).toInt())
-            val bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
+            val bitmap=createBitmap(width,height,Bitmap.Config.ARGB_8888)
             try {
                 bitmap.eraseColor(Color.WHITE)
                 page.render(bitmap,null,Matrix().apply {setScale(width.toFloat()/page.width,height.toFloat()/page.height)},PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)

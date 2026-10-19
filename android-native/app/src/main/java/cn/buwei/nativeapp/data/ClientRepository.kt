@@ -33,19 +33,23 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
     private val network=OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(90,TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
     private val gate=Mutex()
+    private val sessionLock=Any()
     private val _account=MutableStateFlow<JsonObject?>(null)
     val account=_account.asStateFlow()
     val accountId:String? get()=_account.value?.get("id")?.jsonPrimitive?.contentOrNull
     val status=MutableStateFlow("")
     @Volatile var epoch:Long=0; private set
-    private var credential:String?=null
+    @Volatile private var credential:String?=null
     @Volatile private var initialized=false
     val origin:String get()=testOrigin?:BuildConfig.SERVICE_ORIGIN
     suspend fun restore()=withContext(Dispatchers.IO) {
-        if(initialized) return@withContext
-        credential=secrets.get("cookie")
-        _account.value=secrets.get("account")?.let { json.parseToJsonElement(it).jsonObject }
-        initialized=true
+        synchronized(sessionLock) {
+            if(initialized) return@withContext
+            val session=secrets.get("session")?.let {json.parseToJsonElement(it).jsonObject}
+            credential=session?.get("cookie")?.jsonPrimitive?.content
+            _account.value=session?.get("account") as? JsonObject
+            initialized=true
+        }
         if(credential!=null) try { validateSession() } catch(e:IOException) { if(e is ApiException) throw e else status.value="离线阅读：显示本机已保存内容" }
     }
     fun resolvePath(path:String):String {
@@ -56,7 +60,7 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
     suspend fun get(path:String):JsonObject {
         val p=resolvePath(path); val owner=accountId; val generation=epoch
         try {
-            val data=networkJson("GET",p)
+            val data=networkJson("GET",p,expectedOwner=owner,expectedEpoch=generation)
             assertOwner(owner,generation)
             if(owner!=null && OfflinePolicy.cacheable(p)) withContext(Dispatchers.IO) {
                 store.putSnapshot(NativeDatabase.Snapshot().apply { account=owner; this.path=p; body=data.toString(); savedAt=System.currentTimeMillis() })
@@ -79,9 +83,10 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
             throw IOException("网络不可用，且此内容尚未保存到本机",e)
         }
     }
-    suspend fun request(method:String,path:String,body:JsonElement?=null,idempotencyKey:String?=null):JsonObject {
+    suspend fun request(method:String,path:String,body:JsonElement?=null,idempotencyKey:String?=null,expectedOwner:String?=accountId,expectedEpoch:Long=epoch):JsonObject {
+        assertOwner(expectedOwner,expectedEpoch)
         if(method=="GET") return get(path)
-        val p=resolvePath(path); val owner=accountId; val generation=epoch
+        val p=resolvePath(path); val owner=expectedOwner; val generation=expectedEpoch
         // Offline-safe writes are durable before transport. A dropped response retries only the same key.
         if(owner!=null && OfflinePolicy.allowed(method,p)) return gate.withLock {
             val row=NativeDatabase.Operation().apply { id=idempotencyKey?:UUID.randomUUID().toString(); account=owner; project=OfflinePolicy.project(p)!!; this.path=p; this.method=method; this.body=(body?:JsonObject(emptyMap())).toString(); createdAt=System.currentTimeMillis() }
@@ -103,10 +108,10 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
                         status.value="当前项目有待处理的同步冲突；新操作已保存并等待"
                         return@withLock buildJsonObject {put("queued",true);put("operationId",row.id)}
                     }
-                    try {sendOperation(earlier);assertOwner(owner,generation);withContext(Dispatchers.IO){store.removeOperation(earlier.id,owner)}}
+                    try {sendOperation(earlier,generation);assertOwner(owner,generation);withContext(Dispatchers.IO){store.removeOperation(earlier.id,owner)}}
                     catch(e:ApiException){block(earlier,e);throw e}
                 }
-                val result=sendOperation(row)
+                val result=sendOperation(row,generation)
                 assertOwner(owner,generation)
                 withContext(Dispatchers.IO) { store.removeOperation(row.id,owner) }
                 result
@@ -116,13 +121,13 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
                 buildJsonObject { put("queued",true); put("operationId",row.id) }
             }
         }
-        val data=networkJson(method,p,body,idempotencyKey?:UUID.randomUUID().toString())
+        val data=networkJson(method,p,body,idempotencyKey?:UUID.randomUUID().toString(),owner,generation)
         assertOwner(owner,generation)
         return data
     }
-    suspend fun networkJson(method:String,path:String,body:JsonElement?=null,key:String?=null):JsonObject {
-        val owner=accountId;val generation=epoch
-        val raw=execute(method,path,body?.toString()?.toRequestBody("application/json".toMediaType()),key)
+    suspend fun networkJson(method:String,path:String,body:JsonElement?=null,key:String?=null,expectedOwner:String?=accountId,expectedEpoch:Long=epoch):JsonObject = withContext(Dispatchers.IO) {
+        val owner=expectedOwner;val generation=expectedEpoch
+        val raw=execute(method,path,body?.toString()?.toRequestBody("application/json".toMediaType()),key,expectedOwner=owner,expectedEpoch=generation)
         raw.use { response ->
             assertOwner(owner,generation)
             val payload=response.body.string().let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
@@ -131,16 +136,17 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
                 throw ApiException(response.code,error?.get("code")?.jsonPrimitive?.contentOrNull?:"HTTP_${response.code}",error?.get("message")?.jsonPrimitive?.contentOrNull?:"请求失败 (${response.code})",response.header("X-Request-Id")?:"")
             }
             val value=payload?.get("data")?:throw IOException("服务返回了无效数据")
-            return value as? JsonObject ?: buildJsonObject { put("items",value) }
+            return@withContext value as? JsonObject ?: buildJsonObject { put("items",value) }
         }
     }
-    suspend fun execute(method:String,path:String,body:RequestBody?=null,key:String?=null,headers:Map<String,String> = emptyMap()):Response {
+    suspend fun execute(method:String,path:String,body:RequestBody?=null,key:String?=null,headers:Map<String,String> = emptyMap(),expectedOwner:String?=accountId,expectedEpoch:Long=epoch):Response {
         val p=resolvePath(path)
+        val cookie=synchronized(sessionLock) {assertOwner(expectedOwner,expectedEpoch);credential}
         val builder=Request.Builder().url(origin+p).header("X-Request-Id",UUID.randomUUID().toString())
-        credential?.let { builder.header("Cookie",it) }
+        cookie?.let { builder.header("Cookie",it) }
         key?.let { builder.header("Idempotency-Key",it) }
         headers.forEach { (name,value)->builder.header(name,value) }
-        accountId?.let { builder.header("X-Notification-Account",it) }
+        expectedOwner?.let { builder.header("X-Notification-Account",it) }
         builder.method(method,if(method in listOf("GET","HEAD")) null else body?:ByteArray(0).toRequestBody())
         val call=network.newCall(builder.build())
         return suspendCancellableCoroutine { continuation ->
@@ -151,13 +157,14 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
             })
         }
     }
-    fun socket(path:String,listener:WebSocketListener):WebSocket {
+    fun socket(path:String,listener:WebSocketListener,expectedOwner:String?=accountId,expectedEpoch:Long=epoch):WebSocket {
+        val cookie=synchronized(sessionLock){assertOwner(expectedOwner,expectedEpoch);credential}
         val builder=Request.Builder().url(origin+resolvePath(path))
-        credential?.let { builder.header("Cookie",it) }
+        cookie?.let { builder.header("Cookie",it) }
         return network.newWebSocket(builder.build(),listener)
     }
-    suspend fun uploadPart(path:String,bytes:ByteArray) {
-        execute("PUT",path,bytes.toRequestBody("application/octet-stream".toMediaType()),headers=mapOf("X-Part-Size" to bytes.size.toString())).use {
+    suspend fun uploadPart(path:String,bytes:ByteArray,expectedOwner:String?=accountId,expectedEpoch:Long=epoch) {
+        execute("PUT",path,bytes.toRequestBody("application/octet-stream".toMediaType()),headers=mapOf("X-Part-Size" to bytes.size.toString()),expectedOwner=expectedOwner,expectedEpoch=expectedEpoch).use {
             if(!it.isSuccessful) throw ApiException(it.code,"UPLOAD_FAILED","分片上传失败 (${it.code})，已保留续传记录")
         }
     }
@@ -169,7 +176,11 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
             check(it.isSuccessful) { "授权兑换失败 (${it.code})，请重新登录" }
             val cookie=it.headers("Set-Cookie").firstOrNull { c->c.startsWith("ai_office_session=") }?.substringBefore(';')?:error("服务未返回登录会话")
             val user=json.parseToJsonElement(it.body.string()).jsonObject["data"]!!.jsonObject["user"]!!.jsonObject
-            secrets.put("cookie",cookie); secrets.put("account",user.toString()); credential=cookie; epoch++; initialized=true; _account.value=user
+            synchronized(sessionLock) {
+                check(generation==epoch){"账户已变化，请重新授权"}
+                secrets.put("session",buildJsonObject {put("cookie",cookie);put("account",user)}.toString())
+                credential=cookie; epoch++; initialized=true; _account.value=user
+            }
         }
     }
     suspend fun validateSession():JsonObject {
@@ -177,9 +188,8 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
         check(accountId==null || result["id"]?.jsonPrimitive?.content==accountId) { "账户发生变化，已停止操作" }
         return result
     }
-    private suspend fun sendOperation(row:NativeDatabase.Operation):JsonObject {
-        check(row.account==accountId){"账户上下文已变化，停止同步"}
-        return networkJson("POST","/projects/${row.project}/offline-sync",buildJsonObject { put("method",row.method); put("tail",OfflinePolicy.tail(row.path)); put("body",json.parseToJsonElement(row.body)) },row.id)
+    private suspend fun sendOperation(row:NativeDatabase.Operation,generation:Long):JsonObject {
+        return networkJson("POST","/projects/${row.project}/offline-sync",buildJsonObject { put("method",row.method); put("tail",OfflinePolicy.tail(row.path)); put("body",json.parseToJsonElement(row.body)) },row.id,row.account,generation)
     }
     private suspend fun block(row:NativeDatabase.Operation,e:ApiException)=withContext(Dispatchers.IO) {
         row.state=if(e.status==409) "conflict" else if(e.status==429||e.status>=500) "pending" else "blocked"; row.reason=e.message; store.updateOperation(row)
@@ -193,7 +203,7 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
         for(row in withContext(Dispatchers.IO) { store.operations(owner) }) {
             assertOwner(owner,generation)
             if(row.state!="pending" || row.project in blocked) { blocked+=row.project; continue }
-            try { sendOperation(row); assertOwner(owner,generation); withContext(Dispatchers.IO) { store.removeOperation(row.id,owner) } }
+            try { sendOperation(row,generation); assertOwner(owner,generation); withContext(Dispatchers.IO) { store.removeOperation(row.id,owner) } }
             catch(e:ApiException) { block(row,e); blocked+=row.project; if(e.status==401) break }
         }
     }
@@ -216,7 +226,7 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
         cn.buwei.nativeapp.push.NativePushRegistration.clearNotifications(context)
         expire()
     }
-    private fun expire() { epoch++; credential=null; secrets.put("cookie",null); secrets.put("account",null); _account.value=null }
+    private fun expire()=synchronized(sessionLock) { secrets.put("session",null);epoch++;credential=null;_account.value=null }
     private fun assertOwner(owner:String?,generation:Long) { check(owner==accountId && generation==epoch) { "账户上下文已变化，操作已停止" } }
     private suspend fun revokeIfNeeded(owner:String,project:String) {
         try { networkJson("GET","/projects/$project") }
@@ -224,7 +234,7 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
     }
     suspend fun download(path:String,destination:File) = withContext(Dispatchers.IO) {
         val owner=accountId?:error("请先登录"); val generation=epoch
-        execute("GET",path).use { response ->
+        execute("GET",path,expectedOwner=owner,expectedEpoch=generation).use { response ->
             check(response.isSuccessful) { "文件读取失败 (${response.code})" }
             destination.parentFile?.mkdirs()
             val temporary=File(destination.path+".partial")

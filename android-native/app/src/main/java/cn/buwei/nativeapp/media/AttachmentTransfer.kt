@@ -24,15 +24,15 @@ class AttachmentTransfer(private val repository:ClientRepository) {
         repository.validateSession();assertOwner()
         if(state["fileId"]==null) {
             val key=state["key"]?.jsonPrimitive?.content?:UUID.randomUUID().toString().also { save(buildJsonObject {put("key",it)}) }
-            val record=repository.request("POST","/projects/$project/files",buildJsonObject {put("fileName",file.name);put("purpose","reference")},key)
+            val record=repository.request("POST","/projects/$project/files",buildJsonObject {put("fileName",file.name);put("purpose","reference")},key,owner,generation)
             save(buildJsonObject {put("key",key);put("fileId",record["fileId"]!!)})
         }
         val id=state["fileId"]!!.jsonPrimitive.content;val path="/projects/$project/files/$id/uploads"
-        val init=repository.networkJson("POST",path,buildJsonObject {put("sizeBytes",file.length())})
+        val init=repository.networkJson("POST",path,buildJsonObject {put("sizeBytes",file.length())},expectedOwner=owner,expectedEpoch=generation)
         val session=init["sessionId"]!!.jsonPrimitive.content
         val partBytes=init["partBytes"]!!.jsonPrimitive.int
         require(partBytes in 1..(8*1024*1024)) {"服务返回了无效分片大小"}
-        val status=repository.networkJson("GET","$path/$session")
+        val status=repository.networkJson("GET","$path/$session",expectedOwner=owner,expectedEpoch=generation)
         if(status["status"]?.jsonPrimitive?.content!="complete") {
             val done=(status["parts"] as? JsonArray).orEmpty().associate { val p=it.jsonObject;p["partNumber"]!!.jsonPrimitive.int to p["sizeBytes"]!!.jsonPrimitive.long }
             RandomAccessFile(file,"r").use {input->var offset=0L;var part=1
@@ -40,12 +40,12 @@ class AttachmentTransfer(private val repository:ClientRepository) {
                     if(done[part]!=bytes.toLong()) {
                         input.seek(offset);val buffer=ByteArray(bytes);input.readFully(buffer)
                         onProgress("上传分片 $part / ${(file.length()+partBytes-1)/partBytes}")
-                        repository.uploadPart("$path/$session/parts/$part",buffer)
+                        repository.uploadPart("$path/$session/parts/$part",buffer,owner,generation)
                     }
                     offset+=bytes;part++
                 }
             }
-            repository.networkJson("POST","$path/$session/complete")
+            repository.networkJson("POST","$path/$session/complete",expectedOwner=owner,expectedEpoch=generation)
         }
         assertOwner();onProgress("文件上传完成");id
     }
@@ -63,7 +63,7 @@ class AttachmentTransfer(private val repository:ClientRepository) {
         val init=repository.networkJson("POST",path,buildJsonObject {put("sourceVersionId",version);put("method","browser-$extension")})
         val session=init["sessionId"]!!.jsonPrimitive.content
         var batch=0
-        try {
+        val completion=try {
             assertOwner()
             val result=DocumentReader.read(repository.context,file) {block->
                 assertOwner()
@@ -74,7 +74,7 @@ class AttachmentTransfer(private val repository:ClientRepository) {
                 assertOwner();batch++;onProgress("本机正文已提交 $batch 批")
             }
             assertOwner()
-            return repository.networkJson("POST","$path/$session/complete",buildJsonObject {
+            repository.networkJson("POST","$path/$session/complete",buildJsonObject {
                 put("totalPages",result.pages?.let {JsonPrimitive(it)}?:JsonNull)
                 put("warnings",JsonArray(result.warnings.take(100).map {JsonPrimitive(it.take(1000))}))
                 put("partial",result.warnings.isNotEmpty());put("interrupted",false)
@@ -96,5 +96,12 @@ class AttachmentTransfer(private val repository:ClientRepository) {
             if(failure is CancellationException)throw failure
             throw java.io.IOException(if(finalized)"正文导入未完成；原文件和已接收正文保留为部分结果。${failure.message.orEmpty()}" else "正文导入中断，服务端状态尚未确认；请查看资料解析进度。${failure.message.orEmpty()}",failure)
         }
+        // Image preparation is a separate phase: failure must not re-finalize completed text
+        // as interrupted. The dedicated endpoint never dispatches OCR or a paid model job.
+        if(extension=="pdf"&&(completion["needsImages"]?.jsonPrimitive?.intOrNull?:0)>0) {
+            assertOwner()
+            uploadMissingPdfImages(repository,project,source["sourceId"]!!.jsonPrimitive.content,version,file,onProgress)
+        }
+        return completion
     }
 }

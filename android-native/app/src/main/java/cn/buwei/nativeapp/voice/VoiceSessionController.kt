@@ -74,7 +74,7 @@ internal class VoiceSessionController(private val repository: ClientRepository, 
                     override fun onMessage(webSocket: WebSocket, text: String) { scope.launch { if (token == generation && owned()) event(token, webSocket, text, microphone) } }
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { scope.launch { if (token == generation) fail("语音连接失败。") } }
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { scope.launch { if (token == generation) fail("语音连接中断。") } }
-                })
+                },owner,epoch)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (token == generation) fail(failure.message ?: "无法连接语音服务。") }
         }

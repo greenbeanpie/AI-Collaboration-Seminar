@@ -90,26 +90,26 @@ class NativeBusinessTest {
   runBlocking{repository.exchange("fixture-code","fixture-verifier")}
  }
  @After fun teardown(){server.shutdown()}
- private fun awaitText(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Exception){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
+ private fun awaitText(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Throwable){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
  private fun screenshot(name:String){val image=compose.onRoot().captureToImage().asAndroidBitmap();val directory=File(context.getExternalFilesDir(null),"native-ui-fixtures").apply{mkdirs()};val target=File(directory,"$name.png");target.outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};assertTrue(target.length()>0)}
 
  @Test fun projectListOpensSelectedProject(){
   assertEquals(listOf("projectId","taskId"),pathParameterNames("/api/v1/projects/{projectId}/tasks/{taskId}"))
   val selected=AtomicReference<String?>(null)
-  compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"projects",null,{selected.set(it)},{})}}}
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"projects",null,{selected.set(it)},{})}}}
   awaitText("Fixture project");compose.onNodeWithText("打开项目").performScrollTo().performClick()
   compose.waitUntil{selected.get()==project};screenshot("projects")
  }
  @Test fun taskListLoadsNativeDetail(){
-  compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"tasks",project,{},{})}}}
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"tasks",project,{},{})}}}
   awaitText("Fixture task");compose.onNodeWithText("查看详情").performScrollTo().performClick()
   awaitText("任务内容：Task detail fixture");screenshot("task-detail")
  }
  @Test fun richEditorSavesTextAndRetainsReferencesAndMarks(){
-  compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"data",project,{},{})}}}
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"data",project,{},{})}}}
   compose.onNodeWithText("成果材料").performScrollTo().performClick();awaitText("Fixture material")
   compose.onNodeWithText("查看详情").performScrollTo().performClick();awaitText("编辑正文")
-  compose.onNodeWithText("编辑正文").performScrollTo().performClick();compose.onNodeWithText("body before").performScrollTo().performTextReplacement("body after");closeSoftKeyboard()
+  compose.onNodeWithText("编辑正文").performScrollTo().performClick();compose.onNode(hasText("body before") and hasSetTextAction()).performScrollTo().performTextReplacement("body after");closeSoftKeyboard()
   screenshot("rich-editor");compose.onNodeWithText("保存新版本").performScrollTo().performClick()
   compose.waitUntil(15000){received.get()!=null}
   val save=received.get()!!.obj("body");assertEquals(richDoc().toString().replace("body before","body after"),save.obj("doc").toString());assertFalse(save.containsKey("markdown"));assertEquals(1,save["expectedRevision"]!!.jsonPrimitive.int)
@@ -117,7 +117,7 @@ class NativeBusinessTest {
  }
  @Test fun creationDraftPreviewsThenCommitsOnlyAfterConfirmation(){
   val selected=AtomicReference<String?>(null)
-  compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){ProjectCreationScreen(repository){selected.set(it)}}}}
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){ProjectCreationScreen(repository){selected.set(it)}}}}
   compose.onNodeWithText("名称 *").performScrollTo().performTextInput("Fixture project");closeSoftKeyboard()
   compose.onNodeWithText("保存创建草稿").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
   awaitText("生成手动预览");compose.onNodeWithText("生成手动预览").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
@@ -125,8 +125,8 @@ class NativeBusinessTest {
   awaitText("项目已创建");screenshot("creation-committed");compose.onNodeWithText("进入项目").performScrollTo().performClick();compose.waitUntil{selected.get()==project}
  }
  @Test fun conversationSendsPollsAndDisplaysNativeAnswer(){
-  compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
   compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performClick()
-  awaitText("Fixture answer");compose.onNodeWithText("Native response").assertIsDisplayed();screenshot("ai-conversation")
+  awaitText("Fixture answer");compose.onNodeWithText("Native response").performScrollTo().assertIsDisplayed();screenshot("ai-conversation")
  }
 }
