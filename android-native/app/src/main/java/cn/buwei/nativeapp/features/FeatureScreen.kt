@@ -117,6 +117,10 @@ private fun ResourceView(repository:ClientRepository,destination:Destination,onP
  LaunchedEffect(destination,repository.accountId,refresh,applied,cursor){busy=true;try{val query=listOfNotNull(applied.takeIf{it.isNotBlank()}?.let{"q=${Uri.encode(it)}"},cursor?.let{"cursor=${Uri.encode(it)}"}).joinToString("&");val loaded=repository.get(destination.path+(if(query.isEmpty())""else if(destination.path.contains('?'))"&$query"else"?$query"));data=if(cursor!=null&&loaded["items"]is JsonArray)JsonObject(loaded+mapOf("items" to JsonArray(previous+loaded["items"]!!.jsonArray)))else loaded;failure=null}catch(e:CancellationException){throw e}catch(e:Exception){failure=e.message}finally{busy=false}}
  Text(destination.title,style=MaterialTheme.typography.titleLarge)
  val canonical=NativeContracts.operations.firstOrNull{it.method=="GET"&&bindPath(it.path,destination.bindings)==destination.path}?.path
+  if(canonical=="$projectPrefix/tasks/{taskId}/inquiries"){
+   val project=destination.bindings["projectId"];val task=destination.bindings["taskId"]
+   if(project!=null&&task!=null){TaskInquiriesScreen(repository,project,task);return}
+  }
  val hasSearch=NativeContracts.operations.firstOrNull{it.method=="GET"&&it.path==canonical}?.parameters?.any{it.jsonObject.text("name")=="q"}==true
  if(hasSearch){OutlinedTextField(search,{search=it},label={Text("搜索")},modifier=Modifier.fillMaxWidth());TextButton({cursor=null;previous=emptyList();applied=search}){Text("搜索")}}
  TextButton({cursor=null;previous=emptyList();refresh++},enabled=!busy){Text("刷新")}
