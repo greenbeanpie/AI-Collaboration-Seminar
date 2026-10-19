@@ -27,6 +27,7 @@ public sealed class NativeVoiceView : UserControl
     private readonly MediaPlayer speaker = new();
     private readonly SpeechSynthesizer synthesizer = new();
     private SpeechSynthesisStream? speechStream;
+    private XamlRoot? hostRoot;
     private readonly ActivityGate activity;
     private readonly string draftPath;
     private readonly SemaphoreSlim draftWrites = new(1, 1);
@@ -66,6 +67,8 @@ public sealed class NativeVoiceView : UserControl
         };
         Loaded += async (_, _) => await RunAsync(async () =>
         {
+            hostRoot = XamlRoot;
+            if (hostRoot is not null) hostRoot.Changed += HostVisibilityChanged;
             if (File.Exists(draftPath))
             {
                 var saved = JsonNode.Parse(await File.ReadAllTextAsync(draftPath));
@@ -77,9 +80,18 @@ public sealed class NativeVoiceView : UserControl
         Unloaded += async (_, _) =>
         {
             unloaded = true; StopSpeech(); voice.Changed -= OnState;
+            if (hostRoot is not null) hostRoot.Changed -= HostVisibilityChanged;
             await voice.DisposeAsync(); await PersistDraftAsync(); speaker.Dispose(); synthesizer.Dispose();
         };
         Buttons();
+    }
+    private async void HostVisibilityChanged(XamlRoot sender, XamlRootChangedEventArgs args)
+    {
+        if (!sender.IsHostVisible)
+        {
+            StopSpeech();
+            await RunAsync(voice.CancelAsync);
+        }
     }
     private async Task RunAsync(Func<Task> action)
     {
