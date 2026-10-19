@@ -7,6 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.*
         if(!loading&&error==null&&rows.isEmpty())Text("尚无已保存的持续反馈版本")
         rows.forEach{row->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
             Text("反馈版本 ${row.twText("version")} · ${row.twText("createdAt")}",style=MaterialTheme.typography.titleSmall)
+            NativeAiReferenceBadge()
             members.firstOrNull{it.twText("userId")==row.twText("actorId")}?.let{Text("修改者：${it.twText("displayName")}",style=MaterialTheme.typography.bodySmall)}
             SelectionContainer{Text(row.twText("feedback").ifBlank{"已清空持续反馈"})}
         }}}
@@ -42,6 +44,7 @@ internal fun nativeFrozenFeedback(job:JsonObject):JsonObject? {
     var expanded by remember(job.twText("jobId"),snapshot){mutableStateOf(false)}
     TextButton({expanded=!expanded}){Text("本次采用的持续反馈 · v${snapshot.twText("version")}")}
     if(expanded){
+        NativeAiReferenceBadge()
         snapshot.twText("createdAt").takeIf(String::isNotBlank)?.let{Text("保存时间：$it",style=MaterialTheme.typography.bodySmall)}
         SelectionContainer{Text(snapshot.twText("feedback").ifBlank{if(snapshot.twText("version")=="0")"本次作业未设置持续反馈"else"本次采用已清空的持续反馈"})}
         Text("此内容由后台作业固定；后续反馈修改不会替换本轮依据。",style=MaterialTheme.typography.bodySmall)

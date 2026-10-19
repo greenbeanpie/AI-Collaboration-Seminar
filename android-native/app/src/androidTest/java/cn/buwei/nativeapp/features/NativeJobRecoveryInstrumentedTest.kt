@@ -1,6 +1,8 @@
 package cn.buwei.nativeapp.features
 
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
@@ -93,10 +95,20 @@ class NativeJobRecoveryInstrumentedTest {
             return delegate.dispatch(request)
         }}
         compose.setContent{NativeTheme{Surface{AiConversationScreen(repository,project)}}}
-        waitFor("恢复失败执行");compose.onNodeWithText("询问项目 AI").performTextInput("下一条本机问题草稿");androidx.test.espresso.Espresso.closeSoftKeyboard()
+        waitFor("恢复失败执行");compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("询问项目 AI"));compose.onNodeWithText("询问项目 AI").performTextInput("下一条本机问题草稿");androidx.test.espresso.Espresso.closeSoftKeyboard()
         confirmResume(scroll=true);waitFor("恢复后的回答");assertEquals(1,writes.size)
         assertEquals("/api/v1/jobs/$original/retry",writes.single().path)
         compose.onNodeWithText("下一条本机问题草稿").assertExists()
+    }
+    @Test fun shortChatWindowKeepsComposerAndSendReachableWithoutWritingAnything(){
+        val project=UUID.randomUUID().toString()
+        compose.setContent{NativeTheme{Surface(Modifier.height(300.dp).fillMaxWidth()){AiConversationScreen(repository,project)}}}
+        waitFor("询问项目 AI")
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("询问项目 AI"))
+        compose.onNodeWithText("询问项目 AI").performTextInput("横屏窗口中的未发送草稿")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithText("发送").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("横屏窗口中的未发送草稿").assertExists();assertTrue(writes.isEmpty())
     }
     @Test fun rehearsalRecoveryTracksReturnedJobWithoutResubmittingAnswerDraft() {
         val project=UUID.randomUUID().toString();val rehearsal=UUID.randomUUID().toString();val base="/api/v1/projects/$project";val delegate=server.dispatcher

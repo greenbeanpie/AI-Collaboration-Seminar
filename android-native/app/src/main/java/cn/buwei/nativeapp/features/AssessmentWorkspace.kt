@@ -12,7 +12,7 @@ import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
 import cn.buwei.nativeapp.data.requestDurably
 import cn.buwei.nativeapp.NativeAiReferenceBadge
-import cn.buwei.nativeapp.ReferenceFieldLabel
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -199,6 +199,6 @@ private fun AssessmentFollowupWorkspace(repository: ClientRepository, projectId:
     Text("固定材料追问与版本对比", style = MaterialTheme.typography.titleMedium); Text("新对话中的事实不能作为评分证据；复核只使用本轮固定材料与标准，已有人工分数会保留。")
     turns.forEach { turn -> Text("${turn.text("message")} · ${turn.text("status")} · r${turn.text("baseRevision")} → r${turn.text("publishedRevision")}"); val result = turn["publishedReport"] as? JsonObject ?: turn["proposedReport"] as? JsonObject; result?.let { AssessmentReport(it, turn.obj("baseReport")) }; if (turn["publishedReport"] is JsonObject && turn["proposedReport"] is JsonObject) { Text("AI 建议（人工分数保留前）"); AssessmentReport(turn.obj("proposedReport"), turn.obj("publishedReport")) }; turn.text("error").takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }; turn.text("jobId").takeIf { it.isNotBlank() }?.let { NativeJobExecution(repository, it, allowResume = enabled, onSettled = { reload++; onChanged() }) } }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; TextButton({ reload++ }) { Text("刷新追问记录") }
-    OutlinedTextField(message, { if (it.length <= 8000) message = it }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("指出固定材料中的遗漏或询问评分依据") }, minLines = 3)
+    ReferenceOutlinedTextField(message, { if (it.length <= 8000) message = it }, Modifier.fillMaxWidth(), label = "指出固定材料中的遗漏或询问评分依据", minLines = 3)
     Button({ val submitted = message.trim(); onConfirm("发送追问并复核当前评分 r${assessment.text("revision")}？这会调用模型；只使用固定材料，保留人工分数。") { check(repository.accountId == owner && repository.epoch == epoch); repository.requestDurably("followup:$projectId:${assessment.text("assessmentId")}", "POST", path, buildJsonObject { put("message", submitted); put("expectedRevision", assessment["revision"] ?: JsonPrimitive(1)) }); message = ""; reload++; onChanged() } }, enabled = enabled && message.isNotBlank() && turns.none { it.text("status") in listOf("queued", "running", "waiting_input") }) { Text("发送追问并复核") }
 }

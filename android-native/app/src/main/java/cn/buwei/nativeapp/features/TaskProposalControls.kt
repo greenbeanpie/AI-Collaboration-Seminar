@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ApiException
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.requestDurably
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -79,6 +81,7 @@ internal fun proposalFeedbackBody(id:String,reason:String):JsonObject {
     fun update(group:String,index:Int,field:String,value:JsonElement){val rows=payload.twRows(group).toMutableList();rows[index]=JsonObject(rows[index]+(field to value));payload=JsonObject(payload+(group to JsonArray(rows)))}
     OutlinedButton({open=!open}){Text("修正建议、部分应用或重新反馈")}
     if(!open)return
+    NativeAiReferenceBadge()
     Text("本机基于 r$revision · ${proposalStatus(status)}；当前 r${latest.twText("revision")} · ${proposalStatus(latest.twText("status"))}")
     if(payload.twRows("references").any{it.twText("resourceType")=="decision"})Text("来源已移除：历史决策记录不能重新读取，请核对现有资料。",color=MaterialTheme.colorScheme.error)
     TextButton({run{readLatest();message="已读取最新方案，本机修改和选择保留"}},enabled=!busy){Text("读取最新方案（保留本机修改）")}
@@ -133,5 +136,5 @@ internal fun proposalFeedbackBody(id:String,reason:String):JsonObject {
 private fun proposalStatus(value:String)=mapOf("pending" to "待确认","stale" to "已过期","rejected" to "已拒绝","applied" to "已应用")[value]?:value
 
 @Composable private fun ProposalField(enabled:Boolean,label:String,value:String,onChange:(String)->Unit,max:Int,lines:Int=1){
-    OutlinedTextField(value,{if(it.length<=max)onChange(it)},Modifier.fillMaxWidth(),enabled=enabled,label={Text(label)},minLines=lines)
+    ReferenceOutlinedTextField(value,{if(it.length<=max)onChange(it)},Modifier.fillMaxWidth(),enabled=enabled,label=label,minLines=lines)
 }

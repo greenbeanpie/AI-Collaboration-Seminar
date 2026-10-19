@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.requestDurably
 import cn.buwei.nativeapp.NativeAiReferenceBadge
-import cn.buwei.nativeapp.ReferenceFieldLabel
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import cn.buwei.nativeapp.voice.VoiceWorkspace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -93,7 +93,7 @@ private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: S
             val processing = current.text("processingStatus") in listOf("queued", "running", "waiting_input")
             val active = current.flag("canOperate") && current.text("status") == "active"
             if (active) {
-                OutlinedTextField(answer, { if (it.length <= 8000) answer = it }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("本轮真实回答") }, minLines = 3, enabled = aiEnabled && !busy && !processing)
+                ReferenceOutlinedTextField(answer, { if (it.length <= 8000) answer = it }, Modifier.fillMaxWidth(), label = "本轮真实回答", minLines = 3, enabled = aiEnabled && !busy && !processing)
                 Button({ val body = buildJsonObject { put("content", answer.trim()) }; val id = selected; confirm = "提交本轮真实回答？内容将保存并用于后续追问及评分，会调用模型。" to { val result = send("POST", "/rehearsals/${Uri.encode(id)}/answers", body); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && answer.isNotBlank() && rehearsalCanAnswer(current)) { Text("提交回答") }
                 OutlinedButton({ voiceOpen = true }, enabled = aiEnabled && !busy && !processing) { Text("进入原生实时语音演练") }
                 Button({ val id = selected; confirm = "结束本轮并生成总结评分？将依据本轮固定资料和真实回答调用模型。" to { val result = send("POST", "/rehearsals/${Uri.encode(id)}/finish"); jobId = result.text("jobId") } }, enabled = aiEnabled && !busy && !processing && current.rows("turns").isNotEmpty()) { Text("结束并生成总结") }
