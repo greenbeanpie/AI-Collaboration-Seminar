@@ -69,6 +69,8 @@ Python 标准库独立审计通过：共 **406 条聚合采样、1,700 条进程
 从仓库根目录，使用 [measure-resources.ps1](../scripts/measure-resources.ps1) 对独立匿名配置运行：
 
 ```powershell
+Expand-Archive ./output/windows-native/Buwei.Windows.Native-0.1.0-x64-portable.zip `
+  -DestinationPath ./output/windows-native/publish
 & ./windows-native/scripts/measure-resources.ps1 `
   -NativeExe ./output/windows-native/publish/Buwei.Windows.Native.exe `
   -NativeArguments @('--benchmark') `

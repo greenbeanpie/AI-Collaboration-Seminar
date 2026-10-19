@@ -2,6 +2,14 @@
 
 本轮交付是可构建、可打包的 WinUI 原生迁移预览，**不是完整业务对等或正式发布验收**。专用界面已覆盖主要业务领域，但 [UI-COVERAGE.md](docs/UI-COVERAGE.md) 列出的缺口仍未完成。[MIGRATION_MATRIX.md](docs/MIGRATION_MATRIX.md) 是后续验收门槛。
 
+## 改动范围
+
+- `windows-native/App/`：原生工作区、分领域专用界面、结构文档编辑、MVVM 通知模型和 Windows 集成。
+- `windows-native/Core/`：HTTP/会话、账户隔离 SQLite、离线队列、草稿、Office 读取及导出；同级六个测试项目、`scripts/` 与 `installer/` 提供本机验证、打包及采样。
+- `backend/src/api/native-auth.ts`、`backend/src/services/native-auth.ts`、`backend/test/native-auth.test.ts` 与 `backend/migrations/0081_native_auth_client_type.sql`：可选 Windows 授权事务，保持 Android 缺省行为。
+- `frontend/src/pages/NativeAuthorizePage.tsx` 及其测试、后端/前端 OpenAPI 与 Android `native-contracts.json`：固定回调与契约兼容更新。
+- 同期其他任务合入 `main` 的 Android 功能修复完整保留，不作为本 Windows 迁移实现或测试成果计数。
+
 ## 环境与构建
 
 - Windows x64；Visual Studio Community 2026 18.11；.NET SDK 10.0.402；MSVC 14.51；已安装完整 Windows SDK 28000，无需重复安装 26100。API 编译目标为 26100。
@@ -43,3 +51,12 @@ Minisign 使用既有公钥，实际生产签名 fixture、篡改、哈希、路
 ## 性能
 
 原始三轮匿名前台/托盘数据及限制见交付目录 `resources/` 和 [性能记录](docs/PERFORMANCE.md)。仅这些实际采样场景可比较；认证项目、文档、传输和媒体峰值未测。未证明固定资源降幅，也未进行系统冷启动实验。
+
+| 三轮中位数，MiB | Tauri 基线 | WinUI 预览 |
+| --- | ---: | ---: |
+| 匿名登录前台，进程树私有字节 | 555.26 | 82.18 |
+| 匿名登录前台，工作集相加 | 885.72 | 150.53 |
+| 初始托盘，进程树私有字节 | 208.42 | 74.94 |
+| 初始托盘，工作集相加 | 62.07 | 142.57 |
+
+前台私有提交量明显下降，**托盘工作集反而增加**，不能宣称所有内存指标改善。私有提交量不等于实际物理 RAM，工作集相加包含共享页重复计数；VRAM 未测。各组 CPU 机器归一化中位数均为 0%，不是每一时刻都没有 CPU 活动。其他任务的后台负载未受控制；仅有输入空闲计时，没有视觉就绪或可交互耗时验收。
