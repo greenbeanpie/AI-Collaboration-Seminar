@@ -24,6 +24,16 @@ class RecordingStore(context: Context, root: String, account: String, id: String
         directory.mkdirs()
         manifest = AtomicFile(File(directory, "manifest.json"))
         snapshot = if (manifest.baseFile.exists()) JSONObject(manifest.openRead().bufferedReader().use { it.readText() }) else JSONObject()
+        // Old native builds always used an automatic title and the actor as contributor.
+        // Missing upload bookkeeping cannot prove that no create request reached the server.
+        // Preserve that historical identity before exposing editable new metadata controls.
+        if(snapshot.length()>0&&!snapshot.has("metadataVersion")&&!snapshot.has("uploadMetadata")){
+            val title="会议录制 ${snapshot.optString("createdAt")}";val people=JSONArray().put(snapshot.getString("accountId"))
+            snapshot.put("title",title).put("contributorIds",people).put("legacyMetadataPreserved",true)
+                .put("uploadMetadata",JSONObject().put("clientSessionId",snapshot.getString("id")).put("title",title)
+                    .put("kind",snapshot.getString("kind")).put("purpose","reference").put("contributorIds",JSONArray(people.toString())))
+            save()
+        }
     }
 
     @Synchronized fun create(args: JSONObject) {
@@ -31,7 +41,7 @@ class RecordingStore(context: Context, root: String, account: String, id: String
         snapshot = JSONObject().put("id", args.getString("id")).put("accountId", args.getString("accountId"))
             .put("projectId", args.getString("projectId")).put("kind", args.getString("kind"))
             .put("state", "recording").put("createdAt", java.time.Instant.now().toString())
-            .put("elapsedMs", 0).put("segments", JSONArray()).put("interruptions", JSONArray())
+            .put("elapsedMs", 0).put("segments", JSONArray()).put("interruptions", JSONArray()).put("metadataVersion",1)
         save()
     }
 
@@ -39,6 +49,49 @@ class RecordingStore(context: Context, root: String, account: String, id: String
         val output = manifest.startWrite()
         try { output.write(snapshot.toString().toByteArray(Charsets.UTF_8)); manifest.finishWrite(output) }
         catch (e: Exception) { manifest.failWrite(output); throw e }
+    }
+
+    /** Refresh an inactive view after a service-owned writer has finalized the manifest. */
+    @Synchronized fun refresh(): JSONObject {
+        if(manifest.baseFile.exists()) snapshot=JSONObject(manifest.openRead().bufferedReader().use{it.readText()})
+        return view()
+    }
+
+    @Synchronized fun metadata(title:String,contributors:List<String>) {
+        require(!snapshot.has("uploadMetadata")){"上传参数已固定，请使用原参数继续上传"}
+        val name=title.trim();require(name.length in 1..200){"标题须为1至200字"}
+        require(contributors.size in 1..100&&contributors.distinct().size==contributors.size){"请选择1至100位不重复的贡献人"}
+        contributors.forEach{require(java.util.UUID.fromString(it).toString()==it.lowercase()){"贡献人标识无效"}}
+        snapshot.put("title",name).put("contributorIds",JSONArray(contributors.sorted()));save()
+    }
+
+    /** Freeze before the first request, so a lost create response can retry the exact identity. */
+    @Synchronized fun freezeUploadMetadata():JSONObject {
+        if(!snapshot.has("uploadMetadata")){
+            val contributors=snapshot.optJSONArray("contributorIds")?:JSONArray().put(snapshot.getString("accountId"))
+            val title=snapshot.optString("title").ifBlank{"会议录制 ${snapshot.optString("createdAt")}"}
+            metadata(title,(0 until contributors.length()).map{contributors.getString(it)})
+            snapshot.put("uploadMetadata",JSONObject().put("clientSessionId",snapshot.getString("id"))
+                .put("title",title).put("kind",snapshot.getString("kind")).put("purpose","reference")
+                .put("contributorIds",JSONArray(contributors.toString())))
+            save()
+        }
+        return JSONObject(snapshot.getJSONObject("uploadMetadata").toString())
+    }
+    @Synchronized fun uploadedSegment(sequence:Int,fileId:String){
+        require(java.util.UUID.fromString(fileId).toString()==fileId.lowercase())
+        val segments=snapshot.getJSONArray("segments")
+        val segment=(0 until segments.length()).map{segments.getJSONObject(it)}.single{it.getInt("sequence")==sequence}
+        require(!segment.has("fileId")||segment.getString("fileId")==fileId){"片段云端文件身份已变化"}
+        segment.put("fileId",fileId);save()
+    }
+    @Synchronized fun cloudSession(sessionId:String,materialId:String){
+        require(snapshot.has("uploadMetadata")){"上传身份尚未固定"}
+        require(java.util.UUID.fromString(sessionId).toString()==sessionId.lowercase())
+        require(java.util.UUID.fromString(materialId).toString()==materialId.lowercase())
+        require(!snapshot.has("sessionId")||snapshot.getString("sessionId")==sessionId){"云端录制身份已变化"}
+        require(!snapshot.has("materialId")||snapshot.getString("materialId")==materialId){"云端材料身份已变化"}
+        snapshot.put("sessionId",sessionId).put("materialId",materialId);save()
     }
 
     @Synchronized fun state(state: String, elapsed: Long, error: String? = null) {

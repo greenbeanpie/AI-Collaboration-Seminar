@@ -28,6 +28,13 @@ import androidx.core.graphics.createBitmap
 import cn.buwei.mobile.RecordingService
 import cn.buwei.mobile.RecordingStore
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.features.taskWorkspaceMembers
+import cn.buwei.nativeapp.features.twBase
+import cn.buwei.nativeapp.features.twText
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.json.JSONObject
@@ -47,6 +54,8 @@ import java.util.UUID
     var microphone by remember {mutableStateOf("")};var camera by remember {mutableStateOf("")}
     var drafts by remember {mutableStateOf<List<File>>(emptyList())}
     var running by remember {mutableStateOf(RecordingService.instance!=null)}
+    val activeSnapshot by observeNativeRecordingSnapshot {RecordingService.instance?.store?.view()?.toString()}
+    val paused=remember(activeSnapshot){activeSnapshot?.let{JSONObject(it).optString("state")=="paused"}==true}
     val activityCallback by rememberUpdatedState(onActivityChange)
     LaunchedEffect(running,busy){activityCallback(running||busy)}
     DisposableEffect(Unit){onDispose{activityCallback(false)}}
@@ -86,7 +95,6 @@ import java.util.UUID
         Text("文件先保存在当前账户的本机空间；预览确认后上传。",style=MaterialTheme.typography.bodyMedium)
         if(projectId==null)Text("打开项目后可上传或录制。")
         Button(onClick={picker.launch(arrayOf("*/*"))},enabled=!busy){Text("新增资料 · 选择文件")}
-        val paused=RecordingService.instance?.store?.view()?.optString("state")=="paused"
         val microphones=remember { (context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager).getDevices(android.media.AudioManager.GET_DEVICES_INPUTS).map {it.id.toString() to it.productName.toString()} }
         val cameras=remember {val manager=context.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager;manager.cameraIdList.map {id->id to (if(manager.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)==android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT)"前置摄像头" else "后置 / 外接摄像头")}}
         DevicePicker("麦克风",microphone,microphones,!running||paused){microphone=it}
@@ -95,8 +103,14 @@ import java.util.UUID
             listOf("audio" to "录音","video" to "录像","photo" to "拍照").forEach {(kind,title)->OutlinedButton(onClick={permissionKind=kind;val needed=buildList{if(kind!="photo")add(Manifest.permission.RECORD_AUDIO);if(kind!="audio")add(Manifest.permission.CAMERA)};if(needed.all {ContextCompat.checkSelfPermission(context,it)==PackageManager.PERMISSION_GRANTED})startRecording(kind) else permissions.launch(needed.toTypedArray())},enabled=!running&&!busy&&projectId!=null){Text(title)}}
         }
         if(running) {
-            Text("正在录制；可锁屏继续。停止后检查片段再上传。")
-            Row {TextButton(onClick={RecordingService.instance?.store?.view()?.getString("id")?.let {RecordingService.instance?.action(it,"pause",JSONObject())}}){Text("暂停")};TextButton(onClick={RecordingService.instance?.store?.view()?.getString("id")?.let {val args=JSONObject();if(microphone.isNotBlank())args.put("inputDeviceId",microphone);if(camera.isNotBlank())args.put("cameraDeviceId",camera);RecordingService.instance?.action(it,"resume",args)}},enabled=paused){Text("继续")};TextButton(onClick={context.startService(Intent(context,RecordingService::class.java).setAction("stop"))}){Text("停止并保存")}}
+            Text(if(paused)"录制已暂停；可切换设备后继续。"else"正在录制；可锁屏继续。停止后检查片段再上传。")
+            NativeRecordingControls(paused){action->try{
+                assertOwner();val service=RecordingService.instance?:error("录制服务已结束")
+                val current=service.store?.view()?:error("录制尚未启动")
+                check(current.optString("accountId")==owner&&current.optString("projectId")==projectId){"请返回活动录制所属项目操作"}
+                val args=JSONObject();if(action=="resume"){if(microphone.isNotBlank())args.put("inputDeviceId",microphone);if(camera.isNotBlank())args.put("cameraDeviceId",camera)}
+                service.action(current.getString("id"),action,args)
+            }catch(e:Exception){progress=e.message?:"录制操作失败"}}
         }
         if(progress.isNotBlank())Text(progress)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -112,14 +126,16 @@ import java.util.UUID
         Text("录制草稿",style=MaterialTheme.typography.titleLarge)
         drafts.forEach {directory->
             val store=remember(directory.path) {RecordingStore(context,File(context.dataDir,"recordings").path,owner,directory.name)}
-            val manifest=if(!running)store.recover() else store.view()
+            val manifest=if(!running){store.refresh();store.recover()}else store.view()
             Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){
                 Text("${manifest.optString("kind")} · ${manifest.optString("state")} · ${manifest.optLong("elapsedMs")/1000} 秒")
                 manifest.optString("error").takeIf {it.isNotBlank()}?.let {Text(it)}
                 val pieces=directory.listFiles()?.filter {it.extension in listOf("mp4","m4a","jpg")}.orEmpty()
                 pieces.forEach {file->TextButton(onClick={selected=file}){Text("预览 / 导出 ${file.name}")}}
                 directory.listFiles()?.filter {it.name.endsWith(".partial")}?.forEach {tail->TextButton(onClick={selected=tail;progress="此尾段可能未完成封装，请导出检查；原始文件继续保留"}){Text("导出中断尾段 ${tail.name}")}}
-                if(!running&&projectId==manifest.optString("projectId"))Button(onClick={scope.launch {busy=true;try{uploadRecording(repository,projectId,store){progress=it};progress="录制已上传，后续处理状态请查看资料"}catch(e:Exception){if(e is CancellationException)throw e;progress=e.message?:"录制上传失败"}finally{busy=false}}},enabled=!busy&&pieces.isNotEmpty()){Text("确认上传整次录制")}
+                if(!running&&projectId==manifest.optString("projectId")){
+                    RecordingMetadataEditor(repository,projectId,store,busy||pieces.isEmpty(),onError={progress=it},onUpload={scope.launch {busy=true;try{uploadNativeRecording(repository,projectId,store,{progress=it});progress="录制已上传，后续处理状态请查看资料"}catch(e:Exception){if(e is CancellationException)throw e;progress=e.message?:"录制上传失败"}finally{busy=false}}})
+                }
             }}
         }
     }
@@ -134,20 +150,59 @@ import java.util.UUID
     Box {TextButton(onClick={expanded=true},enabled=enabled){Text("$title："+(choices.firstOrNull {it.first==selected}?.second?:"系统默认"))};DropdownMenu(expanded,onDismissRequest={expanded=false}){DropdownMenuItem(text={Text("系统默认")},onClick={onSelect("");expanded=false});choices.forEach {(id,name)->DropdownMenuItem(text={Text(name)},onClick={onSelect(id);expanded=false})}}}
 }
 
-private suspend fun uploadRecording(repository:ClientRepository,project:String,store:RecordingStore,onProgress:(String)->Unit) {
+/** Observable snapshots include state and elapsed time; a stable service Boolean cannot observe pause. */
+@Composable internal fun observeNativeRecordingSnapshot(read:()->String?):State<String?> {
+ val reader by rememberUpdatedState(read);val lifecycle=LocalLifecycleOwner.current.lifecycle
+ return produceState<String?>(null,lifecycle){lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){while(isActive){value=reader();delay(500)}}}
+}
+@Composable internal fun NativeRecordingControls(paused:Boolean,onAction:(String)->Unit){
+ Row {TextButton({onAction("pause")},enabled=!paused){Text("暂停")};TextButton({onAction("resume")},enabled=paused){Text("继续")};TextButton({onAction("stop")}){Text("停止并保存")}}
+}
+
+@Composable internal fun RecordingMetadataEditor(repository:ClientRepository,project:String,store:RecordingStore,disabled:Boolean,onError:(String)->Unit,onUpload:()->Unit){
+ val owner=repository.accountId;val epoch=repository.epoch
+ val data=store.view();val frozen=data.has("uploadMetadata")
+ var title by remember(store.directory.path){mutableStateOf(data.optString("title").ifBlank{"会议录制 ${data.optString("createdAt")}"})}
+ var contributors by remember(store.directory.path){mutableStateOf(data.optJSONArray("contributorIds")?.let{array->(0 until array.length()).map{array.getString(it)}}?:listOfNotNull(owner))}
+ var members by remember(project,owner){mutableStateOf<List<JsonObject>>(emptyList())};var memberError by remember{mutableStateOf<String?>(null)}
+ var refresh by remember{mutableIntStateOf(0)}
+ LaunchedEffect(project,owner,epoch,refresh){try{val rows=taskWorkspaceMembers(repository,twBase(project));check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"};members=rows;memberError=null}catch(e:CancellationException){throw e}catch(e:Exception){members=emptyList();memberError=e.message}}
+ fun save():Boolean{try{check(owner==repository.accountId&&epoch==repository.epoch){"账户已变化"};store.metadata(title,contributors);onError("录制上传参数已保存到本机");return true}catch(e:Exception){onError(e.message?:"录制参数保存失败");return false}}
+ ReferenceOutlinedTextField(title,{if(it.length<=200){title=it;if(it.isNotBlank()&&contributors.isNotEmpty())save()}},label="会议 / 资料标题",enabled=!disabled&&!frozen)
+ Text(if(frozen)"上传参数已固定；重试沿用相同标题和贡献人。"else"贡献人（至少选择一名项目成员；会话和片段使用相同名单）")
+ if(data.optBoolean("legacyMetadataPreserved"))Text("旧版录制的上传结果可能已到达服务器；保留旧版自动标题与本人贡献人，禁止改写，原片段继续保留。")
+ memberError?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton({refresh++},enabled=!disabled){Text("重新读取录制贡献人")}}
+ members.forEach{member->val id=member.twText("userId");Row{Checkbox(id in contributors,{checked->contributors=if(checked)(contributors+id).distinct()else contributors-id;if(contributors.isNotEmpty()&&title.isNotBlank())save()},enabled=!disabled&&!frozen);Text(member.twText("displayName").ifBlank{member.twText("username")})}}
+ val unavailable=contributors.filter{candidate->members.none{it.twText("userId")==candidate}}
+ if(unavailable.isNotEmpty())Text("保留的贡献人中有 ${unavailable.size} 位不在当前成员列表；服务端会重新校验项目成员身份。")
+ if(contributors.isEmpty()||title.isBlank())Text("请填写标题并选择至少一名贡献人后再上传。",color=MaterialTheme.colorScheme.error)
+ Text("上传后可能按项目配置转写、识别并生成会议摘要，产生模型用量；失败后不会自动重新提交上传。")
+ Button(onClick={if(frozen||save())onUpload()},enabled=!disabled&&title.isNotBlank()&&contributors.isNotEmpty()&&(frozen||(memberError==null&&members.isNotEmpty()&&unavailable.isEmpty()))){Text("确认上传整次录制")}
+}
+
+internal suspend fun uploadNativeRecording(repository:ClientRepository,project:String,store:RecordingStore,onProgress:(String)->Unit,
+ uploadFile:suspend(File,String,List<String>)->String={file,purpose,contributors->AttachmentTransfer(repository).upload(project,file,onProgress,purpose,contributors)}
+) {
     val data=store.view();check(data.optString("state") !in listOf("recording","paused")){"请先停止录制"}
-    val account=repository.accountId;val epoch=repository.epoch
-    val session=repository.networkJson("POST","/projects/$project/recording-sessions",buildJsonObject{put("clientSessionId",data.getString("id"));put("title","会议录制 ${data.optString("createdAt")}");put("kind",data.getString("kind"))})
-    val path="/projects/$project/recording-sessions/${session["sessionId"]!!.jsonPrimitive.content}"
-    val segments=data.getJSONArray("segments")
+    val account=repository.accountId?:error("请登录");val epoch=repository.epoch
+    fun owned(){check(account==repository.accountId&&epoch==repository.epoch&&data.optString("accountId")==account&&data.optString("projectId")==project){"账户或项目已变化，录制上传已停止"}}
+    owned()
+    val segments=data.getJSONArray("segments");check(segments.length()>0){"没有可上传的完整片段"}
+    val metadata=store.freezeUploadMetadata();val body=repository.json.parseToJsonElement(metadata.toString()).jsonObject
+    val contributors=(body["contributorIds"] as JsonArray).map{it.jsonPrimitive.content}
+    val session=repository.networkJson("POST","/projects/$project/recording-sessions",body,expectedOwner=account,expectedEpoch=epoch)
+    owned();val sessionId=session["sessionId"]!!.jsonPrimitive.content
+    store.cloudSession(sessionId,session["materialId"]!!.jsonPrimitive.content)
+    val path="/projects/$project/recording-sessions/$sessionId"
     val interruptions=repository.json.parseToJsonElement(data.optJSONArray("interruptions")?.toString()?:"[]")
     for(i in 0 until segments.length()) {
-        check(account==repository.accountId&&epoch==repository.epoch){"账户已变化"}
-        val segment=segments.getJSONObject(i);val name=segment.getString("name");check(File(name).name==name)
-        val fileId=AttachmentTransfer(repository).upload(project,File(store.directory,name),onProgress)
-        repository.networkJson("PUT","$path/segments/${segment.getInt("sequence")}",buildJsonObject{put("fileId",fileId);put("startMs",segment.getLong("startMs"));put("endMs",segment.getLong("endMs"));put("sha256",segment.getString("sha256"));put("interruptions",interruptions)})
+        owned();val segment=segments.getJSONObject(i);val name=segment.getString("name");check(File(name).name==name)
+        val fileId=segment.optString("fileId").takeIf{it.isNotBlank()}?:uploadFile(File(store.directory,name),body["purpose"]!!.jsonPrimitive.content,contributors)
+        owned();store.uploadedSegment(segment.getInt("sequence"),fileId)
+        repository.networkJson("PUT","$path/segments/${segment.getInt("sequence")}",buildJsonObject{put("fileId",fileId);put("startMs",segment.getLong("startMs"));put("endMs",segment.getLong("endMs"));put("sha256",segment.getString("sha256"));put("interruptions",interruptions)},expectedOwner=account,expectedEpoch=epoch)
     }
-    repository.networkJson("POST","$path/complete",buildJsonObject{put("segmentCount",segments.length());put("interruptions",interruptions)})
+    owned();repository.networkJson("POST","$path/complete",buildJsonObject{put("segmentCount",segments.length());put("interruptions",interruptions)},expectedOwner=account,expectedEpoch=epoch)
+    owned();store.state("uploaded",data.optLong("elapsedMs"))
 }
 
 @Composable fun NativeFilePreview(repository:ClientRepository,file:File,onDismiss:()->Unit) {
