@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 class AdminWorkspaceInstrumentedTest {
     @get:Rule val compose = createComposeRule()
     private lateinit var server: MockWebServer; private lateinit var repository: ClientRepository
-    private val project = "11111111-1111-4111-8111-111111111111"; private val user = "22222222-2222-4222-8222-222222222222"
+    private val project = UUID.randomUUID().toString(); private val user = UUID.randomUUID().toString()
     private val observed = ConcurrentLinkedQueue<RecordedRequest>()
     private var role = "super_admin"; private var retryFails = true
     private fun response(value: String, status: Int = 200) = MockResponse().setResponseCode(status).setHeader("Content-Type", "application/json").setBody("{\"data\":$value}")
