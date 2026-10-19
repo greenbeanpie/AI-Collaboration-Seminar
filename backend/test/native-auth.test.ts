@@ -10,12 +10,12 @@ function app() { return createApp(); }
 function call(path: string, body?: unknown, cookie?: string, origin?: string) {
   return app().fetch(new Request(BASE + '/api/v1/auth/native' + path, { method: body === undefined ? 'GET' : 'POST', headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }), env);
 }
-async function begin() {
-  const response = await call('/transactions', { codeChallenge: await nativeChallenge(verifier), state }); expect(response.status).toBe(201);
+async function begin(clientType?: 'android' | 'windows') {
+  const response = await call('/transactions', { codeChallenge: await nativeChallenge(verifier), state, ...(clientType ? { clientType } : {}) }); expect(response.status).toBe(201);
   return (await response.json() as { data: { transactionId: string; authorizationPath: string } }).data;
 }
-async function approved() {
-  const user = await seedUser(); const transaction = await begin();
+async function approved(clientType?: 'android' | 'windows') {
+  const user = await seedUser(); const transaction = await begin(clientType);
   const res = await call(`/transactions/${transaction.transactionId}/approve`, {}, authCookie(user.token)); expect(res.status).toBe(200);
   const redirect = new URL((await res.json() as { data: { redirectUri: string } }).data.redirectUri);
   return { user, transaction, redirect, code: redirect.searchParams.get('code')! };
@@ -23,6 +23,25 @@ async function approved() {
 beforeEach(async () => { await env.DB.prepare('DELETE FROM auth_password_rate_limits').run(); });
 
 describe('Native browser S256 authorization', () => {
+  it.each([undefined, 'android', 'windows'] as const)('binds %s transactions to the allowlisted callback and preserves PKCE and single-use exchange', async clientType => {
+    const user = await seedUser(); const transaction = await begin(clientType);
+    const expected = clientType === 'windows' ? 'buwei-windows-native://auth/callback' : 'buwei-native-preview://auth/callback';
+    const info = await call(`/transactions/${transaction.transactionId}`, undefined, authCookie(user.token));
+    expect((await info.json() as { data: unknown }).data).toMatchObject({ clientType: clientType ?? 'android', callbackBase: expected, state });
+    const approval = await call(`/transactions/${transaction.transactionId}/approve`, {}, authCookie(user.token));
+    const redirect = new URL((await approval.json() as { data: { redirectUri: string } }).data.redirectUri);
+    expect(`${redirect.protocol}//${redirect.host}${redirect.pathname}`).toBe(expected);
+    const code = redirect.searchParams.get('code');
+    expect((await call('/exchange', { code, codeVerifier: 'b'.repeat(43) })).status).toBe(400);
+    expect((await call('/exchange', { code, codeVerifier: verifier })).status).toBe(201);
+    expect((await call('/exchange', { code, codeVerifier: verifier })).status).toBe(400);
+  });
+  it('rejects unknown client types and supplied callbacks', async () => {
+    const input = { codeChallenge: await nativeChallenge(verifier), state };
+    for (const extra of [{ clientType: 'web' }, { clientType: null }, { clientType: 'windows', redirectUri: 'buwei-native-preview://auth/callback' }, { clientType: 'windows', callbackBase: 'https://evil.invalid' }]) {
+      expect((await call('/transactions', { ...input, ...extra })).status).toBe(400);
+    }
+  });
   it('implements the RFC 7636 S256 test vector', async () => {
     expect(await nativeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
   });

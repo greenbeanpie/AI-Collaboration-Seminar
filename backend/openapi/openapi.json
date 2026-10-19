@@ -574,11 +574,27 @@
               },
               "expiresAt": {
                 "type": "string"
+              },
+              "clientType": {
+                "type": "string",
+                "enum": [
+                  "android",
+                  "windows"
+                ]
+              },
+              "callbackBase": {
+                "type": "string",
+                "enum": [
+                  "buwei-native-preview://auth/callback",
+                  "buwei-windows-native://auth/callback"
+                ]
               }
             },
             "required": [
               "state",
-              "expiresAt"
+              "expiresAt",
+              "clientType",
+              "callbackBase"
             ]
           },
           "requestId": {
@@ -27325,6 +27341,13 @@
                   "state": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{32,128}$"
+                  },
+                  "clientType": {
+                    "type": "string",
+                    "enum": [
+                      "android",
+                      "windows"
+                    ]
                   }
                 },
                 "required": [

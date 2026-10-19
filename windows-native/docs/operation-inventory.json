@@ -1,0 +1,3544 @@
+{
+  "notice": "API inventory only. Does not establish native UI implementation or acceptance.",
+  "operations": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/account-invitations",
+      "family": "admin",
+      "summary": "注册码使用状态（无明文码和哈希）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/account-invitations",
+      "family": "admin",
+      "summary": "系统管理员生成16位单次注册码（仅此响应回显明文）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/accounts",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/accounts/{userId}/password-recovery",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/accounts/{userId}/profile",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/accounts/{userId}/role",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ai-config",
+      "family": "admin",
+      "summary": "读取当前 AI 配置版本（运维管理员）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/ai-config",
+      "family": "admin",
+      "summary": "保存 AI 配置新版本（探测为可选诊断；变更后停用，保存后可显式启用）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-config/disable",
+      "family": "admin",
+      "summary": "停用当前已保存 AI 配置（不提交表单草稿，不调用模型）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-config/media-probe",
+      "family": "admin",
+      "summary": "只读检查官方 Gemini 模型元数据（不上传媒体，不产生生成费用）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-config/mimo-media-probe",
+      "family": "admin",
+      "summary": "只读检查小米官方模型列表，不产生识别费用",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-config/probe",
+      "family": "admin",
+      "summary": "对当前配置执行能力探测（中文/JSON/图片/用量字段）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/ai-diagnostics",
+      "family": "admin",
+      "summary": "超级管理员清空AI诊断记录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ai-diagnostics",
+      "family": "admin",
+      "summary": "超级管理员读取最后1000条、最多1MB的AI诊断记录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ai-execution-policy",
+      "family": "admin",
+      "summary": "读取后台 AI 执行策略",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "403"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/ai-execution-policy",
+      "family": "admin",
+      "summary": "更新后台 AI 窗口调用上限",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ai-resource-dispatches",
+      "family": "admin",
+      "summary": "核对仍占用并发的模型请求",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-resource-dispatches/{id}/release",
+      "family": "admin",
+      "summary": "供应商确认已结束后审计释放并发，不退当日计数",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/admin/ai-retries",
+      "family": "admin",
+      "summary": "清除尚未开始的失败 AI 请求重试记录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/ai-retries",
+      "family": "admin",
+      "summary": "读取失败 AI 请求与批量重试排队状态",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/ai-retries",
+      "family": "admin",
+      "summary": "快照并排队所有当前失败 AI 请求",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/idempotency/release",
+      "family": "admin",
+      "summary": "释放滞留的幂等 processing 记录（人工确认业务状态后允许同键重试）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "404"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/idempotency/stuck",
+      "family": "admin",
+      "summary": "列出滞留的幂等 processing 记录（运维核对后释放）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/resource-policy",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "403"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/admin/resource-policy",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "403",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/storage-inventory",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/storage-inventory/continue",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/storage-inventory/reservations/{id}/resolve",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/storage-inventory/start",
+      "family": "admin",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/device",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /device",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/device/claim",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /device/claim",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/device/disconnect",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /device/disconnect",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/device/heartbeat",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /device/heartbeat",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/device/workspaces",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /device/workspaces",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/devices",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /devices",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agent-bridges/devices/{deviceId}",
+      "family": "agent-bridges",
+      "summary": "DSH bridge delete /devices/{deviceId}",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/devices/{deviceId}/projects",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /devices/{deviceId}/projects",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/devices/{deviceId}/projects",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /devices/{deviceId}/projects",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /handoffs/{handoffId}",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/adopt-and-submit",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/adopt-and-submit",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/artifacts",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/artifacts/{artifactId}/content",
+      "family": "agent-bridges",
+      "summary": "Store validated bridge artifact without automatic parsing",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/cancel",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/cancel",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/complete",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/complete",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/events",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/events",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/heartbeat",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /handoffs/{handoffId}/heartbeat",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/inputs/{fileId}",
+      "family": "agent-bridges",
+      "summary": "Download authorized fixed input",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/handoffs/{handoffId}/snapshot",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /handoffs/{handoffId}/snapshot",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/pairings",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /pairings",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/pairings/{pairingId}",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /pairings/{pairingId}",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/pairings/{pairingId}/approve",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /pairings/{pairingId}/approve",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agent-bridges/projects/{projectId}/tasks/{taskId}/handoffs",
+      "family": "agent-bridges",
+      "summary": "DSH bridge get /projects/{projectId}/tasks/{taskId}/handoffs",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agent-bridges/projects/{projectId}/tasks/{taskId}/handoffs",
+      "family": "agent-bridges",
+      "summary": "DSH bridge post /projects/{projectId}/tasks/{taskId}/handoffs",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/challenges",
+      "family": "auth",
+      "summary": "验证码认证已停用，使用账号密码登录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "410"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/native/exchange",
+      "family": "auth",
+      "summary": "一次性授权码和 PKCE 换取独立 Cookie 会话",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400",
+        "429"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/native/transactions",
+      "family": "auth",
+      "summary": "创建 S256 PKCE 原生授权事务",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400",
+        "429"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/native/transactions/{transactionId}",
+      "family": "auth",
+      "summary": "浏览器读取待确认原生授权",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "400",
+        "429"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/native/transactions/{transactionId}/approve",
+      "family": "auth",
+      "summary": "由当前密码会话批准一次性原生登录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "400",
+        "429"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/password",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/password-recovery/redeem",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/password-recovery/request",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/personal-profile",
+      "family": "profiles",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/auth/personal-profile",
+      "family": "profiles",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/personal-profile/import-candidates",
+      "family": "profiles",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/auth/profile",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/recovery-email",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/recovery-email",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/recovery-email",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/recovery-email/verify",
+      "family": "auth",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "family": "auth",
+      "summary": "凭一次性注册码创建用户名密码账号（邮箱可空且不视为已验证）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400",
+        "403",
+        "409",
+        "429"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/session",
+      "family": "auth",
+      "summary": "立即撤销当前会话及可选当前设备推送订阅",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/session",
+      "family": "auth",
+      "summary": "读取当前密码登录用户",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/sessions",
+      "family": "auth",
+      "summary": "用户名或联系邮箱与密码换取会话",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "401",
+        "403",
+        "429"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/capabilities",
+      "family": "system",
+      "summary": "系统能力与限制（公开接口）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creation-drafts",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creation-drafts/{draftId}",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/creation-drafts/{draftId}",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creation-drafts/{draftId}/activity-events",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/answer",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/clarifications/{questionId}/cancel",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/commit",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/execution/{action}",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/imports/complete",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/media-resume",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/{partNumber}",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/multipart/complete",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/files/{fileId}/state",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/preview",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/{draftId}/state",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/creation-drafts/from-template",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "family": "system",
+      "summary": "存活检查（不触发付费调用）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health/deps",
+      "family": "system",
+      "summary": "内部依赖检查（D1/R2 可达性，不触发付费调用）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invitations/accept",
+      "family": "invitations",
+      "summary": "接受邀请（原子校验有效期/次数/人数规则）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409",
+        "429"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/invitations/inbox",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invitations/inbox/{invitationId}",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/invitations/inbox/{invitationId}/preview",
+      "family": "invitations",
+      "summary": "本人只读查看待接受邀请的项目详情",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/invitations/preview",
+      "family": "invitations",
+      "summary": "只读邀请码预览，不占用次数或加入项目",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/jobs/{jobId}",
+      "family": "jobs",
+      "summary": "查询异步任务状态（前端 2s→10s 退避轮询）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/jobs/{jobId}/activity-events",
+      "family": "jobs",
+      "summary": "读取 AI 操作记录（包含续跑历史）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/jobs/{jobId}/execution/{action}",
+      "family": "jobs",
+      "summary": "继续、输出当前结果或取消后台 AI 处理",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/jobs/{jobId}/retry",
+      "family": "jobs",
+      "summary": "重试失败任务（终态成功/取消不可重试）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/media-fetch/{jobId}",
+      "family": "media",
+      "summary": "活动 MiMo 任务的短期签名媒体读取",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "206",
+        "404",
+        "416"
+      ]
+    },
+    {
+      "method": "HEAD",
+      "path": "/api/v1/media-fetch/{jobId}",
+      "family": "media",
+      "summary": "活动 MiMo 任务的短期签名媒体读取",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "206",
+        "404",
+        "416"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notifications",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/{id}/dismiss",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/{id}/read",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/native-devices",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/notifications/native-devices/{installationId}",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/push/lookup",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notifications/push/status",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/push/subscriptions",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/notifications/push/subscriptions/{id}",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/notifications/read-all",
+      "family": "notifications",
+      "summary": "标记当前账户全部可见且未收起的未读通知，覆盖所有分页",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/notifications/settings",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/notifications/settings",
+      "family": "notifications",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/{username}",
+      "family": "profiles",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/profiles/search",
+      "family": "profiles",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/project-templates",
+      "family": "creation",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects",
+      "family": "projects",
+      "summary": "我参与的项目列表（游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects",
+      "family": "projects",
+      "summary": "创建项目（创建者为负责人）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}",
+      "family": "projects",
+      "summary": "项目详情",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}",
+      "family": "projects",
+      "summary": "更新项目（owner；带 expectedRevision 乐观锁）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "403",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/agent-runs/{runId}/adopt",
+      "family": "agent",
+      "summary": "采纳 AI 草稿为新材料版本（冻结写请求：materialId/expectedRevision/reviewed/doc；reviewed 必须为 true）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/agent-sessions",
+      "family": "agent",
+      "summary": "项目 AI 会话列表（游标分页，可按模式和状态筛选；包含最新运行和任务 ID）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/agent-sessions",
+      "family": "agent",
+      "summary": "发起三档 AI 补位（冻结写请求：mode/roleTemplate/taskId/instruction/materialVersionIds/sourceVersionIds）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/agent-sessions/{sessionId}",
+      "family": "agent",
+      "summary": "AI 会话详情（含回合与运行状态）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/agent-sessions/{sessionId}/turns",
+      "family": "agent",
+      "summary": "带做：提交回答并触发下一轮（202 + jobId）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/ai-chat",
+      "family": "project-ai-chat",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/ai-chat",
+      "family": "project-ai-chat",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/ai-chat",
+      "family": "project-ai-chat",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/ai-chat/questions/{questionId}/operations",
+      "family": "project-ai-chat",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/ai-tools/calls",
+      "family": "agent",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/ai-tools/capabilities",
+      "family": "agent",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/ai/clarifications",
+      "family": "agent",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/ai/clarifications/{questionId}/answer",
+      "family": "agent",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/ai/clarifications/{questionId}/cancel",
+      "family": "agent",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/assessments",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/assessments",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/assessments/{assessmentId}",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/assessments/{assessmentId}/followups",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/assessments/{assessmentId}/followups",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/assessments/{assessmentId}/scores",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/assignment-suggestions",
+      "family": "assignment",
+      "summary": "生成项目任务分工建议（异步；只生成建议，不直接修改任务）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "400",
+        "403",
+        "404",
+        "409",
+        "429"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/agent-eligibility",
+      "family": "collaboration",
+      "summary": "批量读取任务 AI 执行适用性检查",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/ai-activity",
+      "family": "collaboration",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/assign",
+      "family": "collaboration",
+      "summary": "协作流程 /assign",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/decompose",
+      "family": "collaboration",
+      "summary": "协作流程 /decompose",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/feedback",
+      "family": "collaboration",
+      "summary": "协作流程 /feedback",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/feedback/current",
+      "family": "collaboration",
+      "summary": "协作流程 /feedback/current",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/feedback/current",
+      "family": "collaboration",
+      "summary": "协作流程 /feedback/current",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/feedback/history",
+      "family": "collaboration",
+      "summary": "协作流程 /feedback/history",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/proposals",
+      "family": "collaboration",
+      "summary": "协作流程 /proposals",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/collaboration/proposals/{proposalId}",
+      "family": "collaboration",
+      "summary": "协作流程 /proposals/{proposalId}",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/proposals/{proposalId}/apply",
+      "family": "collaboration",
+      "summary": "协作流程 /proposals/{proposalId}/apply",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/settings",
+      "family": "collaboration",
+      "summary": "协作流程 /settings",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/collaboration/settings",
+      "family": "collaboration",
+      "summary": "协作流程 /settings",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/decide",
+      "family": "collaboration",
+      "summary": "协作流程 /submissions/{submissionId}/decide",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/submissions/{submissionId}/scores",
+      "family": "collaboration",
+      "summary": "协作流程 /submissions/{submissionId}/scores",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility",
+      "family": "collaboration",
+      "summary": "读取任务 AI 执行适用性检查",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/agent-eligibility",
+      "family": "collaboration",
+      "summary": "请求模型判断任务 AI 执行适用性",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assign",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/assign",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assistance-plan",
+      "family": "collaboration",
+      "summary": "读取任务辅助计划",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/assistance-plan",
+      "family": "collaboration",
+      "summary": "手动生成任务辅助计划",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/claim",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/claim",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/reopen",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/reopen",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/submissions",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/submissions",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/submissions",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/collaboration/tasks/{taskId}/summary",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/summary",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/comments",
+      "family": "comments",
+      "summary": "评论列表（按目标过滤，游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/comments",
+      "family": "comments",
+      "summary": "发表评论（任务/材料/预审/答辩）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/document-imports/{sessionId}",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports/{sessionId}/batches",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports/{sessionId}/complete",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports/analyze",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports/blank-pages",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/document-imports/extract",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/events",
+      "family": "ledger",
+      "summary": "活动历史事件流（游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/export-bundle",
+      "family": "ledger",
+      "summary": "导出成果说明 JSON 汇总（材料 Markdown + 要求 + 活动历史）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/files",
+      "family": "files",
+      "summary": "文件库和回收站（含未完成上传）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files",
+      "family": "files",
+      "summary": "创建文件记录，获取上传地址（服务端分配 R2 key）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}",
+      "family": "files",
+      "summary": "移入回收站并取消相关来源任务，保留原文件和历史",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/archive",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/content",
+      "family": "files",
+      "summary": "下载文件内容（需项目成员权限；R2 不公开）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/content",
+      "family": "files",
+      "summary": "上传文件内容（二进制，文档≤10MiB，音视频≤50MiB，按实际字节校验）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "201",
+        "413",
+        "415"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/processing",
+      "family": "files",
+      "summary": "读取文件正文及后续处理阶段",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/processing",
+      "family": "files",
+      "summary": "启动或继续文件处理，不重复上传原文件",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/restore",
+      "family": "files",
+      "summary": "恢复文件和关联来源，不自动启动 AI",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/unarchive",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/uploads",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/abort",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/complete",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/files/{fileId}/uploads/{sessionId}/parts/{partNumber}",
+      "family": "files",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/goal",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/goal",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/invitation-requests",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/invitation-requests",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/invitation-requests/{requestId}/decide",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/invitations",
+      "family": "invitations",
+      "summary": "邀请列表（teamManage）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/invitations",
+      "family": "invitations",
+      "summary": "创建邀请（teamManage；邀请码仅返回一次）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "403"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/invitations/{invitationId}",
+      "family": "invitations",
+      "summary": "撤销邀请（teamManage）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/materials",
+      "family": "materials",
+      "summary": "材料列表（游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/materials",
+      "family": "materials",
+      "summary": "创建材料（含空初始版本）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}",
+      "family": "materials",
+      "summary": "材料详情（含当前版本内容）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}",
+      "family": "materials",
+      "summary": "保存材料（expectedRevision 乐观锁；产生不可变新版本；409 冲突时保留本地内容）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}/archive",
+      "family": "materials",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}/unarchive",
+      "family": "materials",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}/versions",
+      "family": "materials",
+      "summary": "版本历史（不含 doc 正文，游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/materials/{materialId}/versions/{versionId}",
+      "family": "materials",
+      "summary": "版本详情（不可变快照）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/members",
+      "family": "members",
+      "summary": "成员身份、项目角色与加入信息",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/members/{userId}",
+      "family": "members",
+      "summary": "移除非负责人成员（需要团队管理权限）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "403",
+        "409"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/members/{userId}/permissions",
+      "family": "members",
+      "summary": "项目负责人调整组员权限",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "403",
+        "409"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/members/me",
+      "family": "members",
+      "summary": "退出项目（负责人不可退出，须先转让）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/members/me",
+      "family": "members",
+      "summary": "我在项目中的成员信息",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/members/me",
+      "family": "members",
+      "summary": "已停用：个人资料改由全局个人资料维护",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "403",
+        "410"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/offline-sync",
+      "family": "offline",
+      "summary": "同步单个离线操作；沿用原接口权限、版本校验并保存幂等响应",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "400",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/recording-sessions",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/recording-sessions",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/recording-sessions/{sessionId}",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/complete",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/retry",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/recording-sessions/{sessionId}/segments/{sequence}",
+      "family": "recordings",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/rehearsals",
+      "family": "rehearsals",
+      "summary": "跨设备答辩历史列表",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals",
+      "family": "rehearsals",
+      "summary": "发起答辩演练（202 + jobId，第一问生成中）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}",
+      "family": "rehearsals",
+      "summary": "取消未结束的答辩演练并删除本场记录",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}",
+      "family": "rehearsals",
+      "summary": "演练详情（含全部问答轮次）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/answers",
+      "family": "rehearsals",
+      "summary": "逐题回答（202 + jobId，追问或点评生成中）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/finish",
+      "family": "rehearsals",
+      "summary": "结束演练并生成总结（202 + jobId）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/speech/{speechId}",
+      "family": "rehearsals",
+      "summary": "查询私有评委朗读",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/turns/{sequence}/speech",
+      "family": "rehearsals",
+      "summary": "云端朗读已退役，请使用系统本地朗读",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "410"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice",
+      "family": "rehearsals",
+      "summary": "语音答辩准备状态（配置与权限，不代表已付费连通验证）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions",
+      "family": "rehearsals",
+      "summary": "创建逐题转录会话（原答案仍由用户提交）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rehearsals/{rehearsalId}/voice-sessions/{sessionId}/close",
+      "family": "rehearsals",
+      "summary": "幂等关闭语音会话",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/requirement-sets",
+      "family": "requirements",
+      "summary": "要求集列表（可按 sourceVersionId 过滤；重新解析产生新草稿，不覆盖已确认内容）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/requirement-sets/{setId}",
+      "family": "requirements",
+      "summary": "要求集详情（含要求条目与引用）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/requirement-sets/{setId}/confirm",
+      "family": "requirements",
+      "summary": "确认要求集（owner；重复确认 409）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200",
+        "403",
+        "409"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/requirements/{requirementId}",
+      "family": "requirements",
+      "summary": "修改要求条目（field_state 变为 edited；已确认的要求集不可改）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/search",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/resource-index/{resourceType}/{versionId}/section",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/resource-library",
+      "family": "resources",
+      "summary": "统一项目资料列表，保留来源和成果版本身份",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/resource-library/{resourceType}/{resourceId}",
+      "family": "resources",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/resource-library/{resourceType}/{resourceId}",
+      "family": "resources",
+      "summary": "修改资料用途，不修改来源原文或成果正文版本",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/reviews",
+      "family": "reviews",
+      "summary": "预审记录列表",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/reviews",
+      "family": "reviews",
+      "summary": "发起预审（冻结写请求：rubricVersionId/requirementSetId/materialVersionIds；202 + jobId）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "404",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/reviews/{reviewId}",
+      "family": "reviews",
+      "summary": "预审详情（报告绑定输入版本；材料更新后前端应提示报告针对旧版本）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/rubrics",
+      "family": "requirements",
+      "summary": "评分标准版本列表",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rubrics",
+      "family": "requirements",
+      "summary": "新增评分标准版本（草稿）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/rubrics/{rubricId}",
+      "family": "requirements",
+      "summary": "修改评分标准草稿（owner）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/rubrics/{rubricId}/confirm",
+      "family": "requirements",
+      "summary": "确认评分标准（owner）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources",
+      "family": "sources",
+      "summary": "来源列表（游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources",
+      "family": "sources",
+      "summary": "导入来源（文件/粘贴文本/网页链接）并创建来源版本",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201",
+        "400"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}",
+      "family": "sources",
+      "summary": "粘贴或网页来源移入回收站，保留历史引用",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}",
+      "family": "sources",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/page-images",
+      "family": "sources",
+      "summary": "上传页面图片（绑定 sourceVersionId+pageNumber），全部就绪后自动触发 OCR",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "400"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/page-images/prepare",
+      "family": "sources",
+      "summary": "只保存扫描页图片，不创建 OCR 或其他模型任务",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "400",
+        "404",
+        "409"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/parse",
+      "family": "sources",
+      "summary": "发起解析（异步，202 + jobId）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/render-requests",
+      "family": "sources",
+      "summary": "获取需要前端 PDF.js 渲染上传的页码（扫描页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/restore",
+      "family": "sources",
+      "summary": "恢复粘贴或网页来源，不自动启动 AI",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}",
+      "family": "sources",
+      "summary": "来源版本详情（含逐页处理状态）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/fragments",
+      "family": "sources",
+      "summary": "来源全文引用片段",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing",
+      "family": "sources",
+      "summary": "查看正文、要求提取与文件总结的独立状态",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/media-resume",
+      "family": "sources",
+      "summary": "配置 Gemini 后继续音频回退，不重复转录",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/sources/{sourceId}/versions/{sourceVersionId}/processing/summary",
+      "family": "sources",
+      "summary": "单独生成或重试文件总结（不重复上传、不重新 OCR）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/standards",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/standards",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/standards/{standardsVersionId}",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/standards/current",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/standards/generate",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "202"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/task-inquiries/{inquiryId}/messages",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/task-inquiries/unread",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks",
+      "family": "tasks",
+      "summary": "任务列表（可按状态/负责人过滤，游标分页）",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks",
+      "family": "tasks",
+      "summary": "创建任务",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}",
+      "family": "tasks",
+      "summary": "任务详情",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/assign",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/assign",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/claim",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/claim",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/dependencies",
+      "family": "project-simplification",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/files",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/files",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/files/{materialId}",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/inquiries/read",
+      "family": "other",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/reopen",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/reopen",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/submissions",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/submissions",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/submissions",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/submissions",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/summary",
+      "family": "collaboration",
+      "summary": "协作流程 /tasks/{taskId}/summary",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/tasks/apply-assignment",
+      "family": "tasks",
+      "summary": "应用一项分工建议（仅修改负责人，保留任务状态）",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200",
+        "400",
+        "404",
+        "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/graph",
+      "family": "tasks",
+      "summary": "完整任务依赖图与统计",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/username-invitations",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/username-invitations",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{projectId}/username-invitations/{invitationId}/revoke",
+      "family": "invitations",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/resource-usage",
+      "family": "resources",
+      "summary": "当前账户与有权项目的资源用量",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/support/tickets",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/support/tickets",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/support/tickets/{ticketId}",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/support/tickets/{ticketId}/images/{imageId}",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/support/tickets/{ticketId}/images/{imageId}",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [
+        "image/png",
+        "image/jpeg",
+        "image/webp"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/support/tickets/{ticketId}/messages",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/support/tickets/{ticketId}/messages",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "201"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/support/tickets/{ticketId}/status",
+      "family": "support",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    }
+  ]
+}
