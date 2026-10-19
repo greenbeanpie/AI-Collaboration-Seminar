@@ -1,3 +1,4 @@
+import type { Context } from 'hono';
 import { discoverableFileSql,recordingChildSourceSql } from '../services/archive-policy';
 import { contributorSchema, fileContributors, fileContributorsForFiles } from '../services/file-contributors';
 import { notificationStatements } from '../services/notifications';
@@ -112,6 +113,7 @@ const pageImagesBody = z.object({
     .min(1)
     .max(100),
 });
+const preparePageImagesBody = pageImagesBody.extend({ expectedLifecycleVersion: z.number().int().positive() }).strict();
 const pageImagesResponse = apiEnvelope(
   z.object({
     accepted: z.number().int(),
@@ -235,6 +237,15 @@ const deleteSourceRoute=createRoute({method:'delete',path:'/api/v1/projects/{pro
 const restoreSourceRoute=createRoute({method:'post',path:'/api/v1/projects/{projectId}/sources/{sourceId}/restore',tags:['sources'],summary:'恢复粘贴或网页来源，不自动启动 AI',
   request:{params:sourceParams,body:{required:true,content:{'application/json':{schema:sourceLifecycleBody}}}},responses:{200:{description:'已恢复',content:{'application/json':{schema:sourceLifecycleResponse}}}}});
 
+const preparePageImagesRoute = createRoute({
+  method: 'post', path: '/api/v1/projects/{projectId}/sources/{sourceId}/page-images/prepare', tags: ['sources'],
+  summary: '只保存扫描页图片，不创建 OCR 或其他模型任务',
+  request: { params: sourceParams, headers: z.object({ 'idempotency-key': z.string().min(1).max(200) }), body: { content: { 'application/json': { schema: preparePageImagesBody } }, required: true } },
+  responses: { 202: { content: { 'application/json': { schema: pageImagesResponse } }, description: '已接收图片；jobId 恒为 null' },
+    400: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '页码或文件无效' },
+    404: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '来源、生命周期或文件不可用' },
+    409: { content: { 'application/json': { schema: apiErrorEnvelope } }, description: '版本或页面状态已变化' } },
+});
 export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
   // * 通配覆盖 /sources 下所有深度（含 parse / page-images / versions 等）
   app.use('/api/v1/projects/:projectId/sources', requireUser, requireProjectMember());
@@ -488,9 +499,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     return c.json(apiData(c, { items: pages.results.map((p) => ({ pageNumber: p.page_number })) }), 200);
   });
 
-  app.openapi(pageImagesRoute, async (c) => {
-    const { sourceId } = c.req.valid('param');
-    const body = c.req.valid('json');
+  const registerPageImages = async (c: Context<AppEnv>, sourceId: string, body: z.infer<typeof pageImagesBody>, uploadOnly = false, expectedLifecycleVersion?: number) => {
     const member = c.get('member')!;
     const source = await c.env.DB.prepare('SELECT id, current_version_id FROM sources WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL')
       .bind(sourceId, member.projectId)
@@ -499,11 +508,12 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
     const versionId = body.sourceVersionId || source.current_version_id;
     if (!versionId) throw invalidState('来源没有版本');
     await projectSourceVersion(c.env, member.projectId, sourceId, versionId);
-    const lifecycle=await loadActiveSourceVersion(c.env,versionId);
+    if (uploadOnly && source.current_version_id !== versionId) throw invalidState('来源版本已变化，请刷新后继续');
+    const lifecycle=await loadActiveSourceVersion(c.env,versionId,expectedLifecycleVersion);
 
     const result = await withIdempotency(c.env, {
       key: c.req.header('idempotency-key'), userId: c.get('user')!.id,
-      operation: `source.page-images:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body),
+      operation: `source.page-images${uploadOnly ? '.prepare' : ''}:${member.projectId}:${sourceId}`, rawBody: JSON.stringify(body), required: uploadOnly,
     }, async () => {
       if (new Set(body.images.map(image => image.pageNumber)).size !== body.images.length) {
         throw validationFailed('同一次请求不能重复提交同一页');
@@ -531,7 +541,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         UPDATE source_pages SET
           image_file_id = (SELECT json_extract(value, '$.fileId') FROM json_each(?2)
             WHERE json_extract(value, '$.pageNumber') = source_pages.page_number),
-          image_status = 'uploaded', ocr_status = 'pending', updated_at = ?3
+          image_status = 'uploaded', ocr_status = CASE WHEN ?6 = 1 THEN 'none' ELSE 'pending' END, updated_at = ?3
         WHERE source_version_id = ?1 AND ${sourceLifecycleGuard('?1','?4')}
           AND NOT EXISTS(SELECT 1 FROM json_each(?2) supplied LEFT JOIN files f ON f.id=json_extract(supplied.value,'$.fileId') WHERE f.id IS NULL OR f.project_id!=?5 OR f.deleted_at IS NOT NULL OR f.status!='available')
           AND page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))
@@ -539,7 +549,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
             WHERE eligible.source_version_id = ?1 AND (eligible.image_status = 'none' OR eligible.ocr_status = 'failed')
               AND eligible.text_status != 'extracted'
               AND eligible.page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))) = json_array_length(?2)
-      `).bind(versionId, JSON.stringify(body.images), nowIso(),lifecycle.lifecycleVersion,member.projectId).run();
+      `).bind(versionId, JSON.stringify(body.images), nowIso(),lifecycle.lifecycleVersion,member.projectId,uploadOnly ? 1 : 0).run();
       const accepted = updated.meta.changes;
       if (accepted !== body.images.length) throw invalidState('页面状态已发生变化，请刷新后重新提交');
 
@@ -550,7 +560,7 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
         .first<{ n: number }>();
 
       let jobId: string | null = null;
-      if ((remaining?.n ?? 0) === 0 && accepted > 0) {
+      if (!uploadOnly && (remaining?.n ?? 0) === 0 && accepted > 0) {
         jobId = await createJobAndDispatch(c.env, {
           projectId: member.projectId,
           kind: 'ocr_pages',
@@ -561,5 +571,10 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
       return { status: 202 as const, body: { accepted, remaining: remaining?.n ?? 0, jobId } };
     });
     return c.json(apiData(c, result.body), result.status);
+  };
+  app.openapi(pageImagesRoute, c => registerPageImages(c, c.req.valid('param').sourceId, c.req.valid('json')));
+  app.openapi(preparePageImagesRoute, c => {
+    const body = c.req.valid('json');
+    return registerPageImages(c, c.req.valid('param').sourceId, body, true, body.expectedLifecycleVersion);
   });
 }
