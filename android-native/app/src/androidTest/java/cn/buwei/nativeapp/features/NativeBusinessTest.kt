@@ -24,6 +24,7 @@ import org.junit.Test
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /** Deterministic loopback fixtures; these tests never send requests to production. */
 class NativeBusinessTest {
@@ -38,6 +39,7 @@ class NativeBusinessTest {
  private val userId="55555555-5555-4555-8555-555555555555"
  private val user get()=buildJsonObject{put("id",userId);put("username","native-fixture");put("displayName","Native fixture");put("isAdmin",false);put("role","user")}
  private val received=AtomicReference<JsonObject?>(null)
+ private val observedRequests=ConcurrentLinkedQueue<String>()
  private var payload=buildJsonObject{put("name","Fixture project");put("aiCollaborationEnabled",false)}
  private var preview=false
  @Volatile private var sent=false
@@ -55,6 +57,7 @@ class NativeBusinessTest {
   server=MockWebServer()
   server.dispatcher=object:Dispatcher(){override fun dispatch(request:RecordedRequest):MockResponse{
    val route=request.path.orEmpty().substringBefore('?');val method=request.method.orEmpty()
+   observedRequests.add("$method $route")
    if(route=="/api/v1/auth/native/exchange")return envelope(buildJsonObject{put("user",user)}).addHeader("Set-Cookie","ai_office_session=fixture; HttpOnly; SameSite=Strict")
    if(route=="/api/v1/auth/session")return envelope(buildJsonObject{put("user",user)})
    if(method=="GET"&&route=="/api/v1/projects")return envelope(buildJsonObject{put("items",buildJsonArray{add(projectFixture())});put("nextCursor",JsonNull)})
@@ -86,10 +89,11 @@ class NativeBusinessTest {
   runBlocking{repository.exchange("fixture-code","fixture-verifier")}
  }
  @After fun teardown(){server.shutdown()}
- private fun awaitText(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
+ private fun awaitText(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Exception){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
  private fun screenshot(name:String){val image=compose.onRoot().captureToImage().asAndroidBitmap();val directory=File(context.getExternalFilesDir(null),"native-ui-fixtures").apply{mkdirs()};val target=File(directory,"$name.png");target.outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};assertTrue(target.length()>0)}
 
  @Test fun projectListOpensSelectedProject(){
+  assertEquals(listOf("projectId","taskId"),pathParameterNames("/api/v1/projects/{projectId}/tasks/{taskId}"))
   val selected=AtomicReference<String?>(null)
   compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"projects",null,{selected.set(it)},{})}}}
   awaitText("Fixture project");compose.onNodeWithText("打开项目").performScrollTo().performClick()

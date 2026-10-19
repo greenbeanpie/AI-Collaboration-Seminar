@@ -136,7 +136,7 @@ private fun ResourceView(repository:ClientRepository,destination:Destination,onP
     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
      Text(itemTitle(item),style=MaterialTheme.typography.titleMedium);Text(listOf("status","lifecycleState","createdAt","dueDate").mapNotNull{item.text(it).takeIf{v->v.isNotBlank()}}.joinToString(" · "),style=MaterialTheme.typography.bodySmall)
      if(canonical=="/api/v1/projects")TextButton({(item.text("id").ifBlank{item.text("projectId")}).takeIf{it.isNotBlank()}?.let(onProject)}){Text("打开项目")}
-     if(detail!=null)TextButton({val detailIds=ids.toMutableMap();if(item.text("id").isNotBlank())Regex("\\{([^}]+)}").findAll(detail.path).lastOrNull()?.groupValues?.get(1)?.let{detailIds[it]=item.text("id")};onOpen(Destination(bindPath(detail.path,detailIds),itemTitle(item),detailIds))}){Text("查看详情")}
+     if(detail!=null)TextButton({val detailIds=ids.toMutableMap();if(item.text("id").isNotBlank())pathParameterNames(detail.path).lastOrNull()?.let{detailIds[it]=item.text("id")};onOpen(Destination(bindPath(detail.path,detailIds),itemTitle(item),detailIds))}){Text("查看详情")}
      var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text(if(expanded)"收起"else"展开内容")};if(expanded)StructuredValue(item)
      ContextActions(repository,canonical,item,ids,onOpen,onForm)
     }}
@@ -149,6 +149,7 @@ private fun ResourceView(repository:ClientRepository,destination:Destination,onP
 
 private fun itemTitle(item:JsonObject)=listOf("title","name","displayName","subject","username","summary","body","message","id","taskId","materialId").firstNotNullOfOrNull{item.text(it).takeIf{v->v.isNotBlank()}}?:"记录"
 private fun bindPath(path:String,ids:Map<String,String>):String {var p=path;ids.forEach{(k,v)->p=p.replace("{$k}",Uri.encode(v))};return p}
+internal fun pathParameterNames(path:String):List<String> = Regex("\\{([^}]+)\\}").findAll(path).map{it.groupValues[1]}.toList()
 private fun extractIds(item:JsonObject):Map<String,String>{val result=item.filter{(k,v)->(k=="id"||k.endsWith("Id"))&&v is JsonPrimitive&&!v.contentOrNull.isNullOrBlank()}.mapValues{it.value.jsonPrimitive.content}.toMutableMap();item.obj("currentVersion").text("versionId").takeIf{it.isNotBlank()}?.let{result["versionId"]=it;result["sourceVersionId"]=it};item.text("currentVersionId").takeIf{it.isNotBlank()}?.let{result["sourceVersionId"]=it};return result}
 private fun detailOperation(canonical:String?,item:JsonObject,ids:Map<String,String>):NativeOperation?{
  if(canonical==null)return null
@@ -175,9 +176,9 @@ private fun ContextActions(repository:ClientRepository,canonical:String?,item:Js
  var expanded by remember(canonical){mutableStateOf(false)}
  val itemId=item.text("id")
  val base=if(canonical.endsWith("}"))canonical else if(itemId.isNotBlank())NativeContracts.operations.firstOrNull{it.path.startsWith("$canonical/{")}?.path?.let{candidate->val end=candidate.indexOf('}',canonical.length);if(end>=0)candidate.substring(0,end+1)else null} else null
- val ids=bindings.toMutableMap();if(base!=null&&itemId.isNotBlank()){Regex("\\{([^}]+)}").findAll(base).lastOrNull()?.groupValues?.get(1)?.let{ids[it]=itemId}}
+ val ids=bindings.toMutableMap();if(base!=null&&itemId.isNotBlank()){pathParameterNames(base).lastOrNull()?.let{ids[it]=itemId}}
  val prefix=base?:canonical
- val actions=NativeContracts.operations.filter{op->(op.path==prefix&&op.method!="GET"||op.path.startsWith("$prefix/")&&op.path.removePrefix("$prefix/").count{it=='/'}<=1)&&allowed(op)&&!op.binary&&Regex("\\{([^}]+)}").findAll(op.path).all{it.groupValues[1] in ids}}
+ val actions=NativeContracts.operations.filter{op->(op.path==prefix&&op.method!="GET"||op.path.startsWith("$prefix/")&&op.path.removePrefix("$prefix/").count{it=='/'}<=1)&&allowed(op)&&!op.binary&&pathParameterNames(op.path).all{it in ids}}
  val attachmentProject=bindings["projectId"]
  val attachmentId=item.text("fileId").ifBlank {if(canonical.contains("/files"))itemId else ""}
  if(attachmentProject!=null&&attachmentId.isNotBlank())AttachmentActions(repository,attachmentProject,attachmentId,item.text("fileName").ifBlank{item.text("name").ifBlank{attachmentId}})
