@@ -1,6 +1,6 @@
 package cn.buwei.nativeapp.features
 
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -24,7 +24,7 @@ import kotlinx.serialization.json.*
  fun action(block:suspend ()->Unit){if(busy)return;busy=true;error=null;notice="";scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};block()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}
  suspend fun reloadEmail(){emailStatus=accountWorkspaceRequest(repository,"GET","/api/v1/auth/recovery-email",owner=owner,epoch=epoch)}
  LaunchedEffect(owner){try{reloadEmail();capabilities=repository.networkJson("GET","/api/v1/capabilities",expectedOwner=owner,expectedEpoch=epoch)}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
- fun browser(path:String){CustomTabsIntent.Builder().build().apply{intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)}.launchUrl(repository.context,Uri.parse(BuildConfig.SERVICE_ORIGIN+path))}
+ fun browser(path:String){CustomTabsIntent.Builder().build().apply{intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)}.launchUrl(repository.context,(BuildConfig.SERVICE_ORIGIN+path).toUri())}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
   Text("账户与个人资料",style=MaterialTheme.typography.headlineSmall);Text("登录账号：${account?.text("username").orEmpty()}")
   error?.let{Text(it,color=MaterialTheme.colorScheme.error)};if(notice.isNotBlank())Text(notice);if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -50,7 +50,7 @@ import kotlinx.serialization.json.*
    "password"->{accountWorkspaceRequest(repository,"POST","/api/v1/auth/password",buildJsonObject{put("currentPassword",currentPassword);put("newPassword",newPassword)},owner,epoch);runCatching{repository.get("/api/v1/auth/session")};notice="密码已修改，请重新登录"}
    "email"->{accountWorkspaceRequest(repository,"POST","/api/v1/auth/recovery-email",buildJsonObject{put("email",email.trim());put("currentPassword",emailPassword)},owner,epoch);notice="申请已受理，请检查新邮箱并核对验证链接。";reloadEmail()}
    "remove-email"->{accountWorkspaceRequest(repository,"DELETE","/api/v1/auth/recovery-email",buildJsonObject{put("currentPassword",emailPassword)},owner,epoch);reloadEmail();notice="恢复邮箱已解绑"}
-   "verify"->{val code=if(token.trim().startsWith("https://"))Uri.parse(token.trim()).fragment.orEmpty().removePrefix("token=")else token.trim();accountWorkspaceRequest(repository,"POST","/api/v1/auth/recovery-email/verify",buildJsonObject{put("token",code)},owner,epoch);reloadEmail();notice="恢复邮箱已验证"}
+   "verify"->{val code=if(token.trim().startsWith("https://"))token.trim().toUri().fragment.orEmpty().removePrefix("token=")else token.trim();accountWorkspaceRequest(repository,"POST","/api/v1/auth/recovery-email/verify",buildJsonObject{put("token",code)},owner,epoch);reloadEmail();notice="恢复邮箱已验证"}
   }}finally{currentPassword="";newPassword="";repeatPassword="";emailPassword="";token=""}
  }}){Text("确认")}},dismissButton={TextButton({confirm=null}){Text("返回")}})}
 }
