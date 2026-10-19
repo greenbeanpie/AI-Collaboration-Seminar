@@ -5,7 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import cn.buwei.nativeapp.ReferenceFieldLabel
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -55,15 +55,15 @@ private fun ProjectSettingsContent(repository: ClientRepository, projectId: Stri
         else {
         Text(if (canEdit) "项目负责人 · 可修改" else "成员只读"); TextButton({ refresh++; error = null }, enabled = !busy) { Text("刷新服务端版本") }; if (busy) LinearProgressIndicator(Modifier.fillMaxWidth()); error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; if (message.isNotBlank()) Text(message)
         Text("项目基本信息 · r${server.text("revision")}", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(projectChanges.text("name").ifBlank { server.text("name") }, { changeProject("name", JsonPrimitive(it.take(100))) }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("项目名称") }, enabled = canEdit && !busy)
-        OutlinedTextField((projectChanges["description"] ?: server["description"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeProject("description", JsonPrimitive(it.take(2000))) }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("项目说明") }, minLines = 3, enabled = canEdit && !busy)
-        OutlinedTextField(if ("deadlineDate" in projectChanges) projectChanges.text("deadlineDate") else server.text("deadlineDate").take(10), { changeProject("deadlineDate", JsonPrimitive(it)) }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("截止日期 YYYY-MM-DD（可空）") }, enabled = canEdit && !busy)
+        ReferenceOutlinedTextField(projectChanges.text("name").ifBlank { server.text("name") }, { changeProject("name", JsonPrimitive(it.take(100))) }, Modifier.fillMaxWidth(), label = "项目名称", enabled = canEdit && !busy)
+        ReferenceOutlinedTextField((projectChanges["description"] ?: server["description"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeProject("description", JsonPrimitive(it.take(2000))) }, Modifier.fillMaxWidth(), label = "项目说明", minLines = 3, enabled = canEdit && !busy)
+        ReferenceOutlinedTextField(if ("deadlineDate" in projectChanges) projectChanges.text("deadlineDate") else server.text("deadlineDate").take(10), { changeProject("deadlineDate", JsonPrimitive(it)) }, Modifier.fillMaxWidth(), label = "截止日期 YYYY-MM-DD（可空）", enabled = canEdit && !busy)
         Text("原日期精度：${server.text("deadlinePrecision")}；未编辑日期时保留原精度和时刻。", style = MaterialTheme.typography.bodySmall)
         if (projectConflict) { Text("服务端已更新：${server.text("name")} · ${server.text("description")}；本机编辑保留。", color = MaterialTheme.colorScheme.error); TextButton({ projectBase = server }) { Text("已核对当前版本，保留本机编辑继续") } }
         Button({ try { val body = projectSettingsPatch(projectBase ?: server, projectChanges); confirm = "保存项目基本信息？" to { send("PATCH", "", body); projectBase = null; projectChanges = JsonObject(emptyMap()); message = "项目设置已保存" } } catch (e: Exception) { error = e.message } }, enabled = canEdit && !busy && !projectConflict && projectChanges.isNotEmpty()) { Text("保存项目设置") }
         Text("项目主目标 · r${goal.text("revision")}", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField((goalChanges["title"] ?: goal["title"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeGoal("title", JsonPrimitive(it.take(200))) }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("主目标标题") }, enabled = canEdit && !busy)
-        OutlinedTextField((goalChanges["detail"] ?: goal["detail"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeGoal("detail", JsonPrimitive(it)) }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("主目标说明") }, minLines = 3, enabled = canEdit && !busy)
+        ReferenceOutlinedTextField((goalChanges["title"] ?: goal["title"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeGoal("title", JsonPrimitive(it.take(200))) }, Modifier.fillMaxWidth(), label = "主目标标题", enabled = canEdit && !busy)
+        ReferenceOutlinedTextField((goalChanges["detail"] ?: goal["detail"])?.jsonPrimitive?.contentOrNull.orEmpty(), { changeGoal("detail", JsonPrimitive(it)) }, Modifier.fillMaxWidth(), label = "主目标说明", minLines = 3, enabled = canEdit && !busy)
         if (goalConflict) Text("主目标版本已变化，请重新读取后核对编辑。", color = MaterialTheme.colorScheme.error)
         Button({ val body = buildJsonObject { put("expectedRevision", (goalBase ?: goal)["revision"]!!); put("title", (goalChanges["title"] ?: goal["title"])!!); put("detail", (goalChanges["detail"] ?: goal["detail"]) ?: JsonPrimitive("")) }; confirm = "保存项目主目标？历史评分继续保留各自冻结目标。" to { send("PATCH", "/goal", body); goalBase = null; goalChanges = JsonObject(emptyMap()); message = "项目主目标已保存" } }, enabled = canEdit && !busy && !goalConflict && goalChanges.isNotEmpty()) { Text("保存主目标") }
         if (goalConflict) TextButton({ goalBase = null; goalChanges = JsonObject(emptyMap()) }) { Text("丢弃本机目标编辑，载入最新版本") }

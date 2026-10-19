@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import cn.buwei.nativeapp.NativeAiReferenceBadge
-import cn.buwei.nativeapp.ReferenceFieldLabel
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -25,8 +25,8 @@ import kotlinx.serialization.json.*
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};if(notice.isNotBlank())Text(notice)
  profile?.let{value->
   fun update(key:String,next:JsonElement)=run{profile=JsonObject(value+(key to next))}
-  listOf("bio" to "自我介绍（Markdown）","major" to "专业","specialties" to "技能与特长","preferredRoles" to "倾向项目职位").forEach{(key,label)->OutlinedTextField(value.text(key),{update(key,JsonPrimitive(it))},label={ReferenceFieldLabel(label,value.flag("aiUseAllowed"))},modifier=Modifier.fillMaxWidth());Row{Checkbox(value.obj("visibility")[key]?.jsonPrimitive?.booleanOrNull==true,{enabled->update("visibility",JsonObject(value.obj("visibility")+(key to JsonPrimitive(enabled))))});Text("公开$label")}}
-  OutlinedTextField(value.text("weeklyAvailableHours"),{text->if(text.isBlank())update("weeklyAvailableHours",JsonNull)else text.toDoubleOrNull()?.takeIf{it in 0.0..168.0}?.let{update("weeklyAvailableHours",JsonPrimitive(it))}},label={ReferenceFieldLabel("每周可投入小时（0–168，可留空）",value.flag("aiUseAllowed"))},modifier=Modifier.fillMaxWidth())
+  listOf("bio" to "自我介绍（Markdown）","major" to "专业","specialties" to "技能与特长","preferredRoles" to "倾向项目职位").forEach{(key,label)->ReferenceOutlinedTextField(value.text(key),{update(key,JsonPrimitive(it))},label=label,aiReference=value.flag("aiUseAllowed"),modifier=Modifier.fillMaxWidth());Row{Checkbox(value.obj("visibility")[key]?.jsonPrimitive?.booleanOrNull==true,{enabled->update("visibility",JsonObject(value.obj("visibility")+(key to JsonPrimitive(enabled))))});Text("公开$label")}}
+  ReferenceOutlinedTextField(value.text("weeklyAvailableHours"),{text->if(text.isBlank())update("weeklyAvailableHours",JsonNull)else text.toDoubleOrNull()?.takeIf{it in 0.0..168.0}?.let{update("weeklyAvailableHours",JsonPrimitive(it))}},label="每周可投入小时（0–168，可留空）",aiReference=value.flag("aiUseAllowed"),modifier=Modifier.fillMaxWidth())
   Row{Checkbox(value["searchable"]?.jsonPrimitive?.booleanOrNull==true,{update("searchable",JsonPrimitive(it))});Text("允许按完整用户名找到我")};Row{Checkbox(value["aiUseAllowed"]?.jsonPrimitive?.booleanOrNull==true,{update("aiUseAllowed",JsonPrimitive(it))});Text("允许项目 AI 使用个人资料")}
   Text("服务端资料版本：${value.text("revision")}");Button({confirmation="save"},enabled=!busy){Text("保存资料与隐私设置")};TextButton({confirmation="reload"},enabled=!busy){Text("读取服务端资料并放弃本机编辑")}
   OutlinedButton({action{loadCandidates(false)}},enabled=!busy){Text("读取旧项目资料导入候选")}

@@ -6,8 +6,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -15,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.features.ProjectSettingsWorkspace
+import cn.buwei.nativeapp.features.CreationText
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -30,19 +29,51 @@ class NativeReferencePreferencesInstrumentedTest {
     @get:Rule val compose=createComposeRule()
     @Test fun referenceFieldLabelsWrapAtLargeFontWithoutChangingAccessibleName(){
         val label="固定材料中的遗漏或询问评分依据"
-        compose.setContent{NativeTheme{val density=LocalDensity.current;CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
+        val value=mutableStateOf("保留原始正文");var pixelsPerDp=1f
+        compose.setContent{NativeTheme{val density=LocalDensity.current;pixelsPerDp=density.density;CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
             NativeReferencePreferenceContent("fixture",{flowOf(true)},{}){Column(Modifier.width(280.dp).padding(12.dp)){
-                OutlinedTextField("保留原始正文",{},Modifier.fillMaxWidth(),label={ReferenceFieldLabel(label)})
-                Text("此处内容可供 AI 引用，关闭标识不改变权限。")
-                NativeAiReferenceBadge()
+                CreationText(label,value.value){value.value=it}
             }}
         }}}
-        val fieldLabel=compose.onNodeWithText(label,useUnmergedTree=true);val layouts=mutableListOf<TextLayoutResult>()
-        fieldLabel.assertExists().performSemanticsAction(SemanticsActions.GetTextLayoutResult){assertTrue(it(layouts))}
-        assertFalse(layouts.single().didOverflowWidth);assertFalse(layouts.single().didOverflowHeight)
-        compose.onNodeWithText("保留原始正文").assertExists()
-        val output=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),"native-reference-large-font.png")
-        output.outputStream().use{compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+        compose.waitUntil(5000){compose.onAllNodesWithTag("reference-badge:$label").fetchSemanticsNodes().isNotEmpty()}
+        fun assertCompleteLayout(){
+            val root=compose.onRoot().fetchSemanticsNode().boundsInRoot
+            fun fullBounds(tag:String):androidx.compose.ui.geometry.Rect {
+                val node=compose.onNodeWithTag(tag,useUnmergedTree=true)
+                val clipped=node.fetchSemanticsNode().boundsInRoot
+                val full=node.getUnclippedBoundsInRoot()
+                // This compares against the parent's clipped bounds, not only TextLayoutResult.
+                assertEquals("$tag clipped top",full.top.value,clipped.top/pixelsPerDp,0.5f)
+                assertEquals("$tag clipped left",full.left.value,clipped.left/pixelsPerDp,0.5f)
+                assertEquals("$tag clipped height",(full.bottom.value-full.top.value),clipped.height/pixelsPerDp,0.5f)
+                assertEquals("$tag clipped width",(full.right.value-full.left.value),clipped.width/pixelsPerDp,0.5f)
+                assertTrue("$tag outside root",clipped.top>=root.top&&clipped.left>=root.left&&clipped.bottom<=root.bottom+1&&clipped.right<=root.right+1)
+                return clipped
+            }
+            val heading=fullBounds("reference-heading:$label")
+            val title=fullBounds("reference-title:$label")
+            val badge=fullBounds("reference-badge:$label")
+            val input=fullBounds("reference-input:$label")
+            assertTrue("heading overlaps input",heading.bottom<=input.top)
+            assertTrue("badge overlaps label",title.bottom<=badge.top)
+            assertTrue("label outside heading",title.top>=heading.top&&title.bottom<=heading.bottom)
+            assertTrue("badge outside heading",badge.top>=heading.top&&badge.bottom<=heading.bottom)
+            assertTrue("long label must wrap at fontScale 2",title.height/pixelsPerDp>40f)
+        }
+        assertCompleteLayout()
+        compose.onAllNodesWithText(label).assertCountEquals(1)
+        compose.onNodeWithText(label).performTextInput("补充")
+        compose.runOnIdle {assertTrue(value.value.contains("补充"));assertTrue(value.value.contains("保留原始正文"))}
+        androidx.test.espresso.Espresso.closeSoftKeyboard();compose.waitForIdle();assertCompleteLayout()
+        fun screenshot(name:String){
+            val output=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),name)
+            output.outputStream().use{compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+        }
+        screenshot("native-reference-large-font.png")
+        compose.onNodeWithText(label).performTextClearance();androidx.test.espresso.Espresso.closeSoftKeyboard();compose.waitForIdle()
+        compose.runOnIdle {assertEquals("",value.value)}
+        assertCompleteLayout();compose.onAllNodesWithText(label).assertCountEquals(1)
+        screenshot("native-reference-large-font-empty.png")
     }
     @Test fun failedSaveKeepsTemporaryChoiceAndReportsFailure() {
         compose.setContent { NativeTheme { NativeReferencePreferenceContent("a",{flowOf(true)},{throw IOException("fixture")}) { NativeAppearanceSettings("system"){} } } }

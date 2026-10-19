@@ -4,12 +4,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import cn.buwei.nativeapp.ReferenceFieldLabel
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import java.util.UUID
 
-@Composable internal fun CreationText(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,label={ReferenceFieldLabel(label,aiReference=label!="邀请码标识（每行一个）")},modifier=Modifier.fillMaxWidth())}
+@Composable internal fun CreationText(label:String,value:String,onChange:(String)->Unit){ReferenceOutlinedTextField(value,onChange,label=label,aiReference=label!="邀请码标识（每行一个）",modifier=Modifier.fillMaxWidth())}
 @Composable internal fun CreationChoice(label:String,value:String,choices:List<Pair<String,String>>,change:(String)->Unit){Text(label,style=MaterialTheme.typography.labelLarge);choices.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){row.forEach{(id,title)->FilterChip(selected=value==id,onClick={change(id)},label={Text(title)})}}}}
 @Composable internal fun CreationPayloadFields(payload:JsonObject,change:(JsonObject)->Unit){
  fun field(key:String,value:JsonElement?)=change(creationPatch(payload,key,value))

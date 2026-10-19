@@ -11,6 +11,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.datastore.core.DataStore
@@ -69,9 +71,12 @@ internal val LocalReferenceBadges=staticCompositionLocalOf { ReferenceBadgeState
     }
 }
 
-/** A label retains its exact accessible name while the decoration can wrap below it. */
-@Composable internal fun ReferenceFieldLabel(text:String,aiReference:Boolean=true) {
-    Column { Text(text); if(aiReference) Box(Modifier.clearAndSetSemantics {}) { NativeAiReferenceBadge() } }
+/** A full-height heading. Text-field callers must place this above the input, never in a floating label slot. */
+@Composable internal fun ReferenceFieldLabel(text:String,modifier:Modifier=Modifier,aiReference:Boolean=true,decorative:Boolean=false) {
+    Column(modifier.testTag("reference-heading:$text"),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+        Text(text,if(decorative)Modifier.clearAndSetSemantics { testTag="reference-title:$text" } else Modifier.testTag("reference-title:$text"),style=MaterialTheme.typography.bodyLarge)
+        if(aiReference&&LocalReferenceBadges.current.visible) Box(Modifier.clearAndSetSemantics { testTag="reference-badge:$text" }) { NativeAiReferenceBadge() }
+    }
 }
 
 @Composable internal fun NativeAppearanceSettings(theme:String,setTheme:suspend (String)->Unit) {
