@@ -32,6 +32,7 @@ const PublicProfilePage = lazy(() => import('./pages/PersonalProfiles').then(mod
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage').then(module => ({ default: module.AdminAccountsPage })));
 const SystemOverviewPage = lazy(() => import('./pages/SystemOverviewPage').then(module => ({ default: module.SystemOverviewPage })));
 const AiSettings = lazy(() => import('./pages/AiSettings').then(module => ({ default: module.AiSettings })));
+const NativeAuthorizePage = lazy(() => import('./pages/NativeAuthorizePage').then((module) => ({ default: module.NativeAuthorizePage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const CreateProjectPage = lazy(() => import('./pages/CreateProjectPage').then((module) => ({ default: module.CreateProjectPage })));
@@ -125,6 +126,7 @@ export default function App() {
       <Route path="/help" element={<PublicHelpPage />} />
       <Route path="/password-reset" element={<PasswordResetPage />} />
       <Route element={<ProtectedApp />}>
+        <Route path="/app/native-authorize" element={<NativeAuthorizePage />} />
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/app/help" element={<WorkspaceLegacyRedirect from="/app/help" to="/app/support/help" />} />
         <Route path="/app/agent-bridges/connect" element={<AgentBridgesPage />} />

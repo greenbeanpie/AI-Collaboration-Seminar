@@ -1,6 +1,7 @@
 import type { Env } from '../env';
 import { newId, nowIso } from '../core/db';
 import { isPushConfigured, sendWebPush } from './web-push';
+import { isNativePushConfigured, sendNativePush } from './native-push';
 
 export type NotificationKind = 'project_invitation' | 'source_added' | 'requirements_ready' | 'requirements_confirmed' | 'requirement_changed' | 'ticket_reply' | 'ticket_status' | 'task_inquiry' | 'task_ready' | 'member_permissions_updated';
 const content: Record<NotificationKind, [string, string]> = {
@@ -52,11 +53,12 @@ export function notificationStatements(env: Env, input: EventInput): D1PreparedS
       AND (e.kind = 'project_invitation' OR e.scope != 'project' OR EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = e.resource_id AND m.user_id = u.id AND m.joined_at <= e.created_at))`)
       .bind(input.key,input.recipientIds ? JSON.stringify(input.recipientIds) : null),
   ];
-  if (isPushConfigured(env)) statements.push(env.DB.prepare(`INSERT OR IGNORE INTO notification_push_outbox(event_id,subscription_id,available_at,created_at,updated_at)
+  if (isPushConfigured(env) || isNativePushConfigured(env)) statements.push(env.DB.prepare(`INSERT OR IGNORE INTO notification_push_outbox(event_id,subscription_id,available_at,created_at,updated_at)
     SELECT e.id,s.id,e.created_at,e.created_at,e.created_at FROM notification_events e JOIN notification_inbox n ON n.event_id = e.id
       JOIN push_subscriptions s ON s.user_id = n.user_id LEFT JOIN notification_settings p ON p.user_id = n.user_id
-    WHERE e.event_key = ?1 AND s.disabled_at IS NULL AND s.created_at <= e.created_at AND COALESCE(p.push_enabled,1) = 1`)
-    .bind(input.key));
+    WHERE e.event_key = ?1 AND s.disabled_at IS NULL AND s.created_at <= e.created_at AND COALESCE(p.push_enabled,1) = 1
+      AND ((s.transport='webpush' AND ?2=1) OR (s.transport='fcm' AND ?3=1))`)
+    .bind(input.key,isPushConfigured(env)?1:0,isNativePushConfigured(env)?1:0));
   return statements;
 }
 
@@ -69,20 +71,22 @@ export async function revokeDevice(env: Env, userId: string, id: string, session
   ]);
 }
 
-/** A bounded cron batch. No network calls when VAPID is not configured. */
+/** Reuses the bounded notification outbox for configured web and native transports. */
 export async function dispatchNotifications(env: Env): Promise<void> {
-  if (!isPushConfigured(env)) return;
+  if (!isPushConfigured(env) && !isNativePushConfigured(env)) return;
   const now = nowIso();
-  const due = await env.DB.prepare(`SELECT event_id,subscription_id FROM notification_push_outbox
-    WHERE status IN ('pending','sending') AND available_at <= ?1 AND (lease_until IS NULL OR lease_until <= ?1)
-    ORDER BY available_at LIMIT 20`).bind(now).all<{ event_id: string; subscription_id: string }>();
+  const due = await env.DB.prepare(`SELECT o.event_id,o.subscription_id FROM notification_push_outbox o
+    JOIN push_subscriptions s ON s.id=o.subscription_id
+    WHERE o.status IN ('pending','sending') AND o.available_at <= ?1 AND (o.lease_until IS NULL OR o.lease_until <= ?1)
+      AND ((s.transport='webpush' AND ?2=1) OR (s.transport='fcm' AND ?3=1))
+    ORDER BY o.available_at LIMIT 20`).bind(now,isPushConfigured(env)?1:0,isNativePushConfigured(env)?1:0).all<{ event_id: string; subscription_id: string }>();
   for (const item of due.results) {
     const lease = new Date(Date.now() + 60_000).toISOString();
     const claim = await env.DB.prepare(`UPDATE notification_push_outbox SET status='sending',attempts=attempts+1,lease_until=?3,updated_at=?4
       WHERE event_id=?1 AND subscription_id=?2 AND status IN ('pending','sending') AND (lease_until IS NULL OR lease_until<=?4)`)
       .bind(item.event_id, item.subscription_id, lease, now).run();
     if (claim.meta.changes !== 1) continue;
-    const row = await env.DB.prepare(`SELECT e.id,e.title,e.body,e.url,s.user_id,s.endpoint,s.p256dh,s.auth,o.attempts
+    const row = await env.DB.prepare(`SELECT e.id,e.title,e.body,e.url,s.user_id,s.endpoint,s.p256dh,s.auth,s.transport,s.native_token,o.attempts
       FROM notification_push_outbox o JOIN notification_events e ON e.id=o.event_id JOIN push_subscriptions s ON s.id=o.subscription_id
       JOIN notification_inbox n ON n.event_id=e.id AND n.user_id=s.user_id LEFT JOIN notification_settings p ON p.user_id=s.user_id
       WHERE o.event_id=?1 AND o.subscription_id=?2 AND o.status='sending' AND o.lease_until=?3
@@ -92,11 +96,13 @@ export async function dispatchNotifications(env: Env): Promise<void> {
         WHERE session.token_hash=s.session_hash AND session.user_id=s.user_id AND session.revoked_at IS NULL
         AND session.expires_at>?5 AND session.auth_method='password' AND a.password_hash IS NOT NULL)`)
       .bind(item.event_id,item.subscription_id,lease,new Date(Date.now()-86400_000).toISOString(),nowIso())
-      .first<{ id: string; title: string; body: string; url: string; user_id: string; endpoint: string; p256dh: string; auth: string; attempts: number }>();
+      .first<{ id: string; title: string; body: string; url: string; user_id: string; endpoint: string; p256dh: string; auth: string; transport:'webpush'|'fcm';native_token:string|null;attempts: number }>();
     let status: 'sent' | 'pending' | 'failed' | 'cancelled' = 'cancelled';
     if (row) {
       try {
-        const sent = await sendWebPush(env, row, { title: row.title, body: row.body, data: { userId: row.user_id, notificationId: row.id, url: row.url } });
+        const sent = row.transport==='fcm'
+          ? await sendNativePush(env,{native_token:row.native_token!,user_id:row.user_id},row.id)
+          : await sendWebPush(env, row, { title: row.title, body: row.body, data: { userId: row.user_id, notificationId: row.id, url: row.url } });
         if (sent.status >= 200 && sent.status < 300) status = 'sent';
         else if (sent.status === 404 || sent.status === 410) {
           await env.DB.prepare("UPDATE push_subscriptions SET disabled_at=?2,disabled_reason='expired',updated_at=?2 WHERE id=?1").bind(item.subscription_id,nowIso()).run();

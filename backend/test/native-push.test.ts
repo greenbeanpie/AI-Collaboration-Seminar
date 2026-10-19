@@ -2,12 +2,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { env, BASE } from './helpers/env';
 import { authCookie, seedUser, type SeededUser } from './helpers/seed';
 import { createApp } from '../src/app';
-import { registerNativePushRoutes } from '../src/api/native-push';
 import { isNativePushConfigured, registerNativeDevice, revokeNativeSession, sendNativePush, type NativePushConfig } from '../src/services/native-push';
 import { newId, nowIso, sha256Hex } from '../src/core/db';
 
 const app = createApp();
-registerNativePushRoutes(app);
 const configured = { ...env, FCM_PROJECT_ID: 'test-project', FCM_CLIENT_EMAIL: 'test@example.test', FCM_PRIVATE_KEY: 'test-only-not-a-real-key' };
 const token = 'test-registration-token-abcdefghijklmnopqrstuvwxyz';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });

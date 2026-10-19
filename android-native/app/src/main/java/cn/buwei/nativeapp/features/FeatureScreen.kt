@@ -18,6 +18,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.*
 import java.util.UUID
+import cn.buwei.nativeapp.media.AttachmentActions
+import cn.buwei.nativeapp.voice.VoiceWorkspace
 
 private data class Destination(val path:String,val title:String,val bindings:Map<String,String> = emptyMap())
 private data class FormDestination(val operation:NativeOperation,val bindings:Map<String,String>,val initial:JsonObject=JsonObject(emptyMap()))
@@ -31,11 +33,13 @@ fun FeatureScreen(repository:ClientRepository,section:String,projectId:String?,o
  var destination by remember(section,projectId,repository.accountId){mutableStateOf<Destination?>(null)}
  var form by remember(section,projectId,repository.accountId){mutableStateOf<FormDestination?>(null)}
  var advanced by remember(section,projectId){mutableStateOf(false)}
+ var voiceId by remember(section,projectId){mutableStateOf<String?>(null)}
+ if(voiceId!=null && projectId!=null){Column(Modifier.fillMaxSize()){TextButton({voiceId=null}){Text("返回排练详情")};Box(Modifier.weight(1f)){VoiceWorkspace(repository,projectId,voiceId!!)}};return}
  val bindings=if(projectId==null)emptyMap()else mapOf("projectId" to projectId)
  BackHandler(form!=null||destination!=null||advanced){when{form!=null->form=null;destination!=null->destination=null;else->advanced=false}}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
   if(form!=null){TextButton({form=null}){Text("返回")};OperationForm(repository,form!!){form=null};return@Column}
-  if(destination!=null){TextButton({destination=null}){Text("返回")};ResourceView(repository,destination!!,onProject,{destination=it},{form=it});return@Column}
+  if(destination!=null){TextButton({destination=null}){Text("返回")};if(destination!!.bindings["rehearsalId"]!=null&&destination!!.path.endsWith("/rehearsals/"+destination!!.bindings["rehearsalId"]))OutlinedButton({voiceId=destination!!.bindings["rehearsalId"]}){Text("文字与语音排练")};ResourceView(repository,destination!!,onProject,{destination=it},{form=it});return@Column}
   val title=mapOf("projects" to "我的项目","overview" to "项目概览","tasks" to "任务协作","data" to "项目资料","team" to "团队","assessment" to "标准与评估","rehearsals" to "答辩演练","ledger" to "活动历史","export" to "成果导出","project-settings" to "项目设置","profile" to "账户与个人资料","notifications" to "通知","support" to "帮助工单","help" to "使用帮助","accounts" to "账户管理","system" to "系统管理","ai-settings" to "AI 配置","bridges" to "Agent Bridge","create-project" to "创建项目","join" to "加入项目")[section]?:section
   Text(title,style=MaterialTheme.typography.headlineSmall)
   if(advanced){TextButton({advanced=false}){Text("返回业务页面")};AdvancedActions(repository,section,bindings){form=it};return@Column}
@@ -174,6 +178,9 @@ private fun ContextActions(repository:ClientRepository,canonical:String?,item:Js
  val ids=bindings.toMutableMap();if(base!=null&&itemId.isNotBlank()){Regex("\\{([^}]+)}").findAll(base).lastOrNull()?.groupValues?.get(1)?.let{ids[it]=itemId}}
  val prefix=base?:canonical
  val actions=NativeContracts.operations.filter{op->(op.path==prefix&&op.method!="GET"||op.path.startsWith("$prefix/")&&op.path.removePrefix("$prefix/").count{it=='/'}<=1)&&allowed(op)&&!op.binary&&Regex("\\{([^}]+)}").findAll(op.path).all{it.groupValues[1] in ids}}
+ val attachmentProject=bindings["projectId"]
+ val attachmentId=item.text("fileId").ifBlank {if(canonical.contains("/files"))itemId else ""}
+ if(attachmentProject!=null&&attachmentId.isNotBlank())AttachmentActions(repository,attachmentProject,attachmentId,item.text("fileName").ifBlank{item.text("name").ifBlank{attachmentId}})
  if(actions.isEmpty())return
  TextButton({expanded=!expanded}){Text(if(expanded)"收起操作"else"相关操作与历史")}
  if(expanded)actions.forEach{op->TextButton({if(op.method=="GET")onOpen(Destination(bindPath(op.path,ids),op.title,ids))else{val props=op.schema["properties"] as? JsonObject?:JsonObject(emptyMap());val initial=JsonObject(props.keys.mapNotNull{k->when(k){"expectedRevision"->item["revision"]?.let{k to it};else->item[k]?.let{k to it}}}.toMap());onForm(FormDestination(op,ids,initial))}}){Text(op.title)}}

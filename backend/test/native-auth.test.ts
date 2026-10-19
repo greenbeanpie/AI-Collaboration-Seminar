@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
-import { registerNativeAuthRoutes } from '../src/api/native-auth';
 import { env, BASE } from './helpers/env';
 import { authCookie, seedUser } from './helpers/seed';
 import { nativeChallenge } from '../src/services/native-auth';
 import { sha256Hex } from '../src/core/db';
 
 const verifier = 'a'.repeat(43); const state = 's'.repeat(43);
-function app() { const instance = createApp(); registerNativeAuthRoutes(instance); return instance; }
+function app() { return createApp(); }
 function call(path: string, body?: unknown, cookie?: string, origin?: string) {
   return app().fetch(new Request(BASE + '/api/v1/auth/native' + path, { method: body === undefined ? 'GET' : 'POST', headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...(origin ? { origin } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }), env);
 }

@@ -6,6 +6,9 @@ export type AiContinuationMessage =
   | { kind: 'draft-preview'; instanceId: string };
 
 export interface Env {
+  FCM_PROJECT_ID?: string;
+  FCM_CLIENT_EMAIL?: string;
+  FCM_PRIVATE_KEY?: string;
   /** Internal Workflow execution slice; never populated from user input or bindings. */
   AI_EXECUTION_SLICE?: true;
   /** Invocation-local dispatch count. A new Workflow instance gets a fresh context. */

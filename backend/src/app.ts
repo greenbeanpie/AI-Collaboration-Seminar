@@ -1,4 +1,6 @@
 import { registerRecordingRoutes } from './api/recordings';
+import { registerNativeAuthRoutes } from './api/native-auth';
+import { registerNativePushRoutes } from './api/native-push';
 import {registerResourcePolicyRoutes} from './api/resource-policy';
 import {registerStorageInventoryRoutes} from './api/storage-inventory';
 import {registerPasswordRecoveryRoutes} from './api/password-recovery';
@@ -114,6 +116,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerCapabilitiesRoutes(app);
   registerMediaFetchRoutes(app);
   registerAuthRoutes(app);
+  registerNativeAuthRoutes(app);
   registerAccountSettingsRoutes(app);
   registerPersonalProfileRoutes(app);
   registerCreationDraftRoutes(app);
@@ -160,6 +163,7 @@ export function createApp(): OpenAPIHono<AppEnv> {
   registerAiDiagnosticsRoutes(app);
   registerSupportTicketRoutes(app);
   registerNotificationRoutes(app);
+  registerNativePushRoutes(app);
   registerOfflineSyncRoutes(app);
 
   app.doc31('/api/v1/openapi.json', {

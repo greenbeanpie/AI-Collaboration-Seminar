@@ -1,4 +1,5 @@
 import { revokeDevice } from '../services/notifications';
+import { revokeNativeSession } from '../services/native-push';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
 import { apiData } from '../core/api';
@@ -50,6 +51,7 @@ export function registerAuthRoutes(app: OpenAPIHono<AppEnv>): void {
     const expected = c.req.header('X-Notification-Account');
     if (expected && expected !== c.get('user')!.id) throw invalidState('登录账户已变化，请在当前账户重新操作');
     const token = parseCookies(c.req.header('cookie'))[SESSION_COOKIE] ?? '';
+    await revokeNativeSession(c.env,c.get('user')!.id,await sha256Hex(token));
     const subscriptionId = c.req.header('X-Push-Subscription-Id');
     if (subscriptionId && z.string().uuid().safeParse(subscriptionId).success) await revokeDevice(c.env, c.get('user')!.id, subscriptionId, await sha256Hex(token));
     await c.env.DB.prepare('UPDATE sessions SET revoked_at = ?2 WHERE token_hash = ?1 AND revoked_at IS NULL').bind(await sha256Hex(token), nowIso()).run();
