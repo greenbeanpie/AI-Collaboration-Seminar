@@ -66,9 +66,17 @@ internal suspend fun renderPdfPageImage(page:PdfRenderer.Page,limits:PdfImageLim
     } finally {temporary.delete()}
 }
 
+/** Bind a derived image to the fixed source version and the file actually supplied by the caller. */
+internal fun pdfImageParentFileId(source:JsonObject,version:JsonObject,originalFileId:String?):String {
+    val parent=version["fileId"]?.jsonPrimitive?.contentOrNull?:error("来源版本缺少原文件标识，无法准备扫描页")
+    require(UUID.fromString(parent).toString()==parent.lowercase()){ "原文件标识无效" }
+    check(source["fileId"]?.jsonPrimitive?.contentOrNull==parent&&originalFileId==parent){"扫描页原文件与来源版本不匹配，请刷新后继续"}
+    return parent
+}
+
 /** Explicit upload-only preparation. The dedicated endpoint fails safely on older backends. */
 suspend fun uploadMissingPdfImages(
-    repository:ClientRepository,project:String,sourceId:String,sourceVersionId:String,file:File,onProgress:(String)->Unit,
+    repository:ClientRepository,project:String,sourceId:String,sourceVersionId:String,file:File,onProgress:(String)->Unit,originalFileId:String?=null,
 )=withContext(Dispatchers.IO) {
     for(id in listOf(project,sourceId,sourceVersionId))require(UUID.fromString(id).toString()==id.lowercase()){ "来源标识无效" }
     require(file.isFile&&file.extension.equals("pdf",true)){"扫描页需要原始 PDF 文件"}
@@ -81,10 +89,11 @@ suspend fun uploadMissingPdfImages(
     require(lifecycle>0&&initial["currentVersionId"]?.jsonPrimitive?.contentOrNull==sourceVersionId&&initial["deletedAt"]?.jsonPrimitive?.contentOrNull==null){"来源版本或生命周期已变化，请刷新后继续"}
     suspend fun active() {
         val current=get(prefix)
-        check(current["lifecycleVersion"]?.jsonPrimitive?.intOrNull==lifecycle&&current["currentVersionId"]?.jsonPrimitive?.contentOrNull==sourceVersionId&&current["deletedAt"]?.jsonPrimitive?.contentOrNull==null){"来源版本或生命周期已变化，扫描页上传已停止"}
+        check(current["lifecycleVersion"]?.jsonPrimitive?.intOrNull==lifecycle&&current["currentVersionId"]?.jsonPrimitive?.contentOrNull==sourceVersionId&&current["deletedAt"]?.jsonPrimitive?.contentOrNull==null&&current["fileId"]==initial["fileId"]){"来源版本或生命周期已变化，扫描页上传已停止"}
     }
     val version=get("$prefix/versions/$sourceVersionId")
     check(version["sourceId"]?.jsonPrimitive?.contentOrNull==sourceId&&version["sourceVersionId"]?.jsonPrimitive?.contentOrNull==sourceVersionId){"来源版本不匹配"}
+    val parentFileId=pdfImageParentFileId(initial,version,originalFileId)
     val cap=get("/capabilities")["limits"]?.jsonObject?:error("服务未返回扫描页渲染限制")
     val limits=PdfImageLimits(cap["pageImageMaxEdge"]?.jsonPrimitive?.intOrNull?:error("扫描页长边限制无效"),cap["pageImageMaxBytes"]?.jsonPrimitive?.intOrNull?:error("扫描页体积限制无效"),cap["maxPdfPages"]?.let {if(it==JsonNull)null else it.jsonPrimitive.intOrNull?:error("PDF 页数限制无效")})
     suspend fun missing():List<Int> {
@@ -115,7 +124,7 @@ suspend fun uploadMissingPdfImages(
             if(!reusable)document.openPage(pageNumber-1).use {page->renderPdfPageImage(page,limits,image,::assertOwner)}
             assertOwner()
             // The transfer helper persists a content-hash upload manifest, so a retry reuses completed uploads.
-            val imageId=AttachmentTransfer(repository).upload(project,image,onProgress)
+            val imageId=AttachmentTransfer(repository).upload(project,image,onProgress,"reference",null,parentFileId)
             assertOwner();active()
             if(pageNumber !in missing())continue
             val intent=AtomicFile(File(directory,"page-$pageNumber-registration.json"))
