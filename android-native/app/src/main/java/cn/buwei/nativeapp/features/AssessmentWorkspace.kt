@@ -164,7 +164,7 @@ internal fun AssessmentReport(report: JsonObject, before: JsonObject? = null) {
 }
 
 @Composable
-private fun AssessmentManualEditor(repository: ClientRepository, projectId: String, standard: JsonObject?, assessment: JsonObject?, goal: JsonObject, materials: Set<String>, enabled: Boolean, onSave: (JsonObject) -> Unit) {
+internal fun AssessmentManualEditor(repository: ClientRepository, projectId: String, standard: JsonObject?, assessment: JsonObject?, goal: JsonObject, materials: Set<String>, enabled: Boolean, onSave: (JsonObject) -> Unit) {
     var open by remember { mutableStateOf(false) }; val report = assessment?.obj("report") ?: JsonObject(emptyMap())
     var values by remember(assessment?.text("assessmentId"), assessment?.text("revision")) { mutableStateOf(mapOf<String, String>()) }; var comments by remember(assessment?.text("assessmentId"), assessment?.text("revision")) { mutableStateOf(mapOf<String, String>()) }
     var reason by remember(assessment?.text("assessmentId"), assessment?.text("revision")) { mutableStateOf("") }; var summary by remember(assessment?.text("revision")) { mutableStateOf(report.text("summary")) }; var error by remember { mutableStateOf<String?>(null) }

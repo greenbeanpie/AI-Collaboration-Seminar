@@ -23,6 +23,23 @@ internal fun rehearsalCreation(scope: String, member: String, materials: Set<Str
     return buildJsonObject { put("scope", scope); put("memberId", if (scope == "member") JsonPrimitive(member) else JsonNull); put("materialVersionIds", JsonArray(materials.sorted().map(::JsonPrimitive))); put("sourceVersionIds", JsonArray(sources.sorted().map(::JsonPrimitive))) }
 }
 
+@Composable
+private fun RehearsalAssessmentResult(repository: ClientRepository, projectId: String, rehearsalId: String, refresh: Int, canCorrect: Boolean, onChanged: () -> Unit, onConfirm: (String, suspend () -> Unit) -> Unit) {
+    val base = assessmentBase(projectId); var assessment by remember(rehearsalId) { mutableStateOf<JsonObject?>(null) }; var standard by remember { mutableStateOf<JsonObject?>(null) }; var error by remember { mutableStateOf<String?>(null) }
+    val owner = repository.accountId; val epoch = repository.epoch
+    LaunchedEffect(rehearsalId, refresh) { try { assessment = assessmentPages(repository, "$base/assessments?limit=50").firstOrNull { it.text("rehearsalId") == rehearsalId && !it.flag("historical") }; standard = repository.networkJson("GET", "$base/standards/current")["standard"] as? JsonObject } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    assessment?.let { row ->
+        Text("本轮答辩评分 · 标准 v${row.text("standardsVersion")} · 评分 r${row.text("revision")}", style = MaterialTheme.typography.titleMedium)
+        Text("固定主目标：${row.obj("goal").text("title")} · r${row.text("goalRevision")}")
+        AssessmentReport(row.obj("report"))
+        if (row["aiReport"] is JsonObject) { Text("原始 AI 建议与当前人工评分"); AssessmentReport(row.obj("aiReport"), row.obj("report")) }
+        AssessmentManualEditor(repository, projectId, standard, row, row.obj("goal"), emptySet(), canCorrect && row.text("status") in listOf("succeeded", "failed") && row.text("standardsVersionId") == standard?.text("standardsVersionId")) { body ->
+            onConfirm("保存本轮答辩人工修正？只修改已编辑维度，原始 AI 建议保留。") { check(repository.accountId == owner && repository.epoch == epoch); repository.requestDurably("rehearsal-score:$projectId:${row.text("assessmentId")}", "PATCH", "$base/assessments/${Uri.encode(row.text("assessmentId"))}/scores", body); onChanged() }
+        }
+    }
+}
+
 internal fun rehearsalCanAnswer(detail: JsonObject): Boolean {
     val turns = detail.rows("turns"); val latest = turns.lastOrNull()
     return detail.flag("canOperate") && detail.text("status") == "active" && detail.text("processingStatus") !in setOf("queued", "running", "waiting_input") && latest?.text("role") == "assistant" && latest.text("kind") in setOf("question", "followup")
@@ -57,6 +74,7 @@ private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: S
         if (scope == "member") AssessmentChoice("答辩成员", member, members.map { it.text("userId") to it.text("displayName").ifBlank { it.text("name").ifBlank { it.text("username") } } }) { member = it }
         AssessmentReferencePicker(repository, projectId, materials, sources) { m, s -> materials = m; sources = s }
         Button({ val body = rehearsalCreation(scope, member, materials, sources); confirm = "开始本轮答辩演练？后端将固定授权资料并调用模型生成第一问。" to { val result = send("POST", "/rehearsals", body); selected = result.text("rehearsalId"); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && (scope == "all" || member.isNotBlank()) && (project.text("myRole") == "owner" || project.obj("permissions").flag("scoreInitiate"))) { Text("开始新演练") }
+        Button({ val body = buildJsonObject { put("kind", "rehearsal"); put("materialVersionIds", JsonArray(materials.sorted().map(::JsonPrimitive))); put("sourceVersionIds", JsonArray(sources.sorted().map(::JsonPrimitive))) }; confirm = "开始带评分的答辩演练？这会固定主目标、统一标准和成果版本，按本轮真实回答生成维度评分。" to { val result = send("POST", "/assessments", body); selected = result.text("rehearsalId"); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && (project.text("myRole") == "owner" || project.obj("permissions").flag("scoreInitiate"))) { Text("开始带评分的答辩演练") }
         AssessmentChoice("历史演练", selected, history.mapIndexed { index, row -> row.text("rehearsalId") to "${row.text("createdAt")} · ${if (row.text("scope") == "member") "成员演练" else "全体演练"} · ${if (row.text("status") == "finished") "已结束" else "进行中"} · ${index + 1}" }) { selected = it; answer = ""; jobId = "" }
         detail?.let { current ->
             Text(if (current.text("status") == "finished") "本轮已结束" else "本轮正在进行", style = MaterialTheme.typography.titleMedium)
@@ -70,6 +88,7 @@ private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: S
                 Button({ val id = selected; confirm = "结束本轮并生成总结评分？将依据本轮固定资料和真实回答调用模型。" to { val result = send("POST", "/rehearsals/${Uri.encode(id)}/finish"); jobId = result.text("jobId") } }, enabled = aiEnabled && !busy && !processing && current.rows("turns").isNotEmpty()) { Text("结束并生成总结") }
                 TextButton({ val id = selected; confirm = "取消并删除本场演练？本场问答及未完成评分不会保存，取消后无法恢复。" to { send("DELETE", "/rehearsals/${Uri.encode(id)}"); selected = ""; detail = null; answer = ""; jobId = "" } }, enabled = !busy) { Text("取消并删除本场演练") }
             } else if (current.text("status") == "active") Text("仅本轮有操作权限的答辩成员可回答或结束。")
+            RehearsalAssessmentResult(repository, projectId, selected, refresh, project.text("myRole") == "owner" || project.obj("permissions").flag("scoreCorrect"), onChanged = { refresh++ }, onConfirm = { message, block -> confirm = message to block })
             val visibleJob = jobId.ifBlank { current.text("processingJobId").ifBlank { current.text("aiJobId") } }; if (visibleJob.isNotBlank()) NativeJobExecution(repository, visibleJob, onSettled = { refresh++ })
         }
         if (detail == null && jobId.isNotBlank()) NativeJobExecution(repository, jobId, onSettled = { refresh++ })
