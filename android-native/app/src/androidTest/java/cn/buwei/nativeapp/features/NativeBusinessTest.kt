@@ -25,6 +25,8 @@ import org.junit.Test
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /** Deterministic loopback fixtures; these tests never send requests to production. */
@@ -46,6 +48,9 @@ class NativeBusinessTest {
  private var preview=false
  @Volatile private var sent=false
  @Volatile private var jobDone=false
+ private val jobCompletionAllowed=AtomicBoolean(true)
+ private val jobReads=AtomicInteger()
+ private val answerServed=AtomicBoolean()
  private fun envelope(data:JsonElement)=MockResponse().setHeader("Content-Type","application/json").setBody(buildJsonObject{put("data",data);put("requestId","native-test")}.toString())
  private fun emptyList()=buildJsonObject{put("items",JsonArray(kotlin.collections.emptyList()));put("nextCursor",JsonNull)}
  private fun projectFixture()=buildJsonObject{put("id",project);put("name","Fixture project");put("description","Local test data");put("status","active");put("revision",1);put("myRole","owner");put("permissions",buildJsonObject{listOf("teamManage","taskManage","resourceManage","scoreInitiate","scoreCorrect").forEach{put(it,true)}})}
@@ -92,9 +97,12 @@ class NativeBusinessTest {
    if(route=="/api/v1/projects/$project/ai-chat"){
     if(method=="POST"){sent=true;return envelope(buildJsonObject{put("questionId",task);put("jobId",draftId)})}
     if(method=="DELETE"){sent=false;jobDone=false;return envelope(buildJsonObject{put("cleared",true)})}
-    return envelope(buildJsonObject{put("items",buildJsonArray{if(sent){add(buildJsonObject{put("id","q1");put("questionId",task);put("role","user");put("content","Explain fixture");put("createdAt","2026-10-19T00:00:00Z");put("jobId",draftId)});if(jobDone)add(buildJsonObject{put("id","a1");put("questionId",task);put("role","assistant");put("content","## Fixture answer\nNative response");put("createdAt","2026-10-19T00:00:01Z");put("jobId",draftId)})}});put("nextCursor",JsonNull);put("pendingJobId",if(sent&&!jobDone)JsonPrimitive(draftId)else JsonNull)})
+    val hasQuestion=sent;val completed=jobDone
+    val response=envelope(buildJsonObject{put("items",buildJsonArray{if(hasQuestion){add(buildJsonObject{put("id","q1");put("questionId",task);put("role","user");put("content","Explain fixture");put("createdAt","2026-10-19T00:00:00Z");put("jobId",draftId)});if(completed)add(buildJsonObject{put("id","a1");put("questionId",task);put("role","assistant");put("content","## Fixture answer\nNative response");put("createdAt","2026-10-19T00:00:01Z");put("jobId",draftId)})}});put("nextCursor",JsonNull);put("pendingJobId",if(hasQuestion&&!completed)JsonPrimitive(draftId)else JsonNull)})
+    if(hasQuestion&&completed)answerServed.set(true)
+    return response
    }
-   if(route=="/api/v1/jobs/$draftId"){jobDone=true;return envelope(buildJsonObject{put("jobId",draftId);put("status","succeeded");put("activity",buildJsonObject{put("code","executing_tool");put("progress",buildJsonObject{put("completed",3);put("unit","tool_call")})});put("execution",buildJsonObject{put("totalCalls",1);put("state","completed");put("generation",1)})})}
+   if(route=="/api/v1/jobs/$draftId"){val allowCompletion=jobCompletionAllowed.get();jobReads.incrementAndGet();if(allowCompletion)jobDone=true;return envelope(buildJsonObject{put("jobId",draftId);put("status",if(jobDone)"succeeded"else"running");put("activity",buildJsonObject{put("code","executing_tool");put("progress",buildJsonObject{put("completed",3);put("unit","tool_call")})});put("execution",buildJsonObject{put("totalCalls",1);put("state","completed");put("generation",1)})})}
    if(route.endsWith("/operations"))return envelope(emptyList())
    return MockResponse().setResponseCode(404).setBody("Unexpected fixture route: $method $route")
   }}
@@ -103,7 +111,7 @@ class NativeBusinessTest {
   runBlocking{repository.exchange("fixture-code","fixture-verifier")}
  }
  @After fun teardown(){server.shutdown()}
- private fun awaitText(text:String){try{compose.waitUntil(15000){if(compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()){runCatching{if(compose.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().size==1)compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))}};compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Throwable){runCatching{screenshot("failure-${text.hashCode()}")};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n${compose.onRoot().printToString()}",e)}}
+ private fun awaitText(text:String){try{compose.waitUntil(15000){if(compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()){runCatching{if(compose.onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().size==1)compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))}};compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(e:Throwable){runCatching{screenshot("failure-${text.hashCode()}")};val root=runCatching{compose.onRoot().printToString()}.getOrElse{"UI diagnostic unavailable: ${it.javaClass.simpleName}: ${it.message}"};throw AssertionError("Expected text: $text\nRequests: ${observedRequests.joinToString()}\n$root",e)}}
  private fun screenshot(name:String){val image=compose.onRoot().captureToImage().asAndroidBitmap();val directory=File(context.getExternalFilesDir(null),"native-ui-fixtures").apply{mkdirs()};val target=File(directory,"$name.png");target.outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};assertTrue(target.length()>0)}
 
  @Test fun projectListOpensSelectedProject(){
@@ -153,8 +161,21 @@ class NativeBusinessTest {
   awaitText("项目已创建");screenshot("creation-committed");compose.onNodeWithText("进入项目").performScrollTo().performClick();compose.waitUntil{selected.get()==project}
  }
  @Test fun conversationSendsPollsAndDisplaysNativeAnswer(){
+  // Lazy message cards only poll their job while composed. Keep the first job response
+  // running so that one deliberate scroll can reveal it before the terminal answer arrives.
+  jobCompletionAllowed.set(false)
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
   compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performScrollTo().performClick()
-  awaitText("Fixture answer");compose.onNodeWithText("Native response").performScrollTo().assertIsDisplayed();screenshot("ai-conversation")
+  compose.waitUntil(15000){sent}
+  compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("AI 执行",substring=true))
+  compose.waitUntil(15000){jobReads.get()>0}
+  jobCompletionAllowed.set(true)
+  // Observe actual fixture responses without repeatedly scrolling a changing lazy list.
+  // A second job GET and an answer-bearing history response prove completion was polled.
+  compose.waitUntil(15000){jobReads.get()>=2&&answerServed.get()}
+  compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fixture answer"))
+  compose.onNodeWithText("Fixture answer").assertIsDisplayed()
+  compose.onNodeWithText("Native response").performScrollTo().assertIsDisplayed();screenshot("ai-conversation")
+  assertEquals(1,observedRequests.count{it=="POST /api/v1/projects/$project/ai-chat"})
  }
 }
