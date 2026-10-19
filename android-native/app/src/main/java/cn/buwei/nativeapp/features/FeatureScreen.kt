@@ -92,14 +92,14 @@ private fun OperationForm(repository:ClientRepository,destination:FormDestinatio
  if(op.schema.isNotEmpty())SchemaField("请求内容",op.schema,body,true){body=it as? JsonObject?:JsonObject(emptyMap())}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
  if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
- result?.let{Text("操作结果",style=MaterialTheme.typography.titleMedium);StructuredValue(it);it.text("jobId").takeIf{v->v.isNotBlank()}?.let{id->JobMonitor(repository,id)};TextButton(onDone){Text("返回并刷新")}}
+ result?.let{Text("操作结果",style=MaterialTheme.typography.titleMedium);if(it.flag("queued"))Text("已保存到本机，等待联网同步；服务端尚未提交。请在同步完成后刷新核对。",style=MaterialTheme.typography.bodyMedium);StructuredValue(it);it.text("jobId").takeIf{v->v.isNotBlank()}?.let{id->JobMonitor(repository,id)};TextButton(onDone){Text("返回并刷新")}}
  if(!submitted)Button({
   val missing=op.parameters.map{it.jsonObject}.firstOrNull{it.flag("required")&&params[it.text("name")].isNullOrBlank()}
   error=if(missing!=null)"${label(missing.text("name"))} 必填"else if(op.schema.isNotEmpty())validate(op.schema,body)else null
   if(error==null)confirm=true
  },enabled=!busy){Text(if(op.method=="GET")"读取" else "检查并提交")}
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text(if(op.method=="GET")"读取信息"else"确认操作")},text={Text(op.title+if(op.method!="GET")"\n将修改服务端状态；AI 操作可能产生费用。请求结果不明时请先查询状态，不自动重发。"else"")},confirmButton={TextButton({confirm=false;busy=true;scope.launch{try{
-  var path=op.path;params.forEach{(k,v)->path=path.replace("{$k}",Uri.encode(v))};val query=op.parameters.map{it.jsonObject}.filter{it.text("in")=="query"}.mapNotNull{p->params[p.text("name")]?.takeIf{it.isNotBlank()}?.let{"${Uri.encode(p.text("name"))}=${Uri.encode(it)}"}.joinToString("&");if(query.isNotBlank())path+="?$query"
+  var path=op.path;params.forEach{(k,v)->path=path.replace("{$k}",Uri.encode(v))};val query=op.parameters.map{it.jsonObject}.filter{it.text("in")=="query"}.mapNotNull{p->params[p.text("name")]?.takeIf{it.isNotBlank()}?.let{"${Uri.encode(p.text("name"))}=${Uri.encode(it)}"}}.joinToString("&");if(query.isNotBlank())path+="?$query"
   result=repository.request(op.method,path,if(op.schema.isEmpty())null else body,if(op.method=="GET")null else intentKey);submitted=true;error=null
  }catch(e:CancellationException){throw e}catch(e:Exception){error=e.message?:"操作失败；表单已保留。请先确认服务器状态。"}finally{busy=false}}}){Text("确认")}},dismissButton={TextButton({confirm=false}){Text("取消")}})
 }

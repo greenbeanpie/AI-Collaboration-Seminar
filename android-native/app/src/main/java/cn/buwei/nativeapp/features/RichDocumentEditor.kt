@@ -27,7 +27,7 @@ internal fun NativeRichMaterialEditor(repository:ClientRepository,path:String,ma
   Button({busy=true;scope.launch{try{
    // Omit markdown intentionally: backend material API derives it through docToMarkdown.
    val response=repository.request("PUT",path,buildJsonObject{put("expectedRevision",revision);put("doc",document);put("attachmentIds",JsonArray((material.obj("currentVersion")["attachments"]as? JsonArray)?.mapNotNull{it.jsonObject["fileId"]}.orEmpty()))},intentKey)
-   revision=response["revision"]?:revision;result="已保存新版本";editing=false
+   if(response.flag("queued")){result="已保存到本机，等待联网同步；服务端版本未更新。同步完成后请刷新核对，再继续编辑。"}else{revision=response["revision"]?:revision;result="已保存新版本"};editing=false
   }catch(e:CancellationException){throw e}catch(e:Exception){result=(e.message?:"保存失败")+"；编辑内容已保留。版本冲突时先复制内容，再刷新核对。"}finally{busy=false}}},enabled=!busy){Text("保存新版本")}
   TextButton({editing=false},enabled=!busy){Text("暂存编辑并返回")}
  }
