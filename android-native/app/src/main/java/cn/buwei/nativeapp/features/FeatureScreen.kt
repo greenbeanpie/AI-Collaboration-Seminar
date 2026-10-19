@@ -176,17 +176,7 @@ private fun ContextActions(repository:ClientRepository,canonical:String?,item:Js
 }
 
 @Composable
-private fun MaterialEditor(repository:ClientRepository,path:String,material:JsonObject){
- var editing by remember{mutableStateOf(false)};var markdown by rememberSaveable(path){mutableStateOf(material.obj("currentVersion").text("markdown"))};var result by remember{mutableStateOf<String?>(null)};var busy by remember{mutableStateOf(false)};val scope=rememberCoroutineScope()
- var acceptConversion by remember{mutableStateOf(false)}
- if(!editing){OutlinedButton({editing=true}){Text("编辑正文")};return}
- Text("以版本 ${material.text("revision")} 保存。冲突时保留文本，先复制再刷新。",style=MaterialTheme.typography.bodySmall)
- Text("此编辑器将正文转换为普通段落；表格、内嵌引用和富文本格式会丢失。已有附件仍保留。需要保留格式时请先取消。",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
- Row{Checkbox(acceptConversion,{acceptConversion=it});Text("我确认以普通段落保存新版本")}
- OutlinedTextField(markdown,{markdown=it},label={Text("Markdown 正文")},modifier=Modifier.fillMaxWidth(),minLines=8)
- result?.let{Text(it)}
- Button({busy=true;scope.launch{try{val doc=buildJsonObject{put("type","doc");put("content",buildJsonArray{markdown.split('\n').forEach{line->add(buildJsonObject{put("type","paragraph");put("content",buildJsonArray{if(line.isNotEmpty())add(buildJsonObject{put("type","text");put("text",line)})})})}})};repository.request("PUT",path,buildJsonObject{put("expectedRevision",material["revision"]?:JsonPrimitive(1));put("doc",doc);put("markdown",markdown);put("attachmentIds",JsonArray(material.obj("currentVersion")["attachments"]?.jsonArray?.mapNotNull{it.jsonObject["fileId"]}.orEmpty()))},UUID.randomUUID().toString());result="已保存新版本，请刷新后继续编辑";editing=false}catch(e:CancellationException){throw e}catch(e:Exception){result=e.message?:"保存失败；正文已保留"}finally{busy=false}}},enabled=!busy&&acceptConversion){Text("保存新版本")}
-}
+private fun MaterialEditor(repository:ClientRepository,path:String,material:JsonObject){ NativeRichMaterialEditor(repository,path,material) }
 
 @Composable
 internal fun StructuredValue(value:JsonElement,depth:Int=0){
